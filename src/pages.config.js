@@ -3,6 +3,7 @@ import Onboarding from './pages/Onboarding';
 import Discover from './pages/Discover';
 import CampDetail from './pages/CampDetail';
 import Calendar from './pages/Calendar';
+import MyCamps from './pages/MyCamps';
 import __Layout from './Layout.jsx';
 
 
@@ -12,6 +13,7 @@ export const PAGES = {
     "Discover": Discover,
     "CampDetail": CampDetail,
     "Calendar": Calendar,
+    "MyCamps": MyCamps,
 }
 
 export const pagesConfig = {
