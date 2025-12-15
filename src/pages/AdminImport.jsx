@@ -192,7 +192,7 @@ export default function AdminImport() {
             <Button
               type="submit"
               disabled={!jsonInput || importMutation.isPending}
-              className="w-full mt-4 bg-blue-600 hover:bg-blue-700"
+              className="w-full mt-4 bg-electric-blue hover:bg-deep-navy"
             >
               {importMutation.isPending ? (
                 <>

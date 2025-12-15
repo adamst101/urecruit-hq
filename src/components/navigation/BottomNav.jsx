@@ -29,8 +29,8 @@ export default function BottomNav() {
               className={cn(
                 "flex flex-col items-center justify-center gap-1 transition-colors",
                 isActive 
-                  ? "text-blue-600" 
-                  : "text-slate-400 hover:text-slate-600"
+                  ? "text-electric-blue" 
+                  : "text-gray-light hover:text-gray-dark"
               )}
             >
               <Icon className={cn("w-5 h-5", isActive && "fill-current")} />

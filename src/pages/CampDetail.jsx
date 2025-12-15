@@ -255,7 +255,7 @@ export default function CampDetail() {
               "w-full",
               isRegistered 
                 ? "bg-emerald-600 hover:bg-emerald-700" 
-                : "bg-blue-600 hover:bg-blue-700"
+                : "bg-electric-blue hover:bg-deep-navy"
             )}
             onClick={() => toggleRegistrationMutation.mutate()}
             disabled={toggleRegistrationMutation.isPending}

@@ -143,7 +143,7 @@ export default function MyCamps() {
         {!isRegistered && (
           <Button
             size="sm"
-            className="w-full mt-3 bg-blue-600 hover:bg-blue-700"
+            className="w-full mt-3 bg-electric-blue hover:bg-deep-navy"
             onClick={(e) => {
               e.stopPropagation();
               registerMutation.mutate(camp.id);

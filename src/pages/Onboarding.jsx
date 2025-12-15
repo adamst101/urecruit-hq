@@ -80,7 +80,7 @@ export default function Onboarding() {
       <div className="max-w-md mx-auto pt-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-electric-blue rounded-2xl mb-4">
             <Trophy className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-slate-900 mb-2">Welcome to RecruitMe</h1>
@@ -226,7 +226,7 @@ export default function Onboarding() {
           <Button
             type="submit"
             disabled={!isValid || updateProfileMutation.isPending}
-            className="w-full bg-blue-600 hover:bg-blue-700"
+            className="w-full bg-electric-blue hover:bg-deep-navy"
           >
             {updateProfileMutation.isPending ? (
               <>

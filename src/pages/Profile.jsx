@@ -101,8 +101,8 @@ export default function Profile() {
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-md mx-auto p-4">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-              <User className="w-6 h-6 text-blue-600" />
+            <div className="w-12 h-12 bg-electric-blue/10 rounded-full flex items-center justify-center">
+              <User className="w-6 h-6 text-electric-blue" />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">Profile</h1>
@@ -252,7 +252,7 @@ export default function Profile() {
           <Button
             type="submit"
             disabled={updateProfileMutation.isPending}
-            className="w-full bg-blue-600 hover:bg-blue-700"
+            className="w-full bg-electric-blue hover:bg-deep-navy"
           >
             {updateProfileMutation.isPending ? (
               <>

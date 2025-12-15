@@ -202,14 +202,14 @@ export default function Calendar() {
                   className={cn(
                     "min-h-[60px] p-1.5 border-r border-b border-slate-100 transition-colors",
                     !isCurrentMonth && "bg-slate-50",
-                    isToday && "bg-blue-50",
+                    isToday && "bg-electric-blue/10 ring-1 ring-electric-blue",
                     hasCamps && "hover:bg-slate-100 cursor-pointer",
                     !hasCamps && "cursor-default"
                   )}
                 >
                   <div className={cn(
                     "text-sm font-medium mb-1",
-                    isToday && "text-blue-600",
+                    isToday && "text-electric-blue font-bold",
                     !isCurrentMonth && "text-slate-400",
                     isCurrentMonth && !isToday && "text-slate-700"
                   )}>

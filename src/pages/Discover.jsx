@@ -194,23 +194,23 @@ export default function Discover() {
             <div className="flex items-center gap-2 mt-3 text-sm">
               <span className="text-slate-500">Filters:</span>
               {filters.divisions?.map(d => (
-                <span key={d} className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                <span key={d} className="px-2 py-1 bg-electric-blue/10 text-electric-blue rounded-full text-xs font-medium">
                   {d}
                 </span>
               ))}
               {filters.positions?.length > 0 && (
-                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                <span className="px-2 py-1 bg-electric-blue/10 text-electric-blue rounded-full text-xs font-medium">
                   {filters.positions.length} position{filters.positions.length > 1 ? 's' : ''}
                 </span>
               )}
               {filters.state && (
-                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                <span className="px-2 py-1 bg-electric-blue/10 text-electric-blue rounded-full text-xs font-medium">
                   {filters.state}
                 </span>
               )}
               <button
                 onClick={handleClearFilters}
-                className="text-blue-600 hover:underline text-xs"
+                className="text-electric-blue hover:underline text-xs font-medium"
               >
                 Clear
               </button>
