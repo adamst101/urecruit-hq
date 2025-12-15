@@ -120,7 +120,7 @@ export default function Calendar() {
       {/* Header */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-md mx-auto p-4">
-          <h1 className="text-2xl font-bold text-slate-900 mb-4">Camp Calendar</h1>
+          <h1 className="text-2xl font-bold text-deep-navy mb-4">Camp Calendar</h1>
           
           {/* Sport Filter */}
           <Select value={sportFilter} onValueChange={setSportFilter}>
@@ -149,7 +149,7 @@ export default function Calendar() {
             >
               <ChevronLeft className="w-5 h-5" />
             </Button>
-            <h2 className="text-lg font-bold text-slate-900">
+            <h2 className="text-lg font-bold text-deep-navy">
               {format(currentDate, 'MMMM yyyy')}
             </h2>
             <Button
@@ -294,8 +294,8 @@ export default function Calendar() {
                         <span className="text-xs text-slate-500">{sport.sport_name}</span>
                       )}
                     </div>
-                    <h3 className="font-semibold text-slate-900">{school?.school_name}</h3>
-                    <p className="text-sm text-slate-600">{camp.camp_name}</p>
+                    <h3 className="font-semibold text-deep-navy">{school?.school_name}</h3>
+                    <p className="text-sm text-gray-dark">{camp.camp_name}</p>
                   </button>
                 );
               })}

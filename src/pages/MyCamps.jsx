@@ -111,7 +111,7 @@ export default function MyCamps() {
                 <span className="text-xs text-slate-500">{sport.sport_name}</span>
               )}
             </div>
-            <h3 className="font-bold text-slate-900 truncate">
+            <h3 className="font-bold text-deep-navy truncate">
               {school?.school_name || 'Unknown School'}
             </h3>
             <p className="text-sm text-slate-600 truncate">{camp.camp_name}</p>
@@ -174,7 +174,7 @@ export default function MyCamps() {
       {/* Header */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-md mx-auto p-4">
-          <h1 className="text-2xl font-bold text-slate-900 mb-4">My Camps</h1>
+          <h1 className="text-2xl font-bold text-deep-navy mb-4">My Camps</h1>
           
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid w-full grid-cols-2 bg-slate-100">
@@ -209,8 +209,8 @@ export default function MyCamps() {
             ) : registeredCamps.length === 0 ? (
               <div className="text-center py-20">
                 <CheckCircle className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-                <h3 className="text-lg font-semibold text-slate-700">No registered camps</h3>
-                <p className="text-slate-500 mb-4">Start exploring camps to register</p>
+                <h3 className="text-lg font-semibold text-deep-navy">No registered camps</h3>
+                <p className="text-gray-dark mb-4">Start exploring camps to register</p>
                 <Button onClick={() => navigate(createPageUrl('Discover'))}>
                   Discover Camps
                 </Button>
@@ -240,8 +240,8 @@ export default function MyCamps() {
             ) : favoriteCamps.length === 0 ? (
               <div className="text-center py-20">
                 <Star className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-                <h3 className="text-lg font-semibold text-slate-700">No favorite camps</h3>
-                <p className="text-slate-500 mb-4">Tap the star icon to save camps</p>
+                <h3 className="text-lg font-semibold text-deep-navy">No favorite camps</h3>
+                <p className="text-gray-dark mb-4">Tap the star icon to save camps</p>
                 <Button onClick={() => navigate(createPageUrl('Discover'))}>
                   Discover Camps
                 </Button>

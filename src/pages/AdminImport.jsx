@@ -169,8 +169,8 @@ export default function AdminImport() {
             <ArrowLeft className="w-5 h-5" />
             <span>Back</span>
           </button>
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Admin: Import Camps</h1>
-          <p className="text-slate-600">
+          <h1 className="text-3xl font-bold text-deep-navy mb-2">Admin: Import Camps</h1>
+          <p className="text-gray-dark">
             Import camps from JSON data. Supports single camp objects or arrays of camps.
           </p>
         </div>

@@ -166,7 +166,7 @@ export default function Discover() {
       {/* Header */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-md mx-auto p-4">
-          <h1 className="text-2xl font-bold text-slate-900 mb-4">Discover Camps</h1>
+          <h1 className="text-2xl font-bold text-deep-navy mb-4">Discover Camps</h1>
           
           {/* Search Bar */}
           <div className="flex gap-2">
@@ -228,8 +228,8 @@ export default function Discover() {
         ) : filteredCamps.length === 0 ? (
           <div className="text-center py-20">
             <Search className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-            <h3 className="text-lg font-semibold text-slate-700">No camps found</h3>
-            <p className="text-slate-500">Try adjusting your filters</p>
+            <h3 className="text-lg font-semibold text-deep-navy">No camps found</h3>
+            <p className="text-gray-dark">Try adjusting your filters</p>
           </div>
         ) : (
           <div className="space-y-4">

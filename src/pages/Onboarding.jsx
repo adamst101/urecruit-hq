@@ -76,15 +76,15 @@ export default function Onboarding() {
   const isValid = formData.athlete_name && formData.sport_id && formData.primary_position_id;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 p-4 pb-20">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 p-4 pb-20">
       <div className="max-w-md mx-auto pt-8">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-electric-blue rounded-2xl mb-4">
             <Trophy className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Welcome to RecruitMe</h1>
-          <p className="text-slate-600">Let's set up your athlete profile</p>
+          <h1 className="text-3xl font-bold text-deep-navy mb-2">Welcome to RecruitMe</h1>
+          <p className="text-gray-dark">Let's set up your athlete profile</p>
         </div>
 
         {/* Form */}

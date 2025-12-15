@@ -152,7 +152,7 @@ export default function CampDetail() {
                   <span className="text-xs text-slate-500 font-medium">{sport.sport_name}</span>
                 )}
               </div>
-              <h1 className="text-2xl font-bold text-slate-900">
+              <h1 className="text-2xl font-bold text-deep-navy">
                 {school?.school_name || 'Unknown School'}
               </h1>
               <p className="text-slate-600">{camp.camp_name}</p>

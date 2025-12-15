@@ -105,8 +105,8 @@ export default function Profile() {
               <User className="w-6 h-6 text-electric-blue" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Profile</h1>
-              <p className="text-sm text-slate-500">{user?.email}</p>
+              <h1 className="text-2xl font-bold text-deep-navy">Profile</h1>
+              <p className="text-sm text-gray-dark">{user?.email}</p>
             </div>
           </div>
         </div>

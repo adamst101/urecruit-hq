@@ -58,7 +58,7 @@ export default function CampCard({
                 <Badge className="bg-emerald-100 text-emerald-700 text-xs">✓</Badge>
               )}
             </div>
-            <h3 className="font-bold text-base text-slate-900 truncate">
+            <h3 className="font-bold text-base text-deep-navy truncate">
               {school?.school_name || 'Unknown School'}
             </h3>
             <p className="text-sm text-slate-500 truncate">{camp.camp_name}</p>
