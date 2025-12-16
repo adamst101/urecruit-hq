@@ -56,71 +56,48 @@ export default function AdminImport() {
   });
 
   const importMutation = useMutation({
-    mutationFn: async (data) => {
-      const campsArray = Array.isArray(data) ? data : [data];
+    mutationFn: async (csvData) => {
       const results = [];
+      const football = sports.find(s => s.sport_name === 'Football');
 
-      for (const campData of campsArray) {
+      for (const row of csvData) {
         // Find or create school
         let school = schools.find(s => 
-          s.school_name?.toLowerCase() === campData.school_name?.toLowerCase()
+          s.school_name?.toLowerCase().trim() === row.School?.toLowerCase().trim()
         );
         
-        if (!school && campData.school_name) {
+        if (!school && row.School) {
           school = await base44.entities.School.create({
-            school_name: campData.school_name,
-            division: campData.division || 'Other',
-            conference: campData.conference || '',
-            city: campData.city || '',
-            state: campData.state || '',
-            logo_url: campData.logo_url || ''
+            school_name: row.School.trim(),
+            division: mapDivision(row.Division),
+            city: row.City?.trim() || '',
+            state: row.State?.trim() || ''
           });
         }
 
-        // Find sport
-        let sport = sports.find(s => 
-          s.sport_name?.toLowerCase() === campData.sport_name?.toLowerCase()
-        );
-        
-        if (!sport) {
-          // Default to Football if not specified
-          sport = sports.find(s => s.sport_name === 'Football');
-        }
+        if (!school || !football) continue;
 
-        // Process positions
-        const positionIds = [];
-        if (campData.positions && Array.isArray(campData.positions)) {
-          for (const posCode of campData.positions) {
-            let position = positions.find(p => 
-              p.position_code === posCode && p.sport_id === sport.id
-            );
-            
-            if (!position) {
-              // Create new position if doesn't exist
-              position = await base44.entities.Position.create({
-                sport_id: sport.id,
-                position_code: posCode,
-                position_name: posCode // Default name to code
-              });
-            }
-            
-            positionIds.push(position.id);
-          }
+        // Parse date (format: M/D/YYYY)
+        const dateParts = row.Date?.split('/');
+        let startDate = '';
+        if (dateParts && dateParts.length === 3) {
+          const [month, day, year] = dateParts;
+          startDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
         }
 
         // Create camp
         const camp = await base44.entities.Camp.create({
-          school_id: school?.id,
-          sport_id: sport?.id,
-          camp_name: campData.camp_name,
-          start_date: campData.start_date,
-          end_date: campData.end_date || campData.start_date,
-          city: campData.city || '',
-          state: campData.state || '',
-          position_ids: positionIds,
-          price: campData.price || 0,
-          link_url: campData.link_url || '',
-          notes: campData.notes || ''
+          school_id: school.id,
+          sport_id: football.id,
+          camp_name: row['Camp Name']?.trim() || 'Camp',
+          start_date: startDate,
+          end_date: startDate,
+          city: row.City?.trim() || '',
+          state: row.State?.trim() || '',
+          position_ids: [],
+          price: 0,
+          link_url: row['Registration Link']?.trim() || '',
+          notes: row['Position Specifics']?.trim() || ''
         });
 
         results.push(camp);
