@@ -132,32 +132,19 @@ export default function AdminImport() {
     setResult(null);
     
     try {
-      const data = JSON.parse(jsonInput);
+      const data = parseCsv(csvInput);
       importMutation.mutate(data);
     } catch (error) {
       setResult({
         success: false,
-        message: `Invalid JSON: ${error.message}`,
+        message: `Error parsing CSV: ${error.message}`,
         error
       });
     }
   };
 
-  const exampleJSON = `{
-  "school_name": "University of Example",
-  "division": "FBS",
-  "conference": "Big Example",
-  "city": "Example City",
-  "state": "EX",
-  "sport_name": "Football",
-  "camp_name": "Summer Skills Camp",
-  "start_date": "2025-06-15",
-  "end_date": "2025-06-16",
-  "positions": ["QB", "WR", "DB"],
-  "price": 75,
-  "link_url": "https://example.com/register",
-  "notes": "Elite camp for skill position players."
-}`;
+  const exampleCSV = `Camp Name\tSchool\tDivision\tDate\tCity\tState\tRegistration Link\tPosition Specifics
+Summer Skills Camp\tUniversity of Example\tDI (FBS)\t6/15/2025\tExample City\tEX\thttps://example.com\tAll`;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
