@@ -160,7 +160,7 @@ Summer Skills Camp\tUniversity of Example\tDI (FBS)\t6/15/2025\tExample City\tEX
           </button>
           <h1 className="text-3xl font-bold text-deep-navy mb-2">Admin: Import Camps</h1>
           <p className="text-gray-dark">
-            Import camps from JSON data. Supports single camp objects or arrays of camps.
+            Paste CSV data from Airtable export (tab-separated)
           </p>
         </div>
 
