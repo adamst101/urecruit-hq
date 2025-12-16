@@ -21,7 +21,7 @@ export default function Onboarding() {
     primary_position_id: '',
     secondary_position_ids: [],
     home_zip: '',
-    radius_miles: 100,
+    radius_miles: null,
     division_preferences: []
   });
 
@@ -193,14 +193,16 @@ export default function Onboarding() {
 
           {/* Radius */}
           <div>
-            <Label htmlFor="radius_miles">Search Radius (miles)</Label>
+            <Label htmlFor="radius_miles">Search Radius</Label>
             <Input
               id="radius_miles"
               type="number"
-              value={formData.radius_miles}
-              onChange={(e) => setFormData({ ...formData, radius_miles: parseInt(e.target.value) })}
+              value={formData.radius_miles || ''}
+              onChange={(e) => setFormData({ ...formData, radius_miles: e.target.value ? parseInt(e.target.value) : null })}
+              placeholder="Unlimited (leave blank for all camps)"
               className="mt-1"
             />
+            <p className="text-xs text-gray-dark mt-1">Leave blank to see all camps nationwide</p>
           </div>
 
           {/* Division Preferences */}
