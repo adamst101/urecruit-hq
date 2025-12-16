@@ -167,20 +167,20 @@ Summer Skills Camp\tUniversity of Example\tDI (FBS)\t6/15/2025\tExample City\tEX
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm">
-            <Label htmlFor="json-input" className="text-lg font-semibold mb-2 block">
-              Camp Data (JSON)
+            <Label htmlFor="csv-input" className="text-lg font-semibold mb-2 block">
+              CSV Data from Airtable
             </Label>
             <Textarea
-              id="json-input"
-              value={jsonInput}
-              onChange={(e) => setJsonInput(e.target.value)}
-              placeholder={exampleJSON}
+              id="csv-input"
+              value={csvInput}
+              onChange={(e) => setCsvInput(e.target.value)}
+              placeholder="Paste CSV data here (tab-separated from Airtable)"
               className="min-h-[300px] font-mono text-sm"
             />
 
             <Button
               type="submit"
-              disabled={!jsonInput || importMutation.isPending}
+              disabled={!csvInput || importMutation.isPending}
               className="w-full mt-4 bg-electric-blue hover:bg-deep-navy"
             >
               {importMutation.isPending ? (
