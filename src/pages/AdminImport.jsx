@@ -212,23 +212,25 @@ Summer Skills Camp\tUniversity of Example\tDI (FBS)\t6/15/2025\tExample City\tEX
           )}
         </form>
 
-        {/* Example */}
+        {/* Instructions */}
         <div className="bg-white rounded-2xl p-6 shadow-sm mt-6">
-          <h2 className="text-lg font-semibold mb-3">Example JSON Format</h2>
-          <pre className="bg-slate-50 rounded-lg p-4 text-xs overflow-x-auto">
-            {exampleJSON}
-          </pre>
-          <p className="text-sm text-slate-600 mt-3">
-            <strong>For multiple camps:</strong> wrap in an array: <code className="bg-slate-100 px-1 py-0.5 rounded">[{'{...}'}, {'{...}'}]</code>
-          </p>
-          <div className="mt-3 text-sm text-slate-600">
-            <p className="font-semibold mb-1">Notes:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>If school doesn't exist, it will be created</li>
-              <li>If positions don't exist for the sport, they'll be created</li>
-              <li>Sport defaults to Football if not specified</li>
-              <li>Division must be one of: FBS, FCS, D2, D3, NAIA, Other</li>
-            </ul>
+          <h2 className="text-lg font-semibold mb-3">How to Import from Airtable</h2>
+          <div className="space-y-3 text-sm text-slate-600">
+            <ol className="list-decimal list-inside space-y-2">
+              <li>Open your Airtable and select all rows with camp data</li>
+              <li>Copy the data (Cmd+C or Ctrl+C)</li>
+              <li>Paste it into the text area above</li>
+              <li>Click "Import Camps"</li>
+            </ol>
+            <div className="mt-4">
+              <p className="font-semibold mb-1">Notes:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>Schools will be created automatically if they don't exist</li>
+                <li>All camps will be Football sport</li>
+                <li>Division types are automatically mapped (DI FBS → FBS, DII → D2, etc.)</li>
+                <li>Duplicate camps will be created - review after import</li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
