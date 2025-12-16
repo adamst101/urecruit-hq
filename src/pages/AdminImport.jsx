@@ -9,6 +9,31 @@ import { Upload, Loader2, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-rea
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
+const mapDivision = (csvDivision) => {
+  if (!csvDivision) return 'Other';
+  const div = csvDivision.toUpperCase();
+  if (div.includes('FBS')) return 'FBS';
+  if (div.includes('FCS')) return 'FCS';
+  if (div.includes('DII') || div.includes('D2')) return 'D2';
+  if (div.includes('DIII') || div.includes('D3')) return 'D3';
+  if (div.includes('NAIA')) return 'NAIA';
+  return 'Other';
+};
+
+const parseCsv = (csv) => {
+  const lines = csv.trim().split('\n');
+  const headers = lines[0].split('\t').map(h => h.trim());
+  
+  return lines.slice(1).map(line => {
+    const values = line.split('\t');
+    const obj = {};
+    headers.forEach((header, i) => {
+      obj[header] = values[i]?.trim() || '';
+    });
+    return obj;
+  });
+};
+
 export default function AdminImport() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
