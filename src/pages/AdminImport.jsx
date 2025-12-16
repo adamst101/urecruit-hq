@@ -37,7 +37,7 @@ const parseCsv = (csv) => {
 export default function AdminImport() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [jsonInput, setJsonInput] = useState('');
+  const [csvInput, setCsvInput] = useState('');
   const [result, setResult] = useState(null);
 
   const { data: sports = [] } = useQuery({
