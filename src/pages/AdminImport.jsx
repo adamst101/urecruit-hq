@@ -114,7 +114,7 @@ export default function AdminImport() {
         message: `Successfully imported ${data.length} camp(s)`,
         data
       });
-      setJsonInput('');
+      setCsvInput('');
       toast.success(`Imported ${data.length} camp(s)`);
     },
     onError: (error) => {
