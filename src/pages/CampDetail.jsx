@@ -62,16 +62,19 @@ export default function CampDetail() {
 
   const { data: favorites = [] } = useQuery({
     queryKey: ['favorites'],
-    queryFn: () => base44.entities.Favorite.list()
+    queryFn: () => base44.entities.Favorite.list(),
+    enabled: !!user
   });
 
   const { data: registrations = [] } = useQuery({
     queryKey: ['registrations'],
-    queryFn: () => base44.entities.Registration.list()
+    queryFn: () => base44.entities.Registration.list(),
+    enabled: !!user
   });
 
   const toggleFavoriteMutation = useMutation({
     mutationFn: async () => {
+      if (!user) return;
       const existing = favorites.find(f => f.camp_id === campId);
       if (existing) {
         await base44.entities.Favorite.delete(existing.id);
@@ -86,6 +89,7 @@ export default function CampDetail() {
 
   const toggleRegistrationMutation = useMutation({
     mutationFn: async () => {
+      if (!user) return;
       const existing = registrations.find(r => r.camp_id === campId);
       if (existing) {
         // Toggle between registered and completed, or remove
