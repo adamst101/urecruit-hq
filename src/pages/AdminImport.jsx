@@ -10,14 +10,15 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 const mapDivision = (csvDivision) => {
-  if (!csvDivision) return 'Other';
+  if (!csvDivision) return 'JUCO';
   const div = csvDivision.toUpperCase();
-  if (div.includes('FBS')) return 'FBS';
-  if (div.includes('FCS')) return 'FCS';
+  if (div.includes('FBS')) return 'D1 (FBS)';
+  if (div.includes('FCS')) return 'D1 (FCS)';
   if (div.includes('DII') || div.includes('D2')) return 'D2';
   if (div.includes('DIII') || div.includes('D3')) return 'D3';
   if (div.includes('NAIA')) return 'NAIA';
-  return 'Other';
+  if (div.includes('JUCO')) return 'JUCO';
+  return 'JUCO';
 };
 
 const parseCsv = (csv) => {
@@ -227,7 +228,7 @@ Summer Skills Camp\tUniversity of Example\tDI (FBS)\t6/15/2025\tExample City\tEX
               <ul className="list-disc list-inside space-y-1">
                 <li>Schools will be created automatically if they don't exist</li>
                 <li>All camps will be Football sport</li>
-                <li>Division types are automatically mapped (DI FBS → FBS, DII → D2, etc.)</li>
+                <li>Division types are automatically mapped (FBS → D1 (FBS), DII → D2, etc.)</li>
                 <li>Duplicate camps will be created - review after import</li>
               </ul>
             </div>
