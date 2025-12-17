@@ -10,7 +10,7 @@ import { Trophy, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 
-const divisions = ["FBS", "FCS", "D2", "D3", "NAIA", "Other"];
+const divisions = ["D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"];
 
 export default function Onboarding() {
   const navigate = useNavigate();

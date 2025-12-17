@@ -9,12 +9,12 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from "@/lib/utils";
 
 const divisionColors = {
-  "FBS": "bg-amber-500 text-white",
-  "FCS": "bg-orange-500 text-white",
+  "D1 (FBS)": "bg-amber-500 text-white",
+  "D1 (FCS)": "bg-orange-500 text-white",
   "D2": "bg-blue-600 text-white",
   "D3": "bg-emerald-600 text-white",
   "NAIA": "bg-purple-600 text-white",
-  "Other": "bg-slate-600 text-white"
+  "JUCO": "bg-slate-600 text-white"
 };
 
 export default function CampDetail() {
