@@ -171,7 +171,7 @@ export default function Discover() {
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
           </div>
-        ) : filteredCamps.length === 0 ? (
+        ) : campSummaries.length === 0 ? (
           <div className="text-center py-20">
             <Search className="w-12 h-12 mx-auto text-slate-300 mb-4" />
             <h3 className="text-lg font-semibold text-deep-navy">No camps found</h3>
