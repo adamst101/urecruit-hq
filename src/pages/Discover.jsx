@@ -17,19 +17,9 @@ export default function Discover() {
   const [filters, setFilters] = useState({});
   const [showFilters, setShowFilters] = useState(false);
 
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me()
-  });
-
-  const { data: camps = [], isLoading: campsLoading } = useQuery({
-    queryKey: ['camps'],
-    queryFn: () => base44.entities.Camp.list()
-  });
-
-  const { data: schools = [] } = useQuery({
-    queryKey: ['schools'],
-    queryFn: () => base44.entities.School.list()
+  const { data: athleteProfile } = useQuery({
+    queryKey: ['athleteProfile'],
+    queryFn: () => base44.functions.getAthleteProfile()
   });
 
   const { data: sports = [] } = useQuery({
@@ -42,118 +32,74 @@ export default function Discover() {
     queryFn: () => base44.entities.Position.list()
   });
 
-  const { data: favorites = [] } = useQuery({
-    queryKey: ['favorites'],
-    queryFn: () => base44.entities.Favorite.list()
-  });
-
-  const { data: registrations = [] } = useQuery({
-    queryKey: ['registrations'],
-    queryFn: () => base44.entities.Registration.list()
+  const { data: campSummaries = [], isLoading: campsLoading } = useQuery({
+    queryKey: ['campSummaries', athleteProfile?.id, filters, searchQuery],
+    queryFn: () => base44.functions.getCampSummaries({
+      athlete_id: athleteProfile?.id,
+      sport_id: filters.sport,
+      divisions: filters.divisions?.join(','),
+      states: filters.state,
+      position_ids: filters.positions?.join(','),
+      start_date_gte: filters.startDate,
+      end_date_lte: filters.endDate,
+      search: searchQuery
+    }),
+    enabled: !!athleteProfile
   });
 
   // Check if onboarding needed
   useEffect(() => {
-    if (user && !user.athlete_name) {
+    if (athleteProfile === null) {
       navigate(createPageUrl('Onboarding'));
     }
-  }, [user, navigate]);
+  }, [athleteProfile, navigate]);
 
-  // Default sport filter to user's sport
+  // Default sport filter to athlete's sport
   useEffect(() => {
-    if (user?.sport_id && !filters.sport) {
-      setFilters(prev => ({ ...prev, sport: user.sport_id }));
+    if (athleteProfile?.sport_id && !filters.sport) {
+      setFilters(prev => ({ ...prev, sport: athleteProfile.sport_id }));
     }
-  }, [user]);
+  }, [athleteProfile]);
 
   const toggleFavoriteMutation = useMutation({
     mutationFn: async (campId) => {
-      const existing = favorites.find(f => f.camp_id === campId);
-      if (existing) {
-        await base44.entities.Favorite.delete(existing.id);
+      if (!athleteProfile) return;
+      
+      const intents = await base44.entities.CampIntent.filter({
+        athlete_id: athleteProfile.id,
+        camp_id: campId
+      });
+      
+      if (intents.length > 0) {
+        const intent = intents[0];
+        if (intent.status === 'favorite') {
+          await base44.entities.CampIntent.update(intent.id, { status: 'removed' });
+        } else {
+          await base44.entities.CampIntent.update(intent.id, { status: 'favorite' });
+        }
       } else {
-        await base44.entities.Favorite.create({ user_id: user.id, camp_id: campId });
+        await base44.entities.CampIntent.create({
+          athlete_id: athleteProfile.id,
+          camp_id: campId,
+          status: 'favorite'
+        });
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['favorites'] });
+      queryClient.invalidateQueries({ queryKey: ['campSummaries'] });
     }
   });
 
-  const filteredCamps = useMemo(() => {
-    let result = [...camps];
-
-    // Sport filter
-    if (filters.sport) {
-      result = result.filter(c => c.sport_id === filters.sport);
-    }
-
-    // Division filter
-    if (filters.divisions?.length > 0) {
-      result = result.filter(c => {
-        const school = schools.find(s => s.id === c.school_id);
-        return school && filters.divisions.includes(school.division);
-      });
-    }
-
-    // Position filter
-    if (filters.positions?.length > 0) {
-      result = result.filter(c => {
-        return filters.positions.some(fp => c.position_ids?.includes(fp));
-      });
-    }
-
-    // State filter
-    if (filters.state) {
-      result = result.filter(c => c.state === filters.state);
-    }
-
-    // Date range filter
-    if (filters.startDate) {
-      result = result.filter(c => new Date(c.end_date || c.start_date) >= new Date(filters.startDate));
-    }
-    if (filters.endDate) {
-      result = result.filter(c => new Date(c.start_date) <= new Date(filters.endDate));
-    }
-
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(c => {
-        const school = schools.find(s => s.id === c.school_id);
-        return (
-          c.camp_name?.toLowerCase().includes(query) ||
-          school?.school_name?.toLowerCase().includes(query)
-        );
-      });
-    }
-
-    // Sort by date
-    result.sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
-
-    return result;
-  }, [camps, schools, filters, searchQuery]);
-
   const availablePositions = useMemo(() => {
-    const sportId = filters.sport || user?.sport_id;
+    const sportId = filters.sport || athleteProfile?.sport_id;
     return positions.filter(p => p.sport_id === sportId);
-  }, [positions, filters.sport, user]);
-
-  const getCampData = (camp) => {
-    const school = schools.find(s => s.id === camp.school_id);
-    const sport = sports.find(s => s.id === camp.sport_id);
-    const campPositions = positions.filter(p => camp.position_ids?.includes(p.id));
-    const isFavorite = favorites.some(f => f.camp_id === camp.id);
-    const isRegistered = registrations.some(r => r.camp_id === camp.id);
-
-    return { school, sport, campPositions, isFavorite, isRegistered };
-  };
+  }, [positions, filters.sport, athleteProfile]);
 
   const handleClearFilters = () => {
-    setFilters({ sport: user?.sport_id });
+    setFilters({ sport: athleteProfile?.sport_id });
   };
 
-  if (!user) {
+  if (!athleteProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -233,22 +179,41 @@ export default function Discover() {
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredCamps.map(camp => {
-              const { school, sport, campPositions, isFavorite, isRegistered } = getCampData(camp);
-              return (
-                <CampCard
-                  key={camp.id}
-                  camp={camp}
-                  school={school}
-                  sport={sport}
-                  positions={campPositions}
-                  isFavorite={isFavorite}
-                  isRegistered={isRegistered}
-                  onFavoriteToggle={() => toggleFavoriteMutation.mutate(camp.id)}
-                  onClick={() => navigate(createPageUrl(`CampDetail?id=${camp.id}`))}
-                />
-              );
-            })}
+            {campSummaries.map(summary => (
+              <CampCard
+                key={summary.camp_id}
+                camp={{
+                  id: summary.camp_id,
+                  camp_name: summary.camp_name,
+                  start_date: summary.start_date,
+                  end_date: summary.end_date,
+                  price: summary.price,
+                  city: summary.city,
+                  state: summary.state,
+                  position_ids: summary.position_ids
+                }}
+                school={{
+                  id: summary.school_id,
+                  school_name: summary.school_name,
+                  division: summary.school_division,
+                  logo_url: summary.school_logo_url,
+                  city: summary.school_city,
+                  state: summary.school_state
+                }}
+                sport={{
+                  id: summary.sport_id,
+                  sport_name: summary.sport_name
+                }}
+                positions={summary.position_codes.map((code, idx) => ({
+                  position_code: code,
+                  id: summary.position_ids[idx]
+                }))}
+                isFavorite={summary.intent_status === 'favorite'}
+                isRegistered={summary.intent_status === 'registered' || summary.intent_status === 'completed'}
+                onFavoriteToggle={() => toggleFavoriteMutation.mutate(summary.camp_id)}
+                onClick={() => navigate(createPageUrl(`CampDetail?id=${summary.camp_id}`))}
+              />
+            ))}
           </div>
         )}
       </div>
