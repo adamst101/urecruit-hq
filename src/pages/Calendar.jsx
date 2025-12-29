@@ -29,19 +29,9 @@ export default function Calendar() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [sportFilter, setSportFilter] = useState('all');
 
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me()
-  });
-
-  const { data: camps = [] } = useQuery({
-    queryKey: ['camps'],
-    queryFn: () => base44.entities.Camp.list()
-  });
-
-  const { data: schools = [] } = useQuery({
-    queryKey: ['schools'],
-    queryFn: () => base44.entities.School.list()
+  const { data: athleteProfile } = useQuery({
+    queryKey: ['athleteProfile'],
+    queryFn: () => base44.functions.getAthleteProfile()
   });
 
   const { data: sports = [] } = useQuery({
@@ -49,14 +39,12 @@ export default function Calendar() {
     queryFn: () => base44.entities.Sport.list()
   });
 
-  const { data: favorites = [] } = useQuery({
-    queryKey: ['favorites'],
-    queryFn: () => base44.entities.Favorite.list()
-  });
-
-  const { data: registrations = [] } = useQuery({
-    queryKey: ['registrations'],
-    queryFn: () => base44.entities.Registration.list()
+  const { data: campSummaries = [] } = useQuery({
+    queryKey: ['campSummaries', athleteProfile?.id],
+    queryFn: () => base44.functions.getCampSummaries({
+      athlete_id: athleteProfile?.id
+    }),
+    enabled: !!athleteProfile
   });
 
   const monthStart = startOfMonth(currentDate);
@@ -66,30 +54,27 @@ export default function Calendar() {
   const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
 
   const { registeredCamps, favoriteCamps } = useMemo(() => {
-    const regIds = registrations.map(r => r.camp_id);
-    const favIds = favorites.map(f => f.camp_id);
-
-    let registered = camps.filter(c => regIds.includes(c.id));
-    let favorite = camps.filter(c => favIds.includes(c.id) && !regIds.includes(c.id));
+    let registered = campSummaries.filter(s => s.intent_status === 'registered' || s.intent_status === 'completed');
+    let favorite = campSummaries.filter(s => s.intent_status === 'favorite');
 
     if (sportFilter !== 'all') {
-      registered = registered.filter(c => c.sport_id === sportFilter);
-      favorite = favorite.filter(c => c.sport_id === sportFilter);
+      registered = registered.filter(s => s.sport_id === sportFilter);
+      favorite = favorite.filter(s => s.sport_id === sportFilter);
     }
 
     return { registeredCamps: registered, favoriteCamps: favorite };
-  }, [camps, registrations, favorites, sportFilter]);
+  }, [campSummaries, sportFilter]);
 
   const getCampsForDay = (date) => {
-    const registered = registeredCamps.filter(camp => {
-      const start = new Date(camp.start_date);
-      const end = camp.end_date ? new Date(camp.end_date) : start;
+    const registered = registeredCamps.filter(summary => {
+      const start = new Date(summary.start_date);
+      const end = summary.end_date ? new Date(summary.end_date) : start;
       return date >= start && date <= end;
     });
     
-    const favorite = favoriteCamps.filter(camp => {
-      const start = new Date(camp.start_date);
-      const end = camp.end_date ? new Date(camp.end_date) : start;
+    const favorite = favoriteCamps.filter(summary => {
+      const start = new Date(summary.start_date);
+      const end = summary.end_date ? new Date(summary.end_date) : start;
       return date >= start && date <= end;
     });
 
@@ -107,7 +92,7 @@ export default function Calendar() {
 
   const selectedDateCamps = selectedDate ? getCampsForDay(selectedDate) : null;
 
-  if (!user) {
+  if (!athleteProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -252,53 +237,41 @@ export default function Calendar() {
                 </div>
               )}
 
-              {selectedDateCamps.registered.map(camp => {
-                const school = schools.find(s => s.id === camp.school_id);
-                const sport = sports.find(s => s.id === camp.sport_id);
-                return (
-                  <button
-                    key={camp.id}
-                    onClick={() => {
-                      setSelectedDate(null);
-                      navigate(createPageUrl(`CampDetail?id=${camp.id}`));
-                    }}
-                    className="w-full text-left p-4 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>
-                      {sport && (
-                        <span className="text-xs text-slate-500">{sport.sport_name}</span>
-                      )}
-                    </div>
-                    <h3 className="font-semibold text-deep-navy">{school?.school_name}</h3>
-                    <p className="text-sm text-gray-dark">{camp.camp_name}</p>
-                  </button>
-                );
-              })}
+              {selectedDateCamps.registered.map(summary => (
+                <button
+                  key={summary.camp_id}
+                  onClick={() => {
+                    setSelectedDate(null);
+                    navigate(createPageUrl(`CampDetail?id=${summary.camp_id}`));
+                  }}
+                  className="w-full text-left p-4 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-colors"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>
+                    <span className="text-xs text-slate-500">{summary.sport_name}</span>
+                  </div>
+                  <h3 className="font-semibold text-deep-navy">{summary.school_name}</h3>
+                  <p className="text-sm text-gray-dark">{summary.camp_name}</p>
+                </button>
+              ))}
 
-              {selectedDateCamps.favorite.map(camp => {
-                const school = schools.find(s => s.id === camp.school_id);
-                const sport = sports.find(s => s.id === camp.sport_id);
-                return (
-                  <button
-                    key={camp.id}
-                    onClick={() => {
-                      setSelectedDate(null);
-                      navigate(createPageUrl(`CampDetail?id=${camp.id}`));
-                    }}
-                    className="w-full text-left p-4 bg-white border-2 border-dashed border-rose-300 rounded-xl hover:bg-rose-50 transition-colors"
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant="outline" className="text-rose-600 border-rose-300 text-xs">Favorite</Badge>
-                      {sport && (
-                        <span className="text-xs text-slate-500">{sport.sport_name}</span>
-                      )}
-                    </div>
-                    <h3 className="font-semibold text-deep-navy">{school?.school_name}</h3>
-                    <p className="text-sm text-gray-dark">{camp.camp_name}</p>
-                  </button>
-                );
-              })}
+              {selectedDateCamps.favorite.map(summary => (
+                <button
+                  key={summary.camp_id}
+                  onClick={() => {
+                    setSelectedDate(null);
+                    navigate(createPageUrl(`CampDetail?id=${summary.camp_id}`));
+                  }}
+                  className="w-full text-left p-4 bg-white border-2 border-dashed border-rose-300 rounded-xl hover:bg-rose-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant="outline" className="text-rose-600 border-rose-300 text-xs">Favorite</Badge>
+                    <span className="text-xs text-slate-500">{summary.sport_name}</span>
+                  </div>
+                  <h3 className="font-semibold text-deep-navy">{summary.school_name}</h3>
+                  <p className="text-sm text-gray-dark">{summary.camp_name}</p>
+                </button>
+              ))}
             </div>
           )}
         </SheetContent>

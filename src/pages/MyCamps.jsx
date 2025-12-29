@@ -16,85 +16,76 @@ export default function MyCamps() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('registered');
 
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me()
+  const { data: athleteProfile } = useQuery({
+    queryKey: ['athleteProfile'],
+    queryFn: () => base44.functions.getAthleteProfile()
   });
 
-  const { data: camps = [], isLoading: campsLoading } = useQuery({
-    queryKey: ['camps'],
-    queryFn: () => base44.entities.Camp.list()
-  });
-
-  const { data: schools = [] } = useQuery({
-    queryKey: ['schools'],
-    queryFn: () => base44.entities.School.list()
-  });
-
-  const { data: sports = [] } = useQuery({
-    queryKey: ['sports'],
-    queryFn: () => base44.entities.Sport.list()
-  });
-
-  const { data: favorites = [] } = useQuery({
-    queryKey: ['favorites'],
-    queryFn: () => base44.entities.Favorite.list()
-  });
-
-  const { data: registrations = [] } = useQuery({
-    queryKey: ['registrations'],
-    queryFn: () => base44.entities.Registration.list()
+  const { data: campSummaries = [], isLoading: campsLoading } = useQuery({
+    queryKey: ['campSummaries', athleteProfile?.id],
+    queryFn: () => base44.functions.getCampSummaries({
+      athlete_id: athleteProfile?.id
+    }),
+    enabled: !!athleteProfile
   });
 
   const registerMutation = useMutation({
-    mutationFn: (campId) => base44.entities.Registration.create({ 
-      user_id: user.id, 
-      camp_id: campId,
-      status: 'registered'
-    }),
+    mutationFn: async (campId) => {
+      if (!athleteProfile) return;
+      
+      const intents = await base44.entities.CampIntent.filter({
+        athlete_id: athleteProfile.id,
+        camp_id: campId
+      });
+      
+      if (intents.length > 0) {
+        await base44.entities.CampIntent.update(intents[0].id, { 
+          status: 'registered',
+          registration_confirmed: true
+        });
+      } else {
+        await base44.entities.CampIntent.create({
+          athlete_id: athleteProfile.id,
+          camp_id: campId,
+          status: 'registered',
+          registration_confirmed: true
+        });
+      }
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['registrations'] });
+      queryClient.invalidateQueries({ queryKey: ['campSummaries'] });
     }
   });
 
   const registeredCamps = useMemo(() => {
-    const regIds = registrations.map(r => r.camp_id);
-    return camps
-      .filter(c => regIds.includes(c.id))
-      .map(c => ({
-        ...c,
-        registration: registrations.find(r => r.camp_id === c.id)
-      }))
+    return campSummaries
+      .filter(s => s.intent_status === 'registered' || s.intent_status === 'completed')
       .sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
-  }, [camps, registrations]);
+  }, [campSummaries]);
 
   const favoriteCamps = useMemo(() => {
-    const favIds = favorites.map(f => f.camp_id);
-    return camps
-      .filter(c => favIds.includes(c.id))
+    return campSummaries
+      .filter(s => s.intent_status === 'favorite')
       .sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
-  }, [camps, favorites]);
+  }, [campSummaries]);
 
   const groupByMonth = (campsList) => {
     const grouped = {};
-    campsList.forEach(camp => {
-      const monthKey = format(parseISO(camp.start_date), 'MMMM yyyy');
+    campsList.forEach(summary => {
+      const monthKey = format(parseISO(summary.start_date), 'MMMM yyyy');
       if (!grouped[monthKey]) {
         grouped[monthKey] = [];
       }
-      grouped[monthKey].push(camp);
+      grouped[monthKey].push(summary);
     });
     return grouped;
   };
 
-  const renderCampCard = (camp, isRegistered = false) => {
-    const school = schools.find(s => s.id === camp.school_id);
-    const sport = sports.find(s => s.id === camp.sport_id);
-
+  const renderCampCard = (summary, isRegistered = false) => {
     return (
       <button
-        key={camp.id}
-        onClick={() => navigate(createPageUrl(`CampDetail?id=${camp.id}`))}
+        key={summary.camp_id}
+        onClick={() => navigate(createPageUrl(`CampDetail?id=${summary.camp_id}`))}
         className="w-full text-left bg-white rounded-xl p-4 shadow-sm border border-slate-100 hover:shadow-md transition-all active:scale-98"
       >
         <div className="flex items-start justify-between mb-2">
@@ -102,19 +93,17 @@ export default function MyCamps() {
             <div className="flex items-center gap-2 mb-1">
               {isRegistered ? (
                 <Badge className="bg-emerald-600 text-white text-xs">
-                  {camp.registration?.status === 'completed' ? 'Completed' : 'Registered'}
+                  {summary.intent_status === 'completed' ? 'Completed' : 'Registered'}
                 </Badge>
               ) : (
                 <Badge className="bg-rose-100 text-rose-700 text-xs">Favorite</Badge>
               )}
-              {sport && (
-                <span className="text-xs text-slate-500">{sport.sport_name}</span>
-              )}
+              <span className="text-xs text-slate-500">{summary.sport_name}</span>
             </div>
             <h3 className="font-bold text-deep-navy truncate">
-              {school?.school_name || 'Unknown School'}
+              {summary.school_name || 'Unknown School'}
             </h3>
-            <p className="text-sm text-slate-600 truncate">{camp.camp_name}</p>
+            <p className="text-sm text-slate-600 truncate">{summary.camp_name}</p>
           </div>
         </div>
 
@@ -122,20 +111,20 @@ export default function MyCamps() {
           <div className="flex items-center gap-2 text-sm text-slate-600">
             <Calendar className="w-4 h-4 text-slate-400" />
             <span>
-              {format(parseISO(camp.start_date), 'MMM d')}
-              {camp.end_date && camp.end_date !== camp.start_date && (
-                <> - {format(parseISO(camp.end_date), 'MMM d, yyyy')}</>
+              {format(parseISO(summary.start_date), 'MMM d')}
+              {summary.end_date && summary.end_date !== summary.start_date && (
+                <> - {format(parseISO(summary.end_date), 'MMM d, yyyy')}</>
               )}
-              {(!camp.end_date || camp.end_date === camp.start_date) && (
-                <>, {format(parseISO(camp.start_date), 'yyyy')}</>
+              {(!summary.end_date || summary.end_date === summary.start_date) && (
+                <>, {format(parseISO(summary.start_date), 'yyyy')}</>
               )}
             </span>
           </div>
           
-          {(camp.city || camp.state) && (
+          {(summary.city || summary.state) && (
             <div className="flex items-center gap-2 text-sm text-slate-600">
               <MapPin className="w-4 h-4 text-slate-400" />
-              <span>{[camp.city, camp.state].filter(Boolean).join(', ')}</span>
+              <span>{[summary.city, summary.state].filter(Boolean).join(', ')}</span>
             </div>
           )}
         </div>
@@ -146,7 +135,7 @@ export default function MyCamps() {
             className="w-full mt-3 bg-electric-blue hover:bg-deep-navy"
             onClick={(e) => {
               e.stopPropagation();
-              registerMutation.mutate(camp.id);
+              registerMutation.mutate(summary.camp_id);
             }}
             disabled={registerMutation.isPending}
           >
@@ -158,7 +147,7 @@ export default function MyCamps() {
     );
   };
 
-  if (!user) {
+  if (!athleteProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />

@@ -55,59 +55,75 @@ export default function CampDetail() {
     queryFn: () => base44.entities.Position.list()
   });
 
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me()
+  const { data: athleteProfile } = useQuery({
+    queryKey: ['athleteProfile'],
+    queryFn: () => base44.functions.getAthleteProfile()
   });
 
-  const { data: favorites = [] } = useQuery({
-    queryKey: ['favorites'],
-    queryFn: () => base44.entities.Favorite.list(),
-    enabled: !!user
-  });
-
-  const { data: registrations = [] } = useQuery({
-    queryKey: ['registrations'],
-    queryFn: () => base44.entities.Registration.list(),
-    enabled: !!user
+  const { data: campIntent } = useQuery({
+    queryKey: ['campIntent', athleteProfile?.id, campId],
+    queryFn: async () => {
+      if (!athleteProfile) return null;
+      const intents = await base44.entities.CampIntent.filter({
+        athlete_id: athleteProfile.id,
+        camp_id: campId
+      });
+      return intents[0] || null;
+    },
+    enabled: !!athleteProfile && !!campId
   });
 
   const toggleFavoriteMutation = useMutation({
     mutationFn: async () => {
-      if (!user) return;
-      const existing = favorites.find(f => f.camp_id === campId);
-      if (existing) {
-        await base44.entities.Favorite.delete(existing.id);
+      if (!athleteProfile) return;
+      
+      if (campIntent) {
+        if (campIntent.status === 'favorite') {
+          await base44.entities.CampIntent.update(campIntent.id, { status: 'removed' });
+        } else {
+          await base44.entities.CampIntent.update(campIntent.id, { status: 'favorite' });
+        }
       } else {
-        await base44.entities.Favorite.create({ user_id: user.id, camp_id: campId });
+        await base44.entities.CampIntent.create({
+          athlete_id: athleteProfile.id,
+          camp_id: campId,
+          status: 'favorite'
+        });
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['favorites'] });
+      queryClient.invalidateQueries({ queryKey: ['campIntent'] });
+      queryClient.invalidateQueries({ queryKey: ['campSummaries'] });
     }
   });
 
   const toggleRegistrationMutation = useMutation({
     mutationFn: async () => {
-      if (!user) return;
-      const existing = registrations.find(r => r.camp_id === campId);
-      if (existing) {
-        // Toggle between registered and completed, or remove
-        if (existing.status === 'registered') {
-          await base44.entities.Registration.update(existing.id, { status: 'completed' });
+      if (!athleteProfile) return;
+      
+      if (campIntent) {
+        if (campIntent.status === 'registered') {
+          await base44.entities.CampIntent.update(campIntent.id, { status: 'completed' });
+        } else if (campIntent.status === 'completed') {
+          await base44.entities.CampIntent.update(campIntent.id, { status: 'removed' });
         } else {
-          await base44.entities.Registration.delete(existing.id);
+          await base44.entities.CampIntent.update(campIntent.id, { 
+            status: 'registered',
+            registration_confirmed: true
+          });
         }
       } else {
-        await base44.entities.Registration.create({ 
-          user_id: user.id, 
+        await base44.entities.CampIntent.create({
+          athlete_id: athleteProfile.id,
           camp_id: campId,
-          status: 'registered'
+          status: 'registered',
+          registration_confirmed: true
         });
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['registrations'] });
+      queryClient.invalidateQueries({ queryKey: ['campIntent'] });
+      queryClient.invalidateQueries({ queryKey: ['campSummaries'] });
     }
   });
 
@@ -120,9 +136,8 @@ export default function CampDetail() {
   }
 
   const campPositions = positions.filter(p => camp.position_ids?.includes(p.id));
-  const isFavorite = favorites.some(f => f.camp_id === campId);
-  const registration = registrations.find(r => r.camp_id === campId);
-  const isRegistered = !!registration;
+  const isFavorite = campIntent?.status === 'favorite';
+  const isRegistered = campIntent?.status === 'registered' || campIntent?.status === 'completed';
 
   return (
     <div className="min-h-screen bg-slate-50 pb-8">
@@ -234,7 +249,7 @@ export default function CampDetail() {
           <div className="flex items-center gap-2 p-4 bg-emerald-50 rounded-xl text-emerald-700">
             <CheckCircle className="w-5 h-5" />
             <span className="font-medium">
-              You're {registration.status === 'completed' ? 'completed' : 'registered for'} this camp!
+              You're {campIntent.status === 'completed' ? 'completed' : 'registered for'} this camp!
             </span>
           </div>
         )}
@@ -264,7 +279,7 @@ export default function CampDetail() {
             onClick={() => toggleRegistrationMutation.mutate()}
             disabled={toggleRegistrationMutation.isPending}
           >
-            {registration?.status === 'completed' ? 'Mark as Incomplete' : isRegistered ? 'Mark as Completed' : 'Mark as Registered'}
+            {campIntent?.status === 'completed' ? 'Mark as Incomplete' : isRegistered ? 'Mark as Completed' : 'Mark as Registered'}
           </Button>
 
           {camp.link_url && (
