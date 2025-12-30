@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Lock, CheckCircle2, ArrowRight, UserCircle2 } from "lucide-react";
 
@@ -15,27 +15,28 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity";
  * Onboarding
  * Base44 convention route: /Onboarding
  *
- * Purpose (now):
- * - Landing step for demo users to upgrade
- * - Landing step for new users to finish setup
+ * Purpose:
+ * - Demo/unpaid users: show paywall + upgrade CTA
+ * - New users: set up athlete profile
+ * - Paid users with profile: redirect to Discover
  *
  * IMPORTANT:
- * - We are NOT implementing payments here yet.
- * - This page is a funnel + clear next action.
+ * - Do NOT redirect demo/unpaid users just because they have an athlete profile.
+ *   That blocks conversion. Only redirect when mode === "paid".
  */
 export default function Onboarding() {
   const navigate = useNavigate();
   const { mode, currentYear, demoYear } = useSeasonAccess();
 
-  // Identity hook is the single source of truth (consistent with MyCamps/Discover/Calendar)
+  // Single source of truth for identity
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // If they already have an athlete profile, don’t trap them here.
-  // Send them to the paid/demonstration entry point.
-  if (!identityLoading && athleteProfile) {
-    navigate(createPageUrl("Discover"));
-    return null;
-  }
+  // ✅ Redirect only paid users with a completed profile
+  useEffect(() => {
+    if (!identityLoading && athleteProfile && mode === "paid") {
+      navigate(createPageUrl("Discover"));
+    }
+  }, [identityLoading, athleteProfile, mode, navigate]);
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
@@ -47,7 +48,7 @@ export default function Onboarding() {
           </p>
         </div>
 
-        {/* Paywall card shows ONLY in demo mode */}
+        {/* Paywall card shows ONLY in demo/unpaid mode */}
         <PaywallCard
           show={mode !== "paid"}
           currentYear={currentYear}
@@ -67,20 +68,29 @@ export default function Onboarding() {
               </div>
 
               <div className="mt-4">
-                <Button className="w-full" onClick={() => navigate(createPageUrl("Profile"))}>
+                <Button
+                  className="w-full"
+                  onClick={() => navigate(createPageUrl("Profile"))}
+                  disabled={identityLoading}
+                >
                   Continue to Profile Setup
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </div>
 
+              {identityLoading && (
+                <div className="mt-3 text-xs text-slate-500">
+                  Loading your profile…
+                </div>
+              )}
+
               <div className="mt-3 text-xs text-slate-500">
-                If you already completed setup, you’ll be redirected to Discover automatically.
+                If you already completed setup and have access, you’ll be redirected to Discover automatically.
               </div>
             </div>
           </div>
         </Card>
 
-        {/* Optional: direct path back to demo */}
         <div className="text-center">
           <button
             className="text-sm text-slate-600 underline hover:text-slate-900"
