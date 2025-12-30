@@ -35,8 +35,27 @@ export default function Onboarding() {
     queryFn: () => base44.entities.Position.list()
   });
 
+  const { data: currentUser } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: () => base44.auth.me()
+  });
+
   const updateProfileMutation = useMutation({
-    mutationFn: (data) => base44.auth.updateMe(data),
+    mutationFn: async (data) => {
+      // Create AthleteProfile entity
+      await base44.entities.AthleteProfile.create({
+        account_id: currentUser.id,
+        athlete_name: data.athlete_name,
+        sport_id: data.sport_id,
+        grad_year: data.grad_year,
+        primary_position_id: data.primary_position_id,
+        secondary_position_ids: data.secondary_position_ids || [],
+        home_zip: data.home_zip || '',
+        search_radius_miles: data.radius_miles,
+        division_preferences: data.division_preferences || [],
+        active: true
+      });
+    },
     onSuccess: () => {
       navigate(createPageUrl('Discover'));
     }
