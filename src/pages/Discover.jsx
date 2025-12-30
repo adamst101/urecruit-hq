@@ -14,9 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Search, SlidersHorizontal } from "lucide-react";
 
-import CampCard from "../Components/CampCard";
-import FilterSheet from "../Components/FilterSheet";
-import BottomNav from "../Components/BottomNav";
+import CampCard from "../Components/camps/CampCard";
+import FilterSheet from "../Components/camps/FilterSheet";
+import BottomNav from "../Components/navigation/BottomNav";
 import { useAthleteIdentity } from "../Components/useAthleteIdentity";
 
 export default function Discover() {
