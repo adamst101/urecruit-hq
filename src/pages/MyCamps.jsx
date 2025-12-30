@@ -12,7 +12,7 @@ import { Badge } from "../components/ui/badge";
 import BottomNav from "../components/navigation/BottomNav";
 import CampCard from "../components/camps/CampCard";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
-import { useCampSummariesClient } from "../hooks/useCampSummariesClient";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
 
 export default function MyCamps() {
   const navigate = useNavigate();
@@ -308,4 +308,3 @@ export default function MyCamps() {
     </div>
   );
 }
-
