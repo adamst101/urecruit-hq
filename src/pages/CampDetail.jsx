@@ -57,7 +57,15 @@ export default function CampDetail() {
 
   const { data: athleteProfile } = useQuery({
     queryKey: ['athleteProfile'],
-    queryFn: () => base44.functions.getAthleteProfile()
+    queryFn: async () => {
+      const account = await base44.auth.me();
+      if (!account?.id) return null;
+      const profiles = await base44.entities.AthleteProfile.filter({
+        account_id: account.id,
+        active: true
+      });
+      return profiles?.[0] || null;
+    }
   });
 
   const { data: campIntent } = useQuery({

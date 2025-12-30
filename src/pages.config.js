@@ -2,6 +2,7 @@ import AdminImport from './pages/AdminImport';
 import Calendar from './pages/Calendar';
 import CampDetail from './pages/CampDetail';
 import Discover from './pages/Discover';
+import Home from './pages/Home';
 import MyCamps from './pages/MyCamps';
 import Onboarding from './pages/Onboarding';
 import Profile from './pages/Profile';
@@ -14,6 +15,7 @@ export const PAGES = {
     "Calendar": Calendar,
     "CampDetail": CampDetail,
     "Discover": Discover,
+    "Home": Home,
     "MyCamps": MyCamps,
     "Onboarding": Onboarding,
     "Profile": Profile,

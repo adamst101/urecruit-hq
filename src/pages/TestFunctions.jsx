@@ -1,100 +1,32 @@
-import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
-import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import React from 'react';
+import { AlertCircle } from 'lucide-react';
 
 export default function TestFunctions() {
-  const [testResults, setTestResults] = useState(null);
-
-  const { data: athleteProfile } = useQuery({
-    queryKey: ['athleteProfile'],
-    queryFn: () => base44.functions.getAthleteProfile()
-  });
-
-  const testGetCampSummaries = async () => {
-    setTestResults({ status: 'loading' });
-    try {
-      const result = await base44.functions.getCampSummaries({
-        athlete_id: athleteProfile?.id,
-        limit: 10
-      });
-      setTestResults({ 
-        status: 'success', 
-        data: result,
-        count: result.length 
-      });
-    } catch (error) {
-      setTestResults({ 
-        status: 'error', 
-        error: error.message 
-      });
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-3xl font-bold text-deep-navy mb-6">Function Tests</h1>
 
-        {/* Athlete Profile Info */}
-        <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
-          <h2 className="text-xl font-bold mb-4">Athlete Profile</h2>
-          {athleteProfile ? (
-            <pre className="bg-slate-50 p-4 rounded text-xs overflow-auto">
-              {JSON.stringify(athleteProfile, null, 2)}
-            </pre>
-          ) : (
-            <p className="text-slate-500">No athlete profile found</p>
-          )}
-        </div>
-
-        {/* Test getCampSummaries */}
-        <div className="bg-white rounded-xl p-6 shadow-sm">
-          <h2 className="text-xl font-bold mb-4">getCampSummaries Test</h2>
-          
-          <Button 
-            onClick={testGetCampSummaries}
-            disabled={!athleteProfile}
-            className="mb-4"
-          >
-            Run Test
-          </Button>
-
-          {testResults && (
-            <div className="mt-4">
-              {testResults.status === 'loading' && (
-                <div className="flex items-center gap-2 text-slate-600">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Testing...</span>
-                </div>
-              )}
-
-              {testResults.status === 'success' && (
-                <div>
-                  <div className="flex items-center gap-2 text-green-600 mb-4">
-                    <CheckCircle className="w-5 h-5" />
-                    <span className="font-semibold">Success! Found {testResults.count} camp summaries</span>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded overflow-auto max-h-96">
-                    <pre className="text-xs">{JSON.stringify(testResults.data, null, 2)}</pre>
-                  </div>
-                </div>
-              )}
-
-              {testResults.status === 'error' && (
-                <div>
-                  <div className="flex items-center gap-2 text-red-600 mb-2">
-                    <AlertCircle className="w-5 h-5" />
-                    <span className="font-semibold">Error</span>
-                  </div>
-                  <div className="bg-red-50 p-4 rounded text-sm text-red-700">
-                    {testResults.error}
-                  </div>
-                </div>
-              )}
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-6 h-6 text-amber-600 mt-0.5" />
+            <div>
+              <h2 className="text-lg font-bold text-amber-900 mb-2">
+                Backend Functions Deprecated
+              </h2>
+              <p className="text-amber-800 mb-3">
+                The following backend functions have been removed:
+              </p>
+              <ul className="list-disc list-inside text-amber-800 space-y-1 mb-3">
+                <li><code className="bg-amber-100 px-2 py-0.5 rounded">base44.functions.getAthleteProfile()</code></li>
+                <li><code className="bg-amber-100 px-2 py-0.5 rounded">base44.functions.getCampSummaries()</code></li>
+                <li><code className="bg-amber-100 px-2 py-0.5 rounded">base44.functions.getAthleteDayOverlay()</code></li>
+              </ul>
+              <p className="text-amber-800">
+                All data fetching now happens client-side using <code className="bg-amber-100 px-2 py-0.5 rounded">base44.entities.*</code> and the <code className="bg-amber-100 px-2 py-0.5 rounded">useAthleteIdentity()</code> hook.
+              </p>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
