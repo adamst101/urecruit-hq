@@ -1,93 +1,72 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { User, Loader2, LogOut } from 'lucide-react';
-import BottomNav from '@/components/navigation/BottomNav';
-import { toast } from 'sonner';
+import React, { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { Loader2, LogOut, UserCircle2, ArrowRight, Lock } from "lucide-react";
 
-const divisions = ["D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"];
+import { base44 } from "../api/base44Client";
+import { createPageUrl } from "../utils";
 
+import { Card } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
+
+import BottomNav from "../components/navigation/BottomNav";
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { useAthleteIdentity } from "../components/useAthleteIdentity";
+
+/**
+ * Profile
+ * - Authenticated users: show athlete profile summary + logout
+ * - Demo/unauthenticated users: show sign-in / upgrade CTA (no loops)
+ *
+ * Critical: Logout MUST actually sign out + clear caches + hard redirect.
+ */
 export default function Profile() {
-  const [formData, setFormData] = useState({
-    athlete_name: '',
-    sport_id: '',
-    grad_year: new Date().getFullYear() + 1,
-    primary_position_id: '',
-    secondary_position_ids: [],
-    home_zip: '',
-    radius_miles: null,
-    division_preferences: []
-  });
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const { data: user, isLoading: userLoading } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me()
-  });
+  const { mode, loading: accessLoading, accountId, currentYear, demoYear } = useSeasonAccess();
+  const { athleteProfile, isLoading: identityLoading, isError: identityError, error: identityErrorObj } =
+    useAthleteIdentity();
 
-  const { data: sports = [] } = useQuery({
-    queryKey: ['sports'],
-    queryFn: () => base44.entities.Sport.list()
-  });
+  const [logoutWorking, setLogoutWorking] = useState(false);
 
-  const { data: allPositions = [] } = useQuery({
-    queryKey: ['positions'],
-    queryFn: () => base44.entities.Position.list()
-  });
+  const isAuthed = !!accountId;
 
-  const updateProfileMutation = useMutation({
-    mutationFn: (data) => base44.auth.updateMe(data),
-    onSuccess: () => {
-      toast.success('Profile updated successfully');
+  const headlineBadge = useMemo(() => {
+    if (!isAuthed) return <Badge className="bg-slate-900 text-white">Demo {demoYear}</Badge>;
+    if (mode === "paid") return <Badge className="bg-emerald-600 text-white">Paid {currentYear}</Badge>;
+    return <Badge className="bg-amber-500 text-white">Unpaid {currentYear}</Badge>;
+  }, [isAuthed, mode, currentYear, demoYear]);
+
+  const handleLogout = async () => {
+    setLogoutWorking(true);
+    try {
+      // 1) Real sign-out (method name can vary by SDK)
+      if (base44?.auth?.signOut) {
+        await base44.auth.signOut();
+      } else if (base44?.auth?.logout) {
+        await base44.auth.logout();
+      }
+
+      // 2) Clear react-query cache so nothing "sticks"
+      queryClient.clear();
+
+      // 3) Hard redirect + reload to eliminate stale in-memory session
+      window.location.href = createPageUrl("Home");
+    } catch (e) {
+      // Even if SDK sign-out is weird, force-reset UI state
+      try {
+        queryClient.clear();
+      } catch {}
+      window.location.href = createPageUrl("Home");
+    } finally {
+      setLogoutWorking(false);
     }
-  });
-
-  // Load user data into form
-  useEffect(() => {
-    if (user) {
-      setFormData({
-        athlete_name: user.athlete_name || '',
-        sport_id: user.sport_id || '',
-        grad_year: user.grad_year || new Date().getFullYear() + 1,
-        primary_position_id: user.primary_position_id || '',
-        secondary_position_ids: user.secondary_position_ids || [],
-        home_zip: user.home_zip || '',
-        radius_miles: user.radius_miles || null,
-        division_preferences: user.division_preferences || []
-      });
-    }
-  }, [user]);
-
-  const filteredPositions = allPositions.filter(p => p.sport_id === formData.sport_id);
-
-  const handleDivisionToggle = (div) => {
-    const updated = formData.division_preferences.includes(div)
-      ? formData.division_preferences.filter(d => d !== div)
-      : [...formData.division_preferences, div];
-    setFormData({ ...formData, division_preferences: updated });
   };
 
-  const handleSecondaryPositionToggle = (posId) => {
-    const updated = formData.secondary_position_ids.includes(posId)
-      ? formData.secondary_position_ids.filter(p => p !== posId)
-      : [...formData.secondary_position_ids, posId];
-    setFormData({ ...formData, secondary_position_ids: updated });
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    updateProfileMutation.mutate(formData);
-  };
-
-  const handleLogout = () => {
-    base44.auth.logout();
-  };
-
-  if (userLoading) {
+  // Loading
+  if (accessLoading || identityLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -95,187 +74,216 @@ export default function Profile() {
     );
   }
 
+  // Demo / unauthenticated view (do NOT route them to onboarding automatically)
+  if (!isAuthed) {
+    return (
+      <div className="min-h-screen bg-slate-50 pb-20">
+        <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
+          <div className="max-w-md mx-auto p-4">
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-deep-navy">Profile</h1>
+              {headlineBadge}
+            </div>
+            <div className="text-sm text-slate-600 mt-1">
+              Sign in to create a real athlete profile and save camps.
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-md mx-auto p-4 space-y-4">
+          <Card className="p-4">
+            <div className="flex items-start gap-3">
+              <UserCircle2 className="w-6 h-6 text-slate-700 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-deep-navy">You’re in demo mode</div>
+                <div className="text-sm text-slate-600 mt-1">
+                  Demo browsing is available, but profiles require an account.
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
+                    Sign In / Continue
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                  <Button variant="outline" className="w-full" onClick={() => navigate(createPageUrl("Discover"))}>
+                    Back to Demo
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-4 border-amber-200 bg-amber-50">
+            <div className="flex items-start gap-3">
+              <Lock className="w-6 h-6 text-amber-700 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-amber-900">Unlock current season</div>
+                <div className="text-sm text-amber-900/80 mt-1">
+                  Upgrade to access current-year camps and planning.
+                </div>
+                <div className="mt-4">
+                  <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
+                    Upgrade
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <BottomNav />
+      </div>
+    );
+  }
+
+  // Authenticated but identity error
+  if (identityError) {
+    return (
+      <div className="min-h-screen bg-slate-50 pb-20">
+        <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
+          <div className="max-w-md mx-auto p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-deep-navy">Profile</h1>
+                {headlineBadge}
+              </div>
+              <Button variant="outline" onClick={handleLogout} disabled={logoutWorking}>
+                {logoutWorking ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-md mx-auto p-4">
+          <Card className="p-4 border-rose-200 bg-rose-50 text-rose-700">
+            <div className="font-semibold">Failed to load athlete profile</div>
+            <div className="text-xs mt-2 break-words">
+              {String(identityErrorObj?.message || identityErrorObj)}
+            </div>
+            <div className="mt-4 space-y-2">
+              <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
+                Go to Onboarding
+              </Button>
+              <Button variant="outline" className="w-full" onClick={handleLogout} disabled={logoutWorking}>
+                {logoutWorking ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Signing out…
+                  </>
+                ) : (
+                  "Sign Out"
+                )}
+              </Button>
+            </div>
+          </Card>
+        </div>
+
+        <BottomNav />
+      </div>
+    );
+  }
+
+  // Authenticated view (with or without athleteProfile)
+  const hasProfile = !!athleteProfile;
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200">
+      <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-md mx-auto p-4">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-electric-blue/10 rounded-full flex items-center justify-center">
-              <User className="w-6 h-6 text-electric-blue" />
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-deep-navy">Profile</h1>
+                {headlineBadge}
+              </div>
+              <div className="text-sm text-slate-600 mt-1">
+                {hasProfile ? "Manage your athlete profile." : "Complete setup to personalize camps."}
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-deep-navy">Profile</h1>
-              <p className="text-sm text-gray-dark">{user?.email}</p>
-            </div>
+
+            <Button variant="outline" onClick={handleLogout} disabled={logoutWorking}>
+              {logoutWorking ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Signing out…
+                </>
+              ) : (
+                <>
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Logout
+                </>
+              )}
+            </Button>
           </div>
         </div>
       </div>
 
-      {/* Form */}
-      <div className="max-w-md mx-auto p-4">
-        <form onSubmit={handleSubmit} className="space-y-6 bg-white rounded-2xl p-6 shadow-sm">
-          {/* Athlete Name */}
-          <div>
-            <Label htmlFor="athlete_name">Athlete Name</Label>
-            <Input
-              id="athlete_name"
-              value={formData.athlete_name}
-              onChange={(e) => setFormData({ ...formData, athlete_name: e.target.value })}
-              placeholder="Enter athlete's name"
-              className="mt-1"
-            />
-          </div>
-
-          {/* Sport */}
-          <div>
-            <Label htmlFor="sport">Sport</Label>
-            <Select
-              value={formData.sport_id}
-              onValueChange={(value) => setFormData({ 
-                ...formData, 
-                sport_id: value, 
-                primary_position_id: '', 
-                secondary_position_ids: [] 
-              })}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Select sport" />
-              </SelectTrigger>
-              <SelectContent>
-                {sports.map(sport => (
-                  <SelectItem key={sport.id} value={sport.id}>{sport.sport_name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Grad Year */}
-          <div>
-            <Label htmlFor="grad_year">Graduation Year</Label>
-            <Input
-              id="grad_year"
-              type="number"
-              value={formData.grad_year}
-              onChange={(e) => setFormData({ ...formData, grad_year: parseInt(e.target.value) })}
-              className="mt-1"
-            />
-          </div>
-
-          {/* Primary Position */}
-          {filteredPositions.length > 0 && (
-            <div>
-              <Label htmlFor="primary_position">Primary Position</Label>
-              <Select
-                value={formData.primary_position_id}
-                onValueChange={(value) => setFormData({ ...formData, primary_position_id: value })}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select position" />
-                </SelectTrigger>
-                <SelectContent>
-                  {filteredPositions.map(pos => (
-                    <SelectItem key={pos.id} value={pos.id}>
-                      {pos.position_code} - {pos.position_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Secondary Positions */}
-          {filteredPositions.length > 0 && (
-            <div>
-              <Label className="mb-2 block">Secondary Positions</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {filteredPositions.filter(p => p.id !== formData.primary_position_id).map(pos => (
-                  <div key={pos.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`sec-${pos.id}`}
-                      checked={formData.secondary_position_ids.includes(pos.id)}
-                      onCheckedChange={() => handleSecondaryPositionToggle(pos.id)}
-                    />
-                    <Label htmlFor={`sec-${pos.id}`} className="text-sm cursor-pointer">
-                      {pos.position_code}
-                    </Label>
-                  </div>
-                ))}
+      <div className="max-w-md mx-auto p-4 space-y-4">
+        {!hasProfile ? (
+          <Card className="p-4">
+            <div className="flex items-start gap-3">
+              <UserCircle2 className="w-6 h-6 text-slate-700 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-deep-navy">No athlete profile yet</div>
+                <div className="text-sm text-slate-600 mt-1">
+                  Create your athlete profile so camps can be filtered and saved correctly.
+                </div>
+                <div className="mt-4">
+                  <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
+                    Complete Setup
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
               </div>
             </div>
-          )}
-
-          {/* Home ZIP */}
-          <div>
-            <Label htmlFor="home_zip">Home ZIP Code</Label>
-            <Input
-              id="home_zip"
-              value={formData.home_zip}
-              onChange={(e) => setFormData({ ...formData, home_zip: e.target.value })}
-              placeholder="12345"
-              className="mt-1"
-            />
-          </div>
-
-          {/* Radius */}
-          <div>
-            <Label htmlFor="radius_miles">Search Radius</Label>
-            <Input
-              id="radius_miles"
-              type="number"
-              value={formData.radius_miles || ''}
-              onChange={(e) => setFormData({ ...formData, radius_miles: e.target.value ? parseInt(e.target.value) : null })}
-              placeholder="Unlimited (leave blank for all camps)"
-              className="mt-1"
-            />
-            <p className="text-xs text-gray-dark mt-1">Leave blank to see all camps nationwide</p>
-          </div>
-
-          {/* Division Preferences */}
-          <div>
-            <Label className="mb-2 block">Division Preferences</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {divisions.map(div => (
-                <div key={div} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`div-${div}`}
-                    checked={formData.division_preferences.includes(div)}
-                    onCheckedChange={() => handleDivisionToggle(div)}
-                  />
-                  <Label htmlFor={`div-${div}`} className="text-sm cursor-pointer">
-                    {div}
-                  </Label>
+          </Card>
+        ) : (
+          <Card className="p-4">
+            <div className="flex items-start gap-3">
+              <UserCircle2 className="w-6 h-6 text-slate-700 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-deep-navy">
+                  {athleteProfile?.athlete_name || athleteProfile?.name || "Athlete"}
                 </div>
-              ))}
+
+                <div className="text-sm text-slate-600 mt-1 space-y-1">
+                  {athleteProfile?.sport_id && (
+                    <div>
+                      <span className="font-medium text-slate-700">Sport:</span>{" "}
+                      <span>{athleteProfile.sport_id}</span>
+                    </div>
+                  )}
+                  {athleteProfile?.state && (
+                    <div>
+                      <span className="font-medium text-slate-700">State:</span>{" "}
+                      <span>{athleteProfile.state}</span>
+                    </div>
+                  )}
+                  {athleteProfile?.grad_year && (
+                    <div>
+                      <span className="font-medium text-slate-700">Grad Year:</span>{" "}
+                      <span>{athleteProfile.grad_year}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
+                    Edit Profile / Setup
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+
+                  {mode !== "paid" && (
+                    <Button className="w-full" onClick={() => navigate(createPageUrl("Checkout"))}>
+                      Upgrade to Current Season
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-
-          {/* Save Button */}
-          <Button
-            type="submit"
-            disabled={updateProfileMutation.isPending}
-            className="w-full bg-electric-blue hover:bg-deep-navy"
-          >
-            {updateProfileMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Save Profile'
-            )}
-          </Button>
-        </form>
-
-        {/* Logout Button */}
-        <Button
-          variant="outline"
-          className="w-full mt-4"
-          onClick={handleLogout}
-        >
-          <LogOut className="w-4 h-4 mr-2" />
-          Log Out
-        </Button>
+          </Card>
+        )}
       </div>
 
       <BottomNav />
