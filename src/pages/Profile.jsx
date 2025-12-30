@@ -25,9 +25,14 @@ export default function Profile() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { mode, loading: accessLoading, accountId, currentYear, demoYear } = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading, isError: identityError, error: identityErrorObj } =
-    useAthleteIdentity();
+  const { mode, loading: accessLoading, accountId, currentYear, demoYear } =
+    useSeasonAccess();
+  const {
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError,
+    error: identityErrorObj
+  } = useAthleteIdentity();
 
   const [logoutWorking, setLogoutWorking] = useState(false);
 
@@ -41,6 +46,11 @@ export default function Profile() {
 
   const handleLogout = async () => {
     setLogoutWorking(true);
+
+    // ✅ Logout latch: prevents Home auto-redirect during Base44 session/cache lag
+    try {
+      localStorage.setItem("logoutAt", String(Date.now()));
+    } catch {}
 
     // Always redirect with signedout flag so Home won't auto-route immediately.
     const url = createPageUrl("Home") + `?signedout=1&t=${Date.now()}`;
@@ -140,7 +150,11 @@ export default function Profile() {
                     Sign In / Continue
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
-                  <Button variant="outline" className="w-full" onClick={() => navigate(createPageUrl("Discover"))}>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => navigate(createPageUrl("Discover"))}
+                  >
                     Back to Demo
                   </Button>
                 </div>
