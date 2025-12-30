@@ -1,8 +1,9 @@
 // Pages/Discover.jsx — FULL REPLACEMENT (copy/paste)
 // - Uses ONE identity source: useAthleteIdentity()
-// - Calls getCampSummaries with a cleaned payload (no empty strings)
-// - Adds robust loading/error handling so the page doesn't blank
-// - Favorite toggle writes CampIntent (not Favorite/Registration/UserCamp)
+// - Uses the SAME read-model key as MyCamps/Calendar: ["myCampsSummaries_client", athleteId, athleteSportId]
+// - NO base44.functions.*
+// - Favorite toggle writes CampIntent
+// - Mutations invalidate ["myCampsSummaries_client"] so MyCamps/Calendar update instantly
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -56,6 +57,9 @@ export default function Discover() {
     return v;
   };
 
+  const athleteId = clean(athleteProfile?.id);
+  const athleteSportId = clean(athleteProfile?.sport_id);
+
   // Default sport filter to athlete's sport once
   useEffect(() => {
     if (athleteProfile?.sport_id && !filters.sport) {
@@ -87,161 +91,175 @@ export default function Discover() {
 
   // -----------------------------
   // Camp Summaries (read model)
+  // ✅ Must match MyCamps key so Discover updates MyCamps/Calendar instantly.
+  // NOTE: Discover can still apply extra filtering locally (division/state/position/search).
   // -----------------------------
   const {
-  data: campSummaries = [],
-  isLoading: campsLoading,
-  isError: campsError,
-  error: campsErrorObj
-} = useQuery({
-  queryKey: ["campSummaries_client", athleteProfile?.id, filters, searchQuery],
-  queryFn: async () => {
-    const payload = {
-      athlete_id: clean(athleteProfile?.id),
-      sport_id: clean(filters?.sport || athleteProfile?.sport_id),
-      divisions: clean(Array.isArray(filters?.divisions) ? filters.divisions : (filters?.divisions ? String(filters.divisions).split(",") : undefined)),
-      states: clean(filters?.state || filters?.states),
-      position_ids: clean(Array.isArray(filters?.positions) ? filters.positions : (filters?.positions ? String(filters.positions).split(",") : undefined)),
-      start_date_gte: clean(filters?.startDate),
-      end_date_lte: clean(filters?.endDate),
-      search: clean(searchQuery),
-      limit: 200
-    };
+    data: campSummaries = [],
+    isLoading: campsLoading,
+    isError: campsError,
+    error: campsErrorObj
+  } = useQuery({
+    queryKey: ["myCampsSummaries_client", athleteId, athleteSportId],
+    enabled: !!athleteId && !identityLoading && !identityError,
+    retry: false,
+    queryFn: async () => {
+      const payload = {
+        athlete_id: athleteId,
+        sport_id: clean(filters?.sport || athleteSportId),
+        limit: 500
+      };
 
-    console.log("CLIENT summaries payload", payload);
+      // Camps (optionally by sport)
+      const campQuery = {};
+      if (payload.sport_id) campQuery.sport_id = payload.sport_id;
 
-    // Base query
-    const campQuery = {};
-    if (payload.sport_id) campQuery.sport_id = payload.sport_id;
-    if (payload.start_date_gte) campQuery.start_date = { $gte: payload.start_date_gte };
+      const camps = await base44.entities.Camp.filter(
+        campQuery,
+        "-start_date",
+        payload.limit || 500
+      );
 
-    // Pull camps (sorted by start_date desc per your prior call)
-    let camps = await base44.entities.Camp.filter(campQuery, "-start_date", payload.limit || 200);
+      // Batch join: School / Sport / Position
+      const schoolIds = [...new Set(camps.map((c) => c.school_id).filter(Boolean))];
+      const sportIds = [...new Set(camps.map((c) => c.sport_id).filter(Boolean))];
 
-    // Apply remaining filters locally
-    if (payload.end_date_lte) {
-      camps = camps.filter(c => String(c.start_date).slice(0, 10) <= payload.end_date_lte);
-    }
+      const [schools, sportsJoined, positionsJoined] = await Promise.all([
+        schoolIds.length
+          ? base44.entities.School.filter({ id: { $in: schoolIds } })
+          : Promise.resolve([]),
+        sportIds.length
+          ? base44.entities.Sport.filter({ id: { $in: sportIds } })
+          : Promise.resolve([]),
+        base44.entities.Position.list()
+      ]);
 
-    if (payload.states) {
-      const stateArray = Array.isArray(payload.states) ? payload.states : String(payload.states).split(",");
-      const cleaned = stateArray.map(s => s.trim()).filter(Boolean);
-      if (cleaned.length) {
-        camps = camps.filter(c => cleaned.includes(c.state));
-      }
-    }
+      const schoolMap = Object.fromEntries(schools.map((s) => [s.id, s]));
+      const sportMap = Object.fromEntries(sportsJoined.map((s) => [s.id, s]));
+      const positionMap = Object.fromEntries(positionsJoined.map((p) => [p.id, p]));
 
-    if (payload.position_ids?.length) {
-      const posSet = new Set(payload.position_ids.map(String));
-      camps = camps.filter(c => (c.position_ids || []).some(pid => posSet.has(String(pid))));
-    }
-
-    // Batch fetch related entities
-    const schoolIds = [...new Set(camps.map(c => c.school_id).filter(Boolean))];
-    const sportIds = [...new Set(camps.map(c => c.sport_id).filter(Boolean))];
-
-    const [schools, sports, positions] = await Promise.all([
-      schoolIds.length ? base44.entities.School.filter({ id: { $in: schoolIds } }) : Promise.resolve([]),
-      sportIds.length ? base44.entities.Sport.filter({ id: { $in: sportIds } }) : Promise.resolve([]),
-      base44.entities.Position.list()
-    ]);
-
-    const schoolMap = Object.fromEntries(schools.map(s => [s.id, s]));
-    const sportMap = Object.fromEntries(sports.map(s => [s.id, s]));
-    const positionMap = Object.fromEntries(positions.map(p => [p.id, p]));
-
-    // Athlete-specific data
-    let intentMap = {};
-    let targetSchoolIds = new Set();
-
-    if (payload.athlete_id) {
+      // Athlete-specific: CampIntent + TargetSchool
       const [intents, targets] = await Promise.all([
         base44.entities.CampIntent.filter({ athlete_id: payload.athlete_id }),
         base44.entities.TargetSchool.filter({ athlete_id: payload.athlete_id })
       ]);
 
-      intentMap = Object.fromEntries(intents.map(i => [i.camp_id, i]));
-      targetSchoolIds = new Set(targets.map(t => t.school_id));
+      const intentMap = Object.fromEntries(intents.map((i) => [i.camp_id, i]));
+      const targetSchoolIds = new Set(targets.map((t) => t.school_id));
+
+      // Summaries (same as MyCamps)
+      return camps.map((camp) => {
+        const school = schoolMap[camp.school_id];
+        const sport = sportMap[camp.sport_id];
+        const intent = intentMap[camp.id] || null;
+        const campPositions = (camp.position_ids || [])
+          .map((pid) => positionMap[pid])
+          .filter(Boolean);
+
+        return {
+          camp_id: camp.id,
+          camp_name: camp.camp_name,
+          start_date: camp.start_date,
+          end_date: camp.end_date,
+          price: camp.price,
+          link_url: camp.link_url,
+          notes: camp.notes,
+          city: camp.city,
+          state: camp.state,
+          position_ids: camp.position_ids || [],
+          position_codes: campPositions.map((p) => p.position_code),
+
+          school_id: school?.id,
+          school_name: school?.school_name,
+          school_division: school?.division,
+          school_logo_url: school?.logo_url,
+          school_city: school?.city,
+          school_state: school?.state,
+          school_conference: school?.conference,
+
+          sport_id: sport?.id,
+          sport_name: sport?.sport_name,
+
+          intent_status: intent?.status || null,
+          intent_priority: intent?.priority || null,
+          is_target_school: targetSchoolIds.has(camp.school_id)
+        };
+      });
     }
+  });
 
-    // Assemble summaries
-    let summaries = camps.map(camp => {
-      const school = schoolMap[camp.school_id];
-      const sport = sportMap[camp.sport_id];
-      const intent = intentMap[camp.id] || null;
-      const campPositions = (camp.position_ids || []).map(pid => positionMap[pid]).filter(Boolean);
+  // -----------------------------
+  // Local filtering (Discover-specific)
+  // This avoids adding new read-model keys and keeps MyCamps/Calendar consistent.
+  // -----------------------------
+  const filteredSummaries = useMemo(() => {
+    let list = Array.isArray(campSummaries) ? [...campSummaries] : [];
 
-      return {
-        camp_id: camp.id,
-        camp_name: camp.camp_name,
-        start_date: camp.start_date,
-        end_date: camp.end_date,
-        price: camp.price,
-        link_url: camp.link_url,
-        notes: camp.notes,
-        city: camp.city,
-        state: camp.state,
-        position_ids: camp.position_ids || [],
-        position_codes: campPositions.map(p => p.position_code),
-
-        school_id: school?.id,
-        school_name: school?.school_name,
-        school_division: school?.division,
-        school_logo_url: school?.logo_url,
-        school_city: school?.city,
-        school_state: school?.state,
-        school_conference: school?.conference,
-
-        sport_id: sport?.id,
-        sport_name: sport?.sport_name,
-
-        intent_status: intent?.status || null,
-        intent_priority: intent?.priority || null,
-        is_target_school: targetSchoolIds.has(camp.school_id),
-
-        distance_from_home: null,
-        days_until_camp: camp.start_date
-          ? Math.ceil((new Date(camp.start_date) - new Date()) / (1000 * 60 * 60 * 24))
-          : null
-      };
-    });
-
-    // Apply division + search after join
-    if (payload.divisions?.length) {
-      const divSet = new Set(payload.divisions);
-      summaries = summaries.filter(s => divSet.has(s.school_division));
-    }
-
-    if (payload.search) {
-      const q = String(payload.search).toLowerCase();
-      summaries = summaries.filter(s =>
-        (s.camp_name || "").toLowerCase().includes(q) ||
-        (s.school_name || "").toLowerCase().includes(q)
+    // Search
+    const q = clean(searchQuery);
+    if (q) {
+      const qq = String(q).toLowerCase();
+      list = list.filter((s) =>
+        (s.camp_name || "").toLowerCase().includes(qq) ||
+        (s.school_name || "").toLowerCase().includes(qq)
       );
     }
 
-    return summaries;
-  },
-  enabled: !!athleteProfile?.id,
-  retry: false
-});
+    // Divisions
+    const divisions = Array.isArray(filters?.divisions)
+      ? filters.divisions
+      : (filters?.divisions ? String(filters.divisions).split(",") : []);
+    const divs = divisions.map((d) => String(d).trim()).filter(Boolean);
+    if (divs.length) {
+      const divSet = new Set(divs);
+      list = list.filter((s) => divSet.has(s.school_division));
+    }
 
+    // State(s)
+    const states = clean(filters?.state || filters?.states);
+    if (states) {
+      const arr = Array.isArray(states) ? states : String(states).split(",");
+      const st = arr.map((s) => String(s).trim()).filter(Boolean);
+      if (st.length) {
+        const set = new Set(st);
+        list = list.filter((s) => set.has(s.state));
+      }
+    }
 
-  const sortedSummaries = useMemo(() => {
-    const list = Array.isArray(campSummaries) ? [...campSummaries] : [];
+    // Positions
+    const pos = Array.isArray(filters?.positions)
+      ? filters.positions
+      : (filters?.positions ? String(filters.positions).split(",") : []);
+    const posIds = pos.map((p) => String(p).trim()).filter(Boolean);
+    if (posIds.length) {
+      const posSet = new Set(posIds);
+      list = list.filter((s) => (s.position_ids || []).some((pid) => posSet.has(String(pid))));
+    }
+
+    // Date range (best-effort, based on existing fields)
+    if (filters?.startDate) {
+      const d0 = String(filters.startDate).slice(0, 10);
+      list = list.filter((s) => String(s.start_date).slice(0, 10) >= d0);
+    }
+    if (filters?.endDate) {
+      const d1 = String(filters.endDate).slice(0, 10);
+      list = list.filter((s) => String(s.start_date).slice(0, 10) <= d1);
+    }
+
+    // Sort ascending by date
     list.sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
     return list;
-  }, [campSummaries]);
+  }, [campSummaries, filters, searchQuery]);
 
   // -----------------------------
-  // Favorite toggle (CampIntent)
+  // Favorite toggle (CampIntent) — match MyCamps behavior
   // -----------------------------
   const toggleFavoriteMutation = useMutation({
     mutationFn: async (campId) => {
-      if (!athleteProfile?.id) return;
+      if (!athleteId) return;
 
       const existing = await base44.entities.CampIntent.filter({
-        athlete_id: athleteProfile.id,
+        athlete_id: athleteId,
         camp_id: campId
       });
 
@@ -252,7 +270,7 @@ export default function Discover() {
 
       if (!intent) {
         await base44.entities.CampIntent.create({
-          athlete_id: athleteProfile.id,
+          athlete_id: athleteId,
           camp_id: campId,
           status: "favorite",
           priority: "medium"
@@ -267,7 +285,8 @@ export default function Discover() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["campSummaries"] });
+      // ✅ SAME invalidation key as MyCamps
+      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
     }
   });
 
@@ -275,7 +294,7 @@ export default function Discover() {
   // UI helpers
   // -----------------------------
   const handleClearFilters = () => {
-    setFilters({ sport: athleteProfile?.sport_id });
+    setFilters({ sport: athleteSportId });
   };
 
   // -----------------------------
@@ -342,10 +361,10 @@ export default function Discover() {
             </Button>
           </div>
 
-          {/* CampSummaries error banner */}
+          {/* Read-model error banner */}
           {campsError && (
             <div className="bg-white border border-rose-200 text-rose-700 rounded-xl p-3 mt-4">
-              <div className="font-semibold">CampSummaries failed</div>
+              <div className="font-semibold">Failed to load camps</div>
               <div className="text-xs break-words mt-1">
                 {String(campsErrorObj?.message || campsErrorObj)}
               </div>
@@ -360,7 +379,7 @@ export default function Discover() {
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
           </div>
-        ) : sortedSummaries.length === 0 ? (
+        ) : filteredSummaries.length === 0 ? (
           <div className="text-center py-20">
             <Search className="w-12 h-12 mx-auto text-slate-300 mb-4" />
             <h3 className="text-lg font-semibold text-deep-navy">No camps found</h3>
@@ -370,12 +389,12 @@ export default function Discover() {
             <div className="text-xs text-slate-400 mt-4 break-words">
               <div>Account: {account?.id}</div>
               <div>Athlete: {athleteProfile?.id}</div>
-              <div>Sport: {filters?.sport || athleteProfile?.sport_id || "none"}</div>
+              <div>Sport: {filters?.sport || athleteSportId || "none"}</div>
             </div>
           </div>
         ) : (
           <div className="space-y-4">
-            {sortedSummaries.map((s) => (
+            {filteredSummaries.map((s) => (
               <CampCard
                 key={s.camp_id}
                 camp={{
