@@ -40,51 +40,65 @@ export default function Profile() {
   }, [isAuthed, mode, currentYear, demoYear]);
 
   const handleLogout = async () => {
-  setLogoutWorking(true);
-  try {
-    // 1) Try all plausible Base44 sign-out APIs (SDKs differ)
-    if (base44?.auth?.signOut) await base44.auth.signOut();
-    else if (base44?.auth?.logout) await base44.auth.logout();
-    else if (base44?.auth?.signout) await base44.auth.signout();
+    setLogoutWorking(true);
 
-    // 2) Clear react-query cache
-    try {
-      queryClient.clear();
-    } catch {}
-
-    // 3) Clear likely auth storage keys (safe + reversible)
-    try {
-      const keys = Object.keys(localStorage || {});
-      keys.forEach((k) => {
-        const lower = String(k). show (k || "").toLowerCase();
-        if (lower.includes("base44") || lower.includes("auth") || lower.includes("token") || lower.includes("session")) {
-          localStorage.removeItem(k);
-        }
-      });
-    } catch {}
-
-    try {
-      const keys = Object.keys(sessionStorage || {});
-      keys.forEach((k) => {
-        const lower = String(k).toLowerCase();
-        if (lower.includes("base44") || lower.includes("auth") || lower.includes("token") || lower.includes("session")) {
-          sessionStorage.removeItem(k);
-        }
-      });
-    } catch {}
-
-    // 4) Hard redirect with cache-buster
+    // Always redirect with signedout flag so Home won't auto-route immediately.
     const url = createPageUrl("Home") + `?signedout=1&t=${Date.now()}`;
- window.location.replace(createPageUrl("Home") + `?signedout=1&t=${Date.now()}`);
-  } catch (e) {
-    // Even if SDK fails, force-reset UI
-    try { queryClient.clear(); } catch {}
-    const url = createPageUrl("Home") + `?signedout=1&t=${Date.now()}`;
-window.location.replace(createPageUrl("Home") + `?signedout=1&t=${Date.now()}`);
-  } finally {
-    setLogoutWorking(false);
-  }
-};
+
+    try {
+      // 1) Real sign-out (Base44 SDKs vary)
+      if (base44?.auth?.signOut) await base44.auth.signOut();
+      else if (base44?.auth?.logout) await base44.auth.logout();
+      else if (base44?.auth?.signout) await base44.auth.signout();
+
+      // 2) Clear react-query cache so no identity/entitlement sticks
+      try {
+        queryClient.clear();
+      } catch {}
+
+      // 3) Clear likely auth/session storage keys (safe even if no-ops)
+      try {
+        const keys = Object.keys(localStorage || {});
+        keys.forEach((k) => {
+          const lower = String(k).toLowerCase();
+          if (
+            lower.includes("base44") ||
+            lower.includes("auth") ||
+            lower.includes("token") ||
+            lower.includes("session")
+          ) {
+            localStorage.removeItem(k);
+          }
+        });
+      } catch {}
+
+      try {
+        const keys = Object.keys(sessionStorage || {});
+        keys.forEach((k) => {
+          const lower = String(k).toLowerCase();
+          if (
+            lower.includes("base44") ||
+            lower.includes("auth") ||
+            lower.includes("token") ||
+            lower.includes("session")
+          ) {
+            sessionStorage.removeItem(k);
+          }
+        });
+      } catch {}
+
+      // 4) Hard redirect (kills in-memory state)
+      window.location.replace(url);
+    } catch (e) {
+      // Even if SDK signout fails, still force-reset UI state
+      try {
+        queryClient.clear();
+      } catch {}
+      window.location.replace(url);
+    } finally {
+      setLogoutWorking(false);
+    }
+  };
 
   // Loading
   if (accessLoading || identityLoading) {
@@ -95,7 +109,7 @@ window.location.replace(createPageUrl("Home") + `?signedout=1&t=${Date.now()}`);
     );
   }
 
-  // Demo / unauthenticated view (do NOT route them to onboarding automatically)
+  // Demo / unauthenticated view (do NOT auto-route them to onboarding)
   if (!isAuthed) {
     return (
       <div className="min-h-screen bg-slate-50 pb-20">
@@ -264,26 +278,20 @@ window.location.replace(createPageUrl("Home") + `?signedout=1&t=${Date.now()}`);
               <UserCircle2 className="w-6 h-6 text-slate-700 mt-0.5" />
               <div className="flex-1">
                 <div className="font-semibold text-deep-navy">
-                  {athleteProfile?.athlete_name || athleteProfile?.name || "Athlete"}
+                  {athleteProfile?.athlete_name || "Athlete"}
                 </div>
 
                 <div className="text-sm text-slate-600 mt-1 space-y-1">
-                  {athleteProfile?.sport_id && (
-                    <div>
-                      <span className="font-medium text-slate-700">Sport:</span>{" "}
-                      <span>{athleteProfile.sport_id}</span>
-                    </div>
-                  )}
-                  {athleteProfile?.state && (
-                    <div>
-                      <span className="font-medium text-slate-700">State:</span>{" "}
-                      <span>{athleteProfile.state}</span>
-                    </div>
-                  )}
                   {athleteProfile?.grad_year && (
                     <div>
                       <span className="font-medium text-slate-700">Grad Year:</span>{" "}
                       <span>{athleteProfile.grad_year}</span>
+                    </div>
+                  )}
+                  {athleteProfile?.home_zip && (
+                    <div>
+                      <span className="font-medium text-slate-700">ZIP:</span>{" "}
+                      <span>{athleteProfile.home_zip}</span>
                     </div>
                   )}
                 </div>
