@@ -2,7 +2,9 @@ import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Lock, CheckCircle2, Loader2 } from "lucide-react";
 
+import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
+
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -10,40 +12,73 @@ import { Badge } from "../components/ui/badge";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 
 /**
- * Checkout (placeholder)
+ * Checkout (TEST UNLOCK)
  * Base44 convention route: /Checkout
  *
- * Today:
- * - UX placeholder so your paywall CTA works.
- * Next:
- * - Stripe checkout (or Base44 payments) + Entitlement creation.
+ * This creates an Entitlement record for the current season.
+ * Later you replace this with real payments -> entitlement creation.
  */
 export default function Checkout() {
   const navigate = useNavigate();
   const { mode, currentYear } = useSeasonAccess();
 
-  // If user is already paid, don't let them linger here
+  const [isWorking, setIsWorking] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const priceLabel = useMemo(() => "$49 / year", []);
+
+  // If already paid, don’t linger here
   if (mode === "paid") {
     navigate(createPageUrl("Discover"));
     return null;
   }
 
-  const [isWorking, setIsWorking] = useState(false);
+  const endOfYearISO = (year) => {
+    // Local time. Good enough for gating. You can move to UTC later if you want.
+    const d = new Date(year, 11, 31, 23, 59, 59);
+    return d.toISOString();
+    };
+  const startOfYearISO = (year) => {
+    const d = new Date(year, 0, 1, 0, 0, 0);
+    return d.toISOString();
+  };
 
-  const priceLabel = useMemo(() => {
-    // You can change this later
-    return "$49 / year";
-  }, []);
-
-  const handleContinue = async () => {
-    // Placeholder: this is where you will call Stripe/Base44 payment flow
+  const handleTestUnlock = async () => {
+    setErr(null);
     setIsWorking(true);
 
-    // Fake delay so user sees feedback (remove when real checkout exists)
-    await new Promise((r) => setTimeout(r, 600));
+    try {
+      const me = await base44.auth.me();
+      const accountId = me?.id;
+      if (!accountId) throw new Error("Not authenticated. Please sign in to unlock.");
 
-    setIsWorking(false);
-    alert("Next step: integrate payments + create Entitlement record. For now this is a placeholder.");
+      // If an active entitlement already exists, just proceed.
+      const existing = await base44.entities.Entitlement.filter({
+        account_id: accountId,
+        season_year: currentYear,
+        status: "active"
+      });
+
+      if (!existing || existing.length === 0) {
+        await base44.entities.Entitlement.create({
+          account_id: accountId,
+          season_year: currentYear,
+          status: "active",
+          product: "RecruitMeSeasonAccess",
+          starts_at: startOfYearISO(currentYear),
+          ends_at: endOfYearISO(currentYear)
+        });
+      }
+
+      // Force hooks/pages that depend on access to refresh
+      // (Base44 apps often rely on react-query underneath; this simple reload is the safest.)
+      navigate(createPageUrl("Discover"));
+      window.location.reload();
+    } catch (e) {
+      setErr(String(e?.message || e));
+    } finally {
+      setIsWorking(false);
+    }
   };
 
   return (
@@ -69,14 +104,14 @@ export default function Checkout() {
               </div>
 
               <p className="text-sm text-slate-600 mt-2">
-                Upgrade to access current-year camps, favorites, registrations, and calendar planning.
-                Access renews yearly and expires at season end.
+                This is a <b>test unlock</b>. It creates an Entitlement record for the current season.
+                Later you’ll replace this with real checkout.
               </p>
 
               <div className="mt-4 space-y-2 text-sm text-slate-700">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  Current-year camp database
+                  Current-year camps & updates
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
@@ -84,19 +119,25 @@ export default function Checkout() {
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  Calendar overlays and conflict visibility
+                  Calendar overlays and planning
                 </div>
               </div>
 
+              {err && (
+                <div className="mt-4 p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-sm">
+                  {err}
+                </div>
+              )}
+
               <div className="mt-6 space-y-2">
-                <Button className="w-full" onClick={handleContinue} disabled={isWorking}>
+                <Button className="w-full" onClick={handleTestUnlock} disabled={isWorking}>
                   {isWorking ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Redirecting…
+                      Unlocking…
                     </>
                   ) : (
-                    "Continue to Payment"
+                    "Test Unlock (Create Entitlement)"
                   )}
                 </Button>
 
@@ -111,7 +152,7 @@ export default function Checkout() {
               </div>
 
               <div className="mt-3 text-xs text-slate-500">
-                Payments aren't wired yet — this page exists so the paywall flow works end-to-end.
+                Next: replace this button with payments → entitlement issuance.
               </div>
             </div>
           </div>
