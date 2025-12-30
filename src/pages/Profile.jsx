@@ -75,12 +75,12 @@ export default function Profile() {
 
     // 4) Hard redirect with cache-buster
     const url = createPageUrl("Home") + `?signedout=1&t=${Date.now()}`;
-    window.location.replace(url);
+ window.location.replace(createPageUrl("Home") + `?signedout=1&t=${Date.now()}`);
   } catch (e) {
     // Even if SDK fails, force-reset UI
     try { queryClient.clear(); } catch {}
     const url = createPageUrl("Home") + `?signedout=1&t=${Date.now()}`;
-    window.location.replace(url);
+window.location.replace(createPageUrl("Home") + `?signedout=1&t=${Date.now()}`);
   } finally {
     setLogoutWorking(false);
   }
