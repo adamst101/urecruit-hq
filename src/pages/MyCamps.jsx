@@ -1,293 +1,182 @@
-import React, { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { Loader2, Lock } from "lucide-react";
 
-import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
+import { cn } from "../lib/utils";
 
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { Button } from "../components/ui/button";
-import { Badge } from "../components/ui/badge";
+import { Card } from "../components/ui/card";
 
 import BottomNav from "../components/navigation/BottomNav";
-import CampCard from "../components/camps/CampCard";
+
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
 
+/**
+ * MyCamps
+ * Paid-only page.
+ *
+ * Guard rules:
+ * - If demo/unpaid → redirect to Onboarding
+ * - If paid but identity still loading → show loader
+ * - If paid + no profile → redirect to Onboarding
+ */
 export default function MyCamps() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [tab, setTab] = useState("registered"); // "registered" | "favorites"
 
-  // -----------------------------
-  // Identity (hook must ALWAYS run)
-  // -----------------------------
+  const { mode, loading: accessLoading } = useSeasonAccess();
   const {
     athleteProfile,
     isLoading: identityLoading,
-    isError: identityError,
-    error: identityErrorObj
+    isError: identityError
   } = useAthleteIdentity();
 
-  const clean = (v) => {
-    if (v === undefined || v === null) return undefined;
-    if (typeof v === "string" && v.trim() === "") return undefined;
-    return v;
-  };
+  /**
+   * 🚫 DEMO / UNPAID GUARD
+   * This is a hard stop. Demo users do not belong here.
+   */
+  useEffect(() => {
+    if (accessLoading || identityLoading) return;
 
-  const athleteId = clean(athleteProfile?.id);
-  const athleteSportId = clean(athleteProfile?.sport_id);
-
-  // -----------------------------
-  // Shared read model (single source of truth)
-  // -----------------------------
-  const {
-    data: campSummaries = [],
-    isLoading: campsLoading,
-    isError: campsError,
-    error: campsErrorObj
-  } = useCampSummariesClient({
-    athleteId,
-    sportId: athleteSportId,
-    enabled: !!athleteId && !identityLoading && !identityError
-  });
-
-  // -----------------------------
-  // Derived lists (hooks must ALWAYS run)
-  // -----------------------------
-  const sortedSummaries = useMemo(() => {
-    const list = Array.isArray(campSummaries) ? [...campSummaries] : [];
-    list.sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
-    return list;
-  }, [campSummaries]);
-
-  const registeredCamps = useMemo(
-    () =>
-      sortedSummaries.filter(
-        (c) => c.intent_status === "registered" || c.intent_status === "completed"
-      ),
-    [sortedSummaries]
-  );
-
-  const favoriteCamps = useMemo(
-    () => sortedSummaries.filter((c) => c.intent_status === "favorite"),
-    [sortedSummaries]
-  );
-
-  const listToRender = tab === "registered" ? registeredCamps : favoriteCamps;
-
-  // -----------------------------
-  // Mutations (unchanged behavior)
-  // -----------------------------
-  const registerMutation = useMutation({
-    mutationFn: async (campId) => {
-      if (!athleteId) return;
-
-      const existing = await base44.entities.CampIntent.filter({
-        athlete_id: athleteId,
-        camp_id: campId
-      });
-
-      const intent = existing?.[0] || null;
-
-      if (!intent) {
-        await base44.entities.CampIntent.create({
-          athlete_id: athleteId,
-          camp_id: campId,
-          status: "registered",
-          priority: "medium",
-          registration_confirmed: true
-        });
-        return;
-      }
-
-      if (intent.status === "registered") {
-        await base44.entities.CampIntent.update(intent.id, { status: "removed" });
-      } else {
-        await base44.entities.CampIntent.update(intent.id, {
-          status: "registered",
-          registration_confirmed: true
-        });
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+    if (mode !== "paid") {
+      navigate(createPageUrl("Onboarding"));
     }
-  });
+  }, [mode, accessLoading, identityLoading, navigate]);
 
-  const favoriteToggleMutation = useMutation({
-    mutationFn: async (campId) => {
-      if (!athleteId) return;
+  /**
+   * 🧭 PROFILE GUARD
+   * Paid users must have a profile to use MyCamps.
+   */
+  useEffect(() => {
+    if (accessLoading || identityLoading) return;
 
-      const existing = await base44.entities.CampIntent.filter({
-        athlete_id: athleteId,
-        camp_id: campId
-      });
-
-      const intent = existing?.[0] || null;
-
-      if (intent?.status === "registered" || intent?.status === "completed") return;
-
-      if (!intent) {
-        await base44.entities.CampIntent.create({
-          athlete_id: athleteId,
-          camp_id: campId,
-          status: "favorite",
-          priority: "medium"
-        });
-        return;
-      }
-
-      if (intent.status === "favorite") {
-        await base44.entities.CampIntent.update(intent.id, { status: "removed" });
-      } else {
-        await base44.entities.CampIntent.update(intent.id, { status: "favorite" });
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+    if (mode === "paid" && !athleteProfile) {
+      navigate(createPageUrl("Onboarding"));
     }
-  });
+  }, [mode, athleteProfile, accessLoading, identityLoading, navigate]);
 
-  // -----------------------------
-  // Render guards
-  // -----------------------------
-  if (identityLoading) return null;
-
-  if (identityError) {
+  // Loading states
+  if (accessLoading || identityLoading) {
     return (
-      <div className="p-6 text-rose-700">
-        Failed to load athlete profile: {String(identityErrorObj?.message || identityErrorObj)}
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
       </div>
     );
   }
 
-  if (!athleteProfile) return null;
+  // Identity error fallback
+  if (identityError) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4">
+        <Card className="max-w-md mx-auto p-4 border-rose-200 bg-rose-50 text-rose-700">
+          <div className="font-semibold">Failed to load athlete profile</div>
+          <div className="text-sm mt-2">
+            Please try again or return to onboarding.
+          </div>
+          <div className="mt-4">
+            <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
+              Go to Onboarding
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // If we somehow got here unpaid, render nothing (navigation effect will fire)
+  if (mode !== "paid" || !athleteProfile) {
+    return null;
+  }
+
+  // ✅ SAFE: Paid + Profile exists
+  return <MyCampsPaid athleteProfile={athleteProfile} />;
+}
+
+/* ------------------------------------------------------------------ */
+/* PAID IMPLEMENTATION                                                 */
+/* ------------------------------------------------------------------ */
+
+function MyCampsPaid({ athleteProfile }) {
+  const athleteId = athleteProfile.id;
+  const sportId = athleteProfile.sport_id;
+
+  const {
+    data: campSummaries = [],
+    isLoading,
+    isError,
+    error
+  } = useCampSummariesClient({
+    athleteId,
+    sportId,
+    enabled: !!athleteId
+  });
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4">
+        <Card className="max-w-md mx-auto p-4 border-rose-200 bg-rose-50 text-rose-700">
+          <div className="font-semibold">Failed to load camps</div>
+          <div className="text-xs mt-2 break-words">
+            {String(error?.message || error)}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  const registered = campSummaries.filter(
+    (c) => c.intent_status === "registered" || c.intent_status === "completed"
+  );
+  const favorites = campSummaries.filter((c) => c.intent_status === "favorite");
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-md mx-auto p-4">
           <h1 className="text-2xl font-bold text-deep-navy">My Camps</h1>
+        </div>
+      </div>
 
-          {campsError && (
-            <div className="mt-3 bg-white border border-rose-200 text-rose-700 rounded-xl p-3">
-              <div className="font-semibold">Failed to load camps</div>
-              <div className="text-xs break-words mt-1">
-                {String(campsErrorObj?.message || campsErrorObj)}
+      <div className="max-w-md mx-auto p-4 space-y-6">
+        {registered.length === 0 && favorites.length === 0 && (
+          <Card className="p-4">
+            <div className="flex items-start gap-3">
+              <Lock className="w-5 h-5 text-slate-600 mt-0.5" />
+              <div>
+                <div className="font-semibold text-deep-navy">No camps yet</div>
+                <div className="text-sm text-slate-600 mt-1">
+                  Favorite or register for camps in Discover to see them here.
+                </div>
               </div>
             </div>
-          )}
+          </Card>
+        )}
 
-          <Tabs value={tab} onValueChange={setTab} className="mt-4">
-            <TabsList className="grid grid-cols-2 w-full">
-              <TabsTrigger value="registered" className="gap-2">
-                Registered
-                <Badge variant="secondary" className="text-xs">
-                  {registeredCamps.length}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="favorites" className="gap-2">
-                Favorites
-                <Badge variant="secondary" className="text-xs">
-                  {favoriteCamps.length}
-                </Badge>
-              </TabsTrigger>
-            </TabsList>
+        {registered.length > 0 && (
+          <Section title="Registered">
+            {registered.map((c) => (
+              <CampRow key={c.camp_id} camp={c} />
+            ))}
+          </Section>
+        )}
 
-            <TabsContent value={tab} className="mt-4">
-              {campsLoading ? (
-                <div className="p-6 text-slate-500">Loading…</div>
-              ) : listToRender.length === 0 ? (
-                <div className="p-6 text-center text-slate-500">
-                  {tab === "registered"
-                    ? "No registered camps yet."
-                    : "No favorite camps yet."}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {listToRender.map((s) => (
-                    <div key={s.camp_id}>
-                      <CampCard
-                        camp={{
-                          id: s.camp_id,
-                          camp_name: s.camp_name,
-                          start_date: s.start_date,
-                          end_date: s.end_date,
-                          city: s.city,
-                          state: s.state,
-                          price: s.price,
-                          link_url: s.link_url,
-                          notes: s.notes,
-                          position_ids: s.position_ids
-                        }}
-                        school={{
-                          id: s.school_id,
-                          school_name: s.school_name,
-                          division: s.school_division,
-                          logo_url: s.school_logo_url,
-                          city: s.school_city,
-                          state: s.school_state,
-                          conference: s.school_conference
-                        }}
-                        sport={{ id: s.sport_id, sport_name: s.sport_name }}
-                        positions={(s.position_codes || []).map((code) => ({
-                          position_code: code
-                        }))}
-                        isFavorite={s.intent_status === "favorite"}
-                        isRegistered={
-                          s.intent_status === "registered" ||
-                          s.intent_status === "completed"
-                        }
-                        onFavoriteToggle={() => favoriteToggleMutation.mutate(s.camp_id)}
-                        onClick={() => navigate(createPageUrl(`CampDetail?id=${s.camp_id}`))}
-                      />
-
-                      <div className="mt-2 flex gap-2">
-                        {tab === "registered" ? (
-                          <>
-                            <Button
-                              variant="outline"
-                              className="flex-1"
-                              onClick={() => registerMutation.mutate(s.camp_id)}
-                              disabled={registerMutation.isPending}
-                            >
-                              Unregister
-                            </Button>
-                            <Button
-                              className="flex-1"
-                              onClick={() => navigate(createPageUrl(`CampDetail?id=${s.camp_id}`))}
-                            >
-                              Details
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button
-                              variant="outline"
-                              className="flex-1"
-                              onClick={() => favoriteToggleMutation.mutate(s.camp_id)}
-                              disabled={favoriteToggleMutation.isPending}
-                            >
-                              Remove Favorite
-                            </Button>
-                            <Button
-                              className="flex-1"
-                              onClick={() => registerMutation.mutate(s.camp_id)}
-                              disabled={registerMutation.isPending}
-                            >
-                              Register
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        </div>
+        {favorites.length > 0 && (
+          <Section title="Favorites">
+            {favorites.map((c) => (
+              <CampRow key={c.camp_id} camp={c} />
+            ))}
+          </Section>
+        )}
       </div>
 
       <BottomNav />
@@ -295,3 +184,24 @@ export default function MyCamps() {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* SUPPORT COMPONENTS                                                  */
+/* ------------------------------------------------------------------ */
+
+function Section({ title, children }) {
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-slate-600 mb-2">{title}</h2>
+      <div className="space-y-2">{children}</div>
+    </div>
+  );
+}
+
+function CampRow({ camp }) {
+  return (
+    <Card className="p-3">
+      <div className="font-semibold text-deep-navy">{camp.school_name}</div>
+      <div className="text-sm text-slate-600">{camp.camp_name}</div>
+    </Card>
+  );
+}
