@@ -13,30 +13,28 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
 /**
  * Onboarding
- * Base44 convention route: /Onboarding
  *
- * Purpose:
- * - Demo/unpaid users: show paywall + upgrade CTA
- * - New users: set up athlete profile
- * - Paid users with profile: redirect to Discover
+ * RULES (critical):
+ * - NEVER redirect unless the user is:
+ *   1) authenticated
+ *   2) paid
+ *   3) has a profile
  *
- * IMPORTANT:
- * - Do NOT redirect demo/unpaid users just because they have an athlete profile.
- *   That blocks conversion. Only redirect when mode === "paid".
+ * This prevents logout + identity cache loops.
  */
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { mode, currentYear, demoYear } = useSeasonAccess();
-
-  // Single source of truth for identity
+  const { mode, currentYear, demoYear, accountId } = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // ✅ Redirect only paid users with a completed profile
+  // ✅ SAFE redirect: only fully-qualified paid users
   useEffect(() => {
-    if (!identityLoading && athleteProfile && mode === "paid") {
+    if (identityLoading) return;
+
+    if (accountId && mode === "paid" && athleteProfile) {
       navigate(createPageUrl("Discover"));
     }
-  }, [identityLoading, athleteProfile, mode, navigate]);
+  }, [identityLoading, accountId, mode, athleteProfile, navigate]);
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
@@ -48,7 +46,7 @@ export default function Onboarding() {
           </p>
         </div>
 
-        {/* Paywall card shows ONLY in demo/unpaid mode */}
+        {/* Paywall card — demo OR signed-out users */}
         <PaywallCard
           show={mode !== "paid"}
           currentYear={currentYear}
@@ -57,36 +55,42 @@ export default function Onboarding() {
           onKeepDemo={() => navigate(createPageUrl("Discover"))}
         />
 
-        {/* Setup card (works for everyone) */}
+        {/* Profile setup (works for signed-in users only) */}
         <Card className="p-4">
           <div className="flex items-start gap-3">
             <UserCircle2 className="w-6 h-6 text-slate-600 mt-0.5" />
             <div className="flex-1">
-              <div className="text-lg font-bold text-deep-navy">Create your athlete profile</div>
+              <div className="text-lg font-bold text-deep-navy">
+                Create your athlete profile
+              </div>
+
               <div className="text-sm text-slate-600 mt-1">
-                This enables favorites, registrations, and personalization across Discover, Calendar, and MyCamps.
+                This enables favorites, registrations, and personalization across Discover,
+                Calendar, and MyCamps.
               </div>
 
               <div className="mt-4">
                 <Button
                   className="w-full"
                   onClick={() => navigate(createPageUrl("Profile"))}
-                  disabled={identityLoading}
+                  disabled={!accountId || identityLoading}
                 >
                   Continue to Profile Setup
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </div>
 
+              {!accountId && (
+                <div className="mt-3 text-xs text-slate-500">
+                  Sign in is required to create a profile.
+                </div>
+              )}
+
               {identityLoading && (
                 <div className="mt-3 text-xs text-slate-500">
                   Loading your profile…
                 </div>
               )}
-
-              <div className="mt-3 text-xs text-slate-500">
-                If you already completed setup and have access, you’ll be redirected to Discover automatically.
-              </div>
             </div>
           </div>
         </Card>
@@ -117,8 +121,8 @@ function PaywallCard({ show, currentYear, demoYear, onUpgrade, onKeepDemo }) {
           </div>
 
           <div className="text-sm text-amber-900/80 mt-1">
-            You’re currently browsing the demo dataset ({demoYear}). Upgrade to access the current season, plus the
-            full planning experience.
+            You’re currently browsing the demo dataset ({demoYear}). Upgrade to
+            access the current season and full planning features.
           </div>
 
           <ul className="mt-3 space-y-1 text-sm text-amber-900/90">
@@ -128,11 +132,11 @@ function PaywallCard({ show, currentYear, demoYear, onUpgrade, onKeepDemo }) {
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4" />
-              Favorites + registrations synced across pages
+              Favorites + registrations
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4" />
-              Calendar overlays for planning
+              Calendar planning overlays
             </li>
           </ul>
 
@@ -146,7 +150,7 @@ function PaywallCard({ show, currentYear, demoYear, onUpgrade, onKeepDemo }) {
           </div>
 
           <div className={cn("text-xs text-amber-900/70 mt-3")}>
-            Access expires at end of the season. Renew yearly to keep current-year camps.
+            Access expires at the end of the season. Renew yearly.
           </div>
         </div>
       </div>
