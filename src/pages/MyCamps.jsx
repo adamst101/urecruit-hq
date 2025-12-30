@@ -12,7 +12,7 @@ import { Badge } from "../components/ui/badge";
 import BottomNav from "../components/navigation/BottomNav";
 import CampCard from "../components/camps/CampCard";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
-import { useCampSummariesClient } from "../hooks/useCampSummariesClient";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
 
 export default function MyCamps() {
   const navigate = useNavigate();
@@ -239,12 +239,8 @@ export default function MyCamps() {
                           s.intent_status === "registered" ||
                           s.intent_status === "completed"
                         }
-                        onFavoriteToggle={() =>
-                          favoriteToggleMutation.mutate(s.camp_id)
-                        }
-                        onClick={() =>
-                          navigate(createPageUrl(`CampDetail?id=${s.camp_id}`))
-                        }
+                        onFavoriteToggle={() => favoriteToggleMutation.mutate(s.camp_id)}
+                        onClick={() => navigate(createPageUrl(`CampDetail?id=${s.camp_id}`))}
                       />
 
                       <div className="mt-2 flex gap-2">
@@ -253,20 +249,14 @@ export default function MyCamps() {
                             <Button
                               variant="outline"
                               className="flex-1"
-                              onClick={() =>
-                                registerMutation.mutate(s.camp_id)
-                              }
+                              onClick={() => registerMutation.mutate(s.camp_id)}
                               disabled={registerMutation.isPending}
                             >
                               Unregister
                             </Button>
                             <Button
                               className="flex-1"
-                              onClick={() =>
-                                navigate(
-                                  createPageUrl(`CampDetail?id=${s.camp_id}`)
-                                )
-                              }
+                              onClick={() => navigate(createPageUrl(`CampDetail?id=${s.camp_id}`))}
                             >
                               Details
                             </Button>
@@ -276,18 +266,14 @@ export default function MyCamps() {
                             <Button
                               variant="outline"
                               className="flex-1"
-                              onClick={() =>
-                                favoriteToggleMutation.mutate(s.camp_id)
-                              }
+                              onClick={() => favoriteToggleMutation.mutate(s.camp_id)}
                               disabled={favoriteToggleMutation.isPending}
                             >
                               Remove Favorite
                             </Button>
                             <Button
                               className="flex-1"
-                              onClick={() =>
-                                registerMutation.mutate(s.camp_id)
-                              }
+                              onClick={() => registerMutation.mutate(s.camp_id)}
                               disabled={registerMutation.isPending}
                             >
                               Register
@@ -308,3 +294,4 @@ export default function MyCamps() {
     </div>
   );
 }
+
