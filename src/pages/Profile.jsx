@@ -40,30 +40,51 @@ export default function Profile() {
   }, [isAuthed, mode, currentYear, demoYear]);
 
   const handleLogout = async () => {
-    setLogoutWorking(true);
+  setLogoutWorking(true);
+  try {
+    // 1) Try all plausible Base44 sign-out APIs (SDKs differ)
+    if (base44?.auth?.signOut) await base44.auth.signOut();
+    else if (base44?.auth?.logout) await base44.auth.logout();
+    else if (base44?.auth?.signout) await base44.auth.signout();
+
+    // 2) Clear react-query cache
     try {
-      // 1) Real sign-out (method name can vary by SDK)
-      if (base44?.auth?.signOut) {
-        await base44.auth.signOut();
-      } else if (base44?.auth?.logout) {
-        await base44.auth.logout();
-      }
-
-      // 2) Clear react-query cache so nothing "sticks"
       queryClient.clear();
+    } catch {}
 
-      // 3) Hard redirect + reload to eliminate stale in-memory session
-      window.location.href = createPageUrl("Home");
-    } catch (e) {
-      // Even if SDK sign-out is weird, force-reset UI state
-      try {
-        queryClient.clear();
-      } catch {}
-      window.location.href = createPageUrl("Home");
-    } finally {
-      setLogoutWorking(false);
-    }
-  };
+    // 3) Clear likely auth storage keys (safe + reversible)
+    try {
+      const keys = Object.keys(localStorage || {});
+      keys.forEach((k) => {
+        const lower = String(k). show (k || "").toLowerCase();
+        if (lower.includes("base44") || lower.includes("auth") || lower.includes("token") || lower.includes("session")) {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch {}
+
+    try {
+      const keys = Object.keys(sessionStorage || {});
+      keys.forEach((k) => {
+        const lower = String(k).toLowerCase();
+        if (lower.includes("base44") || lower.includes("auth") || lower.includes("token") || lower.includes("session")) {
+          sessionStorage.removeItem(k);
+        }
+      });
+    } catch {}
+
+    // 4) Hard redirect with cache-buster
+    const url = createPageUrl("Home") + `?signedout=1&t=${Date.now()}`;
+    window.location.replace(url);
+  } catch (e) {
+    // Even if SDK fails, force-reset UI
+    try { queryClient.clear(); } catch {}
+    const url = createPageUrl("Home") + `?signedout=1&t=${Date.now()}`;
+    window.location.replace(url);
+  } finally {
+    setLogoutWorking(false);
+  }
+};
 
   // Loading
   if (accessLoading || identityLoading) {
