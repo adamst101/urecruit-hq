@@ -11,6 +11,14 @@ import { Card } from "../components/ui/card";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
+/**
+ * Home
+ *
+ * Critical behavior:
+ * - By default, acts as canonical entry router (paid users go to Discover, etc.)
+ * - BUT if `?signedout=1` is present, it must NOT auto-redirect anywhere.
+ *   This prevents logout loops caused by transient/stale auth state.
+ */
 export default function Home() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -18,7 +26,7 @@ export default function Home() {
   const { mode, loading: accessLoading, currentYear, demoYear, accountId } = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // ✅ Escape hatch: if we just signed out, do NOT auto-redirect anywhere.
+  // ✅ Escape hatch: if we just signed out, do NOT auto-route anywhere.
   const signedOut = useMemo(() => {
     const params = new URLSearchParams(location.search || "");
     return params.get("signedout") === "1";
@@ -26,17 +34,17 @@ export default function Home() {
 
   // Canonical entry routing (disabled when signedOut=1)
   useEffect(() => {
-    if (signedOut) return; // ✅ critical: stop auto-routing after logout
+    if (signedOut) return;
     if (accessLoading || identityLoading) return;
 
-    // If signed in + profile:
+    // Signed in + has profile
     if (accountId && athleteProfile) {
       if (mode === "paid") navigate(createPageUrl("Discover"));
       else navigate(createPageUrl("Onboarding"));
       return;
     }
 
-    // If signed in but no profile:
+    // Signed in but no profile
     if (accountId && !athleteProfile) {
       navigate(createPageUrl("Onboarding"));
     }
@@ -44,11 +52,12 @@ export default function Home() {
 
   const handleSignIn = async () => {
     try {
+      // Base44 auth UX varies by project.
+      // If this method isn't available, fallback to Onboarding (often triggers auth UI).
       if (base44?.auth?.signIn) {
         await base44.auth.signIn();
         return;
       }
-      // fallback
       navigate(createPageUrl("Onboarding"));
     } catch (e) {
       navigate(createPageUrl("Onboarding"));
