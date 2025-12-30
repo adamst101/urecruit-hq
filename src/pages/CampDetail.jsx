@@ -1,141 +1,153 @@
-import React from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import React, { useMemo } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+
+import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, MapPin, DollarSign, ExternalLink, Star, CheckCircle, ArrowLeft, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
-import { useNavigate } from 'react-router-dom';
+import {
+  Calendar,
+  MapPin,
+  DollarSign,
+  ExternalLink,
+  Star,
+  CheckCircle,
+  ArrowLeft,
+  Loader2
+} from "lucide-react";
+import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+
+import { useAthleteIdentity } from "@/components/useAthleteIdentity";
+import { useCampSummariesClient } from "@/components/hooks/useCampSummariesClient";
 
 const divisionColors = {
   "D1 (FBS)": "bg-amber-500 text-white",
   "D1 (FCS)": "bg-orange-500 text-white",
-  "D2": "bg-blue-600 text-white",
-  "D3": "bg-emerald-600 text-white",
-  "NAIA": "bg-purple-600 text-white",
-  "JUCO": "bg-slate-600 text-white"
+  D2: "bg-blue-600 text-white",
+  D3: "bg-emerald-600 text-white",
+  NAIA: "bg-purple-600 text-white",
+  JUCO: "bg-slate-600 text-white"
 };
 
 export default function CampDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
   const urlParams = new URLSearchParams(window.location.search);
-  const campId = urlParams.get('id');
+  const campId = urlParams.get("id");
 
-  const { data: camp, isLoading: campLoading } = useQuery({
-    queryKey: ['camp', campId],
-    queryFn: async () => {
-      const camps = await base44.entities.Camp.list();
-      return camps.find(c => c.id === campId);
-    },
-    enabled: !!campId
+  // -----------------------------
+  // Identity (single source of truth)
+  // -----------------------------
+  const {
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError,
+    error: identityErrorObj
+  } = useAthleteIdentity();
+
+  const athleteId = athleteProfile?.id;
+  const athleteSportId = athleteProfile?.sport_id;
+
+  // -----------------------------
+  // Shared read model
+  // -----------------------------
+  const {
+    data: campSummaries = [],
+    isLoading: campsLoading,
+    isError: campsError,
+    error: campsErrorObj
+  } = useCampSummariesClient({
+    athleteId,
+    sportId: athleteSportId,
+    enabled: !!athleteId && !identityLoading && !identityError
   });
 
-  const { data: school } = useQuery({
-    queryKey: ['school', camp?.school_id],
-    queryFn: async () => {
-      const schools = await base44.entities.School.list();
-      return schools.find(s => s.id === camp.school_id);
-    },
-    enabled: !!camp?.school_id
-  });
+  const summary = useMemo(
+    () => campSummaries.find((s) => s.camp_id === campId),
+    [campSummaries, campId]
+  );
 
-  const { data: sport } = useQuery({
-    queryKey: ['sport', camp?.sport_id],
-    queryFn: async () => {
-      const sports = await base44.entities.Sport.list();
-      return sports.find(s => s.id === camp.sport_id);
-    },
-    enabled: !!camp?.sport_id
-  });
-
-  const { data: positions = [] } = useQuery({
-    queryKey: ['positions'],
-    queryFn: () => base44.entities.Position.list()
-  });
-
-  const { data: athleteProfile } = useQuery({
-    queryKey: ['athleteProfile'],
-    queryFn: async () => {
-      const account = await base44.auth.me();
-      if (!account?.id) return null;
-      const profiles = await base44.entities.AthleteProfile.filter({
-        account_id: account.id,
-        active: true
-      });
-      return profiles?.[0] || null;
-    }
-  });
-
-  const { data: campIntent } = useQuery({
-    queryKey: ['campIntent', athleteProfile?.id, campId],
-    queryFn: async () => {
-      if (!athleteProfile) return null;
-      const intents = await base44.entities.CampIntent.filter({
-        athlete_id: athleteProfile.id,
-        camp_id: campId
-      });
-      return intents[0] || null;
-    },
-    enabled: !!athleteProfile && !!campId
-  });
-
+  // -----------------------------
+  // Mutations (write-only)
+  // -----------------------------
   const toggleFavoriteMutation = useMutation({
     mutationFn: async () => {
-      if (!athleteProfile) return;
-      
-      if (campIntent) {
-        if (campIntent.status === 'favorite') {
-          await base44.entities.CampIntent.update(campIntent.id, { status: 'removed' });
-        } else {
-          await base44.entities.CampIntent.update(campIntent.id, { status: 'favorite' });
-        }
-      } else {
+      if (!athleteId || !campId) return;
+
+      const existing = await base44.entities.CampIntent.filter({
+        athlete_id: athleteId,
+        camp_id: campId
+      });
+
+      const intent = existing?.[0] || null;
+
+      if (!intent) {
         await base44.entities.CampIntent.create({
-          athlete_id: athleteProfile.id,
+          athlete_id: athleteId,
           camp_id: campId,
-          status: 'favorite'
+          status: "favorite"
         });
+        return;
+      }
+
+      if (intent.status === "favorite") {
+        await base44.entities.CampIntent.update(intent.id, { status: "removed" });
+      } else if (intent.status !== "registered" && intent.status !== "completed") {
+        await base44.entities.CampIntent.update(intent.id, { status: "favorite" });
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['campIntent'] });
-      queryClient.invalidateQueries({ queryKey: ['myCampsSummaries_client'] });
+      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
     }
   });
 
   const toggleRegistrationMutation = useMutation({
     mutationFn: async () => {
-      if (!athleteProfile) return;
-      
-      if (campIntent) {
-        if (campIntent.status === 'registered') {
-          await base44.entities.CampIntent.update(campIntent.id, { status: 'completed' });
-        } else if (campIntent.status === 'completed') {
-          await base44.entities.CampIntent.update(campIntent.id, { status: 'removed' });
-        } else {
-          await base44.entities.CampIntent.update(campIntent.id, { 
-            status: 'registered',
-            registration_confirmed: true
-          });
-        }
-      } else {
+      if (!athleteId || !campId) return;
+
+      const existing = await base44.entities.CampIntent.filter({
+        athlete_id: athleteId,
+        camp_id: campId
+      });
+
+      const intent = existing?.[0] || null;
+
+      if (!intent) {
         await base44.entities.CampIntent.create({
-          athlete_id: athleteProfile.id,
+          athlete_id: athleteId,
           camp_id: campId,
-          status: 'registered',
+          status: "registered",
+          registration_confirmed: true
+        });
+        return;
+      }
+
+      if (intent.status === "registered") {
+        await base44.entities.CampIntent.update(intent.id, {
+          status: "completed"
+        });
+      } else if (intent.status === "completed") {
+        await base44.entities.CampIntent.update(intent.id, {
+          status: "removed"
+        });
+      } else {
+        await base44.entities.CampIntent.update(intent.id, {
+          status: "registered",
           registration_confirmed: true
         });
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['campIntent'] });
-      queryClient.invalidateQueries({ queryKey: ['myCampsSummaries_client'] });
+      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
     }
   });
 
-  if (campLoading || !camp) {
+  // -----------------------------
+  // Render guards
+  // -----------------------------
+  if (identityLoading || campsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -143,10 +155,30 @@ export default function CampDetail() {
     );
   }
 
-  const campPositions = positions.filter(p => camp.position_ids?.includes(p.id));
-  const isFavorite = campIntent?.status === 'favorite';
-  const isRegistered = campIntent?.status === 'registered' || campIntent?.status === 'completed';
+  if (identityError || campsError) {
+    return (
+      <div className="p-6 text-rose-700">
+        {String(identityErrorObj || campsErrorObj)}
+      </div>
+    );
+  }
 
+  if (!summary) {
+    return (
+      <div className="p-6 text-slate-600">
+        Camp not found or no longer available.
+      </div>
+    );
+  }
+
+  const isFavorite = summary.intent_status === "favorite";
+  const isRegistered =
+    summary.intent_status === "registered" ||
+    summary.intent_status === "completed";
+
+  // -----------------------------
+  // UI
+  // -----------------------------
   return (
     <div className="min-h-screen bg-slate-50 pb-8">
       {/* Header */}
@@ -161,28 +193,30 @@ export default function CampDetail() {
           </button>
 
           <div className="flex items-start gap-4">
-            {school?.logo_url && (
+            {summary.school_logo_url && (
               <img
-                src={school.logo_url}
-                alt={school.school_name}
+                src={summary.school_logo_url}
+                alt={summary.school_name}
                 className="w-16 h-16 rounded-xl object-cover"
               />
             )}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">
-                {school?.division && (
-                  <Badge className={cn("text-xs", divisionColors[school.division])}>
-                    {school.division}
+                {summary.school_division && (
+                  <Badge className={cn("text-xs", divisionColors[summary.school_division])}>
+                    {summary.school_division}
                   </Badge>
                 )}
-                {sport && (
-                  <span className="text-xs text-slate-500 font-medium">{sport.sport_name}</span>
+                {summary.sport_name && (
+                  <span className="text-xs text-slate-500 font-medium">
+                    {summary.sport_name}
+                  </span>
                 )}
               </div>
               <h1 className="text-2xl font-bold text-deep-navy">
-                {school?.school_name || 'Unknown School'}
+                {summary.school_name}
               </h1>
-              <p className="text-slate-600">{camp.camp_name}</p>
+              <p className="text-slate-600">{summary.camp_name}</p>
             </div>
           </div>
         </div>
@@ -196,48 +230,60 @@ export default function CampDetail() {
             <Calendar className="w-5 h-5 text-slate-400 mb-2" />
             <p className="text-xs text-slate-500 uppercase tracking-wide">Date</p>
             <p className="font-semibold text-slate-900">
-              {format(new Date(camp.start_date), 'MMM d, yyyy')}
-              {camp.end_date && camp.end_date !== camp.start_date && (
-                <><br />to {format(new Date(camp.end_date), 'MMM d, yyyy')}</>
-              )}
+              {format(new Date(summary.start_date), "MMM d, yyyy")}
+              {summary.end_date &&
+                summary.end_date !== summary.start_date && (
+                  <>
+                    <br />to {format(new Date(summary.end_date), "MMM d, yyyy")}
+                  </>
+                )}
             </p>
           </div>
 
-          {(camp.city || camp.state) && (
+          {(summary.city || summary.state) && (
             <div className="bg-white rounded-xl p-4">
               <MapPin className="w-5 h-5 text-slate-400 mb-2" />
-              <p className="text-xs text-slate-500 uppercase tracking-wide">Location</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide">
+                Location
+              </p>
               <p className="font-semibold text-slate-900">
-                {camp.city && <>{camp.city}<br /></>}
-                {camp.state}
+                {[summary.city, summary.state].filter(Boolean).join(", ")}
               </p>
             </div>
           )}
 
-          {camp.price && (
+          {summary.price && (
             <div className="bg-white rounded-xl p-4">
               <DollarSign className="w-5 h-5 text-slate-400 mb-2" />
               <p className="text-xs text-slate-500 uppercase tracking-wide">Cost</p>
-              <p className="font-semibold text-slate-900">${camp.price}</p>
+              <p className="font-semibold text-slate-900">
+                ${summary.price}
+              </p>
             </div>
           )}
 
-          {school?.conference && (
+          {summary.school_conference && (
             <div className="bg-white rounded-xl p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Conference</p>
-              <p className="font-semibold text-slate-900">{school.conference}</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">
+                Conference
+              </p>
+              <p className="font-semibold text-slate-900">
+                {summary.school_conference}
+              </p>
             </div>
           )}
         </div>
 
         {/* Positions */}
-        {campPositions.length > 0 && (
+        {summary.position_codes?.length > 0 && (
           <div className="bg-white rounded-xl p-4">
-            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">Positions</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
+              Positions
+            </p>
             <div className="flex flex-wrap gap-2">
-              {campPositions.map((pos) => (
-                <Badge key={pos.id} variant="secondary" className="bg-slate-100">
-                  {pos.position_code} - {pos.position_name}
+              {summary.position_codes.map((code) => (
+                <Badge key={code} variant="secondary" className="bg-slate-100">
+                  {code}
                 </Badge>
               ))}
             </div>
@@ -245,10 +291,12 @@ export default function CampDetail() {
         )}
 
         {/* Notes */}
-        {camp.notes && (
+        {summary.notes && (
           <div className="bg-white rounded-xl p-4">
-            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">About This Camp</p>
-            <p className="text-slate-700 leading-relaxed">{camp.notes}</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
+              About This Camp
+            </p>
+            <p className="text-slate-700 leading-relaxed">{summary.notes}</p>
           </div>
         )}
 
@@ -257,7 +305,11 @@ export default function CampDetail() {
           <div className="flex items-center gap-2 p-4 bg-emerald-50 rounded-xl text-emerald-700">
             <CheckCircle className="w-5 h-5" />
             <span className="font-medium">
-              You're {campIntent.status === 'completed' ? 'completed' : 'registered for'} this camp!
+              You’re{" "}
+              {summary.intent_status === "completed"
+                ? "completed"
+                : "registered"}{" "}
+              for this camp
             </span>
           </div>
         )}
@@ -268,33 +320,38 @@ export default function CampDetail() {
             variant="outline"
             className={cn(
               "w-full",
-              isFavorite && "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100"
+              isFavorite &&
+                "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100"
             )}
             onClick={() => toggleFavoriteMutation.mutate()}
             disabled={toggleFavoriteMutation.isPending}
           >
             <Star className={cn("w-4 h-4 mr-2", isFavorite && "fill-current")} />
-            {isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
+            {isFavorite ? "Remove from Favorites" : "Add to Favorites"}
           </Button>
-          
+
           <Button
             className={cn(
               "w-full",
-              isRegistered 
-                ? "bg-emerald-600 hover:bg-emerald-700" 
+              isRegistered
+                ? "bg-emerald-600 hover:bg-emerald-700"
                 : "bg-electric-blue hover:bg-deep-navy"
             )}
             onClick={() => toggleRegistrationMutation.mutate()}
             disabled={toggleRegistrationMutation.isPending}
           >
-            {campIntent?.status === 'completed' ? 'Mark as Incomplete' : isRegistered ? 'Mark as Completed' : 'Mark as Registered'}
+            {summary.intent_status === "completed"
+              ? "Mark as Incomplete"
+              : isRegistered
+              ? "Mark as Completed"
+              : "Mark as Registered"}
           </Button>
 
-          {camp.link_url && (
+          {summary.link_url && (
             <Button
               variant="outline"
               className="w-full"
-              onClick={() => window.open(camp.link_url, '_blank')}
+              onClick={() => window.open(summary.link_url, "_blank")}
             >
               <ExternalLink className="w-4 h-4 mr-2" />
               Go to Registration Site
