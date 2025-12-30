@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Lock, PlayCircle, UserCircle2 } from "lucide-react";
+import { ArrowRight, Lock, PlayCircle } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -16,7 +16,7 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity";
  * - NEVER auto-redirects
  * - Renders ONE of 3 mutually exclusive states:
  *   1) Paid + profile -> Continue
- *   2) Signed in (but not ready) -> Finish setup / Upgrade
+ *   2) Signed in but not ready -> Finish setup / Upgrade
  *   3) Anonymous -> Demo
  */
 export default function Home() {
@@ -25,7 +25,8 @@ export default function Home() {
 
   const { mode, loading: accessLoading, currentYear, demoYear, accountId } =
     useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
+  const { athleteProfile, isLoading: identityLoading } =
+    useAthleteIdentity();
 
   const signedOut = useMemo(() => {
     const params = new URLSearchParams(location.search || "");
@@ -35,8 +36,7 @@ export default function Home() {
   const logoutLatch = useMemo(() => {
     try {
       const t = Number(localStorage.getItem("logoutAt") || 0);
-      if (!t) return false;
-      return Date.now() - t < 5000;
+      return t && Date.now() - t < 5000;
     } catch {
       return false;
     }
@@ -47,8 +47,9 @@ export default function Home() {
   const isPaid = mode === "paid";
 
   const readyPaid = isAuthed && isPaid && hasProfile;
-  const signedInButNotReady = isAuthed && !readyPaid; // includes unpaid OR no profile
+  const signedInButNotReady = isAuthed && !readyPaid;
 
+  const loading = accessLoading || (isAuthed && identityLoading);
   const showSignedOutNote = signedOut || logoutLatch;
 
   const handleSignIn = async () => {
@@ -63,9 +64,6 @@ export default function Home() {
     }
   };
 
-  // Optional: keep loading states simple
-  const loading = accessLoading || (isAuthed && identityLoading);
-
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 p-4">
@@ -77,59 +75,99 @@ export default function Home() {
     );
   }
 
-  // ✅ Exclusive State 1: Paid + profile complete
   if (readyPaid) {
     return (
-      <PaidHome
-        currentYear={currentYear}
-        showSignedOutNote={showSignedOutNote}
-        onContinue={() => navigate(createPageUrl("Discover"))}
-      />
+      <Shell showSignedOutNote={showSignedOutNote}>
+        <Card className="p-4 border-emerald-200 bg-emerald-50">
+          <div className="font-semibold text-emerald-900">Welcome back</div>
+          <p className="text-sm text-emerald-900/80 mt-1">
+            Your current season ({currentYear}) is ready.
+          </p>
+          <Button
+            className="w-full mt-4"
+            onClick={() => navigate(createPageUrl("Discover"))}
+          >
+            Continue to Discover
+            <ArrowRight className="w-4 h-4 ml-2" />
+          </Button>
+        </Card>
+      </Shell>
     );
   }
 
-  // ✅ Exclusive State 2: Signed in but not ready (unpaid or no profile)
   if (signedInButNotReady) {
     return (
-      <SignedInHome
-        currentYear={currentYear}
-        demoYear={demoYear}
-        isPaid={isPaid}
-        hasProfile={hasProfile}
-        showSignedOutNote={showSignedOutNote}
-        onPrimary={() =>
-          navigate(createPageUrl(isPaid ? "Onboarding" : "Checkout"))
-        }
-        onSecondary={() => navigate(createPageUrl("Discover"))} // demo as fallback
-        onSignIn={handleSignIn}
-      />
+      <Shell showSignedOutNote={showSignedOutNote}>
+        <Card className="p-4 border-amber-200 bg-amber-50">
+          <div className="flex items-start gap-3">
+            <Lock className="w-6 h-6 text-amber-700 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-semibold text-amber-900">
+                {isPaid ? "Finish setup" : "Unlock the current season"}
+              </div>
+              <p className="text-sm text-amber-900/80 mt-1">
+                {isPaid
+                  ? "Complete your athlete profile to personalize camps."
+                  : `Upgrade to access current-year camps (${currentYear}).`}
+              </p>
+
+              <Button
+                className="w-full mt-4"
+                onClick={() =>
+                  navigate(createPageUrl(isPaid ? "Onboarding" : "Checkout"))
+                }
+              >
+                {isPaid ? "Complete Setup" : "Upgrade / Subscribe"}
+              </Button>
+
+              <button
+                className="mt-3 w-full text-sm underline"
+                onClick={() => navigate(createPageUrl("Discover"))}
+              >
+                Browse demo ({demoYear}) instead
+              </button>
+            </div>
+          </div>
+        </Card>
+      </Shell>
     );
   }
 
-  // ✅ Exclusive State 3: Anonymous / demo
   return (
-    <AnonymousHome
-      currentYear={currentYear}
-      demoYear={demoYear}
-      showSignedOutNote={showSignedOutNote}
-      onDemo={() => navigate(createPageUrl("Discover"))}
-      onSignIn={handleSignIn}
-      onUpgrade={() => navigate(createPageUrl("Onboarding"))}
-    />
+    <Shell showSignedOutNote={showSignedOutNote}>
+      <Card className="p-4">
+        <div className="flex items-start gap-3">
+          <PlayCircle className="w-6 h-6 text-slate-700 mt-0.5" />
+          <div className="flex-1">
+            <div className="font-semibold text-deep-navy">Try the demo</div>
+            <p className="text-sm text-slate-600 mt-1">
+              Browse last year’s camps ({demoYear}).
+            </p>
+
+            <Button
+              className="w-full mt-4"
+              onClick={() => navigate(createPageUrl("Discover"))}
+            >
+              Try Demo
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+
+            <button
+              className="mt-4 w-full text-sm underline"
+              onClick={handleSignIn}
+            >
+              Sign in for current season ({currentYear})
+            </button>
+          </div>
+        </div>
+      </Card>
+    </Shell>
   );
 }
 
-/* -------------------------
-   State components
--------------------------- */
+/* ---------- Shared layout ---------- */
 
-function Shell({
-  children,
-  showSignedOutNote
-}: {
-  children: React.ReactNode;
-  showSignedOutNote: boolean;
-}) {
+function Shell({ children, showSignedOutNote }) {
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-md mx-auto space-y-4 pt-8">
@@ -142,157 +180,13 @@ function Shell({
             <p className="text-sm text-slate-600 mt-3">You’re signed out.</p>
           )}
         </div>
+
         {children}
+
         <div className="text-xs text-slate-500 text-center pt-2">
           Demo = last year’s dataset. Paid = current year. Renews annually.
         </div>
       </div>
     </div>
-  );
-}
-
-function PaidHome({
-  currentYear,
-  showSignedOutNote,
-  onContinue
-}: {
-  currentYear: number | string;
-  showSignedOutNote: boolean;
-  onContinue: () => void;
-}) {
-  return (
-    <Shell showSignedOutNote={showSignedOutNote}>
-      <Card className="p-4 border-emerald-200 bg-emerald-50">
-        <div className="flex items-start gap-3">
-          <ArrowRight className="w-6 h-6 text-emerald-700 mt-0.5" />
-          <div className="flex-1">
-            <div className="font-semibold text-emerald-900">Welcome back</div>
-            <div className="text-sm text-emerald-900/80 mt-1">
-              Your current season ({currentYear}) planning is ready.
-            </div>
-            <div className="mt-4">
-              <Button className="w-full" onClick={onContinue}>
-                Continue to Discover
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </Card>
-    </Shell>
-  );
-}
-
-function SignedInHome({
-  currentYear,
-  demoYear,
-  isPaid,
-  hasProfile,
-  showSignedOutNote,
-  onPrimary,
-  onSecondary
-}: {
-  currentYear: number | string;
-  demoYear: number | string;
-  isPaid: boolean;
-  hasProfile: boolean;
-  showSignedOutNote: boolean;
-  onPrimary: () => void;
-  onSecondary: () => void;
-  onSignIn: () => void; // not used here, but kept if you want it later
-}) {
-  const title = !isPaid
-    ? "Unlock the current season"
-    : !hasProfile
-      ? "Finish your athlete profile"
-      : "Continue setup";
-
-  const body = !isPaid
-    ? `Upgrade to access current-year camps (${currentYear}) and planning features.`
-    : !hasProfile
-      ? "Create your athlete profile to enable favorites, calendar overlays, and personalized filtering."
-      : "Complete setup to personalize your experience.";
-
-  const primaryLabel = !isPaid ? "Upgrade / Subscribe" : "Complete Setup";
-  const secondaryLabel = `Browse demo (${demoYear}) instead`;
-
-  return (
-    <Shell showSignedOutNote={showSignedOutNote}>
-      <Card className="p-4 border-amber-200 bg-amber-50">
-        <div className="flex items-start gap-3">
-          <Lock className="w-6 h-6 text-amber-700 mt-0.5" />
-          <div className="flex-1">
-            <div className="font-semibold text-amber-900">{title}</div>
-            <div className="text-sm text-amber-900/80 mt-1">{body}</div>
-
-            <div className="mt-4 space-y-2">
-              <Button className="w-full" onClick={onPrimary}>
-                {primaryLabel}
-              </Button>
-              <button
-                className="w-full text-sm text-slate-700 underline hover:text-slate-900"
-                onClick={onSecondary}
-              >
-                {secondaryLabel}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Card>
-    </Shell>
-  );
-}
-
-function AnonymousHome({
-  currentYear,
-  demoYear,
-  showSignedOutNote,
-  onDemo,
-  onSignIn,
-  onUpgrade
-}: {
-  currentYear: number | string;
-  demoYear: number | string;
-  showSignedOutNote: boolean;
-  onDemo: () => void;
-  onSignIn: () => void;
-  onUpgrade: () => void;
-}) {
-  return (
-    <Shell showSignedOutNote={showSignedOutNote}>
-      <Card className="p-4">
-        <div className="flex items-start gap-3">
-          <PlayCircle className="w-6 h-6 text-slate-700 mt-0.5" />
-          <div className="flex-1">
-            <div className="font-semibold text-deep-navy">Try the demo</div>
-            <div className="text-sm text-slate-600 mt-1">
-              Browse last year’s camps ({demoYear}) with Discover + Calendar.
-            </div>
-            <div className="mt-4">
-              <Button className="w-full" onClick={onDemo}>
-                Try Demo
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </div>
-
-            <div className="mt-3 text-center text-sm text-slate-600">
-              Want current-year camps ({currentYear})?
-            </div>
-
-            <div className="mt-3 space-y-2">
-              <Button className="w-full" onClick={onUpgrade}>
-                Unlock Current Season
-              </Button>
-              <button
-                className="w-full text-sm text-slate-700 underline hover:text-slate-900"
-                onClick={onSignIn}
-              >
-                Sign in
-              </button>
-            </div>
-          </div>
-        </div>
-      </Card>
-    </Shell>
   );
 }
