@@ -1,8 +1,6 @@
 import React, { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
-import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
 
 import { Button } from "../components/ui/button";
@@ -28,6 +26,7 @@ import {
 } from "date-fns";
 
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
 
 export default function Calendar() {
   const navigate = useNavigate();
@@ -56,101 +55,17 @@ export default function Calendar() {
   const athleteSportId = clean(athleteProfile?.sport_id);
 
   // -----------------------------
-  // Client-side summaries adapter (hook must ALWAYS run)
-  // Mirrors MyCamps exactly; uses enabled flag to defer until athleteId exists.
+  // Shared read model (single source of truth)
   // -----------------------------
   const {
     data: campSummaries = [],
     isLoading: campsLoading,
     isError: campsError,
     error: campsErrorObj
-  } = useQuery({
-    queryKey: ["myCampsSummaries_client", athleteId, athleteSportId],
-    enabled: !!athleteId && !identityLoading && !identityError,
-    retry: false,
-    queryFn: async () => {
-      const payload = {
-        athlete_id: athleteId,
-        sport_id: athleteSportId,
-        limit: 500
-      };
-
-      // Camps (optionally by sport)
-      const campQuery = {};
-      if (payload.sport_id) campQuery.sport_id = payload.sport_id;
-
-      const camps = await base44.entities.Camp.filter(
-        campQuery,
-        "-start_date",
-        payload.limit || 500
-      );
-
-      // Batch join: School / Sport / Position
-      const schoolIds = [...new Set(camps.map((c) => c.school_id).filter(Boolean))];
-      const sportIds = [...new Set(camps.map((c) => c.sport_id).filter(Boolean))];
-
-      const [schools, sports, positions] = await Promise.all([
-        schoolIds.length
-          ? base44.entities.School.filter({ id: { $in: schoolIds } })
-          : Promise.resolve([]),
-        sportIds.length
-          ? base44.entities.Sport.filter({ id: { $in: sportIds } })
-          : Promise.resolve([]),
-        base44.entities.Position.list()
-      ]);
-
-      const schoolMap = Object.fromEntries(schools.map((s) => [s.id, s]));
-      const sportMap = Object.fromEntries(sports.map((s) => [s.id, s]));
-      const positionMap = Object.fromEntries(positions.map((p) => [p.id, p]));
-
-      // Athlete-specific: CampIntent + TargetSchool
-      const [intents, targets] = await Promise.all([
-        base44.entities.CampIntent.filter({ athlete_id: payload.athlete_id }),
-        base44.entities.TargetSchool.filter({ athlete_id: payload.athlete_id })
-      ]);
-
-      const intentMap = Object.fromEntries(intents.map((i) => [i.camp_id, i]));
-      const targetSchoolIds = new Set(targets.map((t) => t.school_id));
-
-      // Summaries
-      return camps.map((camp) => {
-        const school = schoolMap[camp.school_id];
-        const sport = sportMap[camp.sport_id];
-        const intent = intentMap[camp.id] || null;
-        const campPositions = (camp.position_ids || [])
-          .map((pid) => positionMap[pid])
-          .filter(Boolean);
-
-        return {
-          camp_id: camp.id,
-          camp_name: camp.camp_name,
-          start_date: camp.start_date,
-          end_date: camp.end_date,
-          price: camp.price,
-          link_url: camp.link_url,
-          notes: camp.notes,
-          city: camp.city,
-          state: camp.state,
-          position_ids: camp.position_ids || [],
-          position_codes: campPositions.map((p) => p.position_code),
-
-          school_id: school?.id,
-          school_name: school?.school_name,
-          school_division: school?.division,
-          school_logo_url: school?.logo_url,
-          school_city: school?.city,
-          school_state: school?.state,
-          school_conference: school?.conference,
-
-          sport_id: sport?.id,
-          sport_name: sport?.sport_name,
-
-          intent_status: intent?.status || null,
-          intent_priority: intent?.priority || null,
-          is_target_school: targetSchoolIds.has(camp.school_id)
-        };
-      });
-    }
+  } = useCampSummariesClient({
+    athleteId,
+    sportId: athleteSportId,
+    enabled: !!athleteId && !identityLoading && !identityError
   });
 
   // -----------------------------
@@ -250,12 +165,7 @@ export default function Calendar() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Sports</SelectItem>
-              {(sportFilter === "all"
-                ? // if MyCamps filtered by athleteSportId, sports list may be incomplete.
-                  // This calendar still uses the summary-derived sport list when needed:
-                  [...new Map(sortedSummaries.map((s) => [s.sport_id, { id: s.sport_id, sport_name: s.sport_name }])).values()]
-                : [...new Map(sortedSummaries.map((s) => [s.sport_id, { id: s.sport_id, sport_name: s.sport_name }])).values()]
-              )
+              {[...new Map(sortedSummaries.map((s) => [s.sport_id, { id: s.sport_id, sport_name: s.sport_name }])).values()]
                 .filter((s) => s?.id)
                 .map((s) => (
                   <SelectItem key={s.id} value={s.id}>
