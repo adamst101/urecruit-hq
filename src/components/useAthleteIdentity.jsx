@@ -10,10 +10,11 @@ import { useSeasonAccess } from "./hooks/useSeasonAccess";
  * HARDENING GOALS:
  * 1) If user is logged out (no accountId), return athleteProfile = null immediately.
  * 2) Prevent stale athleteProfile from a previous session from surviving a render cycle.
- * 3) Ensure the query is keyed by accountId and disabled when logged out.
+ * 3) Scope identity by accountId and only fetch when authenticated.
+ * 4) Enforce active profile (active: true) to avoid ghost/disabled profiles.
  *
  * Query key (scoped by account):
- * ["athleteIdentity", accountId]
+ *   ["athleteIdentity", accountId]
  */
 export function useAthleteIdentity() {
   const queryClient = useQueryClient();
@@ -28,7 +29,7 @@ export function useAthleteIdentity() {
     // Remove cached identity queries so nothing stale can leak into UI
     queryClient.removeQueries({ queryKey: ["athleteIdentity"], exact: false });
 
-    // Also optionally remove any older keys you may have used in prior iterations
+    // Also remove older legacy keys if they exist from prior iterations
     queryClient.removeQueries({ queryKey: ["athleteProfile"], exact: false });
     queryClient.removeQueries({ queryKey: ["getAthleteProfile"], exact: false });
   }, [isAuthed, queryClient]);
@@ -39,14 +40,10 @@ export function useAthleteIdentity() {
     retry: false,
     staleTime: 0,
     queryFn: async () => {
-      /**
-       * IMPORTANT:
-       * We want athlete profile tied to the currently authenticated account.
-       * This assumes AthleteProfile has an account_id field.
-       * If your field is named differently (user_id, owner_id), change the filter below.
-       */
+      // AthleteProfile is linked to auth by account_id per your schema.
       const profiles = await base44.entities.AthleteProfile.filter({
-        account_id: accountId
+        account_id: accountId,
+        active: true
       });
 
       const profile = Array.isArray(profiles) ? profiles[0] : null;
@@ -55,7 +52,7 @@ export function useAthleteIdentity() {
   });
 
   // ✅ If logged out, force a stable "logged out" identity response
-  const safe = useMemo(() => {
+  return useMemo(() => {
     if (!isAuthed) {
       return {
         athleteProfile: null,
@@ -72,6 +69,4 @@ export function useAthleteIdentity() {
       error: query.error
     };
   }, [isAuthed, query.data, query.isLoading, query.isError, query.error]);
-
-  return safe;
 }
