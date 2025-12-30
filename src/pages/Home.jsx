@@ -1,43 +1,57 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ArrowRight, Lock, PlayCircle, Loader2 } from "lucide-react";
+import React, { useEffect, useMemo } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ArrowRight, Lock, PlayCircle, UserCircle2 } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
 
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
-/**
- * Home
- * Marketing-style landing page.
- *
- * Intentional behavior:
- * - Do NOT show "Welcome back" or any session-aware UI.
- * - Even if the user is already authenticated, keep the landing page clean.
- * - Users choose: Try Demo or Sign In / Continue or Upgrade.
- */
 export default function Home() {
   const navigate = useNavigate();
-  const { loading: accessLoading, currentYear, demoYear } = useSeasonAccess();
+  const location = useLocation();
 
-  const [authWorking, setAuthWorking] = useState(false);
+  const { mode, loading: accessLoading, currentYear, demoYear, accountId } = useSeasonAccess();
+  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
+
+  // ✅ Escape hatch: if we just signed out, do NOT auto-redirect anywhere.
+  const signedOut = useMemo(() => {
+    const params = new URLSearchParams(location.search || "");
+    return params.get("signedout") === "1";
+  }, [location.search]);
+
+  // Canonical entry routing (disabled when signedOut=1)
+  useEffect(() => {
+    if (signedOut) return; // ✅ critical: stop auto-routing after logout
+    if (accessLoading || identityLoading) return;
+
+    // If signed in + profile:
+    if (accountId && athleteProfile) {
+      if (mode === "paid") navigate(createPageUrl("Discover"));
+      else navigate(createPageUrl("Onboarding"));
+      return;
+    }
+
+    // If signed in but no profile:
+    if (accountId && !athleteProfile) {
+      navigate(createPageUrl("Onboarding"));
+    }
+  }, [signedOut, accessLoading, identityLoading, accountId, athleteProfile, mode, navigate]);
 
   const handleSignIn = async () => {
-    setAuthWorking(true);
     try {
-      // Base44 auth varies; this is the best-known default.
-      await base44.auth.signIn();
-      // After sign-in, send to onboarding hub (profile + paywall)
+      if (base44?.auth?.signIn) {
+        await base44.auth.signIn();
+        return;
+      }
+      // fallback
       navigate(createPageUrl("Onboarding"));
     } catch (e) {
-      // Fallback: Onboarding (often triggers auth UI)
       navigate(createPageUrl("Onboarding"));
-    } finally {
-      setAuthWorking(false);
     }
   };
 
@@ -50,10 +64,11 @@ export default function Home() {
             Plan and compare college camps across the recruiting calendar — before you commit.
           </p>
 
-          <div className="mt-3 flex gap-2">
-            <Badge className="bg-slate-900 text-white">Demo: {demoYear}</Badge>
-            <Badge className="bg-emerald-600 text-white">Current: {currentYear}</Badge>
-          </div>
+          {signedOut && (
+            <p className="text-sm text-slate-600 mt-3">
+              You’re signed out.
+            </p>
+          )}
         </div>
 
         <Card className="p-4">
@@ -83,31 +98,28 @@ export default function Home() {
                 Upgrade to access current-year camps ({currentYear}) and planning features.
               </div>
               <div className="mt-4 space-y-2">
-                <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))} disabled={accessLoading}>
-                  {accessLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Loading…
-                    </>
-                  ) : (
-                    "Upgrade"
-                  )}
+                <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
+                  Upgrade
                 </Button>
+                <Button variant="outline" className="w-full" onClick={handleSignIn}>
+                  Sign In / Continue
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
 
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleSignIn}
-                  disabled={authWorking}
-                >
-                  {authWorking ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Signing in…
-                    </>
-                  ) : (
-                    "Sign In / Continue"
-                  )}
+        <Card className="p-4">
+          <div className="flex items-start gap-3">
+            <UserCircle2 className="w-6 h-6 text-slate-700 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-semibold text-deep-navy">Already have an account?</div>
+              <div className="text-sm text-slate-600 mt-1">
+                Sign in to manage favorites, registrations, and your camp calendar.
+              </div>
+              <div className="mt-4">
+                <Button variant="outline" className="w-full" onClick={handleSignIn}>
+                  Sign In
                 </Button>
               </div>
             </div>
