@@ -1,17 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
-import { 
-  format, 
-  startOfMonth, 
-  endOfMonth, 
-  eachDayOfInterval, 
-  isSameMonth, 
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  isSameMonth,
   isSameDay,
   addMonths,
   subMonths,
@@ -23,29 +21,86 @@ import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 
+/**
+ * IMPORTANT:
+ * Update these import paths to EXACTLY match MyCamps.
+ * Calendar must use the same hooks + read model as MyCamps.
+ */
+import { useAthleteIdentity } from '@/hooks/useAthleteIdentity';
+import { useCampIntents } from '@/hooks/useCampIntents';
+import { useCamps } from '@/hooks/useCamps';
+import { useSchools } from '@/hooks/useSchools';
+import { useSports } from '@/hooks/useSports';
+
+type CampSummary = {
+  camp_id: string;
+  camp_name?: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  intent_status?: string;
+  school_name?: string;
+  sport_id?: string;
+  sport_name?: string;
+};
+
 export default function Calendar() {
   const navigate = useNavigate();
+
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [sportFilter, setSportFilter] = useState('all');
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [sportFilter, setSportFilter] = useState<string>('all');
 
-  const { data: athleteProfile } = useQuery({
-    queryKey: ['athleteProfile'],
-    queryFn: () => base44.functions.getAthleteProfile()
-  });
+  // Single source of truth for identity (same as MyCamps)
+  const {
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError
+  } = useAthleteIdentity();
 
-  const { data: sports = [] } = useQuery({
-    queryKey: ['sports'],
-    queryFn: () => base44.entities.Sport.list()
-  });
+  // Entity data (same composition model as MyCamps)
+  const { campIntents = [] } = useCampIntents(athleteProfile?.id);
+  const { camps = [] } = useCamps();
+  const { schools = [] } = useSchools();
+  const { sports = [] } = useSports();
 
-  const { data: campSummaries = [] } = useQuery({
-    queryKey: ['campSummaries', athleteProfile?.id],
-    queryFn: () => base44.functions.getCampSummaries({
-      athlete_id: athleteProfile?.id
-    }),
-    enabled: !!athleteProfile
-  });
+  // Client-side summary composition (CampIntent + Camp + School + Sport)
+  const campSummaries: CampSummary[] = useMemo(() => {
+    if (!athleteProfile) return [];
+
+    return (campIntents || [])
+      .map((intent: any) => {
+        const camp = (camps || []).find((c: any) => c.id === intent.camp_id);
+        if (!camp) return null;
+
+        const school = (schools || []).find((s: any) => s.id === camp.school_id);
+        const sport = (sports || []).find((s: any) => s.id === camp.sport_id);
+
+        return {
+          camp_id: camp.id,
+          camp_name: camp.name ?? camp.camp_name ?? camp.title ?? '',
+          start_date: camp.start_date ?? camp.startDate ?? null,
+          end_date: camp.end_date ?? camp.endDate ?? null,
+          intent_status: intent.status ?? intent.intent_status ?? '',
+          school_name: school?.name ?? school?.school_name ?? '',
+          sport_id: sport?.id ?? camp.sport_id,
+          sport_name: sport?.sport_name ?? sport?.name ?? ''
+        } as CampSummary;
+      })
+      .filter(Boolean) as CampSummary[];
+  }, [athleteProfile, campIntents, camps, schools, sports]);
+
+  // Loading/guard rails (no hook-order risk)
+  if (identityLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  if (identityError || !athleteProfile) {
+    return null;
+  }
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -54,7 +109,9 @@ export default function Calendar() {
   const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
 
   const { registeredCamps, favoriteCamps } = useMemo(() => {
-    let registered = campSummaries.filter(s => s.intent_status === 'registered' || s.intent_status === 'completed');
+    let registered = campSummaries.filter(
+      s => s.intent_status === 'registered' || s.intent_status === 'completed'
+    );
     let favorite = campSummaries.filter(s => s.intent_status === 'favorite');
 
     if (sportFilter !== 'all') {
@@ -65,14 +122,16 @@ export default function Calendar() {
     return { registeredCamps: registered, favoriteCamps: favorite };
   }, [campSummaries, sportFilter]);
 
-  const getCampsForDay = (date) => {
+  const getCampsForDay = (date: Date) => {
     const registered = registeredCamps.filter(summary => {
+      if (!summary.start_date) return false;
       const start = new Date(summary.start_date);
       const end = summary.end_date ? new Date(summary.end_date) : start;
       return date >= start && date <= end;
     });
-    
+
     const favorite = favoriteCamps.filter(summary => {
+      if (!summary.start_date) return false;
       const start = new Date(summary.start_date);
       const end = summary.end_date ? new Date(summary.end_date) : start;
       return date >= start && date <= end;
@@ -83,7 +142,7 @@ export default function Calendar() {
     return { registered, favorite, hasConflict };
   };
 
-  const handleDateClick = (date) => {
+  const handleDateClick = (date: Date) => {
     const { registered, favorite } = getCampsForDay(date);
     if (registered.length > 0 || favorite.length > 0) {
       setSelectedDate(date);
@@ -92,21 +151,13 @@ export default function Calendar() {
 
   const selectedDateCamps = selectedDate ? getCampsForDay(selectedDate) : null;
 
-  if (!athleteProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       {/* Header */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-md mx-auto p-4">
           <h1 className="text-2xl font-bold text-deep-navy mb-4">Camp Calendar</h1>
-          
+
           {/* Sport Filter */}
           <Select value={sportFilter} onValueChange={setSportFilter}>
             <SelectTrigger>
@@ -114,8 +165,10 @@ export default function Calendar() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Sports</SelectItem>
-              {sports.map(sport => (
-                <SelectItem key={sport.id} value={sport.id}>{sport.sport_name}</SelectItem>
+              {sports.map((sport: any) => (
+                <SelectItem key={sport.id} value={sport.id}>
+                  {sport.sport_name ?? sport.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -192,15 +245,17 @@ export default function Calendar() {
                     !hasCamps && "cursor-default"
                   )}
                 >
-                  <div className={cn(
-                    "text-sm font-medium mb-1",
-                    isToday && "text-electric-blue font-bold",
-                    !isCurrentMonth && "text-slate-400",
-                    isCurrentMonth && !isToday && "text-slate-700"
-                  )}>
+                  <div
+                    className={cn(
+                      "text-sm font-medium mb-1",
+                      isToday && "text-electric-blue font-bold",
+                      !isCurrentMonth && "text-slate-400",
+                      isCurrentMonth && !isToday && "text-slate-700"
+                    )}
+                  >
                     {format(day, 'd')}
                   </div>
-                  
+
                   <div className="space-y-0.5">
                     {registered.length > 0 && (
                       <div className="w-full h-1.5 bg-emerald-500 rounded-full" />
@@ -223,9 +278,7 @@ export default function Calendar() {
       <Sheet open={!!selectedDate} onOpenChange={() => setSelectedDate(null)}>
         <SheetContent side="bottom" className="h-[60vh] overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>
-              {selectedDate && format(selectedDate, 'MMMM d, yyyy')}
-            </SheetTitle>
+            <SheetTitle>{selectedDate && format(selectedDate, 'MMMM d, yyyy')}</SheetTitle>
           </SheetHeader>
 
           {selectedDateCamps && (
@@ -233,7 +286,9 @@ export default function Calendar() {
               {selectedDateCamps.hasConflict && (
                 <div className="flex items-center gap-2 p-3 bg-red-50 rounded-lg text-red-700">
                   <AlertCircle className="w-5 h-5" />
-                  <span className="text-sm font-medium">Schedule Conflict - Multiple camps on this date</span>
+                  <span className="text-sm font-medium">
+                    Schedule Conflict - Multiple camps on this date
+                  </span>
                 </div>
               )}
 
@@ -265,7 +320,9 @@ export default function Calendar() {
                   className="w-full text-left p-4 bg-white border-2 border-dashed border-rose-300 rounded-xl hover:bg-rose-50 transition-colors"
                 >
                   <div className="flex items-center gap-2 mb-1">
-                    <Badge variant="outline" className="text-rose-600 border-rose-300 text-xs">Favorite</Badge>
+                    <Badge variant="outline" className="text-rose-600 border-rose-300 text-xs">
+                      Favorite
+                    </Badge>
                     <span className="text-xs text-slate-500">{summary.sport_name}</span>
                   </div>
                   <h3 className="font-semibold text-deep-navy">{summary.school_name}</h3>
