@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Lock, PlayCircle, UserCircle2, Loader2 } from "lucide-react";
+import { ArrowRight, Lock, PlayCircle, Loader2 } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -10,55 +10,31 @@ import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
-import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
 /**
  * Home
- * Base44 convention route: /Home (and often "/")
+ * Marketing-style landing page.
  *
- * IMPORTANT:
- * - This page should NOT auto-redirect.
- * - It should be a true landing page with explicit CTAs.
+ * Intentional behavior:
+ * - Do NOT show "Welcome back" or any session-aware UI.
+ * - Even if the user is already authenticated, keep the landing page clean.
+ * - Users choose: Try Demo or Sign In / Continue or Upgrade.
  */
 export default function Home() {
   const navigate = useNavigate();
-  const { mode, loading: accessLoading, currentYear, demoYear, accountId } = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
+  const { loading: accessLoading, currentYear, demoYear } = useSeasonAccess();
 
   const [authWorking, setAuthWorking] = useState(false);
-  const loading = accessLoading || identityLoading;
-
-  // Determine the best "continue" target WITHOUT auto-navigation
-  const continueTarget = useMemo(() => {
-    // Not signed in: we don't have a "continue" target
-    if (!accountId) return null;
-
-    // Signed in, no profile -> complete onboarding/profile
-    if (!athleteProfile) return "Onboarding";
-
-    // Signed in + profile:
-    // paid -> Discover
-    if (mode === "paid") return "Discover";
-
-    // unpaid -> Onboarding (paywall hub)
-    return "Onboarding";
-  }, [accountId, athleteProfile, mode]);
-
-  const continueLabel = useMemo(() => {
-    if (!accountId) return null;
-    if (!athleteProfile) return "Complete Setup";
-    if (mode === "paid") return "Continue";
-    return "Upgrade / Manage Access";
-  }, [accountId, athleteProfile, mode]);
 
   const handleSignIn = async () => {
     setAuthWorking(true);
     try {
-      // Base44 auth may vary; this is the best-known default
+      // Base44 auth varies; this is the best-known default.
       await base44.auth.signIn();
-      // after sign in, Home will re-render and show Continue
+      // After sign-in, send to onboarding hub (profile + paywall)
+      navigate(createPageUrl("Onboarding"));
     } catch (e) {
-      // Fallback: take them to Onboarding (often triggers auth UI)
+      // Fallback: Onboarding (often triggers auth UI)
       navigate(createPageUrl("Onboarding"));
     } finally {
       setAuthWorking(false);
@@ -77,52 +53,8 @@ export default function Home() {
           <div className="mt-3 flex gap-2">
             <Badge className="bg-slate-900 text-white">Demo: {demoYear}</Badge>
             <Badge className="bg-emerald-600 text-white">Current: {currentYear}</Badge>
-            {accountId && (
-              <Badge className={mode === "paid" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}>
-                {mode === "paid" ? "Paid Access" : "Demo Mode"}
-              </Badge>
-            )}
           </div>
         </div>
-
-        {/* If signed in, show a Continue button (but do NOT auto-redirect) */}
-        {accountId && (
-          <Card className="p-4">
-            <div className="flex items-start gap-3">
-              <UserCircle2 className="w-6 h-6 text-slate-700 mt-0.5" />
-              <div className="flex-1">
-                <div className="font-semibold text-deep-navy">Welcome back</div>
-                <div className="text-sm text-slate-600 mt-1">
-                  {athleteProfile
-                    ? mode === "paid"
-                      ? "You have access to the current season."
-                      : "You’re signed in, but you haven’t unlocked the current season yet."
-                    : "Finish setup to personalize camps and enable favorites/registrations."}
-                </div>
-
-                <div className="mt-4">
-                  <Button
-                    className="w-full"
-                    onClick={() => navigate(createPageUrl(continueTarget || "Onboarding"))}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Loading…
-                      </>
-                    ) : (
-                      <>
-                        {continueLabel}
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </Card>
-        )}
 
         <Card className="p-4">
           <div className="flex items-start gap-3">
@@ -151,9 +83,17 @@ export default function Home() {
                 Upgrade to access current-year camps ({currentYear}) and planning features.
               </div>
               <div className="mt-4 space-y-2">
-                <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
-                  Upgrade
+                <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))} disabled={accessLoading}>
+                  {accessLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Loading…
+                    </>
+                  ) : (
+                    "Upgrade"
+                  )}
                 </Button>
+
                 <Button
                   variant="outline"
                   className="w-full"
