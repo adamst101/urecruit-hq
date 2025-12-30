@@ -39,7 +39,7 @@ export default function Discover() {
     error: profileErrorObj
   } = useQuery({
     queryKey: ['athleteProfile'],
-    queryFn: () => base44.functions.getAthleteProfile(),
+    queryFn: () => base44.auth.me(),
     retry: false
   });
 
