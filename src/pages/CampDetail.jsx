@@ -101,7 +101,7 @@ export default function CampDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campIntent'] });
-      queryClient.invalidateQueries({ queryKey: ['campSummaries'] });
+      queryClient.invalidateQueries({ queryKey: ['myCampsSummaries_client'] });
     }
   });
 
@@ -131,7 +131,7 @@ export default function CampDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campIntent'] });
-      queryClient.invalidateQueries({ queryKey: ['campSummaries'] });
+      queryClient.invalidateQueries({ queryKey: ['myCampsSummaries_client'] });
     }
   });
 
