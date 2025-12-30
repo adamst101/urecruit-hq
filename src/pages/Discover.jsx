@@ -17,7 +17,7 @@ export default function Discover() {
   const [filters, setFilters] = useState({});
   const [showFilters, setShowFilters] = useState(false);
 
-  const { data: athleteProfile } = useQuery({
+  const { data: athleteProfile, isLoading: profileLoading } = useQuery({
     queryKey: ['athleteProfile'],
     queryFn: () => base44.functions.getAthleteProfile()
   });
@@ -98,6 +98,14 @@ export default function Discover() {
   const handleClearFilters = () => {
     setFilters({ sport: athleteProfile?.sport_id });
   };
+
+  if (profileLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
 
   if (!athleteProfile) {
     return (
