@@ -1,20 +1,3 @@
-const signedOut = useMemo(() => {
-  const params = new URLSearchParams(location.search || "");
-  return params.get("signedout") === "1";
-}, [location.search]);
-
-const logoutLatch =
-  Date.now() - Number(localStorage.getItem("logoutAt") || 0) < 5000;
-
-if (signedOut || logoutLatch) {
-  // ⛔ HARD STOP: no redirects, no auth logic
-  return (
-    <div className="min-h-screen bg-slate-50 p-4">
-      {/* existing Home JSX */}
-    </div>
-  );
-}
-
 import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, Lock, PlayCircle, UserCircle2 } from "lucide-react";
@@ -32,40 +15,74 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity";
  * Home
  *
  * Critical behavior:
- * - By default, acts as canonical entry router (paid users go to Discover, etc.)
- * - BUT if `?signedout=1` is present, it must NOT auto-redirect anywhere.
- *   This prevents logout loops caused by transient/stale auth state.
+ * - Canonical entry router (paid users can be routed to Discover)
+ * - MUST NOT auto-redirect if:
+ *   - ?signedout=1 is present OR
+ *   - logout latch is active (recent logout timestamp)
+ *
+ * This prevents logout loops + Base44 stale session transitions.
  */
 export default function Home() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { mode, loading: accessLoading, currentYear, demoYear, accountId } = useSeasonAccess();
+  const { mode, loading: accessLoading, currentYear, demoYear, accountId } =
+    useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // ✅ Escape hatch: if we just signed out, do NOT auto-route anywhere.
+  // ✅ URL param escape hatch: if we just signed out, do NOT auto-route anywhere.
   const signedOut = useMemo(() => {
     const params = new URLSearchParams(location.search || "");
     return params.get("signedout") === "1";
   }, [location.search]);
 
-  // Canonical entry routing (disabled when signedOut=1)
+  // ✅ Logout latch (optional but strongly recommended):
+  // Profile logout should set localStorage.setItem("logoutAt", String(Date.now()))
+  // We honor it here to avoid any redirect during auth/session lag.
+  const logoutLatch = useMemo(() => {
+    try {
+      const t = Number(localStorage.getItem("logoutAt") || 0);
+      if (!t) return false;
+      return Date.now() - t < 5000; // 5 seconds
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // ✅ HARD STOP RENDER GUARD:
+  // If signed out (param) OR latch is active, render Home and skip all routing logic.
+  // IMPORTANT: We still define hooks above; we simply skip redirect effect below.
+  const blockAutoRoute = signedOut || logoutLatch;
+
+  // Canonical entry routing (disabled when signedout/latch is active)
   useEffect(() => {
-    if (signedOut) return;
+    if (blockAutoRoute) return;
     if (accessLoading || identityLoading) return;
 
-    // Signed in + has profile
+    // Only auto-route when we are confidently authenticated AND have a profile loaded.
+    // This reduces the chance of "stale identity" causing an unintended redirect.
     if (accountId && athleteProfile) {
-      if (mode === "paid") navigate(createPageUrl("Discover"));
-      else navigate(createPageUrl("Onboarding"));
+      if (mode === "paid") {
+        navigate(createPageUrl("Discover"), { replace: true });
+      } else {
+        navigate(createPageUrl("Onboarding"), { replace: true });
+      }
       return;
     }
 
-    // Signed in but no profile
+    // If authenticated but missing profile, route to Onboarding (setup)
     if (accountId && !athleteProfile) {
-      navigate(createPageUrl("Onboarding"));
+      navigate(createPageUrl("Onboarding"), { replace: true });
     }
-  }, [signedOut, accessLoading, identityLoading, accountId, athleteProfile, mode, navigate]);
+  }, [
+    blockAutoRoute,
+    accessLoading,
+    identityLoading,
+    accountId,
+    athleteProfile,
+    mode,
+    navigate
+  ]);
 
   const handleSignIn = async () => {
     try {
@@ -87,13 +104,12 @@ export default function Home() {
         <div>
           <h1 className="text-3xl font-bold text-deep-navy">RecruitMe</h1>
           <p className="text-slate-600 mt-2">
-            Plan and compare college camps across the recruiting calendar — before you commit.
+            Plan and compare college camps across the recruiting calendar — before
+            you commit.
           </p>
 
-          {signedOut && (
-            <p className="text-sm text-slate-600 mt-3">
-              You’re signed out.
-            </p>
+          {(signedOut || logoutLatch) && (
+            <p className="text-sm text-slate-600 mt-3">You’re signed out.</p>
           )}
         </div>
 
@@ -106,7 +122,10 @@ export default function Home() {
                 Browse last year’s camps ({demoYear}) with Discover + Calendar.
               </div>
               <div className="mt-4">
-                <Button className="w-full" onClick={() => navigate(createPageUrl("Discover"))}>
+                <Button
+                  className="w-full"
+                  onClick={() => navigate(createPageUrl("Discover"))}
+                >
                   Try Demo
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
@@ -119,15 +138,25 @@ export default function Home() {
           <div className="flex items-start gap-3">
             <Lock className="w-6 h-6 text-amber-700 mt-0.5" />
             <div className="flex-1">
-              <div className="font-semibold text-amber-900">Unlock the current season</div>
+              <div className="font-semibold text-amber-900">
+                Unlock the current season
+              </div>
               <div className="text-sm text-amber-900/80 mt-1">
-                Upgrade to access current-year camps ({currentYear}) and planning features.
+                Upgrade to access current-year camps ({currentYear}) and planning
+                features.
               </div>
               <div className="mt-4 space-y-2">
-                <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
+                <Button
+                  className="w-full"
+                  onClick={() => navigate(createPageUrl("Onboarding"))}
+                >
                   Upgrade
                 </Button>
-                <Button variant="outline" className="w-full" onClick={handleSignIn}>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleSignIn}
+                >
                   Sign In / Continue
                 </Button>
               </div>
@@ -139,12 +168,18 @@ export default function Home() {
           <div className="flex items-start gap-3">
             <UserCircle2 className="w-6 h-6 text-slate-700 mt-0.5" />
             <div className="flex-1">
-              <div className="font-semibold text-deep-navy">Already have an account?</div>
+              <div className="font-semibold text-deep-navy">
+                Already have an account?
+              </div>
               <div className="text-sm text-slate-600 mt-1">
                 Sign in to manage favorites, registrations, and your camp calendar.
               </div>
               <div className="mt-4">
-                <Button variant="outline" className="w-full" onClick={handleSignIn}>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleSignIn}
+                >
                   Sign In
                 </Button>
               </div>
