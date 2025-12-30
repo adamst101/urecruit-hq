@@ -89,31 +89,143 @@ export default function Discover() {
   // Camp Summaries (read model)
   // -----------------------------
   const {
-    data: campSummaries = [],
-    isLoading: campsLoading,
-    isError: campsError,
-    error: campsErrorObj
-  } = useQuery({
-    queryKey: ["campSummaries", athleteProfile?.id, filters, searchQuery],
-    queryFn: async () => {
-      const payload = {
-        athlete_id: clean(athleteProfile?.id),
-        sport_id: clean(filters?.sport || athleteProfile?.sport_id),
-        divisions: clean(Array.isArray(filters?.divisions) ? filters.divisions.join(",") : filters?.divisions),
-        states: clean(filters?.state || filters?.states),
-        position_ids: clean(Array.isArray(filters?.positions) ? filters.positions.join(",") : filters?.positions),
-        start_date_gte: clean(filters?.startDate),
-        end_date_lte: clean(filters?.endDate),
-        search: clean(searchQuery),
-        limit: 200
-      };
+  data: campSummaries = [],
+  isLoading: campsLoading,
+  isError: campsError,
+  error: campsErrorObj
+} = useQuery({
+  queryKey: ["campSummaries_client", athleteProfile?.id, filters, searchQuery],
+  queryFn: async () => {
+    const payload = {
+      athlete_id: clean(athleteProfile?.id),
+      sport_id: clean(filters?.sport || athleteProfile?.sport_id),
+      divisions: clean(Array.isArray(filters?.divisions) ? filters.divisions : (filters?.divisions ? String(filters.divisions).split(",") : undefined)),
+      states: clean(filters?.state || filters?.states),
+      position_ids: clean(Array.isArray(filters?.positions) ? filters.positions : (filters?.positions ? String(filters.positions).split(",") : undefined)),
+      start_date_gte: clean(filters?.startDate),
+      end_date_lte: clean(filters?.endDate),
+      search: clean(searchQuery),
+      limit: 200
+    };
 
-      console.log("getCampSummaries payload", payload);
-      return base44.functions.getCampSummaries(payload);
-    },
-    enabled: !!athleteProfile?.id,
-    retry: false
-  });
+    console.log("CLIENT summaries payload", payload);
+
+    // Base query
+    const campQuery = {};
+    if (payload.sport_id) campQuery.sport_id = payload.sport_id;
+    if (payload.start_date_gte) campQuery.start_date = { $gte: payload.start_date_gte };
+
+    // Pull camps (sorted by start_date desc per your prior call)
+    let camps = await base44.entities.Camp.filter(campQuery, "-start_date", payload.limit || 200);
+
+    // Apply remaining filters locally
+    if (payload.end_date_lte) {
+      camps = camps.filter(c => String(c.start_date).slice(0, 10) <= payload.end_date_lte);
+    }
+
+    if (payload.states) {
+      const stateArray = Array.isArray(payload.states) ? payload.states : String(payload.states).split(",");
+      const cleaned = stateArray.map(s => s.trim()).filter(Boolean);
+      if (cleaned.length) {
+        camps = camps.filter(c => cleaned.includes(c.state));
+      }
+    }
+
+    if (payload.position_ids?.length) {
+      const posSet = new Set(payload.position_ids.map(String));
+      camps = camps.filter(c => (c.position_ids || []).some(pid => posSet.has(String(pid))));
+    }
+
+    // Batch fetch related entities
+    const schoolIds = [...new Set(camps.map(c => c.school_id).filter(Boolean))];
+    const sportIds = [...new Set(camps.map(c => c.sport_id).filter(Boolean))];
+
+    const [schools, sports, positions] = await Promise.all([
+      schoolIds.length ? base44.entities.School.filter({ id: { $in: schoolIds } }) : Promise.resolve([]),
+      sportIds.length ? base44.entities.Sport.filter({ id: { $in: sportIds } }) : Promise.resolve([]),
+      base44.entities.Position.list()
+    ]);
+
+    const schoolMap = Object.fromEntries(schools.map(s => [s.id, s]));
+    const sportMap = Object.fromEntries(sports.map(s => [s.id, s]));
+    const positionMap = Object.fromEntries(positions.map(p => [p.id, p]));
+
+    // Athlete-specific data
+    let intentMap = {};
+    let targetSchoolIds = new Set();
+
+    if (payload.athlete_id) {
+      const [intents, targets] = await Promise.all([
+        base44.entities.CampIntent.filter({ athlete_id: payload.athlete_id }),
+        base44.entities.TargetSchool.filter({ athlete_id: payload.athlete_id })
+      ]);
+
+      intentMap = Object.fromEntries(intents.map(i => [i.camp_id, i]));
+      targetSchoolIds = new Set(targets.map(t => t.school_id));
+    }
+
+    // Assemble summaries
+    let summaries = camps.map(camp => {
+      const school = schoolMap[camp.school_id];
+      const sport = sportMap[camp.sport_id];
+      const intent = intentMap[camp.id] || null;
+      const campPositions = (camp.position_ids || []).map(pid => positionMap[pid]).filter(Boolean);
+
+      return {
+        camp_id: camp.id,
+        camp_name: camp.camp_name,
+        start_date: camp.start_date,
+        end_date: camp.end_date,
+        price: camp.price,
+        link_url: camp.link_url,
+        notes: camp.notes,
+        city: camp.city,
+        state: camp.state,
+        position_ids: camp.position_ids || [],
+        position_codes: campPositions.map(p => p.position_code),
+
+        school_id: school?.id,
+        school_name: school?.school_name,
+        school_division: school?.division,
+        school_logo_url: school?.logo_url,
+        school_city: school?.city,
+        school_state: school?.state,
+        school_conference: school?.conference,
+
+        sport_id: sport?.id,
+        sport_name: sport?.sport_name,
+
+        intent_status: intent?.status || null,
+        intent_priority: intent?.priority || null,
+        is_target_school: targetSchoolIds.has(camp.school_id),
+
+        distance_from_home: null,
+        days_until_camp: camp.start_date
+          ? Math.ceil((new Date(camp.start_date) - new Date()) / (1000 * 60 * 60 * 24))
+          : null
+      };
+    });
+
+    // Apply division + search after join
+    if (payload.divisions?.length) {
+      const divSet = new Set(payload.divisions);
+      summaries = summaries.filter(s => divSet.has(s.school_division));
+    }
+
+    if (payload.search) {
+      const q = String(payload.search).toLowerCase();
+      summaries = summaries.filter(s =>
+        (s.camp_name || "").toLowerCase().includes(q) ||
+        (s.school_name || "").toLowerCase().includes(q)
+      );
+    }
+
+    return summaries;
+  },
+  enabled: !!athleteProfile?.id,
+  retry: false
+});
+
 
   const sortedSummaries = useMemo(() => {
     const list = Array.isArray(campSummaries) ? [...campSummaries] : [];
