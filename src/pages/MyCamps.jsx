@@ -16,10 +16,26 @@ export default function MyCamps() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('registered');
 
-  const { data: athleteProfile } = useQuery({
-    queryKey: ['athleteProfile'],
-    queryFn: () => base44.functions.getAthleteProfile()
-  });
+const {
+  athleteProfile,
+  isLoading: identityLoading,
+  isError: identityError,
+  error: identityErrorObj
+} = useAthleteIdentity();
+
+if (identityLoading) return null;
+
+if (identityError) {
+  return (
+    <div className="p-6 text-red-600">
+      Failed to load athlete profile: {String(identityErrorObj)}
+    </div>
+  );
+}
+
+if (!athleteProfile) return null;
+
+
 
   const { data: campSummaries = [], isLoading: campsLoading } = useQuery({
     queryKey: ['campSummaries', athleteProfile?.id],
