@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, Lock, PlayCircle, UserCircle2 } from "lucide-react";
 
@@ -12,15 +12,17 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
 /**
- * Home
+ * Home (Landing)
  *
- * Critical behavior:
- * - Canonical entry router (paid users can be routed to Discover)
- * - MUST NOT auto-redirect if:
- *   - ?signedout=1 is present OR
- *   - logout latch is active (recent logout timestamp)
+ * RULE:
+ * - Home NEVER auto-redirects.
+ *   (This eliminates auth/session lag loops and "Home -> Discover" hijacks.)
  *
- * This prevents logout loops + Base44 stale session transitions.
+ * Instead:
+ * - Show explicit CTAs:
+ *   - Try Demo -> Discover (demo dataset)
+ *   - Upgrade / Sign In -> Onboarding
+ *   - If authed+paid+profile -> Continue -> Discover
  */
 export default function Home() {
   const navigate = useNavigate();
@@ -30,70 +32,39 @@ export default function Home() {
     useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // ✅ URL param escape hatch: if we just signed out, do NOT auto-route anywhere.
   const signedOut = useMemo(() => {
     const params = new URLSearchParams(location.search || "");
     return params.get("signedout") === "1";
   }, [location.search]);
 
-  // ✅ Logout latch (optional but strongly recommended):
-  // Profile logout should set localStorage.setItem("logoutAt", String(Date.now()))
-  // We honor it here to avoid any redirect during auth/session lag.
   const logoutLatch = useMemo(() => {
     try {
       const t = Number(localStorage.getItem("logoutAt") || 0);
       if (!t) return false;
-      return Date.now() - t < 5000; // 5 seconds
+      return Date.now() - t < 5000;
     } catch {
       return false;
     }
   }, []);
 
-  // ✅ HARD STOP RENDER GUARD:
-  // If signed out (param) OR latch is active, render Home and skip all routing logic.
-  // IMPORTANT: We still define hooks above; we simply skip redirect effect below.
-  const blockAutoRoute = signedOut || logoutLatch;
+  const isAuthed = !!accountId;
+  const hasProfile = !!athleteProfile;
 
-  // Canonical entry routing (disabled when signedout/latch is active)
-  useEffect(() => {
-    if (blockAutoRoute) return;
-    if (accessLoading || identityLoading) return;
-
-    // Only auto-route when we are confidently authenticated AND have a profile loaded.
-    // This reduces the chance of "stale identity" causing an unintended redirect.
-    if (accountId && athleteProfile) {
-      if (mode === "paid") {
-        navigate(createPageUrl("Discover"), { replace: true });
-      } else {
-        navigate(createPageUrl("Onboarding"), { replace: true });
-      }
-      return;
-    }
-
-    // If authenticated but missing profile, route to Onboarding (setup)
-    if (accountId && !athleteProfile) {
-      navigate(createPageUrl("Onboarding"), { replace: true });
-    }
-  }, [
-    blockAutoRoute,
-    accessLoading,
-    identityLoading,
-    accountId,
-    athleteProfile,
-    mode,
-    navigate
-  ]);
+  const showContinue =
+    !accessLoading &&
+    !identityLoading &&
+    isAuthed &&
+    mode === "paid" &&
+    hasProfile;
 
   const handleSignIn = async () => {
     try {
-      // Base44 auth UX varies by project.
-      // If this method isn't available, fallback to Onboarding (often triggers auth UI).
       if (base44?.auth?.signIn) {
         await base44.auth.signIn();
         return;
       }
       navigate(createPageUrl("Onboarding"));
-    } catch (e) {
+    } catch {
       navigate(createPageUrl("Onboarding"));
     }
   };
@@ -104,14 +75,37 @@ export default function Home() {
         <div>
           <h1 className="text-3xl font-bold text-deep-navy">RecruitMe</h1>
           <p className="text-slate-600 mt-2">
-            Plan and compare college camps across the recruiting calendar — before
-            you commit.
+            Plan and compare college camps across the recruiting calendar — before you commit.
           </p>
 
           {(signedOut || logoutLatch) && (
             <p className="text-sm text-slate-600 mt-3">You’re signed out.</p>
           )}
         </div>
+
+        {/* ✅ Continue card (explicit, no auto-route) */}
+        {showContinue && (
+          <Card className="p-4 border-emerald-200 bg-emerald-50">
+            <div className="flex items-start gap-3">
+              <ArrowRight className="w-6 h-6 text-emerald-700 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-emerald-900">Continue</div>
+                <div className="text-sm text-emerald-900/80 mt-1">
+                  You’re signed in with paid access. Jump back into the current season.
+                </div>
+                <div className="mt-4">
+                  <Button
+                    className="w-full"
+                    onClick={() => navigate(createPageUrl("Discover"))}
+                  >
+                    Go to Discover
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
 
         <Card className="p-4">
           <div className="flex items-start gap-3">
@@ -138,12 +132,9 @@ export default function Home() {
           <div className="flex items-start gap-3">
             <Lock className="w-6 h-6 text-amber-700 mt-0.5" />
             <div className="flex-1">
-              <div className="font-semibold text-amber-900">
-                Unlock the current season
-              </div>
+              <div className="font-semibold text-amber-900">Unlock the current season</div>
               <div className="text-sm text-amber-900/80 mt-1">
-                Upgrade to access current-year camps ({currentYear}) and planning
-                features.
+                Upgrade to access current-year camps ({currentYear}) and planning features.
               </div>
               <div className="mt-4 space-y-2">
                 <Button
@@ -168,18 +159,12 @@ export default function Home() {
           <div className="flex items-start gap-3">
             <UserCircle2 className="w-6 h-6 text-slate-700 mt-0.5" />
             <div className="flex-1">
-              <div className="font-semibold text-deep-navy">
-                Already have an account?
-              </div>
+              <div className="font-semibold text-deep-navy">Already have an account?</div>
               <div className="text-sm text-slate-600 mt-1">
                 Sign in to manage favorites, registrations, and your camp calendar.
               </div>
               <div className="mt-4">
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleSignIn}
-                >
+                <Button variant="outline" className="w-full" onClick={handleSignIn}>
                   Sign In
                 </Button>
               </div>
