@@ -89,16 +89,19 @@ function DiscoverDemo({ seasonYear, demoYear }) {
     const q = clean(searchQuery);
     if (q) {
       const qq = String(q).toLowerCase();
-      list = list.filter((s) =>
-        (s.camp_name || "").toLowerCase().includes(qq) ||
-        (s.school_name || "").toLowerCase().includes(qq)
+      list = list.filter(
+        (s) =>
+          (s.camp_name || "").toLowerCase().includes(qq) ||
+          (s.school_name || "").toLowerCase().includes(qq)
       );
     }
 
     // Divisions
     const divisions = Array.isArray(filters?.divisions)
       ? filters.divisions
-      : (filters?.divisions ? String(filters.divisions).split(",") : []);
+      : filters?.divisions
+      ? String(filters.divisions).split(",")
+      : [];
     const divs = divisions.map((d) => String(d).trim()).filter(Boolean);
     if (divs.length) {
       const divSet = new Set(divs);
@@ -119,7 +122,9 @@ function DiscoverDemo({ seasonYear, demoYear }) {
     // Positions
     const pos = Array.isArray(filters?.positions)
       ? filters.positions
-      : (filters?.positions ? String(filters.positions).split(",") : []);
+      : filters?.positions
+      ? String(filters.positions).split(",")
+      : [];
     const posIds = pos.map((p) => String(p).trim()).filter(Boolean);
     if (posIds.length) {
       const posSet = new Set(posIds);
@@ -151,7 +156,7 @@ function DiscoverDemo({ seasonYear, demoYear }) {
               You’re viewing last year’s camps as a demo.{" "}
               <button
                 className="underline font-medium"
-                onClick={() => navigate(createPageUrl("Signup"))}
+                onClick={() => navigate(createPageUrl("Onboarding"))}
               >
                 Sign up
               </button>{" "}
@@ -233,12 +238,9 @@ function DiscoverDemo({ seasonYear, demoYear }) {
                 positions={(s.position_codes || []).map((code) => ({ position_code: code }))}
                 isFavorite={false}
                 isRegistered={false}
-                // Demo is read-only: disable favorite action
                 onFavoriteToggle={() => {}}
-                // Demo detail: open registration URL if present, else no-op
-                onClick={() => {
-                  if (s.link_url) window.open(s.link_url, "_blank");
-                }}
+                // ✅ DEMO: go to internal demo detail page
+                onClick={() => navigate(createPageUrl(`CampDetailDemo?id=${s.camp_id}`))}
               />
             ))}
           </div>
@@ -336,9 +338,10 @@ function DiscoverPaid({ currentYear }) {
     const q = clean(searchQuery);
     if (q) {
       const qq = String(q).toLowerCase();
-      list = list.filter((s) =>
-        (s.camp_name || "").toLowerCase().includes(qq) ||
-        (s.school_name || "").toLowerCase().includes(qq)
+      list = list.filter(
+        (s) =>
+          (s.camp_name || "").toLowerCase().includes(qq) ||
+          (s.school_name || "").toLowerCase().includes(qq)
       );
     }
 
