@@ -3,13 +3,14 @@ import Calendar from './pages/Calendar';
 import CampDetail from './pages/CampDetail';
 import CampDetailDemo from './pages/CampDetailDemo';
 import Checkout from './pages/Checkout';
+import DemoSetup from './pages/DemoSetup';
 import Discover from './pages/Discover';
 import Home from './pages/Home';
 import MyCamps from './pages/MyCamps';
 import Onboarding from './pages/Onboarding';
 import Profile from './pages/Profile';
 import TestFunctions from './pages/TestFunctions';
-import DemoSetup from './pages/DemoSetup';
+import LogoutDebug from './pages/LogoutDebug';
 import __Layout from './Layout.jsx';
 
 
@@ -19,13 +20,14 @@ export const PAGES = {
     "CampDetail": CampDetail,
     "CampDetailDemo": CampDetailDemo,
     "Checkout": Checkout,
+    "DemoSetup": DemoSetup,
     "Discover": Discover,
     "Home": Home,
     "MyCamps": MyCamps,
     "Onboarding": Onboarding,
     "Profile": Profile,
     "TestFunctions": TestFunctions,
-    "DemoSetup": DemoSetup,
+    "LogoutDebug": LogoutDebug,
 }
 
 export const pagesConfig = {
