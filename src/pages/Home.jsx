@@ -1,3 +1,20 @@
+const signedOut = useMemo(() => {
+  const params = new URLSearchParams(location.search || "");
+  return params.get("signedout") === "1";
+}, [location.search]);
+
+const logoutLatch =
+  Date.now() - Number(localStorage.getItem("logoutAt") || 0) < 5000;
+
+if (signedOut || logoutLatch) {
+  // ⛔ HARD STOP: no redirects, no auth logic
+  return (
+    <div className="min-h-screen bg-slate-50 p-4">
+      {/* existing Home JSX */}
+    </div>
+  );
+}
+
 import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, Lock, PlayCircle, UserCircle2 } from "lucide-react";
