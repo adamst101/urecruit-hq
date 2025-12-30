@@ -6,18 +6,20 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
-import { createPageUrl } from "@/utils";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Loader2, Search, SlidersHorizontal } from "lucide-react";
+
+import { base44 } from "../api/base44Client";
+import { createPageUrl } from "../utils";
+
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 
 import CampCard from "../Components/camps/CampCard";
 import FilterSheet from "../Components/camps/FilterSheet";
 import BottomNav from "../Components/navigation/BottomNav";
 import { useAthleteIdentity } from "../Components/useAthleteIdentity";
+
 
 export default function Discover() {
   const navigate = useNavigate();
