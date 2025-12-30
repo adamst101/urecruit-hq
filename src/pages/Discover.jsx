@@ -15,11 +15,10 @@ import { createPageUrl } from "../utils";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 
-import CampCard from "../Components/camps/CampCard";
-import FilterSheet from "../Components/camps/FilterSheet";
-import BottomNav from "../Components/navigation/BottomNav";
-import { useAthleteIdentity } from "../Components/useAthleteIdentity";
-
+import CampCard from "../components/camps/CampCard";
+import FilterSheet from "../components/camps/FilterSheet";
+import BottomNav from "../components/navigation/BottomNav";
+import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
 export default function Discover() {
   const navigate = useNavigate();
