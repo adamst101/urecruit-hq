@@ -1,13 +1,7 @@
-// Pages/MyCamps.jsx — FULL REPLACEMENT (copy/paste)
-// ✅ No backend functions used
-// ✅ Uses useAthleteIdentity() (single source of truth)
-// ✅ Client-side "summaries adapter" (same pattern as Discover)
-// ✅ Tabs: Registered + Favorites (filtered locally by intent_status)
-// ✅ Register/Unregister actions write CampIntent and refresh list
-
 import React, { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
 
@@ -23,11 +17,10 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity";
 export default function MyCamps() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-
   const [tab, setTab] = useState("registered"); // "registered" | "favorites"
 
   // -----------------------------
-  // Identity (single source of truth)
+  // Identity (hook must ALWAYS run)
   // -----------------------------
   const {
     athleteProfile,
@@ -36,29 +29,18 @@ export default function MyCamps() {
     error: identityErrorObj
   } = useAthleteIdentity();
 
-  if (identityLoading) return null;
-
-  if (identityError) {
-    return (
-      <div className="p-6 text-rose-700">
-        Failed to load athlete profile: {String(identityErrorObj?.message || identityErrorObj)}
-      </div>
-    );
-  }
-
-  if (!athleteProfile) return null;
-
-  // -----------------------------
-  // Helpers
-  // -----------------------------
   const clean = (v) => {
     if (v === undefined || v === null) return undefined;
     if (typeof v === "string" && v.trim() === "") return undefined;
     return v;
   };
 
+  const athleteId = clean(athleteProfile?.id);
+  const athleteSportId = clean(athleteProfile?.sport_id);
+
   // -----------------------------
-  // Client-side summaries adapter
+  // Client-side summaries adapter (hook must ALWAYS run)
+  // Use enabled flag so it does nothing until athleteId exists.
   // -----------------------------
   const {
     data: campSummaries = [],
@@ -66,11 +48,13 @@ export default function MyCamps() {
     isError: campsError,
     error: campsErrorObj
   } = useQuery({
-    queryKey: ["myCampsSummaries_client", athleteProfile?.id, athleteProfile?.sport_id],
+    queryKey: ["myCampsSummaries_client", athleteId, athleteSportId],
+    enabled: !!athleteId && !identityLoading && !identityError,
+    retry: false,
     queryFn: async () => {
       const payload = {
-        athlete_id: clean(athleteProfile?.id),
-        sport_id: clean(athleteProfile?.sport_id),
+        athlete_id: athleteId,
+        sport_id: athleteSportId,
         limit: 500
       };
 
@@ -78,7 +62,7 @@ export default function MyCamps() {
       const campQuery = {};
       if (payload.sport_id) campQuery.sport_id = payload.sport_id;
 
-      let camps = await base44.entities.Camp.filter(campQuery, "-start_date", payload.limit || 500);
+      const camps = await base44.entities.Camp.filter(campQuery, "-start_date", payload.limit || 500);
 
       // Batch join: School / Sport / Position
       const schoolIds = [...new Set(camps.map((c) => c.school_id).filter(Boolean))];
@@ -139,20 +123,18 @@ export default function MyCamps() {
           is_target_school: targetSchoolIds.has(camp.school_id)
         };
       });
-    },
-    enabled: !!athleteProfile?.id,
-    retry: false
+    }
   });
 
+  // -----------------------------
+  // Derived lists (hooks must ALWAYS run)
+  // -----------------------------
   const sortedSummaries = useMemo(() => {
     const list = Array.isArray(campSummaries) ? [...campSummaries] : [];
     list.sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
     return list;
   }, [campSummaries]);
 
-  // -----------------------------
-  // Step 4: filter locally by intent_status
-  // -----------------------------
   const registeredCamps = useMemo(() => {
     return sortedSummaries.filter(
       (c) => c.intent_status === "registered" || c.intent_status === "completed"
@@ -163,24 +145,23 @@ export default function MyCamps() {
     return sortedSummaries.filter((c) => c.intent_status === "favorite");
   }, [sortedSummaries]);
 
-  const listToRender = tab === "registered" ? registeredCamps : favoriteCamps;
-
   // -----------------------------
-  // Mutations (CampIntent is ground truth)
+  // Mutations (hooks must ALWAYS run)
   // -----------------------------
   const registerMutation = useMutation({
     mutationFn: async (campId) => {
+      if (!athleteId) return;
+
       const existing = await base44.entities.CampIntent.filter({
-        athlete_id: athleteProfile.id,
+        athlete_id: athleteId,
         camp_id: campId
       });
 
       const intent = existing?.[0] || null;
 
-      // If none, create as registered
       if (!intent) {
         await base44.entities.CampIntent.create({
-          athlete_id: athleteProfile.id,
+          athlete_id: athleteId,
           camp_id: campId,
           status: "registered",
           priority: "medium",
@@ -189,7 +170,6 @@ export default function MyCamps() {
         return;
       }
 
-      // Toggle registered <-> removed (conservative)
       if (intent.status === "registered") {
         await base44.entities.CampIntent.update(intent.id, { status: "removed" });
       } else {
@@ -206,19 +186,20 @@ export default function MyCamps() {
 
   const favoriteToggleMutation = useMutation({
     mutationFn: async (campId) => {
+      if (!athleteId) return;
+
       const existing = await base44.entities.CampIntent.filter({
-        athlete_id: athleteProfile.id,
+        athlete_id: athleteId,
         camp_id: campId
       });
 
       const intent = existing?.[0] || null;
 
-      // Don't override registered/completed from a favorite toggle
       if (intent?.status === "registered" || intent?.status === "completed") return;
 
       if (!intent) {
         await base44.entities.CampIntent.create({
-          athlete_id: athleteProfile.id,
+          athlete_id: athleteId,
           camp_id: campId,
           status: "favorite",
           priority: "medium"
@@ -238,8 +219,22 @@ export default function MyCamps() {
   });
 
   // -----------------------------
-  // Render
+  // NOW it is safe to guard rendering
   // -----------------------------
+  const listToRender = tab === "registered" ? registeredCamps : favoriteCamps;
+
+  if (identityLoading) return null;
+
+  if (identityError) {
+    return (
+      <div className="p-6 text-rose-700">
+        Failed to load athlete profile: {String(identityErrorObj?.message || identityErrorObj)}
+      </div>
+    );
+  }
+
+  if (!athleteProfile) return null;
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
@@ -275,13 +270,11 @@ export default function MyCamps() {
               {campsLoading ? (
                 <div className="p-6 text-slate-500">Loading…</div>
               ) : registeredCamps.length === 0 ? (
-                <div className="p-6 text-center text-slate-500">
-                  No registered camps yet.
-                </div>
+                <div className="p-6 text-center text-slate-500">No registered camps yet.</div>
               ) : (
                 <div className="space-y-4">
                   {registeredCamps.map((s) => (
-                    <div key={s.camp_id} className="relative">
+                    <div key={s.camp_id}>
                       <CampCard
                         camp={{
                           id: s.camp_id,
@@ -307,7 +300,7 @@ export default function MyCamps() {
                         sport={{ id: s.sport_id, sport_name: s.sport_name }}
                         positions={(s.position_codes || []).map((code) => ({ position_code: code }))}
                         isFavorite={s.intent_status === "favorite"}
-                        isRegistered={s.intent_status === "registered" || s.intent_status === "completed"}
+                        isRegistered
                         onFavoriteToggle={() => favoriteToggleMutation.mutate(s.camp_id)}
                         onClick={() => navigate(createPageUrl(`CampDetail?id=${s.camp_id}`))}
                       />
@@ -315,7 +308,7 @@ export default function MyCamps() {
                       <div className="mt-2 flex gap-2">
                         <Button
                           variant="outline"
-                          className={cn("flex-1")}
+                          className="flex-1"
                           onClick={() => registerMutation.mutate(s.camp_id)}
                           disabled={registerMutation.isPending}
                         >
@@ -338,13 +331,11 @@ export default function MyCamps() {
               {campsLoading ? (
                 <div className="p-6 text-slate-500">Loading…</div>
               ) : favoriteCamps.length === 0 ? (
-                <div className="p-6 text-center text-slate-500">
-                  No favorite camps yet.
-                </div>
+                <div className="p-6 text-center text-slate-500">No favorite camps yet.</div>
               ) : (
                 <div className="space-y-4">
                   {favoriteCamps.map((s) => (
-                    <div key={s.camp_id} className="relative">
+                    <div key={s.camp_id}>
                       <CampCard
                         camp={{
                           id: s.camp_id,
@@ -405,3 +396,4 @@ export default function MyCamps() {
     </div>
   );
 }
+
