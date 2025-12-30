@@ -1,3 +1,4 @@
+import { useAthleteIdentity } from "@/components/useAthleteIdentity";
 // Discover.jsx (FULL REPLACEMENT)
 // Adds robust error handling so the page loads even when backend functions fail.
 // Also hardens against null/undefined data that was causing runtime crashes.
@@ -31,6 +32,19 @@ export default function Discover() {
 
   // -----------------------------
   // 1) Athlete Profile (new canonical)
+  const { account, athleteProfile, isLoading, isError, error } = useAthleteIdentity();
+
+if (isLoading) return null;
+
+if (isError) {
+  return <div className="p-6 text-red-600">Identity load failed: {String(error?.message || error)}</div>;
+}
+
+if (!athleteProfile) {
+  // route to onboarding
+  navigate(createPageUrl("Onboarding"));
+  return null;
+}
   // -----------------------------
   const {
     data: athleteProfile,
