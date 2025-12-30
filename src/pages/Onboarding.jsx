@@ -1,265 +1,145 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Trophy, Loader2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
+import React from "react";
+import { useNavigate } from "react-router-dom";
+import { Lock, CheckCircle2, ArrowRight, UserCircle2 } from "lucide-react";
 
-const divisions = ["D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"];
+import { createPageUrl } from "../utils";
+import { cn } from "../lib/utils";
 
+import { Card } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { useAthleteIdentity } from "../components/useAthleteIdentity";
+
+/**
+ * Onboarding
+ * Base44 convention route: /Onboarding
+ *
+ * Purpose (now):
+ * - Landing step for demo users to upgrade
+ * - Landing step for new users to finish setup
+ *
+ * IMPORTANT:
+ * - We are NOT implementing payments here yet.
+ * - This page is a funnel + clear next action.
+ */
 export default function Onboarding() {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    athlete_name: '',
-    sport_id: '',
-    grad_year: new Date().getFullYear() + 1,
-    primary_position_id: '',
-    secondary_position_ids: [],
-    home_zip: '',
-    radius_miles: null,
-    division_preferences: []
-  });
+  const { mode, currentYear, demoYear } = useSeasonAccess();
 
-  const { data: sports = [] } = useQuery({
-    queryKey: ['sports'],
-    queryFn: () => base44.entities.Sport.list()
-  });
+  // Identity hook is the single source of truth (consistent with MyCamps/Discover/Calendar)
+  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  const { data: allPositions = [] } = useQuery({
-    queryKey: ['positions'],
-    queryFn: () => base44.entities.Position.list()
-  });
-
-  const { data: currentUser } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me()
-  });
-
-  const updateProfileMutation = useMutation({
-    mutationFn: async (data) => {
-      // Create AthleteProfile entity
-      await base44.entities.AthleteProfile.create({
-        account_id: currentUser.id,
-        athlete_name: data.athlete_name,
-        sport_id: data.sport_id,
-        grad_year: data.grad_year,
-        primary_position_id: data.primary_position_id,
-        secondary_position_ids: data.secondary_position_ids || [],
-        home_zip: data.home_zip || '',
-        search_radius_miles: data.radius_miles,
-        division_preferences: data.division_preferences || [],
-        active: true
-      });
-    },
-    onSuccess: () => {
-      navigate(createPageUrl('Discover'));
-    }
-  });
-
-  // Default to Football
-  useEffect(() => {
-    if (sports.length > 0 && !formData.sport_id) {
-      const football = sports.find(s => s.sport_name === 'Football');
-      if (football) {
-        setFormData(prev => ({ ...prev, sport_id: football.id }));
-      }
-    }
-  }, [sports]);
-
-  const filteredPositions = allPositions.filter(p => p.sport_id === formData.sport_id);
-
-  const handleDivisionToggle = (div) => {
-    const updated = formData.division_preferences.includes(div)
-      ? formData.division_preferences.filter(d => d !== div)
-      : [...formData.division_preferences, div];
-    setFormData({ ...formData, division_preferences: updated });
-  };
-
-  const handleSecondaryPositionToggle = (posId) => {
-    const updated = formData.secondary_position_ids.includes(posId)
-      ? formData.secondary_position_ids.filter(p => p !== posId)
-      : [...formData.secondary_position_ids, posId];
-    setFormData({ ...formData, secondary_position_ids: updated });
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    updateProfileMutation.mutate(formData);
-  };
-
-  const isValid = formData.athlete_name && formData.sport_id && formData.primary_position_id;
+  // If they already have an athlete profile, don’t trap them here.
+  // Send them to the paid/demonstration entry point.
+  if (!identityLoading && athleteProfile) {
+    navigate(createPageUrl("Discover"));
+    return null;
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 p-4 pb-20">
-      <div className="max-w-md mx-auto pt-8">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-electric-blue rounded-2xl mb-4">
-            <Trophy className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-deep-navy mb-2">Welcome to RecruitMe</h1>
-          <p className="text-gray-dark">Let's set up your athlete profile</p>
+    <div className="min-h-screen bg-slate-50 p-4">
+      <div className="max-w-md mx-auto space-y-4">
+        <div className="pt-2">
+          <h1 className="text-2xl font-bold text-deep-navy">Get Started</h1>
+          <p className="text-slate-600 mt-1">
+            Set up your athlete profile, then unlock the current season when you’re ready.
+          </p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-6 bg-white rounded-2xl p-6 shadow-sm">
-          {/* Athlete Name */}
-          <div>
-            <Label htmlFor="athlete_name">Athlete Name *</Label>
-            <Input
-              id="athlete_name"
-              value={formData.athlete_name}
-              onChange={(e) => setFormData({ ...formData, athlete_name: e.target.value })}
-              placeholder="Enter athlete's name"
-              className="mt-1"
-            />
-          </div>
+        {/* Paywall card shows ONLY in demo mode */}
+        <PaywallCard
+          show={mode !== "paid"}
+          currentYear={currentYear}
+          demoYear={demoYear}
+          onUpgrade={() => navigate(createPageUrl("Checkout"))}
+          onKeepDemo={() => navigate(createPageUrl("Discover"))}
+        />
 
-          {/* Sport */}
-          <div>
-            <Label htmlFor="sport">Sport *</Label>
-            <Select
-              value={formData.sport_id}
-              onValueChange={(value) => setFormData({ 
-                ...formData, 
-                sport_id: value, 
-                primary_position_id: '', 
-                secondary_position_ids: [] 
-              })}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Select sport" />
-              </SelectTrigger>
-              <SelectContent>
-                {sports.map(sport => (
-                  <SelectItem key={sport.id} value={sport.id}>{sport.sport_name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        {/* Setup card (works for everyone) */}
+        <Card className="p-4">
+          <div className="flex items-start gap-3">
+            <UserCircle2 className="w-6 h-6 text-slate-600 mt-0.5" />
+            <div className="flex-1">
+              <div className="text-lg font-bold text-deep-navy">Create your athlete profile</div>
+              <div className="text-sm text-slate-600 mt-1">
+                This enables favorites, registrations, and personalization across Discover, Calendar, and MyCamps.
+              </div>
 
-          {/* Grad Year */}
-          <div>
-            <Label htmlFor="grad_year">Graduation Year *</Label>
-            <Input
-              id="grad_year"
-              type="number"
-              value={formData.grad_year}
-              onChange={(e) => setFormData({ ...formData, grad_year: parseInt(e.target.value) })}
-              className="mt-1"
-            />
-          </div>
+              <div className="mt-4">
+                <Button className="w-full" onClick={() => navigate(createPageUrl("Profile"))}>
+                  Continue to Profile Setup
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
 
-          {/* Primary Position */}
-          {filteredPositions.length > 0 && (
-            <div>
-              <Label htmlFor="primary_position">Primary Position *</Label>
-              <Select
-                value={formData.primary_position_id}
-                onValueChange={(value) => setFormData({ ...formData, primary_position_id: value })}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select position" />
-                </SelectTrigger>
-                <SelectContent>
-                  {filteredPositions.map(pos => (
-                    <SelectItem key={pos.id} value={pos.id}>
-                      {pos.position_code} - {pos.position_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Secondary Positions */}
-          {filteredPositions.length > 0 && (
-            <div>
-              <Label className="mb-2 block">Secondary Positions</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {filteredPositions.filter(p => p.id !== formData.primary_position_id).map(pos => (
-                  <div key={pos.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`sec-${pos.id}`}
-                      checked={formData.secondary_position_ids.includes(pos.id)}
-                      onCheckedChange={() => handleSecondaryPositionToggle(pos.id)}
-                    />
-                    <Label htmlFor={`sec-${pos.id}`} className="text-sm cursor-pointer">
-                      {pos.position_code}
-                    </Label>
-                  </div>
-                ))}
+              <div className="mt-3 text-xs text-slate-500">
+                If you already completed setup, you’ll be redirected to Discover automatically.
               </div>
             </div>
-          )}
-
-          {/* Home ZIP */}
-          <div>
-            <Label htmlFor="home_zip">Home ZIP Code</Label>
-            <Input
-              id="home_zip"
-              value={formData.home_zip}
-              onChange={(e) => setFormData({ ...formData, home_zip: e.target.value })}
-              placeholder="12345"
-              className="mt-1"
-            />
           </div>
+        </Card>
 
-          {/* Radius */}
-          <div>
-            <Label htmlFor="radius_miles">Search Radius</Label>
-            <Input
-              id="radius_miles"
-              type="number"
-              value={formData.radius_miles || ''}
-              onChange={(e) => setFormData({ ...formData, radius_miles: e.target.value ? parseInt(e.target.value) : null })}
-              placeholder="Unlimited (leave blank for all camps)"
-              className="mt-1"
-            />
-            <p className="text-xs text-gray-dark mt-1">Leave blank to see all camps nationwide</p>
-          </div>
-
-          {/* Division Preferences */}
-          <div>
-            <Label className="mb-2 block">Division Preferences</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {divisions.map(div => (
-                <div key={div} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`div-${div}`}
-                    checked={formData.division_preferences.includes(div)}
-                    onCheckedChange={() => handleDivisionToggle(div)}
-                  />
-                  <Label htmlFor={`div-${div}`} className="text-sm cursor-pointer">
-                    {div}
-                  </Label>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Submit */}
-          <Button
-            type="submit"
-            disabled={!isValid || updateProfileMutation.isPending}
-            className="w-full bg-electric-blue hover:bg-deep-navy"
+        {/* Optional: direct path back to demo */}
+        <div className="text-center">
+          <button
+            className="text-sm text-slate-600 underline hover:text-slate-900"
+            onClick={() => navigate(createPageUrl("Discover"))}
           >
-            {updateProfileMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Get Started'
-            )}
-          </Button>
-        </form>
+            Back to Discover
+          </button>
+        </div>
       </div>
     </div>
+  );
+}
+
+function PaywallCard({ show, currentYear, demoYear, onUpgrade, onKeepDemo }) {
+  if (!show) return null;
+
+  return (
+    <Card className="p-4 border-amber-200 bg-amber-50">
+      <div className="flex items-start gap-3">
+        <Lock className="w-5 h-5 text-amber-700 mt-0.5" />
+        <div className="flex-1">
+          <div className="font-semibold text-amber-900">
+            Unlock Current Season Camps ({currentYear})
+          </div>
+
+          <div className="text-sm text-amber-900/80 mt-1">
+            You’re currently browsing the demo dataset ({demoYear}). Upgrade to access the current season, plus the
+            full planning experience.
+          </div>
+
+          <ul className="mt-3 space-y-1 text-sm text-amber-900/90">
+            <li className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" />
+              Current-year camps & updates
+            </li>
+            <li className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" />
+              Favorites + registrations synced across pages
+            </li>
+            <li className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" />
+              Calendar overlays for planning
+            </li>
+          </ul>
+
+          <div className="mt-4 flex gap-2">
+            <Button className="flex-1" onClick={onUpgrade}>
+              Upgrade / Subscribe
+            </Button>
+            <Button variant="outline" className="flex-1" onClick={onKeepDemo}>
+              Keep Browsing Demo
+            </Button>
+          </div>
+
+          <div className={cn("text-xs text-amber-900/70 mt-3")}>
+            Access expires at end of the season. Renew yearly to keep current-year camps.
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
