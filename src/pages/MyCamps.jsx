@@ -1,272 +1,404 @@
-import React, { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Calendar, MapPin, Star, CheckCircle, Loader2 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
-import { cn } from "@/lib/utils";
-import BottomNav from '@/components/navigation/BottomNav';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
+// Pages/MyCamps.jsx — FULL REPLACEMENT (copy/paste)
+// ✅ No backend functions used
+// ✅ Uses useAthleteIdentity() (single source of truth)
+// ✅ Client-side "summaries adapter" (same pattern as Discover)
+// ✅ Tabs: Registered + Favorites (filtered locally by intent_status)
+// ✅ Register/Unregister actions write CampIntent and refresh list
+
+import React, { useMemo, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import { base44 } from "../api/base44Client";
+import { createPageUrl } from "../utils";
+
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
+import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
+import { cn } from "../lib/utils";
+
+import BottomNav from "../components/navigation/BottomNav";
+import CampCard from "../components/camps/CampCard";
+import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
 export default function MyCamps() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('registered');
 
-const {
-  athleteProfile,
-  isLoading: identityLoading,
-  isError: identityError,
-  error: identityErrorObj
-} = useAthleteIdentity();
+  const [tab, setTab] = useState("registered"); // "registered" | "favorites"
 
-if (identityLoading) return null;
+  // -----------------------------
+  // Identity (single source of truth)
+  // -----------------------------
+  const {
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError,
+    error: identityErrorObj
+  } = useAthleteIdentity();
 
-if (identityError) {
-  return (
-    <div className="p-6 text-red-600">
-      Failed to load athlete profile: {String(identityErrorObj)}
-    </div>
-  );
-}
+  if (identityLoading) return null;
 
-if (!athleteProfile) return null;
+  if (identityError) {
+    return (
+      <div className="p-6 text-rose-700">
+        Failed to load athlete profile: {String(identityErrorObj?.message || identityErrorObj)}
+      </div>
+    );
+  }
 
+  if (!athleteProfile) return null;
 
+  // -----------------------------
+  // Helpers
+  // -----------------------------
+  const clean = (v) => {
+    if (v === undefined || v === null) return undefined;
+    if (typeof v === "string" && v.trim() === "") return undefined;
+    return v;
+  };
 
-  const { data: campSummaries = [], isLoading: campsLoading } = useQuery({
-    queryKey: ['campSummaries', athleteProfile?.id],
-    queryFn: () => base44.functions.getCampSummaries({
-      athlete_id: athleteProfile?.id
-    }),
-    enabled: !!athleteProfile
+  // -----------------------------
+  // Client-side summaries adapter
+  // -----------------------------
+  const {
+    data: campSummaries = [],
+    isLoading: campsLoading,
+    isError: campsError,
+    error: campsErrorObj
+  } = useQuery({
+    queryKey: ["myCampsSummaries_client", athleteProfile?.id, athleteProfile?.sport_id],
+    queryFn: async () => {
+      const payload = {
+        athlete_id: clean(athleteProfile?.id),
+        sport_id: clean(athleteProfile?.sport_id),
+        limit: 500
+      };
+
+      // Camps (optionally by sport)
+      const campQuery = {};
+      if (payload.sport_id) campQuery.sport_id = payload.sport_id;
+
+      let camps = await base44.entities.Camp.filter(campQuery, "-start_date", payload.limit || 500);
+
+      // Batch join: School / Sport / Position
+      const schoolIds = [...new Set(camps.map((c) => c.school_id).filter(Boolean))];
+      const sportIds = [...new Set(camps.map((c) => c.sport_id).filter(Boolean))];
+
+      const [schools, sports, positions] = await Promise.all([
+        schoolIds.length ? base44.entities.School.filter({ id: { $in: schoolIds } }) : Promise.resolve([]),
+        sportIds.length ? base44.entities.Sport.filter({ id: { $in: sportIds } }) : Promise.resolve([]),
+        base44.entities.Position.list()
+      ]);
+
+      const schoolMap = Object.fromEntries(schools.map((s) => [s.id, s]));
+      const sportMap = Object.fromEntries(sports.map((s) => [s.id, s]));
+      const positionMap = Object.fromEntries(positions.map((p) => [p.id, p]));
+
+      // Athlete-specific: CampIntent + TargetSchool
+      const [intents, targets] = await Promise.all([
+        base44.entities.CampIntent.filter({ athlete_id: payload.athlete_id }),
+        base44.entities.TargetSchool.filter({ athlete_id: payload.athlete_id })
+      ]);
+
+      const intentMap = Object.fromEntries(intents.map((i) => [i.camp_id, i]));
+      const targetSchoolIds = new Set(targets.map((t) => t.school_id));
+
+      // Summaries
+      return camps.map((camp) => {
+        const school = schoolMap[camp.school_id];
+        const sport = sportMap[camp.sport_id];
+        const intent = intentMap[camp.id] || null;
+        const campPositions = (camp.position_ids || []).map((pid) => positionMap[pid]).filter(Boolean);
+
+        return {
+          camp_id: camp.id,
+          camp_name: camp.camp_name,
+          start_date: camp.start_date,
+          end_date: camp.end_date,
+          price: camp.price,
+          link_url: camp.link_url,
+          notes: camp.notes,
+          city: camp.city,
+          state: camp.state,
+          position_ids: camp.position_ids || [],
+          position_codes: campPositions.map((p) => p.position_code),
+
+          school_id: school?.id,
+          school_name: school?.school_name,
+          school_division: school?.division,
+          school_logo_url: school?.logo_url,
+          school_city: school?.city,
+          school_state: school?.state,
+          school_conference: school?.conference,
+
+          sport_id: sport?.id,
+          sport_name: sport?.sport_name,
+
+          intent_status: intent?.status || null,
+          intent_priority: intent?.priority || null,
+          is_target_school: targetSchoolIds.has(camp.school_id)
+        };
+      });
+    },
+    enabled: !!athleteProfile?.id,
+    retry: false
   });
 
+  const sortedSummaries = useMemo(() => {
+    const list = Array.isArray(campSummaries) ? [...campSummaries] : [];
+    list.sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
+    return list;
+  }, [campSummaries]);
+
+  // -----------------------------
+  // Step 4: filter locally by intent_status
+  // -----------------------------
+  const registeredCamps = useMemo(() => {
+    return sortedSummaries.filter(
+      (c) => c.intent_status === "registered" || c.intent_status === "completed"
+    );
+  }, [sortedSummaries]);
+
+  const favoriteCamps = useMemo(() => {
+    return sortedSummaries.filter((c) => c.intent_status === "favorite");
+  }, [sortedSummaries]);
+
+  const listToRender = tab === "registered" ? registeredCamps : favoriteCamps;
+
+  // -----------------------------
+  // Mutations (CampIntent is ground truth)
+  // -----------------------------
   const registerMutation = useMutation({
     mutationFn: async (campId) => {
-      if (!athleteProfile) return;
-      
-      const intents = await base44.entities.CampIntent.filter({
+      const existing = await base44.entities.CampIntent.filter({
         athlete_id: athleteProfile.id,
         camp_id: campId
       });
-      
-      if (intents.length > 0) {
-        await base44.entities.CampIntent.update(intents[0].id, { 
-          status: 'registered',
-          registration_confirmed: true
-        });
-      } else {
+
+      const intent = existing?.[0] || null;
+
+      // If none, create as registered
+      if (!intent) {
         await base44.entities.CampIntent.create({
           athlete_id: athleteProfile.id,
           camp_id: campId,
-          status: 'registered',
+          status: "registered",
+          priority: "medium",
+          registration_confirmed: true
+        });
+        return;
+      }
+
+      // Toggle registered <-> removed (conservative)
+      if (intent.status === "registered") {
+        await base44.entities.CampIntent.update(intent.id, { status: "removed" });
+      } else {
+        await base44.entities.CampIntent.update(intent.id, {
+          status: "registered",
           registration_confirmed: true
         });
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['campSummaries'] });
+      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
     }
   });
 
-  const registeredCamps = useMemo(() => {
-    return campSummaries
-      .filter(s => s.intent_status === 'registered' || s.intent_status === 'completed')
-      .sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
-  }, [campSummaries]);
+  const favoriteToggleMutation = useMutation({
+    mutationFn: async (campId) => {
+      const existing = await base44.entities.CampIntent.filter({
+        athlete_id: athleteProfile.id,
+        camp_id: campId
+      });
 
-  const favoriteCamps = useMemo(() => {
-    return campSummaries
-      .filter(s => s.intent_status === 'favorite')
-      .sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
-  }, [campSummaries]);
+      const intent = existing?.[0] || null;
 
-  const groupByMonth = (campsList) => {
-    const grouped = {};
-    campsList.forEach(summary => {
-      const monthKey = format(parseISO(summary.start_date), 'MMMM yyyy');
-      if (!grouped[monthKey]) {
-        grouped[monthKey] = [];
+      // Don't override registered/completed from a favorite toggle
+      if (intent?.status === "registered" || intent?.status === "completed") return;
+
+      if (!intent) {
+        await base44.entities.CampIntent.create({
+          athlete_id: athleteProfile.id,
+          camp_id: campId,
+          status: "favorite",
+          priority: "medium"
+        });
+        return;
       }
-      grouped[monthKey].push(summary);
-    });
-    return grouped;
-  };
 
-  const renderCampCard = (summary, isRegistered = false) => {
-    return (
-      <button
-        key={summary.camp_id}
-        onClick={() => navigate(createPageUrl(`CampDetail?id=${summary.camp_id}`))}
-        className="w-full text-left bg-white rounded-xl p-4 shadow-sm border border-slate-100 hover:shadow-md transition-all active:scale-98"
-      >
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              {isRegistered ? (
-                <Badge className="bg-emerald-600 text-white text-xs">
-                  {summary.intent_status === 'completed' ? 'Completed' : 'Registered'}
-                </Badge>
-              ) : (
-                <Badge className="bg-rose-100 text-rose-700 text-xs">Favorite</Badge>
-              )}
-              <span className="text-xs text-slate-500">{summary.sport_name}</span>
-            </div>
-            <h3 className="font-bold text-deep-navy truncate">
-              {summary.school_name || 'Unknown School'}
-            </h3>
-            <p className="text-sm text-slate-600 truncate">{summary.camp_name}</p>
-          </div>
-        </div>
+      if (intent.status === "favorite") {
+        await base44.entities.CampIntent.update(intent.id, { status: "removed" });
+      } else {
+        await base44.entities.CampIntent.update(intent.id, { status: "favorite" });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+    }
+  });
 
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <Calendar className="w-4 h-4 text-slate-400" />
-            <span>
-              {format(parseISO(summary.start_date), 'MMM d')}
-              {summary.end_date && summary.end_date !== summary.start_date && (
-                <> - {format(parseISO(summary.end_date), 'MMM d, yyyy')}</>
-              )}
-              {(!summary.end_date || summary.end_date === summary.start_date) && (
-                <>, {format(parseISO(summary.start_date), 'yyyy')}</>
-              )}
-            </span>
-          </div>
-          
-          {(summary.city || summary.state) && (
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <MapPin className="w-4 h-4 text-slate-400" />
-              <span>{[summary.city, summary.state].filter(Boolean).join(', ')}</span>
-            </div>
-          )}
-        </div>
-
-        {!isRegistered && (
-          <Button
-            size="sm"
-            className="w-full mt-3 bg-electric-blue hover:bg-deep-navy"
-            onClick={(e) => {
-              e.stopPropagation();
-              registerMutation.mutate(summary.camp_id);
-            }}
-            disabled={registerMutation.isPending}
-          >
-            <CheckCircle className="w-4 h-4 mr-2" />
-            Mark as Registered
-          </Button>
-        )}
-      </button>
-    );
-  };
-
-  if (!athleteProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-      </div>
-    );
-  }
-
-  const groupedRegistered = groupByMonth(registeredCamps);
-  const groupedFavorites = groupByMonth(favoriteCamps);
-
+  // -----------------------------
+  // Render
+  // -----------------------------
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
-      {/* Header */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-md mx-auto p-4">
-          <h1 className="text-2xl font-bold text-deep-navy mb-4">My Camps</h1>
-          
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2 bg-slate-100">
-              <TabsTrigger 
-                value="registered"
-                className="data-[state=active]:bg-white"
-              >
-                <CheckCircle className="w-4 h-4 mr-2" />
-                Registered ({registeredCamps.length})
+          <h1 className="text-2xl font-bold text-deep-navy">My Camps</h1>
+
+          {campsError && (
+            <div className="mt-3 bg-white border border-rose-200 text-rose-700 rounded-xl p-3">
+              <div className="font-semibold">Failed to load camps</div>
+              <div className="text-xs break-words mt-1">
+                {String(campsErrorObj?.message || campsErrorObj)}
+              </div>
+            </div>
+          )}
+
+          <Tabs value={tab} onValueChange={setTab} className="mt-4">
+            <TabsList className="grid grid-cols-2 w-full">
+              <TabsTrigger value="registered" className="gap-2">
+                Registered
+                <Badge variant="secondary" className="text-xs">
+                  {registeredCamps.length}
+                </Badge>
               </TabsTrigger>
-              <TabsTrigger 
-                value="favorites"
-                className="data-[state=active]:bg-white"
-              >
-                <Star className="w-4 h-4 mr-2" />
-                Favorites ({favoriteCamps.length})
+              <TabsTrigger value="favorites" className="gap-2">
+                Favorites
+                <Badge variant="secondary" className="text-xs">
+                  {favoriteCamps.length}
+                </Badge>
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="registered" className="mt-4">
+              {campsLoading ? (
+                <div className="p-6 text-slate-500">Loading…</div>
+              ) : registeredCamps.length === 0 ? (
+                <div className="p-6 text-center text-slate-500">
+                  No registered camps yet.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {registeredCamps.map((s) => (
+                    <div key={s.camp_id} className="relative">
+                      <CampCard
+                        camp={{
+                          id: s.camp_id,
+                          camp_name: s.camp_name,
+                          start_date: s.start_date,
+                          end_date: s.end_date,
+                          city: s.city,
+                          state: s.state,
+                          price: s.price,
+                          link_url: s.link_url,
+                          notes: s.notes,
+                          position_ids: s.position_ids
+                        }}
+                        school={{
+                          id: s.school_id,
+                          school_name: s.school_name,
+                          division: s.school_division,
+                          logo_url: s.school_logo_url,
+                          city: s.school_city,
+                          state: s.school_state,
+                          conference: s.school_conference
+                        }}
+                        sport={{ id: s.sport_id, sport_name: s.sport_name }}
+                        positions={(s.position_codes || []).map((code) => ({ position_code: code }))}
+                        isFavorite={s.intent_status === "favorite"}
+                        isRegistered={s.intent_status === "registered" || s.intent_status === "completed"}
+                        onFavoriteToggle={() => favoriteToggleMutation.mutate(s.camp_id)}
+                        onClick={() => navigate(createPageUrl(`CampDetail?id=${s.camp_id}`))}
+                      />
+
+                      <div className="mt-2 flex gap-2">
+                        <Button
+                          variant="outline"
+                          className={cn("flex-1")}
+                          onClick={() => registerMutation.mutate(s.camp_id)}
+                          disabled={registerMutation.isPending}
+                        >
+                          {s.intent_status === "registered" ? "Unregister" : "Register"}
+                        </Button>
+                        <Button
+                          className="flex-1"
+                          onClick={() => navigate(createPageUrl(`CampDetail?id=${s.camp_id}`))}
+                        >
+                          Details
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="favorites" className="mt-4">
+              {campsLoading ? (
+                <div className="p-6 text-slate-500">Loading…</div>
+              ) : favoriteCamps.length === 0 ? (
+                <div className="p-6 text-center text-slate-500">
+                  No favorite camps yet.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {favoriteCamps.map((s) => (
+                    <div key={s.camp_id} className="relative">
+                      <CampCard
+                        camp={{
+                          id: s.camp_id,
+                          camp_name: s.camp_name,
+                          start_date: s.start_date,
+                          end_date: s.end_date,
+                          city: s.city,
+                          state: s.state,
+                          price: s.price,
+                          link_url: s.link_url,
+                          notes: s.notes,
+                          position_ids: s.position_ids
+                        }}
+                        school={{
+                          id: s.school_id,
+                          school_name: s.school_name,
+                          division: s.school_division,
+                          logo_url: s.school_logo_url,
+                          city: s.school_city,
+                          state: s.school_state,
+                          conference: s.school_conference
+                        }}
+                        sport={{ id: s.sport_id, sport_name: s.sport_name }}
+                        positions={(s.position_codes || []).map((code) => ({ position_code: code }))}
+                        isFavorite
+                        isRegistered={false}
+                        onFavoriteToggle={() => favoriteToggleMutation.mutate(s.camp_id)}
+                        onClick={() => navigate(createPageUrl(`CampDetail?id=${s.camp_id}`))}
+                      />
+
+                      <div className="mt-2 flex gap-2">
+                        <Button
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => favoriteToggleMutation.mutate(s.camp_id)}
+                          disabled={favoriteToggleMutation.isPending}
+                        >
+                          Remove Favorite
+                        </Button>
+                        <Button
+                          className="flex-1"
+                          onClick={() => registerMutation.mutate(s.camp_id)}
+                          disabled={registerMutation.isPending}
+                        >
+                          Register
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
         </div>
-      </div>
-
-      {/* Content */}
-      <div className="max-w-md mx-auto p-4">
-        <Tabs value={activeTab}>
-          {/* Registered Tab */}
-          <TabsContent value="registered">
-            {campsLoading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-              </div>
-            ) : registeredCamps.length === 0 ? (
-              <div className="text-center py-20">
-                <CheckCircle className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-                <h3 className="text-lg font-semibold text-deep-navy">No registered camps</h3>
-                <p className="text-gray-dark mb-4">Start exploring camps to register</p>
-                <Button onClick={() => navigate(createPageUrl('Discover'))}>
-                  Discover Camps
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {Object.entries(groupedRegistered).map(([month, campsList]) => (
-                  <div key={month}>
-                    <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
-                      {month}
-                    </h3>
-                    <div className="space-y-3">
-                      {campsList.map(camp => renderCampCard(camp, true))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          {/* Favorites Tab */}
-          <TabsContent value="favorites">
-            {campsLoading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-              </div>
-            ) : favoriteCamps.length === 0 ? (
-              <div className="text-center py-20">
-                <Star className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-                <h3 className="text-lg font-semibold text-deep-navy">No favorite camps</h3>
-                <p className="text-gray-dark mb-4">Tap the star icon to save camps</p>
-                <Button onClick={() => navigate(createPageUrl('Discover'))}>
-                  Discover Camps
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {Object.entries(groupedFavorites).map(([month, campsList]) => (
-                  <div key={month}>
-                    <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
-                      {month}
-                    </h3>
-                    <div className="space-y-3">
-                      {campsList.map(camp => renderCampCard(camp, false))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
       </div>
 
       <BottomNav />
