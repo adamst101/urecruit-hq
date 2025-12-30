@@ -113,7 +113,7 @@ function CalendarDemo({ seasonYear, demoYear }) {
               Demo mode is read-only.{" "}
               <button
                 className="underline font-medium"
-                onClick={() => navigate(createPageUrl("Signup"))}
+                onClick={() => navigate(createPageUrl("Onboarding"))}
               >
                 Sign up
               </button>{" "}
@@ -136,7 +136,14 @@ function CalendarDemo({ seasonYear, demoYear }) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Sports</SelectItem>
-              {[...new Map(sortedSummaries.map((s) => [s.sport_id, { id: s.sport_id, sport_name: s.sport_name }])).values()]
+              {[
+                ...new Map(
+                  sortedSummaries.map((s) => [
+                    s.sport_id,
+                    { id: s.sport_id, sport_name: s.sport_name }
+                  ])
+                ).values()
+              ]
                 .filter((s) => s?.id)
                 .map((s) => (
                   <SelectItem key={s.id} value={s.id}>
@@ -226,7 +233,8 @@ function CalendarDemo({ seasonYear, demoYear }) {
                   key={summary.camp_id}
                   onClick={() => {
                     setSelectedDate(null);
-                    if (summary.link_url) window.open(summary.link_url, "_blank");
+                    // ✅ DEMO: go to internal demo detail page
+                    navigate(createPageUrl(`CampDetailDemo?id=${summary.camp_id}`));
                   }}
                   className="w-full text-left p-4 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
                 >
@@ -288,7 +296,9 @@ function CalendarPaid({ currentYear }) {
   }, [campSummaries]);
 
   const { registeredCamps, favoriteCamps } = useMemo(() => {
-    let registered = sortedSummaries.filter((c) => c.intent_status === "registered" || c.intent_status === "completed");
+    let registered = sortedSummaries.filter(
+      (c) => c.intent_status === "registered" || c.intent_status === "completed"
+    );
     let favorite = sortedSummaries.filter((c) => c.intent_status === "favorite");
 
     if (sportFilter !== "all") {
@@ -329,7 +339,13 @@ function CalendarPaid({ currentYear }) {
 
   const selectedDateCamps = selectedDate ? getCampsForDay(selectedDate) : null;
 
-  if (identityLoading) return null;
+  if (identityLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
 
   if (identityError) {
     return (
@@ -339,7 +355,13 @@ function CalendarPaid({ currentYear }) {
     );
   }
 
-  if (!athleteProfile) return null;
+  if (!athleteProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -367,7 +389,14 @@ function CalendarPaid({ currentYear }) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Sports</SelectItem>
-              {[...new Map(sortedSummaries.map((s) => [s.sport_id, { id: s.sport_id, sport_name: s.sport_name }])).values()]
+              {[
+                ...new Map(
+                  sortedSummaries.map((s) => [
+                    s.sport_id,
+                    { id: s.sport_id, sport_name: s.sport_name }
+                  ])
+                ).values()
+              ]
                 .filter((s) => s?.id)
                 .map((s) => (
                   <SelectItem key={s.id} value={s.id}>
@@ -512,3 +541,4 @@ function CalendarPaid({ currentYear }) {
     </div>
   );
 }
+
