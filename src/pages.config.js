@@ -7,6 +7,7 @@ import MyCamps from './pages/MyCamps';
 import Onboarding from './pages/Onboarding';
 import Profile from './pages/Profile';
 import TestFunctions from './pages/TestFunctions';
+import CampDetailDemo from './pages/CampDetailDemo';
 import __Layout from './Layout.jsx';
 
 
@@ -20,6 +21,7 @@ export const PAGES = {
     "Onboarding": Onboarding,
     "Profile": Profile,
     "TestFunctions": TestFunctions,
+    "CampDetailDemo": CampDetailDemo,
 }
 
 export const pagesConfig = {
