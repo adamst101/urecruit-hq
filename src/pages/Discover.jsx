@@ -1,88 +1,79 @@
-import { useAthleteIdentity } from "@/components/useAthleteIdentity";
-// Discover.jsx (FULL REPLACEMENT)
-// Adds robust error handling so the page loads even when backend functions fail.
-// Also hardens against null/undefined data that was causing runtime crashes.
-//
-// NOTE: This version assumes:
-// - base44.functions.getAthleteProfile() exists
-// - base44.functions.getCampSummaries(...) exists
-// - CampIntent entity exists (used for favorite toggling)
-//
-// If your functions are named differently, change ONLY the two function calls.
+// Pages/Discover.jsx — FULL REPLACEMENT (copy/paste)
+// - Uses ONE identity source: useAthleteIdentity()
+// - Calls getCampSummaries with a cleaned payload (no empty strings)
+// - Adds robust loading/error handling so the page doesn't blank
+// - Favorite toggle writes CampIntent (not Favorite/Registration/UserCamp)
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import React, { useState, useMemo, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { base44 } from "@/api/base44Client";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, SlidersHorizontal, Loader2 } from 'lucide-react';
-import CampCard from '@/components/camps/CampCard';
-import FilterSheet from '@/components/camps/FilterSheet';
-import BottomNav from '@/components/navigation/BottomNav';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
+import { Loader2, Search, SlidersHorizontal } from "lucide-react";
+
+import CampCard from "@/components/CampCard";
+import FilterSheet from "@/components/FilterSheet";
+import BottomNav from "@/components/BottomNav";
+import { useAthleteIdentity } from "@/components/useAthleteIdentity";
 
 export default function Discover() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState({});
   const [showFilters, setShowFilters] = useState(false);
 
   // -----------------------------
-  // 1) Athlete Profile (new canonical)
-  const { account, athleteProfile, isLoading, isError, error } = useAthleteIdentity();
-
-if (isLoading) return null;
-
-if (isError) {
-  return <div className="p-6 text-red-600">Identity load failed: {String(error?.message || error)}</div>;
-}
-
-if (!athleteProfile) {
-  // route to onboarding
-  navigate(createPageUrl("Onboarding"));
-  return null;
-}
+  // Identity (single source of truth)
   // -----------------------------
   const {
-    data: athleteProfile,
-    isLoading: profileLoading,
-    isError: profileError,
-    error: profileErrorObj
-  } = useQuery({
-    queryKey: ['athleteProfile'],
-    queryFn: () => base44.auth.me(),
-    retry: false
-  });
+    account,
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError,
+    error: identityErrorObj
+  } = useAthleteIdentity();
 
-  // Redirect to onboarding only when profile lookup succeeds and returns null
+  // Redirect to onboarding if no athlete profile
   useEffect(() => {
-    if (!profileLoading && !profileError && athleteProfile === null) {
-      navigate(createPageUrl('Onboarding'));
+    if (identityLoading || identityError) return;
+    if (!athleteProfile) {
+      navigate(createPageUrl("Onboarding"));
     }
-  }, [athleteProfile, profileLoading, profileError, navigate]);
+  }, [identityLoading, identityError, athleteProfile, navigate]);
 
-  // Default sport filter to athlete’s sport
+  // -----------------------------
+  // Helpers
+  // -----------------------------
+  const clean = (v) => {
+    if (v === undefined || v === null) return undefined;
+    if (typeof v === "string" && v.trim() === "") return undefined;
+    return v;
+  };
+
+  // Default sport filter to athlete's sport once
   useEffect(() => {
     if (athleteProfile?.sport_id && !filters.sport) {
-      setFilters(prev => ({ ...prev, sport: athleteProfile.sport_id }));
+      setFilters((prev) => ({ ...prev, sport: athleteProfile.sport_id }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [athleteProfile]);
+  }, [athleteProfile?.sport_id]);
 
   // -----------------------------
-  // 2) Supporting reference data (for filters + badges)
+  // Reference data for FilterSheet
   // -----------------------------
   const { data: sports = [] } = useQuery({
-    queryKey: ['sports'],
+    queryKey: ["sports"],
     queryFn: () => base44.entities.Sport.list(),
     retry: false
   });
 
   const { data: positions = [] } = useQuery({
-    queryKey: ['positions'],
+    queryKey: ["positions"],
     queryFn: () => base44.entities.Position.list(),
     retry: false
   });
@@ -90,11 +81,11 @@ if (!athleteProfile) {
   const availablePositions = useMemo(() => {
     const sportId = filters.sport || athleteProfile?.sport_id;
     if (!sportId) return [];
-    return positions.filter(p => p.sport_id === sportId);
-  }, [positions, filters.sport, athleteProfile]);
+    return positions.filter((p) => p.sport_id === sportId);
+  }, [positions, filters.sport, athleteProfile?.sport_id]);
 
   // -----------------------------
-  // 3) Camp Summaries (denormalized read model)
+  // Camp Summaries (read model)
   // -----------------------------
   const {
     data: campSummaries = [],
@@ -102,23 +93,27 @@ if (!athleteProfile) {
     isError: campsError,
     error: campsErrorObj
   } = useQuery({
-    queryKey: ['campSummaries', athleteProfile?.id, filters, searchQuery],
-    queryFn: () => base44.functions.getCampSummaries({
-      athlete_id: athleteProfile?.id,
-      sport_id: filters.sport,
-      divisions: Array.isArray(filters.divisions) ? filters.divisions.join(',') : filters.divisions,
-      states: filters.state || filters.states, // supports either shape
-      position_ids: Array.isArray(filters.positions) ? filters.positions.join(',') : filters.positions,
-      start_date_gte: filters.startDate,
-      end_date_lte: filters.endDate,
-      search: searchQuery,
-      limit: 200
-    }),
-    enabled: !!athleteProfile && athleteProfile !== null,
+    queryKey: ["campSummaries", athleteProfile?.id, filters, searchQuery],
+    queryFn: async () => {
+      const payload = {
+        athlete_id: clean(athleteProfile?.id),
+        sport_id: clean(filters?.sport || athleteProfile?.sport_id),
+        divisions: clean(Array.isArray(filters?.divisions) ? filters.divisions.join(",") : filters?.divisions),
+        states: clean(filters?.state || filters?.states),
+        position_ids: clean(Array.isArray(filters?.positions) ? filters.positions.join(",") : filters?.positions),
+        start_date_gte: clean(filters?.startDate),
+        end_date_lte: clean(filters?.endDate),
+        search: clean(searchQuery),
+        limit: 200
+      };
+
+      console.log("getCampSummaries payload", payload);
+      return base44.functions.getCampSummaries(payload);
+    },
+    enabled: !!athleteProfile?.id,
     retry: false
   });
 
-  // Ensure upcoming sort in UI as a last-mile guard (backend should already do this)
   const sortedSummaries = useMemo(() => {
     const list = Array.isArray(campSummaries) ? [...campSummaries] : [];
     list.sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
@@ -126,55 +121,54 @@ if (!athleteProfile) {
   }, [campSummaries]);
 
   // -----------------------------
-  // 4) Favorite toggle using CampIntent (no Favorite entity)
+  // Favorite toggle (CampIntent)
   // -----------------------------
   const toggleFavoriteMutation = useMutation({
     mutationFn: async (campId) => {
       if (!athleteProfile?.id) return;
 
-      // Find existing intent for this athlete+camp
-      const existingIntents = await base44.entities.CampIntent.filter({
+      const existing = await base44.entities.CampIntent.filter({
         athlete_id: athleteProfile.id,
         camp_id: campId
       });
 
-      const existing = existingIntents?.[0] || null;
+      const intent = existing?.[0] || null;
 
-      // If registered/completed, don't downgrade via "favorite" toggle
-      if (existing?.status === 'registered' || existing?.status === 'completed') {
-        return;
-      }
+      // Don't mess with registrations from favorite toggle
+      if (intent?.status === "registered" || intent?.status === "completed") return;
 
-      if (!existing) {
+      if (!intent) {
         await base44.entities.CampIntent.create({
           athlete_id: athleteProfile.id,
           camp_id: campId,
-          status: 'favorite',
-          priority: 'medium'
+          status: "favorite",
+          priority: "medium"
         });
         return;
       }
 
-      // Toggle favorite on/off
-      if (existing.status === 'favorite') {
-        await base44.entities.CampIntent.update(existing.id, { status: 'removed' });
+      if (intent.status === "favorite") {
+        await base44.entities.CampIntent.update(intent.id, { status: "removed" });
       } else {
-        await base44.entities.CampIntent.update(existing.id, { status: 'favorite' });
+        await base44.entities.CampIntent.update(intent.id, { status: "favorite" });
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['campSummaries'] });
+      queryClient.invalidateQueries({ queryKey: ["campSummaries"] });
     }
   });
 
+  // -----------------------------
+  // UI helpers
+  // -----------------------------
   const handleClearFilters = () => {
     setFilters({ sport: athleteProfile?.sport_id });
   };
 
   // -----------------------------
-  // 5) Loading / error screens
+  // Render guards
   // -----------------------------
-  if (profileLoading) {
+  if (identityLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -182,21 +176,21 @@ if (!athleteProfile) {
     );
   }
 
-  if (profileError) {
+  if (identityError) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="max-w-md w-full bg-white border border-rose-200 text-rose-700 rounded-xl p-4">
-          <div className="font-semibold mb-1">Athlete profile failed</div>
+          <div className="font-semibold mb-1">Identity load failed</div>
           <div className="text-sm break-words">
-            {String(profileErrorObj?.message || profileErrorObj)}
+            {String(identityErrorObj?.message || identityErrorObj)}
           </div>
         </div>
       </div>
     );
   }
 
-  // If athleteProfile is null, useEffect will redirect; render a spinner briefly
-  if (athleteProfile === null) {
+  // If no athleteProfile, useEffect will redirect; render a spinner briefly
+  if (!athleteProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -205,7 +199,7 @@ if (!athleteProfile) {
   }
 
   // -----------------------------
-  // 6) Render
+  // Main UI
   // -----------------------------
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -235,38 +229,7 @@ if (!athleteProfile) {
             </Button>
           </div>
 
-          {/* Active Filters */}
-          {(filters.divisions?.length > 0 || filters.positions?.length > 0 || filters.state) && (
-            <div className="flex items-center gap-2 mt-3 text-sm flex-wrap">
-              <span className="text-slate-500">Filters:</span>
-              {filters.divisions?.map(d => (
-                <span
-                  key={d}
-                  className="px-2 py-1 bg-electric-blue/10 text-electric-blue rounded-full text-xs font-medium"
-                >
-                  {d}
-                </span>
-              ))}
-              {filters.positions?.length > 0 && (
-                <span className="px-2 py-1 bg-electric-blue/10 text-electric-blue rounded-full text-xs font-medium">
-                  {filters.positions.length} position{filters.positions.length > 1 ? 's' : ''}
-                </span>
-              )}
-              {filters.state && (
-                <span className="px-2 py-1 bg-electric-blue/10 text-electric-blue rounded-full text-xs font-medium">
-                  {filters.state}
-                </span>
-              )}
-              <button
-                onClick={handleClearFilters}
-                className="text-electric-blue hover:underline text-xs font-medium"
-              >
-                Clear
-              </button>
-            </div>
-          )}
-
-          {/* CampSummaries error banner (prevents "blank page") */}
+          {/* CampSummaries error banner */}
           {campsError && (
             <div className="bg-white border border-rose-200 text-rose-700 rounded-xl p-3 mt-4">
               <div className="font-semibold">CampSummaries failed</div>
@@ -289,45 +252,49 @@ if (!athleteProfile) {
             <Search className="w-12 h-12 mx-auto text-slate-300 mb-4" />
             <h3 className="text-lg font-semibold text-deep-navy">No camps found</h3>
             <p className="text-gray-dark">Try adjusting your filters</p>
+
+            {/* Helpful debug */}
+            <div className="text-xs text-slate-400 mt-4 break-words">
+              <div>Account: {account?.id}</div>
+              <div>Athlete: {athleteProfile?.id}</div>
+              <div>Sport: {filters?.sport || athleteProfile?.sport_id || "none"}</div>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
-            {sortedSummaries.map(summary => (
+            {sortedSummaries.map((s) => (
               <CampCard
-                key={summary.camp_id}
+                key={s.camp_id}
                 camp={{
-                  id: summary.camp_id,
-                  camp_name: summary.camp_name,
-                  start_date: summary.start_date,
-                  end_date: summary.end_date,
-                  city: summary.city,
-                  state: summary.state,
-                  price: summary.price,
-                  link_url: summary.link_url,
-                  notes: summary.notes,
-                  position_ids: summary.position_ids
+                  id: s.camp_id,
+                  camp_name: s.camp_name,
+                  start_date: s.start_date,
+                  end_date: s.end_date,
+                  city: s.city,
+                  state: s.state,
+                  price: s.price,
+                  link_url: s.link_url,
+                  notes: s.notes,
+                  position_ids: s.position_ids
                 }}
                 school={{
-                  id: summary.school_id,
-                  school_name: summary.school_name,
-                  division: summary.school_division,
-                  logo_url: summary.school_logo_url,
-                  city: summary.school_city,
-                  state: summary.school_state,
-                  conference: summary.school_conference
+                  id: s.school_id,
+                  school_name: s.school_name,
+                  division: s.school_division,
+                  logo_url: s.school_logo_url,
+                  city: s.school_city,
+                  state: s.school_state,
+                  conference: s.school_conference
                 }}
                 sport={{
-                  id: summary.sport_id,
-                  sport_name: summary.sport_name
+                  id: s.sport_id,
+                  sport_name: s.sport_name
                 }}
-                positions={(summary.position_codes || []).map((code, idx) => ({
-                  position_code: code,
-                  id: summary.position_ids?.[idx]
-                }))}
-                isFavorite={summary.intent_status === 'favorite'}
-                isRegistered={summary.intent_status === 'registered' || summary.intent_status === 'completed'}
-                onFavoriteToggle={() => toggleFavoriteMutation.mutate(summary.camp_id)}
-                onClick={() => navigate(createPageUrl(`CampDetail?id=${summary.camp_id}`))}
+                positions={(s.position_codes || []).map((code) => ({ position_code: code }))}
+                isFavorite={s.intent_status === "favorite"}
+                isRegistered={s.intent_status === "registered" || s.intent_status === "completed"}
+                onFavoriteToggle={() => toggleFavoriteMutation.mutate(s.camp_id)}
+                onClick={() => navigate(createPageUrl(`CampDetail?id=${s.camp_id}`))}
               />
             ))}
           </div>
@@ -350,3 +317,4 @@ if (!athleteProfile) {
     </div>
   );
 }
+
