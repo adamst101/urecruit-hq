@@ -3,51 +3,67 @@ import { base44 } from "../../api/base44Client";
 
 /**
  * usePublicCampSummariesClient
- * Public/demo read model built from CampDemo (no identity required).
+ * Demo-mode single source of truth for public camp summaries.
  *
- * Query key:
- *   ["publicCampSummaries_client", seasonYear, sportId]
+ * Query key MUST remain stable:
+ * ["publicCampSummaries_demo", seasonYear, sportId, state, division, positionKey]
  *
- * Note:
- * - No CampIntent
- * - No TargetSchool
- * - Joins only: School / Sport / Position
+ * Notes:
+ * - Uses CampDemo as the system of record for demo browsing.
+ * - Composes a joined summary client-side (School/Sport/Position).
+ * - No writes. No CampIntent.
  */
 export function usePublicCampSummariesClient({
   seasonYear,
-  sportId,
+  sportId = null,
+  state = null,
+  division = null,
+  positionIds = [],
   limit = 500,
   enabled = true
 }) {
   const clean = (v) => {
-    if (v === undefined || v === null) return undefined;
-    if (typeof v === "string" && v.trim() === "") return undefined;
+    if (v === undefined || v === null) return null;
+    if (typeof v === "string" && v.trim() === "") return null;
     return v;
   };
 
   const y = clean(seasonYear);
   const sId = clean(sportId);
+  const st = clean(state);
+  const div = clean(division);
+
+  const posIds = Array.isArray(positionIds) ? positionIds.filter(Boolean) : [];
+  const positionKey = posIds.length ? posIds.slice().sort().join(",") : "none";
 
   return useQuery({
-    queryKey: ["publicCampSummaries_client", y, sId],
-    enabled: Boolean(enabled) && Boolean(y),
+    queryKey: ["publicCampSummaries_demo", y, sId, st, div, positionKey],
+    enabled: !!enabled && !!y,
     retry: false,
     queryFn: async () => {
-      const query = { season_year: y };
-      if (sId) query.sport_id = sId;
+      // -----------------------------
+      // 1) Fetch CampDemo (server-side filters when possible)
+      // -----------------------------
+      const campQuery = { season_year: y };
 
-      // Pull demo camps
+      if (sId) campQuery.sport_id = sId;
+      if (st) campQuery.state = st;
+
+      // Note: division is on School, not CampDemo -> filter after join
       const camps = await base44.entities.CampDemo.filter(
-        query,
+        campQuery,
         "-start_date",
         limit || 500
       );
 
-      if (!camps?.length) return [];
+      const campList = Array.isArray(camps) ? camps : [];
+      if (campList.length === 0) return [];
 
-      // Batch join: School / Sport / Position
-      const schoolIds = [...new Set(camps.map((c) => c.school_id).filter(Boolean))];
-      const sportIds = [...new Set(camps.map((c) => c.sport_id).filter(Boolean))];
+      // -----------------------------
+      // 2) Join School / Sport / Position
+      // -----------------------------
+      const schoolIds = [...new Set(campList.map((c) => c.school_id).filter(Boolean))];
+      const sportIds = [...new Set(campList.map((c) => c.sport_id).filter(Boolean))];
 
       const [schools, sports, positions] = await Promise.all([
         schoolIds.length
@@ -63,8 +79,30 @@ export function usePublicCampSummariesClient({
       const sportMap = Object.fromEntries((sports || []).map((s) => [s.id, s]));
       const positionMap = Object.fromEntries((positions || []).map((p) => [p.id, p]));
 
-      // Summaries (same shape as paid as much as possible)
-      return camps.map((camp) => {
+      // -----------------------------
+      // 3) Apply client-side filters requiring joins
+      // -----------------------------
+      const filtered = campList.filter((camp) => {
+        // division filter (School)
+        if (div) {
+          const school = schoolMap[camp.school_id];
+          if (!school || school.division !== div) return false;
+        }
+
+        // position filter (intersection)
+        if (posIds.length > 0) {
+          const campPos = Array.isArray(camp.position_ids) ? camp.position_ids : [];
+          const hasOverlap = campPos.some((pid) => posIds.includes(pid));
+          if (!hasOverlap) return false;
+        }
+
+        return true;
+      });
+
+      // -----------------------------
+      // 4) Build summary shape (aligned to paid summary where possible)
+      // -----------------------------
+      return filtered.map((camp) => {
         const school = schoolMap[camp.school_id];
         const sport = sportMap[camp.sport_id];
 
@@ -99,15 +137,12 @@ export function usePublicCampSummariesClient({
           sport_id: sport?.id,
           sport_name: sport?.sport_name,
 
-          // Intent (demo users have none)
+          // Demo only: no intent
           intent_status: null,
           intent_priority: null,
 
-          // Targeting (demo users have none)
-          is_target_school: false,
-
-          // Extra
-          season_year: camp.season_year
+          // Demo only: targeting unknown
+          is_target_school: false
         };
       });
     }
