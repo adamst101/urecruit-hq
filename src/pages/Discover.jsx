@@ -14,10 +14,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Search, SlidersHorizontal } from "lucide-react";
 
-import CampCard from "@/components/CampCard";
-import FilterSheet from "@/components/FilterSheet";
-import BottomNav from "@/components/BottomNav";
-import { useAthleteIdentity } from "@/components/useAthleteIdentity";
+import CampCard from "../Components/CampCard";
+import FilterSheet from "../Components/FilterSheet";
+import BottomNav from "../Components/BottomNav";
+import { useAthleteIdentity } from "../Components/useAthleteIdentity";
 
 export default function Discover() {
   const navigate = useNavigate();
