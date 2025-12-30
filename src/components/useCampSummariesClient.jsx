@@ -28,7 +28,7 @@ export function useCampSummariesClient({
 
   return useQuery({
     queryKey: ["myCampsSummaries_client", aId, sId],
-    enabled: !!aId && !!enabled,
+    enabled: Boolean(aId) && enabled,
     retry: false,
     queryFn: async () => {
       const payload = {
@@ -47,6 +47,9 @@ export function useCampSummariesClient({
         payload.limit || 500
       );
 
+      // Fast exit
+      if (!camps?.length) return [];
+
       // Batch join: School / Sport / Position
       const schoolIds = [...new Set(camps.map((c) => c.school_id).filter(Boolean))];
       const sportIds = [...new Set(camps.map((c) => c.sport_id).filter(Boolean))];
@@ -61,9 +64,9 @@ export function useCampSummariesClient({
         base44.entities.Position.list()
       ]);
 
-      const schoolMap = Object.fromEntries(schools.map((s) => [s.id, s]));
-      const sportMap = Object.fromEntries(sports.map((s) => [s.id, s]));
-      const positionMap = Object.fromEntries(positions.map((p) => [p.id, p]));
+      const schoolMap = Object.fromEntries((schools || []).map((s) => [s.id, s]));
+      const sportMap = Object.fromEntries((sports || []).map((s) => [s.id, s]));
+      const positionMap = Object.fromEntries((positions || []).map((p) => [p.id, p]));
 
       // Athlete-specific: CampIntent + TargetSchool
       const [intents, targets] = await Promise.all([
@@ -71,8 +74,8 @@ export function useCampSummariesClient({
         base44.entities.TargetSchool.filter({ athlete_id: payload.athlete_id })
       ]);
 
-      const intentMap = Object.fromEntries(intents.map((i) => [i.camp_id, i]));
-      const targetSchoolIds = new Set(targets.map((t) => t.school_id));
+      const intentMap = Object.fromEntries((intents || []).map((i) => [i.camp_id, i]));
+      const targetSchoolIds = new Set((targets || []).map((t) => t.school_id));
 
       // Summaries
       return camps.map((camp) => {
