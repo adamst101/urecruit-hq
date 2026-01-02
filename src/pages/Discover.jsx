@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Star, Lock, SlidersHorizontal } from "lucide-react";
+import { Loader2, SlidersHorizontal } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
-import { cn } from "../lib/utils";
 
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -20,7 +19,7 @@ import { useCampSummariesClient } from "../components/hooks/useCampSummariesClie
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient";
 import { useDemoProfile } from "../components/hooks/useDemoProfile";
 
-// ✅ NEW: write-gating + demo-local favorites
+// ✅ Write-gating + demo-local favorites
 import { useWriteGate } from "../components/hooks/useWriteGate";
 import { toggleDemoFavorite, isDemoFavorite } from "../components/hooks/demoFavorites";
 
@@ -47,7 +46,7 @@ export default function Discover() {
     isError: identityError
   } = useAthleteIdentity();
 
-  const { loaded: demoLoaded, demoProfile } = useDemoProfile();
+  const { loaded: demoLoaded, demoProfile, demoProfileId } = useDemoProfile();
 
   // ✅ Gate for writes
   const gate = useWriteGate();
@@ -179,8 +178,8 @@ export default function Discover() {
       <Badge className="bg-slate-900 text-white">Demo {demoYear}</Badge>
     );
 
-  // ✅ Stable demo profile id (use whatever you have; fallback to "default")
-  const demoProfileId = demoProfile?.id || "default";
+  // Fallback if hook doesn't provide id yet
+  const effectiveDemoProfileId = demoProfileId || demoProfile?.id || "default";
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -242,16 +241,14 @@ export default function Discover() {
             ? s.position_codes.map((code) => ({ position_code: code }))
             : [];
 
-          // ✅ Favorite state:
-          // - paid: intent_status from joined summaries
-          // - demo: localStorage favorites
+          // ✅ SWAP APPLIED: isFavorite uses gate.mode (single source of truth)
           const isFav =
-            mode === "paid"
+            gate.mode === "paid"
               ? s.intent_status === "favorite"
-              : isDemoFavorite(demoProfileId, s.camp_id);
+              : isDemoFavorite(effectiveDemoProfileId, s.camp_id);
 
           const isRegistered =
-            mode === "paid" &&
+            gate.mode === "paid" &&
             (s.intent_status === "registered" || s.intent_status === "completed");
 
           return (
@@ -266,7 +263,7 @@ export default function Discover() {
               onFavoriteToggle={() => {
                 gate.write({
                   demo: () => {
-                    toggleDemoFavorite(demoProfileId, s.camp_id);
+                    toggleDemoFavorite(effectiveDemoProfileId, s.camp_id);
                     setDemoFavTick((x) => x + 1); // force rerender
                   },
                   paid: () => toggleFavorite.mutate({ campId: s.camp_id }),
@@ -276,7 +273,7 @@ export default function Discover() {
               onClick={() =>
                 navigate(
                   createPageUrl(
-                    mode === "paid"
+                    gate.mode === "paid"
                       ? `CampDetail?id=${s.camp_id}`
                       : `CampDetailDemo?id=${s.camp_id}`
                   )
