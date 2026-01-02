@@ -12,7 +12,7 @@ import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 
 import BottomNav from "../components/navigation/BottomNav";
-import CampCard from "../components/camps/CampCard"; // ✅ FIXED PATH
+import CampCard from "../components/camps/CampCard";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
@@ -20,16 +20,26 @@ import { useCampSummariesClient } from "../components/hooks/useCampSummariesClie
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient";
 import { useDemoProfile } from "../components/hooks/useDemoProfile";
 
+// ✅ NEW: write-gating + demo-local favorites
+import { useWriteGate } from "../components/hooks/useWriteGate";
+import { toggleDemoFavorite, isDemoFavorite } from "../components/hooks/demoFavorites";
+
 /**
  * Discover
- * - Demo mode: public CampDemo summaries + local DemoProfile filters
- * - Paid mode: client-joined camp summaries + CampIntent mutations
+ * - Demo mode: public CampDemo summaries + local DemoProfile filters + localStorage favorites
+ * - Paid mode: client-joined camp summaries + CampIntent mutations (favorites/registered)
+ *
+ * Writes are centralized through useWriteGate:
+ * - demo => localStorage
+ * - paid => backend mutation
+ * - blocked => redirect to Onboarding
  */
 export default function Discover() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { mode, loading: accessLoading, currentYear, demoYear, seasonYear } = useSeasonAccess();
+  const { mode, loading: accessLoading, currentYear, demoYear, seasonYear } =
+    useSeasonAccess();
 
   const {
     athleteProfile,
@@ -38,6 +48,12 @@ export default function Discover() {
   } = useAthleteIdentity();
 
   const { loaded: demoLoaded, demoProfile } = useDemoProfile();
+
+  // ✅ Gate for writes
+  const gate = useWriteGate();
+
+  // ✅ Demo favorites need a re-render trigger (localStorage writes don't re-render React)
+  const [demoFavTick, setDemoFavTick] = useState(0);
 
   // Paid data
   const athleteId = athleteProfile?.id;
@@ -107,6 +123,7 @@ export default function Discover() {
 
       const intent = existing?.[0] || null;
 
+      // Don't allow toggling if registered/completed
       if (intent?.status === "registered" || intent?.status === "completed") return;
 
       if (!intent) {
@@ -144,7 +161,10 @@ export default function Discover() {
           <div className="text-xs mt-2 break-words">
             {String(errorObj?.message || errorObj)}
           </div>
-          <Button className="w-full mt-4" onClick={() => navigate(createPageUrl("Home"))}>
+          <Button
+            className="w-full mt-4"
+            onClick={() => navigate(createPageUrl("Home"))}
+          >
             Back to Home
           </Button>
         </Card>
@@ -158,6 +178,9 @@ export default function Discover() {
     ) : (
       <Badge className="bg-slate-900 text-white">Demo {demoYear}</Badge>
     );
+
+  // ✅ Stable demo profile id (use whatever you have; fallback to "default")
+  const demoProfileId = demoProfile?.id || "default";
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -219,6 +242,18 @@ export default function Discover() {
             ? s.position_codes.map((code) => ({ position_code: code }))
             : [];
 
+          // ✅ Favorite state:
+          // - paid: intent_status from joined summaries
+          // - demo: localStorage favorites
+          const isFav =
+            mode === "paid"
+              ? s.intent_status === "favorite"
+              : isDemoFavorite(demoProfileId, s.camp_id);
+
+          const isRegistered =
+            mode === "paid" &&
+            (s.intent_status === "registered" || s.intent_status === "completed");
+
           return (
             <CampCard
               key={s.camp_id}
@@ -226,17 +261,17 @@ export default function Discover() {
               school={school}
               sport={sport}
               positions={positions}
-              isFavorite={mode === "paid" && s.intent_status === "favorite"}
-              isRegistered={
-                mode === "paid" &&
-                (s.intent_status === "registered" || s.intent_status === "completed")
-              }
+              isFavorite={isFav}
+              isRegistered={isRegistered}
               onFavoriteToggle={() => {
-                if (mode !== "paid") {
-                  navigate(createPageUrl("Onboarding"));
-                  return;
-                }
-                toggleFavorite.mutate({ campId: s.camp_id });
+                gate.write({
+                  demo: () => {
+                    toggleDemoFavorite(demoProfileId, s.camp_id);
+                    setDemoFavTick((x) => x + 1); // force rerender
+                  },
+                  paid: () => toggleFavorite.mutate({ campId: s.camp_id }),
+                  blocked: () => navigate(createPageUrl("Onboarding"))
+                });
               }}
               onClick={() =>
                 navigate(
