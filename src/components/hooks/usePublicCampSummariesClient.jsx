@@ -1,16 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
 
-/**
- * Demo/Public camp summaries client
- * Reads from Camp (not CampDemo) using start_date year bounds.
- * Joins School + Sport to provide a "summary" shape used by Discover/CampCard.
- *
- * NOTE:
- * - If your entity names differ (e.g., Schools vs School), adjust those two calls.
- * - If your school/sport fields differ, the "pick*" helpers below handle common variants.
- */
-
 const yStart = (y) => `${Number(y)}-01-01`;
 const yNext = (y) => `${Number(y) + 1}-01-01`;
 
@@ -34,17 +24,75 @@ function pickSportName(sp) {
   return sp?.sport_name || sp?.name || sp?.title || null;
 }
 
+/**
+ * Try different filter syntaxes for date range until one works.
+ * Returns { rows, used } where used is a string indicating which syntax succeeded.
+ */
+async function filterCampsByYear(whereBase, year, limit) {
+  const start = yStart(year);
+  const next = yNext(year);
+
+  // Candidate syntaxes (Base44 variants)
+  const candidates = [
+    {
+      used: "object_ops_gte_lt",
+      where: { ...whereBase, start_date: { gte: start, lt: next } }
+    },
+    {
+      used: "suffix_ops__gte__lt",
+      where: { ...whereBase, start_date__gte: start, start_date__lt: next }
+    },
+    {
+      used: "suffix_ops_gte_lt",
+      where: { ...whereBase, start_date_gte: start, start_date_lt: next }
+    },
+    {
+      used: "prefix_ops_gte_lt",
+      where: { ...whereBase, gte_start_date: start, lt_start_date: next }
+    }
+  ];
+
+  // Try each candidate
+  for (const c of candidates) {
+    try {
+      const rows = await base44.entities.Camp.filter(
+        c.where,
+        limit ? { limit } : undefined
+      );
+      if (Array.isArray(rows)) return { rows, used: c.used };
+    } catch {
+      // try next
+    }
+  }
+
+  // Fallback: pull a wider set (with sport/state if present) and client-filter by year.
+  // Not ideal, but it prevents "blank app" when operators differ.
+  const rows = await base44.entities.Camp.filter(
+    whereBase,
+    limit ? { limit } : undefined
+  );
+
+  const arr = Array.isArray(rows) ? rows : [];
+  const startStr = start;
+  const nextStr = next;
+
+  const filtered = arr.filter((c) => {
+    const d = c?.start_date;
+    return typeof d === "string" && d >= startStr && d < nextStr;
+  });
+
+  return { rows: filtered, used: "client_side_fallback" };
+}
+
 async function fetchEntityMap(entityName, ids) {
   const map = new Map();
   if (!ids?.length) return map;
 
-  // Base44 filter syntax can vary; many support `id: { in: [...] }`.
-  // If yours does not, replace this block with a loop per id (slower but works).
+  // Try "in" first; fallback to per-id
   let rows = [];
   try {
     rows = await base44.entities[entityName].filter({ id: { in: ids } });
   } catch {
-    // Fallback: N queries (safe)
     rows = [];
     for (const id of ids) {
       try {
@@ -59,12 +107,11 @@ async function fetchEntityMap(entityName, ids) {
 }
 
 /**
- * Returns "summary rows" shaped like what Discover expects:
+ * Returns summaries shaped for Discover:
  * {
- *   camp_id, camp_name, start_date, end_date, city, state, price, link_url, notes,
- *   position_ids,
- *   school_id, school_name, school_division,
- *   sport_id, sport_name
+ *  camp_id, camp_name, start_date, end_date, city, state, price, link_url, notes, position_ids,
+ *  school_id, school_name, school_division,
+ *  sport_id, sport_name
  * }
  */
 async function fetchPublicCampSummaries({
@@ -76,30 +123,21 @@ async function fetchPublicCampSummaries({
 }) {
   if (!seasonYear) return [];
 
-  const where = {
-    start_date: { gte: yStart(seasonYear), lt: yNext(seasonYear) }
-  };
+  // Build base where (no year range yet)
+  const whereBase = {};
+  if (sportId) whereBase.sport_id = sportId;
+  if (state) whereBase.state = state;
 
-  if (sportId) where.sport_id = sportId;
-  if (state) where.state = state;
+  // Pull camps for the year using adaptive operators
+  const { rows: campsRaw, used } = await filterCampsByYear(whereBase, seasonYear);
 
-  // Pull camps
-  let camps = [];
-  try {
-    camps = await base44.entities.Camp.filter(where);
-  } catch (e) {
-    // If your Base44 filter doesn’t support {gte/lt}, you MUST adjust this.
-    // For now, fail loudly so you know the cause.
-    throw new Error(
-      `Camp.filter date-range failed. Adjust filter syntax. Details: ${String(
-        e?.message || e
-      )}`
-    );
-  }
+  // Helpful one-time debug
+  // eslint-disable-next-line no-console
+  console.log("[Demo Camp Query]", { seasonYear, used, count: campsRaw?.length || 0 });
 
-  camps = Array.isArray(camps) ? camps : [];
+  let camps = Array.isArray(campsRaw) ? campsRaw : [];
 
-  // Optional: position filter (client-side)
+  // Optional: positions filter (client-side)
   const pos = Array.isArray(positionIds) ? positionIds.filter(Boolean) : [];
   if (pos.length) {
     camps = camps.filter((c) => {
@@ -153,9 +191,6 @@ async function fetchPublicCampSummaries({
   });
 }
 
-/**
- * usePublicCampSummariesClient
- */
 export function usePublicCampSummariesClient({
   seasonYear,
   sportId,
@@ -186,13 +221,10 @@ export function usePublicCampSummariesClient({
 }
 
 /**
- * Helper for Option A demo-year probing:
- * returns true if any Camp exists in that year (start_date bounds)
+ * Used by Discover Option A year resolver.
+ * Checks if ANY camps exist in the year using the same operator-adaptive logic.
  */
 export async function publicCampYearHasData(year) {
-  const where = {
-    start_date: { gte: yStart(year), lt: yNext(year) }
-  };
-  const rows = await base44.entities.Camp.filter(where, { limit: 1 });
+  const { rows } = await filterCampsByYear({}, year, 1);
   return Array.isArray(rows) && rows.length > 0;
 }
