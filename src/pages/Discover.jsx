@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, SlidersHorizontal } from "lucide-react";
@@ -16,7 +16,11 @@ import CampCard from "../components/camps/CampCard";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
-import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient";
+import {
+  usePublicCampSummariesClient,
+  publicCampYearHasData
+} from "../components/hooks/usePublicCampSummariesClient";
+
 import { useDemoProfile } from "../components/hooks/useDemoProfile";
 
 // ✅ Write-gating + demo-local favorites
@@ -25,24 +29,17 @@ import { toggleDemoFavorite, isDemoFavorite } from "../components/hooks/demoFavo
 
 /**
  * Discover
- * - Demo mode: public CampDemo summaries + local DemoProfile filters + localStorage favorites
- * - Paid mode: client-joined camp summaries + CampIntent mutations
- *
- * OPTION A: Demo year resolves dynamically:
- * - Prefer (currentYear - 1)
- * - If no demo data exists, fallback to (currentYear - 2), (currentYear - 3), ...
- * - Never show a "blank white" screen: show an empty-state card if no results.
- *
- * IMPORTANT:
- * - The "probe" function below assumes you have a CampDemo entity with a season year field.
- * - If your schema differs, update ONLY `probeDemoYearHasData()`.
+ * - Paid: useCampSummariesClient (joined with intent status)
+ * - Demo: uses publicCampSummariesClient backed by Camp + start_date year range (Option A)
+ * - Favorites:
+ *   - paid => CampIntent
+ *   - demo => localStorage
  */
 export default function Discover() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { mode, loading: accessLoading, currentYear, demoYear, seasonYear } =
-    useSeasonAccess();
+  const { mode, loading: accessLoading, currentYear } = useSeasonAccess();
 
   const {
     athleteProfile,
@@ -52,13 +49,12 @@ export default function Discover() {
 
   const { loaded: demoLoaded, demoProfile, demoProfileId } = useDemoProfile();
 
-  // ✅ Gate for writes (single source of truth for paid vs demo behaviors)
   const gate = useWriteGate();
 
-  // ✅ Demo favorites need a re-render trigger (localStorage writes don't re-render React)
+  // localStorage favorites need a rerender trigger
   const [, setDemoFavTick] = useState(0);
 
-  // Paid data identifiers
+  // Paid identifiers
   const athleteId = athleteProfile?.id;
   const sportId = athleteProfile?.sport_id;
 
@@ -69,32 +65,18 @@ export default function Discover() {
     enabled: gate.mode === "paid" && !!athleteId
   });
 
-  /* ------------------------------------------------------------
-   * OPTION A: Resolve the demo year with fallback
-   * ------------------------------------------------------------ */
-
+  // ------------------------------------------------------------
+  // OPTION A: resolve demo year by probing Camp.start_date year bounds
+  // Prefer currentYear - 1, then fallback older if needed
+  // ------------------------------------------------------------
   const demoEnabled = gate.mode !== "paid" && demoLoaded;
-
   const [resolvedDemoYear, setResolvedDemoYear] = useState(null);
   const [resolvingDemoYear, setResolvingDemoYear] = useState(false);
-
-  // ✅ Update ONLY this function if your schema differs.
-  // It should return true if there is at least 1 CampDemo row for that year.
-  const probeDemoYearHasData = useCallback(async (year) => {
-    // Assumption: CampDemo entity exists and has a season_year field.
-    // If your field is named differently (e.g. "seasonYear"), change it here.
-    const rows = await base44.entities.CampDemo.filter(
-      { season_year: Number(year) },
-      { limit: 1 }
-    );
-    return Array.isArray(rows) && rows.length > 0;
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     const run = async () => {
-      // Only resolve for demo/unauth flows
       if (!demoEnabled) {
         setResolvedDemoYear(null);
         setResolvingDemoYear(false);
@@ -105,15 +87,12 @@ export default function Discover() {
 
       const cy = Number(currentYear);
       const preferred = cy - 1;
-
-      // Try up to 4 years back (adjust if needed)
       const candidates = [preferred, preferred - 1, preferred - 2, preferred - 3];
 
       for (const y of candidates) {
         try {
-          const ok = await probeDemoYearHasData(y);
+          const ok = await publicCampYearHasData(y);
           if (cancelled) return;
-
           if (ok) {
             setResolvedDemoYear(y);
             setResolvingDemoYear(false);
@@ -124,7 +103,7 @@ export default function Discover() {
         }
       }
 
-      // None found; keep preferred for honest UI + empty-state handling
+      // none found: keep preferred for honest UI + empty-state
       if (!cancelled) {
         setResolvedDemoYear(preferred);
         setResolvingDemoYear(false);
@@ -135,33 +114,25 @@ export default function Discover() {
     return () => {
       cancelled = true;
     };
-  }, [demoEnabled, currentYear, probeDemoYearHasData]);
+  }, [demoEnabled, currentYear]);
 
-  // Demo query uses the resolved year (fallback-capable)
+  // Demo query (from Camp by date range, joined with School/Sport)
   const demoSummariesQuery = usePublicCampSummariesClient({
     seasonYear: resolvedDemoYear,
     sportId: demoProfile?.sport_id || null,
     state: demoProfile?.state || null,
     division: demoProfile?.division || null,
-    positionIds: Array.isArray(demoProfile?.position_ids)
-      ? demoProfile.position_ids
-      : [],
+    positionIds: Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids : [],
     enabled: demoEnabled && !!resolvedDemoYear
   });
 
-  /* ------------------------------------------------------------
-   * Paid profile guard (unchanged)
-   * ------------------------------------------------------------ */
+  // Paid profile guard
   useEffect(() => {
     if (accessLoading || identityLoading) return;
     if (gate.mode === "paid" && !athleteProfile) {
       navigate(createPageUrl("Onboarding"));
     }
   }, [gate.mode, accessLoading, identityLoading, athleteProfile, navigate]);
-
-  /* ------------------------------------------------------------
-   * Loading / Error / Data selection
-   * ------------------------------------------------------------ */
 
   const loading =
     accessLoading ||
@@ -185,7 +156,7 @@ export default function Discover() {
     return Array.isArray(data) ? data : [];
   }, [gate.mode, paidSummariesQuery.data, demoSummariesQuery.data]);
 
-  // Paid mutations (favorites)
+  // Paid favorites mutation
   const invalidatePaidSummaries = () => {
     queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
   };
@@ -201,7 +172,7 @@ export default function Discover() {
 
       const intent = existing?.[0] || null;
 
-      // Don't allow toggling if registered/completed
+      // Don't toggle if registered/completed
       if (intent?.status === "registered" || intent?.status === "completed") return;
 
       if (!intent) {
@@ -239,10 +210,7 @@ export default function Discover() {
           <div className="text-xs mt-2 break-words">
             {String(errorObj?.message || errorObj)}
           </div>
-          <Button
-            className="w-full mt-4"
-            onClick={() => navigate(createPageUrl("Home"))}
-          >
+          <Button className="w-full mt-4" onClick={() => navigate(createPageUrl("Home"))}>
             Back to Home
           </Button>
         </Card>
@@ -250,11 +218,7 @@ export default function Discover() {
     );
   }
 
-  /* ------------------------------------------------------------
-   * Header badge year (truthful)
-   * ------------------------------------------------------------ */
-
-  const demoBadgeYear = resolvedDemoYear || demoYear;
+  const demoBadgeYear = resolvedDemoYear || (Number(currentYear) - 1);
 
   const headerBadge =
     gate.mode === "paid" ? (
@@ -263,8 +227,7 @@ export default function Discover() {
       <Badge className="bg-slate-900 text-white">Demo {demoBadgeYear}</Badge>
     );
 
-  // Stable demo profile id for favorites
-  const effectiveDemoProfileId = demoProfileId || demoProfile?.id || "default";
+  const effectiveDemoProfileId = demoProfileId || "default";
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -298,41 +261,22 @@ export default function Discover() {
       </div>
 
       <div className="max-w-md mx-auto p-4 space-y-3">
-        {/* ✅ Empty-state (prevents blank white screens) */}
         {summaries.length === 0 ? (
           <Card className="p-4 border-slate-200 bg-white">
             <div className="font-semibold text-deep-navy">No camps found</div>
             <div className="text-sm text-slate-600 mt-1">
               {gate.mode === "paid"
                 ? "No camps matched your current filters."
-                : `We didn’t find demo camps for your selected filters in ${demoBadgeYear}. Try adjusting filters or personalizing the demo.`}
+                : `We didn’t find demo camps that match your filters for ${demoBadgeYear}. Try clearing filters or changing sport/state/division.`}
             </div>
 
             {gate.mode !== "paid" && (
               <div className="mt-4 space-y-2">
-                <Button
-                  className="w-full"
-                  onClick={() => navigate(createPageUrl("DemoSetup"))}
-                >
+                <Button className="w-full" onClick={() => navigate(createPageUrl("DemoSetup"))}>
                   Update Demo Filters
                 </Button>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => window.location.reload()}
-                >
+                <Button variant="outline" className="w-full" onClick={() => window.location.reload()}>
                   Refresh
-                </Button>
-              </div>
-            )}
-
-            {gate.mode === "paid" && (
-              <div className="mt-4">
-                <Button
-                  className="w-full"
-                  onClick={() => navigate(createPageUrl("Home"))}
-                >
-                  Back to Home
                 </Button>
               </div>
             )}
@@ -358,15 +302,12 @@ export default function Discover() {
               division: s.school_division
             };
 
-            const sport = s.sport_id
-              ? { id: s.sport_id, sport_name: s.sport_name }
-              : null;
+            const sport = s.sport_id ? { id: s.sport_id, sport_name: s.sport_name } : null;
 
-            const positions = Array.isArray(s.position_codes)
-              ? s.position_codes.map((code) => ({ position_code: code }))
+            const positions = Array.isArray(s.position_ids)
+              ? s.position_ids.map((id) => ({ position_id: id }))
               : [];
 
-            // ✅ isFavorite uses gate.mode (single source of truth)
             const isFav =
               gate.mode === "paid"
                 ? s.intent_status === "favorite"
@@ -389,7 +330,7 @@ export default function Discover() {
                   gate.write({
                     demo: () => {
                       toggleDemoFavorite(effectiveDemoProfileId, s.camp_id);
-                      setDemoFavTick((x) => x + 1); // force rerender
+                      setDemoFavTick((x) => x + 1);
                     },
                     paid: () => toggleFavorite.mutate({ campId: s.camp_id }),
                     blocked: () => navigate(createPageUrl("Onboarding"))
