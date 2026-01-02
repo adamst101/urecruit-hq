@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, SlidersHorizontal } from "lucide-react";
@@ -26,12 +26,16 @@ import { toggleDemoFavorite, isDemoFavorite } from "../components/hooks/demoFavo
 /**
  * Discover
  * - Demo mode: public CampDemo summaries + local DemoProfile filters + localStorage favorites
- * - Paid mode: client-joined camp summaries + CampIntent mutations (favorites/registered)
+ * - Paid mode: client-joined camp summaries + CampIntent mutations
  *
- * Writes are centralized through useWriteGate:
- * - demo => localStorage
- * - paid => backend mutation
- * - blocked => redirect to Onboarding
+ * OPTION A: Demo year resolves dynamically:
+ * - Prefer (currentYear - 1)
+ * - If no demo data exists, fallback to (currentYear - 2), (currentYear - 3), ...
+ * - Never show a "blank white" screen: show an empty-state card if no results.
+ *
+ * IMPORTANT:
+ * - The "probe" function below assumes you have a CampDemo entity with a season year field.
+ * - If your schema differs, update ONLY `probeDemoYearHasData()`.
  */
 export default function Discover() {
   const navigate = useNavigate();
@@ -48,65 +52,140 @@ export default function Discover() {
 
   const { loaded: demoLoaded, demoProfile, demoProfileId } = useDemoProfile();
 
-  // ✅ Gate for writes
+  // ✅ Gate for writes (single source of truth for paid vs demo behaviors)
   const gate = useWriteGate();
 
   // ✅ Demo favorites need a re-render trigger (localStorage writes don't re-render React)
-  const [demoFavTick, setDemoFavTick] = useState(0);
+  const [, setDemoFavTick] = useState(0);
 
-  // Paid data
+  // Paid data identifiers
   const athleteId = athleteProfile?.id;
   const sportId = athleteProfile?.sport_id;
 
+  // Paid query
   const paidSummariesQuery = useCampSummariesClient({
     athleteId,
     sportId,
-    enabled: mode === "paid" && !!athleteId
+    enabled: gate.mode === "paid" && !!athleteId
   });
 
-  // Demo data
+  /* ------------------------------------------------------------
+   * OPTION A: Resolve the demo year with fallback
+   * ------------------------------------------------------------ */
+
+  const demoEnabled = gate.mode !== "paid" && demoLoaded;
+
+  const [resolvedDemoYear, setResolvedDemoYear] = useState(null);
+  const [resolvingDemoYear, setResolvingDemoYear] = useState(false);
+
+  // ✅ Update ONLY this function if your schema differs.
+  // It should return true if there is at least 1 CampDemo row for that year.
+  const probeDemoYearHasData = useCallback(async (year) => {
+    // Assumption: CampDemo entity exists and has a season_year field.
+    // If your field is named differently (e.g. "seasonYear"), change it here.
+    const rows = await base44.entities.CampDemo.filter(
+      { season_year: Number(year) },
+      { limit: 1 }
+    );
+    return Array.isArray(rows) && rows.length > 0;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      // Only resolve for demo/unauth flows
+      if (!demoEnabled) {
+        setResolvedDemoYear(null);
+        setResolvingDemoYear(false);
+        return;
+      }
+
+      setResolvingDemoYear(true);
+
+      const cy = Number(currentYear);
+      const preferred = cy - 1;
+
+      // Try up to 4 years back (adjust if needed)
+      const candidates = [preferred, preferred - 1, preferred - 2, preferred - 3];
+
+      for (const y of candidates) {
+        try {
+          const ok = await probeDemoYearHasData(y);
+          if (cancelled) return;
+
+          if (ok) {
+            setResolvedDemoYear(y);
+            setResolvingDemoYear(false);
+            return;
+          }
+        } catch {
+          // ignore and try next year
+        }
+      }
+
+      // None found; keep preferred for honest UI + empty-state handling
+      if (!cancelled) {
+        setResolvedDemoYear(preferred);
+        setResolvingDemoYear(false);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [demoEnabled, currentYear, probeDemoYearHasData]);
+
+  // Demo query uses the resolved year (fallback-capable)
   const demoSummariesQuery = usePublicCampSummariesClient({
-    seasonYear,
+    seasonYear: resolvedDemoYear,
     sportId: demoProfile?.sport_id || null,
     state: demoProfile?.state || null,
     division: demoProfile?.division || null,
     positionIds: Array.isArray(demoProfile?.position_ids)
       ? demoProfile.position_ids
       : [],
-    enabled: mode !== "paid" && demoLoaded
+    enabled: demoEnabled && !!resolvedDemoYear
   });
 
-  // Guard: paid users must have profile
+  /* ------------------------------------------------------------
+   * Paid profile guard (unchanged)
+   * ------------------------------------------------------------ */
   useEffect(() => {
     if (accessLoading || identityLoading) return;
-    if (mode === "paid" && !athleteProfile) {
+    if (gate.mode === "paid" && !athleteProfile) {
       navigate(createPageUrl("Onboarding"));
     }
-  }, [mode, accessLoading, identityLoading, athleteProfile, navigate]);
+  }, [gate.mode, accessLoading, identityLoading, athleteProfile, navigate]);
+
+  /* ------------------------------------------------------------
+   * Loading / Error / Data selection
+   * ------------------------------------------------------------ */
 
   const loading =
     accessLoading ||
-    (mode === "paid"
+    (gate.mode === "paid"
       ? paidSummariesQuery.isLoading || identityLoading
-      : demoSummariesQuery.isLoading || !demoLoaded);
+      : resolvingDemoYear || demoSummariesQuery.isLoading || !demoLoaded);
 
   const isError =
-    mode === "paid"
+    gate.mode === "paid"
       ? paidSummariesQuery.isError || identityError
       : demoSummariesQuery.isError;
 
   const errorObj =
-    mode === "paid" ? paidSummariesQuery.error : demoSummariesQuery.error;
+    gate.mode === "paid" ? paidSummariesQuery.error : demoSummariesQuery.error;
 
   const summaries = useMemo(() => {
     const data =
-      mode === "paid"
+      gate.mode === "paid"
         ? paidSummariesQuery.data || []
         : demoSummariesQuery.data || [];
     return Array.isArray(data) ? data : [];
-  }, [mode, paidSummariesQuery.data, demoSummariesQuery.data]);
+  }, [gate.mode, paidSummariesQuery.data, demoSummariesQuery.data]);
 
-  // Paid mutations
+  // Paid mutations (favorites)
   const invalidatePaidSummaries = () => {
     queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
   };
@@ -171,14 +250,20 @@ export default function Discover() {
     );
   }
 
+  /* ------------------------------------------------------------
+   * Header badge year (truthful)
+   * ------------------------------------------------------------ */
+
+  const demoBadgeYear = resolvedDemoYear || demoYear;
+
   const headerBadge =
-    mode === "paid" ? (
+    gate.mode === "paid" ? (
       <Badge className="bg-emerald-600 text-white">Current {currentYear}</Badge>
     ) : (
-      <Badge className="bg-slate-900 text-white">Demo {demoYear}</Badge>
+      <Badge className="bg-slate-900 text-white">Demo {demoBadgeYear}</Badge>
     );
 
-  // Fallback if hook doesn't provide id yet
+  // Stable demo profile id for favorites
   const effectiveDemoProfileId = demoProfileId || demoProfile?.id || "default";
 
   return (
@@ -192,13 +277,13 @@ export default function Discover() {
                 {headerBadge}
               </div>
               <div className="text-sm text-slate-600 mt-1">
-                {mode === "paid"
+                {gate.mode === "paid"
                   ? "Browse and manage camps."
-                  : "Browse last year’s camps. Personalize the demo to filter."}
+                  : `Browse prior-season camps (${demoBadgeYear}). Personalize the demo to filter.`}
               </div>
             </div>
 
-            {mode !== "paid" && (
+            {gate.mode !== "paid" && (
               <Button
                 variant="outline"
                 size="sm"
@@ -213,75 +298,116 @@ export default function Discover() {
       </div>
 
       <div className="max-w-md mx-auto p-4 space-y-3">
-        {summaries.map((s) => {
-          const camp = {
-            id: s.camp_id,
-            camp_name: s.camp_name,
-            start_date: s.start_date,
-            end_date: s.end_date,
-            city: s.city,
-            state: s.state,
-            price: s.price,
-            link_url: s.link_url,
-            notes: s.notes,
-            position_ids: s.position_ids || []
-          };
+        {/* ✅ Empty-state (prevents blank white screens) */}
+        {summaries.length === 0 ? (
+          <Card className="p-4 border-slate-200 bg-white">
+            <div className="font-semibold text-deep-navy">No camps found</div>
+            <div className="text-sm text-slate-600 mt-1">
+              {gate.mode === "paid"
+                ? "No camps matched your current filters."
+                : `We didn’t find demo camps for your selected filters in ${demoBadgeYear}. Try adjusting filters or personalizing the demo.`}
+            </div>
 
-          const school = {
-            id: s.school_id,
-            school_name: s.school_name,
-            division: s.school_division
-          };
+            {gate.mode !== "paid" && (
+              <div className="mt-4 space-y-2">
+                <Button
+                  className="w-full"
+                  onClick={() => navigate(createPageUrl("DemoSetup"))}
+                >
+                  Update Demo Filters
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => window.location.reload()}
+                >
+                  Refresh
+                </Button>
+              </div>
+            )}
 
-          const sport = s.sport_id
-            ? { id: s.sport_id, sport_name: s.sport_name }
-            : null;
+            {gate.mode === "paid" && (
+              <div className="mt-4">
+                <Button
+                  className="w-full"
+                  onClick={() => navigate(createPageUrl("Home"))}
+                >
+                  Back to Home
+                </Button>
+              </div>
+            )}
+          </Card>
+        ) : (
+          summaries.map((s) => {
+            const camp = {
+              id: s.camp_id,
+              camp_name: s.camp_name,
+              start_date: s.start_date,
+              end_date: s.end_date,
+              city: s.city,
+              state: s.state,
+              price: s.price,
+              link_url: s.link_url,
+              notes: s.notes,
+              position_ids: s.position_ids || []
+            };
 
-          const positions = Array.isArray(s.position_codes)
-            ? s.position_codes.map((code) => ({ position_code: code }))
-            : [];
+            const school = {
+              id: s.school_id,
+              school_name: s.school_name,
+              division: s.school_division
+            };
 
-          // ✅ SWAP APPLIED: isFavorite uses gate.mode (single source of truth)
-          const isFav =
-            gate.mode === "paid"
-              ? s.intent_status === "favorite"
-              : isDemoFavorite(effectiveDemoProfileId, s.camp_id);
+            const sport = s.sport_id
+              ? { id: s.sport_id, sport_name: s.sport_name }
+              : null;
 
-          const isRegistered =
-            gate.mode === "paid" &&
-            (s.intent_status === "registered" || s.intent_status === "completed");
+            const positions = Array.isArray(s.position_codes)
+              ? s.position_codes.map((code) => ({ position_code: code }))
+              : [];
 
-          return (
-            <CampCard
-              key={s.camp_id}
-              camp={camp}
-              school={school}
-              sport={sport}
-              positions={positions}
-              isFavorite={isFav}
-              isRegistered={isRegistered}
-              onFavoriteToggle={() => {
-                gate.write({
-                  demo: () => {
-                    toggleDemoFavorite(effectiveDemoProfileId, s.camp_id);
-                    setDemoFavTick((x) => x + 1); // force rerender
-                  },
-                  paid: () => toggleFavorite.mutate({ campId: s.camp_id }),
-                  blocked: () => navigate(createPageUrl("Onboarding"))
-                });
-              }}
-              onClick={() =>
-                navigate(
-                  createPageUrl(
-                    gate.mode === "paid"
-                      ? `CampDetail?id=${s.camp_id}`
-                      : `CampDetailDemo?id=${s.camp_id}`
+            // ✅ isFavorite uses gate.mode (single source of truth)
+            const isFav =
+              gate.mode === "paid"
+                ? s.intent_status === "favorite"
+                : isDemoFavorite(effectiveDemoProfileId, s.camp_id);
+
+            const isRegistered =
+              gate.mode === "paid" &&
+              (s.intent_status === "registered" || s.intent_status === "completed");
+
+            return (
+              <CampCard
+                key={s.camp_id}
+                camp={camp}
+                school={school}
+                sport={sport}
+                positions={positions}
+                isFavorite={isFav}
+                isRegistered={isRegistered}
+                onFavoriteToggle={() => {
+                  gate.write({
+                    demo: () => {
+                      toggleDemoFavorite(effectiveDemoProfileId, s.camp_id);
+                      setDemoFavTick((x) => x + 1); // force rerender
+                    },
+                    paid: () => toggleFavorite.mutate({ campId: s.camp_id }),
+                    blocked: () => navigate(createPageUrl("Onboarding"))
+                  });
+                }}
+                onClick={() =>
+                  navigate(
+                    createPageUrl(
+                      gate.mode === "paid"
+                        ? `CampDetail?id=${s.camp_id}`
+                        : `CampDetailDemo?id=${s.camp_id}`
+                    )
                   )
-                )
-              }
-            />
-          );
-        })}
+                }
+              />
+            );
+          })
+        )}
       </div>
 
       <BottomNav />
