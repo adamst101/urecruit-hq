@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2, ArrowLeft, Calendar, MapPin, DollarSign, ExternalLink, Lock } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -8,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 import { base44 } from "@/api/base44Client";
-import { useQuery } from "@tanstack/react-query";
 import { useSeasonAccess } from "@/components/hooks/useSeasonAccess";
 
 const divisionColors = {
@@ -32,6 +32,9 @@ function pickSchoolName(s) {
 function pickSchoolDivision(s) {
   return s?.division || s?.school_division || s?.division_code || s?.division_level || null;
 }
+function pickSchoolLogo(s) {
+  return s?.logo_url || s?.school_logo_url || s?.logo || s?.image_url || null;
+}
 function pickSportName(sp) {
   return sp?.sport_name || sp?.name || sp?.title || null;
 }
@@ -40,7 +43,7 @@ function getCampIdFromAllSources({ params, location }) {
   const fromParams = normId(params?.id) || normId(params?.camp_id);
   const fromState = normId(location?.state?.camp_id) || normId(location?.state?.id);
   const sp = new URLSearchParams(location?.search || "");
-  const fromQuery = normId(sp.get("id") || sp.get("camp_id"));
+  const fromQuery = normId(sp.get("id") || sp.get("camp_id") || sp.get("campId"));
 
   let fromSession = null;
   try {
@@ -58,93 +61,77 @@ function safeDate(d) {
   }
 }
 
-async function fetchEntityMap(entityName, ids) {
-  const map = new Map();
-  const cleanIds = Array.from(new Set((ids || []).map(normId).filter(Boolean)));
-  if (!cleanIds.length) return map;
+/**
+ * Fetch one entity row by id with Base44-safe fallbacks.
+ */
+async function fetchOneById(entityName, id) {
+  const cleanId = normId(id);
+  if (!cleanId) return null;
 
-  let rows = [];
+  // Try id
   try {
-    rows = await base44.entities[entityName].filter({ id: { in: cleanIds } });
-  } catch {
-    rows = [];
-  }
+    const rows = await base44.entities[entityName].filter({ id: cleanId });
+    if (Array.isArray(rows) && rows[0]) return rows[0];
+  } catch {}
 
-  // fallback per-id (Base44-safe)
-  if (!Array.isArray(rows) || rows.length === 0) {
-    rows = [];
-    for (const id of cleanIds) {
-      try {
-        const one = await base44.entities[entityName].filter({ id });
-        if (Array.isArray(one) && one[0]) rows.push(one[0]);
-        else throw new Error("no match");
-      } catch {
-        try {
-          const one2 = await base44.entities[entityName].filter({ _id: id });
-          if (Array.isArray(one2) && one2[0]) rows.push(one2[0]);
-        } catch {}
-      }
-    }
-  }
+  // Try _id
+  try {
+    const rows2 = await base44.entities[entityName].filter({ _id: cleanId });
+    if (Array.isArray(rows2) && rows2[0]) return rows2[0];
+  } catch {}
 
-  (rows || []).forEach((r) => {
-    const key = normId(r);
-    if (key) map.set(key, r);
-  });
-
-  return map;
+  return null;
 }
 
+/**
+ * Demo detail should match Discover:
+ * - fetch Camp by id
+ * - ensure it belongs to demoYear (based on start_date)
+ * - join School + Sport
+ */
 async function fetchDemoCampDetail({ campId, demoYear }) {
   if (!campId || !demoYear) return null;
 
-  // pull all camps (same as Discover)
-  const campsAll = await base44.entities.Camp.filter({});
-  const camps = Array.isArray(campsAll) ? campsAll : [];
+  const camp = await fetchOneById("Camp", campId);
+  if (!camp) return null;
 
-  // normalize and year-filter same way as Discover
+  // Enforce demoYear membership like Discover does (string compare)
   const start = `${Number(demoYear)}-01-01`;
   const next = `${Number(demoYear) + 1}-01-01`;
+  const d = camp?.start_date;
 
-  const campsNorm = camps
-    .map((c) => ({
-      ...c,
-      camp_id: normId(c),
-      school_id: normId(c.school_id) || c.school_id || null,
-      sport_id: normId(c.sport_id) || c.sport_id || null
-    }))
-    .filter((c) => c.camp_id && typeof c.start_date === "string" && c.start_date >= start && c.start_date < next);
+  if (!(typeof d === "string" && d >= start && d < next)) {
+    // Camp exists but not in demoYear dataset
+    return null;
+  }
 
-  const target = campsNorm.find((c) => c.camp_id === campId);
-  if (!target) return null;
+  const schoolId = normId(camp.school_id) || camp.school_id || null;
+  const sportId = normId(camp.sport_id) || camp.sport_id || null;
 
-  const [schoolMap, sportMap] = await Promise.all([
-    fetchEntityMap("School", [target.school_id]),
-    fetchEntityMap("Sport", [target.sport_id])
+  const [school, sport] = await Promise.all([
+    schoolId ? fetchOneById("School", schoolId) : Promise.resolve(null),
+    sportId ? fetchOneById("Sport", sportId) : Promise.resolve(null)
   ]);
 
-  const sch = target.school_id ? schoolMap.get(target.school_id) : null;
-  const sp = target.sport_id ? sportMap.get(target.sport_id) : null;
-
   return {
-    camp_id: target.camp_id,
-    camp_name: target.camp_name,
-    start_date: target.start_date,
-    end_date: target.end_date || null,
-    city: target.city || null,
-    state: target.state || null,
-    price: typeof target.price === "number" ? target.price : null,
-    link_url: target.link_url || null,
-    notes: target.notes || null,
-    position_ids: Array.isArray(target.position_ids) ? target.position_ids : [],
+    camp_id: normId(camp),
+    camp_name: camp.camp_name,
+    start_date: camp.start_date,
+    end_date: camp.end_date || null,
+    city: camp.city || null,
+    state: camp.state || null,
+    price: typeof camp.price === "number" ? camp.price : null,
+    link_url: camp.link_url || null,
+    notes: camp.notes || null,
+    position_ids: Array.isArray(camp.position_ids) ? camp.position_ids : [],
 
-    school_id: target.school_id,
-    school_name: pickSchoolName(sch),
-    school_division: pickSchoolDivision(sch),
-    school_logo_url: sch?.logo_url || sch?.school_logo_url || null,
+    school_id: schoolId,
+    school_name: pickSchoolName(school),
+    school_division: pickSchoolDivision(school),
+    school_logo_url: pickSchoolLogo(school),
 
-    sport_id: target.sport_id,
-    sport_name: pickSportName(sp)
+    sport_id: sportId,
+    sport_name: pickSportName(sport)
   };
 }
 
@@ -152,7 +139,7 @@ export default function CampDetailDemo() {
   const navigate = useNavigate();
   const params = useParams();
   const location = useLocation();
-  const { demoYear } = useSeasonAccess();
+  const { demoYear, seasonYear } = useSeasonAccess();
 
   const campId = useMemo(() => getCampIdFromAllSources({ params, location }), [params, location]);
 
@@ -161,6 +148,11 @@ export default function CampDetailDemo() {
     enabled: !!campId && !!demoYear,
     queryFn: () => fetchDemoCampDetail({ campId, demoYear })
   });
+
+  // Persist resolved id for refresh resilience
+  try {
+    if (campId) sessionStorage.setItem("last_demo_camp_id", String(campId));
+  } catch {}
 
   if (isLoading) {
     return (
@@ -212,7 +204,7 @@ export default function CampDetailDemo() {
           <div className="text-xs mt-2 text-slate-500">
             Looking for camp_id: <span className="font-mono">{campId}</span>
             <br />
-            demoYear: <b>{demoYear}</b>
+            demoYear: <b>{demoYear}</b> (seasonYear: <b>{seasonYear}</b>)
           </div>
           <div className="mt-4 space-y-2">
             <Button className="w-full" variant="outline" onClick={() => navigate("/Discover")}>
@@ -227,11 +219,6 @@ export default function CampDetailDemo() {
       </div>
     );
   }
-
-  // persist for refresh
-  try {
-    sessionStorage.setItem("last_demo_camp_id", String(campId));
-  } catch {}
 
   return (
     <div className="min-h-screen bg-slate-50 pb-8">
@@ -325,7 +312,11 @@ export default function CampDetailDemo() {
           </Button>
 
           {detail.link_url && (
-            <Button variant="outline" className="w-full" onClick={() => window.open(detail.link_url, "_blank")}>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => window.open(detail.link_url, "_blank")}
+            >
               <ExternalLink className="w-4 h-4 mr-2" />
               View Registration Site (Demo)
             </Button>
