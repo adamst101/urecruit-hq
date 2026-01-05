@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, SlidersHorizontal } from "lucide-react";
@@ -21,6 +21,30 @@ import { useDemoProfile } from "@/components/hooks/useDemoProfile";
 import { useWriteGate } from "@/components/hooks/useWriteGate";
 import { toggleDemoFavorite, isDemoFavorite } from "@/components/hooks/demoFavorites";
 
+function uniq(arr) {
+  return Array.from(new Set((arr || []).filter(Boolean)));
+}
+
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
+}
+
+function pickSchoolName(s) {
+  return s?.school_name || s?.name || s?.title || "Unknown School";
+}
+function pickSchoolDivision(s) {
+  return s?.division || s?.school_division || s?.division_code || s?.division_level || null;
+}
+function pickSportName(sp) {
+  return sp?.sport_name || sp?.name || sp?.title || null;
+}
+
+/**
+ * ✅ Analytics (demo + paid compatible)
+ * Keep this fire-and-forget so it never blocks UX.
+ */
 function trackEvent({
   event_name,
   mode,
@@ -44,27 +68,6 @@ function trackEvent({
   } catch {
     // analytics must never block UX
   }
-}
-
-
-function uniq(arr) {
-  return Array.from(new Set((arr || []).filter(Boolean)));
-}
-
-function normId(x) {
-  if (!x) return null;
-  if (typeof x === "string") return x;
-  return x.id || x._id || x.uuid || null;
-}
-
-function pickSchoolName(s) {
-  return s?.school_name || s?.name || s?.title || "Unknown School";
-}
-function pickSchoolDivision(s) {
-  return s?.division || s?.school_division || s?.division_code || s?.division_level || null;
-}
-function pickSportName(sp) {
-  return sp?.sport_name || sp?.name || sp?.title || null;
 }
 
 /**
@@ -316,6 +319,24 @@ export default function Discover() {
     onSuccess: invalidatePaidSummaries
   });
 
+  /**
+   * ✅ Demo analytics: Discover viewed (once per page load)
+   */
+  const discoverViewedFiredRef = useRef(false);
+  useEffect(() => {
+    if (discoverViewedFiredRef.current) return;
+    if (loading) return;
+
+    if (gate.mode !== "paid") {
+      discoverViewedFiredRef.current = true;
+      trackEvent({
+        event_name: "discover_viewed",
+        mode: "demo",
+        season_year: resolvedDemoYear
+      });
+    }
+  }, [gate.mode, loading, resolvedDemoYear]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -437,6 +458,16 @@ export default function Discover() {
                 onFavoriteToggle={() => {
                   gate.write({
                     demo: () => {
+                      // ✅ Analytics: favorite added (demo)
+                      trackEvent({
+                        event_name: "demo_favorite_added",
+                        mode: "demo",
+                        camp_id: s.camp_id,
+                        school_id: s.school_id,
+                        sport_id: s.sport_id,
+                        season_year: resolvedDemoYear
+                      });
+
                       toggleDemoFavorite(effectiveDemoProfileId, s.camp_id);
                       setDemoFavTick((x) => x + 1);
                     },
@@ -446,6 +477,22 @@ export default function Discover() {
                 }}
                 onClick={() => {
                   const camp_id = s.camp_id;
+
+                  // ✅ Analytics: camp card clicked (demo)
+                  if (gate.mode !== "paid") {
+                    trackEvent({
+                      event_name: "camp_card_clicked",
+                      mode: "demo",
+                      camp_id: s.camp_id,
+                      school_id: s.school_id,
+                      sport_id: s.sport_id,
+                      positions: (resolvedPositions || [])
+                        .map((p) => p.position_code)
+                        .filter(Boolean),
+                      season_year: resolvedDemoYear
+                    });
+                  }
+
                   try {
                     sessionStorage.setItem("last_demo_camp_id", String(camp_id));
                   } catch {}
