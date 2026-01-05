@@ -3,23 +3,23 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 
-import { base44 } from "../api/base44Client";
-import { createPageUrl } from "../utils"; // Base44-managed: treat as fragile string-only
+import { base44 } from "./api/base44Client";
+import { createPageUrl } from "./utils";
 
-import { Button } from "../components/ui/button";
-import { Card } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
+import { Button } from "./components/ui/button";
+import { Card } from "./components/ui/card";
+import { Badge } from "./components/ui/badge";
 
-import BottomNav from "../components/navigation/BottomNav";
-import CampCard from "../components/camps/CampCard";
+import BottomNav from "./components/navigation/BottomNav";
+import CampCard from "./components/camps/CampCard";
 
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
-import { useAthleteIdentity } from "../components/useAthleteIdentity";
-import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
-import { useDemoProfile } from "../components/hooks/useDemoProfile";
+import { useSeasonAccess } from "./components/hooks/useSeasonAccess";
+import { useAthleteIdentity } from "./components/useAthleteIdentity";
+import { useCampSummariesClient } from "./components/hooks/useCampSummariesClient";
+import { useDemoProfile } from "./components/hooks/useDemoProfile";
 
-import { useWriteGate } from "../components/hooks/useWriteGate";
-import { toggleDemoFavorite, isDemoFavorite } from "../components/hooks/demoFavorites";
+import { useWriteGate } from "./components/hooks/useWriteGate";
+import { toggleDemoFavorite, isDemoFavorite } from "./components/hooks/demoFavorites";
 
 function uniq(arr) {
   return Array.from(new Set((arr || []).filter(Boolean)));
@@ -35,23 +35,24 @@ function pickSchoolName(s) {
   return s?.school_name || s?.name || s?.title || "Unknown School";
 }
 function pickSchoolDivision(s) {
-  return (
-    s?.division ||
-    s?.school_division ||
-    s?.division_code ||
-    s?.division_level ||
-    null
-  );
+  return s?.division || s?.school_division || s?.division_code || s?.division_level || null;
 }
 function pickSportName(sp) {
   return sp?.sport_name || sp?.name || sp?.title || null;
 }
 
+/**
+ * Base44 note:
+ * - "id: { in: [...] }" may not be supported.
+ * - Passing a 2nd options argument to filter() often breaks.
+ * This implementation only uses filter(where) and does per-id fallback safely.
+ */
 async function fetchEntityMap(entityName, ids) {
   const map = new Map();
-  const cleanIds = uniq((ids || []).map(normId));
+  const cleanIds = uniq((ids || []).map(normId)).filter(Boolean);
   if (!cleanIds.length) return map;
 
+  // Try to fetch with "in" first (if supported), otherwise fallback per-id
   let rows = [];
   try {
     rows = await base44.entities[entityName].filter({ id: { in: cleanIds } });
@@ -60,17 +61,26 @@ async function fetchEntityMap(entityName, ids) {
       rows = await base44.entities[entityName].filter({ _id: { in: cleanIds } });
     } catch {
       rows = [];
-      for (const id of cleanIds) {
-        try {
-          const one = await base44.entities[entityName].filter({ id }, { limit: 1 });
-          if (Array.isArray(one) && one[0]) rows.push(one[0]);
-          continue;
-        } catch {}
-        try {
-          const one2 = await base44.entities[entityName].filter({ _id: id }, { limit: 1 });
-          if (Array.isArray(one2) && one2[0]) rows.push(one2[0]);
-        } catch {}
-      }
+    }
+  }
+
+  // If "in" didn’t work (common), do per-id fetch
+  if (!Array.isArray(rows) || rows.length === 0) {
+    rows = [];
+    for (const id of cleanIds) {
+      // Try id
+      try {
+        const one = await base44.entities[entityName].filter({ id });
+        if (Array.isArray(one) && one[0]) rows.push(one[0]);
+        else throw new Error("no-id-match");
+        continue;
+      } catch {}
+
+      // Try _id
+      try {
+        const one2 = await base44.entities[entityName].filter({ _id: id });
+        if (Array.isArray(one2) && one2[0]) rows.push(one2[0]);
+      } catch {}
     }
   }
 
@@ -78,9 +88,18 @@ async function fetchEntityMap(entityName, ids) {
     const key = normId(r);
     if (key) map.set(key, r);
   });
+
   return map;
 }
 
+/**
+ * DEMO query:
+ * - Pull Camps (optionally filtered by sport/state equality)
+ * - Filter by demoYear using client-side start_date bounds
+ * - Join School + Sport
+ * - Apply division + position filters client-side
+ * - Return "summary" rows shaped like Discover expects
+ */
 async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   if (!demoYear) return [];
 
@@ -91,6 +110,7 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   const rows = await base44.entities.Camp.filter(whereBase);
   const campsAll = Array.isArray(rows) ? rows : [];
 
+  // Normalize ids
   const campsNorm = campsAll
     .map((c) => ({
       ...c,
@@ -100,6 +120,7 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     }))
     .filter((c) => c.camp_id);
 
+  // Year filter (YYYY-MM-DD compare)
   const start = `${Number(demoYear)}-01-01`;
   const next = `${Number(demoYear) + 1}-01-01`;
 
@@ -108,17 +129,20 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     return typeof d === "string" && d >= start && d < next;
   });
 
+  // Dedupe by camp_id
   const seen = new Set();
   camps = camps.filter((c) => (seen.has(c.camp_id) ? false : (seen.add(c.camp_id), true)));
 
-  const schoolIds = uniq(camps.map((c) => c.school_id));
-  const sportIds = uniq(camps.map((c) => c.sport_id));
+  // Join School + Sport
+  const schoolIds = uniq(camps.map((c) => c.school_id)).filter(Boolean);
+  const sportIds = uniq(camps.map((c) => c.sport_id)).filter(Boolean);
 
   const [schoolMap, sportMap] = await Promise.all([
     fetchEntityMap("School", schoolIds),
     fetchEntityMap("Sport", sportIds)
   ]);
 
+  // Division filter (requires school join)
   if (demoProfile?.division) {
     const want = demoProfile.division;
     camps = camps.filter((c) => {
@@ -127,9 +151,8 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     });
   }
 
-  const pos = Array.isArray(demoProfile?.position_ids)
-    ? demoProfile.position_ids.filter(Boolean)
-    : [];
+  // Position filter (client-side)
+  const pos = Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids.filter(Boolean) : [];
   if (pos.length) {
     camps = camps.filter((c) => {
       const cpos = Array.isArray(c?.position_ids) ? c.position_ids : [];
@@ -137,6 +160,7 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     });
   }
 
+  // Map to summary shape used by Discover
   return camps.map((c) => {
     const sch = c.school_id ? schoolMap.get(c.school_id) : null;
     const sp = c.sport_id ? sportMap.get(c.sport_id) : null;
@@ -145,6 +169,7 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
       camp_id: c.camp_id,
       school_id: c.school_id,
       sport_id: c.sport_id,
+
       camp_name: c.camp_name,
       start_date: c.start_date,
       end_date: c.end_date || null,
@@ -154,9 +179,11 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
       price: typeof c.price === "number" ? c.price : null,
       link_url: c.link_url || null,
       notes: c.notes || null,
+
       school_name: pickSchoolName(sch),
       school_division: pickSchoolDivision(sch),
       sport_name: pickSportName(sp),
+
       intent_status: null
     };
   });
@@ -167,8 +194,7 @@ export default function Discover() {
   const queryClient = useQueryClient();
 
   const { loading: accessLoading, currentYear } = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
-    useAthleteIdentity();
+  const { athleteProfile, isLoading: identityLoading, isError: identityError } = useAthleteIdentity();
 
   const { loaded: demoLoaded, demoProfile, demoProfileId } = useDemoProfile();
   const gate = useWriteGate();
@@ -203,7 +229,6 @@ export default function Discover() {
   useEffect(() => {
     if (accessLoading || identityLoading) return;
     if (gate.mode === "paid" && !athleteProfile) {
-      // Only ever pass plain strings to Base44 createPageUrl
       navigate(createPageUrl("Onboarding"));
     }
   }, [gate.mode, accessLoading, identityLoading, athleteProfile, navigate]);
@@ -215,18 +240,12 @@ export default function Discover() {
       : demoSummariesQuery.isLoading || !demoLoaded);
 
   const isError =
-    gate.mode === "paid"
-      ? paidSummariesQuery.isError || identityError
-      : demoSummariesQuery.isError;
+    gate.mode === "paid" ? paidSummariesQuery.isError || identityError : demoSummariesQuery.isError;
 
-  const errorObj =
-    gate.mode === "paid" ? paidSummariesQuery.error : demoSummariesQuery.error;
+  const errorObj = gate.mode === "paid" ? paidSummariesQuery.error : demoSummariesQuery.error;
 
   const summaries = useMemo(() => {
-    const data =
-      gate.mode === "paid"
-        ? paidSummariesQuery.data || []
-        : demoSummariesQuery.data || [];
+    const data = gate.mode === "paid" ? paidSummariesQuery.data || [] : demoSummariesQuery.data || [];
     return Array.isArray(data) ? data : [];
   }, [gate.mode, paidSummariesQuery.data, demoSummariesQuery.data]);
 
@@ -244,7 +263,6 @@ export default function Discover() {
       });
 
       const intent = existing?.[0] || null;
-
       if (intent?.status === "registered" || intent?.status === "completed") return;
 
       if (!intent) {
@@ -279,9 +297,7 @@ export default function Discover() {
       <div className="min-h-screen bg-slate-50 p-4">
         <Card className="max-w-md mx-auto p-4 border-rose-200 bg-rose-50 text-rose-700">
           <div className="font-semibold">Failed to load Discover</div>
-          <div className="text-xs mt-2 break-words">
-            {String(errorObj?.message || errorObj)}
-          </div>
+          <div className="text-xs mt-2 break-words">{String(errorObj?.message || errorObj)}</div>
           <Button className="w-full mt-4" onClick={() => navigate(createPageUrl("Home"))}>
             Back to Home
           </Button>
@@ -317,11 +333,7 @@ export default function Discover() {
             </div>
 
             {gate.mode !== "paid" && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(createPageUrl("DemoSetup"))}
-              >
+              <Button variant="outline" size="sm" onClick={() => navigate(createPageUrl("DemoSetup"))}>
                 <SlidersHorizontal className="w-4 h-4 mr-2" />
                 Personalize
               </Button>
@@ -342,9 +354,29 @@ export default function Discover() {
           </Card>
         ) : (
           summaries.map((s) => {
-            const positions = Array.isArray(s.position_ids)
-              ? s.position_ids.map((id) => ({ position_id: id }))
-              : [];
+            const camp = {
+              id: s.camp_id,
+              camp_name: s.camp_name,
+              start_date: s.start_date,
+              end_date: s.end_date,
+              city: s.city,
+              state: s.state,
+              price: s.price,
+              link_url: s.link_url,
+              notes: s.notes,
+              position_ids: s.position_ids || []
+            };
+
+            const school = {
+              id: s.school_id,
+              school_name: s.school_name,
+              division: s.school_division
+            };
+
+            const sport = s.sport_id ? { id: s.sport_id, sport_name: s.sport_name } : null;
+
+            // ✅ Demo: hide raw position UUIDs until Position join is implemented
+            const positions = gate.mode === "paid" ? (Array.isArray(s.position_ids) ? s.position_ids.map((id) => ({ position_id: id })) : []) : [];
 
             const isFav =
               gate.mode === "paid"
@@ -352,30 +384,14 @@ export default function Discover() {
                 : isDemoFavorite(effectiveDemoProfileId, s.camp_id);
 
             const isRegistered =
-              gate.mode === "paid" &&
-              (s.intent_status === "registered" || s.intent_status === "completed");
+              gate.mode === "paid" && (s.intent_status === "registered" || s.intent_status === "completed");
 
             return (
               <CampCard
                 key={s.camp_id}
-                camp={{
-                  id: s.camp_id,
-                  camp_name: s.camp_name,
-                  start_date: s.start_date,
-                  end_date: s.end_date,
-                  city: s.city,
-                  state: s.state,
-                  price: s.price,
-                  link_url: s.link_url,
-                  notes: s.notes,
-                  position_ids: s.position_ids || []
-                }}
-                school={{
-                  id: s.school_id,
-                  school_name: s.school_name,
-                  division: s.school_division
-                }}
-                sport={s.sport_id ? { id: s.sport_id, sport_name: s.sport_name } : null}
+                camp={camp}
+                school={school}
+                sport={sport}
                 positions={positions}
                 isFavorite={isFav}
                 isRegistered={isRegistered}
@@ -391,17 +407,17 @@ export default function Discover() {
                 }}
                 onClick={() => {
                   const camp_id = s.camp_id;
-                  const page = gate.mode === "paid" ? "CampDetail" : "CampDetailDemo";
 
                   try {
                     sessionStorage.setItem("last_demo_camp_id", String(camp_id));
                   } catch {}
 
-                  // ✅ Prefer route param (requires route update); still includes query for compatibility
-                  navigate(
-                    `/${page}/${encodeURIComponent(camp_id)}?id=${encodeURIComponent(camp_id)}`,
-                    { state: { camp_id, id: camp_id } }
-                  );
+                  // ✅ Base44-safe: build path with createPageUrl, add query separately
+                  const page = gate.mode === "paid" ? "CampDetail" : "CampDetailDemo";
+                  const pathname = createPageUrl(page);
+                  navigate(`${pathname}?id=${encodeURIComponent(camp_id)}&camp_id=${encodeURIComponent(camp_id)}`, {
+                    state: { camp_id, id: camp_id }
+                  });
                 }}
               />
             );
