@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, ArrowLeft, Calendar, MapPin, DollarSign, ExternalLink, Lock } from "lucide-react";
@@ -11,32 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { base44 } from "@/api/base44Client";
 import { useSeasonAccess } from "@/components/hooks/useSeasonAccess";
 import { createPageUrl } from "@/utils";
-
-function trackEvent({
-  event_name,
-  mode,
-  camp_id = null,
-  school_id = null,
-  sport_id = null,
-  positions = [],
-  season_year
-}) {
-  try {
-    base44.entities.Event.create({
-      event_name,
-      mode,
-      camp_id,
-      school_id,
-      sport_id,
-      positions,
-      season_year,
-      ts: new Date().toISOString()
-    });
-  } catch {
-    // analytics must never block UX
-  }
-}
-
 
 const divisionColors = {
   "D1 (FBS)": "bg-amber-500 text-white",
@@ -64,6 +38,34 @@ function pickSchoolLogo(s) {
 }
 function pickSportName(sp) {
   return sp?.sport_name || sp?.name || sp?.title || null;
+}
+
+/**
+ * ✅ Analytics helper (same shape as Discover)
+ */
+function trackEvent({
+  event_name,
+  mode,
+  camp_id = null,
+  school_id = null,
+  sport_id = null,
+  positions = [],
+  season_year
+}) {
+  try {
+    base44.entities.Event.create({
+      event_name,
+      mode,
+      camp_id,
+      school_id,
+      sport_id,
+      positions,
+      season_year,
+      ts: new Date().toISOString()
+    });
+  } catch {
+    // analytics must never block UX
+  }
 }
 
 function getCampIdFromAllSources({ params, location }) {
@@ -148,6 +150,7 @@ async function fetchDemoCampDetail({ campId, demoYear }) {
   const camp = await fetchOneById("Camp", campId);
   if (!camp) return null;
 
+  // Ensure it belongs to demo year (same logic as Discover)
   const start = `${Number(demoYear)}-01-01`;
   const next = `${Number(demoYear) + 1}-01-01`;
   const d = camp?.start_date;
@@ -213,9 +216,30 @@ export default function CampDetailDemo() {
     queryFn: () => fetchDemoCampDetail({ campId, demoYear })
   });
 
+  // Persist id for refresh resilience
   try {
     if (campId) sessionStorage.setItem("last_demo_camp_id", String(campId));
   } catch {}
+
+  /**
+   * ✅ Analytics: camp detail viewed (fire once per camp)
+   */
+  const detailViewedFiredRef = useRef(false);
+  useEffect(() => {
+    if (detailViewedFiredRef.current) return;
+    if (!detail) return;
+
+    detailViewedFiredRef.current = true;
+    trackEvent({
+      event_name: "camp_detail_viewed",
+      mode: "demo",
+      camp_id: detail.camp_id,
+      school_id: detail.school_id,
+      sport_id: detail.sport_id,
+      positions: (detail.positions || []).map((p) => p.position_code).filter(Boolean),
+      season_year: demoYear
+    });
+  }, [detail, demoYear]);
 
   if (isLoading) {
     return (
@@ -314,7 +338,12 @@ export default function CampDetailDemo() {
                 )}
                 {Array.isArray(detail.positions) && detail.positions.length > 0 && (
                   <span className="text-xs text-slate-500">
-                    • {detail.positions.map((p) => p.position_code).filter(Boolean).slice(0, 6).join(", ")}
+                    •{" "}
+                    {detail.positions
+                      .map((p) => p.position_code)
+                      .filter(Boolean)
+                      .slice(0, 6)
+                      .join(", ")}
                     {detail.positions.length > 6 ? "…" : ""}
                   </span>
                 )}
@@ -369,7 +398,23 @@ export default function CampDetailDemo() {
         )}
 
         <div className="space-y-3">
-          <Button className="w-full" onClick={() => navigate("/signup")}>
+          <Button
+            className="w-full"
+            onClick={() => {
+              // ✅ Analytics: signup CTA clicked
+              trackEvent({
+                event_name: "signup_cta_clicked",
+                mode: "demo",
+                camp_id: detail.camp_id,
+                school_id: detail.school_id,
+                sport_id: detail.sport_id,
+                positions: (detail.positions || []).map((p) => p.position_code).filter(Boolean),
+                season_year: demoYear
+              });
+
+              navigate("/signup");
+            }}
+          >
             Unlock Current Season
           </Button>
 
@@ -384,4 +429,3 @@ export default function CampDetailDemo() {
     </div>
   );
 }
-
