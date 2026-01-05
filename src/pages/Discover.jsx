@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
@@ -16,31 +16,145 @@ import CampCard from "../components/camps/CampCard";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
-import {
-  usePublicCampSummariesClient,
-  publicCampYearHasData
-} from "../components/hooks/usePublicCampSummariesClient";
-
 import { useDemoProfile } from "../components/hooks/useDemoProfile";
 
-// ✅ Write-gating + demo-local favorites
 import { useWriteGate } from "../components/hooks/useWriteGate";
 import { toggleDemoFavorite, isDemoFavorite } from "../components/hooks/demoFavorites";
 
+function uniq(arr) {
+  return Array.from(new Set((arr || []).filter(Boolean)));
+}
+
+function pickSchoolName(s) {
+  return s?.school_name || s?.name || s?.title || "Unknown School";
+}
+function pickSchoolDivision(s) {
+  return (
+    s?.division ||
+    s?.school_division ||
+    s?.division_code ||
+    s?.division_level ||
+    null
+  );
+}
+function pickSportName(sp) {
+  return sp?.sport_name || sp?.name || sp?.title || null;
+}
+
+async function fetchEntityMap(entityName, ids) {
+  const map = new Map();
+  if (!ids?.length) return map;
+
+  // Try "in" query, fallback to per-id
+  let rows = [];
+  try {
+    rows = await base44.entities[entityName].filter({ id: { in: ids } });
+  } catch {
+    rows = [];
+    for (const id of ids) {
+      try {
+        const one = await base44.entities[entityName].filter({ id }, { limit: 1 });
+        if (Array.isArray(one) && one[0]) rows.push(one[0]);
+      } catch {}
+    }
+  }
+
+  (rows || []).forEach((r) => map.set(r.id, r));
+  return map;
+}
+
 /**
- * Discover
- * - Paid: useCampSummariesClient (joined with intent status)
- * - Demo: uses publicCampSummariesClient backed by Camp + start_date year range (Option A)
- * - Favorites:
- *   - paid => CampIntent
- *   - demo => localStorage
+ * DEMO query:
+ * - Pull Camps (optionally filtered by sport/state equality)
+ * - Filter by demoYear using client-side start_date bounds
+ * - Join School + Sport
+ * - Apply division + position filters client-side (reliable)
+ * - Return "summary" rows shaped like Discover expects
  */
+async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
+  if (!demoYear) return [];
+
+  // 1) Fetch Camps (only equality filters server-side, no date ops)
+  const whereBase = {};
+  if (demoProfile?.sport_id) whereBase.sport_id = demoProfile.sport_id;
+  if (demoProfile?.state) whereBase.state = demoProfile.state;
+
+  const rows = await base44.entities.Camp.filter(whereBase);
+  const campsAll = Array.isArray(rows) ? rows : [];
+
+  // 2) Client-side year filter (bulletproof)
+  const start = `${Number(demoYear)}-01-01`;
+  const next = `${Number(demoYear) + 1}-01-01`;
+
+  let camps = campsAll.filter((c) => {
+    const d = c?.start_date;
+    return typeof d === "string" && d >= start && d < next;
+  });
+
+  // 3) Join School + Sport
+  const schoolIds = uniq(camps.map((c) => c.school_id));
+  const sportIds = uniq(camps.map((c) => c.sport_id));
+
+  const [schoolMap, sportMap] = await Promise.all([
+    fetchEntityMap("School", schoolIds),
+    fetchEntityMap("Sport", sportIds)
+  ]);
+
+  // 4) Division filter (client-side, needs school join)
+  if (demoProfile?.division) {
+    const want = demoProfile.division;
+    camps = camps.filter((c) => {
+      const sch = schoolMap.get(c.school_id);
+      return pickSchoolDivision(sch) === want;
+    });
+  }
+
+  // 5) Position filter (client-side)
+  const pos = Array.isArray(demoProfile?.position_ids)
+    ? demoProfile.position_ids.filter(Boolean)
+    : [];
+  if (pos.length) {
+    camps = camps.filter((c) => {
+      const cpos = Array.isArray(c?.position_ids) ? c.position_ids : [];
+      return pos.some((p) => cpos.includes(p));
+    });
+  }
+
+  // 6) Map to summary shape used by Discover
+  return camps.map((c) => {
+    const sch = schoolMap.get(c.school_id);
+    const sp = sportMap.get(c.sport_id);
+
+    return {
+      camp_id: c.id,
+      school_id: c.school_id,
+      sport_id: c.sport_id,
+
+      camp_name: c.camp_name,
+      start_date: c.start_date,
+      end_date: c.end_date || null,
+      city: c.city || null,
+      state: c.state || null,
+      position_ids: Array.isArray(c.position_ids) ? c.position_ids : [],
+      price: typeof c.price === "number" ? c.price : null,
+      link_url: c.link_url || null,
+      notes: c.notes || null,
+
+      school_name: pickSchoolName(sch),
+      school_division: pickSchoolDivision(sch),
+      sport_name: pickSportName(sp),
+
+      // Demo has no intent_status
+      intent_status: null
+    };
+  });
+}
+
 export default function Discover() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { mode, loading: accessLoading, currentYear } = useSeasonAccess();
-
+  const { loading: accessLoading, currentYear, demoYear } = useSeasonAccess();
   const {
     athleteProfile,
     isLoading: identityLoading,
@@ -48,7 +162,6 @@ export default function Discover() {
   } = useAthleteIdentity();
 
   const { loaded: demoLoaded, demoProfile, demoProfileId } = useDemoProfile();
-
   const gate = useWriteGate();
 
   // localStorage favorites need a rerender trigger
@@ -58,78 +171,29 @@ export default function Discover() {
   const athleteId = athleteProfile?.id;
   const sportId = athleteProfile?.sport_id;
 
-  // Paid query
+  // Paid query (unchanged)
   const paidSummariesQuery = useCampSummariesClient({
     athleteId,
     sportId,
     enabled: gate.mode === "paid" && !!athleteId
   });
 
-  // ------------------------------------------------------------
-  // OPTION A: resolve demo year by probing Camp.start_date year bounds
-  // Prefer currentYear - 1, then fallback older if needed
-  // ------------------------------------------------------------
+  // Demo year = previous year
+  const resolvedDemoYear = Number(currentYear) - 1;
   const demoEnabled = gate.mode !== "paid" && demoLoaded;
-  const [resolvedDemoYear, setResolvedDemoYear] = useState(null);
-  const [resolvingDemoYear, setResolvingDemoYear] = useState(false);
-useEffect(() => {
-  (async () => {
-    const rows = await base44.entities.Camp.filter({}, { limit: 5 });
-    console.log("[SANITY] Camp rows:", rows);
-  })();
-}, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      if (!demoEnabled) {
-        setResolvedDemoYear(null);
-        setResolvingDemoYear(false);
-        return;
-      }
-
-      setResolvingDemoYear(true);
-
-      const cy = Number(currentYear);
-      const preferred = cy - 1;
-      const candidates = [preferred, preferred - 1, preferred - 2, preferred - 3];
-
-      for (const y of candidates) {
-        try {
-          const ok = await publicCampYearHasData(y);
-          if (cancelled) return;
-          if (ok) {
-            setResolvedDemoYear(y);
-            setResolvingDemoYear(false);
-            return;
-          }
-        } catch {
-          // ignore and try next year
-        }
-      }
-
-      // none found: keep preferred for honest UI + empty-state
-      if (!cancelled) {
-        setResolvedDemoYear(preferred);
-        setResolvingDemoYear(false);
-      }
-    };
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [demoEnabled, currentYear]);
-
-  // Demo query (from Camp by date range, joined with School/Sport)
-  const demoSummariesQuery = usePublicCampSummariesClient({
-    seasonYear: resolvedDemoYear,
-    sportId: demoProfile?.sport_id || null,
-    state: demoProfile?.state || null,
-    division: demoProfile?.division || null,
-    positionIds: Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids : [],
-    enabled: demoEnabled && !!resolvedDemoYear
+  // Demo query (uses Camp + client-side year filter)
+  const demoSummariesQuery = useQuery({
+    queryKey: [
+      "demoCampSummaries",
+      resolvedDemoYear,
+      demoProfile?.sport_id || null,
+      demoProfile?.state || null,
+      demoProfile?.division || null,
+      Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids.join(",") : ""
+    ],
+    enabled: demoEnabled && !!resolvedDemoYear,
+    queryFn: () => fetchDemoCampSummaries({ demoYear: resolvedDemoYear, demoProfile })
   });
 
   // Paid profile guard
@@ -144,7 +208,7 @@ useEffect(() => {
     accessLoading ||
     (gate.mode === "paid"
       ? paidSummariesQuery.isLoading || identityLoading
-      : resolvingDemoYear || demoSummariesQuery.isLoading || !demoLoaded);
+      : demoSummariesQuery.isLoading || !demoLoaded);
 
   const isError =
     gate.mode === "paid"
@@ -224,13 +288,11 @@ useEffect(() => {
     );
   }
 
-  const demoBadgeYear = resolvedDemoYear || (Number(currentYear) - 1);
-
-  const headerBadge =
+  const badge =
     gate.mode === "paid" ? (
       <Badge className="bg-emerald-600 text-white">Current {currentYear}</Badge>
     ) : (
-      <Badge className="bg-slate-900 text-white">Demo {demoBadgeYear}</Badge>
+      <Badge className="bg-slate-900 text-white">Demo {resolvedDemoYear}</Badge>
     );
 
   const effectiveDemoProfileId = demoProfileId || "default";
@@ -243,12 +305,12 @@ useEffect(() => {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold text-deep-navy">Discover</h1>
-                {headerBadge}
+                {badge}
               </div>
               <div className="text-sm text-slate-600 mt-1">
                 {gate.mode === "paid"
                   ? "Browse and manage camps."
-                  : `Browse prior-season camps (${demoBadgeYear}). Personalize the demo to filter.`}
+                  : `Browse prior-season camps (${resolvedDemoYear}). Personalize the demo to filter.`}
               </div>
             </div>
 
@@ -273,7 +335,7 @@ useEffect(() => {
             <div className="text-sm text-slate-600 mt-1">
               {gate.mode === "paid"
                 ? "No camps matched your current filters."
-                : `We didn’t find demo camps that match your filters for ${demoBadgeYear}. Try clearing filters or changing sport/state/division.`}
+                : `No ${resolvedDemoYear} camps match your demo filters. Try clearing filters in Personalize.`}
             </div>
 
             {gate.mode !== "paid" && (
