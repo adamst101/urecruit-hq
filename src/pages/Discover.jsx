@@ -3,23 +3,23 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 
-import { base44 } from "../api/base44Client";
-import { createPageUrl } from "../utils";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
 
-import { Button } from "../components/ui/button";
-import { Card } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
-import BottomNav from "../components/navigation/BottomNav";
-import CampCard from "../components/camps/CampCard";
+import BottomNav from "@/components/navigation/BottomNav";
+import CampCard from "@/components/camps/CampCard";
 
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
-import { useAthleteIdentity } from "../components/useAthleteIdentity";
-import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
-import { useDemoProfile } from "../components/hooks/useDemoProfile";
+import { useSeasonAccess } from "@/components/hooks/useSeasonAccess";
+import { useAthleteIdentity } from "@/components/useAthleteIdentity";
+import { useCampSummariesClient } from "@/components/hooks/useCampSummariesClient";
+import { useDemoProfile } from "@/components/hooks/useDemoProfile";
 
-import { useWriteGate } from "../components/hooks/useWriteGate";
-import { toggleDemoFavorite, isDemoFavorite } from "../components/hooks/demoFavorites";
+import { useWriteGate } from "@/components/hooks/useWriteGate";
+import { toggleDemoFavorite, isDemoFavorite } from "@/components/hooks/demoFavorites";
 
 function uniq(arr) {
   return Array.from(new Set((arr || []).filter(Boolean)));
@@ -42,17 +42,15 @@ function pickSportName(sp) {
 }
 
 /**
- * Base44 note:
- * - "id: { in: [...] }" may not be supported.
- * - Passing a 2nd options argument to filter() often breaks.
- * This implementation only uses filter(where) and does per-id fallback safely.
+ * Base44-safe entity bulk fetch:
+ * - Try "in" (may or may not be supported)
+ * - Fall back to per-id filter({ id }) then filter({ _id })
  */
 async function fetchEntityMap(entityName, ids) {
   const map = new Map();
   const cleanIds = uniq((ids || []).map(normId)).filter(Boolean);
   if (!cleanIds.length) return map;
 
-  // Try to fetch with "in" first (if supported), otherwise fallback per-id
   let rows = [];
   try {
     rows = await base44.entities[entityName].filter({ id: { in: cleanIds } });
@@ -64,19 +62,16 @@ async function fetchEntityMap(entityName, ids) {
     }
   }
 
-  // If "in" didn’t work (common), do per-id fetch
   if (!Array.isArray(rows) || rows.length === 0) {
     rows = [];
     for (const id of cleanIds) {
-      // Try id
       try {
         const one = await base44.entities[entityName].filter({ id });
-        if (Array.isArray(one) && one[0]) rows.push(one[0]);
-        else throw new Error("no-id-match");
-        continue;
+        if (Array.isArray(one) && one[0]) {
+          rows.push(one[0]);
+          continue;
+        }
       } catch {}
-
-      // Try _id
       try {
         const one2 = await base44.entities[entityName].filter({ _id: id });
         if (Array.isArray(one2) && one2[0]) rows.push(one2[0]);
@@ -93,12 +88,10 @@ async function fetchEntityMap(entityName, ids) {
 }
 
 /**
- * DEMO query:
- * - Pull Camps (optionally filtered by sport/state equality)
- * - Filter by demoYear using client-side start_date bounds
+ * DEMO:
+ * - Pull Camps with optional equality filters (sport/state) from demoProfile
+ * - Filter by year client-side using start_date string bounds
  * - Join School + Sport
- * - Apply division + position filters client-side
- * - Return "summary" rows shaped like Discover expects
  */
 async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   if (!demoYear) return [];
@@ -110,7 +103,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   const rows = await base44.entities.Camp.filter(whereBase);
   const campsAll = Array.isArray(rows) ? rows : [];
 
-  // Normalize ids
   const campsNorm = campsAll
     .map((c) => ({
       ...c,
@@ -120,7 +112,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     }))
     .filter((c) => c.camp_id);
 
-  // Year filter (YYYY-MM-DD compare)
   const start = `${Number(demoYear)}-01-01`;
   const next = `${Number(demoYear) + 1}-01-01`;
 
@@ -129,11 +120,9 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     return typeof d === "string" && d >= start && d < next;
   });
 
-  // Dedupe by camp_id
   const seen = new Set();
   camps = camps.filter((c) => (seen.has(c.camp_id) ? false : (seen.add(c.camp_id), true)));
 
-  // Join School + Sport
   const schoolIds = uniq(camps.map((c) => c.school_id)).filter(Boolean);
   const sportIds = uniq(camps.map((c) => c.sport_id)).filter(Boolean);
 
@@ -142,7 +131,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     fetchEntityMap("Sport", sportIds)
   ]);
 
-  // Division filter (requires school join)
   if (demoProfile?.division) {
     const want = demoProfile.division;
     camps = camps.filter((c) => {
@@ -151,7 +139,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     });
   }
 
-  // Position filter (client-side)
   const pos = Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids.filter(Boolean) : [];
   if (pos.length) {
     camps = camps.filter((c) => {
@@ -160,7 +147,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     });
   }
 
-  // Map to summary shape used by Discover
   return camps.map((c) => {
     const sch = c.school_id ? schoolMap.get(c.school_id) : null;
     const sp = c.sport_id ? sportMap.get(c.sport_id) : null;
@@ -248,6 +234,26 @@ export default function Discover() {
     const data = gate.mode === "paid" ? paidSummariesQuery.data || [] : demoSummariesQuery.data || [];
     return Array.isArray(data) ? data : [];
   }, [gate.mode, paidSummariesQuery.data, demoSummariesQuery.data]);
+
+  /**
+   * ✅ Position join for whatever list is currently shown (demo or paid)
+   */
+  const allPositionIds = useMemo(() => {
+    const ids = [];
+    for (const s of summaries) {
+      const arr = Array.isArray(s?.position_ids) ? s.position_ids : [];
+      for (const id of arr) ids.push(id);
+    }
+    return uniq(ids.map(normId)).filter(Boolean);
+  }, [summaries]);
+
+  const positionsMapQuery = useQuery({
+    queryKey: ["positionsMap", allPositionIds.join("|")],
+    enabled: allPositionIds.length > 0,
+    queryFn: () => fetchEntityMap("Position", allPositionIds)
+  });
+
+  const positionsMap = positionsMapQuery.data || new Map();
 
   const invalidatePaidSummaries = () => {
     queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
@@ -375,14 +381,15 @@ export default function Discover() {
 
             const sport = s.sport_id ? { id: s.sport_id, sport_name: s.sport_name } : null;
 
-            // ✅ Demo: hide raw position UUIDs until Position join is implemented
-            // Demo cleanup: do NOT render position UUIDs
-const positions =
-  gate.mode === "paid"
-    ? (Array.isArray(s.position_ids)
-        ? s.position_ids.map((id) => ({ position_id: id }))
-        : [])
-    : [];
+            // ✅ Position rendering: show codes (QB/RB/etc). Never show raw ids.
+            const resolvedPositions = (Array.isArray(s.position_ids) ? s.position_ids : [])
+              .map((pid) => positionsMap.get(normId(pid)))
+              .filter(Boolean)
+              .map((p) => ({
+                position_id: normId(p),
+                position_code: p.position_code,
+                position_name: p.position_name
+              }));
 
             const isFav =
               gate.mode === "paid"
@@ -398,7 +405,7 @@ const positions =
                 camp={camp}
                 school={school}
                 sport={sport}
-                positions={positions}
+                positions={resolvedPositions}
                 isFavorite={isFav}
                 isRegistered={isRegistered}
                 onFavoriteToggle={() => {
@@ -413,14 +420,13 @@ const positions =
                 }}
                 onClick={() => {
                   const camp_id = s.camp_id;
-
                   try {
                     sessionStorage.setItem("last_demo_camp_id", String(camp_id));
                   } catch {}
 
-                  // ✅ Base44-safe: build path with createPageUrl, add query separately
                   const page = gate.mode === "paid" ? "CampDetail" : "CampDetailDemo";
                   const pathname = createPageUrl(page);
+
                   navigate(`${pathname}?id=${encodeURIComponent(camp_id)}&camp_id=${encodeURIComponent(camp_id)}`, {
                     state: { camp_id, id: camp_id }
                   });
