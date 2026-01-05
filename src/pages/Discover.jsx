@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
-import { createPageUrl } from "../utils";
+import { createPageUrl } from "../utils"; // Base44-managed: treat as fragile string-only
 
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -53,16 +53,13 @@ async function fetchEntityMap(entityName, ids) {
   if (!cleanIds.length) return map;
 
   let rows = [];
-  // Try by id in list
   try {
     rows = await base44.entities[entityName].filter({ id: { in: cleanIds } });
   } catch {
-    // Try by _id in list
     try {
       rows = await base44.entities[entityName].filter({ _id: { in: cleanIds } });
     } catch {
       rows = [];
-      // Fallback per-id
       for (const id of cleanIds) {
         try {
           const one = await base44.entities[entityName].filter({ id }, { limit: 1 });
@@ -81,7 +78,6 @@ async function fetchEntityMap(entityName, ids) {
     const key = normId(r);
     if (key) map.set(key, r);
   });
-
   return map;
 }
 
@@ -95,7 +91,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   const rows = await base44.entities.Camp.filter(whereBase);
   const campsAll = Array.isArray(rows) ? rows : [];
 
-  // Normalize IDs up front
   const campsNorm = campsAll
     .map((c) => ({
       ...c,
@@ -105,7 +100,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     }))
     .filter((c) => c.camp_id);
 
-  // Demo year filter (YYYY-MM-DD safe compare)
   const start = `${Number(demoYear)}-01-01`;
   const next = `${Number(demoYear) + 1}-01-01`;
 
@@ -114,7 +108,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     return typeof d === "string" && d >= start && d < next;
   });
 
-  // Dedupe
   const seen = new Set();
   camps = camps.filter((c) => (seen.has(c.camp_id) ? false : (seen.add(c.camp_id), true)));
 
@@ -126,7 +119,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     fetchEntityMap("Sport", sportIds)
   ]);
 
-  // Division filter
   if (demoProfile?.division) {
     const want = demoProfile.division;
     camps = camps.filter((c) => {
@@ -135,7 +127,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     });
   }
 
-  // Position filter
   const pos = Array.isArray(demoProfile?.position_ids)
     ? demoProfile.position_ids.filter(Boolean)
     : [];
@@ -154,7 +145,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
       camp_id: c.camp_id,
       school_id: c.school_id,
       sport_id: c.sport_id,
-
       camp_name: c.camp_name,
       start_date: c.start_date,
       end_date: c.end_date || null,
@@ -164,11 +154,9 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
       price: typeof c.price === "number" ? c.price : null,
       link_url: c.link_url || null,
       notes: c.notes || null,
-
       school_name: pickSchoolName(sch),
       school_division: pickSchoolDivision(sch),
       sport_name: pickSportName(sp),
-
       intent_status: null
     };
   });
@@ -215,7 +203,8 @@ export default function Discover() {
   useEffect(() => {
     if (accessLoading || identityLoading) return;
     if (gate.mode === "paid" && !athleteProfile) {
-      navigate(createPageUrl("Onboarding")); // string only
+      // Only ever pass plain strings to Base44 createPageUrl
+      navigate(createPageUrl("Onboarding"));
     }
   }, [gate.mode, accessLoading, identityLoading, athleteProfile, navigate]);
 
@@ -350,41 +339,9 @@ export default function Discover() {
                 ? "No camps matched your current filters."
                 : `No ${resolvedDemoYear} camps match your demo filters. Try clearing filters in Personalize.`}
             </div>
-
-            {gate.mode !== "paid" && (
-              <div className="mt-4 space-y-2">
-                <Button className="w-full" onClick={() => navigate(createPageUrl("DemoSetup"))}>
-                  Update Demo Filters
-                </Button>
-                <Button variant="outline" className="w-full" onClick={() => window.location.reload()}>
-                  Refresh
-                </Button>
-              </div>
-            )}
           </Card>
         ) : (
           summaries.map((s) => {
-            const camp = {
-              id: s.camp_id,
-              camp_name: s.camp_name,
-              start_date: s.start_date,
-              end_date: s.end_date,
-              city: s.city,
-              state: s.state,
-              price: s.price,
-              link_url: s.link_url,
-              notes: s.notes,
-              position_ids: s.position_ids || []
-            };
-
-            const school = {
-              id: s.school_id,
-              school_name: s.school_name,
-              division: s.school_division
-            };
-
-            const sport = s.sport_id ? { id: s.sport_id, sport_name: s.sport_name } : null;
-
             const positions = Array.isArray(s.position_ids)
               ? s.position_ids.map((id) => ({ position_id: id }))
               : [];
@@ -401,9 +358,24 @@ export default function Discover() {
             return (
               <CampCard
                 key={s.camp_id}
-                camp={camp}
-                school={school}
-                sport={sport}
+                camp={{
+                  id: s.camp_id,
+                  camp_name: s.camp_name,
+                  start_date: s.start_date,
+                  end_date: s.end_date,
+                  city: s.city,
+                  state: s.state,
+                  price: s.price,
+                  link_url: s.link_url,
+                  notes: s.notes,
+                  position_ids: s.position_ids || []
+                }}
+                school={{
+                  id: s.school_id,
+                  school_name: s.school_name,
+                  division: s.school_division
+                }}
+                sport={s.sport_id ? { id: s.sport_id, sport_name: s.sport_name } : null}
                 positions={positions}
                 isFavorite={isFav}
                 isRegistered={isRegistered}
@@ -417,12 +389,17 @@ export default function Discover() {
                     blocked: () => navigate(createPageUrl("Onboarding"))
                   });
                 }}
-                // ✅ No createPageUrl here. Avoids pageName.replace errors entirely.
                 onClick={() => {
                   const camp_id = s.camp_id;
                   const page = gate.mode === "paid" ? "CampDetail" : "CampDetailDemo";
+
+                  try {
+                    sessionStorage.setItem("last_demo_camp_id", String(camp_id));
+                  } catch {}
+
+                  // ✅ Prefer route param (requires route update); still includes query for compatibility
                   navigate(
-                    `/${page}?id=${encodeURIComponent(camp_id)}&camp_id=${encodeURIComponent(camp_id)}`,
+                    `/${page}/${encodeURIComponent(camp_id)}?id=${encodeURIComponent(camp_id)}`,
                     { state: { camp_id, id: camp_id } }
                   );
                 }}
