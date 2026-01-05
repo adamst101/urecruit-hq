@@ -376,7 +376,13 @@ export default function Discover() {
             const sport = s.sport_id ? { id: s.sport_id, sport_name: s.sport_name } : null;
 
             // ✅ Demo: hide raw position UUIDs until Position join is implemented
-            const positions = gate.mode === "paid" ? (Array.isArray(s.position_ids) ? s.position_ids.map((id) => ({ position_id: id })) : []) : [];
+            // Demo cleanup: do NOT render position UUIDs
+const positions =
+  gate.mode === "paid"
+    ? (Array.isArray(s.position_ids)
+        ? s.position_ids.map((id) => ({ position_id: id }))
+        : [])
+    : [];
 
             const isFav =
               gate.mode === "paid"
