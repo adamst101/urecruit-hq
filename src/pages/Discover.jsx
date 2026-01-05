@@ -241,12 +241,23 @@ export default function Discover() {
     queryFn: () => fetchDemoCampSummaries({ demoYear: resolvedDemoYear, demoProfile })
   });
 
-  useEffect(() => {
-    if (accessLoading || identityLoading) return;
-    if (gate.mode === "paid" && !athleteProfile) {
-      navigate(createPageUrl("Onboarding"));
-    }
-  }, [gate.mode, accessLoading, identityLoading, athleteProfile, navigate]);
+ useEffect(() => {
+  if (loading) return;
+  if (gate.mode === "paid") return;
+
+  const key = `evt_discover_viewed_${resolvedDemoYear}`;
+  try {
+    if (sessionStorage.getItem(key) === "1") return;
+    sessionStorage.setItem(key, "1");
+  } catch {}
+
+  trackEvent({
+    event_name: "discover_viewed",
+    mode: "demo",
+    season_year: resolvedDemoYear
+  });
+}, [gate.mode, loading, resolvedDemoYear]);
+
 
   const loading =
     accessLoading ||
