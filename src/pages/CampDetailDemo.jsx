@@ -1,6 +1,14 @@
 import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, ArrowLeft, Calendar, MapPin, DollarSign, ExternalLink, Lock } from "lucide-react";
+import {
+  Loader2,
+  ArrowLeft,
+  Calendar,
+  MapPin,
+  DollarSign,
+  ExternalLink,
+  Lock
+} from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -19,27 +27,35 @@ const divisionColors = {
   JUCO: "bg-slate-600 text-white"
 };
 
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
+}
+
 export default function CampDetailDemo() {
   const navigate = useNavigate();
   const { seasonYear, demoYear } = useSeasonAccess();
 
+  // Support both ?id= and ?camp_id= (backward/forward compatible)
   const urlParams = new URLSearchParams(window.location.search);
-  const campId = urlParams.get("id");
+  const campId = normId(urlParams.get("camp_id") || urlParams.get("id"));
 
+  // ✅ Critical fix: Demo detail must load demo-year dataset, not current seasonYear
   const {
     data: campSummaries = [],
     isLoading,
     isError,
     error
   } = usePublicCampSummariesClient({
-    seasonYear,
+    seasonYear: demoYear,
     enabled: true
   });
 
-  const summary = useMemo(
-    () => campSummaries.find((s) => s.camp_id === campId),
-    [campSummaries, campId]
-  );
+  const summary = useMemo(() => {
+    if (!campId) return null;
+    return (campSummaries || []).find((s) => normId(s?.camp_id) === campId);
+  }, [campSummaries, campId]);
 
   if (isLoading) {
     return (
@@ -53,6 +69,26 @@ export default function CampDetailDemo() {
     return (
       <div className="p-6 text-rose-700">
         Failed to load demo camp: {String(error?.message || error)}
+        <div className="mt-3">
+          <Button variant="outline" onClick={() => navigate(-1)}>
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!campId) {
+    return (
+      <div className="p-6 text-slate-600">
+        Missing camp id.
+        <div className="mt-3">
+          <Button variant="outline" onClick={() => navigate(-1)}>
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back
+          </Button>
+        </div>
       </div>
     );
   }
@@ -61,6 +97,10 @@ export default function CampDetailDemo() {
     return (
       <div className="p-6 text-slate-600">
         Demo camp not found.
+        <div className="mt-2 text-xs text-slate-400">
+          Looking for camp_id: <span className="font-mono">{campId}</span> in demoYear{" "}
+          <b>{demoYear}</b> (seasonYear is <b>{seasonYear}</b>)
+        </div>
         <div className="mt-3">
           <Button variant="outline" onClick={() => navigate(-1)}>
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -87,7 +127,8 @@ export default function CampDetailDemo() {
           <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 mb-4 flex items-start gap-2">
             <Lock className="w-4 h-4 mt-0.5" />
             <div className="text-sm">
-              Demo camp from season <b>{demoYear}</b>. Sign up to unlock the current season.
+              Demo camp from season <b>{demoYear}</b>. Sign up to unlock the current
+              season.
             </div>
           </div>
 
@@ -102,7 +143,9 @@ export default function CampDetailDemo() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">
                 {summary.school_division && (
-                  <Badge className={cn("text-xs", divisionColors[summary.school_division])}>
+                  <Badge
+                    className={cn("text-xs", divisionColors[summary.school_division])}
+                  >
                     {summary.school_division}
                   </Badge>
                 )}
@@ -167,7 +210,9 @@ export default function CampDetailDemo() {
         {/* Positions */}
         {summary.position_codes?.length > 0 && (
           <div className="bg-white rounded-xl p-4">
-            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">Positions</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
+              Positions
+            </p>
             <div className="flex flex-wrap gap-2">
               {summary.position_codes.map((code) => (
                 <Badge key={code} variant="secondary" className="bg-slate-100">
