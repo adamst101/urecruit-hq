@@ -1,14 +1,6 @@
 import React, { useMemo } from "react";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
-import {
-  Loader2,
-  ArrowLeft,
-  Calendar,
-  MapPin,
-  DollarSign,
-  ExternalLink,
-  Lock
-} from "lucide-react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { Loader2, ArrowLeft, Calendar, MapPin, DollarSign, ExternalLink, Lock } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -34,15 +26,36 @@ function normId(x) {
 }
 
 function getCampIdFromAllSources({ params, location }) {
-  const fromParams = normId(params?.camp_id) || normId(params?.id) || normId(params?.campId);
+  // 1) Route param: /CampDetailDemo/:id or /CampDetailDemo/:camp_id
+  const fromParams =
+    normId(params?.id) ||
+    normId(params?.camp_id) ||
+    normId(params?.campId);
 
+  // 2) Navigation state: navigate(url, { state: { camp_id } })
   const fromState =
-    normId(location?.state?.camp_id) || normId(location?.state?.id);
+    normId(location?.state?.camp_id) ||
+    normId(location?.state?.id);
 
+  // 3) Querystring: ?id=... or ?camp_id=...
   const sp = new URLSearchParams(location?.search || "");
-  const fromQuery = normId(sp.get("camp_id") || sp.get("id") || sp.get("campId"));
+  const fromQuery = normId(sp.get("id") || sp.get("camp_id") || sp.get("campId"));
 
-  return fromParams || fromState || fromQuery || null;
+  // 4) Session fallback (survives query stripping + refresh)
+  let fromSession = null;
+  try {
+    fromSession = normId(sessionStorage.getItem("last_demo_camp_id"));
+  } catch {}
+
+  return fromParams || fromState || fromQuery || fromSession || null;
+}
+
+function safeDate(d) {
+  try {
+    return d ? format(new Date(d), "MMM d, yyyy") : "TBD";
+  } catch {
+    return "TBD";
+  }
 }
 
 export default function CampDetailDemo() {
@@ -57,7 +70,7 @@ export default function CampDetailDemo() {
     [params, location]
   );
 
-  // ✅ Critical: demo detail must query demoYear dataset
+  // Always query demoYear for demo detail
   const {
     data: campSummaries = [],
     isLoading,
@@ -83,10 +96,11 @@ export default function CampDetailDemo() {
 
   if (isError) {
     return (
-      <div className="p-6 text-rose-700">
-        Failed to load demo camp: {String(error?.message || error)}
-        <div className="mt-3">
-          <Button variant="outline" onClick={() => navigate(-1)}>
+      <div className="min-h-screen bg-slate-50 p-6">
+        <div className="max-w-md mx-auto bg-white border border-rose-200 rounded-xl p-4 text-rose-700">
+          <div className="font-semibold">Failed to load demo camp</div>
+          <div className="text-xs mt-2 break-words">{String(error?.message || error)}</div>
+          <Button className="w-full mt-4" variant="outline" onClick={() => navigate(-1)}>
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back
           </Button>
@@ -97,13 +111,28 @@ export default function CampDetailDemo() {
 
   if (!campId) {
     return (
-      <div className="p-6 text-slate-600">
-        Missing camp id.
-        <div className="mt-3">
-          <Button variant="outline" onClick={() => navigate(-1)}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
-          </Button>
+      <div className="min-h-screen bg-slate-50 p-6">
+        <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-xl p-4 text-slate-700">
+          <div className="font-semibold">Missing camp id.</div>
+          <div className="text-xs mt-2 text-slate-500">
+            This page accepts an id from:
+            <ul className="list-disc pl-5 mt-1">
+              <li>Querystring: ?id=... or ?camp_id=...</li>
+              <li>Route param: /.../:id or /.../:camp_id</li>
+              <li>Navigation state: navigate(url, {`{ state: { camp_id } }`})</li>
+              <li>SessionStorage fallback: last_demo_camp_id</li>
+            </ul>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <Button className="w-full" variant="outline" onClick={() => navigate("/Discover")}>
+              Go to Discover
+            </Button>
+            <Button className="w-full" onClick={() => navigate(-1)}>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -111,21 +140,33 @@ export default function CampDetailDemo() {
 
   if (!summary) {
     return (
-      <div className="p-6 text-slate-600">
-        Demo camp not found.
-        <div className="mt-2 text-xs text-slate-400">
-          Looking for camp_id: <span className="font-mono">{campId}</span> in demoYear{" "}
-          <b>{demoYear}</b> (seasonYear is <b>{seasonYear}</b>)
-        </div>
-        <div className="mt-3">
-          <Button variant="outline" onClick={() => navigate(-1)}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
-          </Button>
+      <div className="min-h-screen bg-slate-50 p-6">
+        <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-xl p-4 text-slate-700">
+          <div className="font-semibold">Demo camp not found.</div>
+          <div className="text-xs mt-2 text-slate-500">
+            Looking for camp_id: <span className="font-mono">{campId}</span>
+            <br />
+            demoYear: <b>{demoYear}</b> (seasonYear: <b>{seasonYear}</b>)
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <Button className="w-full" variant="outline" onClick={() => navigate("/Discover")}>
+              Back to Discover
+            </Button>
+            <Button className="w-full" onClick={() => navigate(-1)}>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
+
+  // Optional: store the last resolved id too
+  try {
+    sessionStorage.setItem("last_demo_camp_id", String(campId));
+  } catch {}
 
   return (
     <div className="min-h-screen bg-slate-50 pb-8">
@@ -162,13 +203,13 @@ export default function CampDetailDemo() {
                   </Badge>
                 )}
                 {summary.sport_name && (
-                  <span className="text-xs text-slate-500 font-medium">
-                    {summary.sport_name}
-                  </span>
+                  <span className="text-xs text-slate-500 font-medium">{summary.sport_name}</span>
                 )}
               </div>
-              <h1 className="text-2xl font-bold text-deep-navy">{summary.school_name}</h1>
-              <p className="text-slate-600">{summary.camp_name}</p>
+              <h1 className="text-2xl font-bold text-deep-navy">
+                {summary.school_name || "Unknown School"}
+              </h1>
+              <p className="text-slate-600">{summary.camp_name || "Camp"}</p>
             </div>
           </div>
         </div>
@@ -180,10 +221,10 @@ export default function CampDetailDemo() {
             <Calendar className="w-5 h-5 text-slate-400 mb-2" />
             <p className="text-xs text-slate-500 uppercase tracking-wide">Date</p>
             <p className="font-semibold text-slate-900">
-              {format(new Date(summary.start_date), "MMM d, yyyy")}
+              {safeDate(summary.start_date)}
               {summary.end_date && summary.end_date !== summary.start_date && (
                 <>
-                  <br />to {format(new Date(summary.end_date), "MMM d, yyyy")}
+                  <br />to {safeDate(summary.end_date)}
                 </>
               )}
             </p>
@@ -206,35 +247,11 @@ export default function CampDetailDemo() {
               <p className="font-semibold text-slate-900">${summary.price}</p>
             </div>
           )}
-
-          {summary.school_conference && (
-            <div className="bg-white rounded-xl p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">
-                Conference
-              </p>
-              <p className="font-semibold text-slate-900">{summary.school_conference}</p>
-            </div>
-          )}
         </div>
-
-        {summary.position_codes?.length > 0 && (
-          <div className="bg-white rounded-xl p-4">
-            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">Positions</p>
-            <div className="flex flex-wrap gap-2">
-              {summary.position_codes.map((code) => (
-                <Badge key={code} variant="secondary" className="bg-slate-100">
-                  {code}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
 
         {summary.notes && (
           <div className="bg-white rounded-xl p-4">
-            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
-              About This Camp
-            </p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">About This Camp</p>
             <p className="text-slate-700 leading-relaxed">{summary.notes}</p>
           </div>
         )}
