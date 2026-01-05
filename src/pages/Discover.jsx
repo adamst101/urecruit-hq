@@ -72,6 +72,12 @@ export default function Discover() {
   const demoEnabled = gate.mode !== "paid" && demoLoaded;
   const [resolvedDemoYear, setResolvedDemoYear] = useState(null);
   const [resolvingDemoYear, setResolvingDemoYear] = useState(false);
+useEffect(() => {
+  (async () => {
+    const rows = await base44.entities.Camp.filter({}, { limit: 5 });
+    console.log("[SANITY] Camp rows:", rows);
+  })();
+}, []);
 
   useEffect(() => {
     let cancelled = false;
