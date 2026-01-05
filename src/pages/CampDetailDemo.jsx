@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { base44 } from "@/api/base44Client";
 import { useSeasonAccess } from "@/components/hooks/useSeasonAccess";
+import { createPageUrl } from "@/utils";
 
 const divisionColors = {
   "D1 (FBS)": "bg-amber-500 text-white",
@@ -61,20 +62,15 @@ function safeDate(d) {
   }
 }
 
-/**
- * Fetch one entity row by id with Base44-safe fallbacks.
- */
 async function fetchOneById(entityName, id) {
   const cleanId = normId(id);
   if (!cleanId) return null;
 
-  // Try id
   try {
     const rows = await base44.entities[entityName].filter({ id: cleanId });
     if (Array.isArray(rows) && rows[0]) return rows[0];
   } catch {}
 
-  // Try _id
   try {
     const rows2 = await base44.entities[entityName].filter({ _id: cleanId });
     if (Array.isArray(rows2) && rows2[0]) return rows2[0];
@@ -83,27 +79,17 @@ async function fetchOneById(entityName, id) {
   return null;
 }
 
-/**
- * Demo detail should match Discover:
- * - fetch Camp by id
- * - ensure it belongs to demoYear (based on start_date)
- * - join School + Sport
- */
 async function fetchDemoCampDetail({ campId, demoYear }) {
   if (!campId || !demoYear) return null;
 
   const camp = await fetchOneById("Camp", campId);
   if (!camp) return null;
 
-  // Enforce demoYear membership like Discover does (string compare)
+  // Ensure it belongs to demo year (same logic as Discover)
   const start = `${Number(demoYear)}-01-01`;
   const next = `${Number(demoYear) + 1}-01-01`;
   const d = camp?.start_date;
-
-  if (!(typeof d === "string" && d >= start && d < next)) {
-    // Camp exists but not in demoYear dataset
-    return null;
-  }
+  if (!(typeof d === "string" && d >= start && d < next)) return null;
 
   const schoolId = normId(camp.school_id) || camp.school_id || null;
   const sportId = normId(camp.sport_id) || camp.sport_id || null;
@@ -123,7 +109,6 @@ async function fetchDemoCampDetail({ campId, demoYear }) {
     price: typeof camp.price === "number" ? camp.price : null,
     link_url: camp.link_url || null,
     notes: camp.notes || null,
-    position_ids: Array.isArray(camp.position_ids) ? camp.position_ids : [],
 
     school_id: schoolId,
     school_name: pickSchoolName(school),
@@ -143,13 +128,17 @@ export default function CampDetailDemo() {
 
   const campId = useMemo(() => getCampIdFromAllSources({ params, location }), [params, location]);
 
+  const goBackToDiscover = () => {
+    // Deterministic back for Base44: always go to Discover
+    navigate(createPageUrl("Discover"));
+  };
+
   const { data: detail, isLoading, isError, error } = useQuery({
     queryKey: ["demoCampDetail", campId, demoYear],
     enabled: !!campId && !!demoYear,
     queryFn: () => fetchDemoCampDetail({ campId, demoYear })
   });
 
-  // Persist resolved id for refresh resilience
   try {
     if (campId) sessionStorage.setItem("last_demo_camp_id", String(campId));
   } catch {}
@@ -168,9 +157,9 @@ export default function CampDetailDemo() {
         <div className="max-w-md mx-auto bg-white border border-rose-200 rounded-xl p-4 text-rose-700">
           <div className="font-semibold">Failed to load demo camp</div>
           <div className="text-xs mt-2 break-words">{String(error?.message || error)}</div>
-          <Button className="w-full mt-4" variant="outline" onClick={() => navigate(-1)}>
+          <Button className="w-full mt-4" variant="outline" onClick={goBackToDiscover}>
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
+            Back to Discover
           </Button>
         </div>
       </div>
@@ -183,12 +172,8 @@ export default function CampDetailDemo() {
         <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-xl p-4 text-slate-700">
           <div className="font-semibold">Missing camp id.</div>
           <div className="mt-4 space-y-2">
-            <Button className="w-full" variant="outline" onClick={() => navigate("/Discover")}>
+            <Button className="w-full" variant="outline" onClick={goBackToDiscover}>
               Back to Discover
-            </Button>
-            <Button className="w-full" onClick={() => navigate(-1)}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
             </Button>
           </div>
         </div>
@@ -207,12 +192,8 @@ export default function CampDetailDemo() {
             demoYear: <b>{demoYear}</b> (seasonYear: <b>{seasonYear}</b>)
           </div>
           <div className="mt-4 space-y-2">
-            <Button className="w-full" variant="outline" onClick={() => navigate("/Discover")}>
+            <Button className="w-full" variant="outline" onClick={goBackToDiscover}>
               Back to Discover
-            </Button>
-            <Button className="w-full" onClick={() => navigate(-1)}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
             </Button>
           </div>
         </div>
@@ -225,7 +206,7 @@ export default function CampDetailDemo() {
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-md mx-auto p-4">
           <button
-            onClick={() => navigate(-1)}
+            onClick={goBackToDiscover}
             className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-4"
           >
             <ArrowLeft className="w-5 h-5" />
