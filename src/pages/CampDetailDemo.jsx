@@ -79,13 +79,49 @@ async function fetchOneById(entityName, id) {
   return null;
 }
 
+async function fetchEntityMap(entityName, ids) {
+  const map = new Map();
+  const cleanIds = Array.from(new Set((ids || []).map(normId).filter(Boolean)));
+  if (!cleanIds.length) return map;
+
+  let rows = [];
+  try {
+    rows = await base44.entities[entityName].filter({ id: { in: cleanIds } });
+  } catch {
+    rows = [];
+  }
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    rows = [];
+    for (const id of cleanIds) {
+      try {
+        const one = await base44.entities[entityName].filter({ id });
+        if (Array.isArray(one) && one[0]) {
+          rows.push(one[0]);
+          continue;
+        }
+      } catch {}
+      try {
+        const one2 = await base44.entities[entityName].filter({ _id: id });
+        if (Array.isArray(one2) && one2[0]) rows.push(one2[0]);
+      } catch {}
+    }
+  }
+
+  (rows || []).forEach((r) => {
+    const key = normId(r);
+    if (key) map.set(key, r);
+  });
+
+  return map;
+}
+
 async function fetchDemoCampDetail({ campId, demoYear }) {
   if (!campId || !demoYear) return null;
 
   const camp = await fetchOneById("Camp", campId);
   if (!camp) return null;
 
-  // Ensure it belongs to demo year (same logic as Discover)
   const start = `${Number(demoYear)}-01-01`;
   const next = `${Number(demoYear) + 1}-01-01`;
   const d = camp?.start_date;
@@ -93,11 +129,22 @@ async function fetchDemoCampDetail({ campId, demoYear }) {
 
   const schoolId = normId(camp.school_id) || camp.school_id || null;
   const sportId = normId(camp.sport_id) || camp.sport_id || null;
+  const positionIds = Array.isArray(camp.position_ids) ? camp.position_ids.map(normId).filter(Boolean) : [];
 
-  const [school, sport] = await Promise.all([
+  const [school, sport, posMap] = await Promise.all([
     schoolId ? fetchOneById("School", schoolId) : Promise.resolve(null),
-    sportId ? fetchOneById("Sport", sportId) : Promise.resolve(null)
+    sportId ? fetchOneById("Sport", sportId) : Promise.resolve(null),
+    positionIds.length ? fetchEntityMap("Position", positionIds) : Promise.resolve(new Map())
   ]);
+
+  const resolvedPositions = positionIds
+    .map((pid) => posMap.get(pid))
+    .filter(Boolean)
+    .map((p) => ({
+      position_id: normId(p),
+      position_code: p.position_code,
+      position_name: p.position_name
+    }));
 
   return {
     camp_id: normId(camp),
@@ -116,7 +163,9 @@ async function fetchDemoCampDetail({ campId, demoYear }) {
     school_logo_url: pickSchoolLogo(school),
 
     sport_id: sportId,
-    sport_name: pickSportName(sport)
+    sport_name: pickSportName(sport),
+
+    positions: resolvedPositions
   };
 }
 
@@ -129,7 +178,6 @@ export default function CampDetailDemo() {
   const campId = useMemo(() => getCampIdFromAllSources({ params, location }), [params, location]);
 
   const goBackToDiscover = () => {
-    // Deterministic back for Base44: always go to Discover
     navigate(createPageUrl("Discover"));
   };
 
@@ -229,7 +277,7 @@ export default function CampDetailDemo() {
               />
             )}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
                 {detail.school_division && (
                   <Badge className={cn("text-xs", divisionColors[detail.school_division])}>
                     {detail.school_division}
@@ -238,7 +286,14 @@ export default function CampDetailDemo() {
                 {detail.sport_name && (
                   <span className="text-xs text-slate-500 font-medium">{detail.sport_name}</span>
                 )}
+                {Array.isArray(detail.positions) && detail.positions.length > 0 && (
+                  <span className="text-xs text-slate-500">
+                    • {detail.positions.map((p) => p.position_code).filter(Boolean).slice(0, 6).join(", ")}
+                    {detail.positions.length > 6 ? "…" : ""}
+                  </span>
+                )}
               </div>
+
               <h1 className="text-2xl font-bold text-deep-navy">{detail.school_name}</h1>
               <p className="text-slate-600">{detail.camp_name}</p>
             </div>
@@ -293,11 +348,7 @@ export default function CampDetailDemo() {
           </Button>
 
           {detail.link_url && (
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => window.open(detail.link_url, "_blank")}
-            >
+            <Button variant="outline" className="w-full" onClick={() => window.open(detail.link_url, "_blank")}>
               <ExternalLink className="w-4 h-4 mr-2" />
               View Registration Site (Demo)
             </Button>
@@ -307,3 +358,4 @@ export default function CampDetailDemo() {
     </div>
   );
 }
+
