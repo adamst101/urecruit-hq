@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import {
   Loader2,
   ArrowLeft,
@@ -33,15 +33,35 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
+function getCampIdFromAllSources({ params, location }) {
+  // 1) Router params (supports routes like /demo/camp/:camp_id or /CampDetailDemo/:id)
+  const fromParams =
+    normId(params?.camp_id) || normId(params?.id) || normId(params?.campId);
+
+  // 2) Navigation state (supports navigate(url, { state: { camp_id } }))
+  const fromState = normId(location?.state?.camp_id) || normId(location?.state?.id);
+
+  // 3) Querystring (supports ?camp_id= or ?id=)
+  const sp = new URLSearchParams(location?.search || window.location.search || "");
+  const fromQuery = normId(sp.get("camp_id") || sp.get("id") || sp.get("campId"));
+
+  return fromParams || fromState || fromQuery || null;
+}
+
 export default function CampDetailDemo() {
   const navigate = useNavigate();
+  const params = useParams();
+  const location = useLocation();
+
   const { seasonYear, demoYear } = useSeasonAccess();
 
-  // Support both ?id= and ?camp_id= (backward/forward compatible)
-  const urlParams = new URLSearchParams(window.location.search);
-  const campId = normId(urlParams.get("camp_id") || urlParams.get("id"));
+  // ✅ Robust: works whether ID comes from param, querystring, or navigation state
+  const campId = useMemo(
+    () => getCampIdFromAllSources({ params, location }),
+    [params, location]
+  );
 
-  // ✅ Critical fix: Demo detail must load demo-year dataset, not current seasonYear
+  // ✅ Critical: demo detail must query demoYear dataset
   const {
     data: campSummaries = [],
     isLoading,
@@ -83,6 +103,14 @@ export default function CampDetailDemo() {
     return (
       <div className="p-6 text-slate-600">
         Missing camp id.
+        <div className="mt-2 text-xs text-slate-400">
+          This page accepts an id from:
+          <ul className="list-disc ml-5 mt-1">
+            <li>Querystring: ?id=... or ?camp_id=...</li>
+            <li>Route param: /.../:id or /.../:camp_id</li>
+            <li>Navigation state: navigate(url, {`{ state: { camp_id } }`})</li>
+          </ul>
+        </div>
         <div className="mt-3">
           <Button variant="outline" onClick={() => navigate(-1)}>
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -127,8 +155,7 @@ export default function CampDetailDemo() {
           <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 mb-4 flex items-start gap-2">
             <Lock className="w-4 h-4 mt-0.5" />
             <div className="text-sm">
-              Demo camp from season <b>{demoYear}</b>. Sign up to unlock the current
-              season.
+              Demo camp from season <b>{demoYear}</b>. Sign up to unlock the current season.
             </div>
           </div>
 
@@ -143,9 +170,7 @@ export default function CampDetailDemo() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">
                 {summary.school_division && (
-                  <Badge
-                    className={cn("text-xs", divisionColors[summary.school_division])}
-                  >
+                  <Badge className={cn("text-xs", divisionColors[summary.school_division])}>
                     {summary.school_division}
                   </Badge>
                 )}
@@ -210,9 +235,7 @@ export default function CampDetailDemo() {
         {/* Positions */}
         {summary.position_codes?.length > 0 && (
           <div className="bg-white rounded-xl p-4">
-            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
-              Positions
-            </p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">Positions</p>
             <div className="flex flex-wrap gap-2">
               {summary.position_codes.map((code) => (
                 <Badge key={code} variant="secondary" className="bg-slate-100">
