@@ -6,11 +6,11 @@ import Checkout from './pages/Checkout';
 import DemoSetup from './pages/DemoSetup';
 import Discover from './pages/Discover';
 import Home from './pages/Home';
+import LogoutDebug from './pages/LogoutDebug';
 import MyCamps from './pages/MyCamps';
 import Onboarding from './pages/Onboarding';
 import Profile from './pages/Profile';
 import TestFunctions from './pages/TestFunctions';
-import LogoutDebug from './pages/LogoutDebug';
 import __Layout from './Layout.jsx';
 
 
@@ -23,11 +23,11 @@ export const PAGES = {
     "DemoSetup": DemoSetup,
     "Discover": Discover,
     "Home": Home,
+    "LogoutDebug": LogoutDebug,
     "MyCamps": MyCamps,
     "Onboarding": Onboarding,
     "Profile": Profile,
     "TestFunctions": TestFunctions,
-    "LogoutDebug": LogoutDebug,
 }
 
 export const pagesConfig = {

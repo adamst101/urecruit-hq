@@ -451,7 +451,7 @@ export default function Discover() {
                   const camp_id = s.camp_id;
                   const page = gate.mode === "paid" ? "CampDetail" : "CampDetailDemo";
                   navigate(
-                    createPageUrl({ path: page, query: { id: camp_id, camp_id } }),
+                    createPageUrl(`${page}?id=${camp_id}&camp_id=${camp_id}`),
                     { state: { camp_id, id: camp_id } }
                   );
                 }}
