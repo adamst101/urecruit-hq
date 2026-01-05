@@ -12,6 +12,32 @@ import { base44 } from "@/api/base44Client";
 import { useSeasonAccess } from "@/components/hooks/useSeasonAccess";
 import { createPageUrl } from "@/utils";
 
+function trackEvent({
+  event_name,
+  mode,
+  camp_id = null,
+  school_id = null,
+  sport_id = null,
+  positions = [],
+  season_year
+}) {
+  try {
+    base44.entities.Event.create({
+      event_name,
+      mode,
+      camp_id,
+      school_id,
+      sport_id,
+      positions,
+      season_year,
+      ts: new Date().toISOString()
+    });
+  } catch {
+    // analytics must never block UX
+  }
+}
+
+
 const divisionColors = {
   "D1 (FBS)": "bg-amber-500 text-white",
   "D1 (FCS)": "bg-orange-500 text-white",
