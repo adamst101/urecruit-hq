@@ -412,7 +412,8 @@ export default function CampDetailDemo() {
                 season_year: demoYear
               });
 
-              navigate("/signup");
+              navigate(createPageUrl("Signup"));
+
             }}
           >
             Unlock Current Season
