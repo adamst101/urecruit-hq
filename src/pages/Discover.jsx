@@ -3,23 +3,23 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 
-import { base44 } from "./api/base44Client";
-import { createPageUrl } from "./utils";
+import { base44 } from "../api/base44Client";
+import { createPageUrl } from "../utils";
 
-import { Button } from "./components/ui/button";
-import { Card } from "./components/ui/card";
-import { Badge } from "./components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card } from "../components/ui/card";
+import { Badge } from "../components/ui/badge";
 
-import BottomNav from "./components/navigation/BottomNav";
-import CampCard from "./components/camps/CampCard";
+import BottomNav from "../components/navigation/BottomNav";
+import CampCard from "../components/camps/CampCard";
 
-import { useSeasonAccess } from "./components/hooks/useSeasonAccess";
-import { useAthleteIdentity } from "./components/useAthleteIdentity";
-import { useCampSummariesClient } from "./components/hooks/useCampSummariesClient";
-import { useDemoProfile } from "./components/hooks/useDemoProfile";
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { useAthleteIdentity } from "../components/useAthleteIdentity";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
+import { useDemoProfile } from "../components/hooks/useDemoProfile";
 
-import { useWriteGate } from "./components/hooks/useWriteGate";
-import { toggleDemoFavorite, isDemoFavorite } from "./components/hooks/demoFavorites";
+import { useWriteGate } from "../components/hooks/useWriteGate";
+import { toggleDemoFavorite, isDemoFavorite } from "../components/hooks/demoFavorites";
 
 function uniq(arr) {
   return Array.from(new Set((arr || []).filter(Boolean)));
