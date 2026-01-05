@@ -21,6 +21,32 @@ import { useDemoProfile } from "@/components/hooks/useDemoProfile";
 import { useWriteGate } from "@/components/hooks/useWriteGate";
 import { toggleDemoFavorite, isDemoFavorite } from "@/components/hooks/demoFavorites";
 
+function trackEvent({
+  event_name,
+  mode,
+  camp_id = null,
+  school_id = null,
+  sport_id = null,
+  positions = [],
+  season_year
+}) {
+  try {
+    base44.entities.Event.create({
+      event_name,
+      mode,
+      camp_id,
+      school_id,
+      sport_id,
+      positions,
+      season_year,
+      ts: new Date().toISOString()
+    });
+  } catch {
+    // analytics must never block UX
+  }
+}
+
+
 function uniq(arr) {
   return Array.from(new Set((arr || []).filter(Boolean)));
 }
