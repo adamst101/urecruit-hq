@@ -25,6 +25,13 @@ function uniq(arr) {
   return Array.from(new Set((arr || []).filter(Boolean)));
 }
 
+// ✅ normalize id/_id/object → string id
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
+}
+
 function pickSchoolName(s) {
   return s?.school_name || s?.name || s?.title || "Unknown School";
 }
@@ -41,25 +48,41 @@ function pickSportName(sp) {
   return sp?.sport_name || sp?.name || sp?.title || null;
 }
 
+// ✅ join helper that keys map by normalized id (works with id or _id)
 async function fetchEntityMap(entityName, ids) {
   const map = new Map();
-  if (!ids?.length) return map;
+  const cleanIds = uniq((ids || []).map(normId));
+  if (!cleanIds.length) return map;
 
-  // Try "in" query, fallback to per-id
   let rows = [];
+  // Try id: { in: [...] }
   try {
-    rows = await base44.entities[entityName].filter({ id: { in: ids } });
+    rows = await base44.entities[entityName].filter({ id: { in: cleanIds } });
   } catch {
-    rows = [];
-    for (const id of ids) {
-      try {
-        const one = await base44.entities[entityName].filter({ id }, { limit: 1 });
-        if (Array.isArray(one) && one[0]) rows.push(one[0]);
-      } catch {}
+    // Try _id: { in: [...] }
+    try {
+      rows = await base44.entities[entityName].filter({ _id: { in: cleanIds } });
+    } catch {
+      rows = [];
+      // Fallback per-id probes
+      for (const id of cleanIds) {
+        try {
+          const one = await base44.entities[entityName].filter({ id }, { limit: 1 });
+          if (Array.isArray(one) && one[0]) rows.push(one[0]);
+          continue;
+        } catch {}
+        try {
+          const one2 = await base44.entities[entityName].filter({ _id: id }, { limit: 1 });
+          if (Array.isArray(one2) && one2[0]) rows.push(one2[0]);
+        } catch {}
+      }
     }
   }
 
-  (rows || []).forEach((r) => map.set(r.id, r));
+  (rows || []).forEach((r) => {
+    const key = normId(r);
+    if (key) map.set(key, r);
+  });
   return map;
 }
 
@@ -67,14 +90,15 @@ async function fetchEntityMap(entityName, ids) {
  * DEMO query:
  * - Pull Camps (optionally filtered by sport/state equality)
  * - Filter by demoYear using client-side start_date bounds
+ * - Normalize ids
  * - Join School + Sport
- * - Apply division + position filters client-side (reliable)
+ * - Apply division + position filters client-side
  * - Return "summary" rows shaped like Discover expects
  */
 async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   if (!demoYear) return [];
 
-  // 1) Fetch Camps (only equality filters server-side, no date ops)
+  // 1) Fetch Camps (only equality filters server-side)
   const whereBase = {};
   if (demoProfile?.sport_id) whereBase.sport_id = demoProfile.sport_id;
   if (demoProfile?.state) whereBase.state = demoProfile.state;
@@ -82,16 +106,30 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   const rows = await base44.entities.Camp.filter(whereBase);
   const campsAll = Array.isArray(rows) ? rows : [];
 
-  // 2) Client-side year filter (bulletproof)
+  // 2) Normalize IDs up front (critical)
+  const campsNorm = campsAll
+    .map((c) => ({
+      ...c,
+      camp_id: normId(c),
+      school_id: normId(c.school_id) || c.school_id || null,
+      sport_id: normId(c.sport_id) || c.sport_id || null
+    }))
+    .filter((c) => c.camp_id);
+
+  // 3) Client-side year filter (YYYY-MM-DD string compare is safe)
   const start = `${Number(demoYear)}-01-01`;
   const next = `${Number(demoYear) + 1}-01-01`;
 
-  let camps = campsAll.filter((c) => {
+  let camps = campsNorm.filter((c) => {
     const d = c?.start_date;
     return typeof d === "string" && d >= start && d < next;
   });
 
-  // 3) Join School + Sport
+  // 4) Dedupe by camp_id (prevents duplicates)
+  const seen = new Set();
+  camps = camps.filter((c) => (seen.has(c.camp_id) ? false : (seen.add(c.camp_id), true)));
+
+  // 5) Join School + Sport
   const schoolIds = uniq(camps.map((c) => c.school_id));
   const sportIds = uniq(camps.map((c) => c.sport_id));
 
@@ -100,16 +138,16 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     fetchEntityMap("Sport", sportIds)
   ]);
 
-  // 4) Division filter (client-side, needs school join)
+  // 6) Division filter (needs school join)
   if (demoProfile?.division) {
     const want = demoProfile.division;
     camps = camps.filter((c) => {
-      const sch = schoolMap.get(c.school_id);
+      const sch = c.school_id ? schoolMap.get(c.school_id) : null;
       return pickSchoolDivision(sch) === want;
     });
   }
 
-  // 5) Position filter (client-side)
+  // 7) Position filter
   const pos = Array.isArray(demoProfile?.position_ids)
     ? demoProfile.position_ids.filter(Boolean)
     : [];
@@ -120,13 +158,13 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     });
   }
 
-  // 6) Map to summary shape used by Discover
+  // 8) Map to summary shape used by Discover
   return camps.map((c) => {
-    const sch = schoolMap.get(c.school_id);
-    const sp = sportMap.get(c.sport_id);
+    const sch = c.school_id ? schoolMap.get(c.school_id) : null;
+    const sp = c.sport_id ? sportMap.get(c.sport_id) : null;
 
     return {
-      camp_id: c.id,
+      camp_id: c.camp_id,
       school_id: c.school_id,
       sport_id: c.sport_id,
 
@@ -144,7 +182,6 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
       school_division: pickSchoolDivision(sch),
       sport_name: pickSportName(sp),
 
-      // Demo has no intent_status
       intent_status: null
     };
   });
@@ -154,7 +191,7 @@ export default function Discover() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { loading: accessLoading, currentYear, demoYear } = useSeasonAccess();
+  const { loading: accessLoading, currentYear } = useSeasonAccess();
   const {
     athleteProfile,
     isLoading: identityLoading,
@@ -182,7 +219,7 @@ export default function Discover() {
   const resolvedDemoYear = Number(currentYear) - 1;
   const demoEnabled = gate.mode !== "paid" && demoLoaded;
 
-  // Demo query (uses Camp + client-side year filter)
+  // Demo query
   const demoSummariesQuery = useQuery({
     queryKey: [
       "demoCampSummaries",
@@ -343,7 +380,11 @@ export default function Discover() {
                 <Button className="w-full" onClick={() => navigate(createPageUrl("DemoSetup"))}>
                   Update Demo Filters
                 </Button>
-                <Button variant="outline" className="w-full" onClick={() => window.location.reload()}>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => window.location.reload()}
+                >
                   Refresh
                 </Button>
               </div>
@@ -404,15 +445,16 @@ export default function Discover() {
                     blocked: () => navigate(createPageUrl("Onboarding"))
                   });
                 }}
-                onClick={() =>
+                // ✅ Critical: pass camp id via BOTH querystring + navigation state
+                // This makes CampDetailDemo immune to helpers/routers that strip ?id=
+                onClick={() => {
+                  const camp_id = s.camp_id;
+                  const page = gate.mode === "paid" ? "CampDetail" : "CampDetailDemo";
                   navigate(
-                    createPageUrl(
-                      gate.mode === "paid"
-                        ? `CampDetail?id=${s.camp_id}`
-                        : `CampDetailDemo?id=${s.camp_id}`
-                    )
-                  )
-                }
+                    createPageUrl({ path: page, query: { id: camp_id, camp_id } }),
+                    { state: { camp_id, id: camp_id } }
+                  );
+                }}
               />
             );
           })
