@@ -34,15 +34,12 @@ function normId(x) {
 }
 
 function getCampIdFromAllSources({ params, location }) {
-  // 1) Router params (supports routes like /demo/camp/:camp_id or /CampDetailDemo/:id)
-  const fromParams =
-    normId(params?.camp_id) || normId(params?.id) || normId(params?.campId);
+  const fromParams = normId(params?.camp_id) || normId(params?.id) || normId(params?.campId);
 
-  // 2) Navigation state (supports navigate(url, { state: { camp_id } }))
-  const fromState = normId(location?.state?.camp_id) || normId(location?.state?.id);
+  const fromState =
+    normId(location?.state?.camp_id) || normId(location?.state?.id);
 
-  // 3) Querystring (supports ?camp_id= or ?id=)
-  const sp = new URLSearchParams(location?.search || window.location.search || "");
+  const sp = new URLSearchParams(location?.search || "");
   const fromQuery = normId(sp.get("camp_id") || sp.get("id") || sp.get("campId"));
 
   return fromParams || fromState || fromQuery || null;
@@ -55,7 +52,6 @@ export default function CampDetailDemo() {
 
   const { seasonYear, demoYear } = useSeasonAccess();
 
-  // ✅ Robust: works whether ID comes from param, querystring, or navigation state
   const campId = useMemo(
     () => getCampIdFromAllSources({ params, location }),
     [params, location]
@@ -103,14 +99,6 @@ export default function CampDetailDemo() {
     return (
       <div className="p-6 text-slate-600">
         Missing camp id.
-        <div className="mt-2 text-xs text-slate-400">
-          This page accepts an id from:
-          <ul className="list-disc ml-5 mt-1">
-            <li>Querystring: ?id=... or ?camp_id=...</li>
-            <li>Route param: /.../:id or /.../:camp_id</li>
-            <li>Navigation state: navigate(url, {`{ state: { camp_id } }`})</li>
-          </ul>
-        </div>
         <div className="mt-3">
           <Button variant="outline" onClick={() => navigate(-1)}>
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -141,7 +129,6 @@ export default function CampDetailDemo() {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-8">
-      {/* Header */}
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-md mx-auto p-4">
           <button
@@ -187,9 +174,7 @@ export default function CampDetailDemo() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="max-w-md mx-auto p-4 space-y-6">
-        {/* Key Details */}
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-white rounded-xl p-4">
             <Calendar className="w-5 h-5 text-slate-400 mb-2" />
@@ -232,7 +217,6 @@ export default function CampDetailDemo() {
           )}
         </div>
 
-        {/* Positions */}
         {summary.position_codes?.length > 0 && (
           <div className="bg-white rounded-xl p-4">
             <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">Positions</p>
@@ -246,7 +230,6 @@ export default function CampDetailDemo() {
           </div>
         )}
 
-        {/* Notes */}
         {summary.notes && (
           <div className="bg-white rounded-xl p-4">
             <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
@@ -256,7 +239,6 @@ export default function CampDetailDemo() {
           </div>
         )}
 
-        {/* Actions (demo-safe) */}
         <div className="space-y-3">
           <Button className="w-full" onClick={() => navigate("/signup")}>
             Unlock Current Season
