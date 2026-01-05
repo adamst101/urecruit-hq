@@ -16,8 +16,8 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
 /**
  * Profile
- * - Authenticated users: show athlete profile summary + logout
- * - Demo/unauthenticated users: show sign-in / upgrade CTA (no loops)
+ * - Demo/unauthenticated users: show Sign In + Upgrade CTA (no forced redirects)
+ * - Authenticated users: show athlete profile summary + upgrade CTA if unpaid + logout
  *
  * Critical: Logout MUST actually sign out + clear caches + hard redirect.
  */
@@ -25,8 +25,8 @@ export default function Profile() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { mode, loading: accessLoading, accountId, currentYear, demoYear } =
-    useSeasonAccess();
+  const { mode, loading: accessLoading, accountId, currentYear, demoYear } = useSeasonAccess();
+
   const {
     athleteProfile,
     isLoading: identityLoading,
@@ -56,7 +56,7 @@ export default function Profile() {
     const url = createPageUrl("Home") + `?signedout=1&t=${Date.now()}`;
 
     try {
-      // 1) Real sign-out (Base44 SDKs vary)
+      // 1) Real sign-out (Base44 SDK variants)
       if (base44?.auth?.signOut) await base44.auth.signOut();
       else if (base44?.auth?.logout) await base44.auth.logout();
       else if (base44?.auth?.signout) await base44.auth.signout();
@@ -119,7 +119,7 @@ export default function Profile() {
     );
   }
 
-  // Demo / unauthenticated view (do NOT auto-route them to onboarding)
+  // Demo / unauthenticated view (do NOT auto-route them anywhere)
   if (!isAuthed) {
     return (
       <div className="min-h-screen bg-slate-50 pb-20">
@@ -150,34 +150,26 @@ export default function Profile() {
                     Sign In / Continue
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
+
                   <Button
                     variant="outline"
                     className="w-full"
                     onClick={() => navigate(createPageUrl("Discover"))}
                   >
-                    Back to Demo
+                    Back to Discover
                   </Button>
                 </div>
               </div>
             </div>
           </Card>
 
-          <Card className="p-4 border-amber-200 bg-amber-50">
-            <div className="flex items-start gap-3">
-              <Lock className="w-6 h-6 text-amber-700 mt-0.5" />
-              <div className="flex-1">
-                <div className="font-semibold text-amber-900">Unlock current season</div>
-                <div className="text-sm text-amber-900/80 mt-1">
-                  Upgrade to access current-year camps and planning.
-                </div>
-                <div className="mt-4">
-                  <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
-                    Upgrade
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </Card>
+          <PaywallCard
+            show={true}
+            currentYear={currentYear}
+            demoYear={demoYear}
+            onUpgrade={() => navigate(createPageUrl("Checkout"))}
+            onKeepDemo={() => navigate(createPageUrl("Discover"))}
+          />
         </div>
 
         <BottomNav />
@@ -196,8 +188,19 @@ export default function Profile() {
                 <h1 className="text-2xl font-bold text-deep-navy">Profile</h1>
                 {headlineBadge}
               </div>
+
               <Button variant="outline" onClick={handleLogout} disabled={logoutWorking}>
-                {logoutWorking ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+                {logoutWorking ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Signing out…
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Logout
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -213,7 +216,12 @@ export default function Profile() {
               <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
                 Go to Onboarding
               </Button>
-              <Button variant="outline" className="w-full" onClick={handleLogout} disabled={logoutWorking}>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleLogout}
+                disabled={logoutWorking}
+              >
                 {logoutWorking ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -327,9 +335,50 @@ export default function Profile() {
             </div>
           </Card>
         )}
+
+        <PaywallCard
+          show={mode !== "paid"}
+          currentYear={currentYear}
+          demoYear={demoYear}
+          onUpgrade={() => navigate(createPageUrl("Checkout"))}
+          onKeepDemo={() => navigate(createPageUrl("Discover"))}
+        />
       </div>
 
       <BottomNav />
     </div>
+  );
+}
+
+function PaywallCard({ show, currentYear, demoYear, onUpgrade, onKeepDemo }) {
+  if (!show) return null;
+
+  return (
+    <Card className="p-4 border-amber-200 bg-amber-50">
+      <div className="flex items-start gap-3">
+        <Lock className="w-5 h-5 text-amber-700 mt-0.5" />
+        <div className="flex-1">
+          <div className="font-semibold text-amber-900">
+            Unlock Current Season Camps ({currentYear})
+          </div>
+
+          <div className="text-sm text-amber-900/80 mt-1">
+            You’re currently browsing the demo dataset ({demoYear}). Upgrade to access the current
+            season and full planning features.
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <Button className="w-full" onClick={onUpgrade}>
+              Upgrade
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+
+            <Button variant="outline" className="w-full" onClick={onKeepDemo}>
+              Keep Browsing Demo
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
