@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Lock, LogIn } from "lucide-react";
 
@@ -28,6 +28,14 @@ async function safeSignIn() {
   return false;
 }
 
+function fallbackDemoYear() {
+  const y = new Date().getFullYear();
+  return y - 1;
+}
+function fallbackCurrentYear() {
+  return new Date().getFullYear();
+}
+
 export default function Home() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
@@ -40,13 +48,35 @@ export default function Home() {
   const paid = mode === "paid";
   const hasProfile = !!athleteProfile;
 
-  const loading = isLoading || (authed && identityLoading);
+  // Raw loading from hooks
+  const rawLoading = isLoading || (authed && identityLoading);
 
-  // Home viewed (dedupe per session)
+  // ---- Stuck-loading fuse: after 2.5s, stop blocking the user ----
+  const [loadingFusedOpen, setLoadingFusedOpen] = useState(false);
+
   useEffect(() => {
-    if (isLoading) return;
+    // Reset fuse whenever we go into a loading state
+    if (!rawLoading) {
+      setLoadingFusedOpen(false);
+      return;
+    }
 
-    const key = `evt_home_viewed_${mode || "demo"}_${currentYear}`;
+    const t = setTimeout(() => setLoadingFusedOpen(true), 2500);
+    return () => clearTimeout(t);
+  }, [rawLoading]);
+
+  // Effective loading: only show/disable while not fused open
+  const loading = rawLoading && !loadingFusedOpen;
+
+  // Years with safe fallback so UI never becomes undefined-dependent
+  const demoY = demoYear ?? fallbackDemoYear();
+  const currentY = currentYear ?? fallbackCurrentYear();
+
+  // Home viewed (dedupe per session) — don’t wait forever if fuse trips
+  useEffect(() => {
+    if (rawLoading && !loadingFusedOpen) return;
+
+    const key = `evt_home_viewed_${mode || "demo"}_${currentY}`;
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -55,48 +85,43 @@ export default function Home() {
     trackEvent({
       event_name: "home_viewed",
       mode: mode || "demo",
-      season_year: paid ? currentYear : demoYear,
+      season_year: paid ? currentY : demoY,
       source: "home",
-      account_id: accountId || null
+      account_id: accountId || null,
+      fused_open: loadingFusedOpen ? 1 : 0
     });
-  }, [isLoading, mode, currentYear, demoYear, paid, accountId]);
+  }, [rawLoading, loadingFusedOpen, mode, currentY, demoY, paid, accountId]);
 
-  // ===== Copy improvements (sell confidence + outcomes) =====
+  // Copy
   const heroTitle = "Recruit smarter. Avoid conflicts. See the whole season.";
   const heroDesc =
     "Plan and prioritize college camps across your target schools—before weekends disappear.";
-
   const trustLine = "Independent planning tool • Not affiliated with camps";
 
-  // ===== Status line (clarifies demo vs current) =====
+  // Status line: do NOT show “Loading…” forever. If fused, show a helpful fallback.
   const statusLine = useMemo(() => {
     if (loading) return "Loading…";
-    if (paid) return `Current season is unlocked (${currentYear}).`;
-    return `Demo shows last season (${demoYear}). Current season (${currentYear}) updates regularly.`;
-  }, [loading, paid, currentYear, demoYear]);
+    if (paid) return `Current season is unlocked (${currentY}).`;
+    return `Demo shows last season (${demoY}). Current season (${currentY}) updates regularly.`;
+  }, [loading, paid, currentY, demoY]);
 
-  // Tighten badge
-  const badgeText = paid ? `Unlocked: ${currentYear}` : `Demo: ${demoYear}`;
+  // Badge
+  const badgeText = paid ? `Unlocked: ${currentY}` : `Demo: ${demoY}`;
   const badgeClass = paid ? "bg-emerald-700 text-white" : "bg-slate-900 text-white";
 
-  // ===== Routing logic (single primary path) =====
-  function getPrimaryTarget() {
-    // Paid user without profile should go straight to Profile
-    if (paid && authed && !hasProfile) return createPageUrl("Profile");
-
-    // If logged in, go where they were headed or Discover
-    if (authed) return next ? next : createPageUrl("Discover");
-
-    // Not logged in: browse demo in Discover (guards can handle if needed)
-    return createPageUrl("Discover");
-  }
-
+  // Primary CTA label
   const primaryLabel = useMemo(() => {
     if (loading) return "Loading…";
     if (paid && authed && !hasProfile) return "Set up athlete profile";
-    if (authed) return "View my recruiting season";
     return "View my recruiting season";
   }, [loading, paid, authed, hasProfile]);
+
+  // Routing logic
+  function getPrimaryTarget() {
+    if (paid && authed && !hasProfile) return createPageUrl("Profile");
+    if (authed) return next ? next : createPageUrl("Discover");
+    return createPageUrl("Discover"); // demo path
+  }
 
   function primaryCTA() {
     const target = getPrimaryTarget();
@@ -107,10 +132,11 @@ export default function Home() {
           ? "home_primary_to_profile_clicked"
           : "home_primary_clicked",
       mode: paid ? "paid" : "demo",
-      season_year: paid ? currentYear : demoYear,
+      season_year: paid ? currentY : demoY,
       source: "home",
       account_id: accountId || null,
-      target
+      target,
+      fused_open: loadingFusedOpen ? 1 : 0
     });
 
     nav(target);
@@ -120,8 +146,9 @@ export default function Home() {
     trackEvent({
       event_name: "home_login_clicked",
       mode: mode || "demo",
-      season_year: paid ? currentYear : demoYear,
-      source: "home"
+      season_year: paid ? currentY : demoY,
+      source: "home",
+      fused_open: loadingFusedOpen ? 1 : 0
     });
 
     const ok = await safeSignIn();
@@ -129,9 +156,6 @@ export default function Home() {
       nav(createPageUrl("Home"), { replace: true });
       return;
     }
-
-    // After login: honor next if provided; otherwise Discover.
-    // Paid-without-profile will be routed to Profile by primary/guards.
     nav(next ? next : createPageUrl("Discover"), { replace: true });
   }
 
@@ -139,35 +163,28 @@ export default function Home() {
     trackEvent({
       event_name: "home_demo_clicked",
       mode: "demo",
-      season_year: demoYear,
-      source: "home"
+      season_year: demoY,
+      source: "home",
+      fused_open: loadingFusedOpen ? 1 : 0
     });
     nav(createPageUrl("Discover"));
   }
 
   function goSubscribe() {
-    // Paid users should not be routed to Subscribe.
     if (paid) {
-      trackEvent({
-        event_name: "home_paid_subscribe_clicked",
-        mode: "paid",
-        season_year: currentYear,
-        source: "home"
-      });
       nav(createPageUrl("Discover"));
       return;
     }
-
     trackEvent({
       event_name: "home_subscribe_clicked",
       mode: "demo",
-      season_year: currentYear,
-      source: "home"
+      season_year: currentY,
+      source: "home",
+      fused_open: loadingFusedOpen ? 1 : 0
     });
     nav(createPageUrl("Subscribe"));
   }
 
-  // ===== “Outcomes > Features” bullets =====
   const outcomeBullets = [
     { title: "Clarity", text: "See camps only from schools you actually care about." },
     { title: "Control", text: "Spot date conflicts early—before you commit weekends." },
@@ -187,13 +204,18 @@ export default function Home() {
 
             <div className="flex items-center gap-2 flex-wrap">
               <Badge className={badgeClass}>{badgeText}</Badge>
-              <div className="text-xs text-slate-500">{statusLine}</div>
+
+              {/* Key change: if fuse opened, don’t show “Loading…”; show status/fallback */}
+              <div className="text-xs text-slate-500">
+                {loadingFusedOpen && rawLoading
+                  ? "Having trouble loading status—continuing anyway."
+                  : statusLine}
+              </div>
             </div>
 
             <div className="text-xs text-slate-500">{trustLine}</div>
           </div>
 
-          {/* Top-right: ONE utility action only */}
           <div className="flex gap-2">
             {!authed ? (
               <Button variant="outline" onClick={handleLogin}>
@@ -210,7 +232,6 @@ export default function Home() {
 
         {/* Main content */}
         <div className="grid md:grid-cols-2 gap-4">
-          {/* Primary card (dominant) */}
           <Card className="p-6 space-y-4 border-slate-300 shadow-sm">
             <div className="space-y-1">
               <div className="text-lg font-bold text-deep-navy">Start here</div>
@@ -221,23 +242,27 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Key change: don’t block forever; fuse opens and enables */}
             <Button className="w-full" onClick={primaryCTA} disabled={loading}>
               {primaryLabel}
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
 
-            {/* Secondary actions (kept minimal and clearly secondary) */}
             <div className="flex items-center justify-between gap-3">
               <Button variant="outline" onClick={goDemo} disabled={loading}>
-                Explore demo ({demoYear})
+                Explore demo ({demoY})
               </Button>
 
               {!paid ? (
                 <Button variant="outline" onClick={goSubscribe} disabled={loading}>
-                  Unlock {currentYear}
+                  Unlock {currentY}
                 </Button>
               ) : (
-                <Button variant="outline" onClick={() => nav(createPageUrl("Discover"))} disabled={loading}>
+                <Button
+                  variant="outline"
+                  onClick={() => nav(createPageUrl("Discover"))}
+                  disabled={loading}
+                >
                   Go to Discover
                 </Button>
               )}
@@ -249,9 +274,16 @@ export default function Home() {
                 <div>Athlete setup is required before using paid features.</div>
               </div>
             )}
+
+            {/* Optional: subtle diagnostic hint if fuse opened */}
+            {loadingFusedOpen && rawLoading ? (
+              <div className="text-[11px] text-slate-400">
+                Tip: your season/profile hooks are not resolving. Check console/network for
+                useSeasonAccess / useAthleteIdentity calls.
+              </div>
+            ) : null}
           </Card>
 
-          {/* Outcomes card */}
           <Card className="p-6 space-y-4">
             <div className="text-lg font-bold text-deep-navy">What you get</div>
 
@@ -264,14 +296,12 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Tiny clarifier: demo vs current */}
             <div className="text-xs text-slate-500">
               Demo is last season’s data. Current season unlock includes the latest updates.
             </div>
           </Card>
         </div>
 
-        {/* Optional: keep footer lean, but add a final trust nudge */}
         <div className="text-xs text-slate-500">
           Built for recruiting families who need fewer mistakes, fewer conflicts, and clearer tradeoffs.
         </div>
