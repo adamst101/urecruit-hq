@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { createPageUrl } from "../../utils";
@@ -8,99 +8,62 @@ import { useAthleteIdentity } from "../useAthleteIdentity";
 /**
  * RouteGuard
  *
- * Controls access at the ROUTE level (not UI-level).
+ * Goals:
+ * - Keep Home as a true front door (no auto-redirect here)
+ * - Allow demo browsing without auth (Discover demo)
+ * - Enforce: Paid users MUST have an athlete profile before using paid features
  *
- * Policy flags:
- * - requireAuth: must be signed in
- * - requirePaid: must have current-season entitlement
- * - requireProfile: must have athlete profile
+ * Flags:
+ * - requireAuth: user must be signed in (accountId required)
+ * - requirePaid: user must have access (mode === "paid")
+ * - requireProfile: user must have athlete profile (paid-only enforcement)
  *
- * Design principles:
- * - Home is NEVER guarded
- * - Demo users can browse Discover/Calendar
- * - Paid features require entitlement + athlete profile
- * - Profile creation is allowed even without subscription
+ * Notes:
+ * - requireProfile only triggers when mode === "paid"
+ * - If you want "profile allowed without paid" you can route to Profile without requirePaid.
  */
 export default function RouteGuard({
   requireAuth = false,
   requirePaid = false,
   requireProfile = false,
-  children
+  children,
 }) {
-  const navigate = useNavigate();
-  const location = useLocation();
+  const nav = useNavigate();
+  const loc = useLocation();
 
-  const {
-    loading: accessLoading,
-    mode,
-    accountId,
-    currentYear
-  } = useSeasonAccess();
+  const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
+  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  const {
-    athleteProfile,
-    isLoading: identityLoading
-  } = useAthleteIdentity();
+  const loading = accessLoading || (mode === "paid" && identityLoading);
+
+  const nextParam = useMemo(() => encodeURIComponent(loc.pathname + (loc.search || "")), [loc.pathname, loc.search]);
 
   useEffect(() => {
-    if (accessLoading || identityLoading) return;
+    if (loading) return;
 
-    const pathname = location.pathname;
-
-    /* ----------------------------------------------------
-       1) AUTH REQUIRED
-    ---------------------------------------------------- */
+    // 1) Auth required
     if (requireAuth && !accountId) {
-      navigate(
-        createPageUrl("Home") + `?next=${encodeURIComponent(pathname)}`,
-        { replace: true }
-      );
+      nav(createPageUrl("Home") + `?next=${nextParam}`, { replace: true });
       return;
     }
 
-    /* ----------------------------------------------------
-       2) PAID REQUIRED
-       (user must have entitlement for current season)
-    ---------------------------------------------------- */
+    // 2) Paid required
     if (requirePaid && mode !== "paid") {
-      navigate(
-        createPageUrl("Subscribe") + `?next=${encodeURIComponent(pathname)}`,
-        { replace: true }
-      );
+      nav(createPageUrl("Subscribe") + `?next=${nextParam}`, { replace: true });
       return;
     }
 
-    /* ----------------------------------------------------
-       3) ATHLETE PROFILE REQUIRED
-       (only enforced for paid flows)
-    ---------------------------------------------------- */
+    // 3) Profile required (paid-only enforcement)
     if (requireProfile && mode === "paid" && !athleteProfile) {
-      navigate(
-        createPageUrl("Profile") + `?next=${encodeURIComponent(pathname)}`,
-        { replace: true }
-      );
+      nav(createPageUrl("Profile") + `?next=${nextParam}`, { replace: true });
       return;
     }
-  }, [
-    accessLoading,
-    identityLoading,
-    requireAuth,
-    requirePaid,
-    requireProfile,
-    accountId,
-    mode,
-    athleteProfile,
-    navigate,
-    location.pathname
-  ]);
+  }, [loading, requireAuth, requirePaid, requireProfile, accountId, mode, athleteProfile, nav, nextParam]);
 
-  /* ----------------------------------------------------
-     LOADING STATE
-  ---------------------------------------------------- */
-  if (accessLoading || identityLoading) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-slate-500 text-sm">Loading…</div>
+        <div className="text-slate-600">Loading…</div>
       </div>
     );
   }
