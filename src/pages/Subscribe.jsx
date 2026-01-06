@@ -13,7 +13,10 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 
 function trackEvent(payload) {
   try {
-    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+    base44.entities.Event.create({
+      ...payload,
+      ts: new Date().toISOString()
+    });
   } catch {}
 }
 
@@ -21,10 +24,22 @@ export default function Subscribe() {
   const navigate = useNavigate();
   const { currentYear, demoYear, mode } = useSeasonAccess();
 
+  // Dedup subscribe_viewed per session
   useEffect(() => {
-    trackEvent({ event_name: "subscribe_viewed", mode: mode === "paid" ? "paid" : "demo", season_year: currentYear });
+    const key = `evt_subscribe_viewed_${currentYear}`;
+    try {
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+
+    trackEvent({
+      event_name: "subscribe_viewed",
+      mode: mode === "paid" ? "paid" : "demo",
+      season_year: currentYear,      // ✅ year being sold
+      source: "subscribe_page"
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentYear]);
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
@@ -52,17 +67,16 @@ export default function Subscribe() {
                 <Feature>Current-year camps & updates</Feature>
                 <Feature>Unlimited favorites + registrations tracking</Feature>
                 <Feature>Calendar planning overlays & conflict detection</Feature>
-                <Feature>Multi-athlete support (one account, multiple kids)</Feature>
+                <Feature>Multi-athlete support (one email, multiple kids)</Feature>
               </div>
 
-              {/* Price block - set your price here */}
               <div className="mt-4 bg-white/70 border border-amber-200 rounded-xl p-3">
                 <div className="flex items-baseline justify-between">
                   <div className="font-semibold text-amber-900">Season Pass</div>
                   <div className="text-2xl font-bold text-amber-900">$49</div>
                 </div>
                 <div className="text-xs text-amber-900/70 mt-1">
-                  Per season. You can add multiple athletes under one email.
+                  Per season. Add multiple athletes under one email.
                 </div>
               </div>
 
@@ -70,7 +84,12 @@ export default function Subscribe() {
                 <Button
                   className="w-full"
                   onClick={() => {
-                    trackEvent({ event_name: "subscribe_cta_clicked", mode: "demo", season_year: currentYear });
+                    trackEvent({
+                      event_name: "subscribe_cta_clicked",
+                      mode: "demo",
+                      season_year: currentYear,  // ✅ year being sold
+                      source: "subscribe_page"
+                    });
                     navigate(createPageUrl("Checkout"));
                   }}
                 >
@@ -82,7 +101,12 @@ export default function Subscribe() {
                   variant="outline"
                   className="w-full"
                   onClick={() => {
-                    trackEvent({ event_name: "subscribe_keep_demo_clicked", mode: "demo", season_year: currentYear });
+                    trackEvent({
+                      event_name: "subscribe_keep_demo_clicked",
+                      mode: "demo",
+                      season_year: currentYear, // still ok; it's an action on subscribe page
+                      source: "subscribe_page"
+                    });
                     navigate(createPageUrl("Discover"));
                   }}
                 >
@@ -91,7 +115,7 @@ export default function Subscribe() {
               </div>
 
               <div className="mt-3 text-xs text-amber-900/70">
-                No profile required before purchase. You'll add athletes after checkout.
+                No profile required before purchase. You’ll add athletes after checkout.
               </div>
             </div>
           </div>
@@ -107,10 +131,6 @@ export default function Subscribe() {
             <div>
               <span className="font-medium text-slate-700">Do I need to create a profile first?</span>{" "}
               No — you create athletes after purchase.
-            </div>
-            <div>
-              <span className="font-medium text-slate-700">What does "current season" mean?</span>{" "}
-              The latest recruiting calendar year's camps and updates.
             </div>
           </div>
         </Card>
