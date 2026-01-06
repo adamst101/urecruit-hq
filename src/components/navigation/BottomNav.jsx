@@ -29,11 +29,10 @@ export default function BottomNav() {
       ];
     }
 
-    // Demo mode: send "Upgrade" to Subscribe (not Onboarding)
-    // Use force=1 so paid users can still view if intentionally routed, and include next=Discover.
+    // Demo mode: Upgrade goes to Subscribe and carries user back to Discover
     const upgradeUrl =
       createPageUrl("Subscribe") +
-      `?force=1&source=bottom_nav_upgrade&next=${encodeURIComponent(createPageUrl("Discover"))}`;
+      `?source=bottom_nav_upgrade&next=${encodeURIComponent(createPageUrl("Discover"))}`;
 
     return [
       { key: "Discover", label: "Discover", icon: Compass, to: createPageUrl("Discover") },
@@ -46,7 +45,6 @@ export default function BottomNav() {
 
   const isActive = (to) => {
     const cleanTo = String(to || "").split("?")[0];
-    // treat exact route match as active
     return pathname === cleanTo;
   };
 
@@ -69,7 +67,9 @@ export default function BottomNav() {
                 )}
               >
                 <Icon className={cn("w-5 h-5", active && "text-deep-navy")} />
-                <span className={cn("text-xs font-medium", active && "text-deep-navy")}>{item.label}</span>
+                <span className={cn("text-xs font-medium", active && "text-deep-navy")}>
+                  {item.label}
+                </span>
               </button>
             );
           })}
