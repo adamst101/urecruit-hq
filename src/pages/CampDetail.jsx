@@ -44,7 +44,72 @@ function trackEvent(payload) {
   } catch {}
 }
 
-function CampDetailPaidInner() {
+// --------------------
+// Demo intent storage (NO BACKEND WRITES)
+// --------------------
+function demoIntentKey(seasonYear) {
+  return `rm_demo_intents_${seasonYear || "unknown"}`;
+}
+
+function readDemoIntents(seasonYear) {
+  try {
+    const raw = localStorage.getItem(demoIntentKey(seasonYear));
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDemoIntents(seasonYear, obj) {
+  try {
+    localStorage.setItem(demoIntentKey(seasonYear), JSON.stringify(obj || {}));
+  } catch {}
+}
+
+function getDemoIntent(seasonYear, campId) {
+  const intents = readDemoIntents(seasonYear);
+  return intents[String(campId)] || null; // { status: "favorite"|"registered"|"completed"|"removed", priority? }
+}
+
+function setDemoIntent(seasonYear, campId, intentOrNull) {
+  const intents = readDemoIntents(seasonYear);
+  const key = String(campId);
+
+  if (!intentOrNull) delete intents[key];
+  else intents[key] = intentOrNull;
+
+  writeDemoIntents(seasonYear, intents);
+}
+
+// --------------------
+// Query-cache lookup (demo data source)
+// --------------------
+function findCampSummaryInCache(queryClient, campId) {
+  try {
+    const all = queryClient.getQueryCache().getAll();
+    for (const q of all) {
+      const data = q.state?.data;
+      if (!data) continue;
+
+      // Common patterns: array of summaries OR {data:[...]} OR {items:[...]}
+      const arr =
+        Array.isArray(data) ? data :
+        Array.isArray(data?.data) ? data.data :
+        Array.isArray(data?.items) ? data.items :
+        null;
+
+      if (!arr) continue;
+
+      const hit = arr.find((x) => String(x?.camp_id) === String(campId));
+      if (hit) return hit;
+    }
+  } catch {}
+  return null;
+}
+
+function CampDetailInner() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -62,56 +127,8 @@ function CampDetailPaidInner() {
     return params.get("id");
   }, [location.search]);
 
-  /**
-   * DEMO GUARD:
-   * If the viewer is not paid, this route shouldn't render paid CampDetail.
-   * Send them to CampDetailDemo with the same id.
-   */
-  useEffect(() => {
-    if (accessLoading) return;
-    if (!campId) return;
-
-    if (mode !== "paid") {
-      navigate(createPageUrl(`CampDetailDemo?id=${encodeURIComponent(campId)}`), { replace: true });
-    }
-  }, [mode, accessLoading, campId, navigate]);
-
-  // Loading skeleton (avoid rendering paid content until guards resolve)
-  if (accessLoading || identityLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-      </div>
-    );
-  }
-
-  // If demo, we render nothing (redirect effect will fire)
-  if (mode !== "paid") return null;
-
-  // Identity error
-  if (identityError) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-4">
-        <div className="max-w-md mx-auto">
-          <Card className="p-4 border-rose-200 bg-rose-50 text-rose-700">
-            <div className="font-semibold">Failed to load athlete profile</div>
-            <div className="text-sm mt-1 break-words">
-              {String(identityErrorObj?.message || identityErrorObj)}
-            </div>
-            <div className="mt-4">
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(location.pathname + location.search)}`)}
-              >
-                Go to Profile Setup
-              </Button>
-            </div>
-          </Card>
-        </div>
-      </div>
-    );
-  }
+  const paid = mode === "paid";
+  const canWrite = paid && !!athleteProfile?.id; // paid + profile (RouteGuard should enforce)
 
   // No campId
   if (!campId) {
@@ -134,31 +151,130 @@ function CampDetailPaidInner() {
     );
   }
 
-  // Paid + Profile exists (RouteGuard enforces, but keep safe)
-  const athleteId = athleteProfile?.id;
-  const sportId = athleteProfile?.sport_id;
+  // Access loading: keep minimal skeleton (do not redirect anywhere)
+  if (accessLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
 
-  const {
-    data: summaries = [],
-    isLoading: summariesLoading,
-    isError: summariesError,
-    error: summariesErrorObj
-  } = useCampSummariesClient({
+  // Identity loading: only relevant for paid (demo should not block on identity)
+  if (paid && identityLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  // Identity error (paid only)
+  if (paid && identityError) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4">
+        <div className="max-w-md mx-auto">
+          <Card className="p-4 border-rose-200 bg-rose-50 text-rose-700">
+            <div className="font-semibold">Failed to load athlete profile</div>
+            <div className="text-sm mt-1 break-words">
+              {String(identityErrorObj?.message || identityErrorObj)}
+            </div>
+            <div className="mt-4">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() =>
+                  navigate(
+                    createPageUrl("Profile") +
+                      `?next=${encodeURIComponent(location.pathname + location.search)}`
+                  )
+                }
+              >
+                Go to Profile Setup
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Paid + Profile exists
+  const athleteId = athleteProfile?.id || null;
+  const sportId = athleteProfile?.sport_id || null;
+
+  // Paid: load with client hook (authoritative)
+  const paidSummariesQuery = useCampSummariesClient({
     athleteId,
     sportId,
-    enabled: !!athleteId
+    enabled: paid && !!athleteId
   });
 
+  // Determine summary:
+  // - Paid: from hook
+  // - Demo: from query cache (Discover already loaded), then overlay local intent
+  const paidSummaries = paidSummariesQuery?.data || [];
+
+  const baseSummary = useMemo(() => {
+    if (paid) {
+      return (paidSummaries || []).find((s) => String(s.camp_id) === String(campId)) || null;
+    }
+    // Demo mode: try query cache
+    return findCampSummaryInCache(queryClient, campId);
+  }, [paid, paidSummaries, campId, queryClient]);
+
+  const demoIntent = useMemo(() => {
+    if (paid) return null;
+    return getDemoIntent(seasonYear, campId);
+  }, [paid, seasonYear, campId]);
+
   const summary = useMemo(() => {
-    return (summaries || []).find((s) => String(s.camp_id) === String(campId)) || null;
-  }, [summaries, campId]);
+    if (!baseSummary) return null;
+
+    // In demo: override intent status locally (no backend)
+    if (!paid) {
+      const intent_status = demoIntent?.status || baseSummary.intent_status || "none";
+      return { ...baseSummary, intent_status };
+    }
+    return baseSummary;
+  }, [baseSummary, paid, demoIntent]);
 
   const invalidateSummaries = () => {
+    // Paid: this key already exists in your code
     queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+
+    // Demo: also invalidate everything so Discover/Calendar reflect local intent overlays if they read cache
+    if (!paid) {
+      queryClient.invalidateQueries();
+    }
   };
 
+  // Mutations
   const toggleFavorite = useMutation({
     mutationFn: async () => {
+      // DEMO: local-only
+      if (!paid) {
+        const existing = getDemoIntent(seasonYear, campId);
+
+        // registered/completed are not toggleable via favorite
+        if (existing?.status === "registered" || existing?.status === "completed") return;
+
+        if (!existing || existing.status === "removed" || existing.status === "none") {
+          setDemoIntent(seasonYear, campId, { status: "favorite", priority: "medium" });
+          return;
+        }
+
+        if (existing.status === "favorite") {
+          setDemoIntent(seasonYear, campId, { status: "removed" });
+          return;
+        }
+
+        // any other state -> favorite
+        setDemoIntent(seasonYear, campId, { status: "favorite", priority: "medium" });
+        return;
+      }
+
+      // PAID: backend write
       const existing = await base44.entities.CampIntent.filter({
         athlete_id: athleteId,
         camp_id: campId
@@ -189,7 +305,7 @@ function CampDetailPaidInner() {
       invalidateSummaries();
       trackEvent({
         event_name: "camp_favorite_toggled",
-        mode: "paid",
+        mode: paid ? "paid" : "demo",
         season_year: seasonYear || null,
         camp_id: campId,
         athlete_id: athleteId || null
@@ -199,6 +315,15 @@ function CampDetailPaidInner() {
 
   const registerCamp = useMutation({
     mutationFn: async () => {
+      // DEMO: local-only register marker (no backend)
+      if (!paid) {
+        const existing = getDemoIntent(seasonYear, campId);
+        if (existing?.status === "registered" || existing?.status === "completed") return;
+        setDemoIntent(seasonYear, campId, { status: "registered", priority: "high" });
+        return;
+      }
+
+      // PAID: backend write
       const existing = await base44.entities.CampIntent.filter({
         athlete_id: athleteId,
         camp_id: campId
@@ -225,7 +350,7 @@ function CampDetailPaidInner() {
       invalidateSummaries();
       trackEvent({
         event_name: "camp_mark_registered",
-        mode: "paid",
+        mode: paid ? "paid" : "demo",
         season_year: seasonYear || null,
         camp_id: campId,
         athlete_id: athleteId || null
@@ -233,7 +358,8 @@ function CampDetailPaidInner() {
     }
   });
 
-  if (summariesLoading) {
+  // Paid query states
+  if (paid && paidSummariesQuery?.isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -241,14 +367,14 @@ function CampDetailPaidInner() {
     );
   }
 
-  if (summariesError) {
+  if (paid && paidSummariesQuery?.isError) {
     return (
       <div className="min-h-screen bg-slate-50 p-4">
         <div className="max-w-md mx-auto">
           <Card className="p-4 border-rose-200 bg-rose-50 text-rose-700">
             <div className="font-semibold">Failed to load camp detail</div>
             <div className="text-xs mt-2 break-words">
-              {String(summariesErrorObj?.message || summariesErrorObj)}
+              {String(paidSummariesQuery?.error?.message || paidSummariesQuery?.error)}
             </div>
           </Card>
         </div>
@@ -256,6 +382,7 @@ function CampDetailPaidInner() {
     );
   }
 
+  // If not found (demo may not have cache yet)
   if (!summary) {
     return (
       <div className="min-h-screen bg-slate-50 p-4">
@@ -263,12 +390,25 @@ function CampDetailPaidInner() {
           <Card className="p-4">
             <div className="font-semibold text-deep-navy">Camp not found</div>
             <div className="text-sm text-slate-600 mt-1">
-              This camp may not be available for your current sport filter or season.
+              {paid
+                ? "This camp may not be available for your current sport filter or season."
+                : "Open Discover first so demo camps load, then return to this camp."}
             </div>
-            <div className="mt-4">
+            <div className="mt-4 space-y-2">
               <Button className="w-full" onClick={() => navigate(createPageUrl("Discover"))}>
-                Back to Discover
+                Go to Discover
               </Button>
+              {!paid ? (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() =>
+                    navigate(createPageUrl("Discover") + `?mode=demo&season=${encodeURIComponent(seasonYear || "")}`)
+                  }
+                >
+                  Go to Discover (Demo)
+                </Button>
+              ) : null}
             </div>
           </Card>
         </div>
@@ -308,7 +448,12 @@ function CampDetailPaidInner() {
                   <span className="text-xs text-slate-500 font-medium">{summary.sport_name}</span>
                 )}
                 {isRegistered && (
-                  <Badge className="bg-emerald-100 text-emerald-700 text-xs">Registered</Badge>
+                  <Badge className="bg-emerald-100 text-emerald-700 text-xs">
+                    {paid ? "Registered" : "Registered (Demo)"}
+                  </Badge>
+                )}
+                {!paid && (
+                  <Badge className="bg-slate-100 text-slate-700 text-xs">Demo</Badge>
                 )}
               </div>
 
@@ -322,10 +467,18 @@ function CampDetailPaidInner() {
               onClick={() => toggleFavorite.mutate()}
               className={cn(
                 "p-2 rounded-full transition-all",
-                isFavorite ? "bg-rose-50 text-rose-500" : "bg-slate-50 text-slate-400 hover:text-slate-700"
+                isFavorite
+                  ? "bg-rose-50 text-rose-500"
+                  : "bg-slate-50 text-slate-400 hover:text-slate-700"
               )}
               disabled={toggleFavorite.isPending || isRegistered}
-              title={isRegistered ? "Registered camps cannot be favorited/removed here" : "Toggle favorite"}
+              title={
+                isRegistered
+                  ? "Registered camps cannot be favorited/removed here"
+                  : paid
+                  ? "Toggle favorite"
+                  : "Toggle favorite (demo: local only)"
+              }
               type="button"
             >
               <Star className={cn("w-5 h-5", isFavorite && "fill-current")} />
@@ -336,6 +489,14 @@ function CampDetailPaidInner() {
 
       {/* Body */}
       <div className="max-w-md mx-auto p-4 space-y-4">
+        {!paid ? (
+          <Card className="p-3 border-slate-200 bg-slate-50">
+            <div className="text-xs text-slate-600">
+              Demo mode: Favorites and registrations are saved locally on this device (no account writes).
+            </div>
+          </Card>
+        ) : null}
+
         <Card className="p-4">
           <div className="space-y-3">
             {startDate && (
@@ -367,7 +528,10 @@ function CampDetailPaidInner() {
             {Array.isArray(summary.position_codes) && summary.position_codes.length > 0 && (
               <div className="flex flex-wrap gap-1 pt-1">
                 {summary.position_codes.slice(0, 8).map((code, idx) => (
-                  <span key={idx} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-full">
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-full"
+                  >
                     {code}
                   </span>
                 ))}
@@ -392,15 +556,17 @@ function CampDetailPaidInner() {
             {registerCamp.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Registering…
+                {paid ? "Registering…" : "Saving…"}
               </>
             ) : isRegistered ? (
               <>
                 <CheckCircle2 className="w-4 h-4 mr-2" />
-                Registered
+                {paid ? "Registered" : "Registered (Demo)"}
               </>
-            ) : (
+            ) : paid ? (
               "Mark as Registered"
+            ) : (
+              "Mark as Registered (Demo)"
             )}
           </Button>
 
@@ -423,15 +589,13 @@ function CampDetailPaidInner() {
 
 export default function CampDetail() {
   /**
-   * Correct wrapper policy for YOUR RouteGuard implementation:
-   * - Demo users can still browse public/demo elsewhere
-   * - Paid users must complete athlete profile first
-   *
-   * NOTE: RouteGuard already only enforces profile when mode === "paid"
+   * Wrapper policy:
+   * - This page should exist in demo and paid modes (same UI)
+   * - RouteGuard should only enforce profile requirements when mode === "paid"
    */
   return (
     <RouteGuard requireProfile={true}>
-      <CampDetailPaidInner />
+      <CampDetailInner />
     </RouteGuard>
   );
 }
