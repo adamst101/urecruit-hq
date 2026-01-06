@@ -3,23 +3,23 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 
-import { base44 } from "@/api/base44Client";
-import { createPageUrl } from "@/utils";
+import { base44 } from "../api/base44Client";
+import { createPageUrl } from "../utils";
 
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card } from "../components/ui/card";
+import { Badge } from "../components/ui/badge";
 
-import BottomNav from "@/components/navigation/BottomNav";
-import CampCard from "@/components/camps/CampCard";
+import BottomNav from "../components/navigation/BottomNav";
+import CampCard from "../components/camps/CampCard";
 
-import { useSeasonAccess } from "@/components/hooks/useSeasonAccess";
-import { useAthleteIdentity } from "@/components/useAthleteIdentity";
-import { useCampSummariesClient } from "@/components/hooks/useCampSummariesClient";
-import { useDemoProfile } from "@/components/hooks/useDemoProfile";
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { useAthleteIdentity } from "../components/useAthleteIdentity";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
+import { useDemoProfile } from "../components/hooks/useDemoProfile";
 
-import { useWriteGate } from "@/components/hooks/useWriteGate";
-import { toggleDemoFavorite, isDemoFavorite } from "@/components/hooks/demoFavorites";
+import { useWriteGate } from "../components/hooks/useWriteGate";
+import { toggleDemoFavorite, isDemoFavorite } from "../components/hooks/demoFavorites";
 
 function uniq(arr) {
   return Array.from(new Set((arr || []).filter(Boolean)));
@@ -43,26 +43,12 @@ function pickSportName(sp) {
 
 /**
  * ✅ Analytics (demo + paid compatible)
- * Keep this fire-and-forget so it never blocks UX.
+ * Fire-and-forget so it never blocks UX.
  */
-function trackEvent({
-  event_name,
-  mode,
-  camp_id = null,
-  school_id = null,
-  sport_id = null,
-  positions = [],
-  season_year
-}) {
+function trackEvent(payload) {
   try {
     base44.entities.Event.create({
-      event_name,
-      mode,
-      camp_id,
-      school_id,
-      sport_id,
-      positions,
-      season_year,
+      ...payload,
       ts: new Date().toISOString()
     });
   } catch {
@@ -72,8 +58,8 @@ function trackEvent({
 
 /**
  * Base44-safe entity bulk fetch:
- * - Try "in" (may or may not be supported)
- * - Fall back to per-id filter({ id }) then filter({ _id })
+ * - Try "in"
+ * - Fall back to per-id
  */
 async function fetchEntityMap(entityName, ids) {
   const map = new Map();
@@ -247,9 +233,7 @@ export default function Discover() {
       ? paidSummariesQuery.isLoading || identityLoading
       : demoSummariesQuery.isLoading || !demoLoaded);
 
-  const isError =
-    gate.mode === "paid" ? paidSummariesQuery.isError || identityError : demoSummariesQuery.isError;
-
+  const isError = gate.mode === "paid" ? paidSummariesQuery.isError || identityError : demoSummariesQuery.isError;
   const errorObj = gate.mode === "paid" ? paidSummariesQuery.error : demoSummariesQuery.error;
 
   const summaries = useMemo(() => {
@@ -313,21 +297,23 @@ export default function Discover() {
   });
 
   /**
-   * ✅ Demo analytics: Discover viewed (once per page load)
+   * ✅ Demo analytics: Discover viewed (once per session/year)
    */
-  const discoverViewedFiredRef = useRef(false);
   useEffect(() => {
-    if (discoverViewedFiredRef.current) return;
     if (loading) return;
+    if (gate.mode === "paid") return;
 
-    if (gate.mode !== "paid") {
-      discoverViewedFiredRef.current = true;
-      trackEvent({
-        event_name: "discover_viewed",
-        mode: "demo",
-        season_year: resolvedDemoYear
-      });
-    }
+    const key = `evt_discover_viewed_${resolvedDemoYear}`;
+    try {
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+
+    trackEvent({
+      event_name: "discover_viewed",
+      mode: "demo",
+      season_year: resolvedDemoYear
+    });
   }, [gate.mode, loading, resolvedDemoYear]);
 
   if (loading) {
@@ -388,6 +374,32 @@ export default function Discover() {
         </div>
       </div>
 
+      {/* ✅ DEMO SUBSCRIBE BANNER (requested change) */}
+      {gate.mode !== "paid" && (
+        <div className="max-w-md mx-auto px-4 pt-3">
+          <Card className="p-3 border-amber-200 bg-amber-50">
+            <div className="text-sm text-amber-900">
+              Current season camps are locked.{" "}
+              <button
+                className="underline font-medium"
+                onClick={() => {
+                  trackEvent({
+                    event_name: "discover_subscribe_banner_clicked",
+                    mode: "demo",
+                    season_year: resolvedDemoYear
+                  });
+                  navigate(createPageUrl("Subscribe"));
+                }}
+                type="button"
+              >
+                See plan & pricing
+              </button>
+              .
+            </div>
+          </Card>
+        </div>
+      )}
+
       <div className="max-w-md mx-auto p-4 space-y-3">
         {summaries.length === 0 ? (
           <Card className="p-4 border-slate-200 bg-white">
@@ -421,7 +433,6 @@ export default function Discover() {
 
             const sport = s.sport_id ? { id: s.sport_id, sport_name: s.sport_name } : null;
 
-            // ✅ Position rendering: show codes (QB/RB/etc). Never show raw ids.
             const resolvedPositions = (Array.isArray(s.position_ids) ? s.position_ids : [])
               .map((pid) => positionsMap.get(normId(pid)))
               .filter(Boolean)
@@ -451,7 +462,6 @@ export default function Discover() {
                 onFavoriteToggle={() => {
                   gate.write({
                     demo: () => {
-                      // ✅ Analytics: favorite added (demo)
                       trackEvent({
                         event_name: "demo_favorite_added",
                         mode: "demo",
@@ -465,13 +475,12 @@ export default function Discover() {
                       setDemoFavTick((x) => x + 1);
                     },
                     paid: () => toggleFavorite.mutate({ campId: s.camp_id }),
-                    blocked: () => navigate(createPageUrl("Onboarding"))
+                    blocked: () => navigate(createPageUrl("Subscribe"))
                   });
                 }}
                 onClick={() => {
                   const camp_id = s.camp_id;
 
-                  // ✅ Analytics: camp card clicked (demo)
                   if (gate.mode !== "paid") {
                     trackEvent({
                       event_name: "camp_card_clicked",
@@ -479,9 +488,7 @@ export default function Discover() {
                       camp_id: s.camp_id,
                       school_id: s.school_id,
                       sport_id: s.sport_id,
-                      positions: (resolvedPositions || [])
-                        .map((p) => p.position_code)
-                        .filter(Boolean),
+                      positions: (resolvedPositions || []).map((p) => p.position_code).filter(Boolean),
                       season_year: resolvedDemoYear
                     });
                   }
