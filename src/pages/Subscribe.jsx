@@ -22,10 +22,21 @@ function trackEvent(payload) {
 
 export default function Subscribe() {
   const navigate = useNavigate();
-  const { currentYear, demoYear, mode } = useSeasonAccess();
+  const { loading, currentYear, demoYear, mode, accountId } = useSeasonAccess();
 
-  // Dedup subscribe_viewed per session
+  // ✅ Guardrail: paid users should never see Subscribe
   useEffect(() => {
+    if (loading) return;
+    if (mode === "paid") {
+      navigate(createPageUrl("Discover"), { replace: true });
+    }
+  }, [loading, mode, navigate]);
+
+  // Dedup subscribe_viewed per session (only for demo users)
+  useEffect(() => {
+    if (loading) return;
+    if (mode === "paid") return;
+
     const key = `evt_subscribe_viewed_${currentYear}`;
     try {
       if (sessionStorage.getItem(key) === "1") return;
@@ -34,12 +45,15 @@ export default function Subscribe() {
 
     trackEvent({
       event_name: "subscribe_viewed",
-      mode: mode === "paid" ? "paid" : "demo",
-      season_year: currentYear, // ✅ year being sold
+      mode: "demo",
+      season_year: currentYear, // year being sold
       source: "subscribe_page"
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentYear]);
+  }, [loading, mode, currentYear]);
+
+  // While redirecting paid users, render nothing (prevents flicker)
+  if (loading) return null;
+  if (mode === "paid") return null;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
@@ -86,9 +100,10 @@ export default function Subscribe() {
                   onClick={() => {
                     trackEvent({
                       event_name: "checkout_cta_clicked",
-                      mode: mode === "paid" ? "paid" : "demo",
-                      season_year: currentYear, // ✅ year being sold
-                      source: "subscribe_page"
+                      mode: "demo",
+                      season_year: currentYear,
+                      source: "subscribe_page",
+                      account_id: accountId || null
                     });
                     navigate(createPageUrl("Checkout"));
                   }}
@@ -103,9 +118,10 @@ export default function Subscribe() {
                   onClick={() => {
                     trackEvent({
                       event_name: "subscribe_keep_demo_clicked",
-                      mode: mode === "paid" ? "paid" : "demo",
+                      mode: "demo",
                       season_year: currentYear,
-                      source: "subscribe_page"
+                      source: "subscribe_page",
+                      account_id: accountId || null
                     });
                     navigate(createPageUrl("Discover"));
                   }}
@@ -147,4 +163,3 @@ function Feature({ children }) {
     </div>
   );
 }
-
