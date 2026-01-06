@@ -1,5 +1,5 @@
 // src/pages/Checkout.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, CheckCircle2, CreditCard, ArrowLeft } from "lucide-react";
 
@@ -13,13 +13,16 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 
 function trackEvent(payload) {
   try {
-    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+    base44.entities.Event.create({
+      ...payload,
+      ts: new Date().toISOString()
+    });
   } catch {}
 }
 
 export default function Checkout() {
   const navigate = useNavigate();
-  const { accountId, currentYear } = useSeasonAccess();
+  const { accountId, currentYear, mode } = useSeasonAccess();
 
   const [working, setWorking] = useState(false);
   const [err, setErr] = useState("");
@@ -27,10 +30,30 @@ export default function Checkout() {
   const signedIn = !!accountId;
 
   const backTarget = useMemo(() => createPageUrl("Subscribe"), []);
+  const homeTarget = useMemo(() => createPageUrl("Home"), []);
+  const subscribeTarget = useMemo(() => createPageUrl("Subscribe"), []);
+  const profileTarget = useMemo(() => createPageUrl("Profile"), []);
+
+  // ✅ Track checkout_viewed once per session (for funnel analysis)
+  useEffect(() => {
+    const key = `evt_checkout_viewed_${currentYear}`;
+    try {
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+
+    trackEvent({
+      event_name: "checkout_viewed",
+      mode: mode === "paid" ? "paid" : "demo",
+      season_year: currentYear, // ✅ year being sold
+      source: "checkout_page"
+    });
+  }, [currentYear, mode]);
 
   const handleCompletePurchase = async () => {
     if (!signedIn) {
-      navigate(createPageUrl("Home"));
+      // Not signed in → send to Home
+      navigate(homeTarget);
       return;
     }
 
@@ -59,14 +82,27 @@ export default function Checkout() {
         });
       }
 
-      trackEvent({ event_name: "purchase_completed", mode: "paid", season_year: currentYear });
+      // 2) Analytics: purchase completed (include account + source)
+      trackEvent({
+        event_name: "purchase_completed",
+        mode: "paid",
+        season_year: currentYear,
+        source: "checkout_page",
+        account_id: accountId
+      });
 
-      // 2) Send to Profile to add/select athlete(s)
-      navigate(createPageUrl("Profile"), {
+      // 3) Send to Profile to add/select athlete(s)
+      navigate(profileTarget, {
         state: { postPurchase: true, season_year: currentYear }
       });
     } catch (e) {
       setErr(String(e?.message || e));
+      trackEvent({
+        event_name: "purchase_failed",
+        mode: mode === "paid" ? "paid" : "demo",
+        season_year: currentYear,
+        source: "checkout_page"
+      });
     } finally {
       setWorking(false);
     }
@@ -77,7 +113,15 @@ export default function Checkout() {
       <div className="max-w-md mx-auto space-y-4">
         <button
           className="flex items-center gap-2 text-slate-600 hover:text-slate-900"
-          onClick={() => navigate(backTarget)}
+          onClick={() => {
+            trackEvent({
+              event_name: "checkout_back_clicked",
+              mode: mode === "paid" ? "paid" : "demo",
+              season_year: currentYear,
+              source: "checkout_page"
+            });
+            navigate(backTarget);
+          }}
           type="button"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -95,7 +139,19 @@ export default function Checkout() {
           <Card className="p-4 border-rose-200 bg-rose-50 text-rose-700">
             <div className="font-semibold">Sign in required</div>
             <div className="text-sm mt-1">Please sign in to subscribe and unlock the current season.</div>
-            <Button className="w-full mt-4" onClick={() => navigate(createPageUrl("Home"))}>
+
+            <Button
+              className="w-full mt-4"
+              onClick={() => {
+                trackEvent({
+                  event_name: "checkout_signin_required_continue_clicked",
+                  mode: "demo",
+                  season_year: currentYear,
+                  source: "checkout_page"
+                });
+                navigate(homeTarget);
+              }}
+            >
               Go to Home
             </Button>
           </Card>
@@ -107,9 +163,7 @@ export default function Checkout() {
               <CreditCard className="w-6 h-6 text-slate-700 mt-0.5" />
               <div className="flex-1">
                 <div className="text-lg font-bold text-deep-navy">Season Pass</div>
-                <div className="text-sm text-slate-600 mt-1">
-                  Current-year camps + planning tools.
-                </div>
+                <div className="text-sm text-slate-600 mt-1">Current-year camps + planning tools.</div>
 
                 <div className="mt-4 space-y-2">
                   <Button className="w-full" onClick={handleCompletePurchase} disabled={working}>
@@ -126,8 +180,21 @@ export default function Checkout() {
                     )}
                   </Button>
 
-                  <Button variant="outline" className="w-full" onClick={() => navigate(createPageUrl("Discover"))}>
-                    Keep Browsing Demo
+                  {/* ✅ Remove “Keep Browsing Demo” from Checkout. It leaks conversions. */}
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      trackEvent({
+                        event_name: "checkout_back_to_subscribe_clicked",
+                        mode: mode === "paid" ? "paid" : "demo",
+                        season_year: currentYear,
+                        source: "checkout_page"
+                      });
+                      navigate(subscribeTarget);
+                    }}
+                  >
+                    Back to Pricing
                   </Button>
 
                   {err && (
@@ -148,3 +215,4 @@ export default function Checkout() {
     </div>
   );
 }
+
