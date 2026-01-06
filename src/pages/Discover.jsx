@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, SlidersHorizontal } from "lucide-react";
@@ -42,8 +42,7 @@ function pickSportName(sp) {
 }
 
 /**
- * ✅ Analytics (demo + paid compatible)
- * Fire-and-forget so it never blocks UX.
+ * Analytics helper (fire-and-forget)
  */
 function trackEvent(payload) {
   try {
@@ -52,7 +51,7 @@ function trackEvent(payload) {
       ts: new Date().toISOString()
     });
   } catch {
-    // analytics must never block UX
+    // never block UX
   }
 }
 
@@ -135,6 +134,7 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     return typeof d === "string" && d >= start && d < next;
   });
 
+  // dedupe by camp_id
   const seen = new Set();
   camps = camps.filter((c) => (seen.has(c.camp_id) ? false : (seen.add(c.camp_id), true)));
 
@@ -146,6 +146,7 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     fetchEntityMap("Sport", sportIds)
   ]);
 
+  // optional division filter (post-join)
   if (demoProfile?.division) {
     const want = demoProfile.division;
     camps = camps.filter((c) => {
@@ -154,6 +155,7 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     });
   }
 
+  // optional positions filter (camp.position_ids intersects demoProfile.position_ids)
   const pos = Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids.filter(Boolean) : [];
   if (pos.length) {
     camps = camps.filter((c) => {
@@ -242,7 +244,7 @@ export default function Discover() {
   }, [gate.mode, paidSummariesQuery.data, demoSummariesQuery.data]);
 
   /**
-   * ✅ Position join for whatever list is currently shown (demo or paid)
+   * Position join for whatever list is currently shown (demo or paid)
    */
   const allPositionIds = useMemo(() => {
     const ids = [];
@@ -297,7 +299,7 @@ export default function Discover() {
   });
 
   /**
-   * ✅ Demo analytics: Discover viewed (once per session/year)
+   * Demo analytics: Discover viewed (once per session/year)
    */
   useEffect(() => {
     if (loading) return;
@@ -374,7 +376,7 @@ export default function Discover() {
         </div>
       </div>
 
-      {/* ✅ DEMO SUBSCRIBE BANNER (requested change) */}
+      {/* DEMO SUBSCRIBE BANNER */}
       {gate.mode !== "paid" && (
         <div className="max-w-md mx-auto px-4 pt-3">
           <Card className="p-3 border-amber-200 bg-amber-50">
@@ -463,7 +465,9 @@ export default function Discover() {
                   gate.write({
                     demo: () => {
                       trackEvent({
-                        event_name: "demo_favorite_added",
+                        event_name: isDemoFavorite(effectiveDemoProfileId, s.camp_id)
+                          ? "demo_favorite_removed"
+                          : "demo_favorite_added",
                         mode: "demo",
                         camp_id: s.camp_id,
                         school_id: s.school_id,
@@ -514,3 +518,4 @@ export default function Discover() {
     </div>
   );
 }
+
