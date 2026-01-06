@@ -412,7 +412,7 @@ export default function CampDetailDemo() {
                 season_year: demoYear
               });
 
-              navigate(createPageUrl("Checkout"));
+              navigate(createPageUrl("Subscribe"));
 
             }}
           >
