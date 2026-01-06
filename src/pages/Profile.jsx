@@ -74,14 +74,15 @@ export default function Profile() {
 
   // IMPORTANT: include mode so demo can be allowed
   const {
-    season,
-    hasAccess,
-    isLoading: accessLoading,
-    mode, // "demo" | "paid" (per your Subscribe page)
-    currentYear,
-    demoYear,
-    accountId,
-  } = useSeasonAccess();
+  isLoading: accessLoading,
+  mode,
+  hasAccess,
+  seasonYear,
+  currentYear,
+  demoYear,
+  accountId,
+} = useSeasonAccess();
+
 
   const [saving, setSaving] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
