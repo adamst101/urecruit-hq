@@ -48,31 +48,25 @@ export default function Home() {
   const paid = mode === "paid";
   const hasProfile = !!athleteProfile;
 
-  // Raw loading from hooks
+  // ---- Stuck-loading fuse (Home must never brick) ----
   const rawLoading = isLoading || (authed && identityLoading);
-
-  // ---- Stuck-loading fuse: after 2.5s, stop blocking the user ----
   const [loadingFusedOpen, setLoadingFusedOpen] = useState(false);
 
   useEffect(() => {
-    // Reset fuse whenever we go into a loading state
     if (!rawLoading) {
       setLoadingFusedOpen(false);
       return;
     }
-
     const t = setTimeout(() => setLoadingFusedOpen(true), 2500);
     return () => clearTimeout(t);
   }, [rawLoading]);
 
-  // Effective loading: only show/disable while not fused open
   const loading = rawLoading && !loadingFusedOpen;
 
-  // Years with safe fallback so UI never becomes undefined-dependent
   const demoY = demoYear ?? fallbackDemoYear();
   const currentY = currentYear ?? fallbackCurrentYear();
 
-  // Home viewed (dedupe per session) — don’t wait forever if fuse trips
+  // ---- Track home viewed (don’t wait forever if fuse trips) ----
   useEffect(() => {
     if (rawLoading && !loadingFusedOpen) return;
 
@@ -92,56 +86,24 @@ export default function Home() {
     });
   }, [rawLoading, loadingFusedOpen, mode, currentY, demoY, paid, accountId]);
 
-  // Copy
+  // ---- Copy: aligned to your model (no personalization unless paid+profile) ----
   const heroTitle = "Recruit smarter. Avoid conflicts. See the whole season.";
   const heroDesc =
     "Plan and prioritize college camps across your target schools—before weekends disappear.";
   const trustLine = "Independent planning tool • Not affiliated with camps";
 
-  // Status line: do NOT show “Loading…” forever. If fused, show a helpful fallback.
+  // ---- Status line: clearly separate demo vs paid current season ----
   const statusLine = useMemo(() => {
     if (loading) return "Loading…";
-    if (paid) return `Current season is unlocked (${currentY}).`;
-    return `Demo shows last season (${demoY}). Current season (${currentY}) updates regularly.`;
+    if (paid) return `Current season mode (${currentY}). Paid workspaces require athlete setup.`;
+    return `Demo mode (${demoY}). Unlock ${currentY} for the current season and planning tools.`;
   }, [loading, paid, currentY, demoY]);
 
   // Badge
-  const badgeText = paid ? `Unlocked: ${currentY}` : `Demo: ${demoY}`;
+  const badgeText = paid ? `Paid: ${currentY}` : `Demo: ${demoY}`;
   const badgeClass = paid ? "bg-emerald-700 text-white" : "bg-slate-900 text-white";
 
-  // Primary CTA label
-  const primaryLabel = useMemo(() => {
-    if (loading) return "Loading…";
-    if (paid && authed && !hasProfile) return "Set up athlete profile";
-    return "View my recruiting season";
-  }, [loading, paid, authed, hasProfile]);
-
-  // Routing logic
-  function getPrimaryTarget() {
-    if (paid && authed && !hasProfile) return createPageUrl("Profile");
-    if (authed) return next ? next : createPageUrl("Discover");
-    return createPageUrl("Discover"); // demo path
-  }
-
-  function primaryCTA() {
-    const target = getPrimaryTarget();
-
-    trackEvent({
-      event_name:
-        paid && authed && !hasProfile
-          ? "home_primary_to_profile_clicked"
-          : "home_primary_clicked",
-      mode: paid ? "paid" : "demo",
-      season_year: paid ? currentY : demoY,
-      source: "home",
-      account_id: accountId || null,
-      target,
-      fused_open: loadingFusedOpen ? 1 : 0
-    });
-
-    nav(target);
-  }
-
+  // ---- Navigation helpers ----
   async function handleLogin() {
     trackEvent({
       event_name: "home_login_clicked",
@@ -156,12 +118,15 @@ export default function Home() {
       nav(createPageUrl("Home"), { replace: true });
       return;
     }
+
+    // After login: honor next if provided, otherwise go Discover (demo-friendly).
+    // Paid users without profile will be routed by guards when they attempt paid workspaces.
     nav(next ? next : createPageUrl("Discover"), { replace: true });
   }
 
-  function goDemo() {
+  function goDiscoverDemo() {
     trackEvent({
-      event_name: "home_demo_clicked",
+      event_name: "home_demo_discover_clicked",
       mode: "demo",
       season_year: demoY,
       source: "home",
@@ -172,18 +137,112 @@ export default function Home() {
 
   function goSubscribe() {
     if (paid) {
-      nav(createPageUrl("Discover"));
+      // Paid users shouldn’t land here; keep them moving.
+      trackEvent({
+        event_name: "home_paid_subscribe_clicked",
+        mode: "paid",
+        season_year: currentY,
+        source: "home"
+      });
+      nav(createPageUrl("MyCamps"));
       return;
     }
+
     trackEvent({
       event_name: "home_subscribe_clicked",
-      mode: "demo",
+      mode: authed ? "demo" : "anon",
       season_year: currentY,
       source: "home",
       fused_open: loadingFusedOpen ? 1 : 0
     });
     nav(createPageUrl("Subscribe"));
   }
+
+  function goProfile() {
+    trackEvent({
+      event_name: "home_profile_clicked",
+      mode: paid ? "paid" : authed ? "demo" : "anon",
+      season_year: paid ? currentY : demoY,
+      source: "home"
+    });
+    nav(createPageUrl("Profile"));
+  }
+
+  function goMyCamps() {
+    trackEvent({
+      event_name: "home_mycamps_clicked",
+      mode: "paid",
+      season_year: currentY,
+      source: "home"
+    });
+    nav(createPageUrl("MyCamps"));
+  }
+
+  function goCalendar() {
+    trackEvent({
+      event_name: "home_calendar_clicked",
+      mode: "paid",
+      season_year: currentY,
+      source: "home"
+    });
+    nav(createPageUrl("Calendar"));
+  }
+
+  // ---- Primary CTA policy (matches your guard model) ----
+  const primary = useMemo(() => {
+    // Paid workspaces are paid-only + requireProfile
+    if (paid && authed && !hasProfile) {
+      return {
+        label: "Set up athlete profile",
+        action: goProfile,
+        key: "primary_profile_required"
+      };
+    }
+    if (paid && authed && hasProfile) {
+      return {
+        label: "Go to My Camps",
+        action: goMyCamps,
+        key: "primary_mycamps"
+      };
+    }
+
+    // Not paid (anon or authed demo): primary is demo Discover
+    return {
+      label: `Explore demo camps (${demoY})`,
+      action: goDiscoverDemo,
+      key: "primary_demo_discover"
+    };
+  }, [paid, authed, hasProfile, demoY]);
+
+  function primaryCTA() {
+    trackEvent({
+      event_name: "home_primary_clicked",
+      primary_key: primary.key,
+      mode: paid ? "paid" : authed ? "demo" : "anon",
+      season_year: paid ? currentY : demoY,
+      source: "home",
+      account_id: accountId || null
+    });
+
+    primary.action();
+  }
+
+  // ---- Secondary CTA policy (no redundancy) ----
+  const secondaryLeft = useMemo(() => {
+    if (!authed) {
+      return { label: "Log in", action: handleLogin };
+    }
+    // Signed-in demo OR paid: profile is always accessible for auth users
+    return { label: "Account", action: goProfile };
+  }, [authed, paid, hasProfile]);
+
+  const secondaryRight = useMemo(() => {
+    if (!paid) {
+      return { label: `Unlock ${currentY}`, action: goSubscribe };
+    }
+    // Paid user: offer Calendar (paid-only workspace)
+    return { label: "Open Calendar", action: goCalendar };
+  }, [paid, currentY]);
 
   const outcomeBullets = [
     { title: "Clarity", text: "See camps only from schools you actually care about." },
@@ -204,8 +263,6 @@ export default function Home() {
 
             <div className="flex items-center gap-2 flex-wrap">
               <Badge className={badgeClass}>{badgeText}</Badge>
-
-              {/* Key change: if fuse opened, don’t show “Loading…”; show status/fallback */}
               <div className="text-xs text-slate-500">
                 {loadingFusedOpen && rawLoading
                   ? "Having trouble loading status—continuing anyway."
@@ -216,6 +273,7 @@ export default function Home() {
             <div className="text-xs text-slate-500">{trustLine}</div>
           </div>
 
+          {/* Top-right utility: keep it simple */}
           <div className="flex gap-2">
             {!authed ? (
               <Button variant="outline" onClick={handleLogin}>
@@ -223,65 +281,48 @@ export default function Home() {
                 Log in
               </Button>
             ) : (
-              <Button variant="outline" onClick={() => nav(createPageUrl("Profile"))}>
-                Manage profile
+              <Button variant="outline" onClick={goProfile}>
+                Account
               </Button>
             )}
           </div>
         </div>
 
-        {/* Main content */}
+        {/* Main */}
         <div className="grid md:grid-cols-2 gap-4">
           <Card className="p-6 space-y-4 border-slate-300 shadow-sm">
             <div className="space-y-1">
               <div className="text-lg font-bold text-deep-navy">Start here</div>
               <div className="text-sm text-slate-600">
-                {paid
-                  ? "You’re unlocked. Jump into the app and plan your season."
-                  : "Explore the demo, then unlock the current season when you're ready."}
+                {!paid
+                  ? "Explore the demo, then unlock the current season when you’re ready."
+                  : !hasProfile
+                  ? "Paid workspaces require athlete setup. Create an athlete to continue."
+                  : "You’re unlocked. Jump into your paid season workspace."}
               </div>
             </div>
 
-            {/* Key change: don’t block forever; fuse opens and enables */}
             <Button className="w-full" onClick={primaryCTA} disabled={loading}>
-              {primaryLabel}
+              {loading ? "Loading…" : primary.label}
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
 
             <div className="flex items-center justify-between gap-3">
-              <Button variant="outline" onClick={goDemo} disabled={loading}>
-                Explore demo ({demoY})
+              <Button variant="outline" onClick={secondaryLeft.action} disabled={loading}>
+                {secondaryLeft.label}
               </Button>
 
-              {!paid ? (
-                <Button variant="outline" onClick={goSubscribe} disabled={loading}>
-                  Unlock {currentY}
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  onClick={() => nav(createPageUrl("Discover"))}
-                  disabled={loading}
-                >
-                  Go to Discover
-                </Button>
-              )}
+              <Button variant="outline" onClick={secondaryRight.action} disabled={loading}>
+                {secondaryRight.label}
+              </Button>
             </div>
 
             {paid && authed && !hasProfile && (
               <div className="text-xs text-amber-700 flex items-start gap-2">
                 <Lock className="w-4 h-4 mt-0.5" />
-                <div>Athlete setup is required before using paid features.</div>
+                <div>Profile is required to access MyCamps, Calendar, CampDetail, and Planner.</div>
               </div>
             )}
-
-            {/* Optional: subtle diagnostic hint if fuse opened */}
-            {loadingFusedOpen && rawLoading ? (
-              <div className="text-[11px] text-slate-400">
-                Tip: your season/profile hooks are not resolving. Check console/network for
-                useSeasonAccess / useAthleteIdentity calls.
-              </div>
-            ) : null}
           </Card>
 
           <Card className="p-6 space-y-4">
@@ -297,7 +338,7 @@ export default function Home() {
             </div>
 
             <div className="text-xs text-slate-500">
-              Demo is last season’s data. Current season unlock includes the latest updates.
+              Demo is last season’s data (read-only). Paid unlock enables current-season planning tools.
             </div>
           </Card>
         </div>
