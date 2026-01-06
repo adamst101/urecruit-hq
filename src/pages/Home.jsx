@@ -13,7 +13,7 @@ import { Badge } from "../components/ui/badge";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
-import { getDemoDefaults, setDemoMode } from "../utils/demoMode";
+import { getDemoDefaults, setDemoMode } from "../hooks/demoMode";
 import { routeToWorkspace } from "../utils/routeToWorkspace";
 
 function trackEvent(payload) {
