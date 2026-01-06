@@ -1,3 +1,4 @@
+// src/components/hooks/usePublicCampSummariesClient.js
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
 
@@ -6,6 +7,12 @@ const yNext = (y) => `${Number(y) + 1}-01-01`;
 
 function uniq(arr) {
   return Array.from(new Set((arr || []).filter(Boolean)));
+}
+
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
 }
 
 function pickSchoolName(s) {
@@ -25,10 +32,19 @@ function pickSportName(sp) {
 }
 
 /**
+ * Base44 filter signature in this app:
+ *   entity.filter(where, sort, limit)
+ */
+async function filterCamps(where, limit) {
+  const lim = Number.isFinite(Number(limit)) ? Number(limit) : undefined;
+  return await base44.entities.Camp.filter(where || {}, "-start_date", lim || 500);
+}
+
+/**
  * Try different filter syntaxes for date range until one works.
  * Returns { rows, used } where used is a string indicating which syntax succeeded.
  */
-async function filterCampsByYear(whereBase, year, limit) {
+async function filterCampsByYear(whereBase, year, limit = 500) {
   const start = yStart(year);
   const next = yNext(year);
 
@@ -36,78 +52,88 @@ async function filterCampsByYear(whereBase, year, limit) {
   const candidates = [
     {
       used: "object_ops_gte_lt",
-      where: { ...whereBase, start_date: { gte: start, lt: next } }
+      where: { ...whereBase, start_date: { gte: start, lt: next } },
     },
     {
       used: "suffix_ops__gte__lt",
-      where: { ...whereBase, start_date__gte: start, start_date__lt: next }
+      where: { ...whereBase, start_date__gte: start, start_date__lt: next },
     },
     {
       used: "suffix_ops_gte_lt",
-      where: { ...whereBase, start_date_gte: start, start_date_lt: next }
+      where: { ...whereBase, start_date_gte: start, start_date_lt: next },
     },
     {
       used: "prefix_ops_gte_lt",
-      where: { ...whereBase, gte_start_date: start, lt_start_date: next }
-    }
+      where: { ...whereBase, gte_start_date: start, lt_start_date: next },
+    },
   ];
 
-  // Try each candidate
   for (const c of candidates) {
     try {
-      const rows = await base44.entities.Camp.filter(
-        c.where,
-        limit ? { limit } : undefined
-      );
+      const rows = await filterCamps(c.where, limit);
       if (Array.isArray(rows)) return { rows, used: c.used };
     } catch {
       // try next
     }
   }
 
-  // Fallback: pull a wider set (with sport/state if present) and client-filter by year.
-  // Not ideal, but it prevents "blank app" when operators differ.
-  const rows = await base44.entities.Camp.filter(
-    whereBase,
-    limit ? { limit } : undefined
-  );
+  // Fallback: pull with base filters + client-side year gating.
+  // Keep limit a bit larger to reduce false negatives.
+  const wider = Math.max(Number(limit) || 500, 2000);
 
+  const rows = await filterCamps(whereBase, wider);
   const arr = Array.isArray(rows) ? rows : [];
-  const startStr = start;
-  const nextStr = next;
 
   const filtered = arr.filter((c) => {
     const d = c?.start_date;
-    return typeof d === "string" && d >= startStr && d < nextStr;
+    return typeof d === "string" && d >= start && d < next;
   });
 
-  return { rows: filtered, used: "client_side_fallback" };
+  return { rows: filtered.slice(0, Number(limit) || 500), used: "client_side_fallback" };
 }
 
+/**
+ * Base44-safe entity bulk fetch:
+ * - Try { id: { in: [...] } }
+ * - Fall back to per-id fetch
+ */
 async function fetchEntityMap(entityName, ids) {
   const map = new Map();
-  if (!ids?.length) return map;
 
-  // Try "in" first; fallback to per-id
+  const cleanIds = uniq((ids || []).map(normId)).filter(Boolean);
+  if (!cleanIds.length) return map;
+
   let rows = [];
   try {
-    rows = await base44.entities[entityName].filter({ id: { in: ids } });
+    rows = await base44.entities[entityName].filter({ id: { in: cleanIds } });
   } catch {
     rows = [];
-    for (const id of ids) {
+  }
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    rows = [];
+    for (const id of cleanIds) {
       try {
-        const one = await base44.entities[entityName].filter({ id }, { limit: 1 });
+        const one = await base44.entities[entityName].filter({ id });
         if (Array.isArray(one) && one[0]) rows.push(one[0]);
+      } catch {}
+      try {
+        const one2 = await base44.entities[entityName].filter({ _id: id });
+        if (Array.isArray(one2) && one2[0]) rows.push(one2[0]);
       } catch {}
     }
   }
 
-  (rows || []).forEach((r) => map.set(r.id, r));
+  (rows || []).forEach((r) => {
+    const key = normId(r) || r?.id;
+    if (key) map.set(String(key), r);
+  });
+
   return map;
 }
 
 /**
- * Returns summaries shaped for Discover:
+ * Returns summaries shaped for Discover (public/demo-style):
  * {
  *  camp_id, camp_name, start_date, end_date, city, state, price, link_url, notes, position_ids,
  *  school_id, school_name, school_division,
@@ -119,59 +145,65 @@ async function fetchPublicCampSummaries({
   sportId,
   state,
   division,
-  positionIds
+  positionIds,
+  limit = 500,
 }) {
   if (!seasonYear) return [];
 
-  // Build base where (no year range yet)
   const whereBase = {};
-  if (sportId) whereBase.sport_id = sportId;
+  const sId = normId(sportId);
+  if (sId) whereBase.sport_id = sId;
   if (state) whereBase.state = state;
 
-  // Pull camps for the year using adaptive operators
-  const { rows: campsRaw, used } = await filterCampsByYear(whereBase, seasonYear);
-
-  // Helpful one-time debug
-  // eslint-disable-next-line no-console
-  console.log("[Demo Camp Query]", { seasonYear, used, count: campsRaw?.length || 0 });
+  const { rows: campsRaw } = await filterCampsByYear(whereBase, seasonYear, limit);
 
   let camps = Array.isArray(campsRaw) ? campsRaw : [];
 
+  // normalize camp ids/refs
+  camps = camps
+    .map((c) => ({
+      ...c,
+      id: normId(c) || c?.id,
+      school_id: normId(c?.school_id) || c?.school_id || null,
+      sport_id: normId(c?.sport_id) || c?.sport_id || null,
+      position_ids: Array.isArray(c?.position_ids)
+        ? c.position_ids.map(normId).filter(Boolean)
+        : [],
+    }))
+    .filter((c) => !!c.id);
+
   // Optional: positions filter (client-side)
-  const pos = Array.isArray(positionIds) ? positionIds.filter(Boolean) : [];
+  const pos = Array.isArray(positionIds)
+    ? positionIds.map(normId).filter(Boolean)
+    : [];
   if (pos.length) {
-    camps = camps.filter((c) => {
-      const cpos = Array.isArray(c?.position_ids) ? c.position_ids : [];
-      return pos.some((p) => cpos.includes(p));
-    });
+    camps = camps.filter((c) => pos.some((p) => (c.position_ids || []).includes(p)));
   }
 
-  // Join School + Sport for display fields
-  const schoolIds = uniq(camps.map((c) => c.school_id));
-  const sportIds = uniq(camps.map((c) => c.sport_id));
+  const schoolIds = uniq(camps.map((c) => c.school_id)).filter(Boolean).map(String);
+  const sportIds = uniq(camps.map((c) => c.sport_id)).filter(Boolean).map(String);
 
   const [schoolMap, sportMap] = await Promise.all([
     fetchEntityMap("School", schoolIds),
-    fetchEntityMap("Sport", sportIds)
+    fetchEntityMap("Sport", sportIds),
   ]);
 
-  // Optional: division filter (needs school join)
+  // Optional: division filter (post-join)
   if (division) {
     camps = camps.filter((c) => {
-      const sch = schoolMap.get(c.school_id);
+      const sch = c.school_id ? schoolMap.get(String(c.school_id)) : null;
       return pickSchoolDivision(sch) === division;
     });
   }
 
-  // Map to summary shape
   return camps.map((c) => {
-    const sch = schoolMap.get(c.school_id);
-    const sp = sportMap.get(c.sport_id);
+    const sch = c.school_id ? schoolMap.get(String(c.school_id)) : null;
+    const sp = c.sport_id ? sportMap.get(String(c.sport_id)) : null;
 
     return {
-      camp_id: c.id,
-      school_id: c.school_id,
-      sport_id: c.sport_id,
+      camp_id: String(c.id),
+      school_id: c.school_id ? String(c.school_id) : null,
+      sport_id: c.sport_id ? String(c.sport_id) : null,
 
       camp_name: c.camp_name,
       start_date: c.start_date,
@@ -186,7 +218,10 @@ async function fetchPublicCampSummaries({
       school_name: pickSchoolName(sch),
       school_division: pickSchoolDivision(sch),
 
-      sport_name: pickSportName(sp)
+      sport_name: pickSportName(sp),
+
+      // keep parity with other summary shapes (optional)
+      intent_status: null,
     };
   });
 }
@@ -197,26 +232,31 @@ export function usePublicCampSummariesClient({
   state,
   division,
   positionIds,
-  enabled
+  limit = 500,
+  enabled = true,
 }) {
   return useQuery({
     queryKey: [
       "publicCampSummaries",
       seasonYear,
-      sportId || null,
+      normId(sportId) || null,
       state || null,
       division || null,
-      Array.isArray(positionIds) ? positionIds.join(",") : ""
+      Array.isArray(positionIds) ? positionIds.map(normId).filter(Boolean).join(",") : "",
+      Number(limit) || 500,
     ],
-    enabled: !!enabled && !!seasonYear,
+    enabled: Boolean(enabled) && !!seasonYear,
+    retry: false,
+    staleTime: 0,
     queryFn: () =>
       fetchPublicCampSummaries({
         seasonYear,
         sportId,
         state,
         division,
-        positionIds
-      })
+        positionIds,
+        limit,
+      }),
   });
 }
 
@@ -228,3 +268,4 @@ export async function publicCampYearHasData(year) {
   const { rows } = await filterCampsByYear({}, year, 1);
   return Array.isArray(rows) && rows.length > 0;
 }
+
