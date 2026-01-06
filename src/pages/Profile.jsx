@@ -28,40 +28,41 @@ function normId(x) {
 
 /**
  * Best-effort mapping for legacy free-text sport_id values.
- * This prevents “football”/”FB” from breaking the new reference-based join.
+ * Prevents “football”/”FB” from breaking the new reference-based join.
  */
 function normalizeSportIdMaybe(rawSportId, sports) {
   if (!rawSportId) return null;
 
   // already looks like an id of an existing sport
-  const direct = sports.find((s) => String(s?.id) === String(rawSportId));
+  const direct = (sports || []).find((s) => String(s?.id) === String(rawSportId));
   if (direct) return String(direct.id);
 
   const needle = String(rawSportId).trim().toLowerCase();
   if (!needle) return null;
 
-  // try match by name or slug
-  const byName = sports.find(
-    (s) => String(s?.name || "").trim().toLowerCase() === needle
-  );
+  // try match by sport_name OR name OR slug
+  const byName = (sports || []).find((s) => {
+    const n = String(s?.sport_name || s?.name || "").trim().toLowerCase();
+    return n === needle;
+  });
   if (byName) return String(byName.id);
 
-  const bySlug = sports.find(
-    (s) => String(s?.slug || "").trim().toLowerCase() === needle
-  );
+  const bySlug = (sports || []).find((s) => String(s?.slug || "").trim().toLowerCase() === needle);
   if (bySlug) return String(bySlug.id);
 
   // common aliases
   const aliasMap = {
     fb: "football",
     "american football": "football",
+    "flag football": "football",
     hoops: "basketball",
   };
   const mapped = aliasMap[needle];
   if (mapped) {
-    const aliased = sports.find(
-      (s) => String(s?.name || "").trim().toLowerCase() === mapped
-    );
+    const aliased = (sports || []).find((s) => {
+      const n = String(s?.sport_name || s?.name || "").trim().toLowerCase();
+      return n === mapped;
+    });
     if (aliased) return String(aliased.id);
   }
 
@@ -73,25 +74,17 @@ export default function Profile() {
   const location = useLocation();
 
   // ✅ standardized hook usage
-  const {
-    isLoading,
-    mode,
-    hasAccess,
-    seasonYear,
-    currentYear,
-    demoYear,
-    accountId,
-  } = useSeasonAccess();
+  const { isLoading, mode, seasonYear, currentYear, demoYear, accountId } = useSeasonAccess();
 
   const [saving, setSaving] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
 
   const [profile, setProfile] = useState(null);
 
-  // Profile fields
+  // sport selection is local state until save
   const [sportId, setSportId] = useState(null);
 
-  // Sports list for normalization
+  // Sports list for legacy normalization (SportSelector may fetch too; this is for mapping)
   const [sports, setSports] = useState([]);
   const [sportsLoading, setSportsLoading] = useState(false);
 
@@ -100,10 +93,17 @@ export default function Profile() {
     return params.get("next") || createPageUrl("Discover");
   }, [location.search]);
 
-  // ✅ Demo users must be able to edit profile (sport selection is foundational)
-  const canEditProfile = true;
+  /**
+   * ✅ Profile editability rules
+   * - Paid: yes
+   * - Demo: allow selection for UX, but DO NOT write to backend if user isn't signed in.
+   *   (Otherwise you create an unauthorized write + confusing state)
+   */
+  const isAuthed = !!accountId;
+  const canWriteBackend = isAuthed; // keep strict
+  const canEditUI = true; // allow demo users to select sport for funnel flow
 
-  // Load sports for normalization (SportSelector also loads, but this is for mapping legacy values)
+  // Load sports list (for normalization)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -123,18 +123,39 @@ export default function Profile() {
     };
   }, []);
 
-  // Load profile
+  // Load profile (only if authed; in demo there may be no "me")
   useEffect(() => {
     let mounted = true;
 
     (async () => {
-      // wait until access hook resolves; prevents “flap” state
       if (isLoading) return;
 
       setProfileLoading(true);
+
+      // DEMO (not signed in): do not call "me" — it will often 401/throw.
+      if (!isAuthed) {
+        setProfile(null);
+        setSportId(null);
+        setProfileLoading(false);
+
+        trackEvent({
+          event_name: "profile_loaded",
+          mode: mode || null,
+          season_year: seasonYear || null,
+          sport_id: null,
+          account_id: null,
+          has_access: mode === "paid",
+          authed: false,
+          source: "profile",
+        });
+
+        return;
+      }
+
       try {
         const me = await base44.entities.AthleteProfile?.get?.("me");
         const p = me || null;
+
         if (!mounted) return;
 
         setProfile(p);
@@ -150,10 +171,15 @@ export default function Profile() {
           season_year: seasonYear || null,
           sport_id: normalized || rawSportId || null,
           account_id: accountId || null,
-          has_access: !!hasAccess,
+          has_access: mode === "paid",
+          authed: true,
+          source: "profile",
         });
       } catch (e) {
-        if (mounted) setProfile(null);
+        if (mounted) {
+          setProfile(null);
+          setSportId(null);
+        }
       } finally {
         if (mounted) setProfileLoading(false);
       }
@@ -162,12 +188,12 @@ export default function Profile() {
     return () => {
       mounted = false;
     };
-  }, [isLoading, sports, mode, seasonYear, accountId, hasAccess]);
+  }, [isLoading, isAuthed, mode, seasonYear, accountId, sports]);
 
   const pageLoading = isLoading || profileLoading;
 
   async function onSave() {
-    if (!canEditProfile) return;
+    if (!canEditUI) return;
 
     if (!sportId) {
       trackEvent({
@@ -175,7 +201,24 @@ export default function Profile() {
         mode: mode || null,
         season_year: seasonYear || null,
         account_id: accountId || null,
+        authed: isAuthed,
+        source: "profile",
       });
+      return;
+    }
+
+    // Demo (not signed in): treat "Save" as "Continue" (no backend write)
+    if (!canWriteBackend) {
+      trackEvent({
+        event_name: "profile_continue_demo",
+        mode: mode || "demo",
+        season_year: seasonYear || null,
+        sport_id: String(sportId),
+        account_id: null,
+        authed: false,
+        source: "profile",
+      });
+      navigate(nextUrl);
       return;
     }
 
@@ -187,10 +230,8 @@ export default function Profile() {
       };
 
       const updated =
-        (await base44.entities.AthleteProfile?.update?.(
-          normId(profile) || "me",
-          payload
-        )) || (await base44.entities.AthleteProfile?.upsert?.(payload));
+        (await base44.entities.AthleteProfile?.update?.(normId(profile) || "me", payload)) ||
+        (await base44.entities.AthleteProfile?.upsert?.(payload));
 
       setProfile(updated || payload);
 
@@ -200,6 +241,8 @@ export default function Profile() {
         season_year: seasonYear || null,
         sport_id: String(sportId),
         account_id: accountId || null,
+        authed: true,
+        source: "profile",
       });
 
       navigate(nextUrl);
@@ -210,6 +253,8 @@ export default function Profile() {
         season_year: seasonYear || null,
         sport_id: sportId || null,
         account_id: accountId || null,
+        authed: true,
+        source: "profile",
         error: String(e?.message || e),
       });
     } finally {
@@ -231,7 +276,7 @@ export default function Profile() {
   }
 
   const sportMissing = !sportId;
-  const disableSave = !canEditProfile || saving || sportsLoading || sportMissing;
+  const disableSave = !canEditUI || saving || sportsLoading || sportMissing;
 
   return (
     <div className="mx-auto max-w-xl p-6 space-y-4">
@@ -245,7 +290,6 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* small indicator for clarity */}
           <Badge variant="secondary">
             {mode === "paid" ? `Paid ${currentYear || ""}` : `Demo ${demoYear || ""}`}
           </Badge>
@@ -275,6 +319,8 @@ export default function Profile() {
                 season_year: seasonYear || null,
                 sport_id: id || null,
                 account_id: accountId || null,
+                authed: isAuthed,
+                source: "profile",
               });
             }}
             disabled={saving}
@@ -283,6 +329,13 @@ export default function Profile() {
           <div className="text-xs opacity-70">
             This prevents “no camps found” due to sport mismatches.
           </div>
+
+          {!isAuthed && (
+            <div className="text-xs text-slate-600">
+              You’re in demo mode. Sport selection helps personalization, but it won’t be saved to your account until you
+              sign in.
+            </div>
+          )}
         </div>
 
         <div className="pt-2 flex items-center justify-end">
@@ -301,9 +354,7 @@ export default function Profile() {
           </Button>
         </div>
 
-        {sportMissing && (
-          <div className="text-xs text-red-600">Select a sport to continue.</div>
-        )}
+        {sportMissing && <div className="text-xs text-red-600">Select a sport to continue.</div>}
       </Card>
     </div>
   );
