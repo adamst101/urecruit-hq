@@ -8,7 +8,6 @@ import Discover from './pages/Discover';
 import Home from './pages/Home';
 import LogoutDebug from './pages/LogoutDebug';
 import MyCamps from './pages/MyCamps';
-import Onboarding from './pages/Onboarding';
 import Profile from './pages/Profile';
 import Subscribe from './pages/Subscribe';
 import TestFunctions from './pages/TestFunctions';
@@ -27,7 +26,6 @@ export const PAGES = {
     "Home": Home,
     "LogoutDebug": LogoutDebug,
     "MyCamps": MyCamps,
-    "Onboarding": Onboarding,
     "Profile": Profile,
     "Subscribe": Subscribe,
     "TestFunctions": TestFunctions,
@@ -35,7 +33,7 @@ export const PAGES = {
 }
 
 export const pagesConfig = {
-    mainPage: "Onboarding",
+    mainPage: "AdminImport",
     Pages: PAGES,
     Layout: __Layout,
 };
