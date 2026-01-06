@@ -15,6 +15,7 @@ import { base44 } from "../../api/base44Client";
  * Hardening:
  * - Use UTC year to avoid Jan 1 timezone edge cases
  * - Handle season_year stored as number OR string
+ * - Work around Base44 filter operator variance (id/in/$in, etc.)
  * - Keep query keys stable
  * - Return a consistent contract used across pages (Subscribe/Profile/Discover/etc.)
  */
@@ -32,6 +33,8 @@ export function useSeasonAccess() {
   // Who is the user?
   const meQuery = useQuery({
     queryKey: ["auth_me"],
+    retry: false,
+    staleTime: 0,
     queryFn: async () => {
       // Treat failures as "not logged in"
       try {
@@ -40,35 +43,32 @@ export function useSeasonAccess() {
         return null;
       }
     },
-    retry: false,
   });
 
   const accountId = meQuery.data?.id || null;
 
-  // If auth is explicitly null, do not try entitlements
+  // Only check entitlements when auth is resolved and we have an accountId
   const canCheckEntitlements = !!accountId && !meQuery.isLoading;
 
-  // Does the user have a current-year entitlement?
   const entitlementQuery = useQuery({
     queryKey: ["entitlement_current_year", accountId, currentYear],
     enabled: canCheckEntitlements,
     retry: false,
+    staleTime: 0,
     queryFn: async () => {
-      // First attempt: strict filter (fastest when it works)
-      let rows = [];
+      // 1) Fast path: strict filter (works when Base44 supports equality filters well)
       try {
-        rows = await base44.entities.Entitlement.filter({
+        const rows = await base44.entities.Entitlement.filter({
           account_id: accountId,
           season_year: currentYear,
           status: "active",
         });
+        if (Array.isArray(rows) && rows[0]) return rows[0];
       } catch {
-        rows = [];
+        // fall through
       }
 
-      if (Array.isArray(rows) && rows[0]) return rows[0];
-
-      // Fallback: season_year might be stored as string, or filter might be picky.
+      // 2) Fallback: season_year might be stored as string OR filter might be picky.
       // Pull active entitlements for the account and match in memory.
       let allActive = [];
       try {
@@ -92,14 +92,11 @@ export function useSeasonAccess() {
   const loading =
     meQuery.isLoading || (canCheckEntitlements && entitlementQuery.isLoading);
 
-  // Paid if logged in AND has entitlement for currentYear
   const isPaid = !!accountId && !!entitlementQuery.data;
-
-  // Public season to use for data queries in the app
   const seasonYear = isPaid ? currentYear : demoYear;
 
   return {
-    // ✅ canonical fields (use these going forward)
+    // canonical
     loading,
     isLoading: loading,
 
@@ -110,13 +107,13 @@ export function useSeasonAccess() {
     currentYear,
     demoYear,
     seasonYear,
-    season: seasonYear, // alias used by some pages
+    season: seasonYear, // legacy alias
 
-    // raw identity
+    // identity
     accountId,
     entitlement: entitlementQuery.data || null,
 
-    // helpful debugging/status flags (safe to keep)
+    // flags
     isAuthenticated: !!accountId,
   };
 }
