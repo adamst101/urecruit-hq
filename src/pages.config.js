@@ -11,6 +11,7 @@ import MyCamps from './pages/MyCamps';
 import Onboarding from './pages/Onboarding';
 import Profile from './pages/Profile';
 import TestFunctions from './pages/TestFunctions';
+import Subscribe from './pages/Subscribe';
 import __Layout from './Layout.jsx';
 
 
@@ -28,6 +29,7 @@ export const PAGES = {
     "Onboarding": Onboarding,
     "Profile": Profile,
     "TestFunctions": TestFunctions,
+    "Subscribe": Subscribe,
 }
 
 export const pagesConfig = {
