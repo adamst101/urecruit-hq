@@ -2,13 +2,13 @@ import React, { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
-import { useIdentity } from "../components/auth/useIdentity";
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 
 export default function Upgrade() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
   const next = sp.get("next");
-  const id = useIdentity();
+  const { accountId } = useSeasonAccess();
   const [working, setWorking] = useState(false);
   const [err, setErr] = useState(null);
 
@@ -75,7 +75,7 @@ export default function Upgrade() {
             {working ? "Processing…" : "Subscribe"}
           </button>
 
-          {id.isAuthed && (
+          {accountId && (
             <button
               onClick={() => nav(createPageUrl("Profile"))}
               style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
