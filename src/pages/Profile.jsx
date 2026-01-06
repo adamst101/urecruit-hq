@@ -13,7 +13,7 @@ import { Badge } from "../components/ui/badge";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import SportSelector from "../components/SportSelector";
 
-// --- analytics helpers (keep your existing tracking shape)
+// --- analytics helpers
 function trackEvent(payload) {
   try {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
@@ -51,7 +51,7 @@ function normalizeSportIdMaybe(rawSportId, sports) {
   );
   if (bySlug) return String(bySlug.id);
 
-  // common aliases (expand as needed)
+  // common aliases
   const aliasMap = {
     fb: "football",
     "american football": "football",
@@ -72,50 +72,42 @@ export default function Profile() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // IMPORTANT: include mode so demo can be allowed
- const { isLoading, mode, seasonYear } = useSeasonAccess();
-
-const {
-  data: detail,
-  isLoading: detailLoading,
-  isError,
-  error,
-} = useQuery({
-  queryKey: ["demoCampDetail", campId, seasonYear],
-  enabled: !!campId && !!seasonYear,
-  queryFn: () => fetchDemoCampDetail({ campId, seasonYear }),
-});
-
+  // ✅ standardized hook usage
+  const {
+    isLoading,
+    mode,
+    hasAccess,
+    seasonYear,
+    currentYear,
+    demoYear,
+    accountId,
+  } = useSeasonAccess();
 
   const [saving, setSaving] = useState(false);
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
 
   const [profile, setProfile] = useState(null);
 
   // Profile fields
   const [sportId, setSportId] = useState(null);
 
-  // For normalization
+  // Sports list for normalization
   const [sports, setSports] = useState([]);
-  const [loadingSports, setLoadingSports] = useState(false);
+  const [sportsLoading, setSportsLoading] = useState(false);
 
   const nextUrl = useMemo(() => {
     const params = new URLSearchParams(location.search);
     return params.get("next") || createPageUrl("Discover");
   }, [location.search]);
 
-  // ✅ Demo users MUST be able to set sport; don't block Profile.
-  // Only block if you explicitly want to prevent profile edits for paid-only reasons.
-  const ready = !accessLoading && !loadingProfile;
-  const isDemo = mode === "demo";
-  const canEditProfile = true; // allow both demo + paid
-  const showPaywall = false; // never show subscription required on Profile
+  // ✅ Demo users must be able to edit profile (sport selection is foundational)
+  const canEditProfile = true;
 
-  // Load sports for normalization + selector
+  // Load sports for normalization (SportSelector also loads, but this is for mapping legacy values)
   useEffect(() => {
     let mounted = true;
     (async () => {
-      setLoadingSports(true);
+      setSportsLoading(true);
       try {
         const rows = await base44.entities.Sport.list();
         if (!mounted) return;
@@ -123,7 +115,7 @@ const {
       } catch {
         if (mounted) setSports([]);
       } finally {
-        if (mounted) setLoadingSports(false);
+        if (mounted) setSportsLoading(false);
       }
     })();
     return () => {
@@ -136,40 +128,43 @@ const {
     let mounted = true;
 
     (async () => {
-      setLoadingProfile(true);
+      // wait until access hook resolves; prevents “flap” state
+      if (isLoading) return;
+
+      setProfileLoading(true);
       try {
-        // If you use base44.functions.getAthleteProfile() in your app, swap it in here.
         const me = await base44.entities.AthleteProfile?.get?.("me");
         const p = me || null;
-
         if (!mounted) return;
 
         setProfile(p);
 
         const rawSportId = p?.sport_id ? String(p.sport_id) : null;
-
         const normalized = normalizeSportIdMaybe(rawSportId, sports);
+
         setSportId(normalized || rawSportId || null);
 
         trackEvent({
           event_name: "profile_loaded",
           mode: mode || null,
-          season_year: currentYear || null,
-          demo_year: demoYear || null,
+          season_year: seasonYear || null,
           sport_id: normalized || rawSportId || null,
           account_id: accountId || null,
+          has_access: !!hasAccess,
         });
       } catch (e) {
         if (mounted) setProfile(null);
       } finally {
-        if (mounted) setLoadingProfile(false);
+        if (mounted) setProfileLoading(false);
       }
     })();
 
     return () => {
       mounted = false;
     };
-  }, [sports, mode, currentYear, demoYear, accountId]);
+  }, [isLoading, sports, mode, seasonYear, accountId, hasAccess]);
+
+  const pageLoading = isLoading || profileLoading;
 
   async function onSave() {
     if (!canEditProfile) return;
@@ -178,8 +173,7 @@ const {
       trackEvent({
         event_name: "profile_save_blocked_missing_sport",
         mode: mode || null,
-        season_year: currentYear || null,
-        demo_year: demoYear || null,
+        season_year: seasonYear || null,
         account_id: accountId || null,
       });
       return;
@@ -203,8 +197,7 @@ const {
       trackEvent({
         event_name: "profile_saved",
         mode: mode || null,
-        season_year: currentYear || null,
-        demo_year: demoYear || null,
+        season_year: seasonYear || null,
         sport_id: String(sportId),
         account_id: accountId || null,
       });
@@ -214,8 +207,7 @@ const {
       trackEvent({
         event_name: "profile_save_failed",
         mode: mode || null,
-        season_year: currentYear || null,
-        demo_year: demoYear || null,
+        season_year: seasonYear || null,
         sport_id: sportId || null,
         account_id: accountId || null,
         error: String(e?.message || e),
@@ -225,8 +217,7 @@ const {
     }
   }
 
-  // Loading state
-  if (!ready) {
+  if (pageLoading) {
     return (
       <div className="mx-auto max-w-xl p-6">
         <Card className="p-6">
@@ -239,35 +230,8 @@ const {
     );
   }
 
-  // (Optional) Paywall section disabled; leaving hook for future
-  if (showPaywall && !hasAccess && !isDemo) {
-    return (
-      <div className="mx-auto max-w-xl p-6">
-        <Card className="p-6 space-y-3">
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary">Access</Badge>
-            <div className="font-semibold">Subscription required</div>
-          </div>
-          <div className="text-sm opacity-80">
-            Your current season access doesn’t allow updates to your RecruitMe profile.
-          </div>
-          <Button
-            onClick={() =>
-              navigate(
-                createPageUrl("Subscribe") +
-                  `?force=1&next=${encodeURIComponent(createPageUrl("Profile"))}`
-              )
-            }
-          >
-            Go to Subscribe
-          </Button>
-        </Card>
-      </div>
-    );
-  }
-
   const sportMissing = !sportId;
-  const disableSave = !canEditProfile || saving || loadingSports || sportMissing;
+  const disableSave = !canEditProfile || saving || sportsLoading || sportMissing;
 
   return (
     <div className="mx-auto max-w-xl p-6 space-y-4">
@@ -281,12 +245,10 @@ const {
             </div>
           </div>
 
-          {/* small mode pill for debugging/clarity */}
-          {mode ? (
-            <Badge variant="secondary">
-              {mode === "paid" ? `Paid ${currentYear || ""}` : `Demo ${demoYear || ""}`}
-            </Badge>
-          ) : null}
+          {/* small indicator for clarity */}
+          <Badge variant="secondary">
+            {mode === "paid" ? `Paid ${currentYear || ""}` : `Demo ${demoYear || ""}`}
+          </Badge>
         </div>
 
         {/* Sport Selector */}
@@ -310,8 +272,7 @@ const {
               trackEvent({
                 event_name: "profile_sport_selected",
                 mode: mode || null,
-                season_year: currentYear || null,
-                demo_year: demoYear || null,
+                season_year: seasonYear || null,
                 sport_id: id || null,
                 account_id: accountId || null,
               });
@@ -347,4 +308,3 @@ const {
     </div>
   );
 }
-
