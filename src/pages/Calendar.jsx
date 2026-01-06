@@ -1,389 +1,65 @@
 // src/pages/Calendar.jsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
+import { Loader2, Lock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import {
-  Loader2,
-  AlertCircle,
-  ChevronLeft,
-  ChevronRight,
-  Lock,
-} from "lucide-react";
-import {
-  format,
-  startOfMonth,
-  endOfMonth,
-  eachDayOfInterval,
-  isSameMonth,
-  isSameDay,
-  addMonths,
-  subMonths,
-  startOfWeek,
-  endOfWeek,
-} from "date-fns";
 
 import { createPageUrl } from "../utils";
-
+import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../components/ui/sheet";
 import { Badge } from "../components/ui/badge";
-import { cn } from "../lib/utils";
 
 import BottomNav from "../components/navigation/BottomNav";
+import RouteGuard from "../components/auth/RouteGuard";
 
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
-import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient";
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { useDemoProfile } from "../components/hooks/useDemoProfile";
 
 /**
- * Calendar (router page)
- * - Demo: public summaries (read-only)
- * - Paid: athlete-specific summaries (registered/favorite)
+ * CalendarPage
+ * - Paid: shows current season camps (from client-composed summaries)
+ * - Demo: lightweight placeholder (until you build demo calendar overlays)
+ *
+ * Wrapper policy:
+ * - requireChild=true: if authed AND no athlete -> RouteGuard will force Profile
+ * - demo users can still browse calendar placeholder
  */
-export default function Calendar() {
-  const {
-    isLoading: accessLoading,
-    mode,
-    seasonYear,
-    currentYear,
-    demoYear,
-  } = useSeasonAccess();
-
-  if (accessLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-      </div>
-    );
-  }
-
-  return mode === "paid" ? (
-    <CalendarPaid currentYear={currentYear} />
-  ) : (
-    <CalendarDemo seasonYear={seasonYear} demoYear={demoYear} currentYear={currentYear} />
-  );
-}
-
-/* -----------------------------
-   DEMO (no auth, read-only)
------------------------------ */
-function CalendarDemo({ seasonYear, demoYear, currentYear }) {
+function CalendarPage() {
   const navigate = useNavigate();
+  const { mode, currentYear } = useSeasonAccess();
+  const { athleteProfile, isLoading: identityLoading, isError: identityError, error } = useAthleteIdentity();
+  const { demoProfileId } = useDemoProfile();
 
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [sportFilter, setSportFilter] = useState("all");
-
-  const {
-    data: campSummaries = [],
-    isLoading: campsLoading,
-    isError: campsError,
-    error: campsErrorObj,
-  } = usePublicCampSummariesClient({
-    seasonYear,
-    sportId: sportFilter === "all" ? undefined : sportFilter,
-    enabled: true,
-  });
-
-  const sortedSummaries = useMemo(() => {
-    const list = Array.isArray(campSummaries) ? [...campSummaries] : [];
-    list.sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
-    return list;
-  }, [campSummaries]);
-
-  const monthStart = startOfMonth(currentDate);
-  const monthEnd = endOfMonth(currentDate);
-  const calendarStart = startOfWeek(monthStart);
-  const calendarEnd = endOfWeek(monthEnd);
-  const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
-
-  const getCampsForDay = (date) => {
-    const camps = sortedSummaries.filter((summary) => {
-      const start = new Date(summary.start_date);
-      const end = summary.end_date ? new Date(summary.end_date) : start;
-      return date >= start && date <= end;
-    });
-    return { camps };
-  };
-
-  const handleDateClick = (date) => {
-    const { camps } = getCampsForDay(date);
-    if (camps.length > 0) setSelectedDate(date);
-  };
-
-  const selectedDateCamps = selectedDate ? getCampsForDay(selectedDate) : null;
-
-  return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
-        <div className="max-w-md mx-auto p-4">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <h1 className="text-2xl font-bold text-deep-navy">Camp Calendar</h1>
-            <div className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
-              Demo Season: {demoYear}
-            </div>
-          </div>
-
-          <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 mb-4 flex items-start gap-2">
-            <Lock className="w-4 h-4 mt-0.5" />
-            <div className="text-sm">
-              Demo mode is read-only.{" "}
-              <button
-                className="underline font-medium"
-                onClick={() => navigate(createPageUrl("Onboarding"))}
-                type="button"
-              >
-                Sign up
-              </button>{" "}
-              to unlock the current season <b>{currentYear}</b>.
-            </div>
-          </div>
-
-          {campsError && (
-            <div className="mt-3 bg-white border border-rose-200 text-rose-700 rounded-xl p-3">
-              <div className="font-semibold">Failed to load demo camps</div>
-              <div className="text-xs break-words mt-1">
-                {String(campsErrorObj?.message || campsErrorObj)}
-              </div>
-            </div>
-          )}
-
-          <Select value={sportFilter} onValueChange={setSportFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All Sports" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Sports</SelectItem>
-              {[
-                ...new Map(
-                  sortedSummaries.map((s) => [
-                    s.sport_id,
-                    { id: s.sport_id, sport_name: s.sport_name },
-                  ])
-                ).values(),
-              ]
-                .filter((s) => s?.id)
-                .map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.sport_name || "Sport"}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-
-          {/* Helpful debug/clarity: what year are we querying? */}
-          <div className="text-xs text-slate-500 mt-2">
-            Viewing data for seasonYear: <b>{seasonYear}</b>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-md mx-auto p-4">
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-slate-100">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setCurrentDate(subMonths(currentDate, 1))}
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </Button>
-            <h2 className="text-lg font-bold text-deep-navy">
-              {format(currentDate, "MMMM yyyy")}
-            </h2>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setCurrentDate(addMonths(currentDate, 1))}
-            >
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          </div>
-
-          <div className="grid grid-cols-7 border-b border-slate-100">
-            {["S", "M", "T", "W", "T", "F", "S"].map((d, idx) => (
-              <div
-                key={idx}
-                className="p-2 text-center text-xs font-semibold text-slate-500"
-              >
-                {d}
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-7">
-            {days.map((day, idx) => {
-              const { camps } = getCampsForDay(day);
-              const isToday = isSameDay(day, new Date());
-              const isCurrentMonth = isSameMonth(day, currentDate);
-              const hasCamps = camps.length > 0;
-
-              return (
-                <button
-                  key={idx}
-                  onClick={() => handleDateClick(day)}
-                  disabled={!hasCamps}
-                  className={cn(
-                    "min-h-[60px] p-1.5 border-r border-b border-slate-100 transition-colors",
-                    !isCurrentMonth && "bg-slate-50",
-                    isToday && "bg-electric-blue/10 ring-1 ring-electric-blue",
-                    hasCamps && "hover:bg-slate-100 cursor-pointer",
-                    !hasCamps && "cursor-default"
-                  )}
-                  type="button"
-                >
-                  <div
-                    className={cn(
-                      "text-sm font-medium mb-1",
-                      isToday && "text-electric-blue font-bold",
-                      !isCurrentMonth && "text-slate-400",
-                      isCurrentMonth && !isToday && "text-slate-700"
-                    )}
-                  >
-                    {format(day, "d")}
-                  </div>
-                  {hasCamps && <div className="w-full h-1.5 bg-slate-700 rounded-full" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {campsLoading && (
-          <div className="mt-3 flex items-center gap-2 text-slate-500 text-sm">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Loading demo camps…
-          </div>
-        )}
-      </div>
-
-      <Sheet open={!!selectedDate} onOpenChange={() => setSelectedDate(null)}>
-        <SheetContent side="bottom" className="h-[60vh] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>{selectedDate && format(selectedDate, "MMMM d, yyyy")}</SheetTitle>
-          </SheetHeader>
-
-          {selectedDateCamps && (
-            <div className="space-y-4 py-6">
-              {selectedDateCamps.camps.map((summary) => (
-                <button
-                  key={summary.camp_id}
-                  onClick={() => {
-                    setSelectedDate(null);
-                    navigate(createPageUrl(`CampDetailDemo?id=${summary.camp_id}`));
-                  }}
-                  className="w-full text-left p-4 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                  type="button"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <Badge variant="outline" className="text-slate-700 text-xs">
-                      Demo
-                    </Badge>
-                    <span className="text-xs text-slate-500">{summary.sport_name}</span>
-                  </div>
-                  <h3 className="font-semibold text-deep-navy">{summary.school_name}</h3>
-                  <p className="text-sm text-gray-dark">{summary.camp_name}</p>
-                </button>
-              ))}
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
-
-      <BottomNav />
-    </div>
-  );
-}
-
-/* -----------------------------
-   PAID (existing behavior)
------------------------------ */
-function CalendarPaid({ currentYear }) {
-  const navigate = useNavigate();
-
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [sportFilter, setSportFilter] = useState("all");
-
-  const {
-    athleteProfile,
-    isLoading: identityLoading,
-    isError: identityError,
-    error: identityErrorObj,
-  } = useAthleteIdentity();
-
+  const isPaid = mode === "paid";
   const athleteId = athleteProfile?.id;
-  const athleteSportId = athleteProfile?.sport_id;
+  const sportId = athleteProfile?.sport_id;
 
-  const {
-    data: campSummaries = [],
-    isLoading: campsLoading,
-    isError: campsError,
-    error: campsErrorObj,
-  } = useCampSummariesClient({
+  const paidQuery = useCampSummariesClient({
     athleteId,
-    sportId: athleteSportId,
-    enabled: !!athleteId && !identityLoading && !identityError,
+    sportId,
+    enabled: isPaid && !!athleteId
   });
 
-  const sortedSummaries = useMemo(() => {
-    const list = Array.isArray(campSummaries) ? [...campSummaries] : [];
-    list.sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
-    return list;
-  }, [campSummaries]);
+  const loading = (isPaid && (identityLoading || paidQuery.isLoading));
+  const isError = (isPaid && (identityError || paidQuery.isError));
+  const errObj = error || paidQuery.error;
 
-  const { registeredCamps, favoriteCamps } = useMemo(() => {
-    let registered = sortedSummaries.filter(
-      (c) => c.intent_status === "registered" || c.intent_status === "completed"
-    );
-    let favorite = sortedSummaries.filter((c) => c.intent_status === "favorite");
+  const camps = useMemo(() => {
+    if (!isPaid) return [];
+    const rows = paidQuery.data || [];
+    return Array.isArray(rows) ? rows : [];
+  }, [isPaid, paidQuery.data]);
 
-    if (sportFilter !== "all") {
-      registered = registered.filter((c) => c.sport_id === sportFilter);
-      favorite = favorite.filter((c) => c.sport_id === sportFilter);
-    }
+  const registered = useMemo(() => {
+    return camps.filter((c) => c.intent_status === "registered" || c.intent_status === "completed");
+  }, [camps]);
 
-    return { registeredCamps: registered, favoriteCamps: favorite };
-  }, [sortedSummaries, sportFilter]);
+  const favorites = useMemo(() => {
+    return camps.filter((c) => c.intent_status === "favorite");
+  }, [camps]);
 
-  const monthStart = startOfMonth(currentDate);
-  const monthEnd = endOfMonth(currentDate);
-  const calendarStart = startOfWeek(monthStart);
-  const calendarEnd = endOfWeek(monthEnd);
-  const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
-
-  const getCampsForDay = (date) => {
-    const registered = registeredCamps.filter((summary) => {
-      const start = new Date(summary.start_date);
-      const end = summary.end_date ? new Date(summary.end_date) : start;
-      return date >= start && date <= end;
-    });
-
-    const favorite = favoriteCamps.filter((summary) => {
-      const start = new Date(summary.start_date);
-      const end = summary.end_date ? new Date(summary.end_date) : start;
-      return date >= start && date <= end;
-    });
-
-    const hasConflict = registered.length > 1;
-    return { registered, favorite, hasConflict };
-  };
-
-  const handleDateClick = (date) => {
-    const { registered, favorite } = getCampsForDay(date);
-    if (registered.length > 0 || favorite.length > 0) setSelectedDate(date);
-  };
-
-  const selectedDateCamps = selectedDate ? getCampsForDay(selectedDate) : null;
-
-  if (identityLoading) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -391,205 +67,162 @@ function CalendarPaid({ currentYear }) {
     );
   }
 
-  if (identityError) {
+  if (isError) {
     return (
-      <div className="p-6 text-rose-700">
-        Failed to load athlete profile:{" "}
-        {String(identityErrorObj?.message || identityErrorObj)}
+      <div className="min-h-screen bg-slate-50 p-4 pb-20">
+        <Card className="max-w-md mx-auto p-4 border-rose-200 bg-rose-50 text-rose-700">
+          <div className="font-semibold">Failed to load Calendar</div>
+          <div className="text-xs mt-2 break-words">{String(errObj?.message || errObj)}</div>
+          <Button className="w-full mt-4" onClick={() => navigate(createPageUrl("Discover"))}>
+            Back to Discover
+          </Button>
+        </Card>
+        <BottomNav />
       </div>
     );
   }
 
-  if (!athleteProfile) {
+  // -----------------------------
+  // DEMO Calendar (placeholder)
+  // -----------------------------
+  if (!isPaid) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+      <div className="min-h-screen bg-slate-50 pb-20">
+        <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
+          <div className="max-w-md mx-auto p-4">
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-deep-navy">Calendar</h1>
+              <Badge className="bg-slate-900 text-white">Demo</Badge>
+            </div>
+            <div className="text-sm text-slate-600 mt-1">
+              Calendar overlays are part of the Season Pass experience.
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-md mx-auto p-4 space-y-3">
+          <Card className="p-4 border-amber-200 bg-amber-50">
+            <div className="flex items-start gap-3">
+              <Lock className="w-5 h-5 text-amber-700 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-amber-900">Upgrade to unlock Calendar</div>
+                <div className="text-sm text-amber-900/80 mt-1">
+                  See your favorites + registrations as a schedule and spot conflicts.
+                </div>
+
+                <div className="mt-3">
+                  <Button
+                    className="w-full"
+                    onClick={() => navigate(createPageUrl("Subscribe") + `?source=calendar_demo`)}
+                  >
+                    See Plan & Pricing
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <div className="text-sm text-slate-600">
+              Demo profile: <span className="font-medium">{demoProfileId || "default"}</span>
+            </div>
+          </Card>
+        </div>
+
+        <BottomNav />
       </div>
     );
   }
 
+  // -----------------------------
+  // PAID Calendar (simple list view)
+  // -----------------------------
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-md mx-auto p-4">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <h1 className="text-2xl font-bold text-deep-navy mb-0">Camp Calendar</h1>
-            <div className="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">
-              Current Season: {currentYear}
-            </div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-deep-navy">Calendar</h1>
+            <Badge className="bg-emerald-600 text-white">Current {currentYear}</Badge>
           </div>
-
-          {campsError && (
-            <div className="mt-3 bg-white border border-rose-200 text-rose-700 rounded-xl p-3">
-              <div className="font-semibold">Failed to load camps</div>
-              <div className="text-xs break-words mt-1">
-                {String(campsErrorObj?.message || campsErrorObj)}
-              </div>
-            </div>
-          )}
-
-          <Select value={sportFilter} onValueChange={setSportFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All Sports" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Sports</SelectItem>
-              {[
-                ...new Map(
-                  sortedSummaries.map((s) => [
-                    s.sport_id,
-                    { id: s.sport_id, sport_name: s.sport_name },
-                  ])
-                ).values(),
-              ]
-                .filter((s) => s?.id)
-                .map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.sport_name || "Sport"}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+          <div className="text-sm text-slate-600 mt-1">
+            Your registered and favorited camps (overlay UI can come next).
+          </div>
         </div>
       </div>
 
-      <div className="max-w-md mx-auto p-4">
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-slate-100">
-            <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))}>
-              <ChevronLeft className="w-5 h-5" />
+      <div className="max-w-md mx-auto p-4 space-y-6">
+        {registered.length === 0 && favorites.length === 0 ? (
+          <Card className="p-4">
+            <div className="font-semibold text-deep-navy">Nothing to schedule yet</div>
+            <div className="text-sm text-slate-600 mt-1">
+              Favorite or register for camps in Discover to see them here.
+            </div>
+            <Button className="w-full mt-4" onClick={() => navigate(createPageUrl("Discover"))}>
+              Go to Discover
             </Button>
-            <h2 className="text-lg font-bold text-deep-navy">{format(currentDate, "MMMM yyyy")}</h2>
-            <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))}>
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          </div>
+          </Card>
+        ) : (
+          <>
+            {registered.length > 0 && (
+              <Section title="Registered">
+                {registered.map((c) => (
+                  <CampRow key={c.camp_id} camp={c} />
+                ))}
+              </Section>
+            )}
 
-          <div className="grid grid-cols-7 border-b border-slate-100">
-            {["S", "M", "T", "W", "T", "F", "S"].map((d, idx) => (
-              <div key={idx} className="p-2 text-center text-xs font-semibold text-slate-500">
-                {d}
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-7">
-            {days.map((day, idx) => {
-              const { registered, favorite, hasConflict } = getCampsForDay(day);
-              const isToday = isSameDay(day, new Date());
-              const isCurrentMonth = isSameMonth(day, currentDate);
-              const hasCamps = registered.length > 0 || favorite.length > 0;
-
-              return (
-                <button
-                  key={idx}
-                  onClick={() => handleDateClick(day)}
-                  disabled={!hasCamps}
-                  className={cn(
-                    "min-h-[60px] p-1.5 border-r border-b border-slate-100 transition-colors",
-                    !isCurrentMonth && "bg-slate-50",
-                    isToday && "bg-electric-blue/10 ring-1 ring-electric-blue",
-                    hasCamps && "hover:bg-slate-100 cursor-pointer",
-                    !hasCamps && "cursor-default"
-                  )}
-                  type="button"
-                >
-                  <div
-                    className={cn(
-                      "text-sm font-medium mb-1",
-                      isToday && "text-electric-blue font-bold",
-                      !isCurrentMonth && "text-slate-400",
-                      isCurrentMonth && !isToday && "text-slate-700"
-                    )}
-                  >
-                    {format(day, "d")}
-                  </div>
-
-                  <div className="space-y-0.5">
-                    {registered.length > 0 && (
-                      <div className="w-full h-1.5 bg-emerald-500 rounded-full" />
-                    )}
-                    {favorite.length > 0 && (
-                      <div className="w-full h-1.5 border-2 border-rose-400 rounded-full" />
-                    )}
-                    {hasConflict && <AlertCircle className="w-3 h-3 text-red-500 mx-auto" />}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {campsLoading && (
-          <div className="mt-3 flex items-center gap-2 text-slate-500 text-sm">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Loading camps…
-          </div>
+            {favorites.length > 0 && (
+              <Section title="Favorites">
+                {favorites.map((c) => (
+                  <CampRow key={c.camp_id} camp={c} />
+                ))}
+              </Section>
+            )}
+          </>
         )}
       </div>
 
-      <Sheet open={!!selectedDate} onOpenChange={() => setSelectedDate(null)}>
-        <SheetContent side="bottom" className="h-[60vh] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>{selectedDate && format(selectedDate, "MMMM d, yyyy")}</SheetTitle>
-          </SheetHeader>
-
-          {selectedDateCamps && (
-            <div className="space-y-4 py-6">
-              {selectedDateCamps.hasConflict && (
-                <div className="flex items-center gap-2 p-3 bg-red-50 rounded-lg text-red-700">
-                  <AlertCircle className="w-5 h-5" />
-                  <span className="text-sm font-medium">
-                    Schedule Conflict - Multiple registered camps on this date
-                  </span>
-                </div>
-              )}
-
-              {selectedDateCamps.registered.map((summary) => (
-                <button
-                  key={`reg-${summary.camp_id}`}
-                  onClick={() => {
-                    setSelectedDate(null);
-                    navigate(createPageUrl(`CampDetail?id=${summary.camp_id}`));
-                  }}
-                  className="w-full text-left p-4 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-colors"
-                  type="button"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>
-                    <span className="text-xs text-slate-500">{summary.sport_name}</span>
-                  </div>
-                  <h3 className="font-semibold text-deep-navy">{summary.school_name}</h3>
-                  <p className="text-sm text-gray-dark">{summary.camp_name}</p>
-                </button>
-              ))}
-
-              {selectedDateCamps.favorite.map((summary) => (
-                <button
-                  key={`fav-${summary.camp_id}`}
-                  onClick={() => {
-                    setSelectedDate(null);
-                    navigate(createPageUrl(`CampDetail?id=${summary.camp_id}`));
-                  }}
-                  className="w-full text-left p-4 bg-white border-2 border-dashed border-rose-300 rounded-xl hover:bg-rose-50 transition-colors"
-                  type="button"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <Badge variant="outline" className="text-rose-600 border-rose-300 text-xs">
-                      Favorite
-                    </Badge>
-                    <span className="text-xs text-slate-500">{summary.sport_name}</span>
-                  </div>
-                  <h3 className="font-semibold text-deep-navy">{summary.school_name}</h3>
-                  <p className="text-sm text-gray-dark">{summary.camp_name}</p>
-                </button>
-              ))}
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
-
       <BottomNav />
     </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-slate-600 mb-2">{title}</h2>
+      <div className="space-y-2">{children}</div>
+    </div>
+  );
+}
+
+function CampRow({ camp }) {
+  return (
+    <Card className="p-3">
+      <div className="font-semibold text-deep-navy">{camp.school_name || "Unknown School"}</div>
+      <div className="text-sm text-slate-600">{camp.camp_name || "Camp"}</div>
+      {(camp.start_date || camp.state || camp.city) && (
+        <div className="text-xs text-slate-500 mt-1">
+          {[camp.start_date, [camp.city, camp.state].filter(Boolean).join(", ")].filter(Boolean).join(" • ")}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+export default function Calendar() {
+  // ✅ Same wrapper policy as Discover:
+  // - Demo users can still see the (locked) calendar page
+  // - Paid users must have an athlete profile before using Calendar
+  return (
+    <RouteGuard
+      requireAuth={false}
+      requireSub={false}
+      requireChild={true}
+      allowProfileWithoutSub={true}
+    >
+      <CalendarPage />
+    </RouteGuard>
   );
 }
