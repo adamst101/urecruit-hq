@@ -8,9 +8,9 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-import { base44 } from "@/api/base44Client";
-import { useSeasonAccess } from "@/components/hooks/useSeasonAccess";
-import { createPageUrl } from "@/utils";
+import { base44 } from "../api/base44Client";
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { createPageUrl } from "../utils";
 
 const divisionColors = {
   "D1 (FBS)": "bg-amber-500 text-white",
@@ -40,32 +40,13 @@ function pickSportName(sp) {
   return sp?.sport_name || sp?.name || sp?.title || null;
 }
 
-/**
- * ✅ Analytics helper (same shape as Discover)
- */
-function trackEvent({
-  event_name,
-  mode,
-  camp_id = null,
-  school_id = null,
-  sport_id = null,
-  positions = [],
-  season_year
-}) {
+function trackEvent(payload) {
   try {
     base44.entities.Event.create({
-      event_name,
-      mode,
-      camp_id,
-      school_id,
-      sport_id,
-      positions,
-      season_year,
+      ...payload,
       ts: new Date().toISOString()
     });
-  } catch {
-    // analytics must never block UX
-  }
+  } catch {}
 }
 
 function getCampIdFromAllSources({ params, location }) {
@@ -150,7 +131,6 @@ async function fetchDemoCampDetail({ campId, demoYear }) {
   const camp = await fetchOneById("Camp", campId);
   if (!camp) return null;
 
-  // Ensure it belongs to demo year (same logic as Discover)
   const start = `${Number(demoYear)}-01-01`;
   const next = `${Number(demoYear) + 1}-01-01`;
   const d = camp?.start_date;
@@ -202,13 +182,11 @@ export default function CampDetailDemo() {
   const navigate = useNavigate();
   const params = useParams();
   const location = useLocation();
-  const { demoYear, seasonYear } = useSeasonAccess();
+  const { demoYear, currentYear } = useSeasonAccess();
 
   const campId = useMemo(() => getCampIdFromAllSources({ params, location }), [params, location]);
 
-  const goBackToDiscover = () => {
-    navigate(createPageUrl("Discover"));
-  };
+  const goBackToDiscover = () => navigate(createPageUrl("Discover"));
 
   const { data: detail, isLoading, isError, error } = useQuery({
     queryKey: ["demoCampDetail", campId, demoYear],
@@ -216,20 +194,24 @@ export default function CampDetailDemo() {
     queryFn: () => fetchDemoCampDetail({ campId, demoYear })
   });
 
-  // Persist id for refresh resilience
   try {
     if (campId) sessionStorage.setItem("last_demo_camp_id", String(campId));
   } catch {}
 
-  /**
-   * ✅ Analytics: camp detail viewed (fire once per camp)
-   */
-  const detailViewedFiredRef = useRef(false);
+  const viewedKey = useMemo(() => (campId && demoYear ? `evt_demo_detail_${demoYear}_${campId}` : null), [campId, demoYear]);
+  const onceRef = useRef(false);
+
   useEffect(() => {
-    if (detailViewedFiredRef.current) return;
+    if (onceRef.current) return;
     if (!detail) return;
 
-    detailViewedFiredRef.current = true;
+    try {
+      if (viewedKey && sessionStorage.getItem(viewedKey) === "1") return;
+      if (viewedKey) sessionStorage.setItem(viewedKey, "1");
+    } catch {}
+
+    onceRef.current = true;
+
     trackEvent({
       event_name: "camp_detail_viewed",
       mode: "demo",
@@ -237,9 +219,10 @@ export default function CampDetailDemo() {
       school_id: detail.school_id,
       sport_id: detail.sport_id,
       positions: (detail.positions || []).map((p) => p.position_code).filter(Boolean),
-      season_year: demoYear
+      season_year: demoYear,
+      source: "camp_detail_demo"
     });
-  }, [detail, demoYear]);
+  }, [detail, viewedKey, demoYear]);
 
   if (isLoading) {
     return (
@@ -269,11 +252,9 @@ export default function CampDetailDemo() {
       <div className="min-h-screen bg-slate-50 p-6">
         <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-xl p-4 text-slate-700">
           <div className="font-semibold">Missing camp id.</div>
-          <div className="mt-4 space-y-2">
-            <Button className="w-full" variant="outline" onClick={goBackToDiscover}>
-              Back to Discover
-            </Button>
-          </div>
+          <Button className="w-full mt-4" variant="outline" onClick={goBackToDiscover}>
+            Back to Discover
+          </Button>
         </div>
       </div>
     );
@@ -284,11 +265,6 @@ export default function CampDetailDemo() {
       <div className="min-h-screen bg-slate-50 p-6">
         <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-xl p-4 text-slate-700">
           <div className="font-semibold">Demo camp not found.</div>
-          <div className="text-xs mt-2 text-slate-500">
-            Looking for camp_id: <span className="font-mono">{campId}</span>
-            <br />
-            demoYear: <b>{demoYear}</b> (seasonYear: <b>{seasonYear}</b>)
-          </div>
           <div className="mt-4 space-y-2">
             <Button className="w-full" variant="outline" onClick={goBackToDiscover}>
               Back to Discover
@@ -306,6 +282,7 @@ export default function CampDetailDemo() {
           <button
             onClick={goBackToDiscover}
             className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-4"
+            type="button"
           >
             <ArrowLeft className="w-5 h-5" />
             <span>Back</span>
@@ -314,7 +291,7 @@ export default function CampDetailDemo() {
           <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 mb-4 flex items-start gap-2">
             <Lock className="w-4 h-4 mt-0.5" />
             <div className="text-sm">
-              Demo camp from season <b>{demoYear}</b>. Sign up to unlock the current season.
+              Demo camp from season <b>{demoYear}</b>. Subscribe to unlock the current season <b>{currentYear}</b>.
             </div>
           </div>
 
@@ -329,23 +306,12 @@ export default function CampDetailDemo() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 {detail.school_division && (
-                  <Badge className={cn("text-xs", divisionColors[detail.school_division])}>
+                  <Badge className={cn("text-xs", divisionColors[detail.school_division] || "bg-slate-900 text-white")}>
                     {detail.school_division}
                   </Badge>
                 )}
                 {detail.sport_name && (
                   <span className="text-xs text-slate-500 font-medium">{detail.sport_name}</span>
-                )}
-                {Array.isArray(detail.positions) && detail.positions.length > 0 && (
-                  <span className="text-xs text-slate-500">
-                    •{" "}
-                    {detail.positions
-                      .map((p) => p.position_code)
-                      .filter(Boolean)
-                      .slice(0, 6)
-                      .join(", ")}
-                    {detail.positions.length > 6 ? "…" : ""}
-                  </span>
                 )}
               </div>
 
@@ -381,11 +347,11 @@ export default function CampDetailDemo() {
             </div>
           )}
 
-          {detail.price && (
+          {detail.price != null && (
             <div className="bg-white rounded-xl p-4">
               <DollarSign className="w-5 h-5 text-slate-400 mb-2" />
               <p className="text-xs text-slate-500 uppercase tracking-wide">Cost</p>
-              <p className="font-semibold text-slate-900">${detail.price}</p>
+              <p className="font-semibold text-slate-900">{detail.price > 0 ? `$${detail.price}` : "Free"}</p>
             </div>
           )}
         </div>
@@ -401,26 +367,40 @@ export default function CampDetailDemo() {
           <Button
             className="w-full"
             onClick={() => {
-              // ✅ Analytics: signup CTA clicked
               trackEvent({
-                event_name: "subscribe_cta_clicked",
+                event_name: "upgrade_intent_clicked",     // ✅ renamed
                 mode: "demo",
+                season_year: demoYear,                   // ✅ demo context year
+                source: "camp_detail_demo",
                 camp_id: detail.camp_id,
                 school_id: detail.school_id,
                 sport_id: detail.sport_id,
-                positions: (detail.positions || []).map((p) => p.position_code).filter(Boolean),
-                season_year: demoYear
+                positions: (detail.positions || []).map((p) => p.position_code).filter(Boolean)
               });
 
               navigate(createPageUrl("Subscribe"));
-
             }}
           >
-            Unlock Current Season
+            See Plan & Pricing
           </Button>
 
           {detail.link_url && (
-            <Button variant="outline" className="w-full" onClick={() => window.open(detail.link_url, "_blank")}>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                trackEvent({
+                  event_name: "demo_registration_site_clicked",
+                  mode: "demo",
+                  season_year: demoYear,
+                  source: "camp_detail_demo",
+                  camp_id: detail.camp_id,
+                  school_id: detail.school_id,
+                  sport_id: detail.sport_id
+                });
+                window.open(detail.link_url, "_blank");
+              }}
+            >
               <ExternalLink className="w-4 h-4 mr-2" />
               View Registration Site (Demo)
             </Button>
