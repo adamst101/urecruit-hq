@@ -1,3 +1,4 @@
+// src/components/navigation/BottomNav.jsx
 import React, { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { CalendarDays, Compass, Lock, User } from "lucide-react";
@@ -9,9 +10,9 @@ import { useSeasonAccess } from "../hooks/useSeasonAccess";
 /**
  * BottomNav
  * - Paid users: Discover, Calendar, MyCamps, Profile
- * - Demo users: Discover, Calendar, Upgrade
+ * - Demo users: Discover, Calendar, Upgrade (Subscribe)
  *
- * Goal: prevent demo users from navigating to pages that require identity/camp intents (MyCamps).
+ * Goal: prevent demo users from navigating to paid-only pages (MyCamps).
  */
 export default function BottomNav() {
   const navigate = useNavigate();
@@ -24,25 +25,28 @@ export default function BottomNav() {
         { key: "Discover", label: "Discover", icon: Compass, to: createPageUrl("Discover") },
         { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") },
         { key: "MyCamps", label: "MyCamps", icon: Lock, to: createPageUrl("MyCamps") },
-        { key: "Profile", label: "Profile", icon: User, to: createPageUrl("Profile") }
+        { key: "Profile", label: "Profile", icon: User, to: createPageUrl("Profile") },
       ];
     }
 
-    // Demo mode
+    // Demo mode: send "Upgrade" to Subscribe (not Onboarding)
+    // Use force=1 so paid users can still view if intentionally routed, and include next=Discover.
+    const upgradeUrl =
+      createPageUrl("Subscribe") +
+      `?force=1&source=bottom_nav_upgrade&next=${encodeURIComponent(createPageUrl("Discover"))}`;
+
     return [
       { key: "Discover", label: "Discover", icon: Compass, to: createPageUrl("Discover") },
       { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") },
-      { key: "Onboarding", label: "Upgrade", icon: Lock, to: createPageUrl("Onboarding") }
+      { key: "Upgrade", label: "Upgrade", icon: Lock, to: upgradeUrl },
     ];
   }, [mode]);
 
   const pathname = location?.pathname || "";
 
   const isActive = (to) => {
-    // Base44 convention routes look like "/Discover", "/Calendar", etc.
-    // We treat exact match as active.
-    // Also handle query params by splitting at "?"
     const cleanTo = String(to || "").split("?")[0];
+    // treat exact route match as active
     return pathname === cleanTo;
   };
 
@@ -57,6 +61,7 @@ export default function BottomNav() {
             return (
               <button
                 key={item.key}
+                type="button"
                 onClick={() => navigate(item.to)}
                 className={cn(
                   "py-3 flex flex-col items-center justify-center gap-1 transition-colors",
@@ -64,9 +69,7 @@ export default function BottomNav() {
                 )}
               >
                 <Icon className={cn("w-5 h-5", active && "text-deep-navy")} />
-                <span className={cn("text-xs font-medium", active && "text-deep-navy")}>
-                  {item.label}
-                </span>
+                <span className={cn("text-xs font-medium", active && "text-deep-navy")}>{item.label}</span>
               </button>
             );
           })}
