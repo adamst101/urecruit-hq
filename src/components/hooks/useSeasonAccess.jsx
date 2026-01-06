@@ -1,3 +1,4 @@
+// src/components/hooks/useSeasonAccess.js
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
@@ -15,6 +16,7 @@ import { base44 } from "../../api/base44Client";
  * - Use UTC year to avoid Jan 1 timezone edge cases
  * - Handle season_year stored as number OR string
  * - Keep query keys stable
+ * - Return a consistent contract used across pages (Subscribe/Profile/Discover/etc.)
  */
 export function useSeasonAccess() {
   // Stable season years (UTC)
@@ -23,23 +25,33 @@ export function useSeasonAccess() {
     const currentYearUTC = now.getUTCFullYear();
     return {
       currentYear: currentYearUTC,
-      demoYear: currentYearUTC - 1
+      demoYear: currentYearUTC - 1,
     };
   }, []);
 
   // Who is the user?
   const meQuery = useQuery({
     queryKey: ["auth_me"],
-    queryFn: () => base44.auth.me(),
-    retry: false
+    queryFn: async () => {
+      // Treat failures as "not logged in"
+      try {
+        return await base44.auth.me();
+      } catch {
+        return null;
+      }
+    },
+    retry: false,
   });
 
   const accountId = meQuery.data?.id || null;
 
+  // If auth is explicitly null, do not try entitlements
+  const canCheckEntitlements = !!accountId && !meQuery.isLoading;
+
   // Does the user have a current-year entitlement?
   const entitlementQuery = useQuery({
     queryKey: ["entitlement_current_year", accountId, currentYear],
-    enabled: !!accountId && !meQuery.isLoading && !meQuery.isError,
+    enabled: canCheckEntitlements,
     retry: false,
     queryFn: async () => {
       // First attempt: strict filter (fastest when it works)
@@ -48,7 +60,7 @@ export function useSeasonAccess() {
         rows = await base44.entities.Entitlement.filter({
           account_id: accountId,
           season_year: currentYear,
-          status: "active"
+          status: "active",
         });
       } catch {
         rows = [];
@@ -62,7 +74,7 @@ export function useSeasonAccess() {
       try {
         allActive = await base44.entities.Entitlement.filter({
           account_id: accountId,
-          status: "active"
+          status: "active",
         });
       } catch {
         allActive = [];
@@ -74,27 +86,37 @@ export function useSeasonAccess() {
       });
 
       return match || null;
-    }
+    },
   });
 
-  const loading = meQuery.isLoading || (!!accountId && entitlementQuery.isLoading);
+  const loading =
+    meQuery.isLoading || (canCheckEntitlements && entitlementQuery.isLoading);
 
-  // If not logged in, always demo
+  // Paid if logged in AND has entitlement for currentYear
   const isPaid = !!accountId && !!entitlementQuery.data;
 
+  // Public season to use for data queries in the app
+  const seasonYear = isPaid ? currentYear : demoYear;
+
   return {
+    // ✅ canonical fields (use these going forward)
     loading,
+    isLoading: loading,
+
     mode: isPaid ? "paid" : "demo",
+    hasAccess: isPaid,
 
     // seasons
     currentYear,
     demoYear,
+    seasonYear,
+    season: seasonYear, // alias used by some pages
 
-    // For demo hooks that accept seasonYear
-    seasonYear: isPaid ? currentYear : demoYear,
-
-    // raw
+    // raw identity
     accountId,
-    entitlement: entitlementQuery.data || null
+    entitlement: entitlementQuery.data || null,
+
+    // helpful debugging/status flags (safe to keep)
+    isAuthenticated: !!accountId,
   };
 }
