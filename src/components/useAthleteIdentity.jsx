@@ -1,3 +1,4 @@
+// src/components/useAthleteIdentity.js
 import { useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -7,51 +8,72 @@ import { useSeasonAccess } from "./hooks/useSeasonAccess";
 /**
  * useAthleteIdentity
  *
- * HARDENING GOALS:
- * 1) If user is logged out (no accountId), return athleteProfile = null immediately.
- * 2) Prevent stale athleteProfile from a previous session from surviving a render cycle.
- * 3) Scope identity by accountId and only fetch when authenticated.
- * 4) Enforce active profile (active: true) to avoid ghost/disabled profiles.
- *
- * Query key (scoped by account):
- *   ["athleteIdentity", accountId]
+ * Goals:
+ * - If logged out (no accountId) -> athleteProfile=null immediately (no stale leak)
+ * - Scope cache by accountId
+ * - Only fetch when authenticated
+ * - Prefer active profile if field exists, but don't hard-fail if schema differs
+ * - Be resilient to Base44 id field variations (id/_id/uuid)
  */
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
+}
+
 export function useAthleteIdentity() {
   const queryClient = useQueryClient();
   const { accountId } = useSeasonAccess();
-
   const isAuthed = !!accountId;
 
-  // 🔥 Critical: when accountId goes null, purge cached identity data immediately
+  // When accountId goes null, purge cached identity so nothing stale leaks into UI.
   useEffect(() => {
     if (isAuthed) return;
 
-    // Remove cached identity queries so nothing stale can leak into UI
     queryClient.removeQueries({ queryKey: ["athleteIdentity"], exact: false });
-
-    // Also remove older legacy keys if they exist from prior iterations
     queryClient.removeQueries({ queryKey: ["athleteProfile"], exact: false });
     queryClient.removeQueries({ queryKey: ["getAthleteProfile"], exact: false });
+    queryClient.removeQueries({ queryKey: ["auth_me"], exact: false });
   }, [isAuthed, queryClient]);
 
   const query = useQuery({
     queryKey: ["athleteIdentity", accountId],
-    enabled: isAuthed, // ✅ do not fetch when logged out
+    enabled: isAuthed,
     retry: false,
     staleTime: 0,
+    gcTime: 5 * 60 * 1000,
     queryFn: async () => {
-      // AthleteProfile is linked to auth by account_id per your schema.
-      const profiles = await base44.entities.AthleteProfile.filter({
-        account_id: accountId,
-        active: true
-      });
+      // 1) Pull profiles for this account
+      let profiles = [];
+      try {
+        profiles = await base44.entities.AthleteProfile.filter({
+          account_id: accountId
+        });
+      } catch (e) {
+        // If the entity/filter fails, surface error (react-query will mark isError)
+        throw e;
+      }
 
-      const profile = Array.isArray(profiles) ? profiles[0] : null;
-      return profile || null;
+      const list = Array.isArray(profiles) ? profiles : [];
+
+      // 2) Prefer an active profile if present, otherwise fallback to first
+      const active = list.find((p) => p?.active === true) || null;
+      const first = list[0] || null;
+
+      const chosen = active || first || null;
+
+      // 3) If data exists but id is missing/odd, still return object (UI can handle),
+      // but normalize for safety if you need id later.
+      if (!chosen) return null;
+
+      return {
+        ...chosen,
+        id: normId(chosen) || chosen.id || chosen._id || chosen.uuid || null
+      };
     }
   });
 
-  // ✅ If logged out, force a stable "logged out" identity response
+  // Stable response shape
   return useMemo(() => {
     if (!isAuthed) {
       return {
