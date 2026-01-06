@@ -524,15 +524,15 @@ function DiscoverPage() {
 }
 
 export default function Discover() {
-  // ✅ RequireChild enforces: signed-in users who are paid must have an athlete profile before Discover
-  // Demo users still allowed to browse.
+  /**
+   * Correct policy for THIS app:
+   * - Demo users can browse Discover without auth.
+   * - Paid users MUST complete athlete profile before Discover.
+   *
+   * That is exactly: requireProfile=true (paid-only enforced inside RouteGuard).
+   */
   return (
-    <RouteGuard
-      requireAuth={false}
-      requireSub={false}
-      requireChild={true}
-      allowProfileWithoutSub={true}
-    >
+    <RouteGuard requireProfile={true}>
       <DiscoverPage />
     </RouteGuard>
   );
