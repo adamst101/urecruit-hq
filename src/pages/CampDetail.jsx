@@ -1,7 +1,16 @@
+// src/pages/CampDetail.jsx
 import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Calendar, MapPin, DollarSign, Star, CheckCircle2, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Calendar,
+  MapPin,
+  DollarSign,
+  Star,
+  CheckCircle2,
+  Loader2,
+} from "lucide-react";
 import { format } from "date-fns";
 
 import { base44 } from "../api/base44Client";
@@ -24,7 +33,7 @@ const divisionColors = {
   D2: "bg-blue-600 text-white",
   D3: "bg-emerald-600 text-white",
   NAIA: "bg-purple-600 text-white",
-  JUCO: "bg-slate-600 text-white"
+  JUCO: "bg-slate-600 text-white",
 };
 
 export default function CampDetail() {
@@ -32,12 +41,14 @@ export default function CampDetail() {
   const location = useLocation();
   const queryClient = useQueryClient();
 
-  const { mode, loading: accessLoading } = useSeasonAccess();
+  // ✅ Standard hook usage (and fixes your old `loading:` destructure)
+  const { isLoading: accessLoading, mode } = useSeasonAccess();
+
   const {
     athleteProfile,
     isLoading: identityLoading,
     isError: identityError,
-    error: identityErrorObj
+    error: identityErrorObj,
   } = useAthleteIdentity();
 
   const campId = useMemo(() => {
@@ -54,7 +65,7 @@ export default function CampDetail() {
     if (!campId) return;
 
     if (mode !== "paid") {
-      navigate(createPageUrl(`CampDetailDemo?id=${campId}`));
+      navigate(createPageUrl(`CampDetailDemo?id=${campId}`), { replace: true });
     }
   }, [mode, accessLoading, campId, navigate]);
 
@@ -64,7 +75,7 @@ export default function CampDetail() {
   useEffect(() => {
     if (accessLoading || identityLoading) return;
     if (mode !== "paid") return; // demo guard handles
-    if (!athleteProfile) navigate(createPageUrl("Onboarding"));
+    if (!athleteProfile) navigate(createPageUrl("Onboarding"), { replace: true });
   }, [mode, accessLoading, identityLoading, athleteProfile, navigate]);
 
   // Loading skeleton (avoid rendering paid content until guards resolve)
@@ -90,7 +101,11 @@ export default function CampDetail() {
               {String(identityErrorObj?.message || identityErrorObj)}
             </div>
             <div className="mt-4">
-              <Button variant="outline" className="w-full" onClick={() => navigate(createPageUrl("Discover"))}>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => navigate(createPageUrl("Discover"))}
+              >
                 Back to Discover
               </Button>
             </div>
@@ -129,11 +144,11 @@ export default function CampDetail() {
     data: summaries = [],
     isLoading: summariesLoading,
     isError: summariesError,
-    error: summariesErrorObj
+    error: summariesErrorObj,
   } = useCampSummariesClient({
     athleteId,
     sportId,
-    enabled: !!athleteId
+    enabled: !!athleteId,
   });
 
   const summary = useMemo(() => {
@@ -149,7 +164,7 @@ export default function CampDetail() {
     mutationFn: async () => {
       const existing = await base44.entities.CampIntent.filter({
         athlete_id: athleteId,
-        camp_id: campId
+        camp_id: campId,
       });
 
       const intent = existing?.[0] || null;
@@ -162,25 +177,28 @@ export default function CampDetail() {
           athlete_id: athleteId,
           camp_id: campId,
           status: "favorite",
-          priority: "medium"
+          priority: "medium",
         });
         return;
       }
 
+      const intentId = intent.id || intent._id || intent.uuid;
+      if (!intentId) return;
+
       if (intent.status === "favorite") {
-        await base44.entities.CampIntent.update(intent.id, { status: "removed" });
+        await base44.entities.CampIntent.update(intentId, { status: "removed" });
       } else {
-        await base44.entities.CampIntent.update(intent.id, { status: "favorite" });
+        await base44.entities.CampIntent.update(intentId, { status: "favorite" });
       }
     },
-    onSuccess: invalidateSummaries
+    onSuccess: invalidateSummaries,
   });
 
   const registerCamp = useMutation({
     mutationFn: async () => {
       const existing = await base44.entities.CampIntent.filter({
         athlete_id: athleteId,
-        camp_id: campId
+        camp_id: campId,
       });
 
       const intent = existing?.[0] || null;
@@ -190,7 +208,7 @@ export default function CampDetail() {
           athlete_id: athleteId,
           camp_id: campId,
           status: "registered",
-          priority: "high"
+          priority: "high",
         });
         return;
       }
@@ -198,9 +216,12 @@ export default function CampDetail() {
       // If already registered/completed, do nothing
       if (intent.status === "registered" || intent.status === "completed") return;
 
-      await base44.entities.CampIntent.update(intent.id, { status: "registered" });
+      const intentId = intent.id || intent._id || intent.uuid;
+      if (!intentId) return;
+
+      await base44.entities.CampIntent.update(intentId, { status: "registered" });
     },
-    onSuccess: invalidateSummaries
+    onSuccess: invalidateSummaries,
   });
 
   if (summariesLoading) {
@@ -247,7 +268,8 @@ export default function CampDetail() {
   }
 
   const isFavorite = summary.intent_status === "favorite";
-  const isRegistered = summary.intent_status === "registered" || summary.intent_status === "completed";
+  const isRegistered =
+    summary.intent_status === "registered" || summary.intent_status === "completed";
 
   const startDate = summary.start_date ? new Date(summary.start_date) : null;
   const endDate = summary.end_date ? new Date(summary.end_date) : null;
@@ -260,6 +282,7 @@ export default function CampDetail() {
           <button
             onClick={() => navigate(createPageUrl("Discover"))}
             className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-3"
+            type="button"
           >
             <ArrowLeft className="w-5 h-5" />
             Back
@@ -269,15 +292,24 @@ export default function CampDetail() {
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 {summary.school_division && (
-                  <Badge className={cn("text-xs", divisionColors[summary.school_division])}>
+                  <Badge
+                    className={cn(
+                      "text-xs",
+                      divisionColors[summary.school_division] || "bg-slate-900 text-white"
+                    )}
+                  >
                     {summary.school_division}
                   </Badge>
                 )}
                 {summary.sport_name && (
-                  <span className="text-xs text-slate-500 font-medium">{summary.sport_name}</span>
+                  <span className="text-xs text-slate-500 font-medium">
+                    {summary.sport_name}
+                  </span>
                 )}
                 {isRegistered && (
-                  <Badge className="bg-emerald-100 text-emerald-700 text-xs">Registered</Badge>
+                  <Badge className="bg-emerald-100 text-emerald-700 text-xs">
+                    Registered
+                  </Badge>
                 )}
               </div>
 
@@ -291,10 +323,17 @@ export default function CampDetail() {
               onClick={() => toggleFavorite.mutate()}
               className={cn(
                 "p-2 rounded-full transition-all",
-                isFavorite ? "bg-rose-50 text-rose-500" : "bg-slate-50 text-slate-400 hover:text-slate-700"
+                isFavorite
+                  ? "bg-rose-50 text-rose-500"
+                  : "bg-slate-50 text-slate-400 hover:text-slate-700"
               )}
               disabled={toggleFavorite.isPending || isRegistered}
-              title={isRegistered ? "Registered camps cannot be favorited/removed here" : "Toggle favorite"}
+              title={
+                isRegistered
+                  ? "Registered camps cannot be favorited/removed here"
+                  : "Toggle favorite"
+              }
+              type="button"
             >
               <Star className={cn("w-5 h-5", isFavorite && "fill-current")} />
             </button>
@@ -311,7 +350,9 @@ export default function CampDetail() {
                 <Calendar className="w-4 h-4 text-slate-400" />
                 <span>
                   {format(startDate, "MMM d, yyyy")}
-                  {endDate && summary.end_date !== summary.start_date ? ` – ${format(endDate, "MMM d, yyyy")}` : ""}
+                  {endDate && summary.end_date !== summary.start_date
+                    ? ` – ${format(endDate, "MMM d, yyyy")}`
+                    : ""}
                 </span>
               </div>
             )}
@@ -323,17 +364,22 @@ export default function CampDetail() {
               </div>
             )}
 
-            {summary.price && (
+            {summary.price != null && (
               <div className="flex items-center gap-2 text-sm text-slate-700">
                 <DollarSign className="w-4 h-4 text-slate-400" />
-                <span className="font-medium">${summary.price}</span>
+                <span className="font-medium">
+                  {Number(summary.price) > 0 ? `$${summary.price}` : "Free"}
+                </span>
               </div>
             )}
 
             {Array.isArray(summary.position_codes) && summary.position_codes.length > 0 && (
               <div className="flex flex-wrap gap-1 pt-1">
                 {summary.position_codes.slice(0, 8).map((code, idx) => (
-                  <span key={idx} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-full">
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-full"
+                  >
                     {code}
                   </span>
                 ))}
