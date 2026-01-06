@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+// src/pages/DemoSetup.jsx
+import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight, SlidersHorizontal, Loader2 } from "lucide-react";
 
@@ -7,7 +8,13 @@ import { createPageUrl } from "../utils";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 
 import { base44 } from "../api/base44Client";
 
@@ -16,30 +23,33 @@ import { useDemoProfile } from "../components/hooks/useDemoProfile";
 
 /**
  * DemoSetup
- * Base44 convention route: /DemoSetup
- *
  * Demo-only: allows users to personalize the demo via localStorage DemoProfile.
  * No backend writes.
  */
 export default function DemoSetup() {
   const navigate = useNavigate();
-  const { mode, demoYear } = useSeasonAccess();
-  const { loaded, demoProfile, updateDemoProfile, clearDemoProfile } = useDemoProfile();
 
-  // If user is paid, this page isn't needed.
-  // Keep it simple: send them to Profile.
-  if (mode === "paid") {
-    navigate(createPageUrl("Profile"));
-    return null;
-  }
+  // ✅ Standard hook usage
+  const { isLoading: accessLoading, mode, demoYear } = useSeasonAccess();
+
+  const { loaded, demoProfile, updateDemoProfile, clearDemoProfile } =
+    useDemoProfile();
 
   const [loadingLists, setLoadingLists] = useState(false);
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
   const [err, setErr] = useState(null);
 
-  // Lazy-load lists once user lands (keeps page fast and avoids hook/async patterns)
-  React.useEffect(() => {
+  // ✅ Redirect paid users with effect (never call navigate during render)
+  useEffect(() => {
+    if (accessLoading) return;
+    if (mode === "paid") {
+      navigate(createPageUrl("Profile"), { replace: true });
+    }
+  }, [accessLoading, mode, navigate]);
+
+  // ✅ Lazy-load lists once user lands
+  useEffect(() => {
     let mounted = true;
 
     const load = async () => {
@@ -49,7 +59,7 @@ export default function DemoSetup() {
       try {
         const [sportsList, posList] = await Promise.all([
           base44.entities.Sport.list(),
-          base44.entities.Position.list()
+          base44.entities.Position.list(),
         ]);
 
         if (!mounted) return;
@@ -79,23 +89,26 @@ export default function DemoSetup() {
     () => [
       "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
       "ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK",
-      "OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"
+      "OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",
     ],
     []
   );
 
   const gradYears = useMemo(() => {
     const y = new Date().getFullYear();
-    // Keep wide enough for parents planning ahead
     return Array.from({ length: 7 }, (_, i) => y + i);
   }, []);
 
   const selectedSportId = demoProfile?.sport_id || "none";
   const selectedState = demoProfile?.state || "none";
   const selectedDivision = demoProfile?.division || "none";
-  const selectedGradYear = demoProfile?.grad_year ? String(demoProfile.grad_year) : "none";
+  const selectedGradYear = demoProfile?.grad_year
+    ? String(demoProfile.grad_year)
+    : "none";
 
-  const selectedPositions = Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids : [];
+  const selectedPositions = Array.isArray(demoProfile?.position_ids)
+    ? demoProfile.position_ids
+    : [];
 
   const togglePosition = (positionId) => {
     const exists = selectedPositions.includes(positionId);
@@ -109,7 +122,8 @@ export default function DemoSetup() {
     navigate(createPageUrl("Discover"));
   };
 
-  if (!loaded) {
+  // ✅ Unified loading guard
+  if (accessLoading || !loaded) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -117,12 +131,16 @@ export default function DemoSetup() {
     );
   }
 
+  // Paid users render nothing while redirecting
+  if (mode === "paid") return null;
+
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-md mx-auto space-y-4">
         <button
           onClick={() => navigate(createPageUrl("Discover"))}
           className="flex items-center gap-2 text-slate-600 hover:text-slate-900"
+          type="button"
         >
           <ArrowLeft className="w-5 h-5" />
           Back to Demo
@@ -135,7 +153,8 @@ export default function DemoSetup() {
             <Badge className="bg-slate-900 text-white">Demo: {demoYear}</Badge>
           </div>
           <p className="text-slate-600 mt-2">
-            These settings are saved locally on this device and used to filter demo camps. No account required.
+            These settings are saved locally on this device and used to filter demo
+            camps. No account required.
           </p>
         </div>
 
@@ -152,7 +171,9 @@ export default function DemoSetup() {
             <div className="text-sm font-semibold text-slate-700 mb-2">Sport</div>
             <Select
               value={selectedSportId}
-              onValueChange={(v) => updateDemoProfile({ sport_id: v === "none" ? null : v })}
+              onValueChange={(v) =>
+                updateDemoProfile({ sport_id: v === "none" ? null : v })
+              }
               disabled={loadingLists}
             >
               <SelectTrigger>
@@ -160,11 +181,15 @@ export default function DemoSetup() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Any sport</SelectItem>
-                {sports.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.sport_name || "Sport"}
-                  </SelectItem>
-                ))}
+                {sports.map((s) => {
+                  const id = String(s.id || s._id || s.uuid || "");
+                  if (!id) return null;
+                  return (
+                    <SelectItem key={id} value={id}>
+                      {s.sport_name || s.name || s.title || "Sport"}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -195,7 +220,9 @@ export default function DemoSetup() {
             <div className="text-sm font-semibold text-slate-700 mb-2">Division</div>
             <Select
               value={selectedDivision}
-              onValueChange={(v) => updateDemoProfile({ division: v === "none" ? null : v })}
+              onValueChange={(v) =>
+                updateDemoProfile({ division: v === "none" ? null : v })
+              }
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select division" />
@@ -234,7 +261,7 @@ export default function DemoSetup() {
             </Select>
           </div>
 
-          {/* Positions (simple toggle chips) */}
+          {/* Positions */}
           <div>
             <div className="text-sm font-semibold text-slate-700 mb-2">Positions</div>
 
@@ -246,20 +273,23 @@ export default function DemoSetup() {
             ) : (
               <div className="flex flex-wrap gap-2">
                 {positions.map((p) => {
-                  const active = selectedPositions.includes(p.id);
+                  const id = String(p.id || p._id || p.uuid || "");
+                  if (!id) return null;
+
+                  const active = selectedPositions.includes(id);
                   return (
                     <button
-                      key={p.id}
+                      key={id}
                       type="button"
-                      onClick={() => togglePosition(p.id)}
+                      onClick={() => togglePosition(id)}
                       className={[
                         "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
                         active
                           ? "bg-slate-900 text-white border-slate-900"
-                          : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-slate-300",
                       ].join(" ")}
                     >
-                      {p.position_code || p.position_name || "POS"}
+                      {p.position_code || p.position_name || p.name || "POS"}
                     </button>
                   );
                 })}
