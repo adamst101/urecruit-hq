@@ -108,6 +108,7 @@ async function fetchEntityMap(entityName, ids) {
   const cleanIds = Array.from(new Set((ids || []).map(normId).filter(Boolean)));
   if (!cleanIds.length) return map;
 
+  // Try "in" filter (may or may not be supported); fallback below covers you.
   let rows = [];
   try {
     rows = await base44.entities[entityName].filter({ id: { in: cleanIds } });
@@ -141,12 +142,8 @@ async function fetchEntityMap(entityName, ids) {
 }
 
 /**
- * NOTE:
- * This function name stays the same to minimize churn, but it now keys off `seasonYear`
- * instead of a hard-coded `demoYear`.
- *
- * If you truly want "demo-only", this page will still show the lock banner, but the
- * data filter uses seasonYear (demo users -> demoYear; paid users -> currentYear).
+ * Demo camp detail:
+ * - Uses the camp's start_date to enforce seasonYear window.
  */
 async function fetchDemoCampDetail({ campId, seasonYear }) {
   if (!campId || !seasonYear) return null;
@@ -154,7 +151,6 @@ async function fetchDemoCampDetail({ campId, seasonYear }) {
   const camp = await fetchOneById("Camp", campId);
   if (!camp) return null;
 
-  // Gate by the selected season year using camp.start_date (string YYYY-MM-DD)
   const start = `${Number(seasonYear)}-01-01`;
   const next = `${Number(seasonYear) + 1}-01-01`;
   const d = camp?.start_date;
@@ -210,7 +206,6 @@ export default function CampDetailDemo() {
   const params = useParams();
   const location = useLocation();
 
-  // ✅ Standard hook usage
   const { isLoading, mode, hasAccess, seasonYear, currentYear, demoYear } =
     useSeasonAccess();
 
@@ -221,24 +216,33 @@ export default function CampDetailDemo() {
 
   const goBackToDiscover = () => navigate(createPageUrl("Discover"));
 
-  // ✅ Prevent identifier collision: alias query loading state
+  /**
+   * ✅ REQUIRED: paid users should never see demo detail
+   */
+  useEffect(() => {
+    if (isLoading) return;
+    if (!campId) return;
+
+    if (mode === "paid") {
+      navigate(createPageUrl(`CampDetail?id=${campId}`), { replace: true });
+    }
+  }, [isLoading, mode, campId, navigate]);
+
   const {
     data: detail,
     isLoading: detailLoading,
     isError,
     error,
   } = useQuery({
-    queryKey: ["campDetail", campId, seasonYear],
-    enabled: !!campId && !!seasonYear && !isLoading,
+    queryKey: ["campDetailDemo", campId, seasonYear],
+    enabled: !!campId && !!seasonYear && !isLoading && mode !== "paid",
     queryFn: () => fetchDemoCampDetail({ campId, seasonYear }),
   });
 
-  // persist last viewed camp id (helps navigation fallback)
   try {
     if (campId) sessionStorage.setItem("last_demo_camp_id", String(campId));
   } catch {}
 
-  // dedupe viewed event per session
   const viewedKey = useMemo(
     () => (campId && seasonYear ? `evt_camp_detail_${seasonYear}_${campId}` : null),
     [campId, seasonYear]
@@ -269,7 +273,6 @@ export default function CampDetailDemo() {
     });
   }, [detail, viewedKey, seasonYear, mode, hasAccess]);
 
-  // ✅ Access/season loading guard first
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -278,7 +281,9 @@ export default function CampDetailDemo() {
     );
   }
 
-  // ✅ Then data loading
+  // If paid, we render nothing while redirecting to CampDetail
+  if (mode === "paid") return null;
+
   if (detailLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -292,14 +297,8 @@ export default function CampDetailDemo() {
       <div className="min-h-screen bg-slate-50 p-6">
         <div className="max-w-md mx-auto bg-white border border-rose-200 rounded-xl p-4 text-rose-700">
           <div className="font-semibold">Failed to load camp</div>
-          <div className="text-xs mt-2 break-words">
-            {String(error?.message || error)}
-          </div>
-          <Button
-            className="w-full mt-4"
-            variant="outline"
-            onClick={goBackToDiscover}
-          >
+          <div className="text-xs mt-2 break-words">{String(error?.message || error)}</div>
+          <Button className="w-full mt-4" variant="outline" onClick={goBackToDiscover}>
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Discover
           </Button>
@@ -339,8 +338,7 @@ export default function CampDetailDemo() {
     );
   }
 
-  const isDemo = mode === "demo";
-
+  // demo only
   return (
     <div className="min-h-screen bg-slate-50 pb-8">
       <div className="bg-white border-b border-slate-200">
@@ -354,16 +352,13 @@ export default function CampDetailDemo() {
             <span>Back</span>
           </button>
 
-          {/* Keep demo banner, but key it correctly */}
-          {isDemo && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 mb-4 flex items-start gap-2">
-              <Lock className="w-4 h-4 mt-0.5" />
-              <div className="text-sm">
-                Demo camp from season <b>{demoYear}</b>. Subscribe to unlock the
-                current season <b>{currentYear}</b>.
-              </div>
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 mb-4 flex items-start gap-2">
+            <Lock className="w-4 h-4 mt-0.5" />
+            <div className="text-sm">
+              Demo camp from season <b>{demoYear}</b>. Subscribe to unlock the current season{" "}
+              <b>{currentYear}</b>.
             </div>
-          )}
+          </div>
 
           <div className="flex items-start gap-4">
             {detail.school_logo_url && (
@@ -379,23 +374,18 @@ export default function CampDetailDemo() {
                   <Badge
                     className={cn(
                       "text-xs",
-                      divisionColors[detail.school_division] ||
-                        "bg-slate-900 text-white"
+                      divisionColors[detail.school_division] || "bg-slate-900 text-white"
                     )}
                   >
                     {detail.school_division}
                   </Badge>
                 )}
                 {detail.sport_name && (
-                  <span className="text-xs text-slate-500 font-medium">
-                    {detail.sport_name}
-                  </span>
+                  <span className="text-xs text-slate-500 font-medium">{detail.sport_name}</span>
                 )}
               </div>
 
-              <h1 className="text-2xl font-bold text-deep-navy">
-                {detail.school_name}
-              </h1>
+              <h1 className="text-2xl font-bold text-deep-navy">{detail.school_name}</h1>
               <p className="text-slate-600">{detail.camp_name}</p>
             </div>
           </div>
@@ -421,9 +411,7 @@ export default function CampDetailDemo() {
           {(detail.city || detail.state) && (
             <div className="bg-white rounded-xl p-4">
               <MapPin className="w-5 h-5 text-slate-400 mb-2" />
-              <p className="text-xs text-slate-500 uppercase tracking-wide">
-                Location
-              </p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Location</p>
               <p className="font-semibold text-slate-900">
                 {[detail.city, detail.state].filter(Boolean).join(", ")}
               </p>
@@ -443,42 +431,36 @@ export default function CampDetailDemo() {
 
         {detail.notes && (
           <div className="bg-white rounded-xl p-4">
-            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
-              About This Camp
-            </p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">About This Camp</p>
             <p className="text-slate-700 leading-relaxed">{detail.notes}</p>
           </div>
         )}
 
         <div className="space-y-3">
-          {isDemo && (
-            <Button
-              className="w-full"
-              onClick={() => {
-                trackEvent({
-                  event_name: "upgrade_intent_clicked",
-                  mode: "demo",
-                  season_year: seasonYear, // ✅ single source of truth
-                  source: "camp_detail_demo",
-                  camp_id: detail.camp_id,
-                  school_id: detail.school_id,
-                  sport_id: detail.sport_id,
-                  positions: (detail.positions || [])
-                    .map((p) => p.position_code)
-                    .filter(Boolean),
-                });
+          <Button
+            className="w-full"
+            onClick={() => {
+              trackEvent({
+                event_name: "upgrade_intent_clicked",
+                mode: "demo",
+                season_year: seasonYear,
+                source: "camp_detail_demo",
+                camp_id: detail.camp_id,
+                school_id: detail.school_id,
+                sport_id: detail.sport_id,
+                positions: (detail.positions || []).map((p) => p.position_code).filter(Boolean),
+              });
 
-                navigate(
-                  createPageUrl("Subscribe") +
-                    `?force=1&source=camp_detail_demo&next=${encodeURIComponent(
-                      createPageUrl("Discover")
-                    )}`
-                );
-              }}
-            >
-              See Plan & Pricing
-            </Button>
-          )}
+              navigate(
+                createPageUrl("Subscribe") +
+                  `?force=1&source=camp_detail_demo&next=${encodeURIComponent(
+                    createPageUrl("Discover")
+                  )}`
+              );
+            }}
+          >
+            See Plan & Pricing
+          </Button>
 
           {detail.link_url && (
             <Button
@@ -487,7 +469,7 @@ export default function CampDetailDemo() {
               onClick={() => {
                 trackEvent({
                   event_name: "demo_registration_site_clicked",
-                  mode: mode || null,
+                  mode: "demo",
                   season_year: seasonYear,
                   source: "camp_detail_demo",
                   camp_id: detail.camp_id,
@@ -498,7 +480,7 @@ export default function CampDetailDemo() {
               }}
             >
               <ExternalLink className="w-4 h-4 mr-2" />
-              View Registration Site {isDemo ? "(Demo)" : ""}
+              View Registration Site (Demo)
             </Button>
           )}
         </div>
