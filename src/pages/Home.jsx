@@ -1,18 +1,20 @@
-// src/pages/Home.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowRight, Lock, LogIn } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
 
+import { Card } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
+
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
 function trackEvent(payload) {
   try {
-    base44.entities.Event.create({
-      ...payload,
-      ts: new Date().toISOString(),
-    });
+    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
   } catch {}
 }
 
@@ -31,47 +33,15 @@ export default function Home() {
   const [sp] = useSearchParams();
   const next = sp.get("next");
 
-  const { loading, mode, accountId, currentYear, demoYear } = useSeasonAccess();
+  const { isLoading, mode, accountId, currentYear, demoYear } = useSeasonAccess();
+  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // Optional: check if user has at least one athlete (for CTA text only)
-  const [hasAthlete, setHasAthlete] = useState(false);
-  const [hasAthleteChecked, setHasAthleteChecked] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-
-    async function run() {
-      setHasAthleteChecked(false);
-
-      if (!accountId) {
-        if (!alive) return;
-        setHasAthlete(false);
-        setHasAthleteChecked(true);
-        return;
-      }
-
-      try {
-        const rows = await base44.entities.Athlete.filter({ account_id: accountId });
-        if (!alive) return;
-        setHasAthlete(Array.isArray(rows) && rows.length > 0);
-      } catch {
-        if (!alive) return;
-        setHasAthlete(false);
-      } finally {
-        if (!alive) return;
-        setHasAthleteChecked(true);
-      }
-    }
-
-    run();
-    return () => {
-      alive = false;
-    };
-  }, [accountId]);
+  const authed = !!accountId;
+  const hasProfile = !!athleteProfile;
 
   // Home viewed (dedupe per session)
   useEffect(() => {
-    if (loading) return;
+    if (isLoading) return;
 
     const key = `evt_home_viewed_${mode}_${currentYear}`;
     try {
@@ -81,237 +51,182 @@ export default function Home() {
 
     trackEvent({
       event_name: "home_viewed",
-      mode: mode,
+      mode: mode || "demo",
       season_year: mode === "paid" ? currentYear : demoYear,
       source: "home",
-      account_id: accountId || null,
-      next: next || null,
+      account_id: accountId || null
     });
-  }, [loading, mode, currentYear, demoYear, accountId, next]);
+  }, [isLoading, mode, currentYear, demoYear, accountId]);
 
-  // ✅ CRITICAL CHANGE:
-  // No auto-redirects from Home.
-  // Home is the intentional landing page: Login / Demo / Subscribe.
+  const loading = isLoading || (authed && identityLoading);
 
-  const rightRailCta = useMemo(() => {
-    if (loading) return { label: "Loading…", action: "noop" };
-
-    if (!accountId) return { label: "Log in", action: "login" };
-
-    if (mode !== "paid") return { label: "Subscribe", action: "subscribe" };
-
-    // Paid:
-    // If athlete check hasn't completed yet, keep label stable.
-    if (!hasAthleteChecked) return { label: "Go to app", action: "discover" };
-
-    // If paid but no athlete, nudge Profile first.
-    if (!hasAthlete) return { label: "Set up athlete profile", action: "profile" };
-
-    return { label: "Go to app", action: "discover" };
-  }, [loading, accountId, mode, hasAthlete, hasAthleteChecked]);
+  const subtitle = useMemo(() => {
+    if (loading) return "Loading…";
+    if (!authed) return `Demo: Prior Season (${demoYear}) • Unlock Current Season (${currentYear})`;
+    if (mode === "paid") return `Unlocked: Current Season (${currentYear})`;
+    return `Demo: Prior Season (${demoYear}) • Unlock Current Season (${currentYear})`;
+  }, [loading, authed, mode, currentYear, demoYear]);
 
   async function handleLogin() {
     trackEvent({
       event_name: "home_login_clicked",
-      mode: mode,
+      mode: mode || "demo",
       season_year: mode === "paid" ? currentYear : demoYear,
-      source: "home",
-      next: next || null,
+      source: "home"
     });
 
     const ok = await safeSignIn();
 
-    // After sign-in, route to next if provided; else go to Profile (activation funnel).
     if (ok) {
-      nav(next ? next : createPageUrl("Profile"), { replace: true });
+      // After login:
+      // - If they have paid access, Profile gating will be enforced if missing.
+      // - If next exists, respect it.
+      nav(next ? next : createPageUrl("Discover"), { replace: true });
       return;
     }
 
     nav(createPageUrl("Home"), { replace: true });
   }
 
-  function handleSubscribe() {
-    trackEvent({
-      event_name: "home_subscribe_clicked",
-      mode: mode === "paid" ? "paid" : "demo",
-      season_year: currentYear, // year being sold
-      source: "home",
-      account_id: accountId || null,
-      next: next || null,
-    });
-
-    // Carry next forward if it exists
-    const url =
-      createPageUrl("Subscribe") + (next ? `?next=${encodeURIComponent(next)}` : "");
-    nav(url);
-  }
-
-  function handleDemo() {
+  function goDemo() {
     trackEvent({
       event_name: "home_demo_clicked",
       mode: "demo",
       season_year: demoYear,
-      source: "home",
-      next: next || null,
+      source: "home"
     });
     nav(createPageUrl("Discover"));
   }
 
-  function handleRightRailPrimary() {
-    if (rightRailCta.action === "noop") return;
+  function goSubscribe() {
+    trackEvent({
+      event_name: "home_subscribe_clicked",
+      mode: mode === "paid" ? "paid" : "demo",
+      season_year: currentYear,
+      source: "home"
+    });
+    nav(createPageUrl("Subscribe"));
+  }
 
-    if (rightRailCta.action === "login") return handleLogin();
-    if (rightRailCta.action === "subscribe") return handleSubscribe();
-
-    if (rightRailCta.action === "profile") {
+  function primaryContinue() {
+    // Paid user without profile should be pushed to Profile.
+    // Paid user with profile goes Discover.
+    if (mode === "paid" && !hasProfile) {
       trackEvent({
-        event_name: "home_profile_clicked",
+        event_name: "home_continue_to_profile_clicked",
         mode: "paid",
         season_year: currentYear,
-        source: "home",
-        account_id: accountId || null,
+        source: "home"
       });
-      return nav(createPageUrl("Profile"));
+      nav(createPageUrl("Profile"));
+      return;
     }
 
-    if (rightRailCta.action === "discover") {
-      trackEvent({
-        event_name: "home_go_to_discover_clicked",
-        mode: mode === "paid" ? "paid" : "demo",
-        season_year: mode === "paid" ? currentYear : demoYear,
-        source: "home",
-        account_id: accountId || null,
-      });
-      return nav(createPageUrl("Discover"));
-    }
+    trackEvent({
+      event_name: "home_continue_clicked",
+      mode: mode || "demo",
+      season_year: mode === "paid" ? currentYear : demoYear,
+      source: "home"
+    });
+    nav(createPageUrl("Discover"));
   }
 
   return (
-    <div style={{ padding: 28, maxWidth: 980, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 28, fontWeight: 800 }}>RecruitMe</div>
-          <div style={{ marginTop: 6, opacity: 0.8 }}>
-            Plan and prioritize college sports camps across your target schools.
+    <div className="min-h-screen bg-slate-50 p-6">
+      <div className="max-w-3xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-3xl font-extrabold text-deep-navy">RecruitMe</div>
+            <div className="text-slate-600 mt-1">
+              Plan and prioritize college sports camps across your target schools.
+            </div>
+            <div className="mt-2">
+              <Badge className={mode === "paid" ? "bg-emerald-700 text-white" : "bg-slate-900 text-white"}>
+                {mode === "paid" ? `Unlocked: ${currentYear}` : `Demo: ${demoYear}`}
+              </Badge>
+              <div className="text-xs text-slate-500 mt-2">{subtitle}</div>
+            </div>
           </div>
-          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>
-            {mode === "paid"
-              ? `Unlocked: Current Season (${currentYear})`
-              : `Demo: Prior Season (${demoYear}) • Unlock Current Season (${currentYear})`}
-          </div>
-        </div>
 
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={handleDemo}
-            style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
-            type="button"
-          >
-            View demo
-          </button>
-
-          <button
-            onClick={handleSubscribe}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #111",
-              background: "#111",
-              color: "#fff",
-            }}
-            type="button"
-          >
-            Subscribe
-          </button>
-
-          <button
-            onClick={handleLogin}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: "#fff",
-            }}
-            type="button"
-          >
-            Log in
-          </button>
-        </div>
-      </div>
-
-      <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 18 }}>
-        <div style={{ border: "1px solid #eee", borderRadius: 14, padding: 18 }}>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>What you get</div>
-          <ul style={{ marginTop: 10, lineHeight: 1.7 }}>
-            <li>Discover camps tied to target schools (not generic lists)</li>
-            <li>Calendar overlays to spot conflicts early</li>
-            <li>Favorites + registration tracking</li>
-            <li>Multiple athletes under one account</li>
-          </ul>
-
-          <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              onClick={handleRightRailPrimary}
-              disabled={rightRailCta.action === "noop"}
-              style={{
-                padding: "12px 14px",
-                borderRadius: 10,
-                border: "1px solid #111",
-                background: "#111",
-                color: "#fff",
-                fontWeight: 700,
-                opacity: rightRailCta.action === "noop" ? 0.7 : 1,
-              }}
-              type="button"
-            >
-              {rightRailCta.label}
-            </button>
-
-            <button
-              onClick={handleSubscribe}
-              style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
-              type="button"
-            >
-              See pricing
-            </button>
+          {/* Top actions (no duplicates) */}
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={goDemo}>
+              View demo
+            </Button>
+            <Button onClick={goSubscribe}>Subscribe</Button>
+            {!authed ? (
+              <Button variant="outline" onClick={handleLogin}>
+                <LogIn className="w-4 h-4 mr-2" />
+                Log in
+              </Button>
+            ) : null}
           </div>
         </div>
 
-        <div style={{ border: "1px solid #eee", borderRadius: 14, padding: 18 }}>
-          <div style={{ fontSize: 16, fontWeight: 800 }}>Already subscribed?</div>
-          <div style={{ marginTop: 8, opacity: 0.8 }}>Log in and manage your athletes.</div>
+        {/* Main content */}
+        <div className="grid md:grid-cols-2 gap-4">
+          <Card className="p-5 space-y-3">
+            <div className="text-lg font-bold text-deep-navy">What you get</div>
+            <ul className="text-slate-600 text-sm space-y-1 list-disc list-inside">
+              <li>Discover camps tied to target schools (not generic lists)</li>
+              <li>Calendar overlays to spot conflicts early</li>
+              <li>Favorites + registration tracking</li>
+              <li>Multiple athletes under one account</li>
+            </ul>
 
-          <button
-            onClick={handleLogin}
-            style={{
-              marginTop: 12,
-              width: "100%",
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: "#fff",
-            }}
-            type="button"
-          >
-            Log in
-          </button>
+            <div className="pt-2 flex gap-2">
+              <Button onClick={primaryContinue} disabled={loading}>
+                Continue
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+              <Button variant="outline" onClick={goSubscribe}>
+                See pricing
+              </Button>
+            </div>
 
-          {accountId && (
-            <button
-              onClick={() => nav(createPageUrl("Profile"))}
-              style={{
-                marginTop: 10,
-                width: "100%",
-                padding: "12px 14px",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                background: "#fff",
-              }}
-              type="button"
-            >
-              Manage athletes
-            </button>
-          )}
+            {mode === "paid" && authed && !hasProfile && (
+              <div className="mt-2 text-xs text-amber-700 flex items-start gap-2">
+                <Lock className="w-4 h-4 mt-0.5" />
+                <div>
+                  Athlete setup is required before using paid features. You’ll be prompted automatically.
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-5 space-y-3">
+            <div className="text-lg font-bold text-deep-navy">Fast paths</div>
+            <div className="text-sm text-slate-600">
+              Choose one:
+            </div>
+
+            <div className="space-y-2">
+              <Button variant="outline" className="w-full" onClick={goDemo}>
+                Browse demo camps ({demoYear})
+              </Button>
+
+              <Button className="w-full" onClick={goSubscribe}>
+                Unlock current season ({currentYear})
+              </Button>
+
+              {!authed && (
+                <Button variant="outline" className="w-full" onClick={handleLogin}>
+                  Log in
+                </Button>
+              )}
+
+              {authed && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => nav(createPageUrl("Profile"))}
+                >
+                  Manage athlete profile
+                </Button>
+              )}
+            </div>
+          </Card>
         </div>
       </div>
     </div>
