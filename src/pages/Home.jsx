@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import base44 from "../base44"; // adjust
-import { createPageUrl } from "../utils/createPageUrl";
+import { base44 } from "../api/base44Client";
+import { createPageUrl } from "../utils";
 import { useIdentity } from "../components/auth/useIdentity";
 
 export default function Home() {
