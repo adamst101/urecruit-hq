@@ -1,9 +1,9 @@
+// src/pages/MyCamps.jsx
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Lock } from "lucide-react";
 
 import { createPageUrl } from "../utils";
-import { cn } from "../lib/utils";
 
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -19,29 +19,32 @@ import { useCampSummariesClient } from "../components/hooks/useCampSummariesClie
  * Paid-only page.
  *
  * Guard rules:
- * - If demo/unpaid → redirect to Onboarding
+ * - If demo/unpaid → redirect to Onboarding (or Subscribe; see note below)
  * - If paid but identity still loading → show loader
- * - If paid + no profile → redirect to Onboarding
+ * - If paid + no athlete profile → redirect to Onboarding
  */
 export default function MyCamps() {
   const navigate = useNavigate();
 
-  const { mode, loading: accessLoading } = useSeasonAccess();
-  const {
-    athleteProfile,
-    isLoading: identityLoading,
-    isError: identityError
-  } = useAthleteIdentity();
+  // ✅ Standard hook usage
+  const { isLoading: accessLoading, mode, seasonYear, currentYear, demoYear, accountId } = useSeasonAccess();
+
+  const { athleteProfile, isLoading: identityLoading, isError: identityError, error: identityErrorObj } =
+    useAthleteIdentity();
 
   /**
    * 🚫 DEMO / UNPAID GUARD
    * This is a hard stop. Demo users do not belong here.
+   *
+   * IMPORTANT:
+   * If you want "marketing paywall" behavior, route to Subscribe instead of Onboarding.
+   * Right now, Onboarding is more consistent with your "sign up required" flow.
    */
   useEffect(() => {
     if (accessLoading || identityLoading) return;
 
     if (mode !== "paid") {
-      navigate(createPageUrl("Onboarding"));
+      navigate(createPageUrl("Onboarding"), { replace: true });
     }
   }, [mode, accessLoading, identityLoading, navigate]);
 
@@ -51,9 +54,10 @@ export default function MyCamps() {
    */
   useEffect(() => {
     if (accessLoading || identityLoading) return;
+    if (mode !== "paid") return;
 
-    if (mode === "paid" && !athleteProfile) {
-      navigate(createPageUrl("Onboarding"));
+    if (!athleteProfile) {
+      navigate(createPageUrl("Onboarding"), { replace: true });
     }
   }, [mode, athleteProfile, accessLoading, identityLoading, navigate]);
 
@@ -72,6 +76,9 @@ export default function MyCamps() {
       <div className="min-h-screen bg-slate-50 p-4">
         <Card className="max-w-md mx-auto p-4 border-rose-200 bg-rose-50 text-rose-700">
           <div className="font-semibold">Failed to load athlete profile</div>
+          <div className="text-xs mt-2 break-words">
+            {String(identityErrorObj?.message || identityErrorObj)}
+          </div>
           <div className="text-sm mt-2">
             Please try again or return to onboarding.
           </div>
@@ -86,9 +93,7 @@ export default function MyCamps() {
   }
 
   // If we somehow got here unpaid, render nothing (navigation effect will fire)
-  if (mode !== "paid" || !athleteProfile) {
-    return null;
-  }
+  if (mode !== "paid" || !athleteProfile) return null;
 
   // ✅ SAFE: Paid + Profile exists
   return <MyCampsPaid athleteProfile={athleteProfile} />;
@@ -99,18 +104,15 @@ export default function MyCamps() {
 /* ------------------------------------------------------------------ */
 
 function MyCampsPaid({ athleteProfile }) {
-  const athleteId = athleteProfile.id;
-  const sportId = athleteProfile.sport_id;
+  const navigate = useNavigate();
 
-  const {
-    data: campSummaries = [],
-    isLoading,
-    isError,
-    error
-  } = useCampSummariesClient({
+  const athleteId = athleteProfile?.id;
+  const sportId = athleteProfile?.sport_id;
+
+  const { data: campSummaries = [], isLoading, isError, error } = useCampSummariesClient({
     athleteId,
     sportId,
-    enabled: !!athleteId
+    enabled: !!athleteId,
   });
 
   if (isLoading) {
@@ -126,18 +128,21 @@ function MyCampsPaid({ athleteProfile }) {
       <div className="min-h-screen bg-slate-50 p-4">
         <Card className="max-w-md mx-auto p-4 border-rose-200 bg-rose-50 text-rose-700">
           <div className="font-semibold">Failed to load camps</div>
-          <div className="text-xs mt-2 break-words">
-            {String(error?.message || error)}
+          <div className="text-xs mt-2 break-words">{String(error?.message || error)}</div>
+          <div className="mt-4">
+            <Button className="w-full" variant="outline" onClick={() => navigate(createPageUrl("Discover"))}>
+              Back to Discover
+            </Button>
           </div>
         </Card>
       </div>
     );
   }
 
-  const registered = campSummaries.filter(
+  const registered = (campSummaries || []).filter(
     (c) => c.intent_status === "registered" || c.intent_status === "completed"
   );
-  const favorites = campSummaries.filter((c) => c.intent_status === "favorite");
+  const favorites = (campSummaries || []).filter((c) => c.intent_status === "favorite");
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -205,3 +210,4 @@ function CampRow({ camp }) {
     </Card>
   );
 }
+
