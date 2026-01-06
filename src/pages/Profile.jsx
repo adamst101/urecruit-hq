@@ -1,3 +1,4 @@
+// src/pages/Profile.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2, UserCircle2, ArrowRight, CheckCircle2 } from "lucide-react";
@@ -71,30 +72,42 @@ export default function Profile() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { season, hasAccess, isLoading: accessLoading, mode } = useSeasonAccess();
-
+  // IMPORTANT: include mode so demo can be allowed
+  const {
+    season,
+    hasAccess,
+    isLoading: accessLoading,
+    mode, // "demo" | "paid" (per your Subscribe page)
+    currentYear,
+    demoYear,
+    accountId,
+  } = useSeasonAccess();
 
   const [saving, setSaving] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [profile, setProfile] = useState(null);
 
-  // Profile fields (add others you already have)
+  // Profile fields
   const [sportId, setSportId] = useState(null);
 
-  // For normalization (load sports list once here as well, so we can map legacy values)
+  // For normalization
   const [sports, setSports] = useState([]);
   const [loadingSports, setLoadingSports] = useState(false);
 
   const nextUrl = useMemo(() => {
-    // keep your funnel routing logic; default Discover
     const params = new URLSearchParams(location.search);
     return params.get("next") || createPageUrl("Discover");
   }, [location.search]);
 
-  // Load sports (for normalization + to avoid double-fetching selector? selector fetches too,
-  // but we keep this local to normalize. If you want to avoid double calls, you can pass
-  // sports into SportSelector later; keeping simplest drop-in here.)
+  // ✅ Demo users MUST be able to set sport; don't block Profile.
+  // Only block if you explicitly want to prevent profile edits for paid-only reasons.
+  const ready = !accessLoading && !loadingProfile;
+  const isDemo = mode === "demo";
+  const canEditProfile = true; // allow both demo + paid
+  const showPaywall = false; // never show subscription required on Profile
+
+  // Load sports for normalization + selector
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -121,9 +134,7 @@ export default function Profile() {
     (async () => {
       setLoadingProfile(true);
       try {
-        // Assumption: you have AthleteProfile entity or function.
-        // Use whichever you already stabilized in the funnel.
-        // If your app uses base44.functions.getAthleteProfile(), swap it in here.
+        // If you use base44.functions.getAthleteProfile() in your app, swap it in here.
         const me = await base44.entities.AthleteProfile?.get?.("me");
         const p = me || null;
 
@@ -133,14 +144,16 @@ export default function Profile() {
 
         const rawSportId = p?.sport_id ? String(p.sport_id) : null;
 
-        // If sports list is loaded, normalize legacy free-text -> sport entity id
         const normalized = normalizeSportIdMaybe(rawSportId, sports);
         setSportId(normalized || rawSportId || null);
 
         trackEvent({
-          name: "profile_loaded",
-          season: season || null,
+          event_name: "profile_loaded",
+          mode: mode || null,
+          season_year: currentYear || null,
+          demo_year: demoYear || null,
           sport_id: normalized || rawSportId || null,
+          account_id: accountId || null,
         });
       } catch (e) {
         if (mounted) setProfile(null);
@@ -152,48 +165,55 @@ export default function Profile() {
     return () => {
       mounted = false;
     };
-    // IMPORTANT: re-run when sports arrives so we can normalize if profile loaded first
-  }, [season, sports]);
-
-  const ready = !accessLoading && !loadingProfile;
-  const blocked = ready && !hasAccess;
+  }, [sports, mode, currentYear, demoYear, accountId]);
 
   async function onSave() {
-    if (blocked) return;
+    if (!canEditProfile) return;
 
-    // hard requirement now: sportId must be an actual Sport id
     if (!sportId) {
-      trackEvent({ name: "profile_save_blocked_missing_sport", season: season || null });
+      trackEvent({
+        event_name: "profile_save_blocked_missing_sport",
+        mode: mode || null,
+        season_year: currentYear || null,
+        demo_year: demoYear || null,
+        account_id: accountId || null,
+      });
       return;
     }
 
     setSaving(true);
     try {
-      // Update profile (adjust to your real entity keying)
       const payload = {
         ...(profile || {}),
         sport_id: String(sportId),
       };
 
-      // If your SDK uses update by id, do that. If it uses "me", keep it.
       const updated =
-        (await base44.entities.AthleteProfile?.update?.(normId(profile) || "me", payload)) ||
-        (await base44.entities.AthleteProfile?.upsert?.(payload));
+        (await base44.entities.AthleteProfile?.update?.(
+          normId(profile) || "me",
+          payload
+        )) || (await base44.entities.AthleteProfile?.upsert?.(payload));
 
       setProfile(updated || payload);
 
       trackEvent({
-        name: "profile_saved",
-        season: season || null,
+        event_name: "profile_saved",
+        mode: mode || null,
+        season_year: currentYear || null,
+        demo_year: demoYear || null,
         sport_id: String(sportId),
+        account_id: accountId || null,
       });
 
       navigate(nextUrl);
     } catch (e) {
       trackEvent({
-        name: "profile_save_failed",
-        season: season || null,
+        event_name: "profile_save_failed",
+        mode: mode || null,
+        season_year: currentYear || null,
+        demo_year: demoYear || null,
         sport_id: sportId || null,
+        account_id: accountId || null,
         error: String(e?.message || e),
       });
     } finally {
@@ -215,8 +235,8 @@ export default function Profile() {
     );
   }
 
-  // Access blocked
-  if (blocked) {
+  // (Optional) Paywall section disabled; leaving hook for future
+  if (showPaywall && !hasAccess && !isDemo) {
     return (
       <div className="mx-auto max-w-xl p-6">
         <Card className="p-6 space-y-3">
@@ -227,7 +247,14 @@ export default function Profile() {
           <div className="text-sm opacity-80">
             Your current season access doesn’t allow updates to your RecruitMe profile.
           </div>
-          <Button onClick={() => navigate(createPageUrl("Subscribe"))}>
+          <Button
+            onClick={() =>
+              navigate(
+                createPageUrl("Subscribe") +
+                  `?force=1&next=${encodeURIComponent(createPageUrl("Profile"))}`
+              )
+            }
+          >
             Go to Subscribe
           </Button>
         </Card>
@@ -236,22 +263,29 @@ export default function Profile() {
   }
 
   const sportMissing = !sportId;
-  const disableSave = saving || loadingSports || sportMissing;
+  const disableSave = !canEditProfile || saving || loadingSports || sportMissing;
 
   return (
     <div className="mx-auto max-w-xl p-6 space-y-4">
       <Card className="p-6 space-y-4">
         <div className="flex items-center gap-3">
           <UserCircle2 className="h-6 w-6" />
-          <div>
+          <div className="flex-1">
             <div className="text-lg font-semibold">Your Profile</div>
             <div className="text-sm opacity-70">
               Select your sport to personalize camps and discovery.
             </div>
           </div>
+
+          {/* small mode pill for debugging/clarity */}
+          {mode ? (
+            <Badge variant="secondary">
+              {mode === "paid" ? `Paid ${currentYear || ""}` : `Demo ${demoYear || ""}`}
+            </Badge>
+          ) : null}
         </div>
 
-        {/* Sport Selector (replaces free-text sport_id) */}
+        {/* Sport Selector */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="text-sm font-medium">Sport</div>
@@ -270,16 +304,19 @@ export default function Profile() {
             onChange={(id) => {
               setSportId(id);
               trackEvent({
-                name: "profile_sport_selected",
-                season: season || null,
+                event_name: "profile_sport_selected",
+                mode: mode || null,
+                season_year: currentYear || null,
+                demo_year: demoYear || null,
                 sport_id: id || null,
+                account_id: accountId || null,
               });
             }}
             disabled={saving}
           />
 
           <div className="text-xs opacity-70">
-            This will be used to filter camps and prevent “no camps found” mismatches.
+            This prevents “no camps found” due to sport mismatches.
           </div>
         </div>
 
@@ -300,11 +337,10 @@ export default function Profile() {
         </div>
 
         {sportMissing && (
-          <div className="text-xs text-red-600">
-            Select a sport to continue.
-          </div>
+          <div className="text-xs text-red-600">Select a sport to continue.</div>
         )}
       </Card>
     </div>
   );
 }
+
