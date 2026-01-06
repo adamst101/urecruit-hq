@@ -15,14 +15,16 @@ function trackEvent(payload) {
   try {
     base44.entities.Event.create({
       ...payload,
-      ts: new Date().toISOString()
+      ts: new Date().toISOString(),
     });
   } catch {}
 }
 
 export default function Checkout() {
   const navigate = useNavigate();
-  const { loading, mode, accountId, currentYear } = useSeasonAccess();
+
+  // ✅ Standard hook usage (fixes old `loading:` contract)
+  const { isLoading, mode, accountId, currentYear } = useSeasonAccess();
 
   const [working, setWorking] = useState(false);
   const [err, setErr] = useState("");
@@ -38,17 +40,17 @@ export default function Checkout() {
      Guardrail: paid users should NEVER see Checkout
   ------------------------------------------------------- */
   useEffect(() => {
-    if (loading) return;
+    if (isLoading) return;
     if (mode === "paid") {
       navigate(discoverTarget, { replace: true });
     }
-  }, [loading, mode, discoverTarget, navigate]);
+  }, [isLoading, mode, discoverTarget, navigate]);
 
   /* -------------------------------------------------------
      Track checkout_viewed (demo users only, deduped)
   ------------------------------------------------------- */
   useEffect(() => {
-    if (loading) return;
+    if (isLoading) return;
     if (mode === "paid") return;
 
     const key = `evt_checkout_viewed_${currentYear}`;
@@ -62,9 +64,9 @@ export default function Checkout() {
       mode: "demo",
       season_year: currentYear,
       source: "checkout_page",
-      account_id: accountId || null
+      account_id: accountId || null,
     });
-  }, [loading, mode, currentYear, accountId]);
+  }, [isLoading, mode, currentYear, accountId]);
 
   /* -------------------------------------------------------
      Purchase handler (test-mode entitlement)
@@ -85,7 +87,7 @@ export default function Checkout() {
         existing = await base44.entities.Entitlement.filter({
           account_id: accountId,
           season_year: currentYear,
-          status: "active"
+          status: "active",
         });
       } catch {
         existing = [];
@@ -98,7 +100,7 @@ export default function Checkout() {
           season_year: currentYear,
           status: "active",
           plan: "season",
-          source: "checkout_test"
+          source: "checkout_test",
         });
       }
 
@@ -108,22 +110,27 @@ export default function Checkout() {
         mode: "paid",
         season_year: currentYear,
         source: "checkout_page",
-        account_id: accountId
+        account_id: accountId,
       });
 
       // 4) Activate → Profile (athlete creation / selection)
+      //    NOTE: after entitlement create, useSeasonAccess will flip to paid.
+      //    We still route to Profile directly to continue funnel.
       navigate(profileTarget, {
-        state: { postPurchase: true, season_year: currentYear }
+        state: { postPurchase: true, season_year: currentYear },
+        replace: true,
       });
     } catch (e) {
-      setErr(String(e?.message || e));
+      const msg = String(e?.message || e);
+      setErr(msg);
 
       trackEvent({
         event_name: "purchase_failed",
         mode: "demo",
         season_year: currentYear,
         source: "checkout_page",
-        account_id: accountId || null
+        account_id: accountId || null,
+        error: msg,
       });
     } finally {
       setWorking(false);
@@ -131,7 +138,7 @@ export default function Checkout() {
   };
 
   // While redirecting paid users or loading, render nothing (prevents flicker)
-  if (loading) return null;
+  if (isLoading) return null;
   if (mode === "paid") return null;
 
   return (
@@ -145,7 +152,7 @@ export default function Checkout() {
               mode: "demo",
               season_year: currentYear,
               source: "checkout_page",
-              account_id: accountId || null
+              account_id: accountId || null,
             });
             navigate(backTarget);
           }}
@@ -176,7 +183,7 @@ export default function Checkout() {
                   event_name: "checkout_signin_required_clicked",
                   mode: "demo",
                   season_year: currentYear,
-                  source: "checkout_page"
+                  source: "checkout_page",
                 });
                 navigate(homeTarget);
               }}
@@ -197,11 +204,7 @@ export default function Checkout() {
                 </div>
 
                 <div className="mt-4 space-y-2">
-                  <Button
-                    className="w-full"
-                    onClick={handleCompletePurchase}
-                    disabled={working}
-                  >
+                  <Button className="w-full" onClick={handleCompletePurchase} disabled={working}>
                     {working ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -215,7 +218,6 @@ export default function Checkout() {
                     )}
                   </Button>
 
-                  {/* No demo escape hatch from checkout */}
                   <Button
                     variant="outline"
                     className="w-full"
@@ -225,10 +227,11 @@ export default function Checkout() {
                         mode: "demo",
                         season_year: currentYear,
                         source: "checkout_page",
-                        account_id: accountId || null
+                        account_id: accountId || null,
                       });
                       navigate(backTarget);
                     }}
+                    disabled={working}
                   >
                     Back to Pricing
                   </Button>
@@ -251,3 +254,4 @@ export default function Checkout() {
     </div>
   );
 }
+
