@@ -1,5 +1,5 @@
 // src/pages/Profile.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2, UserCircle2, ArrowRight, CheckCircle2 } from "lucide-react";
 
@@ -27,7 +27,7 @@ function normId(x) {
 export default function Profile() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { mode, accountId, currentYear, demoYear } = useSeasonAccess();
+  const { loading: accessLoading, mode, accountId, currentYear, demoYear } = useSeasonAccess();
 
   const postPurchase = !!location?.state?.postPurchase;
   const isAuthed = !!accountId;
@@ -41,14 +41,36 @@ export default function Profile() {
   const [newSportId, setNewSportId] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const seasonYearForMode = mode === "paid" ? currentYear : demoYear;
+
   const badge = useMemo(() => {
     if (!isAuthed) return <Badge className="bg-slate-900 text-white">Demo {demoYear}</Badge>;
     if (mode === "paid") return <Badge className="bg-emerald-600 text-white">Paid {currentYear}</Badge>;
     return <Badge className="bg-amber-500 text-white">Unpaid</Badge>;
   }, [isAuthed, mode, currentYear, demoYear]);
 
+  // Track profile_viewed once per session (after access resolves)
+  useEffect(() => {
+    if (accessLoading) return;
+
+    const key = `evt_profile_viewed_${mode}_${currentYear}`;
+    try {
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+
+    trackEvent({
+      event_name: "profile_viewed",
+      mode: mode,
+      season_year: seasonYearForMode,
+      source: "profile_page",
+      account_id: accountId || null
+    });
+  }, [accessLoading, mode, currentYear, seasonYearForMode, accountId]);
+
   useEffect(() => {
     let mounted = true;
+
     const load = async () => {
       setErr("");
       setLoading(true);
@@ -92,6 +114,30 @@ export default function Profile() {
     };
   }, [accountId, isAuthed]);
 
+  // Post-purchase: if they already have athletes, auto-continue (no extra click)
+  const autoAdvancedRef = useRef(false);
+  useEffect(() => {
+    if (autoAdvancedRef.current) return;
+    if (!postPurchase) return;
+    if (mode !== "paid") return;
+    if (!isAuthed) return;
+    if (loading) return;
+
+    if (athletes.length > 0) {
+      autoAdvancedRef.current = true;
+
+      trackEvent({
+        event_name: "post_purchase_activation_skipped",
+        mode: "paid",
+        season_year: currentYear,
+        source: "profile_page",
+        account_id: accountId
+      });
+
+      navigate(createPageUrl("Discover"), { replace: true });
+    }
+  }, [postPurchase, mode, isAuthed, loading, athletes.length, currentYear, accountId, navigate]);
+
   const enforceCreateAthlete = postPurchase && mode === "paid" && isAuthed && athletes.length === 0;
 
   const setActive = async (athleteId) => {
@@ -101,7 +147,14 @@ export default function Profile() {
     setActiveAthleteId(id);
     try {
       await base44.entities.Account.update(accountId, { active_athlete_id: id });
-      trackEvent({ event_name: "active_athlete_set", mode: "paid", season_year: currentYear });
+      trackEvent({
+        event_name: "active_athlete_set",
+        mode: mode,
+        season_year: seasonYearForMode,
+        source: "profile_page",
+        account_id: accountId,
+        athlete_id: id
+      });
     } catch {}
   };
 
@@ -111,6 +164,7 @@ export default function Profile() {
 
     setSaving(true);
     setErr("");
+
     try {
       const created = await base44.entities.Athlete.create({
         account_id: accountId,
@@ -120,8 +174,8 @@ export default function Profile() {
 
       const createdId = normId(created) || normId(created?.id);
 
-      const next = [created, ...athletes].filter(Boolean);
-      setAthletes(next);
+      const nextList = [created, ...athletes].filter(Boolean);
+      setAthletes(nextList);
 
       if (createdId) {
         await setActive(createdId);
@@ -130,11 +184,18 @@ export default function Profile() {
       setNewName("");
       setNewSportId("");
 
-      trackEvent({ event_name: "athlete_created", mode: "paid", season_year: currentYear });
+      trackEvent({
+        event_name: "athlete_created",
+        mode: mode,
+        season_year: seasonYearForMode,
+        source: "profile_page",
+        account_id: accountId,
+        athlete_id: createdId || null
+      });
 
-      // If coming from purchase, continue to Discover once at least one athlete exists
+      // Post-purchase: continue immediately once at least one athlete exists
       if (postPurchase) {
-        navigate(createPageUrl("Discover"));
+        navigate(createPageUrl("Discover"), { replace: true });
       }
     } catch (e) {
       setErr(String(e?.message || e));
@@ -143,7 +204,7 @@ export default function Profile() {
     }
   };
 
-  if (loading) {
+  if (accessLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -164,7 +225,18 @@ export default function Profile() {
           </div>
 
           <Card className="p-4">
-            <Button className="w-full" onClick={() => navigate(createPageUrl("Home"))}>
+            <Button
+              className="w-full"
+              onClick={() => {
+                trackEvent({
+                  event_name: "profile_signin_required_clicked",
+                  mode: "demo",
+                  season_year: demoYear,
+                  source: "profile_page"
+                });
+                navigate(createPageUrl("Home"));
+              }}
+            >
               Go to Home
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
@@ -274,7 +346,20 @@ export default function Profile() {
 
         {/* Continue */}
         {!enforceCreateAthlete && (
-          <Button className="w-full" onClick={() => navigate(createPageUrl("Discover"))}>
+          <Button
+            className="w-full"
+            onClick={() => {
+              trackEvent({
+                event_name: "profile_continue_clicked",
+                mode: mode,
+                season_year: seasonYearForMode,
+                source: "profile_page",
+                account_id: accountId || null,
+                athlete_id: activeAthleteId || null
+              });
+              navigate(createPageUrl("Discover"));
+            }}
+          >
             Continue to Discover
             <ArrowRight className="w-4 h-4 ml-2" />
           </Button>
