@@ -14,7 +14,7 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode";
-import { routeToWorkspace } from "../utils/routeToWorkspace";
+import { routeToWorkspace } from "../components/hooks/routeToWorkspace";
 
 function trackEvent(payload) {
   try {
