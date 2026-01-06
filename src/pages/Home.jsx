@@ -1,3 +1,4 @@
+// src/pages/Home.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -10,7 +11,7 @@ function trackEvent(payload) {
   try {
     base44.entities.Event.create({
       ...payload,
-      ts: new Date().toISOString()
+      ts: new Date().toISOString(),
     });
   } catch {}
 }
@@ -30,10 +31,12 @@ export default function Home() {
   const [sp] = useSearchParams();
   const next = sp.get("next");
 
-  const { loading, mode, accountId, currentYear, demoYear } = useSeasonAccess();
+  // ✅ Standard hook usage
+  const { isLoading, mode, seasonYear, currentYear, demoYear, accountId } = useSeasonAccess();
 
   // Optional: check if user has at least one athlete (for CTA text only)
   const [hasAthlete, setHasAthlete] = useState(false);
+
   useEffect(() => {
     let alive = true;
 
@@ -62,9 +65,9 @@ export default function Home() {
 
   // Home viewed (dedupe per session)
   useEffect(() => {
-    if (loading) return;
+    if (isLoading) return;
 
-    const key = `evt_home_viewed_${mode}_${currentYear}`;
+    const key = `evt_home_viewed_${mode}_${seasonYear}`;
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -73,14 +76,15 @@ export default function Home() {
     trackEvent({
       event_name: "home_viewed",
       mode: mode,
-      season_year: mode === "paid" ? currentYear : demoYear,
-      source: "home"
+      season_year: seasonYear, // ✅ single source of truth
+      source: "home",
+      account_id: accountId || null,
     });
-  }, [loading, mode, currentYear, demoYear]);
+  }, [isLoading, mode, seasonYear, accountId]);
 
   // Guardrail: paid users should not hang out on marketing entry once known
   useEffect(() => {
-    if (loading) return;
+    if (isLoading) return;
     if (mode !== "paid") return;
 
     // If they explicitly came with a next param, respect it.
@@ -88,11 +92,11 @@ export default function Home() {
 
     // Paid users go straight to Discover/MyCamps experience
     nav(createPageUrl("Discover"), { replace: true });
-  }, [loading, mode, next, nav]);
+  }, [isLoading, mode, next, nav]);
 
   const primaryCta = useMemo(() => {
     // If we haven't resolved access yet, keep label stable
-    if (loading) return { label: "Loading…", action: "noop" };
+    if (isLoading) return { label: "Loading…", action: "noop" };
 
     // Not signed in: prompt login
     if (!accountId) return { label: "Log in", action: "login" };
@@ -100,24 +104,24 @@ export default function Home() {
     // Signed in but not paid: go to Subscribe
     if (mode !== "paid") return { label: "Subscribe", action: "subscribe" };
 
-    // Paid: if no athlete yet, prompt profile creation; else go to Discover/MyCamps
+    // Paid: if no athlete yet, prompt profile creation; else go to Discover
     if (!hasAthlete) return { label: "Create athlete profile", action: "profile" };
 
     return { label: "Go to Discover", action: "discover" };
-  }, [loading, accountId, mode, hasAthlete]);
+  }, [isLoading, accountId, mode, hasAthlete]);
 
   async function handleLogin() {
     trackEvent({
       event_name: "home_login_clicked",
       mode: mode,
-      season_year: mode === "paid" ? currentYear : demoYear,
-      source: "home"
+      season_year: seasonYear,
+      source: "home",
+      account_id: accountId || null,
     });
 
     const ok = await safeSignIn();
 
     // After sign-in, route to next if provided; otherwise go to Profile (activation)
-    // Profile can route onward if athlete exists.
     if (ok) {
       nav(next ? next : createPageUrl("Profile"), { replace: true });
       return;
@@ -136,8 +140,9 @@ export default function Home() {
       trackEvent({
         event_name: "home_subscribe_clicked",
         mode: "demo",
-        season_year: currentYear, // year being sold
-        source: "home"
+        season_year: currentYear, // ✅ year being sold
+        source: "home",
+        account_id: accountId || null,
       });
       return nav(createPageUrl("Subscribe"));
     }
@@ -147,7 +152,8 @@ export default function Home() {
         event_name: "home_profile_clicked",
         mode: "paid",
         season_year: currentYear,
-        source: "home"
+        source: "home",
+        account_id: accountId || null,
       });
       return nav(createPageUrl("Profile"));
     }
@@ -157,7 +163,8 @@ export default function Home() {
         event_name: "home_go_to_discover_clicked",
         mode: "paid",
         season_year: currentYear,
-        source: "home"
+        source: "home",
+        account_id: accountId || null,
       });
       return nav(createPageUrl("Discover"));
     }
@@ -185,7 +192,7 @@ export default function Home() {
                 event_name: "home_demo_clicked",
                 mode: "demo",
                 season_year: demoYear,
-                source: "home"
+                source: "home",
               });
               nav(createPageUrl("Discover"));
             }}
@@ -200,7 +207,8 @@ export default function Home() {
                 event_name: "home_subscribe_clicked",
                 mode: mode === "paid" ? "paid" : "demo",
                 season_year: currentYear,
-                source: "home"
+                source: "home",
+                account_id: accountId || null,
               });
               nav(createPageUrl("Subscribe"));
             }}
@@ -209,7 +217,7 @@ export default function Home() {
               borderRadius: 10,
               border: "1px solid #111",
               background: "#111",
-              color: "#fff"
+              color: "#fff",
             }}
           >
             Subscribe
@@ -237,7 +245,7 @@ export default function Home() {
                 background: "#111",
                 color: "#fff",
                 fontWeight: 700,
-                opacity: primaryCta.action === "noop" ? 0.7 : 1
+                opacity: primaryCta.action === "noop" ? 0.7 : 1,
               }}
             >
               {primaryCta.label}
@@ -248,8 +256,9 @@ export default function Home() {
                 trackEvent({
                   event_name: "home_pricing_clicked",
                   mode: mode === "paid" ? "paid" : "demo",
-                  season_year: currentYear,
-                  source: "home"
+                  season_year: currentYear, // pricing for current season
+                  source: "home",
+                  account_id: accountId || null,
                 });
                 nav(createPageUrl("Subscribe"));
               }}
@@ -272,7 +281,7 @@ export default function Home() {
               padding: "12px 14px",
               borderRadius: 10,
               border: "1px solid #ddd",
-              background: "#fff"
+              background: "#fff",
             }}
           >
             Log in
@@ -287,7 +296,7 @@ export default function Home() {
                 padding: "12px 14px",
                 borderRadius: 10,
                 border: "1px solid #ddd",
-                background: "#fff"
+                background: "#fff",
               }}
             >
               Manage athletes
