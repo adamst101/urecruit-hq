@@ -182,7 +182,8 @@ export default function CampDetailDemo() {
   const navigate = useNavigate();
   const params = useParams();
   const location = useLocation();
-  const { demoYear, currentYear } = useSeasonAccess();
+ const { isLoading, mode, hasAccess, seasonYear, currentYear, demoYear } = useSeasonAccess();
+
 
   const campId = useMemo(() => getCampIdFromAllSources({ params, location }), [params, location]);
 
