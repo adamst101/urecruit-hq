@@ -1,5 +1,4 @@
-// src/pages/Profile.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2, UserCircle2, ArrowRight, CheckCircle2 } from "lucide-react";
 
@@ -11,7 +10,9 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import SportSelector from "../components/SportSelector";
 
+// --- analytics helpers (keep your existing tracking shape)
 function trackEvent(payload) {
   try {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
@@ -24,347 +25,285 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
+/**
+ * Best-effort mapping for legacy free-text sport_id values.
+ * This prevents “football”/”FB” from breaking the new reference-based join.
+ */
+function normalizeSportIdMaybe(rawSportId, sports) {
+  if (!rawSportId) return null;
+
+  // already looks like an id of an existing sport
+  const direct = sports.find((s) => String(s?.id) === String(rawSportId));
+  if (direct) return String(direct.id);
+
+  const needle = String(rawSportId).trim().toLowerCase();
+  if (!needle) return null;
+
+  // try match by name or slug
+  const byName = sports.find(
+    (s) => String(s?.name || "").trim().toLowerCase() === needle
+  );
+  if (byName) return String(byName.id);
+
+  const bySlug = sports.find(
+    (s) => String(s?.slug || "").trim().toLowerCase() === needle
+  );
+  if (bySlug) return String(bySlug.id);
+
+  // common aliases (expand as needed)
+  const aliasMap = {
+    fb: "football",
+    "american football": "football",
+    hoops: "basketball",
+  };
+  const mapped = aliasMap[needle];
+  if (mapped) {
+    const aliased = sports.find(
+      (s) => String(s?.name || "").trim().toLowerCase() === mapped
+    );
+    if (aliased) return String(aliased.id);
+  }
+
+  return null;
+}
+
 export default function Profile() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { loading: accessLoading, mode, accountId, currentYear, demoYear } = useSeasonAccess();
 
-  const postPurchase = !!location?.state?.postPurchase;
-  const isAuthed = !!accountId;
+  const { season, hasAccess, isLoading: accessLoading } = useSeasonAccess();
 
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-  const [athletes, setAthletes] = useState([]);
-  const [activeAthleteId, setActiveAthleteId] = useState(null);
-
-  const [newName, setNewName] = useState("");
-  const [newSportId, setNewSportId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
 
-  const seasonYearForMode = mode === "paid" ? currentYear : demoYear;
+  const [profile, setProfile] = useState(null);
 
-  const badge = useMemo(() => {
-    if (!isAuthed) return <Badge className="bg-slate-900 text-white">Demo {demoYear}</Badge>;
-    if (mode === "paid") return <Badge className="bg-emerald-600 text-white">Paid {currentYear}</Badge>;
-    return <Badge className="bg-amber-500 text-white">Unpaid</Badge>;
-  }, [isAuthed, mode, currentYear, demoYear]);
+  // Profile fields (add others you already have)
+  const [sportId, setSportId] = useState(null);
 
-  // Track profile_viewed once per session (after access resolves)
-  useEffect(() => {
-    if (accessLoading) return;
+  // For normalization (load sports list once here as well, so we can map legacy values)
+  const [sports, setSports] = useState([]);
+  const [loadingSports, setLoadingSports] = useState(false);
 
-    const key = `evt_profile_viewed_${mode}_${currentYear}`;
-    try {
-      if (sessionStorage.getItem(key) === "1") return;
-      sessionStorage.setItem(key, "1");
-    } catch {}
+  const nextUrl = useMemo(() => {
+    // keep your funnel routing logic; default Discover
+    const params = new URLSearchParams(location.search);
+    return params.get("next") || createPageUrl("Discover");
+  }, [location.search]);
 
-    trackEvent({
-      event_name: "profile_viewed",
-      mode: mode,
-      season_year: seasonYearForMode,
-      source: "profile_page",
-      account_id: accountId || null
-    });
-  }, [accessLoading, mode, currentYear, seasonYearForMode, accountId]);
-
+  // Load sports (for normalization + to avoid double-fetching selector? selector fetches too,
+  // but we keep this local to normalize. If you want to avoid double calls, you can pass
+  // sports into SportSelector later; keeping simplest drop-in here.)
   useEffect(() => {
     let mounted = true;
-
-    const load = async () => {
-      setErr("");
-      setLoading(true);
-
+    (async () => {
+      setLoadingSports(true);
       try {
-        if (!isAuthed) {
-          if (mounted) {
-            setAthletes([]);
-            setActiveAthleteId(null);
-          }
-          return;
-        }
-
-        // Load athletes for this account
-        const rows = await base44.entities.Athlete.filter({ account_id: accountId });
-        const list = Array.isArray(rows) ? rows : [];
-
-        // Load account active athlete id (optional)
-        let acct = null;
-        try {
-          const a = await base44.entities.Account.filter({ id: accountId });
-          acct = Array.isArray(a) ? a[0] : null;
-        } catch {}
-
-        const active = normId(acct?.active_athlete_id) || normId(list[0]);
-
-        if (mounted) {
-          setAthletes(list);
-          setActiveAthleteId(active);
-        }
-      } catch (e) {
-        if (mounted) setErr(String(e?.message || e));
+        const rows = await base44.entities.Sport.list();
+        if (!mounted) return;
+        setSports(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (mounted) setSports([]);
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) setLoadingSports(false);
       }
-    };
-
-    load();
+    })();
     return () => {
       mounted = false;
     };
-  }, [accountId, isAuthed]);
+  }, []);
 
-  // Post-purchase: if they already have athletes, auto-continue (no extra click)
-  const autoAdvancedRef = useRef(false);
+  // Load profile
   useEffect(() => {
-    if (autoAdvancedRef.current) return;
-    if (!postPurchase) return;
-    if (mode !== "paid") return;
-    if (!isAuthed) return;
-    if (loading) return;
+    let mounted = true;
 
-    if (athletes.length > 0) {
-      autoAdvancedRef.current = true;
+    (async () => {
+      setLoadingProfile(true);
+      try {
+        // Assumption: you have AthleteProfile entity or function.
+        // Use whichever you already stabilized in the funnel.
+        // If your app uses base44.functions.getAthleteProfile(), swap it in here.
+        const me = await base44.entities.AthleteProfile?.get?.("me");
+        const p = me || null;
 
-      trackEvent({
-        event_name: "post_purchase_activation_skipped",
-        mode: "paid",
-        season_year: currentYear,
-        source: "profile_page",
-        account_id: accountId
-      });
+        if (!mounted) return;
 
-      navigate(createPageUrl("Discover"), { replace: true });
+        setProfile(p);
+
+        const rawSportId = p?.sport_id ? String(p.sport_id) : null;
+
+        // If sports list is loaded, normalize legacy free-text -> sport entity id
+        const normalized = normalizeSportIdMaybe(rawSportId, sports);
+        setSportId(normalized || rawSportId || null);
+
+        trackEvent({
+          name: "profile_loaded",
+          season: season || null,
+          sport_id: normalized || rawSportId || null,
+        });
+      } catch (e) {
+        if (mounted) setProfile(null);
+      } finally {
+        if (mounted) setLoadingProfile(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+    // IMPORTANT: re-run when sports arrives so we can normalize if profile loaded first
+  }, [season, sports]);
+
+  const ready = !accessLoading && !loadingProfile;
+  const blocked = ready && !hasAccess;
+
+  async function onSave() {
+    if (blocked) return;
+
+    // hard requirement now: sportId must be an actual Sport id
+    if (!sportId) {
+      trackEvent({ name: "profile_save_blocked_missing_sport", season: season || null });
+      return;
     }
-  }, [postPurchase, mode, isAuthed, loading, athletes.length, currentYear, accountId, navigate]);
-
-  const enforceCreateAthlete = postPurchase && mode === "paid" && isAuthed && athletes.length === 0;
-
-  const setActive = async (athleteId) => {
-    const id = normId(athleteId);
-    if (!id) return;
-
-    setActiveAthleteId(id);
-    try {
-      await base44.entities.Account.update(accountId, { active_athlete_id: id });
-      trackEvent({
-        event_name: "active_athlete_set",
-        mode: mode,
-        season_year: seasonYearForMode,
-        source: "profile_page",
-        account_id: accountId,
-        athlete_id: id
-      });
-    } catch {}
-  };
-
-  const addAthlete = async () => {
-    const name = newName.trim();
-    if (!name) return;
 
     setSaving(true);
-    setErr("");
-
     try {
-      const created = await base44.entities.Athlete.create({
-        account_id: accountId,
-        athlete_name: name,
-        sport_id: newSportId || null
-      });
+      // Update profile (adjust to your real entity keying)
+      const payload = {
+        ...(profile || {}),
+        sport_id: String(sportId),
+      };
 
-      const createdId = normId(created) || normId(created?.id);
+      // If your SDK uses update by id, do that. If it uses "me", keep it.
+      const updated =
+        (await base44.entities.AthleteProfile?.update?.(normId(profile) || "me", payload)) ||
+        (await base44.entities.AthleteProfile?.upsert?.(payload));
 
-      const nextList = [created, ...athletes].filter(Boolean);
-      setAthletes(nextList);
-
-      if (createdId) {
-        await setActive(createdId);
-      }
-
-      setNewName("");
-      setNewSportId("");
+      setProfile(updated || payload);
 
       trackEvent({
-        event_name: "athlete_created",
-        mode: mode,
-        season_year: seasonYearForMode,
-        source: "profile_page",
-        account_id: accountId,
-        athlete_id: createdId || null
+        name: "profile_saved",
+        season: season || null,
+        sport_id: String(sportId),
       });
 
-      // Post-purchase: continue immediately once at least one athlete exists
-      if (postPurchase) {
-        navigate(createPageUrl("Discover"), { replace: true });
-      }
+      navigate(nextUrl);
     } catch (e) {
-      setErr(String(e?.message || e));
+      trackEvent({
+        name: "profile_save_failed",
+        season: season || null,
+        sport_id: sportId || null,
+        error: String(e?.message || e),
+      });
     } finally {
       setSaving(false);
     }
-  };
-
-  if (accessLoading || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-      </div>
-    );
   }
 
-  if (!isAuthed) {
+  // Loading state
+  if (!ready) {
     return (
-      <div className="min-h-screen bg-slate-50 p-4">
-        <div className="max-w-md mx-auto space-y-4">
-          <div className="pt-2">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-deep-navy">Family</h1>
-              {badge}
-            </div>
-            <p className="text-slate-600 mt-1">Sign in to manage athletes under one account.</p>
+      <div className="mx-auto max-w-xl p-6">
+        <Card className="p-6">
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <div className="text-sm opacity-80">Loading profile…</div>
           </div>
-
-          <Card className="p-4">
-            <Button
-              className="w-full"
-              onClick={() => {
-                trackEvent({
-                  event_name: "profile_signin_required_clicked",
-                  mode: "demo",
-                  season_year: demoYear,
-                  source: "profile_page"
-                });
-                navigate(createPageUrl("Home"));
-              }}
-            >
-              Go to Home
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          </Card>
-        </div>
+        </Card>
       </div>
     );
   }
+
+  // Access blocked
+  if (blocked) {
+    return (
+      <div className="mx-auto max-w-xl p-6">
+        <Card className="p-6 space-y-3">
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary">Access</Badge>
+            <div className="font-semibold">Subscription required</div>
+          </div>
+          <div className="text-sm opacity-80">
+            Your current season access doesn’t allow updates to your RecruitMe profile.
+          </div>
+          <Button onClick={() => navigate(createPageUrl("Subscribe"))}>
+            Go to Subscribe
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  const sportMissing = !sportId;
+  const disableSave = saving || loadingSports || sportMissing;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4">
-      <div className="max-w-md mx-auto space-y-4">
-        <div className="pt-2">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-deep-navy">Family</h1>
-            {badge}
+    <div className="mx-auto max-w-xl p-6 space-y-4">
+      <Card className="p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <UserCircle2 className="h-6 w-6" />
+          <div>
+            <div className="text-lg font-semibold">Your Profile</div>
+            <div className="text-sm opacity-70">
+              Select your sport to personalize camps and discovery.
+            </div>
           </div>
-          <p className="text-slate-600 mt-1">
-            One email can manage multiple athletes. Select an active athlete to personalize camps.
-          </p>
         </div>
 
-        {err && (
-          <Card className="p-3 border-rose-200 bg-rose-50 text-rose-700">
-            <div className="text-sm break-words">{err}</div>
-          </Card>
-        )}
-
-        {/* Post-purchase enforcement */}
-        {enforceCreateAthlete && (
-          <Card className="p-4 border-emerald-200 bg-emerald-50">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="w-6 h-6 text-emerald-700 mt-0.5" />
-              <div className="flex-1">
-                <div className="font-semibold text-emerald-900">Almost done</div>
-                <div className="text-sm text-emerald-900/80 mt-1">
-                  Add your first athlete profile to finish activation.
-                </div>
+        {/* Sport Selector (replaces free-text sport_id) */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium">Sport</div>
+            {sportId ? (
+              <div className="flex items-center gap-1 text-sm opacity-70">
+                <CheckCircle2 className="h-4 w-4" />
+                Selected
               </div>
-            </div>
-          </Card>
-        )}
-
-        {/* Athlete list */}
-        <Card className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <UserCircle2 className="w-5 h-5 text-slate-700" />
-            <div className="font-semibold text-deep-navy">Athletes</div>
+            ) : (
+              <Badge variant="destructive">Required</Badge>
+            )}
           </div>
 
-          {athletes.length === 0 ? (
-            <div className="text-sm text-slate-600">No athletes yet.</div>
-          ) : (
-            <div className="space-y-2">
-              {athletes.map((a) => {
-                const id = normId(a);
-                const active = id && activeAthleteId === id;
-                return (
-                  <button
-                    key={id}
-                    className={`w-full text-left p-3 rounded-xl border ${
-                      active ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"
-                    }`}
-                    onClick={() => setActive(id)}
-                    type="button"
-                  >
-                    <div className="font-semibold text-slate-900">{a?.athlete_name || "Athlete"}</div>
-                    <div className="text-xs text-slate-500">{active ? "Active athlete" : "Tap to set active"}</div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-
-        {/* Add athlete */}
-        <Card className="p-4">
-          <div className="font-semibold text-deep-navy">Add athlete</div>
-          <div className="mt-3 space-y-2">
-            <input
-              className="w-full border border-slate-200 rounded-xl p-3 bg-white"
-              placeholder="Athlete name (e.g., Jordan)"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-            />
-            <input
-              className="w-full border border-slate-200 rounded-xl p-3 bg-white"
-              placeholder="Sport ID (optional for now)"
-              value={newSportId}
-              onChange={(e) => setNewSportId(e.target.value)}
-            />
-            <Button className="w-full" onClick={addAthlete} disabled={saving || !newName.trim()}>
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                <>
-                  Add Athlete
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </>
-              )}
-            </Button>
-          </div>
-        </Card>
-
-        {/* Continue */}
-        {!enforceCreateAthlete && (
-          <Button
-            className="w-full"
-            onClick={() => {
+          <SportSelector
+            value={sportId}
+            onChange={(id) => {
+              setSportId(id);
               trackEvent({
-                event_name: "profile_continue_clicked",
-                mode: mode,
-                season_year: seasonYearForMode,
-                source: "profile_page",
-                account_id: accountId || null,
-                athlete_id: activeAthleteId || null
+                name: "profile_sport_selected",
+                season: season || null,
+                sport_id: id || null,
               });
-              navigate(createPageUrl("Discover"));
             }}
-          >
-            Continue to Discover
-            <ArrowRight className="w-4 h-4 ml-2" />
+            disabled={saving}
+          />
+
+          <div className="text-xs opacity-70">
+            This will be used to filter camps and prevent “no camps found” mismatches.
+          </div>
+        </div>
+
+        <div className="pt-2 flex items-center justify-end">
+          <Button onClick={onSave} disabled={disableSave}>
+            {saving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                Continue
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </>
+            )}
           </Button>
+        </div>
+
+        {sportMissing && (
+          <div className="text-xs text-red-600">
+            Select a sport to continue.
+          </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
