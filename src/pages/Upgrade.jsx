@@ -1,89 +1,147 @@
-import React, { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+// src/pages/Upgrade.jsx
+import React, { useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
+
+import { Card } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
+
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+
+function trackEvent(payload) {
+  try {
+    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+  } catch {}
+}
 
 export default function Upgrade() {
   const nav = useNavigate();
-  const [sp] = useSearchParams();
-  const next = sp.get("next");
-  const { accountId } = useSeasonAccess();
+  const location = useLocation();
+
+  const { isLoading, mode, hasAccess, seasonYear, currentYear, demoYear, accountId } =
+    useSeasonAccess();
+
   const [working, setWorking] = useState(false);
   const [err, setErr] = useState(null);
+
+  const params = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
+  const next = params.get("next");
+  const source = params.get("source") || "upgrade_page";
+
+  const signedIn = !!accountId;
 
   async function handleSubscribe() {
     setWorking(true);
     setErr(null);
-    try {
-      // Replace with your billing integration
-      // Expected: triggers checkout and returns success
-      await base44.functions.startCheckout?.();
 
-      // After checkout, route to next or Profile
-      nav(next ? next : createPageUrl("Profile"), { replace: true });
+    trackEvent({
+      event_name: "upgrade_subscribe_clicked",
+      mode: mode || null,
+      season_year: currentYear || null, // year being sold
+      source,
+      account_id: accountId || null,
+      has_access: !!hasAccess
+    });
+
+    try {
+      // Prefer new flow: send to Subscribe (which sends to Checkout)
+      // Keep next so user returns where they intended after purchase.
+      const subscribeUrl =
+        createPageUrl("Subscribe") +
+        `?force=1&source=${encodeURIComponent(source)}&next=${encodeURIComponent(
+          next || createPageUrl("Profile")
+        )}`;
+
+      nav(subscribeUrl);
     } catch (e) {
       setErr(e?.message || "Subscription failed. Please try again.");
+
+      trackEvent({
+        event_name: "upgrade_subscribe_failed",
+        mode: mode || null,
+        season_year: currentYear || null,
+        source,
+        account_id: accountId || null,
+        error: String(e?.message || e)
+      });
     } finally {
       setWorking(false);
     }
   }
 
+  // If they already have access, this page is pointless—send them onward.
+  if (!isLoading && mode === "paid") {
+    nav(createPageUrl("Discover"), { replace: true });
+    return null;
+  }
+
   return (
-    <div style={{ padding: 28, maxWidth: 860, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 900 }}>Upgrade</div>
-          <div style={{ marginTop: 6, opacity: 0.8 }}>
-            Full access: target schools, full discover, calendar overlays, and multi-athlete profiles.
+    <div className="min-h-screen bg-slate-50 p-4">
+      <div className="max-w-md mx-auto space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-deep-navy">Upgrade</h1>
+              <Badge className={mode === "paid" ? "bg-emerald-700 text-white" : "bg-slate-900 text-white"}>
+                {mode === "paid" ? `Paid ${currentYear || ""}` : `Demo ${demoYear || ""}`}
+              </Badge>
+            </div>
+            <p className="text-slate-600 mt-1">
+              Full access: current-year camps, calendar overlays, and multi-athlete profiles.
+            </p>
           </div>
-        </div>
-        <button
-          onClick={() => nav(createPageUrl("Home"))}
-          style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
-        >
-          Back
-        </button>
-      </div>
 
-      <div style={{ marginTop: 18, border: "1px solid #eee", borderRadius: 14, padding: 18 }}>
-        <div style={{ fontSize: 18, fontWeight: 800 }}>Plan</div>
-        <div style={{ marginTop: 8, display: "flex", alignItems: "baseline", gap: 10 }}>
-          <div style={{ fontSize: 34, fontWeight: 900 }}>$X</div>
-          <div style={{ opacity: 0.7 }}>/ month</div>
+          <Button variant="outline" onClick={() => nav(createPageUrl("Home"))}>
+            Back
+          </Button>
         </div>
 
-        <ul style={{ marginTop: 12, lineHeight: 1.7 }}>
-          <li>Unlimited target schools</li>
-          <li>Unlimited camps + advanced filters</li>
-          <li>Calendar conflict detection</li>
-          <li>Multiple athletes per account</li>
-        </ul>
-
-        {err && (
-          <div style={{ marginTop: 10, padding: 10, borderRadius: 10, background: "#fff3f3", border: "1px solid #ffd0d0" }}>
-            {err}
+        <Card className="p-4 border-amber-200 bg-amber-50">
+          <div className="font-semibold text-amber-900">Season Pass</div>
+          <div className="text-sm text-amber-900/80 mt-1">
+            Unlock current season ({currentYear || "current year"}) and planning tools.
           </div>
-        )}
 
-        <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
-          <button
-            disabled={working}
-            onClick={handleSubscribe}
-            style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid #111", background: "#111", color: "#fff", fontWeight: 800 }}
-          >
-            {working ? "Processing…" : "Subscribe"}
-          </button>
+          <div className="mt-3 bg-white/70 border border-amber-200 rounded-xl p-3">
+            <div className="flex items-baseline justify-between">
+              <div className="font-semibold text-amber-900">Season Pass</div>
+              <div className="text-2xl font-bold text-amber-900">$49</div>
+            </div>
+            <div className="text-xs text-amber-900/70 mt-1">Per season. Add multiple athletes under one email.</div>
+          </div>
 
-          {accountId && (
-            <button
-              onClick={() => nav(createPageUrl("Profile"))}
-              style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
-            >
-              Manage athletes
-            </button>
+          <ul className="mt-3 text-sm text-amber-900/90 space-y-1 list-disc pl-5">
+            <li>Unlimited target schools</li>
+            <li>Unlimited camps + full filters</li>
+            <li>Calendar conflict detection</li>
+            <li>Multiple athletes per account</li>
+          </ul>
+
+          {err && (
+            <div className="mt-3 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2">
+              {String(err)}
+            </div>
           )}
-        </div>
+
+          <div className="mt-4 space-y-2">
+            <Button className="w-full" disabled={working || isLoading} onClick={handleSubscribe}>
+              {working ? "Processing…" : "Continue to Pricing"}
+            </Button>
+
+            {signedIn && (
+              <Button variant="outline" className="w-full" onClick={() => nav(createPageUrl("Profile"))}>
+                Manage athletes
+              </Button>
+            )}
+          </div>
+
+          <div className="mt-3 text-xs text-amber-900/70">
+            {signedIn ? "You’ll complete checkout next." : "Sign in during checkout to activate your subscription."}
+          </div>
+        </Card>
       </div>
     </div>
   );
