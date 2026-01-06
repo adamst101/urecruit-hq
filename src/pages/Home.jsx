@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight, LogIn, CalendarDays, Compass, Star } from "lucide-react";
+// src/pages/Home.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { ArrowRight, LogIn } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -11,6 +12,9 @@ import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
+
+import { getDemoDefaults, setDemoMode } from "../utils/demoMode";
+import { routeToWorkspace } from "../utils/routeToWorkspace";
 
 function trackEvent(payload) {
   try {
@@ -28,245 +32,282 @@ async function safeSignIn() {
   return false;
 }
 
-function fallbackDemoYear() {
-  const y = new Date().getFullYear();
-  return y - 1;
-}
-function fallbackCurrentYear() {
-  return new Date().getFullYear();
+// small helper: after sign-in, allow hooks to update without blocking render
+async function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 export default function Home() {
   const nav = useNavigate();
-  const [sp] = useSearchParams();
-  const next = sp.get("next");
 
-  const { isLoading, mode, accountId, currentYear, demoYear } = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
+  // Hooks are allowed, but Home must not block render or auto-route based on them.
+  const season = useSeasonAccess();
+  const identity = useAthleteIdentity();
 
-  const authed = !!accountId;
-  const paid = mode === "paid";
-  const hasProfile = !!athleteProfile;
+  // Keep latest values in refs for click-handlers (avoid stale closures)
+  const seasonRef = useRef(season);
+  const identityRef = useRef(identity);
 
-  const rawLoading = isLoading || (authed && identityLoading);
-
-  // Fuse so Home never bricks
-  const [loadingFusedOpen, setLoadingFusedOpen] = useState(false);
   useEffect(() => {
-    if (!rawLoading) {
-      setLoadingFusedOpen(false);
-      return;
-    }
-    const t = setTimeout(() => setLoadingFusedOpen(true), 2500);
-    return () => clearTimeout(t);
-  }, [rawLoading]);
+    seasonRef.current = season;
+  }, [season]);
 
-  const loading = rawLoading && !loadingFusedOpen;
-
-  const demoY = demoYear ?? fallbackDemoYear();
-  const currentY = currentYear ?? fallbackCurrentYear();
-
-  // marketing copy
-  const heroTitle = "Recruit smarter. Avoid conflicts. See the whole season.";
-  const heroDesc =
-    "Plan and prioritize college camps across your target schools—before weekends disappear.";
-  const trustLine = "Independent planning tool • Not affiliated with camps";
-
-  // Badge should reflect the *data mode* currently available
-  const badgeText = paid ? `Current season: ${currentY}` : `Demo season: ${demoY}`;
-  const badgeClass = paid ? "bg-emerald-700 text-white" : "bg-slate-900 text-white";
-
-  const statusLine = useMemo(() => {
-    if (loading) return "Loading…";
-    if (paid) return "Full access enabled. Planning tools and write actions unlocked.";
-    if (authed) return "Signed in with demo access. Same screens, demo data, read-only actions.";
-    return "Explore the demo or subscribe for current season + planning tools.";
-  }, [loading, paid, authed]);
-
-  // Track view once/session
   useEffect(() => {
-    if (rawLoading && !loadingFusedOpen) return;
+    identityRef.current = identity;
+  }, [identity]);
 
-    const key = `evt_home_viewed_${paid ? "paid" : authed ? "demo_authed" : "anon"}_${currentY}`;
+  const { demoSeasonYear } = getDemoDefaults();
+
+  const authed = !!season.accountId;
+  const paid = season.mode === "paid";
+  const hasProfile = !!identity.athleteProfile;
+
+  // Instrument: home view (dedupe per session)
+  useEffect(() => {
+    const key = "evt_home_viewed_v2";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
     } catch {}
 
     trackEvent({
-      event_name: "home_viewed",
-      mode: paid ? "paid" : authed ? "demo" : "anon",
-      season_year: paid ? currentY : demoY,
+      event_name: "home_view",
       source: "home",
-      account_id: accountId || null,
-      fused_open: loadingFusedOpen ? 1 : 0
+      auth_state: authed ? "authed" : "anon",
+      mode: paid ? "paid" : "demo_or_anon"
     });
-  }, [rawLoading, loadingFusedOpen, paid, authed, currentY, demoY, accountId]);
+    // NOTE: intentionally not dependent on hooks to avoid refiring; this is a landing page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  async function handleLogin() {
+  // ----- CTA 1: Try Demo Season (no login required; no backend writes) -----
+  function handleTryDemo() {
     trackEvent({
-      event_name: "home_login_clicked",
-      mode: paid ? "paid" : authed ? "demo" : "anon",
-      season_year: paid ? currentY : demoY,
-      source: "home"
+      event_name: "cta_demo_click",
+      source: "home",
+      demo_season: demoSeasonYear
     });
 
-    const ok = await safeSignIn();
-    if (!ok) {
-      nav(createPageUrl("Home"), { replace: true });
+    // Explicit demo mode contract
+    setDemoMode(demoSeasonYear);
+
+    trackEvent({
+      event_name: "demo_entered",
+      source: "home",
+      demo_season: demoSeasonYear
+    });
+
+    // Route into the real app surface with demo params
+    nav(`${createPageUrl("Discover")}?mode=demo&season=${demoSeasonYear}`);
+  }
+
+  // ----- CTA 2: Start My Season (paid → subscribe → profile → workspace) -----
+  async function handleStartMySeason() {
+    trackEvent({
+      event_name: "cta_start_click",
+      source: "home",
+      auth_state: authed ? "authed" : "anon"
+    });
+
+    // Step 1: if not signed in, sign in then continue
+    if (!seasonRef.current.accountId) {
+      trackEvent({ event_name: "cta_login_click", source: "home", via: "start_my_season" });
+      const ok = await safeSignIn();
+      if (!ok) return;
+
+      // Give hooks a moment to refresh their state (no UI blocking)
+      await sleep(350);
+    }
+
+    // Refresh snapshot after potential sign-in
+    const s = seasonRef.current;
+    const i = identityRef.current;
+
+    const nowAuthed = !!s.accountId;
+    const nowPaid = s.mode === "paid";
+    const nowHasProfile = !!i.athleteProfile;
+
+    const decision = routeToWorkspace({
+      authed: nowAuthed,
+      paid: nowPaid,
+      hasProfile: nowHasProfile
+    });
+
+    trackEvent({
+      event_name: "start_season_routed",
+      source: "home",
+      destination: decision.destination
+    });
+
+    if (decision.destination === "login") {
+      // If we got here, something prevented auth state from landing; take them to login again.
+      await safeSignIn();
       return;
     }
 
-    // After login: if they had a deep link, honor it; otherwise drop them into Discover (demo-safe)
-    nav(next ? next : createPageUrl("Discover"), { replace: true });
+    nav(decision.url);
   }
 
-  function goSubscribe() {
-    trackEvent({
-      event_name: "home_subscribe_clicked",
-      mode: authed ? "demo" : "anon",
-      season_year: currentY,
-      source: "home"
-    });
-    nav(createPageUrl("Subscribe"));
+  // ----- Top-right links -----
+  async function handleLoginOnly() {
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "top_right" });
+    await safeSignIn();
   }
 
-  // Demo should feel like the real app: route into app pages, but they will read demo data.
-  function goDemo() {
-    trackEvent({
-      event_name: "home_demo_clicked",
-      mode: "demo",
-      season_year: demoY,
-      source: "home"
-    });
-    nav(createPageUrl("Discover"));
-  }
+  const badgeText = paid ? `Paid: ${season.currentYear ?? ""}` : `Demo: ${demoSeasonYear}`;
+  const badgeClass = paid ? "bg-emerald-700 text-white" : "bg-slate-900 text-white";
 
-  // Paid workspace links
-  const showWorkspace = paid && authed && hasProfile;
+  // Copy blocks (developer-safe text)
+  const heroHeadline = "Plan the right recruiting camps — before the season passes you by.";
+  const heroSubhead =
+    "RecruitMe turns a chaotic camp season into a focused, athlete-specific planning workspace — so families choose when, where, and why to attend.";
+  const reframeTitle = "Not a camp directory.";
+  const reframeBody =
+    "This isn’t a listings app. It’s a season workspace for decisions: targets, conflicts, favorites, and a calendar that makes tradeoffs obvious.";
+
+  const howItWorks = useMemo(
+    () => [
+      { title: "Try Demo", body: "No login. Explore the full app experience with last season’s data (read-only)." },
+      { title: "Subscribe", body: "Unlock the current season and planning tools." },
+      { title: "Set up athlete", body: "Create athlete context once. Then your workspace unlocks." }
+    ],
+    []
+  );
+
+  const workspaceProof = useMemo(
+    () => [
+      { title: "MyCamps", body: "Your intent workspace: favorites, registered, completed. (Paid + profile)" },
+      { title: "Calendar", body: "Conflict overlays across camps and intent. (Paid + profile)" },
+      { title: "Discover", body: "Browse camps in demo or paid mode—same screens, different season + capabilities." }
+    ],
+    []
+  );
+
+  function handlePricingScroll() {
+    trackEvent({ event_name: "pricing_scroll", source: "home" });
+    const el = document.getElementById("pricing");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+        {/* Top bar */}
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
             <div className="text-3xl font-extrabold text-deep-navy">RecruitMe</div>
-            <div className="text-xl font-bold text-deep-navy leading-snug">{heroTitle}</div>
-            <div className="text-slate-600">{heroDesc}</div>
-
             <div className="flex items-center gap-2 flex-wrap">
               <Badge className={badgeClass}>{badgeText}</Badge>
               <div className="text-xs text-slate-500">
-                {loadingFusedOpen && rawLoading
-                  ? "Having trouble loading status—continuing anyway."
-                  : statusLine}
+                {paid && hasProfile
+                  ? "Workspace unlocked."
+                  : paid && authed && !hasProfile
+                  ? "Paid active. Athlete setup required for workspace."
+                  : authed
+                  ? "Signed in. Demo experience available."
+                  : "Public demo available. No login required."}
               </div>
             </div>
-
-            <div className="text-xs text-slate-500">{trustLine}</div>
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleLogin}>
+            <Button variant="outline" onClick={handlePricingScroll}>
+              Pricing
+            </Button>
+            <Button variant="outline" onClick={handleLoginOnly}>
               <LogIn className="w-4 h-4 mr-2" />
               Log in
             </Button>
           </div>
         </div>
 
-        {/* Main grid */}
-        <div className="grid md:grid-cols-3 gap-4">
-          {/* Marketing / Start */}
-          <Card className="p-6 space-y-4 md:col-span-2 border-slate-300 shadow-sm">
+        {/* HERO */}
+        <div className="grid lg:grid-cols-2 gap-4 items-start">
+          <Card className="p-7 space-y-4 border-slate-300 shadow-sm">
             <div className="space-y-2">
-              <div className="text-lg font-bold text-deep-navy">Start with the demo</div>
-              <div className="text-sm text-slate-600">
-                Same screens as subscribers—just demo data. Upgrade anytime to unlock current season,
-                write actions, and your athlete context.
-              </div>
+              <div className="text-2xl font-extrabold text-deep-navy leading-tight">{heroHeadline}</div>
+              <div className="text-slate-600">{heroSubhead}</div>
+              <div className="text-xs text-slate-500">Independent planning tool • Not affiliated with camps</div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button className="sm:flex-1" onClick={goDemo} disabled={loading}>
-                {loading ? "Loading…" : `View demo (${demoY})`}
+            <div className="flex flex-col sm:flex-row gap-2 pt-2">
+              <Button className="sm:flex-1" onClick={handleTryDemo}>
+                Try the Demo Season
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
-
-              <Button className="sm:flex-1" variant="outline" onClick={goSubscribe} disabled={loading}>
-                {`Sign up / Unlock ${currentY}`}
+              <Button className="sm:flex-1" variant="outline" onClick={handleStartMySeason}>
+                Start My Season
+                <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
 
-            <div className="grid sm:grid-cols-3 gap-3 pt-2">
-              <div className="text-sm">
-                <div className="font-semibold text-deep-navy">Clarity</div>
-                <div className="text-slate-600">
-                  See camps only from schools you actually care about.
-                </div>
-              </div>
-              <div className="text-sm">
-                <div className="font-semibold text-deep-navy">Control</div>
-                <div className="text-slate-600">
-                  Spot conflicts early—before you commit weekends.
-                </div>
-              </div>
-              <div className="text-sm">
-                <div className="font-semibold text-deep-navy">Confidence</div>
-                <div className="text-slate-600">
-                  Plan the season with fewer mistakes and clearer tradeoffs.
-                </div>
-              </div>
+            <div className="text-xs text-slate-500">
+              Demo is read-only and uses prior season data. Paid unlock enables current season + athlete workspace.
             </div>
           </Card>
 
-          {/* Workspace (paid-only) */}
-          <Card className="p-6 space-y-3">
-            <div className="text-lg font-bold text-deep-navy">Workspace</div>
+          {/* Reframe */}
+          <Card className="p-7 space-y-3">
+            <div className="text-lg font-bold text-deep-navy">{reframeTitle}</div>
+            <div className="text-sm text-slate-600">{reframeBody}</div>
 
-            {showWorkspace ? (
-              <>
-                <div className="text-sm text-slate-600">
-                  You’re unlocked. Jump into your season tools.
-                </div>
-
-                <div className="space-y-2">
-                  <Button className="w-full" onClick={() => nav(createPageUrl("MyCamps"))}>
-                    <Star className="w-4 h-4 mr-2" />
-                    Favorites (My Camps)
-                  </Button>
-                  <Button variant="outline" className="w-full" onClick={() => nav(createPageUrl("Discover"))}>
-                    <Compass className="w-4 h-4 mr-2" />
-                    Discover
-                  </Button>
-                  <Button variant="outline" className="w-full" onClick={() => nav(createPageUrl("Calendar"))}>
-                    <CalendarDays className="w-4 h-4 mr-2" />
-                    Calendar
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-sm text-slate-600">
-                  Favorites and planning tools unlock after subscription + athlete setup.
-                </div>
-
-                <div className="space-y-2">
-                  <Button variant="outline" className="w-full" onClick={goDemo} disabled={loading}>
-                    View demo
-                  </Button>
-                  <Button className="w-full" onClick={goSubscribe} disabled={loading}>
-                    Unlock {currentY}
-                  </Button>
-                </div>
-              </>
-            )}
+            <div className="pt-2 grid gap-3">
+              <div className="text-sm">
+                <div className="font-semibold text-deep-navy">Value</div>
+                <div className="text-slate-600">Decisions, tradeoffs, and conflicts—before weekends disappear.</div>
+              </div>
+              <div className="text-sm">
+                <div className="font-semibold text-deep-navy">Risk</div>
+                <div className="text-slate-600">Avoid double-booking and last-minute travel chaos.</div>
+              </div>
+              <div className="text-sm">
+                <div className="font-semibold text-deep-navy">Velocity</div>
+                <div className="text-slate-600">Same UI in demo and paid—upgrade without relearning.</div>
+              </div>
+            </div>
           </Card>
         </div>
 
-        <div className="text-xs text-slate-500">
-          Built for recruiting families who need fewer mistakes, fewer conflicts, and clearer tradeoffs.
-        </div>
+        {/* How it works */}
+        <Card className="p-7 space-y-4">
+          <div className="text-lg font-bold text-deep-navy">How it works</div>
+          <div className="grid md:grid-cols-3 gap-4">
+            {howItWorks.map((x) => (
+              <div key={x.title} className="text-sm">
+                <div className="font-semibold text-deep-navy">{x.title}</div>
+                <div className="text-slate-600">{x.body}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Workspace proof */}
+        <Card className="p-7 space-y-4">
+          <div className="text-lg font-bold text-deep-navy">MyCamps is the workspace</div>
+          <div className="grid md:grid-cols-3 gap-4">
+            {workspaceProof.map((x) => (
+              <div key={x.title} className="text-sm">
+                <div className="font-semibold text-deep-navy">{x.title}</div>
+                <div className="text-slate-600">{x.body}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Final CTA repeat */}
+          <div className="pt-2 flex flex-col sm:flex-row gap-2">
+            <Button className="sm:flex-1" onClick={handleTryDemo}>
+              Try the Demo Season
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+            <Button className="sm:flex-1" variant="outline" onClick={handleStartMySeason}>
+              Start My Season
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          </div>
+        </Card>
+
+        {/* Pricing section anchor (simple placeholder; can move later) */}
+        <div id="pricing" />
       </div>
     </div>
   );
