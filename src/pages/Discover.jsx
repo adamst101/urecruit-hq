@@ -1,6 +1,6 @@
 // src/pages/Discover.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 
@@ -197,6 +197,7 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
 
 function DiscoverPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
 
   const { isLoading: accessLoading, currentYear } = useSeasonAccess();
@@ -210,14 +211,25 @@ function DiscoverPage() {
   const athleteId = athleteProfile?.id;
   const sportId = athleteProfile?.sport_id;
 
+  // --- Pull demo context from URL if present (Home sets ?mode=demo&season=YYYY) ---
+  const urlParams = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
+  const urlMode = urlParams.get("mode");
+  const urlSeason = urlParams.get("season");
+  const urlDemoYear = urlSeason && Number.isFinite(Number(urlSeason)) ? Number(urlSeason) : null;
+
   const paidSummariesQuery = useCampSummariesClient({
     athleteId,
     sportId,
     enabled: gate.mode === "paid" && !!athleteId
   });
 
-  // demo year = prior year (simple and stable)
-  const resolvedDemoYear = Number(currentYear) - 1;
+  // demo year preference:
+  // 1) explicit ?season=YYYY
+  // 2) currentYear - 1
+  const resolvedDemoYear = urlDemoYear || Number(currentYear) - 1;
+
+  // demoEnabled should still key off gate.mode (authoritative) + demoProfile loaded.
+  // urlMode is just a hint (keeps routing consistent from Home), not a source of truth.
   const demoEnabled = gate.mode !== "paid" && demoLoaded;
 
   const demoSummariesQuery = useQuery({
@@ -318,9 +330,10 @@ function DiscoverPage() {
     trackEvent({
       event_name: "discover_viewed",
       mode: "demo",
-      season_year: resolvedDemoYear
+      season_year: resolvedDemoYear,
+      entry_mode: urlMode || null
     });
-  }, [gate.mode, loading, resolvedDemoYear]);
+  }, [gate.mode, loading, resolvedDemoYear, urlMode]);
 
   if (loading) {
     return (
@@ -454,7 +467,8 @@ function DiscoverPage() {
                 : isDemoFavorite(effectiveDemoProfileId, s.camp_id);
 
             const isRegistered =
-              gate.mode === "paid" && (s.intent_status === "registered" || s.intent_status === "completed");
+              gate.mode === "paid" &&
+              (s.intent_status === "registered" || s.intent_status === "completed");
 
             return (
               <CampCard
@@ -505,10 +519,16 @@ function DiscoverPage() {
                     sessionStorage.setItem("last_demo_camp_id", String(camp_id));
                   } catch {}
 
-                  const page = gate.mode === "paid" ? "CampDetail" : "CampDetailDemo";
-                  const pathname = createPageUrl(page);
+                  // IMPORTANT: same screen for demo + paid
+                  const pathname = createPageUrl("CampDetail");
+                  const qs =
+                    gate.mode === "paid"
+                      ? `?id=${encodeURIComponent(camp_id)}`
+                      : `?id=${encodeURIComponent(camp_id)}&mode=demo&season=${encodeURIComponent(
+                          resolvedDemoYear
+                        )}`;
 
-                  navigate(`${pathname}?id=${encodeURIComponent(camp_id)}&camp_id=${encodeURIComponent(camp_id)}`, {
+                  navigate(`${pathname}${qs}`, {
                     state: { camp_id, id: camp_id }
                   });
                 }}
@@ -525,7 +545,7 @@ function DiscoverPage() {
 
 export default function Discover() {
   /**
-   * Correct policy for THIS app:
+   * Policy:
    * - Demo users can browse Discover without auth.
    * - Paid users MUST complete athlete profile before Discover.
    *
