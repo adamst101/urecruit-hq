@@ -196,7 +196,14 @@ export default function Discover() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { loading: accessLoading, currentYear } = useSeasonAccess();
+const {
+  isLoading: accessLoading,
+  mode,
+  hasAccess,
+  seasonYear,
+  currentYear,
+} = useSeasonAccess();
+
   const { athleteProfile, isLoading: identityLoading, isError: identityError } = useAthleteIdentity();
 
   const { loaded: demoLoaded, demoProfile, demoProfileId } = useDemoProfile();
