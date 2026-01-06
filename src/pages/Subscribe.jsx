@@ -35,7 +35,7 @@ export default function Subscribe() {
     trackEvent({
       event_name: "subscribe_viewed",
       mode: mode === "paid" ? "paid" : "demo",
-      season_year: currentYear,      // ✅ year being sold
+      season_year: currentYear, // ✅ year being sold
       source: "subscribe_page"
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,9 +85,9 @@ export default function Subscribe() {
                   className="w-full"
                   onClick={() => {
                     trackEvent({
-                      event_name: "subscribe_cta_clicked",
-                      mode: "demo",
-                      season_year: currentYear,  // ✅ year being sold
+                      event_name: "checkout_cta_clicked",
+                      mode: mode === "paid" ? "paid" : "demo",
+                      season_year: currentYear, // ✅ year being sold
                       source: "subscribe_page"
                     });
                     navigate(createPageUrl("Checkout"));
@@ -103,8 +103,8 @@ export default function Subscribe() {
                   onClick={() => {
                     trackEvent({
                       event_name: "subscribe_keep_demo_clicked",
-                      mode: "demo",
-                      season_year: currentYear, // still ok; it's an action on subscribe page
+                      mode: mode === "paid" ? "paid" : "demo",
+                      season_year: currentYear,
                       source: "subscribe_page"
                     });
                     navigate(createPageUrl("Discover"));
@@ -147,3 +147,4 @@ function Feature({ children }) {
     </div>
   );
 }
+
