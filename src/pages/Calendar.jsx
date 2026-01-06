@@ -19,11 +19,7 @@ import { useDemoProfile } from "../components/hooks/useDemoProfile";
 /**
  * CalendarPage
  * - Paid: shows current season camps (from client-composed summaries)
- * - Demo: lightweight placeholder (until you build demo calendar overlays)
- *
- * Wrapper policy:
- * - requireChild=true: if authed AND no athlete -> RouteGuard will force Profile
- * - demo users can still browse calendar placeholder
+ * - Demo: placeholder (locked)
  */
 function CalendarPage() {
   const navigate = useNavigate();
@@ -41,8 +37,8 @@ function CalendarPage() {
     enabled: isPaid && !!athleteId
   });
 
-  const loading = (isPaid && (identityLoading || paidQuery.isLoading));
-  const isError = (isPaid && (identityError || paidQuery.isError));
+  const loading = isPaid && (identityLoading || paidQuery.isLoading);
+  const isError = isPaid && (identityError || paidQuery.isError);
   const errObj = error || paidQuery.error;
 
   const camps = useMemo(() => {
@@ -51,13 +47,15 @@ function CalendarPage() {
     return Array.isArray(rows) ? rows : [];
   }, [isPaid, paidQuery.data]);
 
-  const registered = useMemo(() => {
-    return camps.filter((c) => c.intent_status === "registered" || c.intent_status === "completed");
-  }, [camps]);
+  const registered = useMemo(
+    () => camps.filter((c) => c.intent_status === "registered" || c.intent_status === "completed"),
+    [camps]
+  );
 
-  const favorites = useMemo(() => {
-    return camps.filter((c) => c.intent_status === "favorite");
-  }, [camps]);
+  const favorites = useMemo(
+    () => camps.filter((c) => c.intent_status === "favorite"),
+    [camps]
+  );
 
   if (loading) {
     return (
@@ -212,16 +210,13 @@ function CampRow({ camp }) {
 }
 
 export default function Calendar() {
-  // ✅ Same wrapper policy as Discover:
-  // - Demo users can still see the (locked) calendar page
-  // - Paid users must have an athlete profile before using Calendar
+  /**
+   * Correct policy (matches your RouteGuard implementation):
+   * - Demo users can view locked Calendar without auth.
+   * - Paid users MUST complete athlete profile before Calendar.
+   */
   return (
-    <RouteGuard
-      requireAuth={false}
-      requireSub={false}
-      requireChild={true}
-      allowProfileWithoutSub={true}
-    >
+    <RouteGuard requireProfile={true}>
       <CalendarPage />
     </RouteGuard>
   );
