@@ -1,57 +1,105 @@
-import React, { useEffect } from "react";
+// src/components/auth/RouteGuard.jsx
+import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useIdentity } from "./useIdentity";
 import { createPageUrl } from "../../utils";
+import { useIdentity } from "./useIdentity";
 
 /**
+ * RouteGuard (updated)
+ *
  * Policy:
  * - requireAuth: blocks if not signed in
- * - requireSub: blocks if not subscribed
- * - requireChild: blocks if no child profile (forces Profile)
+ * - requireSub: blocks if not subscribed (paid mode)
+ * - requireChild: blocks if no child/athlete profile
  *
- * allowProfileWithoutSub: lets non-subscribed users create/manage children (good for conversion)
+ * allowProfileWithoutSub:
+ * - If true, lets non-subscribed users create/manage athlete profiles (good for conversion)
+ *
+ * Hardening:
+ * - Preserve full path + query in next= (not just pathname)
+ * - Avoid redirect loops by not redirecting if already on target page
+ * - Don’t treat "requireChild" as requiring subscription unless requireSub is true
  */
 export default function RouteGuard({
   requireAuth = false,
   requireSub = false,
   requireChild = false,
   allowProfileWithoutSub = true,
-  children,
+  children
 }) {
   const nav = useNavigate();
   const loc = useLocation();
   const id = useIdentity();
 
+  // Preserve full return URL (path + query + hash)
+  const nextUrl = useMemo(() => {
+    const path = loc?.pathname || "";
+    const search = loc?.search || "";
+    const hash = loc?.hash || "";
+    return `${path}${search}${hash}`;
+  }, [loc?.pathname, loc?.search, loc?.hash]);
+
   useEffect(() => {
     if (id.loading) return;
 
-    // Not authed
+    const here = loc?.pathname || "";
+
+    // 1) Auth required
     if (requireAuth && !id.isAuthed) {
-      nav(createPageUrl("Home") + `?next=${encodeURIComponent(loc.pathname)}`, { replace: true });
+      const target = createPageUrl("Home");
+      if (here !== target) {
+        nav(`${target}?next=${encodeURIComponent(nextUrl)}`, { replace: true });
+      }
       return;
     }
 
-    // Subscription required
+    // 2) Subscription required (paid)
     if (requireSub && id.isAuthed && !id.isSubscribed) {
-      nav(createPageUrl("Subscribe") + `?next=${encodeURIComponent(loc.pathname)}`, { replace: true });
+      const target = createPageUrl("Subscribe");
+      if (here !== target) {
+        nav(`${target}?next=${encodeURIComponent(nextUrl)}&force=1`, { replace: true });
+      }
       return;
     }
 
-    // Child required
+    // 3) Child/athlete profile required
     if (requireChild && id.isAuthed) {
-      // If not subscribed but we allow Profile, route to Profile not Subscribe
       if (!id.hasChild) {
-        const target = allowProfileWithoutSub ? "Profile" : "Subscribe";
-        nav(createPageUrl(target) + `?next=${encodeURIComponent(loc.pathname)}`, { replace: true });
+        // If subscription is not required, and we allow profile creation, go Profile.
+        // If subscription IS required, prefer Subscribe first unless you explicitly want Profile-first.
+        const shouldGoProfile = allowProfileWithoutSub && !requireSub;
+        const targetPage = shouldGoProfile ? "Profile" : "Subscribe";
+        const target = createPageUrl(targetPage);
+
+        if (here !== target) {
+          const qs =
+            targetPage === "Subscribe"
+              ? `?next=${encodeURIComponent(nextUrl)}&force=1`
+              : `?next=${encodeURIComponent(nextUrl)}`;
+
+          nav(`${target}${qs}`, { replace: true });
+        }
         return;
       }
     }
-  }, [id.loading, id.isAuthed, id.isSubscribed, id.hasChild, requireAuth, requireSub, requireChild, allowProfileWithoutSub, nav, loc.pathname]);
+  }, [
+    id.loading,
+    id.isAuthed,
+    id.isSubscribed,
+    id.hasChild,
+    requireAuth,
+    requireSub,
+    requireChild,
+    allowProfileWithoutSub,
+    nav,
+    loc?.pathname,
+    nextUrl
+  ]);
 
   if (id.loading) {
     return (
-      <div style={{ padding: 24 }}>
-        <div style={{ fontSize: 16, fontWeight: 600 }}>Loading…</div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-sm text-slate-600">Loading…</div>
       </div>
     );
   }
