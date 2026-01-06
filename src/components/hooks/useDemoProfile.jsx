@@ -1,3 +1,4 @@
+// src/components/hooks/useDemoProfile.js
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 /**
@@ -5,13 +6,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
  *
  * Demo personalization stored in localStorage.
  * - Provides a stable demoProfile.id (required for demo-local favorites keys)
- * - Exposes: { loaded, demoProfile, setDemoProfile, resetDemoProfile, refresh }
+ * - Backward-compatible API:
+ *    { loaded, demoProfile, demoProfileId,
+ *      updateDemoProfile, clearDemoProfile, refresh,
+ *      setDemoProfile, resetDemoProfile }
  *
  * Storage keys:
  * - demo:profile:v1   => profile object
  */
 const STORAGE_KEY = "demo:profile:v1";
 
+// ---------- helpers ----------
 function safeParse(json) {
   try {
     return JSON.parse(json);
@@ -20,8 +25,18 @@ function safeParse(json) {
   }
 }
 
+function safeStringId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
+}
+
+function uniq(arr) {
+  return Array.from(new Set((arr || []).filter(Boolean)));
+}
+
 function makeId() {
-  // Stable enough for local demo identity; avoids crypto dependency.
+  // stable enough for local demo identity; avoids crypto dependency
   return `dp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
@@ -32,93 +47,152 @@ function defaultProfile(existingId) {
     sport_id: null,
     state: null,
     division: null,
-    position_ids: []
+    position_ids: [],
+    // Optional future fields
+    grad_year: null,
   };
 }
 
 function normalizeProfile(raw) {
-  // Ensures shape is consistent and safe
   const base = defaultProfile(raw?.id);
 
+  const sport_id = safeStringId(raw?.sport_id) ?? base.sport_id;
+  const state = typeof raw?.state === "string" ? raw.state : base.state;
+  const division = typeof raw?.division === "string" ? raw.division : base.division;
+
+  const position_ids = Array.isArray(raw?.position_ids)
+    ? uniq(raw.position_ids.map(safeStringId)).filter(Boolean)
+    : base.position_ids;
+
+  const grad_year =
+    raw?.grad_year === null || raw?.grad_year === undefined
+      ? base.grad_year
+      : Number.isFinite(Number(raw.grad_year))
+        ? Number(raw.grad_year)
+        : base.grad_year;
+
   return {
-    id: raw?.id || base.id,
-    sport_id: raw?.sport_id ?? base.sport_id,
-    state: raw?.state ?? base.state,
-    division: raw?.division ?? base.division,
-    position_ids: Array.isArray(raw?.position_ids) ? raw.position_ids : base.position_ids
+    id: safeStringId(raw?.id) || base.id,
+    sport_id,
+    state,
+    division,
+    position_ids,
+    grad_year,
   };
+}
+
+function readFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? safeParse(raw) : null;
+    return normalizeProfile(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function writeToStorage(profile) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function useDemoProfile() {
   const [loaded, setLoaded] = useState(false);
   const [demoProfile, setDemoProfileState] = useState(() => defaultProfile());
 
-  // Load from localStorage once
+  // Load once + ensure persisted shape
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const parsed = raw ? safeParse(raw) : null;
-      const normalized = normalizeProfile(parsed);
-      setDemoProfileState(normalized);
+    const fromStorage = readFromStorage();
+    const next = fromStorage ? fromStorage : normalizeProfile(demoProfile);
 
-      // Persist back to ensure we always have an id + correct shape
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-    } catch {
-      // If localStorage fails (privacy mode), fall back to in-memory profile
-      setDemoProfileState((prev) => normalizeProfile(prev));
-    } finally {
-      setLoaded(true);
-    }
+    setDemoProfileState(next);
+    writeToStorage(next);
+    setLoaded(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Write-through setter (merges patches, normalizes, persists)
+  // Sync across tabs/windows
+  useEffect(() => {
+    function onStorage(e) {
+      if (!e) return;
+      if (e.key !== STORAGE_KEY) return;
+
+      const next = readFromStorage();
+      if (!next) return;
+
+      setDemoProfileState((prev) => {
+        // Avoid useless rerenders
+        const prevStr = JSON.stringify(prev);
+        const nextStr = JSON.stringify(next);
+        return prevStr === nextStr ? prev : next;
+      });
+      setLoaded(true);
+    }
+
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Core write-through setter (patch or updater)
   const setDemoProfile = useCallback((patchOrUpdater) => {
     setDemoProfileState((prev) => {
       const patch =
         typeof patchOrUpdater === "function" ? patchOrUpdater(prev) : patchOrUpdater;
 
       const merged = normalizeProfile({ ...prev, ...(patch || {}) });
-
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-      } catch {}
-
+      writeToStorage(merged);
       return merged;
     });
   }, []);
 
-  // Hard refresh from localStorage (useful if something else updates storage)
+  // Back-compat alias used by your pages (DemoSetup etc.)
+  const updateDemoProfile = useCallback(
+    (patch) => setDemoProfile(patch),
+    [setDemoProfile]
+  );
+
+  // Hard refresh from localStorage (useful if storage updated outside React)
   const refresh = useCallback(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const parsed = raw ? safeParse(raw) : null;
-      const normalized = normalizeProfile(parsed);
-      setDemoProfileState(normalized);
-      setLoaded(true);
-    } catch {
-      setLoaded(true);
-    }
+    const next = readFromStorage();
+    if (next) setDemoProfileState(next);
+    setLoaded(true);
   }, []);
 
+  // Reset filters but KEEP SAME id (favorites remain tied)
   const resetDemoProfile = useCallback(() => {
     setDemoProfileState((prev) => {
-      const next = defaultProfile(prev?.id); // keep same id so favorites stay tied
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {}
+      const next = defaultProfile(prev?.id);
+      writeToStorage(next);
       return next;
     });
   }, []);
 
-  // Convenience: stable id for favorites keys, always present after loaded
-  const demoProfileId = useMemo(() => demoProfile?.id || "default", [demoProfile?.id]);
+  // Back-compat alias used by your pages
+  const clearDemoProfile = useCallback(() => {
+    resetDemoProfile();
+  }, [resetDemoProfile]);
+
+  const demoProfileId = useMemo(
+    () => (demoProfile?.id ? String(demoProfile.id) : "default"),
+    [demoProfile?.id]
+  );
 
   return {
     loaded,
     demoProfile,
     demoProfileId,
+
+    // Preferred API
     setDemoProfile,
     resetDemoProfile,
-    refresh
+    refresh,
+
+    // Backward-compatible API for existing callers
+    updateDemoProfile,
+    clearDemoProfile,
   };
 }
