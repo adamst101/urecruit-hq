@@ -403,7 +403,7 @@ export default function CampDetailDemo() {
             onClick={() => {
               // ✅ Analytics: signup CTA clicked
               trackEvent({
-                event_name: "signup_cta_clicked",
+                event_name: "subscribe_cta_clicked",
                 mode: "demo",
                 camp_id: detail.camp_id,
                 school_id: detail.school_id,
