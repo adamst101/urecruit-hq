@@ -73,15 +73,18 @@ export default function Profile() {
   const location = useLocation();
 
   // IMPORTANT: include mode so demo can be allowed
-  const {
-  isLoading: accessLoading,
-  mode,
-  hasAccess,
-  seasonYear,
-  currentYear,
-  demoYear,
-  accountId,
-} = useSeasonAccess();
+ const { isLoading, mode, seasonYear } = useSeasonAccess();
+
+const {
+  data: detail,
+  isLoading: detailLoading,
+  isError,
+  error,
+} = useQuery({
+  queryKey: ["demoCampDetail", campId, seasonYear],
+  enabled: !!campId && !!seasonYear,
+  queryFn: () => fetchDemoCampDetail({ campId, seasonYear }),
+});
 
 
   const [saving, setSaving] = useState(false);
