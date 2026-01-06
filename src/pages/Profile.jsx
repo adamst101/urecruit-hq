@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, LogOut, UserCircle2, ArrowRight, Lock } from "lucide-react";
+// src/pages/Profile.jsx
+import React, { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Loader2, UserCircle2, ArrowRight, CheckCircle2 } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -10,108 +10,140 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
-import BottomNav from "../components/navigation/BottomNav";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
-import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
-/**
- * Profile
- * - Demo/unauthenticated users: show Sign In + Upgrade CTA (no forced redirects)
- * - Authenticated users: show athlete profile summary + upgrade CTA if unpaid + logout
- *
- * Critical: Logout MUST actually sign out + clear caches + hard redirect.
- */
+function trackEvent(payload) {
+  try {
+    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+  } catch {}
+}
+
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
+}
+
 export default function Profile() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const location = useLocation();
+  const { mode, accountId, currentYear, demoYear } = useSeasonAccess();
 
-  const { mode, loading: accessLoading, accountId, currentYear, demoYear } = useSeasonAccess();
-
-  const {
-    athleteProfile,
-    isLoading: identityLoading,
-    isError: identityError,
-    error: identityErrorObj
-  } = useAthleteIdentity();
-
-  const [logoutWorking, setLogoutWorking] = useState(false);
-
+  const postPurchase = !!location?.state?.postPurchase;
   const isAuthed = !!accountId;
 
-  const headlineBadge = useMemo(() => {
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [athletes, setAthletes] = useState([]);
+  const [activeAthleteId, setActiveAthleteId] = useState(null);
+
+  const [newName, setNewName] = useState("");
+  const [newSportId, setNewSportId] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const badge = useMemo(() => {
     if (!isAuthed) return <Badge className="bg-slate-900 text-white">Demo {demoYear}</Badge>;
     if (mode === "paid") return <Badge className="bg-emerald-600 text-white">Paid {currentYear}</Badge>;
-    return <Badge className="bg-amber-500 text-white">Unpaid {currentYear}</Badge>;
+    return <Badge className="bg-amber-500 text-white">Unpaid</Badge>;
   }, [isAuthed, mode, currentYear, demoYear]);
 
-  const handleLogout = async () => {
-    setLogoutWorking(true);
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setErr("");
+      setLoading(true);
 
-    // ✅ Logout latch: prevents Home auto-redirect during Base44 session/cache lag
+      try {
+        if (!isAuthed) {
+          if (mounted) {
+            setAthletes([]);
+            setActiveAthleteId(null);
+          }
+          return;
+        }
+
+        // Load athletes for this account
+        const rows = await base44.entities.Athlete.filter({ account_id: accountId });
+        const list = Array.isArray(rows) ? rows : [];
+
+        // Load account active athlete id (optional)
+        let acct = null;
+        try {
+          const a = await base44.entities.Account.filter({ id: accountId });
+          acct = Array.isArray(a) ? a[0] : null;
+        } catch {}
+
+        const active = normId(acct?.active_athlete_id) || normId(list[0]);
+
+        if (mounted) {
+          setAthletes(list);
+          setActiveAthleteId(active);
+        }
+      } catch (e) {
+        if (mounted) setErr(String(e?.message || e));
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, [accountId, isAuthed]);
+
+  const enforceCreateAthlete = postPurchase && mode === "paid" && isAuthed && athletes.length === 0;
+
+  const setActive = async (athleteId) => {
+    const id = normId(athleteId);
+    if (!id) return;
+
+    setActiveAthleteId(id);
     try {
-      localStorage.setItem("logoutAt", String(Date.now()));
+      await base44.entities.Account.update(accountId, { active_athlete_id: id });
+      trackEvent({ event_name: "active_athlete_set", mode: "paid", season_year: currentYear });
     } catch {}
+  };
 
-    // Always redirect with signedout flag so Home won't auto-route immediately.
-    const url = createPageUrl("Home") + `?signedout=1&t=${Date.now()}`;
+  const addAthlete = async () => {
+    const name = newName.trim();
+    if (!name) return;
 
+    setSaving(true);
+    setErr("");
     try {
-      // 1) Real sign-out (Base44 SDK variants)
-      if (base44?.auth?.signOut) await base44.auth.signOut();
-      else if (base44?.auth?.logout) await base44.auth.logout();
-      else if (base44?.auth?.signout) await base44.auth.signout();
+      const created = await base44.entities.Athlete.create({
+        account_id: accountId,
+        athlete_name: name,
+        sport_id: newSportId || null
+      });
 
-      // 2) Clear react-query cache so no identity/entitlement sticks
-      try {
-        queryClient.clear();
-      } catch {}
+      const createdId = normId(created) || normId(created?.id);
 
-      // 3) Clear likely auth/session storage keys (safe even if no-ops)
-      try {
-        const keys = Object.keys(localStorage || {});
-        keys.forEach((k) => {
-          const lower = String(k).toLowerCase();
-          if (
-            lower.includes("base44") ||
-            lower.includes("auth") ||
-            lower.includes("token") ||
-            lower.includes("session")
-          ) {
-            localStorage.removeItem(k);
-          }
-        });
-      } catch {}
+      const next = [created, ...athletes].filter(Boolean);
+      setAthletes(next);
 
-      try {
-        const keys = Object.keys(sessionStorage || {});
-        keys.forEach((k) => {
-          const lower = String(k).toLowerCase();
-          if (
-            lower.includes("base44") ||
-            lower.includes("auth") ||
-            lower.includes("token") ||
-            lower.includes("session")
-          ) {
-            sessionStorage.removeItem(k);
-          }
-        });
-      } catch {}
+      if (createdId) {
+        await setActive(createdId);
+      }
 
-      // 4) Hard redirect (kills in-memory state)
-      window.location.replace(url);
+      setNewName("");
+      setNewSportId("");
+
+      trackEvent({ event_name: "athlete_created", mode: "paid", season_year: currentYear });
+
+      // If coming from purchase, continue to Discover once at least one athlete exists
+      if (postPurchase) {
+        navigate(createPageUrl("Discover"));
+      }
     } catch (e) {
-      // Even if SDK signout fails, still force-reset UI state
-      try {
-        queryClient.clear();
-      } catch {}
-      window.location.replace(url);
+      setErr(String(e?.message || e));
     } finally {
-      setLogoutWorking(false);
+      setSaving(false);
     }
   };
 
-  // Loading
-  if (accessLoading || identityLoading) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
@@ -119,266 +151,135 @@ export default function Profile() {
     );
   }
 
-  // Demo / unauthenticated view (do NOT auto-route them anywhere)
   if (!isAuthed) {
     return (
-      <div className="min-h-screen bg-slate-50 pb-20">
-        <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
-          <div className="max-w-md mx-auto p-4">
+      <div className="min-h-screen bg-slate-50 p-4">
+        <div className="max-w-md mx-auto space-y-4">
+          <div className="pt-2">
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-deep-navy">Profile</h1>
-              {headlineBadge}
+              <h1 className="text-2xl font-bold text-deep-navy">Family</h1>
+              {badge}
             </div>
-            <div className="text-sm text-slate-600 mt-1">
-              Sign in to create a real athlete profile and save camps.
-            </div>
+            <p className="text-slate-600 mt-1">Sign in to manage athletes under one account.</p>
           </div>
-        </div>
 
-        <div className="max-w-md mx-auto p-4 space-y-4">
           <Card className="p-4">
-            <div className="flex items-start gap-3">
-              <UserCircle2 className="w-6 h-6 text-slate-700 mt-0.5" />
-              <div className="flex-1">
-                <div className="font-semibold text-deep-navy">You’re in demo mode</div>
-                <div className="text-sm text-slate-600 mt-1">
-                  Demo browsing is available, but profiles require an account.
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
-                    Sign In / Continue
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => navigate(createPageUrl("Discover"))}
-                  >
-                    Back to Discover
-                  </Button>
-                </div>
-              </div>
-            </div>
+            <Button className="w-full" onClick={() => navigate(createPageUrl("Home"))}>
+              Go to Home
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
           </Card>
-
-          <PaywallCard
-            show={true}
-            currentYear={currentYear}
-            demoYear={demoYear}
-            onUpgrade={() => navigate(createPageUrl("Checkout"))}
-            onKeepDemo={() => navigate(createPageUrl("Discover"))}
-          />
         </div>
-
-        <BottomNav />
       </div>
     );
   }
-
-  // Authenticated but identity error
-  if (identityError) {
-    return (
-      <div className="min-h-screen bg-slate-50 pb-20">
-        <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
-          <div className="max-w-md mx-auto p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-deep-navy">Profile</h1>
-                {headlineBadge}
-              </div>
-
-              <Button variant="outline" onClick={handleLogout} disabled={logoutWorking}>
-                {logoutWorking ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Signing out…
-                  </>
-                ) : (
-                  <>
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Logout
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="max-w-md mx-auto p-4">
-          <Card className="p-4 border-rose-200 bg-rose-50 text-rose-700">
-            <div className="font-semibold">Failed to load athlete profile</div>
-            <div className="text-xs mt-2 break-words">
-              {String(identityErrorObj?.message || identityErrorObj)}
-            </div>
-            <div className="mt-4 space-y-2">
-              <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
-                Go to Onboarding
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={handleLogout}
-                disabled={logoutWorking}
-              >
-                {logoutWorking ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Signing out…
-                  </>
-                ) : (
-                  "Sign Out"
-                )}
-              </Button>
-            </div>
-          </Card>
-        </div>
-
-        <BottomNav />
-      </div>
-    );
-  }
-
-  // Authenticated view (with or without athleteProfile)
-  const hasProfile = !!athleteProfile;
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
-        <div className="max-w-md mx-auto p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-deep-navy">Profile</h1>
-                {headlineBadge}
-              </div>
-              <div className="text-sm text-slate-600 mt-1">
-                {hasProfile ? "Manage your athlete profile." : "Complete setup to personalize camps."}
-              </div>
-            </div>
-
-            <Button variant="outline" onClick={handleLogout} disabled={logoutWorking}>
-              {logoutWorking ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Signing out…
-                </>
-              ) : (
-                <>
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Logout
-                </>
-              )}
-            </Button>
+    <div className="min-h-screen bg-slate-50 p-4">
+      <div className="max-w-md mx-auto space-y-4">
+        <div className="pt-2">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-deep-navy">Family</h1>
+            {badge}
           </div>
+          <p className="text-slate-600 mt-1">
+            One email can manage multiple athletes. Select an active athlete to personalize camps.
+          </p>
         </div>
-      </div>
 
-      <div className="max-w-md mx-auto p-4 space-y-4">
-        {!hasProfile ? (
-          <Card className="p-4">
-            <div className="flex items-start gap-3">
-              <UserCircle2 className="w-6 h-6 text-slate-700 mt-0.5" />
-              <div className="flex-1">
-                <div className="font-semibold text-deep-navy">No athlete profile yet</div>
-                <div className="text-sm text-slate-600 mt-1">
-                  Create your athlete profile so camps can be filtered and saved correctly.
-                </div>
-                <div className="mt-4">
-                  <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
-                    Complete Setup
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
-              </div>
-            </div>
+        {err && (
+          <Card className="p-3 border-rose-200 bg-rose-50 text-rose-700">
+            <div className="text-sm break-words">{err}</div>
           </Card>
-        ) : (
-          <Card className="p-4">
+        )}
+
+        {/* Post-purchase enforcement */}
+        {enforceCreateAthlete && (
+          <Card className="p-4 border-emerald-200 bg-emerald-50">
             <div className="flex items-start gap-3">
-              <UserCircle2 className="w-6 h-6 text-slate-700 mt-0.5" />
+              <CheckCircle2 className="w-6 h-6 text-emerald-700 mt-0.5" />
               <div className="flex-1">
-                <div className="font-semibold text-deep-navy">
-                  {athleteProfile?.athlete_name || "Athlete"}
-                </div>
-
-                <div className="text-sm text-slate-600 mt-1 space-y-1">
-                  {athleteProfile?.grad_year && (
-                    <div>
-                      <span className="font-medium text-slate-700">Grad Year:</span>{" "}
-                      <span>{athleteProfile.grad_year}</span>
-                    </div>
-                  )}
-                  {athleteProfile?.home_zip && (
-                    <div>
-                      <span className="font-medium text-slate-700">ZIP:</span>{" "}
-                      <span>{athleteProfile.home_zip}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
-                    Edit Profile / Setup
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-
-                  {mode !== "paid" && (
-                    <Button className="w-full" onClick={() => navigate(createPageUrl("Checkout"))}>
-                      Upgrade to Current Season
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </Button>
-                  )}
+                <div className="font-semibold text-emerald-900">Almost done</div>
+                <div className="text-sm text-emerald-900/80 mt-1">
+                  Add your first athlete profile to finish activation.
                 </div>
               </div>
             </div>
           </Card>
         )}
 
-        <PaywallCard
-          show={mode !== "paid"}
-          currentYear={currentYear}
-          demoYear={demoYear}
-          onUpgrade={() => navigate(createPageUrl("Checkout"))}
-          onKeepDemo={() => navigate(createPageUrl("Discover"))}
-        />
-      </div>
+        {/* Athlete list */}
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <UserCircle2 className="w-5 h-5 text-slate-700" />
+            <div className="font-semibold text-deep-navy">Athletes</div>
+          </div>
 
-      <BottomNav />
+          {athletes.length === 0 ? (
+            <div className="text-sm text-slate-600">No athletes yet.</div>
+          ) : (
+            <div className="space-y-2">
+              {athletes.map((a) => {
+                const id = normId(a);
+                const active = id && activeAthleteId === id;
+                return (
+                  <button
+                    key={id}
+                    className={`w-full text-left p-3 rounded-xl border ${
+                      active ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"
+                    }`}
+                    onClick={() => setActive(id)}
+                    type="button"
+                  >
+                    <div className="font-semibold text-slate-900">{a?.athlete_name || "Athlete"}</div>
+                    <div className="text-xs text-slate-500">{active ? "Active athlete" : "Tap to set active"}</div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        {/* Add athlete */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">Add athlete</div>
+          <div className="mt-3 space-y-2">
+            <input
+              className="w-full border border-slate-200 rounded-xl p-3 bg-white"
+              placeholder="Athlete name (e.g., Jordan)"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+            <input
+              className="w-full border border-slate-200 rounded-xl p-3 bg-white"
+              placeholder="Sport ID (optional for now)"
+              value={newSportId}
+              onChange={(e) => setNewSportId(e.target.value)}
+            />
+            <Button className="w-full" onClick={addAthlete} disabled={saving || !newName.trim()}>
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  Add Athlete
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </>
+              )}
+            </Button>
+          </div>
+        </Card>
+
+        {/* Continue */}
+        {!enforceCreateAthlete && (
+          <Button className="w-full" onClick={() => navigate(createPageUrl("Discover"))}>
+            Continue to Discover
+            <ArrowRight className="w-4 h-4 ml-2" />
+          </Button>
+        )}
+      </div>
     </div>
-  );
-}
-
-function PaywallCard({ show, currentYear, demoYear, onUpgrade, onKeepDemo }) {
-  if (!show) return null;
-
-  return (
-    <Card className="p-4 border-amber-200 bg-amber-50">
-      <div className="flex items-start gap-3">
-        <Lock className="w-5 h-5 text-amber-700 mt-0.5" />
-        <div className="flex-1">
-          <div className="font-semibold text-amber-900">
-            Unlock Current Season Camps ({currentYear})
-          </div>
-
-          <div className="text-sm text-amber-900/80 mt-1">
-            You’re currently browsing the demo dataset ({demoYear}). Upgrade to access the current
-            season and full planning features.
-          </div>
-
-          <div className="mt-4 space-y-2">
-            <Button className="w-full" onClick={onUpgrade}>
-              Upgrade
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-
-            <Button variant="outline" className="w-full" onClick={onKeepDemo}>
-              Keep Browsing Demo
-            </Button>
-          </div>
-        </div>
-      </div>
-    </Card>
   );
 }
