@@ -1,14 +1,15 @@
 // src/pages/MyCamps.jsx
-import React, { useEffect } from "react";
+import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Lock } from "lucide-react";
 
 import { createPageUrl } from "../utils";
 
-import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
+import { Button } from "../components/ui/button";
 
 import BottomNav from "../components/navigation/BottomNav";
+import RouteGuard from "../components/auth/RouteGuard";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
@@ -18,102 +19,35 @@ import { useCampSummariesClient } from "../components/hooks/useCampSummariesClie
  * MyCamps
  * Paid-only page.
  *
- * Guard rules:
- * - If demo/unpaid → redirect to Onboarding (or Subscribe; see note below)
- * - If paid but identity still loading → show loader
- * - If paid + no athlete profile → redirect to Onboarding
+ * Policy:
+ * - Demo users should never land here (BottomNav hides it; RouteGuard enforces it)
+ * - Paid users must have athlete profile (RouteGuard enforces it)
  */
-export default function MyCamps() {
+function MyCampsPage() {
   const navigate = useNavigate();
-
-  // ✅ Standard hook usage
-  const { isLoading: accessLoading, mode, seasonYear, currentYear, demoYear, accountId } = useSeasonAccess();
-
-  const { athleteProfile, isLoading: identityLoading, isError: identityError, error: identityErrorObj } =
-    useAthleteIdentity();
-
-  /**
-   * 🚫 DEMO / UNPAID GUARD
-   * This is a hard stop. Demo users do not belong here.
-   *
-   * IMPORTANT:
-   * If you want "marketing paywall" behavior, route to Subscribe instead of Onboarding.
-   * Right now, Onboarding is more consistent with your "sign up required" flow.
-   */
-  useEffect(() => {
-    if (accessLoading || identityLoading) return;
-
-    if (mode !== "paid") {
-      navigate(createPageUrl("Onboarding"), { replace: true });
-    }
-  }, [mode, accessLoading, identityLoading, navigate]);
-
-  /**
-   * 🧭 PROFILE GUARD
-   * Paid users must have a profile to use MyCamps.
-   */
-  useEffect(() => {
-    if (accessLoading || identityLoading) return;
-    if (mode !== "paid") return;
-
-    if (!athleteProfile) {
-      navigate(createPageUrl("Onboarding"), { replace: true });
-    }
-  }, [mode, athleteProfile, accessLoading, identityLoading, navigate]);
-
-  // Loading states
-  if (accessLoading || identityLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-      </div>
-    );
-  }
-
-  // Identity error fallback
-  if (identityError) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-4">
-        <Card className="max-w-md mx-auto p-4 border-rose-200 bg-rose-50 text-rose-700">
-          <div className="font-semibold">Failed to load athlete profile</div>
-          <div className="text-xs mt-2 break-words">
-            {String(identityErrorObj?.message || identityErrorObj)}
-          </div>
-          <div className="text-sm mt-2">
-            Please try again or return to onboarding.
-          </div>
-          <div className="mt-4">
-            <Button className="w-full" onClick={() => navigate(createPageUrl("Onboarding"))}>
-              Go to Onboarding
-            </Button>
-          </div>
-        </Card>
-      </div>
-    );
-  }
-
-  // If we somehow got here unpaid, render nothing (navigation effect will fire)
-  if (mode !== "paid" || !athleteProfile) return null;
-
-  // ✅ SAFE: Paid + Profile exists
-  return <MyCampsPaid athleteProfile={athleteProfile} />;
-}
-
-/* ------------------------------------------------------------------ */
-/* PAID IMPLEMENTATION                                                 */
-/* ------------------------------------------------------------------ */
-
-function MyCampsPaid({ athleteProfile }) {
-  const navigate = useNavigate();
+  const { currentYear } = useSeasonAccess();
+  const { athleteProfile } = useAthleteIdentity();
 
   const athleteId = athleteProfile?.id;
   const sportId = athleteProfile?.sport_id;
 
-  const { data: campSummaries = [], isLoading, isError, error } = useCampSummariesClient({
+  const { data, isLoading, isError, error } = useCampSummariesClient({
     athleteId,
     sportId,
-    enabled: !!athleteId,
+    enabled: !!athleteId
   });
+
+  const campSummaries = useMemo(() => (Array.isArray(data) ? data : []), [data]);
+
+  const registered = useMemo(
+    () => campSummaries.filter((c) => c.intent_status === "registered" || c.intent_status === "completed"),
+    [campSummaries]
+  );
+
+  const favorites = useMemo(
+    () => campSummaries.filter((c) => c.intent_status === "favorite"),
+    [campSummaries]
+  );
 
   if (isLoading) {
     return (
@@ -125,30 +59,25 @@ function MyCampsPaid({ athleteProfile }) {
 
   if (isError) {
     return (
-      <div className="min-h-screen bg-slate-50 p-4">
+      <div className="min-h-screen bg-slate-50 p-4 pb-20">
         <Card className="max-w-md mx-auto p-4 border-rose-200 bg-rose-50 text-rose-700">
-          <div className="font-semibold">Failed to load camps</div>
+          <div className="font-semibold">Failed to load My Camps</div>
           <div className="text-xs mt-2 break-words">{String(error?.message || error)}</div>
-          <div className="mt-4">
-            <Button className="w-full" variant="outline" onClick={() => navigate(createPageUrl("Discover"))}>
-              Back to Discover
-            </Button>
-          </div>
+          <Button className="w-full mt-4" variant="outline" onClick={() => navigate(createPageUrl("Discover"))}>
+            Back to Discover
+          </Button>
         </Card>
+        <BottomNav />
       </div>
     );
   }
-
-  const registered = (campSummaries || []).filter(
-    (c) => c.intent_status === "registered" || c.intent_status === "completed"
-  );
-  const favorites = (campSummaries || []).filter((c) => c.intent_status === "favorite");
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-md mx-auto p-4">
           <h1 className="text-2xl font-bold text-deep-navy">My Camps</h1>
+          <div className="text-sm text-slate-600 mt-1">Current season ({currentYear}).</div>
         </div>
       </div>
 
@@ -162,6 +91,9 @@ function MyCampsPaid({ athleteProfile }) {
                 <div className="text-sm text-slate-600 mt-1">
                   Favorite or register for camps in Discover to see them here.
                 </div>
+                <Button className="w-full mt-4" onClick={() => navigate(createPageUrl("Discover"))}>
+                  Go to Discover
+                </Button>
               </div>
             </div>
           </Card>
@@ -189,6 +121,17 @@ function MyCampsPaid({ athleteProfile }) {
   );
 }
 
+export default function MyCamps() {
+  // MyCamps is paid-only and requires athlete profile.
+  // If user is demo or not subscribed => RouteGuard sends them to Subscribe.
+  // If paid + no profile => RouteGuard sends them to Profile (with next=...).
+  return (
+    <RouteGuard requireSub={true} requireChild={true} allowProfileWithoutSub={true}>
+      <MyCampsPage />
+    </RouteGuard>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* SUPPORT COMPONENTS                                                  */
 /* ------------------------------------------------------------------ */
@@ -205,8 +148,8 @@ function Section({ title, children }) {
 function CampRow({ camp }) {
   return (
     <Card className="p-3">
-      <div className="font-semibold text-deep-navy">{camp.school_name}</div>
-      <div className="text-sm text-slate-600">{camp.camp_name}</div>
+      <div className="font-semibold text-deep-navy">{camp.school_name || "Unknown School"}</div>
+      <div className="text-sm text-slate-600">{camp.camp_name || "Camp"}</div>
     </Card>
   );
 }
