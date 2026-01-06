@@ -71,7 +71,8 @@ export default function Profile() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { season, hasAccess, isLoading: accessLoading } = useSeasonAccess();
+  const { season, hasAccess, isLoading: accessLoading, mode } = useSeasonAccess();
+
 
   const [saving, setSaving] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
