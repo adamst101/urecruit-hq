@@ -1,31 +1,113 @@
-import React from 'react';
+// src/pages/UserNotRegisteredError.jsx
+import React, { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Lock, ArrowRight, LogOut } from "lucide-react";
 
-const UserNotRegisteredError = () => {
+import { base44 } from "../api/base44Client";
+import { createPageUrl } from "../utils";
+
+import { Card } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+
+function trackEvent(payload) {
+  try {
+    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+  } catch {}
+}
+
+export default function UserNotRegisteredError() {
+  const navigate = useNavigate();
+  const { isLoading, mode, accountId } = useSeasonAccess();
+
+  // Track once per session
+  useEffect(() => {
+    if (isLoading) return;
+
+    const key = "evt_user_not_registered_viewed";
+    try {
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+
+    trackEvent({
+      event_name: "user_not_registered_viewed",
+      mode: mode || null,
+      account_id: accountId || null,
+      source: "user_not_registered_error"
+    });
+  }, [isLoading, mode, accountId]);
+
+  if (isLoading) return null;
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-b from-white to-slate-50">
-      <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-lg border border-slate-100">
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 mb-6 rounded-full bg-orange-100">
-            <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-white to-slate-50 p-4">
+      <Card className="max-w-md w-full p-8 border-slate-200">
+        <div className="text-center space-y-6">
+          <div className="mx-auto flex items-center justify-center w-16 h-16 rounded-full bg-amber-100">
+            <Lock className="w-8 h-8 text-amber-700" />
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-4">Access Restricted</h1>
-          <p className="text-slate-600 mb-8">
-            You are not registered to use this application. Please contact the app administrator to request access.
-          </p>
-          <div className="p-4 bg-slate-50 rounded-md text-sm text-slate-600">
-            <p>If you believe this is an error, you can:</p>
-            <ul className="list-disc list-inside mt-2 space-y-1">
-              <li>Verify you are logged in with the correct account</li>
-              <li>Contact the app administrator for access</li>
-              <li>Try logging out and back in again</li>
+
+          <div>
+            <h1 className="text-2xl font-bold text-deep-navy">Access Restricted</h1>
+            <p className="text-slate-600 mt-2">
+              Your account isn’t registered for this application yet.
+            </p>
+          </div>
+
+          <div className="bg-slate-50 rounded-lg p-4 text-sm text-slate-600 text-left">
+            <p className="font-medium text-slate-700 mb-2">What you can do:</p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Confirm you’re logged in with the correct email</li>
+              <li>Contact the app administrator to request access</li>
+              <li>Log out and sign back in</li>
             </ul>
           </div>
+
+          <div className="space-y-2">
+            <Button
+              className="w-full"
+              onClick={() => {
+                trackEvent({
+                  event_name: "user_not_registered_go_home_clicked",
+                  source: "user_not_registered_error",
+                  account_id: accountId || null
+                });
+                navigate(createPageUrl("Home"));
+              }}
+            >
+              Go to Home
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={async () => {
+                trackEvent({
+                  event_name: "user_not_registered_logout_clicked",
+                  source: "user_not_registered_error",
+                  account_id: accountId || null
+                });
+
+                try {
+                  await base44.auth?.signOut?.();
+                } catch {}
+
+                navigate(createPageUrl("Home"), { replace: true });
+              }}
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Log out
+            </Button>
+          </div>
+
+          <div className="text-xs text-slate-500">
+            If you believe this is a mistake, please contact support or the app administrator.
+          </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
-};
-
-export default UserNotRegisteredError;
+}
