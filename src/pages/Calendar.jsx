@@ -1,6 +1,13 @@
+// src/pages/Calendar.jsx
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Lock } from "lucide-react";
+import {
+  Loader2,
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Lock,
+} from "lucide-react";
 import {
   format,
   startOfMonth,
@@ -11,13 +18,19 @@ import {
   addMonths,
   subMonths,
   startOfWeek,
-  endOfWeek
+  endOfWeek,
 } from "date-fns";
 
 import { createPageUrl } from "../utils";
 
 import { Button } from "../components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../components/ui/sheet";
 import { Badge } from "../components/ui/badge";
 import { cn } from "../lib/utils";
@@ -29,8 +42,19 @@ import { useCampSummariesClient } from "../components/hooks/useCampSummariesClie
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 
+/**
+ * Calendar (router page)
+ * - Demo: public summaries (read-only)
+ * - Paid: athlete-specific summaries (registered/favorite)
+ */
 export default function Calendar() {
-  const { mode, seasonYear, currentYear, demoYear, loading: accessLoading } = useSeasonAccess();
+  const {
+    isLoading: accessLoading,
+    mode,
+    seasonYear,
+    currentYear,
+    demoYear,
+  } = useSeasonAccess();
 
   if (accessLoading) {
     return (
@@ -43,14 +67,14 @@ export default function Calendar() {
   return mode === "paid" ? (
     <CalendarPaid currentYear={currentYear} />
   ) : (
-    <CalendarDemo seasonYear={seasonYear} demoYear={demoYear} />
+    <CalendarDemo seasonYear={seasonYear} demoYear={demoYear} currentYear={currentYear} />
   );
 }
 
 /* -----------------------------
    DEMO (no auth, read-only)
 ----------------------------- */
-function CalendarDemo({ seasonYear, demoYear }) {
+function CalendarDemo({ seasonYear, demoYear, currentYear }) {
   const navigate = useNavigate();
 
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -61,11 +85,11 @@ function CalendarDemo({ seasonYear, demoYear }) {
     data: campSummaries = [],
     isLoading: campsLoading,
     isError: campsError,
-    error: campsErrorObj
+    error: campsErrorObj,
   } = usePublicCampSummariesClient({
     seasonYear,
     sportId: sportFilter === "all" ? undefined : sportFilter,
-    enabled: true
+    enabled: true,
   });
 
   const sortedSummaries = useMemo(() => {
@@ -114,10 +138,11 @@ function CalendarDemo({ seasonYear, demoYear }) {
               <button
                 className="underline font-medium"
                 onClick={() => navigate(createPageUrl("Onboarding"))}
+                type="button"
               >
                 Sign up
               </button>{" "}
-              to unlock the current season.
+              to unlock the current season <b>{currentYear}</b>.
             </div>
           </div>
 
@@ -140,9 +165,9 @@ function CalendarDemo({ seasonYear, demoYear }) {
                 ...new Map(
                   sortedSummaries.map((s) => [
                     s.sport_id,
-                    { id: s.sport_id, sport_name: s.sport_name }
+                    { id: s.sport_id, sport_name: s.sport_name },
                   ])
-                ).values()
+                ).values(),
               ]
                 .filter((s) => s?.id)
                 .map((s) => (
@@ -152,24 +177,42 @@ function CalendarDemo({ seasonYear, demoYear }) {
                 ))}
             </SelectContent>
           </Select>
+
+          {/* Helpful debug/clarity: what year are we querying? */}
+          <div className="text-xs text-slate-500 mt-2">
+            Viewing data for seasonYear: <b>{seasonYear}</b>
+          </div>
         </div>
       </div>
 
       <div className="max-w-md mx-auto p-4">
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-slate-100">
-            <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+            >
               <ChevronLeft className="w-5 h-5" />
             </Button>
-            <h2 className="text-lg font-bold text-deep-navy">{format(currentDate, "MMMM yyyy")}</h2>
-            <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))}>
+            <h2 className="text-lg font-bold text-deep-navy">
+              {format(currentDate, "MMMM yyyy")}
+            </h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setCurrentDate(addMonths(currentDate, 1))}
+            >
               <ChevronRight className="w-5 h-5" />
             </Button>
           </div>
 
           <div className="grid grid-cols-7 border-b border-slate-100">
             {["S", "M", "T", "W", "T", "F", "S"].map((d, idx) => (
-              <div key={idx} className="p-2 text-center text-xs font-semibold text-slate-500">
+              <div
+                key={idx}
+                className="p-2 text-center text-xs font-semibold text-slate-500"
+              >
                 {d}
               </div>
             ))}
@@ -194,6 +237,7 @@ function CalendarDemo({ seasonYear, demoYear }) {
                     hasCamps && "hover:bg-slate-100 cursor-pointer",
                     !hasCamps && "cursor-default"
                   )}
+                  type="button"
                 >
                   <div
                     className={cn(
@@ -233,10 +277,10 @@ function CalendarDemo({ seasonYear, demoYear }) {
                   key={summary.camp_id}
                   onClick={() => {
                     setSelectedDate(null);
-                    // ✅ DEMO: go to internal demo detail page
                     navigate(createPageUrl(`CampDetailDemo?id=${summary.camp_id}`));
                   }}
                   className="w-full text-left p-4 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                  type="button"
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <Badge variant="outline" className="text-slate-700 text-xs">
@@ -272,7 +316,7 @@ function CalendarPaid({ currentYear }) {
     athleteProfile,
     isLoading: identityLoading,
     isError: identityError,
-    error: identityErrorObj
+    error: identityErrorObj,
   } = useAthleteIdentity();
 
   const athleteId = athleteProfile?.id;
@@ -282,11 +326,11 @@ function CalendarPaid({ currentYear }) {
     data: campSummaries = [],
     isLoading: campsLoading,
     isError: campsError,
-    error: campsErrorObj
+    error: campsErrorObj,
   } = useCampSummariesClient({
     athleteId,
     sportId: athleteSportId,
-    enabled: !!athleteId && !identityLoading && !identityError
+    enabled: !!athleteId && !identityLoading && !identityError,
   });
 
   const sortedSummaries = useMemo(() => {
@@ -350,7 +394,8 @@ function CalendarPaid({ currentYear }) {
   if (identityError) {
     return (
       <div className="p-6 text-rose-700">
-        Failed to load athlete profile: {String(identityErrorObj?.message || identityErrorObj)}
+        Failed to load athlete profile:{" "}
+        {String(identityErrorObj?.message || identityErrorObj)}
       </div>
     );
   }
@@ -393,9 +438,9 @@ function CalendarPaid({ currentYear }) {
                 ...new Map(
                   sortedSummaries.map((s) => [
                     s.sport_id,
-                    { id: s.sport_id, sport_name: s.sport_name }
+                    { id: s.sport_id, sport_name: s.sport_name },
                   ])
-                ).values()
+                ).values(),
               ]
                 .filter((s) => s?.id)
                 .map((s) => (
@@ -447,6 +492,7 @@ function CalendarPaid({ currentYear }) {
                     hasCamps && "hover:bg-slate-100 cursor-pointer",
                     !hasCamps && "cursor-default"
                   )}
+                  type="button"
                 >
                   <div
                     className={cn(
@@ -460,8 +506,12 @@ function CalendarPaid({ currentYear }) {
                   </div>
 
                   <div className="space-y-0.5">
-                    {registered.length > 0 && <div className="w-full h-1.5 bg-emerald-500 rounded-full" />}
-                    {favorite.length > 0 && <div className="w-full h-1.5 border-2 border-rose-400 rounded-full" />}
+                    {registered.length > 0 && (
+                      <div className="w-full h-1.5 bg-emerald-500 rounded-full" />
+                    )}
+                    {favorite.length > 0 && (
+                      <div className="w-full h-1.5 border-2 border-rose-400 rounded-full" />
+                    )}
                     {hasConflict && <AlertCircle className="w-3 h-3 text-red-500 mx-auto" />}
                   </div>
                 </button>
@@ -503,6 +553,7 @@ function CalendarPaid({ currentYear }) {
                     navigate(createPageUrl(`CampDetail?id=${summary.camp_id}`));
                   }}
                   className="w-full text-left p-4 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-colors"
+                  type="button"
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>
@@ -521,6 +572,7 @@ function CalendarPaid({ currentYear }) {
                     navigate(createPageUrl(`CampDetail?id=${summary.camp_id}`));
                   }}
                   className="w-full text-left p-4 bg-white border-2 border-dashed border-rose-300 rounded-xl hover:bg-rose-50 transition-colors"
+                  type="button"
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <Badge variant="outline" className="text-rose-600 border-rose-300 text-xs">
@@ -541,4 +593,3 @@ function CalendarPaid({ currentYear }) {
     </div>
   );
 }
-
