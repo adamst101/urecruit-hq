@@ -27,7 +27,6 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
 
-// ✅ NEW: RouteGuard wrapper
 import RouteGuard from "../components/auth/RouteGuard";
 
 const divisionColors = {
@@ -64,16 +63,16 @@ function CampDetailPaidInner() {
   }, [location.search]);
 
   /**
-   * 🚫 DEMO GUARD
-   * Demo/unpaid users must be routed to CampDetailDemo.
-   * (RouteGuard also handles subscription gating generally, but this preserves your UX.)
+   * DEMO GUARD:
+   * If the viewer is not paid, this route shouldn't render paid CampDetail.
+   * Send them to CampDetailDemo with the same id.
    */
   useEffect(() => {
     if (accessLoading) return;
     if (!campId) return;
 
     if (mode !== "paid") {
-      navigate(createPageUrl(`CampDetailDemo?id=${campId}`), { replace: true });
+      navigate(createPageUrl(`CampDetailDemo?id=${encodeURIComponent(campId)}`), { replace: true });
     }
   }, [mode, accessLoading, campId, navigate]);
 
@@ -103,7 +102,7 @@ function CampDetailPaidInner() {
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() => navigate(createPageUrl("Profile"))}
+                onClick={() => navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(location.pathname + location.search)}`)}
               >
                 Go to Profile Setup
               </Button>
@@ -125,10 +124,7 @@ function CampDetailPaidInner() {
               This page requires a camp id query param: <code>?id=...</code>
             </div>
             <div className="mt-4">
-              <Button
-                className="w-full"
-                onClick={() => navigate(createPageUrl("Discover"))}
-              >
+              <Button className="w-full" onClick={() => navigate(createPageUrl("Discover"))}>
                 Go to Discover
               </Button>
             </div>
@@ -158,7 +154,6 @@ function CampDetailPaidInner() {
   }, [summaries, campId]);
 
   const invalidateSummaries = () => {
-    // must match your stable key
     queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
   };
 
@@ -312,7 +307,9 @@ function CampDetailPaidInner() {
                 {summary.sport_name && (
                   <span className="text-xs text-slate-500 font-medium">{summary.sport_name}</span>
                 )}
-                {isRegistered && <Badge className="bg-emerald-100 text-emerald-700 text-xs">Registered</Badge>}
+                {isRegistered && (
+                  <Badge className="bg-emerald-100 text-emerald-700 text-xs">Registered</Badge>
+                )}
               </div>
 
               <h1 className="text-xl font-bold text-deep-navy truncate">
@@ -346,7 +343,9 @@ function CampDetailPaidInner() {
                 <Calendar className="w-4 h-4 text-slate-400" />
                 <span>
                   {format(startDate, "MMM d, yyyy")}
-                  {endDate && summary.end_date !== summary.start_date ? ` – ${format(endDate, "MMM d, yyyy")}` : ""}
+                  {endDate && summary.end_date !== summary.start_date
+                    ? ` – ${format(endDate, "MMM d, yyyy")}`
+                    : ""}
                 </span>
               </div>
             )}
@@ -406,7 +405,11 @@ function CampDetailPaidInner() {
           </Button>
 
           {summary.link_url && (
-            <Button variant="outline" className="w-full" onClick={() => window.open(summary.link_url, "_blank")}>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => window.open(summary.link_url, "_blank")}
+            >
               Open Camp Link
             </Button>
           )}
@@ -419,30 +422,16 @@ function CampDetailPaidInner() {
 }
 
 export default function CampDetail() {
-  const location = useLocation();
-
-  // Preserve deep-link after forcing Profile setup
-  const next = useMemo(() => createPageUrl("CampDetail") + (location.search || ""), [location.search]);
-
+  /**
+   * Correct wrapper policy for YOUR RouteGuard implementation:
+   * - Demo users can still browse public/demo elsewhere
+   * - Paid users must complete athlete profile first
+   *
+   * NOTE: RouteGuard already only enforces profile when mode === "paid"
+   */
   return (
-    <RouteGuard
-      requireAuth={false}
-      requireSub={true}
-      requireChild={true}
-      allowProfileWithoutSub={true}
-    >
-      {/* If RouteGuard sends user to Profile, it should include next=... internally.
-          If your RouteGuard doesn't yet, update it to do so (see note below). */}
-      <CampDetailPaidInner next={next} />
+    <RouteGuard requireProfile={true}>
+      <CampDetailPaidInner />
     </RouteGuard>
   );
 }
-
-/**
- * NOTE (important):
- * Your RouteGuard must redirect missing-child paid users to:
- *   Profile?next=<current-path>
- * so after creating athlete they come right back here.
- *
- * If your current RouteGuard doesn't append next, update RouteGuard accordingly.
- */
