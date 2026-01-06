@@ -1,5 +1,6 @@
+// src/pages/Subscribe.jsx
 import React, { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { CheckCircle2, ArrowRight, Lock } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
@@ -15,29 +16,42 @@ function trackEvent(payload) {
   try {
     base44.entities.Event.create({
       ...payload,
-      ts: new Date().toISOString()
+      ts: new Date().toISOString(),
     });
   } catch {}
 }
 
 export default function Subscribe() {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // keep your existing contract from useSeasonAccess (as shown in your pasted code)
   const { loading, currentYear, demoYear, mode, accountId } = useSeasonAccess();
 
-  // ✅ Guardrail: paid users should never see Subscribe
+  // ✅ "Intent-aware" redirect guard:
+  // - Paid users generally shouldn't see Subscribe
+  // - BUT if they were explicitly sent here (force=1 or next=...), do not hijack navigation
+  const params = new URLSearchParams(location.search);
+  const force = params.get("force") === "1";
+  const next = params.get("next"); // presence implies intentional navigation
+  const source = params.get("source") || "subscribe_page";
+
+  // ✅ Guardrail: paid users should never see Subscribe (unless forced)
   useEffect(() => {
     if (loading) return;
-    if (mode === "paid") {
+    if (mode === "paid" && !force && !next) {
       navigate(createPageUrl("Discover"), { replace: true });
     }
-  }, [loading, mode, navigate]);
+  }, [loading, mode, force, next, navigate]);
 
   // Dedup subscribe_viewed per session (only for demo users)
   useEffect(() => {
     if (loading) return;
+
+    // We only count "subscribe_viewed" for demo users (your original intent).
     if (mode === "paid") return;
 
-    const key = `evt_subscribe_viewed_${currentYear}`;
+    const key = `evt_subscribe_viewed_${currentYear || "na"}`;
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -45,15 +59,20 @@ export default function Subscribe() {
 
     trackEvent({
       event_name: "subscribe_viewed",
-      mode: "demo",
-      season_year: currentYear, // year being sold
-      source: "subscribe_page"
+      mode: mode || "demo",
+      season_year: currentYear || null, // year being sold
+      source,
+      account_id: accountId || null,
+      force: force ? 1 : 0,
+      next: next || null,
     });
-  }, [loading, mode, currentYear]);
+  }, [loading, mode, currentYear, source, accountId, force, next]);
 
   // While redirecting paid users, render nothing (prevents flicker)
   if (loading) return null;
-  if (mode === "paid") return null;
+
+  // If paid and not forced, this page will redirect away; avoid flicker.
+  if (mode === "paid" && !force && !next) return null;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
@@ -61,8 +80,18 @@ export default function Subscribe() {
         <div className="pt-2">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-deep-navy">Subscribe</h1>
-            <Badge className="bg-slate-900 text-white">Demo {demoYear}</Badge>
+
+            {mode === "demo" ? (
+              <Badge className="bg-slate-900 text-white">
+                Demo {demoYear || ""}
+              </Badge>
+            ) : (
+              <Badge className="bg-emerald-700 text-white">
+                Paid {currentYear || ""}
+              </Badge>
+            )}
           </div>
+
           <p className="text-slate-600 mt-1">
             Unlock the current season ({currentYear}) and planning tools.
           </p>
@@ -100,12 +129,24 @@ export default function Subscribe() {
                   onClick={() => {
                     trackEvent({
                       event_name: "checkout_cta_clicked",
-                      mode: "demo",
-                      season_year: currentYear,
-                      source: "subscribe_page",
-                      account_id: accountId || null
+                      mode: mode || "demo",
+                      season_year: currentYear || null,
+                      source,
+                      account_id: accountId || null,
+                      force: force ? 1 : 0,
+                      next: next || null,
                     });
-                    navigate(createPageUrl("Checkout"));
+
+                    // Carry next forward so checkout can send them back
+                    const checkoutUrl =
+                      createPageUrl("Checkout") +
+                      (next || force
+                        ? `?next=${encodeURIComponent(
+                            next || createPageUrl("Profile")
+                          )}`
+                        : "");
+
+                    navigate(checkoutUrl);
                   }}
                 >
                   Continue to Checkout
@@ -118,16 +159,32 @@ export default function Subscribe() {
                   onClick={() => {
                     trackEvent({
                       event_name: "subscribe_keep_demo_clicked",
-                      mode: "demo",
-                      season_year: currentYear,
-                      source: "subscribe_page",
-                      account_id: accountId || null
+                      mode: mode || "demo",
+                      season_year: currentYear || null,
+                      source,
+                      account_id: accountId || null,
+                      force: force ? 1 : 0,
+                      next: next || null,
                     });
-                    navigate(createPageUrl("Discover"));
+
+                    // If a "next" exists, honor it; otherwise go discover
+                    if (next) navigate(next);
+                    else navigate(createPageUrl("Discover"));
                   }}
                 >
                   Keep Browsing Demo
                 </Button>
+
+                {/* Optional: if they were forced here from Profile, give them a clear way back */}
+                {next ? (
+                  <Button
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => navigate(next)}
+                  >
+                    Back
+                  </Button>
+                ) : null}
               </div>
 
               <div className="mt-3 text-xs text-amber-900/70">
@@ -141,11 +198,15 @@ export default function Subscribe() {
           <div className="font-semibold text-deep-navy">FAQ</div>
           <div className="mt-2 text-sm text-slate-600 space-y-2">
             <div>
-              <span className="font-medium text-slate-700">Can I add multiple kids?</span>{" "}
+              <span className="font-medium text-slate-700">
+                Can I add multiple kids?
+              </span>{" "}
               Yes — one email can manage multiple athletes.
             </div>
             <div>
-              <span className="font-medium text-slate-700">Do I need to create a profile first?</span>{" "}
+              <span className="font-medium text-slate-700">
+                Do I need to create a profile first?
+              </span>{" "}
               No — you create athletes after purchase.
             </div>
           </div>
