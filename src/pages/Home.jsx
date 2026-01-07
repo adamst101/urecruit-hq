@@ -1,5 +1,5 @@
 // src/pages/Home.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, LogIn } from "lucide-react";
 
@@ -11,10 +11,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
-import { useAthleteIdentity } from "../components/useAthleteIdentity";
-
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode";
-import { routeToWorkspace } from "../components/hooks/routeToWorkspace";
 
 function trackEvent(payload) {
   try {
@@ -32,39 +29,37 @@ async function safeSignIn() {
   return false;
 }
 
-// small helper: after sign-in, allow hooks to update without blocking render
-async function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+// Wait for season hook to reflect updated auth/mode after sign-in.
+// Polling avoids "sleep and hope" and prevents stale reads.
+async function waitForSeason(seasonRef, { timeoutMs = 2000, intervalMs = 100 } = {}) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const s = seasonRef.current;
+    if (s && s.accountId) return s;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return seasonRef.current;
 }
 
 export default function Home() {
   const nav = useNavigate();
 
-  // Hooks are allowed, but Home must not block render or auto-route based on them.
+  // Home should be marketing-first. It can read season state, but must not block render.
   const season = useSeasonAccess();
-  const identity = useAthleteIdentity();
-
-  // Keep latest values in refs for click-handlers (avoid stale closures)
   const seasonRef = useRef(season);
-  const identityRef = useRef(identity);
 
   useEffect(() => {
     seasonRef.current = season;
   }, [season]);
 
-  useEffect(() => {
-    identityRef.current = identity;
-  }, [identity]);
-
   const { demoSeasonYear } = getDemoDefaults();
 
   const authed = !!season.accountId;
   const paid = season.mode === "paid";
-  const hasProfile = !!identity.athleteProfile;
 
   // Instrument: home view (dedupe per session)
   useEffect(() => {
-    const key = "evt_home_viewed_v2";
+    const key = "evt_home_viewed_v3";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -74,9 +69,9 @@ export default function Home() {
       event_name: "home_view",
       source: "home",
       auth_state: authed ? "authed" : "anon",
-      mode: paid ? "paid" : "demo_or_anon"
+      mode: paid ? "paid" : "not_paid"
     });
-    // NOTE: intentionally not dependent on hooks to avoid refiring; this is a landing page.
+    // don't re-fire on hook changes; marketing page
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -97,11 +92,10 @@ export default function Home() {
       demo_season: demoSeasonYear
     });
 
-    // Route into the real app surface with demo params
-    nav(`${createPageUrl("Discover")}?mode=demo&season=${demoSeasonYear}`);
+    nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // ----- CTA 2: Start My Season (paid → subscribe → profile → workspace) -----
+  // ----- CTA 2: Start My Season (login → subscribe OR workspace) -----
   async function handleStartMySeason() {
     trackEvent({
       event_name: "cta_start_click",
@@ -109,61 +103,61 @@ export default function Home() {
       auth_state: authed ? "authed" : "anon"
     });
 
-    // Step 1: if not signed in, sign in then continue
-    if (!seasonRef.current.accountId) {
+    // Ensure user is signed in
+    if (!seasonRef.current?.accountId) {
       trackEvent({ event_name: "cta_login_click", source: "home", via: "start_my_season" });
       const ok = await safeSignIn();
       if (!ok) return;
 
-      // Give hooks a moment to refresh their state (no UI blocking)
-      await sleep(350);
+      // wait for hook state to reflect login
+      await waitForSeason(seasonRef);
     }
 
-    // Refresh snapshot after potential sign-in
-    const s = seasonRef.current;
-    const i = identityRef.current;
-
+    const s = seasonRef.current || {};
     const nowAuthed = !!s.accountId;
     const nowPaid = s.mode === "paid";
-    const nowHasProfile = !!i.athleteProfile;
 
-    const decision = routeToWorkspace({
-      authed: nowAuthed,
-      paid: nowPaid,
-      hasProfile: nowHasProfile
-    });
+    // If still not authed, stop (sign-in canceled or failed)
+    if (!nowAuthed) return;
+
+    // Decision:
+    // - not paid -> Subscribe
+    // - paid -> MyCamps (RouteGuard will force Profile if missing)
+    const destination = nowPaid ? "mycamps" : "subscribe";
 
     trackEvent({
       event_name: "start_season_routed",
       source: "home",
-      destination: decision.destination
+      destination
     });
 
-    if (decision.destination === "login") {
-      // If we got here, something prevented auth state from landing; take them to login again.
-      await safeSignIn();
+    if (!nowPaid) {
+      nav(createPageUrl("Subscribe"));
       return;
     }
 
-    nav(decision.url);
+    nav(createPageUrl("MyCamps"));
   }
 
-  // ----- Top-right links -----
+  // Top-right login for existing subscribers
   async function handleLoginOnly() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "top_right" });
     await safeSignIn();
   }
 
-  const badgeText = paid ? `Paid: ${season.currentYear ?? ""}` : `Demo: ${demoSeasonYear}`;
+  function handlePricingScroll() {
+    trackEvent({ event_name: "pricing_scroll", source: "home" });
+    const el = document.getElementById("pricing");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // Keep badge simple: NEVER imply personalization when not paid.
+  const badgeText = paid ? `Paid: Current Season` : `Demo: ${demoSeasonYear}`;
   const badgeClass = paid ? "bg-emerald-700 text-white" : "bg-slate-900 text-white";
 
-  // Copy blocks (developer-safe text)
   const heroHeadline = "Plan the right recruiting camps — before the season passes you by.";
   const heroSubhead =
-    "RecruitMe turns a chaotic camp season into a focused, athlete-specific planning workspace — so families choose when, where, and why to attend.";
-  const reframeTitle = "Not a camp directory.";
-  const reframeBody =
-    "This isn’t a listings app. It’s a season workspace for decisions: targets, conflicts, favorites, and a calendar that makes tradeoffs obvious.";
+    "RecruitMe turns a chaotic camp season into a focused season-planning workspace — so families choose when, where, and why to attend.";
 
   const howItWorks = useMemo(
     () => [
@@ -176,18 +170,12 @@ export default function Home() {
 
   const workspaceProof = useMemo(
     () => [
+      { title: "Discover", body: "Browse camps in demo or paid mode—same screens, different season + capabilities." },
       { title: "MyCamps", body: "Your intent workspace: favorites, registered, completed. (Paid + profile)" },
-      { title: "Calendar", body: "Conflict overlays across camps and intent. (Paid + profile)" },
-      { title: "Discover", body: "Browse camps in demo or paid mode—same screens, different season + capabilities." }
+      { title: "Calendar", body: "Conflict overlays across camps and intent. (Paid + profile)" }
     ],
     []
   );
-
-  function handlePricingScroll() {
-    trackEvent({ event_name: "pricing_scroll", source: "home" });
-    const el = document.getElementById("pricing");
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -199,13 +187,7 @@ export default function Home() {
             <div className="flex items-center gap-2 flex-wrap">
               <Badge className={badgeClass}>{badgeText}</Badge>
               <div className="text-xs text-slate-500">
-                {paid && hasProfile
-                  ? "Workspace unlocked."
-                  : paid && authed && !hasProfile
-                  ? "Paid active. Athlete setup required for workspace."
-                  : authed
-                  ? "Signed in. Demo experience available."
-                  : "Public demo available. No login required."}
+                {paid ? "Current season unlocked after login." : "Public demo available. No login required."}
               </div>
             </div>
           </div>
@@ -248,8 +230,11 @@ export default function Home() {
 
           {/* Reframe */}
           <Card className="p-7 space-y-3">
-            <div className="text-lg font-bold text-deep-navy">{reframeTitle}</div>
-            <div className="text-sm text-slate-600">{reframeBody}</div>
+            <div className="text-lg font-bold text-deep-navy">Not a camp directory.</div>
+            <div className="text-sm text-slate-600">
+              This isn’t a listings app. It’s a season workspace for decisions: targets, conflicts, favorites, and a
+              calendar that makes tradeoffs obvious.
+            </div>
 
             <div className="pt-2 grid gap-3">
               <div className="text-sm">
@@ -283,7 +268,7 @@ export default function Home() {
 
         {/* Workspace proof */}
         <Card className="p-7 space-y-4">
-          <div className="text-lg font-bold text-deep-navy">MyCamps is the workspace</div>
+          <div className="text-lg font-bold text-deep-navy">The paid season workspace</div>
           <div className="grid md:grid-cols-3 gap-4">
             {workspaceProof.map((x) => (
               <div key={x.title} className="text-sm">
@@ -293,7 +278,6 @@ export default function Home() {
             ))}
           </div>
 
-          {/* Final CTA repeat */}
           <div className="pt-2 flex flex-col sm:flex-row gap-2">
             <Button className="sm:flex-1" onClick={handleTryDemo}>
               Try the Demo Season
@@ -306,9 +290,10 @@ export default function Home() {
           </div>
         </Card>
 
-        {/* Pricing section anchor (simple placeholder; can move later) */}
+        {/* Pricing anchor (placeholder) */}
         <div id="pricing" />
       </div>
     </div>
   );
 }
+
