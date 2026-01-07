@@ -55,7 +55,7 @@ export default function Home() {
   const [logoOk, setLogoOk] = useState(true);
 
   useEffect(() => {
-    const key = "evt_home_viewed_v21";
+    const key = "evt_home_viewed_v22";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -78,7 +78,7 @@ export default function Home() {
   }
 
   async function handleLoginOnly() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "header_mobile" });
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "header" });
     const ok = await safeSignIn();
     if (!ok) return;
     await waitForSeason(seasonRef);
@@ -118,8 +118,8 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-8 space-y-8">
         {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
-          {/* Mobile: logo, tagline under logo, login under tagline */}
-          <div className="flex flex-col items-start md:items-start gap-1">
+          {/* Left: logo + tagline */}
+          <div className="flex flex-col items-start gap-1">
             {logoOk ? (
               <img
                 src={LOGO_URL}
@@ -132,12 +132,11 @@ export default function Home() {
               <div className="text-xl md:text-2xl font-extrabold text-brand leading-none">URecruit HQ</div>
             )}
 
-            {/* Tagline: under logo on mobile, reduced size */}
             <div className="text-sm md:text-lg text-muted font-semibold leading-tight">
               Your college recruiting camp planning HQ
             </div>
 
-            {/* Mobile login directly under tagline */}
+            {/* Mobile login under tagline */}
             <div className="pt-1 md:hidden">
               <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
                 <LogIn className="w-4 h-4 mr-2" />
@@ -146,21 +145,11 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Desktop actions (keep right side) */}
+          {/* Desktop: ONLY login button (pricing removed) */}
           <div className="hidden md:flex gap-2">
-            <Button variant="ghost" onClick={handlePricingScroll} className="text-ink">
-              Pricing
-            </Button>
             <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
               <LogIn className="w-4 h-4 mr-2" />
               Log in
-            </Button>
-          </div>
-
-          {/* Mobile pricing link (optional) */}
-          <div className="md:hidden">
-            <Button variant="ghost" onClick={handlePricingScroll} className="text-ink px-0">
-              Pricing
             </Button>
           </div>
         </div>
@@ -171,8 +160,6 @@ export default function Home() {
             <div className="max-w-3xl space-y-3">
               <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
               <div className="h-1 w-14 rounded bg-accent" />
-
-              {/* Center-justify paragraph on the page (mobile only) */}
               <p className="text-muted md:text-lg leading-relaxed text-center md:text-left">{heroParagraph}</p>
             </div>
 
