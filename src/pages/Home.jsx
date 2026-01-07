@@ -52,7 +52,7 @@ export default function Home() {
   const { demoSeasonYear } = getDemoDefaults();
 
   useEffect(() => {
-    const key = "evt_home_viewed_v13";
+    const key = "evt_home_viewed_v14";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -87,7 +87,7 @@ export default function Home() {
     nav(createPageUrl("UserHome"));
   }
 
-  // Primary CTA: "View pricing / Sign-Up" scrolls to pricing anchor
+  // Primary CTA: scroll to pricing anchor
   function handlePricingScroll() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     const el = document.getElementById("pricing");
@@ -179,10 +179,6 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="text-xs text-muted">
-              Independent planning tool · Not affiliated with camps · Demo uses prior-season data (read-only)
-            </div>
-
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-2 items-stretch">
               <Button className="sm:flex-1 btn-brand" onClick={handlePricingScroll}>
@@ -190,10 +186,16 @@ export default function Home() {
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
 
-              <Button className="sm:flex-1 btn-outline-brand" onClick={handleTryDemo}>
+              {/* Access Demo button should be navy + white (same as primary) */}
+              <Button className="sm:flex-1 btn-brand" onClick={handleTryDemo}>
                 Access Demo
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
+            </div>
+
+            {/* Trust microcopy moved to very bottom; removed "(read-only)" */}
+            <div className="pt-2 text-xs text-muted">
+              Independent planning tool · Not affiliated with camps · Demo uses prior-season data
             </div>
           </div>
         </Card>
