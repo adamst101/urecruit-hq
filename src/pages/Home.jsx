@@ -1,7 +1,7 @@
 // src/pages/Home.jsx
 import React, { useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
+import { ArrowRight, LogIn, CheckCircle2, LayoutGrid } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -55,7 +55,7 @@ export default function Home() {
   const paid = season.mode === "paid";
 
   useEffect(() => {
-    const key = "evt_home_viewed_v8";
+    const key = "evt_home_viewed_v9";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -96,7 +96,6 @@ export default function Home() {
     if (!nowAuthed) return;
 
     const destination = nowPaid ? "mycamps" : "subscribe";
-
     trackEvent({ event_name: "start_season_routed", source: "home", destination });
 
     if (!nowPaid) return nav(createPageUrl("Subscribe"));
@@ -104,7 +103,7 @@ export default function Home() {
   }
 
   async function handleLoginOnly() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "existing_members" });
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "top_right" });
     await safeSignIn();
   }
 
@@ -114,13 +113,10 @@ export default function Home() {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // Brand tokens (Base44-safe via Tailwind arbitrary values)
-  const BRAND = "#0B1F3A"; // deep navy
-  const BG = "#F6F8FB"; // soft background
-
   const badgeText = paid ? `Paid: Current Season` : `Demo: ${demoSeasonYear}`;
   const badgeClass = paid ? "bg-emerald-700 text-white" : "bg-slate-900 text-white";
 
+  // Copy (problem-led)
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
   const heroContext =
     "Built for families navigating competitive recruiting seasons—turning spreadsheets, bookmarks, and guesswork into one plan.";
@@ -149,19 +145,24 @@ export default function Home() {
     <button
       type="button"
       onClick={onClick}
-      className={`text-sm font-semibold underline underline-offset-4 hover:opacity-80 w-fit text-[${BRAND}]`}
+      className="text-sm font-semibold text-brand underline underline-offset-4 hover:opacity-80 w-fit"
     >
       {children}
     </button>
   );
 
+  function goToMyCamps() {
+    trackEvent({ event_name: "cta_goto_mycamps_click", source: "home" });
+    nav(createPageUrl("MyCamps"));
+  }
+
   return (
-    <div className={`min-h-screen bg-[${BG}]`}>
+    <div className="min-h-screen" style={{ backgroundColor: "var(--brand-bg)" }}>
       <div className="max-w-5xl mx-auto px-6 py-10 space-y-8">
         {/* Header */}
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 flex-wrap">
-            <div className={`text-2xl font-extrabold text-[${BRAND}]`}>RecruitMe</div>
+            <div className="text-2xl font-extrabold text-brand">RecruitMe</div>
             <Badge className={badgeClass}>{badgeText}</Badge>
             <div className="hidden sm:block text-xs text-slate-500">
               {paid ? "Current season unlocked after login." : "Public demo. No login required."}
@@ -172,10 +173,18 @@ export default function Home() {
             <Button variant="ghost" onClick={handlePricingScroll} className="text-slate-700">
               Pricing
             </Button>
-            <Button variant="outline" onClick={handleLoginOnly}>
-              <LogIn className="w-4 h-4 mr-2" />
-              Log in
-            </Button>
+
+            {authed ? (
+              <Button variant="outline" onClick={goToMyCamps}>
+                <LayoutGrid className="w-4 h-4 mr-2" />
+                MyCamps
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={handleLoginOnly}>
+                <LogIn className="w-4 h-4 mr-2" />
+                Log in
+              </Button>
+            )}
           </div>
         </div>
 
@@ -184,12 +193,8 @@ export default function Home() {
           <div className="p-8 md:p-10 space-y-6">
             {/* Copy */}
             <div className="max-w-3xl space-y-3">
-              <h1 className={`text-3xl md:text-4xl font-extrabold leading-tight text-[${BRAND}]`}>
-                {heroHeadline}
-              </h1>
-
+              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
               <p className="text-sm md:text-base font-semibold text-slate-700">{heroContext}</p>
-
               <p className="text-slate-600 md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
 
@@ -200,7 +205,7 @@ export default function Home() {
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="w-5 h-5 mt-0.5 text-slate-500" />
                     <div className="text-sm">
-                      <div className={`font-bold text-[${BRAND}]`}>{x.a}</div>
+                      <div className="font-bold text-brand">{x.a}</div>
                       <div className="text-slate-600">{x.b}</div>
                     </div>
                   </div>
@@ -213,7 +218,7 @@ export default function Home() {
               <div className="grid md:grid-cols-3 gap-4">
                 {howStrip.map((x) => (
                   <div key={x.title} className="text-sm">
-                    <div className={`font-bold text-[${BRAND}]`}>{x.title}</div>
+                    <div className="font-bold text-brand">{x.title}</div>
                     <div className="text-slate-600">{x.body}</div>
                   </div>
                 ))}
@@ -228,7 +233,7 @@ export default function Home() {
             {/* CTA cluster */}
             <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
               <Button
-                className={`sm:flex-1 bg-[${BRAND}] text-white hover:bg-[#081a31]`}
+                className="sm:flex-1 bg-brand text-white hover:bg-brand-dark"
                 onClick={handleStartMySeason}
               >
                 Sign up to access current-year camps
@@ -252,3 +257,4 @@ export default function Home() {
     </div>
   );
 }
+
