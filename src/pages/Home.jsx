@@ -139,6 +139,7 @@ export default function Home() {
           <div className="p-8 md:p-10 space-y-6">
             <div className="max-w-3xl space-y-3">
               <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
+              <div className="h-1 w-14 rounded bg-accent" />
               <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
 
