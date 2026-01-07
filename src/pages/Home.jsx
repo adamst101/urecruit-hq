@@ -1,5 +1,5 @@
 // src/pages/Home.jsx
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
@@ -11,6 +11,10 @@ import { Button } from "../components/ui/button";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode";
+
+const LOGO_URL =
+  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/68c568d1d_logo_transp.png";
+// ^^^ If logo still breaks, paste the *working* image URL here.
 
 function trackEvent(payload) {
   try {
@@ -51,8 +55,10 @@ export default function Home() {
 
   const { demoSeasonYear } = getDemoDefaults();
 
+  const [logoOk, setLogoOk] = useState(true);
+
   useEffect(() => {
-    const key = "evt_home_viewed_v15";
+    const key = "evt_home_viewed_v16";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -67,7 +73,6 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Demo (no login required)
   function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
 
@@ -78,7 +83,6 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Top-right login: after sign-in, go to UserHome
   async function handleLoginOnly() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "top_right" });
     const ok = await safeSignIn();
@@ -87,7 +91,6 @@ export default function Home() {
     nav(createPageUrl("UserHome"));
   }
 
-  // Primary CTA: scroll to pricing anchor
   function handlePricingScroll() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     const el = document.getElementById("pricing");
@@ -122,11 +125,18 @@ export default function Home() {
         {/* Top brand header */}
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <img
-              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/68c568d1_logo_transp.png"
-              alt="URecruit HQ"
-              className="h-20 md:h-28 lg:h-32 w-auto"
-            />
+            {logoOk ? (
+              <img
+                src={LOGO_URL}
+                alt="URecruit HQ"
+                className="h-20 md:h-28 lg:h-32 w-auto"
+                loading="eager"
+                onError={() => setLogoOk(false)}
+              />
+            ) : (
+              <div className="text-3xl md:text-4xl font-extrabold text-brand leading-tight">URecruit HQ</div>
+            )}
+
             <div className="text-sm md:text-base text-muted font-semibold">
               Your college recruiting camp planning HQ
             </div>
@@ -146,17 +156,12 @@ export default function Home() {
         {/* HERO */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-8 md:p-10 space-y-6">
-            {/* Copy */}
             <div className="max-w-3xl space-y-3">
               <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
-
-              {/* Gold accent (kept subtle; <10% rule) */}
               <div className="h-1 w-14 rounded bg-accent" />
-
               <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
 
-            {/* Outcome cards */}
             <div className="grid md:grid-cols-3 gap-4">
               {bullets.map((x) => (
                 <div key={x.a} className="rounded-xl bg-surface border border-default p-4">
@@ -171,7 +176,6 @@ export default function Home() {
               ))}
             </div>
 
-            {/* How it works strip */}
             <div className="rounded-xl border border-default bg-white p-4">
               <div className="grid md:grid-cols-3 gap-4">
                 {howStrip.map((x) => (
@@ -183,7 +187,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-2 items-stretch">
               <Button className="sm:flex-1 btn-brand" onClick={handlePricingScroll}>
                 View pricing / Sign-Up
@@ -196,16 +199,15 @@ export default function Home() {
               </Button>
             </div>
 
-            {/* Trust microcopy at very bottom; removed "(read-only)" */}
             <div className="pt-2 text-xs text-muted">
               Independent planning tool · Not affiliated with camps · Demo uses prior-season data
             </div>
           </div>
         </Card>
 
-        {/* Pricing anchor (placeholder) */}
         <div id="pricing" />
       </div>
     </div>
   );
 }
+
