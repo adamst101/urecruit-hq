@@ -13,7 +13,7 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode";
 
 const LOGO_URL =
-  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/68c568d1d_logo_transp.png";
+  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
 function trackEvent(payload) {
   try {
