@@ -55,7 +55,7 @@ export default function Home() {
   const [logoOk, setLogoOk] = useState(true);
 
   useEffect(() => {
-    const key = "evt_home_viewed_v19";
+    const key = "evt_home_viewed_v20";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -78,7 +78,7 @@ export default function Home() {
   }
 
   async function handleLoginOnly() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "top_right" });
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "header" });
     const ok = await safeSignIn();
     if (!ok) return;
     await waitForSeason(seasonRef);
@@ -115,32 +115,36 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-surface">
-      <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
-        {/* Top brand header */}
-        <div className="flex items-center justify-between gap-4">
-          {/* Left: logo + tagline (tight stack) */}
-          <div className="flex flex-col gap-0">
+      <div className="max-w-5xl mx-auto px-6 py-6 md:py-8 space-y-8">
+        {/* HEADER (mobile fixed) */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
+          {/* Brand block */}
+          <div className="flex items-center gap-3">
             {logoOk ? (
               <img
                 src={LOGO_URL}
                 alt="URecruit HQ"
                 loading="eager"
                 onError={() => setLogoOk(false)}
-                // ↓ 30% smaller than previous (h-20/md:h-56/lg:h-64)
-                className="h-14 md:h-40 lg:h-44 w-auto block"
+                // Mobile: prevent dominance + no squish
+                className="h-10 md:h-14 lg:h-16 w-auto object-contain flex-shrink-0"
               />
             ) : (
-              <div className="text-3xl md:text-4xl font-extrabold text-brand leading-none">URecruit HQ</div>
+              <div className="text-xl md:text-2xl font-extrabold text-brand leading-none">URecruit HQ</div>
             )}
 
-            {/* Tagline: bold + 2 sizes larger */}
-            <div className="text-lg md:text-xl text-muted font-bold leading-tight">
-              Your college recruiting camp planning HQ
+            <div className="min-w-0">
+              {/* Mobile-friendly: stays professional, doesn't wrap into a poem */}
+              <div className="text-base md:text-xl text-ink font-bold leading-tight truncate">
+                Your college recruiting camp planning HQ
+              </div>
+              {/* Optional small subline if you want it; remove if not needed */}
+              {/* <div className="text-xs md:text-sm text-muted">Plan the season. Avoid conflicts. Track registrations.</div> */}
             </div>
           </div>
 
-          {/* Right actions */}
-          <div className="flex gap-2">
+          {/* Actions (can move anywhere on mobile) */}
+          <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={handlePricingScroll} className="text-ink">
               Pricing
             </Button>
@@ -153,7 +157,7 @@ export default function Home() {
 
         {/* HERO */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
-          <div className="p-8 md:p-10 space-y-6">
+          <div className="p-7 md:p-10 space-y-6">
             <div className="max-w-3xl space-y-3">
               <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
               <div className="h-1 w-14 rounded bg-accent" />
