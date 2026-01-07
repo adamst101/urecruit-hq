@@ -41,6 +41,19 @@ async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } =
   return seasonRef.current;
 }
 
+// Optional: detect profile (only used after paid=true)
+// If you already have a hook for this (useAthleteIdentity), swap it in.
+async function hasAthleteProfile() {
+  try {
+    // If this exists in your app, it’s the cleanest check:
+    if (typeof base44.functions?.getAthleteProfile === "function") {
+      const p = await base44.functions.getAthleteProfile();
+      return !!p;
+    }
+  } catch {}
+  return false;
+}
+
 export default function Home() {
   const nav = useNavigate();
 
@@ -55,7 +68,7 @@ export default function Home() {
   const [logoOk, setLogoOk] = useState(true);
 
   useEffect(() => {
-    const key = "evt_home_viewed_v22";
+    const key = "evt_home_viewed_v23";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -70,6 +83,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Demo (no login required)
   function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
     setDemoMode(demoSeasonYear);
@@ -77,6 +91,7 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
+  // Login (header)
   async function handleLoginOnly() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "header" });
     const ok = await safeSignIn();
@@ -85,10 +100,39 @@ export default function Home() {
     nav(createPageUrl("UserHome"));
   }
 
-  function handlePricingScroll() {
+  // ✅ Primary CTA: View pricing / Sign-Up (must route, not scroll)
+  async function handlePricingSignup() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
-    const el = document.getElementById("pricing");
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    // 1) Ensure signed in (your product requires login to purchase)
+    if (!seasonRef.current?.accountId) {
+      trackEvent({ event_name: "cta_login_click", source: "home", via: "pricing_signup" });
+      const ok = await safeSignIn();
+      if (!ok) return;
+      await waitForSeason(seasonRef);
+    }
+
+    const s = seasonRef.current || {};
+    const authed = !!s.accountId;
+    const paid = s.mode === "paid";
+
+    if (!authed) return;
+
+    // 2) If not paid -> go to Subscribe (checkout)
+    if (!paid) {
+      nav(createPageUrl("Subscribe"));
+      return;
+    }
+
+    // 3) Paid but missing profile -> go to Profile setup (your “select sport” page)
+    const profileExists = await hasAthleteProfile();
+    if (!profileExists) {
+      nav(createPageUrl("Profile"));
+      return;
+    }
+
+    // 4) Paid + profile -> go to UserHome
+    nav(createPageUrl("UserHome"));
   }
 
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
@@ -118,7 +162,6 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-8 space-y-8">
         {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
-          {/* Left: logo + tagline */}
           <div className="flex flex-col items-start gap-1">
             {logoOk ? (
               <img
@@ -145,7 +188,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Desktop: ONLY login button (pricing removed) */}
+          {/* Desktop login only */}
           <div className="hidden md:flex gap-2">
             <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
               <LogIn className="w-4 h-4 mr-2" />
@@ -188,8 +231,9 @@ export default function Home() {
               </div>
             </div>
 
+            {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-2 items-stretch">
-              <Button className="sm:flex-1 btn-brand" onClick={handlePricingScroll}>
+              <Button className="sm:flex-1 btn-brand" onClick={handlePricingSignup}>
                 View pricing / Sign-Up
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
@@ -211,3 +255,4 @@ export default function Home() {
     </div>
   );
 }
+
