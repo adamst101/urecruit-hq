@@ -36,6 +36,10 @@ export default function Layout({ children }) {
         .border-neon-volt { border-color: #D6FF00; }
         .hover\\:bg-electric-blue:hover { background-color: #2D6CF2; }
         .hover\\:bg-deep-navy:hover { background-color: #081B33; }
+        .text-brand { color: var(--brand-navy); }
+        .bg-brand { background-color: var(--brand-navy); }
+        .bg-brand-dark { background-color: var(--brand-navy-dark); }
+        .border-brand { border-color: rgba(11, 31, 58, 0.18); }
       `}</style>
       {children}
     </div>
