@@ -12,7 +12,6 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode";
 
-// IMPORTANT: keep this as the working logo URL
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/68c568d1d_logo_transp.png";
 
@@ -45,7 +44,6 @@ async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } =
 export default function Home() {
   const nav = useNavigate();
 
-  // Home stays anonymous; we only read season state for routing after login.
   const season = useSeasonAccess();
   const seasonRef = useRef(season);
 
@@ -57,7 +55,7 @@ export default function Home() {
   const [logoOk, setLogoOk] = useState(true);
 
   useEffect(() => {
-    const key = "evt_home_viewed_v18";
+    const key = "evt_home_viewed_v19";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -72,18 +70,13 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Demo (no login required)
   function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
-
     setDemoMode(demoSeasonYear);
-
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
-
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Top-right login: after sign-in, go to UserHome
   async function handleLoginOnly() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "top_right" });
     const ok = await safeSignIn();
@@ -92,7 +85,6 @@ export default function Home() {
     nav(createPageUrl("UserHome"));
   }
 
-  // Primary CTA: scroll to pricing anchor
   function handlePricingScroll() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     const el = document.getElementById("pricing");
@@ -125,25 +117,23 @@ export default function Home() {
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
         {/* Top brand header */}
-        <div className="flex items-start justify-between gap-4">
-          {/* Left brand stack */}
-          <div className="space-y-0">
+        <div className="flex items-center justify-between gap-4">
+          {/* Left: logo + tagline (tight stack) */}
+          <div className="flex flex-col gap-0">
             {logoOk ? (
               <img
                 src={LOGO_URL}
                 alt="URecruit HQ"
                 loading="eager"
                 onError={() => setLogoOk(false)}
-                // Mobile: 100% (keep)
-                // Web: 200% larger
-                className="h-20 md:h-56 lg:h-64 w-auto"
+                className="h-20 md:h-56 lg:h-64 w-auto block"
               />
             ) : (
-              <div className="text-3xl md:text-4xl font-extrabold text-brand leading-tight">URecruit HQ</div>
+              <div className="text-3xl md:text-4xl font-extrabold text-brand leading-none">URecruit HQ</div>
             )}
 
-            {/* Reduced padding under logo */}
-            <div className="text-sm md:text-base text-muted font-semibold leading-tight -mt-10">
+            {/* Directly under logo */}
+            <div className="text-sm md:text-base text-muted font-semibold leading-none">
               Your college recruiting camp planning HQ
             </div>
           </div>
