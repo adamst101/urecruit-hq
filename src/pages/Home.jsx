@@ -59,7 +59,7 @@ export default function Home() {
 
   // Instrument: home view (dedupe per session)
   useEffect(() => {
-    const key = "evt_home_viewed_v3";
+    const key = "evt_home_viewed_v4";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -71,11 +71,10 @@ export default function Home() {
       auth_state: authed ? "authed" : "anon",
       mode: paid ? "paid" : "not_paid"
     });
-    // don't re-fire on hook changes; marketing page
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ----- CTA 1: Try Demo Season (no login required; no backend writes) -----
+  // ----- CTA 1: Preview Demo Season (no login required; no backend writes) -----
   function handleTryDemo() {
     trackEvent({
       event_name: "cta_demo_click",
@@ -95,7 +94,7 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // ----- CTA 2: Start My Season (login → subscribe OR workspace) -----
+  // ----- CTA 2: Start Live Season (login → subscribe OR workspace) -----
   async function handleStartMySeason() {
     trackEvent({
       event_name: "cta_start_click",
@@ -105,7 +104,7 @@ export default function Home() {
 
     // Ensure user is signed in
     if (!seasonRef.current?.accountId) {
-      trackEvent({ event_name: "cta_login_click", source: "home", via: "start_my_season" });
+      trackEvent({ event_name: "cta_login_click", source: "home", via: "start_live_season" });
       const ok = await safeSignIn();
       if (!ok) return;
 
@@ -117,10 +116,8 @@ export default function Home() {
     const nowAuthed = !!s.accountId;
     const nowPaid = s.mode === "paid";
 
-    // If still not authed, stop (sign-in canceled or failed)
     if (!nowAuthed) return;
 
-    // Decision:
     // - not paid -> Subscribe
     // - paid -> MyCamps (RouteGuard will force Profile if missing)
     const destination = nowPaid ? "mycamps" : "subscribe";
@@ -155,32 +152,71 @@ export default function Home() {
   const badgeText = paid ? `Paid: Current Season` : `Demo: ${demoSeasonYear}`;
   const badgeClass = paid ? "bg-emerald-700 text-white" : "bg-slate-900 text-white";
 
-  const heroHeadline = "Plan the right recruiting camps — before the season passes you by.";
+  // Copy — updated to wireframe spec
+  const heroHeadline = "Stop guessing which recruiting camps matter this season.";
   const heroSubhead =
-    "RecruitMe turns a chaotic camp season into a focused season-planning workspace — so families choose when, where, and why to attend.";
+    "RecruitMe is a season planning workspace that helps families compare camps, spot conflicts, and commit with confidence—before time and money are wasted.";
+
+  const notDirectoryBullets = useMemo(
+    () => [
+      "Decide which camps are worth your season",
+      "See conflicts and tradeoffs before committing",
+      "One calendar for intent, registrations, and timing"
+    ],
+    []
+  );
 
   const howItWorks = useMemo(
     () => [
-      { title: "Try Demo", body: "No login. Explore the full app experience with last season’s data (read-only)." },
-      { title: "Subscribe", body: "Unlock the current season and planning tools." },
-      { title: "Set up athlete", body: "Create athlete context once. Then your workspace unlocks." }
+      {
+        title: "Preview a real season",
+        body: "Explore the full app using last season’s data—no login, no commitment."
+      },
+      {
+        title: "Unlock your live season",
+        body: "Activate current-season planning tools when you’re ready."
+      },
+      {
+        title: "Set up your athlete once",
+        body: "Your workspace unlocks—no relearning, no rework."
+      }
     ],
     []
   );
 
   const workspaceProof = useMemo(
     () => [
-      { title: "Discover", body: "Browse camps in demo or paid mode—same screens, different season + capabilities." },
-      { title: "MyCamps", body: "Your intent workspace: favorites, registered, completed. (Paid + profile)" },
-      { title: "Calendar", body: "Conflict overlays across camps and intent. (Paid + profile)" }
+      {
+        title: "Discover",
+        body: "Browse camps in demo or paid mode—same screens, different season power."
+      },
+      {
+        title: "MyCamps",
+        body: "Track favorites, intent, registrations, and completions in one place."
+      },
+      {
+        title: "Calendar",
+        body: "See conflicts and overlaps instantly. Tradeoffs become obvious. (Paid season)"
+      }
     ],
     []
+  );
+
+  // Secondary CTA should look like a link (reduce decision friction)
+  const SecondaryCta = ({ onClick, children }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-sm font-semibold text-deep-navy underline underline-offset-4 hover:opacity-80 w-fit"
+    >
+      {children}
+    </button>
   );
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
-        {/* Top bar */}
+        {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
             <div className="text-3xl font-extrabold text-deep-navy">RecruitMe</div>
@@ -207,54 +243,58 @@ export default function Home() {
         <div className="grid lg:grid-cols-2 gap-4 items-start">
           <Card className="p-7 space-y-4 border-slate-300 shadow-sm">
             <div className="space-y-2">
-              <div className="text-2xl font-extrabold text-deep-navy leading-tight">{heroHeadline}</div>
+              <div className="text-3xl font-extrabold text-deep-navy leading-tight">{heroHeadline}</div>
               <div className="text-slate-600">{heroSubhead}</div>
-              <div className="text-xs text-slate-500">Independent planning tool • Not affiliated with camps</div>
+
+              <div className="text-xs text-slate-500">
+                Independent planning tool · No camp affiliations · No login required for demo
+              </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2 pt-2">
-              <Button className="sm:flex-1" onClick={handleTryDemo}>
-                Try the Demo Season
+            {/* Primary CTA = Demo */}
+            <div className="flex flex-col gap-2 pt-2">
+              <Button className="w-full" onClick={handleTryDemo}>
+                Preview a Real Recruiting Season
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
-              <Button className="sm:flex-1" variant="outline" onClick={handleStartMySeason}>
-                Start My Season
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
+
+              {/* Secondary CTA = link */}
+              <SecondaryCta onClick={handleStartMySeason}>Start My Live Season</SecondaryCta>
             </div>
 
             <div className="text-xs text-slate-500">
-              Demo is read-only and uses prior season data. Paid unlock enables current season + athlete workspace.
+              Demo uses prior-season data (read-only). Paid unlocks current season + athlete workspace.
             </div>
           </Card>
 
-          {/* Reframe */}
-          <Card className="p-7 space-y-3">
+          {/* Not a directory */}
+          <Card className="p-7 space-y-3 border-slate-200">
             <div className="text-lg font-bold text-deep-navy">Not a camp directory.</div>
             <div className="text-sm text-slate-600">
-              This isn’t a listings app. It’s a season workspace for decisions: targets, conflicts, favorites, and a
-              calendar that makes tradeoffs obvious.
+              RecruitMe is where you decide which camps are worth your season—before weekends and travel money disappear.
             </div>
 
-            <div className="pt-2 grid gap-3">
-              <div className="text-sm">
-                <div className="font-semibold text-deep-navy">Value</div>
-                <div className="text-slate-600">Decisions, tradeoffs, and conflicts—before weekends disappear.</div>
-              </div>
-              <div className="text-sm">
-                <div className="font-semibold text-deep-navy">Risk</div>
-                <div className="text-slate-600">Avoid double-booking and last-minute travel chaos.</div>
-              </div>
-              <div className="text-sm">
-                <div className="font-semibold text-deep-navy">Velocity</div>
-                <div className="text-slate-600">Same UI in demo and paid—upgrade without relearning.</div>
-              </div>
+            <div className="pt-2 space-y-2">
+              {notDirectoryBullets.map((t) => (
+                <div key={t} className="flex gap-2 text-sm text-slate-700">
+                  <div className="mt-[7px] h-1.5 w-1.5 rounded-full bg-slate-400 flex-shrink-0" />
+                  <div>{t}</div>
+                </div>
+              ))}
             </div>
           </Card>
         </div>
 
+        {/* Credibility band (lightweight) */}
+        <Card className="px-7 py-4 border-slate-200">
+          <div className="text-sm text-slate-700">
+            Built for families navigating competitive recruiting seasons—turning spreadsheets, bookmarks, and guesswork
+            into one plan.
+          </div>
+        </Card>
+
         {/* How it works */}
-        <Card className="p-7 space-y-4">
+        <Card className="p-7 space-y-4 border-slate-200">
           <div className="text-lg font-bold text-deep-navy">How it works</div>
           <div className="grid md:grid-cols-3 gap-4">
             {howItWorks.map((x) => (
@@ -266,9 +306,9 @@ export default function Home() {
           </div>
         </Card>
 
-        {/* Workspace proof */}
-        <Card className="p-7 space-y-4">
-          <div className="text-lg font-bold text-deep-navy">The paid season workspace</div>
+        {/* Workspace overview */}
+        <Card className="p-7 space-y-4 border-slate-200">
+          <div className="text-lg font-bold text-deep-navy">What you manage in your season workspace</div>
           <div className="grid md:grid-cols-3 gap-4">
             {workspaceProof.map((x) => (
               <div key={x.title} className="text-sm">
@@ -278,15 +318,38 @@ export default function Home() {
             ))}
           </div>
 
-          <div className="pt-2 flex flex-col sm:flex-row gap-2">
-            <Button className="sm:flex-1" onClick={handleTryDemo}>
-              Try the Demo Season
+          {/* CTA hierarchy rule: Demo dominant, Live as link */}
+          <div className="pt-2 flex flex-col gap-2">
+            <Button className="w-full" onClick={handleTryDemo}>
+              Preview a Real Recruiting Season
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
-            <Button className="sm:flex-1" variant="outline" onClick={handleStartMySeason}>
-              Start My Season
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
+            <SecondaryCta onClick={handleStartMySeason}>Start My Live Season</SecondaryCta>
+          </div>
+        </Card>
+
+        {/* Conversion band */}
+        <Card className="p-7 border-slate-200 bg-white">
+          <div className="space-y-3">
+            <div className="text-xl font-extrabold text-deep-navy">
+              See how a real recruiting season comes together—before you commit.
+            </div>
+            <div className="text-slate-600">
+              Preview the full workflow with last season’s data. Upgrade only when you’re ready to plan your live
+              season.
+            </div>
+
+            <div className="pt-2 flex flex-col gap-2">
+              <Button className="w-full" onClick={handleTryDemo}>
+                Preview a Real Recruiting Season
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+              <SecondaryCta onClick={handleStartMySeason}>Start My Live Season</SecondaryCta>
+
+              <div className="text-xs text-slate-500 pt-1">
+                Demo uses prior-season data (read-only). Paid unlocks current season + athlete workspace.
+              </div>
+            </div>
           </div>
         </Card>
 
@@ -296,4 +359,3 @@ export default function Home() {
     </div>
   );
 }
-
