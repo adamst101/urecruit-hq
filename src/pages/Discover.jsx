@@ -211,7 +211,7 @@ function DiscoverPage() {
   const athleteId = athleteProfile?.id;
   const sportId = athleteProfile?.sport_id;
 
-  // --- Pull demo context from URL if present (Home sets ?mode=demo&season=YYYY) ---
+  // If Home sent ?mode=demo&season=YYYY, prefer that year for demo display.
   const urlParams = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
   const urlMode = urlParams.get("mode");
   const urlSeason = urlParams.get("season");
@@ -223,13 +223,8 @@ function DiscoverPage() {
     enabled: gate.mode === "paid" && !!athleteId
   });
 
-  // demo year preference:
-  // 1) explicit ?season=YYYY
-  // 2) currentYear - 1
+  // demo year = explicit ?season=YYYY, else prior year
   const resolvedDemoYear = urlDemoYear || Number(currentYear) - 1;
-
-  // demoEnabled should still key off gate.mode (authoritative) + demoProfile loaded.
-  // urlMode is just a hint (keeps routing consistent from Home), not a source of truth.
   const demoEnabled = gate.mode !== "paid" && demoLoaded;
 
   const demoSummariesQuery = useQuery({
@@ -467,8 +462,7 @@ function DiscoverPage() {
                 : isDemoFavorite(effectiveDemoProfileId, s.camp_id);
 
             const isRegistered =
-              gate.mode === "paid" &&
-              (s.intent_status === "registered" || s.intent_status === "completed");
+              gate.mode === "paid" && (s.intent_status === "registered" || s.intent_status === "completed");
 
             return (
               <CampCard
@@ -519,7 +513,7 @@ function DiscoverPage() {
                     sessionStorage.setItem("last_demo_camp_id", String(camp_id));
                   } catch {}
 
-                  // IMPORTANT: same screen for demo + paid
+                  // ✅ IMPORTANT: same page for demo + paid
                   const pathname = createPageUrl("CampDetail");
                   const qs =
                     gate.mode === "paid"
