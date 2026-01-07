@@ -62,6 +62,16 @@ css
   filter: brightness(.92);
 }
 
+.btn-outline-brand {
+  background: transparent;
+  color: var(--navy);
+  border: 1px solid var(--border);
+}
+
+.btn-outline-brand:hover {
+  background: rgba(11, 31, 59, .06);
+}
+
 .btn-accent {
   background: var(--gold);
   color: var(--navy);
