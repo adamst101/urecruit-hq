@@ -55,7 +55,7 @@ export default function Home() {
   const [logoOk, setLogoOk] = useState(true);
 
   useEffect(() => {
-    const key = "evt_home_viewed_v20";
+    const key = "evt_home_viewed_v21";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -78,7 +78,7 @@ export default function Home() {
   }
 
   async function handleLoginOnly() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "header" });
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "header_mobile" });
     const ok = await safeSignIn();
     if (!ok) return;
     await waitForSeason(seasonRef);
@@ -116,41 +116,51 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-8 space-y-8">
-        {/* HEADER (mobile fixed) */}
+        {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
-          {/* Brand block */}
-          <div className="flex items-center gap-3">
+          {/* Mobile: logo, tagline under logo, login under tagline */}
+          <div className="flex flex-col items-start md:items-start gap-1">
             {logoOk ? (
               <img
                 src={LOGO_URL}
                 alt="URecruit HQ"
                 loading="eager"
                 onError={() => setLogoOk(false)}
-                // Mobile: prevent dominance + no squish
-                className="h-10 md:h-14 lg:h-16 w-auto object-contain flex-shrink-0"
+                className="h-10 md:h-14 lg:h-16 w-auto object-contain block"
               />
             ) : (
               <div className="text-xl md:text-2xl font-extrabold text-brand leading-none">URecruit HQ</div>
             )}
 
-            <div className="min-w-0">
-              {/* Mobile-friendly: stays professional, doesn't wrap into a poem */}
-              <div className="text-base md:text-xl text-ink font-bold leading-tight truncate">
-                Your college recruiting camp planning HQ
-              </div>
-              {/* Optional small subline if you want it; remove if not needed */}
-              {/* <div className="text-xs md:text-sm text-muted">Plan the season. Avoid conflicts. Track registrations.</div> */}
+            {/* Tagline: under logo on mobile, reduced size */}
+            <div className="text-sm md:text-lg text-muted font-semibold leading-tight">
+              Your college recruiting camp planning HQ
+            </div>
+
+            {/* Mobile login directly under tagline */}
+            <div className="pt-1 md:hidden">
+              <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
+                <LogIn className="w-4 h-4 mr-2" />
+                Log in
+              </Button>
             </div>
           </div>
 
-          {/* Actions (can move anywhere on mobile) */}
-          <div className="flex justify-end gap-2">
+          {/* Desktop actions (keep right side) */}
+          <div className="hidden md:flex gap-2">
             <Button variant="ghost" onClick={handlePricingScroll} className="text-ink">
               Pricing
             </Button>
             <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
               <LogIn className="w-4 h-4 mr-2" />
               Log in
+            </Button>
+          </div>
+
+          {/* Mobile pricing link (optional) */}
+          <div className="md:hidden">
+            <Button variant="ghost" onClick={handlePricingScroll} className="text-ink px-0">
+              Pricing
             </Button>
           </div>
         </div>
@@ -161,7 +171,9 @@ export default function Home() {
             <div className="max-w-3xl space-y-3">
               <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
               <div className="h-1 w-14 rounded bg-accent" />
-              <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
+
+              {/* Center-justify paragraph on the page (mobile only) */}
+              <p className="text-muted md:text-lg leading-relaxed text-center md:text-left">{heroParagraph}</p>
             </div>
 
             <div className="grid md:grid-cols-3 gap-4">
