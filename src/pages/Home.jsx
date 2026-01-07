@@ -8,7 +8,6 @@ import { createPageUrl } from "../utils";
 
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode";
@@ -43,7 +42,7 @@ async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } =
 export default function Home() {
   const nav = useNavigate();
 
-  // We can read season state for routing after login, but Home UI stays anonymous.
+  // Home UI stays anonymous; we only read season state for routing after login.
   const season = useSeasonAccess();
   const seasonRef = useRef(season);
 
@@ -53,9 +52,9 @@ export default function Home() {
 
   const { demoSeasonYear } = getDemoDefaults();
 
-  // Marketing instrumentation (dedupe per session)
+  // Instrument: home view (dedupe per session)
   useEffect(() => {
-    const key = "evt_home_viewed_v10";
+    const key = "evt_home_viewed_v11";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -81,37 +80,9 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Primary: "Sign up to access current-year camps" (forces login first)
-  async function handleSignUpForCurrentSeason() {
-    trackEvent({ event_name: "cta_signup_current_click", source: "home" });
-
-    if (!seasonRef.current?.accountId) {
-      trackEvent({ event_name: "cta_login_click", source: "home", via: "signup_current" });
-      const ok = await safeSignIn();
-      if (!ok) return;
-      await waitForSeason(seasonRef);
-    }
-
-    const s = seasonRef.current || {};
-    const nowAuthed = !!s.accountId;
-    const nowPaid = s.mode === "paid";
-    if (!nowAuthed) return;
-
-    // If not paid -> Subscribe, else -> UserHome (or MyCamps; your call)
-    // Recommendation: land on UserHome after login, not MyCamps, to reduce confusion.
-    if (!nowPaid) {
-      trackEvent({ event_name: "signup_current_routed", source: "home", destination: "subscribe" });
-      nav(createPageUrl("Subscribe"));
-      return;
-    }
-
-    trackEvent({ event_name: "signup_current_routed", source: "home", destination: "userhome" });
-    nav(createPageUrl("UserHome"));
-  }
-
-  // Header + hero "Existing Members Log In" — after login, go to UserHome
-  async function handleLoginAndGoHome() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "login_only" });
+  // Top-right login: after sign-in, go to UserHome (or swap to whatever you call it)
+  async function handleLoginOnly() {
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "top_right" });
     const ok = await safeSignIn();
     if (!ok) return;
     await waitForSeason(seasonRef);
@@ -119,24 +90,19 @@ export default function Home() {
   }
 
   function handlePricingScroll() {
-    trackEvent({ event_name: "pricing_scroll", source: "home" });
+    trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     const el = document.getElementById("pricing");
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // Home should *always* look anonymous
-  const badgeText = `Demo: ${demoSeasonYear}`;
-  const badgeClass = "bg-slate-900 text-white";
-
+  // Copy
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
-  const heroContext =
-    "Built for families navigating competitive recruiting seasons—turning spreadsheets, bookmarks, and guesswork into one plan.";
   const heroParagraph =
-    "RecruitMe pulls scattered camp dates into one place so you can filter by position, overlay target schools, and build the best sequence to attend—without spreadsheet chaos.";
+    "URecruit HQ pulls scattered camp dates into one place so you can filter by position, overlay target schools, and build the best sequence to attend—without spreadsheet chaos.";
 
   const bullets = useMemo(
     () => [
-      { a: "Find dates fast.", b: "Camps and dates are scattered across school sites. RecruitMe brings them together." },
+      { a: "Find dates fast.", b: "Camps and dates are scattered across school sites. We bring them together." },
       { a: "Plan the sequence.", b: "Overlay schools + position-specific sessions to avoid conflicts." },
       { a: "Track what’s real.", b: "Planning vs registered vs completed—so the plan actually happens." }
     ],
@@ -152,32 +118,23 @@ export default function Home() {
     []
   );
 
-  const LinkCta = ({ onClick, children }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className="text-sm font-semibold underline underline-offset-4 hover:opacity-80 w-fit"
-    >
-      {children}
-    </button>
-  );
-
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--brand-bg)" }}>
       <div className="max-w-5xl mx-auto px-6 py-10 space-y-8">
-        {/* Header (always anonymous) */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="text-2xl font-extrabold text-brand">RecruitMe</div>
-            <Badge className={badgeClass}>{badgeText}</Badge>
-            <div className="hidden sm:block text-xs text-slate-500">Public demo. No login required.</div>
+        {/* Top brand header */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <div className="text-3xl md:text-4xl font-extrabold text-brand leading-tight">URecruit HQ</div>
+            <div className="text-sm md:text-base text-slate-600 font-semibold">
+              Your college recruiting camp planning HQ
+            </div>
           </div>
 
           <div className="flex gap-2">
             <Button variant="ghost" onClick={handlePricingScroll} className="text-slate-700">
               Pricing
             </Button>
-            <Button variant="outline" onClick={handleLoginAndGoHome}>
+            <Button variant="outline" onClick={handleLoginOnly}>
               <LogIn className="w-4 h-4 mr-2" />
               Log in
             </Button>
@@ -187,12 +144,13 @@ export default function Home() {
         {/* HERO */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-8 md:p-10 space-y-6">
+            {/* Copy */}
             <div className="max-w-3xl space-y-3">
               <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
-              <p className="text-sm md:text-base font-semibold text-slate-700">{heroContext}</p>
               <p className="text-slate-600 md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
 
+            {/* Outcome cards */}
             <div className="grid md:grid-cols-3 gap-4">
               {bullets.map((x) => (
                 <div key={x.a} className="rounded-xl bg-slate-50 border border-slate-200 p-4">
@@ -207,6 +165,7 @@ export default function Home() {
               ))}
             </div>
 
+            {/* How it works strip */}
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <div className="grid md:grid-cols-3 gap-4">
                 {howStrip.map((x) => (
@@ -218,28 +177,30 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Trust microcopy (kept, but no "public demo" messaging) */}
             <div className="text-xs text-slate-500">
               Independent planning tool · Not affiliated with camps · Demo uses prior-season data (read-only)
             </div>
 
-            {/* CTAs */}
-            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-              <Button className="sm:flex-1 bg-brand text-white hover:bg-brand-dark" onClick={handleSignUpForCurrentSeason}>
-                Sign up to access current-year camps
+            {/* CTAs (navy buttons w/ white text) */}
+            <div className="flex flex-col sm:flex-row gap-2 items-stretch">
+              <Button
+                className="sm:flex-1 bg-brand text-white hover:bg-brand-dark"
+                onClick={handlePricingScroll}
+              >
+                View pricing / Sign-Up
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
 
-              <Button variant="outline" className="sm:flex-1" onClick={handleTryDemo}>
+              <Button className="sm:flex-1 bg-brand text-white hover:bg-brand-dark" onClick={handleTryDemo}>
                 Access Demo
+                <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
-
-              <div className="sm:ml-2">
-                <LinkCta onClick={handleLoginAndGoHome}>Existing Members Log In</LinkCta>
-              </div>
             </div>
           </div>
         </Card>
 
+        {/* Pricing anchor (placeholder) */}
         <div id="pricing" />
       </div>
     </div>
