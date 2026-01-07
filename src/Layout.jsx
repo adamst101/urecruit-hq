@@ -11,6 +11,9 @@ export default function Layout({ children }) {
           --neon-volt: #D6FF00;
           --gray-light: #A4B0BE;
           --gray-dark: #7A8C9E;
+          --brand-navy: #0b1f3a;
+          --brand-navy-dark: #081a31;
+          --brand-bg: #f6f8fb;
         }
         body {
           font-family: var(--font-sans);
