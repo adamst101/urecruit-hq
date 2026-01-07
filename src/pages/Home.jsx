@@ -52,7 +52,7 @@ export default function Home() {
   const { demoSeasonYear } = getDemoDefaults();
 
   useEffect(() => {
-    const key = "evt_home_viewed_v12";
+    const key = "evt_home_viewed_v13";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -67,6 +67,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Demo (no login required)
   function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
 
@@ -77,6 +78,7 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
+  // Top-right login: after sign-in, go to UserHome
   async function handleLoginOnly() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "top_right" });
     const ok = await safeSignIn();
@@ -85,6 +87,7 @@ export default function Home() {
     nav(createPageUrl("UserHome"));
   }
 
+  // Primary CTA: "View pricing / Sign-Up" scrolls to pricing anchor
   function handlePricingScroll() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     const el = document.getElementById("pricing");
@@ -120,7 +123,9 @@ export default function Home() {
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <div className="text-3xl md:text-4xl font-extrabold text-brand leading-tight">URecruit HQ</div>
-            <div className="text-sm md:text-base text-muted font-semibold">Your college recruiting camp planning HQ</div>
+            <div className="text-sm md:text-base text-muted font-semibold">
+              Your college recruiting camp planning HQ
+            </div>
           </div>
 
           <div className="flex gap-2">
@@ -137,9 +142,13 @@ export default function Home() {
         {/* HERO */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-8 md:p-10 space-y-6">
+            {/* Copy */}
             <div className="max-w-3xl space-y-3">
               <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
+
+              {/* Gold accent (kept subtle; <10% rule) */}
               <div className="h-1 w-14 rounded bg-accent" />
+
               <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
 
@@ -189,6 +198,7 @@ export default function Home() {
           </div>
         </Card>
 
+        {/* Pricing anchor (placeholder) */}
         <div id="pricing" />
       </div>
     </div>
