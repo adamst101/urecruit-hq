@@ -126,14 +126,15 @@ export default function Home() {
                 alt="URecruit HQ"
                 loading="eager"
                 onError={() => setLogoOk(false)}
-                className="h-20 md:h-56 lg:h-64 w-auto block"
+                // ↓ 30% smaller than previous (h-20/md:h-56/lg:h-64)
+                className="h-14 md:h-40 lg:h-44 w-auto block"
               />
             ) : (
               <div className="text-3xl md:text-4xl font-extrabold text-brand leading-none">URecruit HQ</div>
             )}
 
-            {/* Directly under logo */}
-            <div className="text-sm md:text-base text-muted font-semibold leading-none">
+            {/* Tagline: bold + 2 sizes larger */}
+            <div className="text-lg md:text-xl text-muted font-bold leading-tight">
               Your college recruiting camp planning HQ
             </div>
           </div>
