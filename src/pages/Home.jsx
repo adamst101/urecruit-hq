@@ -12,9 +12,9 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode";
 
+// IMPORTANT: keep this as the *working* logo URL
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/68c568d1d_logo_transp.png";
-// ^^^ If logo still breaks, paste the *working* image URL here.
 
 function trackEvent(payload) {
   try {
@@ -54,11 +54,10 @@ export default function Home() {
   }, [season]);
 
   const { demoSeasonYear } = getDemoDefaults();
-
   const [logoOk, setLogoOk] = useState(true);
 
   useEffect(() => {
-    const key = "evt_home_viewed_v16";
+    const key = "evt_home_viewed_v17";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -129,9 +128,11 @@ export default function Home() {
               <img
                 src={LOGO_URL}
                 alt="URecruit HQ"
-                className="h-20 md:h-28 lg:h-32 w-auto"
                 loading="eager"
                 onError={() => setLogoOk(false)}
+                // Mobile: keep current size (100%)
+                // Web/Desktop: 200% larger
+                className="h-20 md:h-56 lg:h-64 w-auto"
               />
             ) : (
               <div className="text-3xl md:text-4xl font-extrabold text-brand leading-tight">URecruit HQ</div>
@@ -210,4 +211,3 @@ export default function Home() {
     </div>
   );
 }
-
