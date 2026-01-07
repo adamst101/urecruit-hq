@@ -143,7 +143,7 @@ export default function Home() {
             )}
 
             {/* Reduced padding under logo */}
-            <div className="text-sm md:text-base text-muted font-semibold leading-tight -mt-1">
+            <div className="text-sm md:text-base text-muted font-semibold leading-tight -mt-2">
               Your college recruiting camp planning HQ
             </div>
           </div>
