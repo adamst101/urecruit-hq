@@ -119,7 +119,7 @@ export default function Home() {
   );
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "var(--brand-bg)" }}>
+    <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-10 space-y-8">
         {/* Top brand header */}
         <div className="flex items-start justify-between gap-4">
