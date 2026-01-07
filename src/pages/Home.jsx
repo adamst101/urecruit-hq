@@ -121,8 +121,12 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-10 space-y-8">
         {/* Top brand header */}
         <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="text-3xl md:text-4xl font-extrabold text-brand leading-tight">URecruit HQ</div>
+          <div className="space-y-2">
+            <img 
+              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/68c568d1d_logo_transp.png" 
+              alt="URecruit HQ" 
+              className="h-12 md:h-14 w-auto"
+            />
             <div className="text-sm md:text-base text-muted font-semibold">
               Your college recruiting camp planning HQ
             </div>
