@@ -1,5 +1,5 @@
 // src/pages/CampDetail.jsx
-import React, { useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -26,6 +26,10 @@ import BottomNav from "../components/navigation/BottomNav";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
+import { useDemoProfile } from "../components/hooks/useDemoProfile";
+
+import { toggleDemoFavorite, isDemoFavorite } from "../components/hooks/demoFavorites";
+import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered";
 
 import RouteGuard from "../components/auth/RouteGuard";
 
@@ -42,45 +46,6 @@ function trackEvent(payload) {
   try {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
   } catch {}
-}
-
-// --------------------
-// Demo intent storage (NO BACKEND WRITES)
-// --------------------
-function demoIntentKey(seasonYear) {
-  return `rm_demo_intents_${seasonYear || "unknown"}`;
-}
-
-function readDemoIntents(seasonYear) {
-  try {
-    const raw = localStorage.getItem(demoIntentKey(seasonYear));
-    if (!raw) return {};
-    const obj = JSON.parse(raw);
-    return obj && typeof obj === "object" ? obj : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeDemoIntents(seasonYear, obj) {
-  try {
-    localStorage.setItem(demoIntentKey(seasonYear), JSON.stringify(obj || {}));
-  } catch {}
-}
-
-function getDemoIntent(seasonYear, campId) {
-  const intents = readDemoIntents(seasonYear);
-  return intents[String(campId)] || null; // { status: "favorite"|"registered"|"completed"|"removed", priority? }
-}
-
-function setDemoIntent(seasonYear, campId, intentOrNull) {
-  const intents = readDemoIntents(seasonYear);
-  const key = String(campId);
-
-  if (!intentOrNull) delete intents[key];
-  else intents[key] = intentOrNull;
-
-  writeDemoIntents(seasonYear, intents);
 }
 
 // --------------------
@@ -122,13 +87,15 @@ function CampDetailInner() {
     error: identityErrorObj
   } = useAthleteIdentity();
 
+  const { demoProfileId } = useDemoProfile();
+  const effectiveDemoProfileId = demoProfileId || "default";
+
   const campId = useMemo(() => {
     const params = new URLSearchParams(location.search || "");
     return params.get("id");
   }, [location.search]);
 
   const paid = mode === "paid";
-  const canWrite = paid && !!athleteProfile?.id; // paid + profile (RouteGuard should enforce)
 
   // No campId
   if (!campId) {
@@ -210,67 +177,51 @@ function CampDetailInner() {
     enabled: paid && !!athleteId
   });
 
-  // Determine summary:
-  // - Paid: from hook
-  // - Demo: from query cache (Discover already loaded), then overlay local intent
   const paidSummaries = paidSummariesQuery?.data || [];
 
+  // Determine summary:
+  // - Paid: from hook
+  // - Demo: from query cache (Discover already loaded)
   const baseSummary = useMemo(() => {
     if (paid) {
       return (paidSummaries || []).find((s) => String(s.camp_id) === String(campId)) || null;
     }
-    // Demo mode: try query cache
     return findCampSummaryInCache(queryClient, campId);
   }, [paid, paidSummaries, campId, queryClient]);
 
-  const demoIntent = useMemo(() => {
-    if (paid) return null;
-    return getDemoIntent(seasonYear, campId);
-  }, [paid, seasonYear, campId]);
+  // Overlay demo intent from shared stores (favorites + registered)
+  const demoIsFav = !paid ? isDemoFavorite(effectiveDemoProfileId, campId) : false;
+  const demoIsReg = !paid ? isDemoRegistered(effectiveDemoProfileId, campId) : false;
 
   const summary = useMemo(() => {
     if (!baseSummary) return null;
 
-    // In demo: override intent status locally (no backend)
     if (!paid) {
-      const intent_status = demoIntent?.status || baseSummary.intent_status || "none";
+      let intent_status = baseSummary.intent_status || "none";
+      if (demoIsReg) intent_status = "registered";
+      else if (demoIsFav) intent_status = "favorite";
       return { ...baseSummary, intent_status };
     }
+
     return baseSummary;
-  }, [baseSummary, paid, demoIntent]);
+  }, [baseSummary, paid, demoIsFav, demoIsReg]);
 
   const invalidateSummaries = () => {
-    // Paid: this key already exists in your code
+    // Paid: invalidate the known key
     queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
 
-    // Demo: also invalidate everything so Discover/Calendar reflect local intent overlays if they read cache
-    if (!paid) {
-      queryClient.invalidateQueries();
-    }
+    // Demo: invalidate all so list refreshes (safe blunt instrument)
+    if (!paid) queryClient.invalidateQueries();
   };
 
   // Mutations
   const toggleFavorite = useMutation({
     mutationFn: async () => {
-      // DEMO: local-only
+      // DEMO: local-only using the SAME store as Discover
       if (!paid) {
-        const existing = getDemoIntent(seasonYear, campId);
-
-        // registered/completed are not toggleable via favorite
-        if (existing?.status === "registered" || existing?.status === "completed") return;
-
-        if (!existing || existing.status === "removed" || existing.status === "none") {
-          setDemoIntent(seasonYear, campId, { status: "favorite", priority: "medium" });
-          return;
-        }
-
-        if (existing.status === "favorite") {
-          setDemoIntent(seasonYear, campId, { status: "removed" });
-          return;
-        }
-
-        // any other state -> favorite
-        setDemoIntent(seasonYear, campId, { status: "favorite", priority: "medium" });
+        // registered in demo behaves like registered in paid: block favorite toggle
+        if (isDemoRegistered(effectiveDemoProfileId, campId)) return;
+        toggleDemoFavorite(effectiveDemoProfileId, campId);
         return;
       }
 
@@ -317,9 +268,8 @@ function CampDetailInner() {
     mutationFn: async () => {
       // DEMO: local-only register marker (no backend)
       if (!paid) {
-        const existing = getDemoIntent(seasonYear, campId);
-        if (existing?.status === "registered" || existing?.status === "completed") return;
-        setDemoIntent(seasonYear, campId, { status: "registered", priority: "high" });
+        if (isDemoRegistered(effectiveDemoProfileId, campId)) return;
+        toggleDemoRegistered(effectiveDemoProfileId, campId); // set true
         return;
       }
 
@@ -394,21 +344,10 @@ function CampDetailInner() {
                 ? "This camp may not be available for your current sport filter or season."
                 : "Open Discover first so demo camps load, then return to this camp."}
             </div>
-            <div className="mt-4 space-y-2">
+            <div className="mt-4">
               <Button className="w-full" onClick={() => navigate(createPageUrl("Discover"))}>
                 Go to Discover
               </Button>
-              {!paid ? (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() =>
-                    navigate(createPageUrl("Discover") + `?mode=demo&season=${encodeURIComponent(seasonYear || "")}`)
-                  }
-                >
-                  Go to Discover (Demo)
-                </Button>
-              ) : null}
             </div>
           </Card>
         </div>
@@ -452,9 +391,7 @@ function CampDetailInner() {
                     {paid ? "Registered" : "Registered (Demo)"}
                   </Badge>
                 )}
-                {!paid && (
-                  <Badge className="bg-slate-100 text-slate-700 text-xs">Demo</Badge>
-                )}
+                {!paid && <Badge className="bg-slate-100 text-slate-700 text-xs">Demo</Badge>}
               </div>
 
               <h1 className="text-xl font-bold text-deep-navy truncate">
@@ -492,7 +429,7 @@ function CampDetailInner() {
         {!paid ? (
           <Card className="p-3 border-slate-200 bg-slate-50">
             <div className="text-xs text-slate-600">
-              Demo mode: Favorites and registrations are saved locally on this device (no account writes).
+              Demo mode: favorites and registrations are saved locally on this device (no account writes).
             </div>
           </Card>
         ) : null}
@@ -589,9 +526,9 @@ function CampDetailInner() {
 
 export default function CampDetail() {
   /**
-   * Wrapper policy:
-   * - This page should exist in demo and paid modes (same UI)
-   * - RouteGuard should only enforce profile requirements when mode === "paid"
+   * Policy:
+   * - Same screen for demo + paid
+   * - RouteGuard enforces profile only when paid (per your implementation)
    */
   return (
     <RouteGuard requireProfile={true}>
