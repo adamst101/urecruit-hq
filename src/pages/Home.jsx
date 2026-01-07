@@ -28,7 +28,6 @@ async function safeSignIn() {
   return false;
 }
 
-// Wait for season hook to reflect updated auth/mode after sign-in.
 async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } = {}) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -42,7 +41,7 @@ async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } =
 export default function Home() {
   const nav = useNavigate();
 
-  // Home UI stays anonymous; we only read season state for routing after login.
+  // Home stays anonymous; we only read season state for routing after login.
   const season = useSeasonAccess();
   const seasonRef = useRef(season);
 
@@ -52,9 +51,8 @@ export default function Home() {
 
   const { demoSeasonYear } = getDemoDefaults();
 
-  // Instrument: home view (dedupe per session)
   useEffect(() => {
-    const key = "evt_home_viewed_v11";
+    const key = "evt_home_viewed_v12";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -69,7 +67,6 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Demo (no login required)
   function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
 
@@ -80,7 +77,6 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Top-right login: after sign-in, go to UserHome (or swap to whatever you call it)
   async function handleLoginOnly() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "top_right" });
     const ok = await safeSignIn();
@@ -95,7 +91,6 @@ export default function Home() {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // Copy
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
   const heroParagraph =
     "URecruit HQ pulls scattered camp dates into one place so you can filter by position, overlay target schools, and build the best sequence to attend—without spreadsheet chaos.";
@@ -125,16 +120,14 @@ export default function Home() {
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <div className="text-3xl md:text-4xl font-extrabold text-brand leading-tight">URecruit HQ</div>
-            <div className="text-sm md:text-base text-slate-600 font-semibold">
-              Your college recruiting camp planning HQ
-            </div>
+            <div className="text-sm md:text-base text-muted font-semibold">Your college recruiting camp planning HQ</div>
           </div>
 
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={handlePricingScroll} className="text-slate-700">
+            <Button variant="ghost" onClick={handlePricingScroll} className="text-ink">
               Pricing
             </Button>
-            <Button variant="outline" onClick={handleLoginOnly}>
+            <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
               <LogIn className="w-4 h-4 mr-2" />
               Log in
             </Button>
@@ -144,21 +137,20 @@ export default function Home() {
         {/* HERO */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-8 md:p-10 space-y-6">
-            {/* Copy */}
             <div className="max-w-3xl space-y-3">
               <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
-              <p className="text-slate-600 md:text-lg leading-relaxed">{heroParagraph}</p>
+              <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
 
             {/* Outcome cards */}
             <div className="grid md:grid-cols-3 gap-4">
               {bullets.map((x) => (
-                <div key={x.a} className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+                <div key={x.a} className="rounded-xl bg-surface border border-default p-4">
                   <div className="flex items-start gap-2">
-                    <CheckCircle2 className="w-5 h-5 mt-0.5 text-slate-500" />
+                    <CheckCircle2 className="w-5 h-5 mt-0.5 text-muted" />
                     <div className="text-sm">
                       <div className="font-bold text-brand">{x.a}</div>
-                      <div className="text-slate-600">{x.b}</div>
+                      <div className="text-muted">{x.b}</div>
                     </div>
                   </div>
                 </div>
@@ -166,33 +158,29 @@ export default function Home() {
             </div>
 
             {/* How it works strip */}
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="rounded-xl border border-default bg-white p-4">
               <div className="grid md:grid-cols-3 gap-4">
                 {howStrip.map((x) => (
                   <div key={x.title} className="text-sm">
                     <div className="font-bold text-brand">{x.title}</div>
-                    <div className="text-slate-600">{x.body}</div>
+                    <div className="text-muted">{x.body}</div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Trust microcopy (kept, but no "public demo" messaging) */}
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-muted">
               Independent planning tool · Not affiliated with camps · Demo uses prior-season data (read-only)
             </div>
 
-            {/* CTAs (navy buttons w/ white text) */}
+            {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-2 items-stretch">
-              <Button
-                className="sm:flex-1 bg-brand text-white hover:bg-brand-dark"
-                onClick={handlePricingScroll}
-              >
+              <Button className="sm:flex-1 btn-brand" onClick={handlePricingScroll}>
                 View pricing / Sign-Up
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
 
-              <Button className="sm:flex-1 bg-brand text-white hover:bg-brand-dark" onClick={handleTryDemo}>
+              <Button className="sm:flex-1 btn-outline-brand" onClick={handleTryDemo}>
                 Access Demo
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
@@ -200,7 +188,6 @@ export default function Home() {
           </div>
         </Card>
 
-        {/* Pricing anchor (placeholder) */}
         <div id="pricing" />
       </div>
     </div>
