@@ -52,7 +52,7 @@ export default function Home() {
   const { demoSeasonYear } = getDemoDefaults();
 
   useEffect(() => {
-    const key = "evt_home_viewed_v14";
+    const key = "evt_home_viewed_v15";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -118,14 +118,14 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-surface">
-      <div className="max-w-5xl mx-auto px-6 py-10 space-y-8">
+      <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
         {/* Top brand header */}
         <div className="flex items-start justify-between gap-4">
-          <div className="space-y-2">
-            <img 
-              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/68c568d1d_logo_transp.png" 
-              alt="URecruit HQ" 
-              className="h-16 md:h-20 w-auto"
+          <div className="space-y-1">
+            <img
+              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/68c568d1_logo_transp.png"
+              alt="URecruit HQ"
+              className="h-20 md:h-28 lg:h-32 w-auto"
             />
             <div className="text-sm md:text-base text-muted font-semibold">
               Your college recruiting camp planning HQ
@@ -190,14 +190,13 @@ export default function Home() {
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
 
-              {/* Access Demo button should be navy + white (same as primary) */}
               <Button className="sm:flex-1 btn-brand" onClick={handleTryDemo}>
                 Access Demo
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
 
-            {/* Trust microcopy moved to very bottom; removed "(read-only)" */}
+            {/* Trust microcopy at very bottom; removed "(read-only)" */}
             <div className="pt-2 text-xs text-muted">
               Independent planning tool · Not affiliated with camps · Demo uses prior-season data
             </div>
