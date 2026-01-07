@@ -1,8 +1,57 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { LogIn } from 'lucide-react';
+import { base44 } from './api/base44Client';
+import { createPageUrl } from './utils';
+
+const LOGO_URL =
+  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
 export default function Layout({ children }) {
+  const navigate = useNavigate();
+  const [logoOk, setLogoOk] = useState(true);
+
+  async function handleLogin() {
+    try {
+      if (typeof base44.auth?.signIn === "function") {
+        await base44.auth.signIn();
+      }
+    } catch {}
+  }
+
+  function goHome() {
+    navigate(createPageUrl("Home"));
+  }
+
   return (
     <div className="min-h-screen bg-surface">
+      {/* Global Header */}
+      <div className="bg-white border-b border-default sticky top-0 z-50">
+        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+          <button onClick={goHome} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            {logoOk ? (
+              <img
+                src={LOGO_URL}
+                alt="URecruit HQ"
+                loading="eager"
+                onError={() => setLogoOk(false)}
+                className="h-8 md:h-10 w-auto object-contain"
+              />
+            ) : (
+              <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
+            )}
+          </button>
+
+          <button
+            onClick={handleLogin}
+            className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2"
+          >
+            <LogIn className="w-4 h-4" />
+            <span className="hidden sm:inline">Log in</span>
+          </button>
+        </div>
+      </div>
+
       <style>{`
         :root {
           --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
