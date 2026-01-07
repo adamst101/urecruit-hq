@@ -29,43 +29,69 @@ export default function RouteGuard({
   requireAuth = false,
   requirePaid = false,
   requireProfile = false,
-  children,
+  children
 }) {
   const nav = useNavigate();
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
+  const {
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError,
+    error: identityErrorObj
+  } = useAthleteIdentity();
 
-  // Build "next" once, stable.
-  const nextParam = useMemo(() => {
-    const path = (loc?.pathname || "") + (loc?.search || "");
-    return encodeURIComponent(path);
+  const currentPath = useMemo(() => {
+    return (loc?.pathname || "") + (loc?.search || "");
   }, [loc?.pathname, loc?.search]);
 
+  // Build "next" once, stable.
+  const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
+
   // Only block on identity load if the route actually needs identity AND user is paid.
-  const needsIdentity = requireProfile && mode === "paid";
+  const isPaid = mode === "paid";
+  const needsIdentity = requireProfile && isPaid;
   const loading = accessLoading || (needsIdentity && identityLoading);
+
+  // Safe navigation: avoid redirect loops / redundant replace calls.
+  const safeReplace = (to) => {
+    if (!to) return;
+    if (to === currentPath) return;
+    nav(to, { replace: true });
+  };
 
   useEffect(() => {
     if (loading) return;
 
-    // 1) Auth required
-    if (requireAuth && !accountId) {
-      nav(createPageUrl("Home") + `?next=${nextParam}`, { replace: true });
+    // If we need identity (paid + requireProfile) but identity errored,
+    // do NOT bounce endlessly — show a controlled error surface by routing to Profile setup.
+    // (Profile page should be able to recover/retry.)
+    if (needsIdentity && identityError) {
+      safeReplace(createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`);
       return;
     }
 
-    // 2) Paid required (demo users get routed to Subscribe)
-    if (requirePaid && mode !== "paid") {
-      nav(createPageUrl("Subscribe") + `?next=${nextParam}`, { replace: true });
+    // 1) Auth required
+    if (requireAuth && !accountId) {
+      safeReplace(createPageUrl("Home") + `?next=${nextParam}`);
+      return;
+    }
+
+    // 2) Paid required
+    // Treat anything other than explicit "paid" as not paid.
+    if (requirePaid && !isPaid) {
+      safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
     }
 
     // 3) Profile required (paid-only enforcement)
-    // If they are paid and don't have an athlete profile, force Profile creation.
-    if (requireProfile && mode === "paid" && !athleteProfile) {
-      nav(createPageUrl("Profile") + `?next=${nextParam}`, { replace: true });
+    if (requireProfile && isPaid && !athleteProfile) {
+      // If already on Profile, don't redirect (prevents loops).
+      const profileUrl = createPageUrl("Profile");
+      if ((loc?.pathname || "") !== profileUrl) {
+        safeReplace(profileUrl + `?next=${nextParam}`);
+      }
       return;
     }
   }, [
@@ -73,11 +99,16 @@ export default function RouteGuard({
     requireAuth,
     requirePaid,
     requireProfile,
+    needsIdentity,
+    identityError,
+    identityErrorObj,
     accountId,
-    mode,
+    isPaid,
     athleteProfile,
-    nav,
     nextParam,
+    currentPath,
+    nav,
+    loc?.pathname
   ]);
 
   if (loading) {
