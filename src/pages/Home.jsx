@@ -125,7 +125,7 @@ export default function Home() {
             <img 
               src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/68c568d1d_logo_transp.png" 
               alt="URecruit HQ" 
-              className="h-12 md:h-14 w-auto"
+              className="h-16 md:h-20 w-auto"
             />
             <div className="text-sm md:text-base text-muted font-semibold">
               Your college recruiting camp planning HQ
