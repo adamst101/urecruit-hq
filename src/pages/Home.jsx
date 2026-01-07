@@ -59,7 +59,7 @@ export default function Home() {
 
   // Instrument: home view (dedupe per session)
   useEffect(() => {
-    const key = "evt_home_viewed_v4";
+    const key = "evt_home_viewed_v5";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -74,7 +74,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ----- CTA 1: Preview Demo Season (no login required; no backend writes) -----
+  // ----- CTA 1: Access Demo Season (no login required; no backend writes) -----
   function handleTryDemo() {
     trackEvent({
       event_name: "cta_demo_click",
@@ -94,7 +94,7 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // ----- CTA 2: Start Live Season (login → subscribe OR workspace) -----
+  // ----- CTA 2: Sign up to access current-year camps (login → subscribe OR workspace) -----
   async function handleStartMySeason() {
     trackEvent({
       event_name: "cta_start_click",
@@ -136,9 +136,9 @@ export default function Home() {
     nav(createPageUrl("MyCamps"));
   }
 
-  // Top-right login for existing subscribers
+  // Existing members
   async function handleLoginOnly() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "top_right" });
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "existing_members" });
     await safeSignIn();
   }
 
@@ -152,58 +152,41 @@ export default function Home() {
   const badgeText = paid ? `Paid: Current Season` : `Demo: ${demoSeasonYear}`;
   const badgeClass = paid ? "bg-emerald-700 text-white" : "bg-slate-900 text-white";
 
-  // Copy — updated to wireframe spec
+  // Copy: problem-led narrative
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
-  const heroSubhead =
-    "RecruitMe is a season planning workspace that helps families compare camps, spot conflicts, and commit with confidence—before time and money are wasted.";
+  const heroContext =
+    "Built for families navigating competitive recruiting seasons—turning spreadsheets, bookmarks, and guesswork into one plan.";
+  const heroParagraph =
+    "RecruitMe brings scattered camp dates into one season plan—so you can filter by position, overlay your target schools, and build the best sequence to attend before weekends and travel money disappear.";
 
-  const notDirectoryBullets = useMemo(
+  const heroBullets = useMemo(
     () => [
-      "Decide which camps are worth your season",
-      "See conflicts and tradeoffs before committing",
-      "One calendar for intent, registrations, and timing"
+      "Find dates fast: camp dates are scattered across school sites—we bring them together.",
+      "Plan the sequence: overlay schools + position-specific sessions to avoid conflicts and pick the right weekends.",
+      "Track execution: keep “planning vs registered vs completed” in one place so the plan actually happens."
     ],
     []
   );
 
   const howItWorks = useMemo(
     () => [
-      {
-        title: "Preview a real season",
-        body: "Explore the full app using last season’s data—no login, no commitment."
-      },
-      {
-        title: "Unlock your live season",
-        body: "Activate current-season planning tools when you’re ready."
-      },
-      {
-        title: "Set up your athlete once",
-        body: "Your workspace unlocks—no relearning, no rework."
-      }
+      { title: "Collect", body: "Bring camps and dates into one place instead of chasing dozens of school sites." },
+      { title: "Sequence", body: "Overlay schools + position-specific sessions to build the best order to attend." },
+      { title: "Execute", body: "Track planning → registered → completed so nothing slips through the cracks." }
     ],
     []
   );
 
   const workspaceProof = useMemo(
     () => [
-      {
-        title: "Discover",
-        body: "Browse camps in demo or paid mode—same screens, different season power."
-      },
-      {
-        title: "MyCamps",
-        body: "Track favorites, intent, registrations, and completions in one place."
-      },
-      {
-        title: "Calendar",
-        body: "See conflicts and overlaps instantly. Tradeoffs become obvious. (Paid season)"
-      }
+      { title: "Discover", body: "Browse camps and dates with filters that match your athlete and position." },
+      { title: "MyCamps", body: "Your status board: planning, registered, completed—no spreadsheet required." },
+      { title: "Calendar", body: "Conflict overlays across target schools so the sequence makes sense." }
     ],
     []
   );
 
-  // Secondary CTA should look like a link (reduce decision friction)
-  const SecondaryCta = ({ onClick, children }) => (
+  const LinkCta = ({ onClick, children }) => (
     <button
       type="button"
       onClick={onClick}
@@ -239,61 +222,47 @@ export default function Home() {
           </div>
         </div>
 
-        {/* HERO */}
-        <div className="grid lg:grid-cols-2 gap-4 items-start">
-          <Card className="p-7 space-y-4 border-slate-300 shadow-sm">
-            <div className="space-y-2">
-              <div className="text-3xl font-extrabold text-deep-navy leading-tight">{heroHeadline}</div>
-              <div className="text-slate-600">{heroSubhead}</div>
+        {/* TOP NARRATIVE HERO (single block) */}
+        <Card className="p-8 space-y-4 border-slate-300 shadow-sm">
+          <div className="space-y-2">
+            <h1 className="text-3xl font-extrabold text-deep-navy leading-tight">{heroHeadline}</h1>
 
-              <div className="text-xs text-slate-500">
-                Independent planning tool · No camp affiliations · No login required for demo
-              </div>
-            </div>
+            <p className="text-sm font-medium text-slate-700">{heroContext}</p>
 
-            {/* Primary CTA = Demo */}
-            <div className="flex flex-col gap-2 pt-2">
-              <Button className="w-full" onClick={handleTryDemo}>
-                Preview a Real Recruiting Season
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
+            <p className="text-slate-600">{heroParagraph}</p>
 
-              {/* Secondary CTA = link */}
-              <SecondaryCta onClick={handleStartMySeason}>Start My Live Season</SecondaryCta>
-            </div>
-
-            <div className="text-xs text-slate-500">
-              Demo uses prior-season data (read-only). Paid unlocks current season + athlete workspace.
-            </div>
-          </Card>
-
-          {/* Not a directory */}
-          <Card className="p-7 space-y-3 border-slate-200">
-            <div className="text-lg font-bold text-deep-navy">Not a camp directory.</div>
-            <div className="text-sm text-slate-600">
-              RecruitMe is where you decide which camps are worth your season—before weekends and travel money disappear.
-            </div>
-
-            <div className="pt-2 space-y-2">
-              {notDirectoryBullets.map((t) => (
+            <div className="pt-1 space-y-2">
+              {heroBullets.map((t) => (
                 <div key={t} className="flex gap-2 text-sm text-slate-700">
                   <div className="mt-[7px] h-1.5 w-1.5 rounded-full bg-slate-400 flex-shrink-0" />
                   <div>{t}</div>
                 </div>
               ))}
             </div>
-          </Card>
-        </div>
 
-        {/* Credibility band (lightweight) */}
-        <Card className="px-7 py-4 border-slate-200">
-          <div className="text-sm text-slate-700">
-            Built for families navigating competitive recruiting seasons—turning spreadsheets, bookmarks, and guesswork
-            into one plan.
+            <div className="text-xs text-slate-500 pt-2">
+              Independent planning tool · Not affiliated with camps · Demo uses prior-season data (read-only)
+            </div>
+          </div>
+
+          {/* CTA cluster (requested order) */}
+          <div className="pt-2 flex flex-col sm:flex-row gap-2">
+            <Button className="sm:flex-1" onClick={handleStartMySeason}>
+              Sign up to access current-year camps
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+
+            <Button variant="outline" className="sm:flex-1" onClick={handleTryDemo}>
+              Access Demo
+            </Button>
+          </div>
+
+          <div className="pt-1">
+            <LinkCta onClick={handleLoginOnly}>Existing Members Log In</LinkCta>
           </div>
         </Card>
 
-        {/* How it works */}
+        {/* Support sections (now lighter to avoid repetition) */}
         <Card className="p-7 space-y-4 border-slate-200">
           <div className="text-lg font-bold text-deep-navy">How it works</div>
           <div className="grid md:grid-cols-3 gap-4">
@@ -306,9 +275,8 @@ export default function Home() {
           </div>
         </Card>
 
-        {/* Workspace overview */}
         <Card className="p-7 space-y-4 border-slate-200">
-          <div className="text-lg font-bold text-deep-navy">What you manage in your season workspace</div>
+          <div className="text-lg font-bold text-deep-navy">What you manage in one place</div>
           <div className="grid md:grid-cols-3 gap-4">
             {workspaceProof.map((x) => (
               <div key={x.title} className="text-sm">
@@ -318,38 +286,18 @@ export default function Home() {
             ))}
           </div>
 
-          {/* CTA hierarchy rule: Demo dominant, Live as link */}
-          <div className="pt-2 flex flex-col gap-2">
-            <Button className="w-full" onClick={handleTryDemo}>
-              Preview a Real Recruiting Season
+          <div className="pt-2 flex flex-col sm:flex-row gap-2">
+            <Button className="sm:flex-1" onClick={handleStartMySeason}>
+              Sign up to access current-year camps
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
-            <SecondaryCta onClick={handleStartMySeason}>Start My Live Season</SecondaryCta>
+            <Button variant="outline" className="sm:flex-1" onClick={handleTryDemo}>
+              Access Demo
+            </Button>
           </div>
-        </Card>
 
-        {/* Conversion band */}
-        <Card className="p-7 border-slate-200 bg-white">
-          <div className="space-y-3">
-            <div className="text-xl font-extrabold text-deep-navy">
-              See how a real recruiting season comes together—before you commit.
-            </div>
-            <div className="text-slate-600">
-              Preview the full workflow with last season’s data. Upgrade only when you’re ready to plan your live
-              season.
-            </div>
-
-            <div className="pt-2 flex flex-col gap-2">
-              <Button className="w-full" onClick={handleTryDemo}>
-                Preview a Real Recruiting Season
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-              <SecondaryCta onClick={handleStartMySeason}>Start My Live Season</SecondaryCta>
-
-              <div className="text-xs text-slate-500 pt-1">
-                Demo uses prior-season data (read-only). Paid unlocks current season + athlete workspace.
-              </div>
-            </div>
+          <div className="pt-1">
+            <LinkCta onClick={handleLoginOnly}>Existing Members Log In</LinkCta>
           </div>
         </Card>
 
