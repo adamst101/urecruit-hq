@@ -23,6 +23,7 @@ import { useDemoProfile } from "../components/hooks/useDemoProfile";
 
 import { useWriteGate } from "../components/hooks/useWriteGate";
 import { toggleDemoFavorite, isDemoFavorite } from "../components/hooks/demoFavorites";
+import { isDemoRegistered } from "../components/hooks/demoRegistered";
 
 function uniq(arr) {
   return Array.from(new Set((arr || []).filter(Boolean)));
@@ -53,9 +54,7 @@ function trackEvent(payload) {
       ...payload,
       ts: new Date().toISOString()
     });
-  } catch {
-    // never block UX
-  }
+  } catch {}
 }
 
 /**
@@ -206,14 +205,14 @@ function DiscoverPage() {
   const { loaded: demoLoaded, demoProfile, demoProfileId } = useDemoProfile();
   const gate = useWriteGate();
 
+  // Trigger rerender when demo favorites change (localStorage is not reactive)
   const [, setDemoFavTick] = useState(0);
 
   const athleteId = athleteProfile?.id;
   const sportId = athleteProfile?.sport_id;
 
-  // If Home sent ?mode=demo&season=YYYY, prefer that year for demo display.
+  // Prefer explicit demo year from query (?season=YYYY), else prior year.
   const urlParams = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
-  const urlMode = urlParams.get("mode");
   const urlSeason = urlParams.get("season");
   const urlDemoYear = urlSeason && Number.isFinite(Number(urlSeason)) ? Number(urlSeason) : null;
 
@@ -223,7 +222,6 @@ function DiscoverPage() {
     enabled: gate.mode === "paid" && !!athleteId
   });
 
-  // demo year = explicit ?season=YYYY, else prior year
   const resolvedDemoYear = urlDemoYear || Number(currentYear) - 1;
   const demoEnabled = gate.mode !== "paid" && demoLoaded;
 
@@ -254,9 +252,6 @@ function DiscoverPage() {
     return Array.isArray(data) ? data : [];
   }, [gate.mode, paidSummariesQuery.data, demoSummariesQuery.data]);
 
-  /**
-   * Position join for whatever list is currently shown (demo or paid)
-   */
   const allPositionIds = useMemo(() => {
     const ids = [];
     for (const s of summaries) {
@@ -309,9 +304,6 @@ function DiscoverPage() {
     onSuccess: invalidatePaidSummaries
   });
 
-  /**
-   * Demo analytics: Discover viewed (once per session/year)
-   */
   useEffect(() => {
     if (loading) return;
     if (gate.mode === "paid") return;
@@ -325,10 +317,9 @@ function DiscoverPage() {
     trackEvent({
       event_name: "discover_viewed",
       mode: "demo",
-      season_year: resolvedDemoYear,
-      entry_mode: urlMode || null
+      season_year: resolvedDemoYear
     });
-  }, [gate.mode, loading, resolvedDemoYear, urlMode]);
+  }, [gate.mode, loading, resolvedDemoYear]);
 
   if (loading) {
     return (
@@ -456,13 +447,17 @@ function DiscoverPage() {
                 position_name: p.position_name
               }));
 
+            const demoReg = gate.mode !== "paid" ? isDemoRegistered(effectiveDemoProfileId, s.camp_id) : false;
+
             const isFav =
               gate.mode === "paid"
                 ? s.intent_status === "favorite"
                 : isDemoFavorite(effectiveDemoProfileId, s.camp_id);
 
             const isRegistered =
-              gate.mode === "paid" && (s.intent_status === "registered" || s.intent_status === "completed");
+              gate.mode === "paid"
+                ? s.intent_status === "registered" || s.intent_status === "completed"
+                : demoReg;
 
             return (
               <CampCard
@@ -476,6 +471,9 @@ function DiscoverPage() {
                 onFavoriteToggle={() => {
                   gate.write({
                     demo: () => {
+                      // Mirror paid rule: can't favorite if registered
+                      if (isDemoRegistered(effectiveDemoProfileId, s.camp_id)) return;
+
                       trackEvent({
                         event_name: isDemoFavorite(effectiveDemoProfileId, s.camp_id)
                           ? "demo_favorite_removed"
@@ -509,22 +507,13 @@ function DiscoverPage() {
                     });
                   }
 
-                  try {
-                    sessionStorage.setItem("last_demo_camp_id", String(camp_id));
-                  } catch {}
-
-                  // ✅ IMPORTANT: same page for demo + paid
                   const pathname = createPageUrl("CampDetail");
                   const qs =
                     gate.mode === "paid"
                       ? `?id=${encodeURIComponent(camp_id)}`
-                      : `?id=${encodeURIComponent(camp_id)}&mode=demo&season=${encodeURIComponent(
-                          resolvedDemoYear
-                        )}`;
+                      : `?id=${encodeURIComponent(camp_id)}&mode=demo&season=${encodeURIComponent(resolvedDemoYear)}`;
 
-                  navigate(`${pathname}${qs}`, {
-                    state: { camp_id, id: camp_id }
-                  });
+                  navigate(`${pathname}${qs}`, { state: { camp_id, id: camp_id } });
                 }}
               />
             );
@@ -538,13 +527,6 @@ function DiscoverPage() {
 }
 
 export default function Discover() {
-  /**
-   * Policy:
-   * - Demo users can browse Discover without auth.
-   * - Paid users MUST complete athlete profile before Discover.
-   *
-   * That is exactly: requireProfile=true (paid-only enforced inside RouteGuard).
-   */
   return (
     <RouteGuard requireProfile={true}>
       <DiscoverPage />
