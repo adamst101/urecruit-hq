@@ -51,9 +51,12 @@ export default function Home() {
   }
 
   // Log in -> Discover
-  function handleLoginOnly() {
+  async function handleLoginOnly() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
-    base44.auth.redirectToLogin(createPageUrl("Discover"));
+    try {
+      await base44.auth.signIn();
+      nav(createPageUrl("Discover"));
+    } catch {}
   }
 
   // View pricing / Sign-Up -> Subscribe
