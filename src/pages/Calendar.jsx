@@ -14,7 +14,6 @@ import RouteGuard from "../components/auth/RouteGuard";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
-import { useDemoProfile } from "../components/hooks/useDemoProfile";
 
 /**
  * CalendarPage
@@ -40,7 +39,6 @@ function CalendarPage() {
 
   // Hook stays mounted; but we only block UI with loading when truly paid+authed.
   const { athleteProfile, isLoading: identityLoading, isError: identityError, error } = useAthleteIdentity();
-  const { demoProfileId } = useDemoProfile();
 
   const athleteId = athleteProfile?.id;
   const sportId = athleteProfile?.sport_id;
@@ -68,7 +66,7 @@ function CalendarPage() {
     enabled: isPaid && !!athleteId
   });
 
-  // This is what was causing your forever-spinner: isPaid was true while not authed.
+  // This prevents the forever-spinner: isPaid must be true AND authed.
   const loading = isPaid && (identityLoading || paidQuery.isLoading);
   const isErr = isPaid && (identityError || paidQuery.isError);
   const errObj = error || paidQuery.error;
@@ -168,33 +166,25 @@ function CalendarPage() {
 
         {/* Demo upsell (secondary) */}
         {!isPaid && (
-          <>
-            <Card className="p-4 border-amber-200 bg-amber-50">
-              <div className="flex items-start gap-3">
-                <Lock className="w-5 h-5 text-amber-700 mt-0.5" />
-                <div className="flex-1">
-                  <div className="font-semibold text-amber-900">Upgrade to unlock your real schedule</div>
-                  <div className="text-sm text-amber-900/80 mt-1">
-                    Overlay your own favorites + registrations and flag conflicts automatically.
-                  </div>
-                  <div className="mt-3">
-                    <Button
-                      className="w-full"
-                      onClick={() => navigate(createPageUrl("Subscribe") + `?source=calendar_demo`)}
-                    >
-                      See Plan & Pricing
-                    </Button>
-                  </div>
+          <Card className="p-4 border-amber-200 bg-amber-50">
+            <div className="flex items-start gap-3">
+              <Lock className="w-5 h-5 text-amber-700 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-amber-900">Upgrade to unlock your real schedule</div>
+                <div className="text-sm text-amber-900/80 mt-1">
+                  Overlay your own favorites + registrations and flag conflicts automatically.
+                </div>
+                <div className="mt-3">
+                  <Button
+                    className="w-full"
+                    onClick={() => navigate(createPageUrl("Subscribe") + `?source=calendar_demo`)}
+                  >
+                    See Plan & Pricing
+                  </Button>
                 </div>
               </div>
-            </Card>
-
-            <Card className="p-4">
-              <div className="text-xs text-slate-500">
-                Demo profile: <span className="font-medium text-slate-700">{demoProfileId || "default"}</span>
-              </div>
-            </Card>
-          </>
+            </div>
+          </Card>
         )}
       </div>
 
