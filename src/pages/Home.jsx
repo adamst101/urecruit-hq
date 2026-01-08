@@ -21,21 +21,7 @@ function trackEvent(payload) {
   } catch {}
 }
 
-function absoluteUrl(pathname) {
-  // Works whether pathname is "/Discover" or "Discover" (createPageUrl usually returns "/...")
-  const p = String(pathname || "");
-  const base = window.location.origin;
-  return p.startsWith("http") ? p : `${base}${p.startsWith("/") ? "" : "/"}${p}`;
-}
 
-function redirectToBase44Login(nextUrl) {
-  // Standard Base44 method
-  if (base44?.auth && typeof base44.auth.redirectToLogin === "function") {
-    base44.auth.redirectToLogin(nextUrl); // redirects browser :contentReference[oaicite:1]{index=1}
-    return true;
-  }
-  return false;
-}
 
 export default function Home() {
   const nav = useNavigate();
@@ -74,30 +60,15 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Log in -> Base44 hosted/login flow -> return to Discover
   async function handleLoginOnly() {
     if (loginWorking) return;
     setLoginWorking(true);
-
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
-
+    
     try {
-      const next = absoluteUrl(createPageUrl("Discover") + "?source=login_home");
-      console.log("Attempting login redirect to:", next);
-      console.log("base44.auth available:", !!base44?.auth);
-      console.log("redirectToLogin type:", typeof base44?.auth?.redirectToLogin);
-      
-      const ok = redirectToBase44Login(next);
-
-      if (!ok) {
-        console.error("Login redirect returned false");
-        alert("Login system not available. Please refresh the page and try again.");
-      }
-      // If ok=true, browser redirects immediately so code below won't run
+      window.location.href = `/auth/login?redirect=${encodeURIComponent(createPageUrl("Discover") + "?source=login_home")}`;
     } catch (e) {
-      console.error("Login redirect error:", e);
-      alert("Login failed. Please try again.");
-    } finally {
+      console.error("Login error:", e);
       setLoginWorking(false);
     }
   }
