@@ -21,24 +21,19 @@ function trackEvent(payload) {
   } catch {}
 }
 
-/**
- * Standard Base44 login flow:
- * Redirect to hosted login and return to `nextUrl` after auth.
- */
-function base44RedirectLogin(nextUrl) {
-  // nextUrl must be an absolute URL
-  const absoluteNext =
-    nextUrl && /^https?:\/\//i.test(nextUrl)
-      ? nextUrl
-      : new URL(nextUrl || window.location.pathname, window.location.origin).toString();
+function absoluteUrl(pathname) {
+  // Works whether pathname is "/Discover" or "Discover" (createPageUrl usually returns "/...")
+  const p = String(pathname || "");
+  const base = window.location.origin;
+  return p.startsWith("http") ? p : `${base}${p.startsWith("/") ? "" : "/"}${p}`;
+}
 
-  const auth = base44?.auth;
-
-  if (auth && typeof auth.redirectToLogin === "function") {
-    auth.redirectToLogin(absoluteNext);
+function redirectToBase44Login(nextUrl) {
+  // Standard Base44 method
+  if (base44?.auth && typeof base44.auth.redirectToLogin === "function") {
+    base44.auth.redirectToLogin(nextUrl); // redirects browser :contentReference[oaicite:1]{index=1}
     return true;
   }
-
   return false;
 }
 
@@ -47,14 +42,13 @@ export default function Home() {
 
   const season = useSeasonAccess();
   const seasonRef = useRef(season);
-
   useEffect(() => {
     seasonRef.current = season;
   }, [season]);
 
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
-  const [authErr, setAuthErr] = useState("");
+  const [loginWorking, setLoginWorking] = useState(false);
 
   useEffect(() => {
     const key = "evt_home_viewed_v22";
@@ -74,30 +68,40 @@ export default function Home() {
 
   // Access Demo (no login required)
   function handleTryDemo() {
-    setAuthErr("");
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
     setDemoMode(demoSeasonYear);
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Log in -> Base44 hosted login -> return to Discover (or whatever RouteGuard sends you to)
-  function handleLoginOnly() {
-    setAuthErr("");
+  // Log in -> Base44 hosted/login flow -> return to Discover
+  async function handleLoginOnly() {
+    if (loginWorking) return;
+    setLoginWorking(true);
+
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // After auth, come back to Discover (absolute URL required)
-    const nextUrl = new URL(createPageUrl("Discover"), window.location.origin).toString();
+    try {
+      const next = absoluteUrl(createPageUrl("Discover") + "?source=login_home");
+      const ok = redirectToBase44Login(next);
 
-    const ok = base44RedirectLogin(nextUrl);
-    if (!ok) {
-      setAuthErr("Login is not configured (base44.auth.redirectToLogin not available). Check Base44 auth mode/settings.");
+      if (!ok) {
+        // If this triggers, your app is not in "user authentication mode"
+        // or base44Client isn't configured with auth.
+        console.error("base44.auth.redirectToLogin is not available. Check Base44 auth mode.");
+        alert("Login is not configured (Base44 auth module unavailable).");
+      }
+      // If ok=true, browser redirects immediately.
+    } catch (e) {
+      console.error("Login redirect failed:", e);
+      alert("Login failed to start. Check console for details.");
+    } finally {
+      setLoginWorking(false);
     }
   }
 
   // View pricing / Sign-Up -> Subscribe
   function handlePricingSignup() {
-    setAuthErr("");
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     nav(createPageUrl("Subscribe") + `?source=home_pricing`);
   }
@@ -127,6 +131,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
+        {/* HERO ONLY (no top bar header to avoid duplicate logo/login) */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
             {/* Brand row: big logo + login */}
@@ -144,30 +149,25 @@ export default function Home() {
                   <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">URecruit HQ</div>
                 )}
 
+                {/* Tagline */}
                 <div className="mt-2 text-base md:text-lg font-bold text-ink text-center md:text-left leading-tight">
                   Your college recruiting camp planning HQ
                 </div>
 
-                {authErr ? (
-                  <div className="mt-3 w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                    {authErr}
-                  </div>
-                ) : null}
-
                 {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button onClick={handleLoginOnly} className="btn-brand w-full">
+                  <Button onClick={handleLoginOnly} className="btn-brand w-full" disabled={loginWorking}>
                     <LogIn className="w-4 h-4 mr-2" />
-                    Log in
+                    {loginWorking ? "Starting login…" : "Log in"}
                   </Button>
                 </div>
               </div>
 
-              {/* Desktop: login right */}
+              {/* Desktop: login to the right */}
               <div className="hidden md:flex">
-                <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
+                <Button variant="outline" onClick={handleLoginOnly} className="text-ink" disabled={loginWorking}>
                   <LogIn className="w-4 h-4 mr-2" />
-                  Log in
+                  {loginWorking ? "Starting login…" : "Log in"}
                 </Button>
               </div>
             </div>
@@ -219,6 +219,7 @@ export default function Home() {
               </Button>
             </div>
 
+            {/* Trust microcopy */}
             <div className="pt-2 text-xs text-muted text-center md:text-left">
               Independent planning tool · Not affiliated with camps · Demo uses prior-season data
             </div>
