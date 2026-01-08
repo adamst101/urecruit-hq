@@ -80,10 +80,9 @@ export default function Home() {
 
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
-  const [loginErr, setLoginErr] = useState("");
 
   useEffect(() => {
-    const key = "evt_home_viewed_v22";
+    const key = "evt_home_viewed_v23";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -100,37 +99,23 @@ export default function Home() {
 
   // Access Demo (no login required)
   function handleTryDemo() {
-    setLoginErr("");
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
     setDemoMode(demoSeasonYear);
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Log in -> redirect to hosted login and come back to Discover
+  // Log in -> Discover
   async function handleLoginOnly() {
-    setLoginErr("");
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
-
-    const nextUrl = absUrl(createPageUrl("Discover"));
-    const res = await startLogin({ nextUrl });
-
-    if (!res.ok) {
-      setLoginErr(res?.error?.message || "Login failed.");
-      return;
-    }
-
-    // If redirectToLogin was used, browser navigates away; do NOT SPA-navigate.
-    if (res.redirected) return;
-
-    // If non-redirect login method was used, then proceed in-app.
+    const ok = await safeSignIn();
+    if (!ok) return;
     await waitForSeason(seasonRef);
     nav(createPageUrl("Discover"));
   }
 
   // View pricing / Sign-Up -> Subscribe
   function handlePricingSignup() {
-    setLoginErr("");
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     nav(createPageUrl("Subscribe") + `?source=home_pricing`);
   }
@@ -182,13 +167,6 @@ export default function Home() {
                 <div className="mt-2 text-base md:text-lg font-bold text-ink text-center md:text-left leading-tight">
                   Your college recruiting camp planning HQ
                 </div>
-
-                {/* Inline auth error */}
-                {loginErr ? (
-                  <div className="mt-3 w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                    {loginErr}
-                  </div>
-                ) : null}
 
                 {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
