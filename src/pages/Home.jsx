@@ -21,16 +21,43 @@ function trackEvent(payload) {
   } catch {}
 }
 
+/**
+ * Standard Base44 login flow:
+ * Redirect to hosted login and return to `nextUrl` after auth.
+ */
+function base44RedirectLogin(nextUrl) {
+  // nextUrl must be an absolute URL
+  const absoluteNext =
+    nextUrl && /^https?:\/\//i.test(nextUrl)
+      ? nextUrl
+      : new URL(nextUrl || window.location.pathname, window.location.origin).toString();
 
+  const auth = base44?.auth;
+
+  if (auth && typeof auth.redirectToLogin === "function") {
+    auth.redirectToLogin(absoluteNext);
+    return true;
+  }
+
+  return false;
+}
 
 export default function Home() {
   const nav = useNavigate();
 
-  const { demoSeasonYear } = getDemoDefaults();
-  const [logoOk, setLogoOk] = useState(true);
+  const season = useSeasonAccess();
+  const seasonRef = useRef(season);
 
   useEffect(() => {
-    const key = "evt_home_viewed_v24";
+    seasonRef.current = season;
+  }, [season]);
+
+  const { demoSeasonYear } = getDemoDefaults();
+  const [logoOk, setLogoOk] = useState(true);
+  const [authErr, setAuthErr] = useState("");
+
+  useEffect(() => {
+    const key = "evt_home_viewed_v22";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -38,28 +65,39 @@ export default function Home() {
 
     trackEvent({
       event_name: "home_view",
-      source: "home"
+      source: "home",
+      auth_state: season?.accountId ? "authed" : "anon",
+      mode: season?.mode === "paid" ? "paid" : "not_paid"
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Access Demo (no login required)
   function handleTryDemo() {
+    setAuthErr("");
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
     setDemoMode(demoSeasonYear);
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Log in -> Discover
-  async function handleLoginOnly() {
+  // Log in -> Base44 hosted login -> return to Discover (or whatever RouteGuard sends you to)
+  function handleLoginOnly() {
+    setAuthErr("");
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
-    if (typeof base44.auth?.signIn === "function") {
-      await base44.auth.signIn();
+
+    // After auth, come back to Discover (absolute URL required)
+    const nextUrl = new URL(createPageUrl("Discover"), window.location.origin).toString();
+
+    const ok = base44RedirectLogin(nextUrl);
+    if (!ok) {
+      setAuthErr("Login is not configured (base44.auth.redirectToLogin not available). Check Base44 auth mode/settings.");
     }
   }
 
   // View pricing / Sign-Up -> Subscribe
   function handlePricingSignup() {
+    setAuthErr("");
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     nav(createPageUrl("Subscribe") + `?source=home_pricing`);
   }
@@ -72,7 +110,7 @@ export default function Home() {
     () => [
       { a: "Find dates fast.", b: "Camps and dates are scattered across school sites. We bring them together." },
       { a: "Plan the sequence.", b: "Overlay schools + position-specific sessions to avoid conflicts." },
-      { a: "Track what's real.", b: "Planning vs registered vs completed—so the plan actually happens." }
+      { a: "Track what’s real.", b: "Planning vs registered vs completed—so the plan actually happens." }
     ],
     []
   );
@@ -89,10 +127,9 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
-        {/* HERO ONLY (no top bar header to avoid duplicate logo/login) */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* Brand row: big logo + login (single login button, responsive layout) */}
+            {/* Brand row: big logo + login */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -107,23 +144,28 @@ export default function Home() {
                   <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">URecruit HQ</div>
                 )}
 
-                {/* Tagline directly under logo */}
                 <div className="mt-2 text-base md:text-lg font-bold text-ink text-center md:text-left leading-tight">
                   Your college recruiting camp planning HQ
                 </div>
 
+                {authErr ? (
+                  <div className="mt-3 w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    {authErr}
+                  </div>
+                ) : null}
+
                 {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button type="button" onClick={handleLoginOnly} className="btn-brand w-full">
+                  <Button onClick={handleLoginOnly} className="btn-brand w-full">
                     <LogIn className="w-4 h-4 mr-2" />
                     Log in
                   </Button>
                 </div>
               </div>
 
-              {/* Desktop: login to the right (only one login total) */}
+              {/* Desktop: login right */}
               <div className="hidden md:flex">
-                <Button type="button" variant="outline" onClick={handleLoginOnly} className="text-ink">
+                <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
                   <LogIn className="w-4 h-4 mr-2" />
                   Log in
                 </Button>
@@ -166,18 +208,17 @@ export default function Home() {
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-2 items-stretch">
-              <Button type="button" className="sm:flex-1 btn-brand" onClick={handlePricingSignup}>
+              <Button className="sm:flex-1 btn-brand" onClick={handlePricingSignup}>
                 View pricing / Sign-Up
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
 
-              <Button type="button" className="sm:flex-1 btn-brand" onClick={handleTryDemo}>
+              <Button className="sm:flex-1 btn-brand" onClick={handleTryDemo}>
                 Access Demo
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
 
-            {/* Trust microcopy */}
             <div className="pt-2 text-xs text-muted text-center md:text-left">
               Independent planning tool · Not affiliated with camps · Demo uses prior-season data
             </div>
