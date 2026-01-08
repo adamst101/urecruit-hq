@@ -78,13 +78,13 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Log in -> UserHome
+  // Log in -> Discover
   async function handleLoginOnly() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
     const ok = await safeSignIn();
     if (!ok) return;
     await waitForSeason(seasonRef);
-    nav(createPageUrl("UserHome"));
+    nav(createPageUrl("Discover"));
   }
 
   // View pricing / Sign-Up -> Subscribe
