@@ -53,10 +53,8 @@ export default function Home() {
   // Log in -> Discover
   async function handleLoginOnly() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
-    try {
+    if (typeof base44.auth?.signIn === "function") {
       await base44.auth.signIn();
-    } catch {
-      // Auth failed, stay on page
     }
   }
 
@@ -116,7 +114,7 @@ export default function Home() {
 
                 {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button onClick={handleLoginOnly} className="btn-brand w-full">
+                  <Button type="button" onClick={handleLoginOnly} className="btn-brand w-full">
                     <LogIn className="w-4 h-4 mr-2" />
                     Log in
                   </Button>
@@ -125,7 +123,7 @@ export default function Home() {
 
               {/* Desktop: login to the right (only one login total) */}
               <div className="hidden md:flex">
-                <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
+                <Button type="button" variant="outline" onClick={handleLoginOnly} className="text-ink">
                   <LogIn className="w-4 h-4 mr-2" />
                   Log in
                 </Button>
@@ -168,12 +166,12 @@ export default function Home() {
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-2 items-stretch">
-              <Button className="sm:flex-1 btn-brand" onClick={handlePricingSignup}>
+              <Button type="button" className="sm:flex-1 btn-brand" onClick={handlePricingSignup}>
                 View pricing / Sign-Up
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
 
-              <Button className="sm:flex-1 btn-brand" onClick={handleTryDemo}>
+              <Button type="button" className="sm:flex-1 btn-brand" onClick={handleTryDemo}>
                 Access Demo
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
