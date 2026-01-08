@@ -160,42 +160,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-8 space-y-8">
-        {/* HEADER */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
-          <div className="flex flex-col items-start gap-1">
-            {logoOk ? (
-              <img
-                src={LOGO_URL}
-                alt="URecruit HQ"
-                loading="eager"
-                onError={() => setLogoOk(false)}
-                className="h-10 md:h-14 lg:h-16 w-auto object-contain block"
-              />
-            ) : (
-              <div className="text-xl md:text-2xl font-extrabold text-brand leading-none">URecruit HQ</div>
-            )}
 
-            <div className="text-sm md:text-lg text-muted font-semibold leading-tight">
-              Your college recruiting camp planning HQ
-            </div>
-
-            {/* Mobile login under tagline */}
-            <div className="pt-1 md:hidden">
-              <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
-                <LogIn className="w-4 h-4 mr-2" />
-                Log in
-              </Button>
-            </div>
-          </div>
-
-          {/* Desktop login only */}
-          <div className="hidden md:flex gap-2">
-            <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
-              <LogIn className="w-4 h-4 mr-2" />
-              Log in
-            </Button>
-          </div>
-        </div>
 
         {/* HERO */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
