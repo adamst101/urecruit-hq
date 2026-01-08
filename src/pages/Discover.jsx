@@ -45,54 +45,66 @@ function pickSportName(sp) {
   return sp?.sport_name || sp?.name || sp?.title || null;
 }
 
-/**
- * Analytics helper (fire-and-forget)
- */
+/** Analytics helper (fire-and-forget) */
 function trackEvent(payload) {
   try {
-    base44.entities.Event.create({
-      ...payload,
-      ts: new Date().toISOString()
-    });
+    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
   } catch {}
+}
+
+/** Chunk helper */
+function chunk(arr, size = 50) {
+  const out = [];
+  for (let i = 0; i < (arr || []).length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
 /**
  * Base44-safe entity bulk fetch:
- * - Try "in"
- * - Fall back to per-id
+ * - Try "in" (chunked)
+ * - Fall back to per-id PARALLEL (not sequential)
  */
 async function fetchEntityMap(entityName, ids) {
   const map = new Map();
   const cleanIds = uniq((ids || []).map(normId)).filter(Boolean);
   if (!cleanIds.length) return map;
 
+  // 1) Try "in" in chunks (more reliable)
   let rows = [];
+  const chunks = chunk(cleanIds, 50);
+
   try {
-    rows = await base44.entities[entityName].filter({ id: { in: cleanIds } });
+    const results = await Promise.all(
+      chunks.map((c) => base44.entities[entityName].filter({ id: { in: c } }))
+    );
+    rows = results.flat().filter(Boolean);
   } catch {
     try {
-      rows = await base44.entities[entityName].filter({ _id: { in: cleanIds } });
+      const results2 = await Promise.all(
+        chunks.map((c) => base44.entities[entityName].filter({ _id: { in: c } }))
+      );
+      rows = results2.flat().filter(Boolean);
     } catch {
       rows = [];
     }
   }
 
+  // 2) If "in" didn’t work, do parallel per-id lookups (fastest safe fallback)
   if (!Array.isArray(rows) || rows.length === 0) {
-    rows = [];
-    for (const id of cleanIds) {
-      try {
-        const one = await base44.entities[entityName].filter({ id });
-        if (Array.isArray(one) && one[0]) {
-          rows.push(one[0]);
-          continue;
-        }
-      } catch {}
-      try {
-        const one2 = await base44.entities[entityName].filter({ _id: id });
-        if (Array.isArray(one2) && one2[0]) rows.push(one2[0]);
-      } catch {}
-    }
+    const settles = await Promise.allSettled(
+      cleanIds.map(async (id) => {
+        try {
+          const one = await base44.entities[entityName].filter({ id });
+          if (Array.isArray(one) && one[0]) return one[0];
+        } catch {}
+        try {
+          const one2 = await base44.entities[entityName].filter({ _id: id });
+          if (Array.isArray(one2) && one2[0]) return one2[0];
+        } catch {}
+        return null;
+      })
+    );
+    rows = settles.map((s) => (s.status === "fulfilled" ? s.value : null)).filter(Boolean);
   }
 
   (rows || []).forEach((r) => {
@@ -105,9 +117,8 @@ async function fetchEntityMap(entityName, ids) {
 
 /**
  * DEMO:
- * - Pull Camps with optional equality filters (sport/state) from demoProfile
- * - Filter by year client-side using start_date string bounds
- * - Join School + Sport
+ * - Pull Camps with optional equality filters (sport/state/division/positions)
+ * - IMPORTANT: try to filter year in the query to avoid massive downloads
  */
 async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   if (!demoYear) return [];
@@ -116,8 +127,23 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   if (demoProfile?.sport_id) whereBase.sport_id = demoProfile.sport_id;
   if (demoProfile?.state) whereBase.state = demoProfile.state;
 
-  const rows = await base44.entities.Camp.filter(whereBase);
-  const campsAll = Array.isArray(rows) ? rows : [];
+  const start = `${Number(demoYear)}-01-01`;
+  const next = `${Number(demoYear) + 1}-01-01`;
+
+  let campsAll = [];
+
+  // Try server-side date bounds first (huge performance win)
+  try {
+    const rows = await base44.entities.Camp.filter({
+      ...whereBase,
+      start_date: { gte: start, lt: next }
+    });
+    campsAll = Array.isArray(rows) ? rows : [];
+  } catch {
+    // Fallback: old behavior (fetch then client-filter)
+    const rows = await base44.entities.Camp.filter(whereBase);
+    campsAll = Array.isArray(rows) ? rows : [];
+  }
 
   const campsNorm = campsAll
     .map((c) => ({
@@ -128,9 +154,7 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     }))
     .filter((c) => c.camp_id);
 
-  const start = `${Number(demoYear)}-01-01`;
-  const next = `${Number(demoYear) + 1}-01-01`;
-
+  // If we had to fall back, filter by year client-side
   let camps = campsNorm.filter((c) => {
     const d = c?.start_date;
     return typeof d === "string" && d >= start && d < next;
@@ -205,13 +229,11 @@ function DiscoverPage() {
   const { loaded: demoLoaded, demoProfile, demoProfileId } = useDemoProfile();
   const gate = useWriteGate();
 
-  // Trigger rerender when demo favorites change (localStorage is not reactive)
   const [, setDemoFavTick] = useState(0);
 
   const athleteId = athleteProfile?.id;
   const sportId = athleteProfile?.sport_id;
 
-  // Prefer explicit demo year from query (?season=YYYY), else prior year.
   const urlParams = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
   const urlSeason = urlParams.get("season");
   const urlDemoYear = urlSeason && Number.isFinite(Number(urlSeason)) ? Number(urlSeason) : null;
@@ -235,7 +257,11 @@ function DiscoverPage() {
       Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids.join(",") : ""
     ],
     enabled: demoEnabled && !!resolvedDemoYear,
-    queryFn: () => fetchDemoCampSummaries({ demoYear: resolvedDemoYear, demoProfile })
+    queryFn: () => fetchDemoCampSummaries({ demoYear: resolvedDemoYear, demoProfile }),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 1
   });
 
   const loading =
@@ -264,7 +290,11 @@ function DiscoverPage() {
   const positionsMapQuery = useQuery({
     queryKey: ["positionsMap", allPositionIds.join("|")],
     enabled: allPositionIds.length > 0,
-    queryFn: () => fetchEntityMap("Position", allPositionIds)
+    queryFn: () => fetchEntityMap("Position", allPositionIds),
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 1
   });
 
   const positionsMap = positionsMapQuery.data || new Map();
@@ -314,11 +344,7 @@ function DiscoverPage() {
       sessionStorage.setItem(key, "1");
     } catch {}
 
-    trackEvent({
-      event_name: "discover_viewed",
-      mode: "demo",
-      season_year: resolvedDemoYear
-    });
+    trackEvent({ event_name: "discover_viewed", mode: "demo", season_year: resolvedDemoYear });
   }, [gate.mode, loading, resolvedDemoYear]);
 
   if (loading) {
@@ -379,7 +405,6 @@ function DiscoverPage() {
         </div>
       </div>
 
-      {/* DEMO SUBSCRIBE BANNER */}
       {gate.mode !== "paid" && (
         <div className="max-w-md mx-auto px-4 pt-3">
           <Card className="p-3 border-amber-200 bg-amber-50">
@@ -471,7 +496,6 @@ function DiscoverPage() {
                 onFavoriteToggle={() => {
                   gate.write({
                     demo: () => {
-                      // Mirror paid rule: can't favorite if registered
                       if (isDemoRegistered(effectiveDemoProfileId, s.camp_id)) return;
 
                       trackEvent({
