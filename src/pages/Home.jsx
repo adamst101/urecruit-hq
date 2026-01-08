@@ -66,7 +66,8 @@ export default function Home() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
     
     try {
-      window.location.href = `/auth/login?redirect=${encodeURIComponent(createPageUrl("Discover") + "?source=login_home")}`;
+      await base44.auth.signIn();
+      nav(createPageUrl("Discover") + "?source=login_home");
     } catch (e) {
       console.error("Login error:", e);
       setLoginWorking(false);
