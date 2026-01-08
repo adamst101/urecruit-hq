@@ -12,9 +12,6 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode";
 
-const LOGO_URL =
-  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
-
 function trackEvent(payload) {
   try {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
@@ -65,7 +62,6 @@ export default function Home() {
   }, [season]);
 
   const { demoSeasonYear } = getDemoDefaults();
-  const [logoOk, setLogoOk] = useState(true);
 
   useEffect(() => {
     const key = "evt_home_viewed_v23";
@@ -160,11 +156,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-8 space-y-8">
-        {/* Tagline */}
-        <div className="text-sm md:text-lg text-muted font-semibold">
-          Your college recruiting camp planning HQ
-        </div>
-
         {/* HERO */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-7 md:p-10 space-y-6">
