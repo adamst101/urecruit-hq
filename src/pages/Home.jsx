@@ -1,7 +1,7 @@
 // src/pages/Home.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, LogIn, CheckCircle2, Loader2 } from "lucide-react";
+import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -21,35 +21,44 @@ function trackEvent(payload) {
   } catch {}
 }
 
-// Try a few likely auth entrypoints; return a useful error if none exist.
-async function safeSignIn() {
-  const auth = base44?.auth;
-
-  if (!auth) {
-    return { ok: false, error: new Error("Auth is not available (base44.auth missing).") };
-  }
-
-  const candidates = [
-    auth.signIn,
-    auth.signInWithRedirect,
-    auth.login,
-    auth.startAuth
-  ].filter((fn) => typeof fn === "function");
-
-  if (!candidates.length) {
-    return { ok: false, error: new Error("No sign-in method found on base44.auth.") };
-  }
-
+function absUrl(path) {
+  // createPageUrl typically returns a path; make it absolute for redirect callbacks
   try {
-    // Call the first available method
-    await candidates[0]();
-    return { ok: true, error: null };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e : new Error(String(e)) };
+    return new URL(path, window.location.origin).toString();
+  } catch {
+    return window.location.href;
   }
 }
 
-async function waitForSeason(seasonRef, { timeoutMs = 8000, intervalMs = 150 } = {}) {
+/**
+ * Base44 auth:
+ * - Primary: base44.auth.redirectToLogin(nextUrl)  (browser redirect)
+ * - Fallbacks: (older builds) base44.auth.signIn()
+ */
+async function startLogin({ nextUrl }) {
+  const auth = base44?.auth;
+
+  // Preferred Base44 method (documented)
+  if (auth && typeof auth.redirectToLogin === "function") {
+    auth.redirectToLogin(nextUrl);
+    return { ok: true, redirected: true };
+  }
+
+  // Legacy / alternate method (if present)
+  if (auth && typeof auth.signIn === "function") {
+    try {
+      await auth.signIn();
+      return { ok: true, redirected: false };
+    } catch (e) {
+      return { ok: false, error: e };
+    }
+  }
+
+  return { ok: false, error: new Error("No sign-in method found on base44.auth.") };
+}
+
+// Only used for “signIn” style flows (non-redirect). For redirectToLogin, we do not need this.
+async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } = {}) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const s = seasonRef.current;
@@ -71,12 +80,10 @@ export default function Home() {
 
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
-
-  const [loginWorking, setLoginWorking] = useState(false);
-  const [loginError, setLoginError] = useState(null);
+  const [loginErr, setLoginErr] = useState("");
 
   useEffect(() => {
-    const key = "evt_home_viewed_v21";
+    const key = "evt_home_viewed_v22";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -93,60 +100,37 @@ export default function Home() {
 
   // Access Demo (no login required)
   function handleTryDemo() {
+    setLoginErr("");
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
     setDemoMode(demoSeasonYear);
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Log in -> Discover (and show errors if auth fails)
+  // Log in -> redirect to hosted login and come back to Discover
   async function handleLoginOnly() {
-    if (loginWorking) return;
-
-    setLoginError(null);
-    setLoginWorking(true);
-
+    setLoginErr("");
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    const res = await safeSignIn();
+    const nextUrl = absUrl(createPageUrl("Discover"));
+    const res = await startLogin({ nextUrl });
 
     if (!res.ok) {
-      const msg = res.error?.message || "Sign-in failed.";
-      setLoginError(msg);
-
-      trackEvent({
-        event_name: "cta_login_failed",
-        source: "home",
-        via: "hero_login",
-        error: msg
-      });
-
-      setLoginWorking(false);
+      setLoginErr(res?.error?.message || "Login failed.");
       return;
     }
 
-    // Give the auth state time to hydrate
-    const s = await waitForSeason(seasonRef);
+    // If redirectToLogin was used, browser navigates away; do NOT SPA-navigate.
+    if (res.redirected) return;
 
-    // If we still don't have accountId, don't silently “do nothing”
-    if (!s?.accountId) {
-      setLoginError(
-        "Login started, but we couldn’t confirm your session yet. If nothing happens, check popup blockers and try again."
-      );
-      trackEvent({ event_name: "cta_login_no_session", source: "home" });
-      setLoginWorking(false);
-      return;
-    }
-
-    trackEvent({ event_name: "cta_login_success", source: "home" });
-    setLoginWorking(false);
-
-    // Discover may still route-guard to Profile if needed (expected)
+    // If non-redirect login method was used, then proceed in-app.
+    await waitForSeason(seasonRef);
     nav(createPageUrl("Discover"));
   }
 
   // View pricing / Sign-Up -> Subscribe
   function handlePricingSignup() {
+    setLoginErr("");
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     nav(createPageUrl("Subscribe") + `?source=home_pricing`);
   }
@@ -199,54 +183,27 @@ export default function Home() {
                   Your college recruiting camp planning HQ
                 </div>
 
+                {/* Inline auth error */}
+                {loginErr ? (
+                  <div className="mt-3 w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    {loginErr}
+                  </div>
+                ) : null}
+
                 {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button
-                    onClick={handleLoginOnly}
-                    className="btn-brand w-full"
-                    disabled={loginWorking}
-                  >
-                    {loginWorking ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Logging in…
-                      </>
-                    ) : (
-                      <>
-                        <LogIn className="w-4 h-4 mr-2" />
-                        Log in
-                      </>
-                    )}
+                  <Button onClick={handleLoginOnly} className="btn-brand w-full">
+                    <LogIn className="w-4 h-4 mr-2" />
+                    Log in
                   </Button>
                 </div>
-
-                {/* Visible login error (mobile + desktop) */}
-                {loginError && (
-                  <div className="mt-3 w-full text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">
-                    {loginError}
-                  </div>
-                )}
               </div>
 
               {/* Desktop: login to the right (only one login total) */}
               <div className="hidden md:flex">
-                <Button
-                  variant="outline"
-                  onClick={handleLoginOnly}
-                  className="text-ink"
-                  disabled={loginWorking}
-                >
-                  {loginWorking ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Logging in…
-                    </>
-                  ) : (
-                    <>
-                      <LogIn className="w-4 h-4 mr-2" />
-                      Log in
-                    </>
-                  )}
+                <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
+                  <LogIn className="w-4 h-4 mr-2" />
+                  Log in
                 </Button>
               </div>
             </div>
