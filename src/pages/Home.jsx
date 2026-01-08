@@ -55,8 +55,9 @@ export default function Home() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
     try {
       await base44.auth.signIn();
-      nav(createPageUrl("Discover"));
-    } catch {}
+    } catch {
+      // Auth failed, stay on page
+    }
   }
 
   // View pricing / Sign-Up -> Subscribe
