@@ -1,5 +1,5 @@
 // src/pages/Home.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
@@ -21,20 +21,12 @@ function trackEvent(payload) {
   } catch {}
 }
 
-
-
 export default function Home() {
   const nav = useNavigate();
-
-  const season = useSeasonAccess();
-  const seasonRef = useRef(season);
-  useEffect(() => {
-    seasonRef.current = season;
-  }, [season]);
+  const season = useSeasonAccess(); // used only for analytics; Home remains public
 
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
-  const [loginWorking, setLoginWorking] = useState(false);
 
   useEffect(() => {
     const key = "evt_home_viewed_v22";
@@ -60,23 +52,21 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  async function handleLoginOnly() {
-    if (loginWorking) return;
-    setLoginWorking(true);
+  /**
+   * Login:
+   * We do NOT call base44.auth.signIn().
+   * With Base44 App Visibility = Public, you send the user to a protected page.
+   * RouteGuard (or Base44) will force the standard login flow if they aren’t authed.
+   */
+  function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
-    
-    try {
-      await base44.auth.redirectToLogin(createPageUrl("Discover"));
-    } catch (e) {
-      console.error("Login error:", e);
-      setLoginWorking(false);
-    }
+    nav(createPageUrl("Discover") + "?source=home_login");
   }
 
-  // View pricing / Sign-Up -> Subscribe
+  // View pricing / Sign-Up -> Subscribe (should be accessible from Home)
   function handlePricingSignup() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
-    nav(createPageUrl("Subscribe") + `?source=home_pricing`);
+    nav(createPageUrl("Subscribe") + "?source=home_pricing");
   }
 
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
@@ -107,7 +97,7 @@ export default function Home() {
         {/* HERO ONLY (no top bar header to avoid duplicate logo/login) */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* Brand row: big logo + login */}
+            {/* Brand row: big logo + login (single login button, responsive layout) */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -122,25 +112,25 @@ export default function Home() {
                   <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">URecruit HQ</div>
                 )}
 
-                {/* Tagline */}
-                <div className="mt-2 text-base md:text-lg font-bold text-ink text-center md:text-left leading-tight">
+                {/* Tagline directly under logo (mobile centered, desktop left) */}
+                <div className="mt-2 text-sm md:text-lg font-bold text-ink text-center md:text-left leading-tight">
                   Your college recruiting camp planning HQ
                 </div>
 
                 {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button onClick={handleLoginOnly} className="btn-brand w-full" disabled={loginWorking}>
+                  <Button onClick={handleLogin} className="btn-brand w-full">
                     <LogIn className="w-4 h-4 mr-2" />
-                    {loginWorking ? "Starting login…" : "Log in"}
+                    Log in
                   </Button>
                 </div>
               </div>
 
-              {/* Desktop: login to the right */}
+              {/* Desktop: login to the right (only one login total) */}
               <div className="hidden md:flex">
-                <Button variant="outline" onClick={handleLoginOnly} className="text-ink" disabled={loginWorking}>
+                <Button variant="outline" onClick={handleLogin} className="text-ink">
                   <LogIn className="w-4 h-4 mr-2" />
-                  {loginWorking ? "Starting login…" : "Log in"}
+                  Log in
                 </Button>
               </div>
             </div>
