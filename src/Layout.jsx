@@ -12,7 +12,7 @@ export default function Layout({ children }) {
   const location = useLocation();
   const [logoOk, setLogoOk] = useState(true);
   
-  const isHomePage = location.pathname === '/' || location.pathname === '/Home';
+  const isHomePage = location.pathname === '/' || location.pathname === '/Home' || location.pathname === '/home';
 
   async function handleLogin() {
     try {
