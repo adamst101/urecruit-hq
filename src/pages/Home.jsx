@@ -1,7 +1,7 @@
 // src/pages/Home.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
+import { ArrowRight, LogIn, CheckCircle2, Loader2 } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -21,17 +21,35 @@ function trackEvent(payload) {
   } catch {}
 }
 
+// Try a few likely auth entrypoints; return a useful error if none exist.
 async function safeSignIn() {
+  const auth = base44?.auth;
+
+  if (!auth) {
+    return { ok: false, error: new Error("Auth is not available (base44.auth missing).") };
+  }
+
+  const candidates = [
+    auth.signIn,
+    auth.signInWithRedirect,
+    auth.login,
+    auth.startAuth
+  ].filter((fn) => typeof fn === "function");
+
+  if (!candidates.length) {
+    return { ok: false, error: new Error("No sign-in method found on base44.auth.") };
+  }
+
   try {
-    if (typeof base44.auth?.signIn === "function") {
-      await base44.auth.signIn();
-      return true;
-    }
-  } catch {}
-  return false;
+    // Call the first available method
+    await candidates[0]();
+    return { ok: true, error: null };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e : new Error(String(e)) };
+  }
 }
 
-async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } = {}) {
+async function waitForSeason(seasonRef, { timeoutMs = 8000, intervalMs = 150 } = {}) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const s = seasonRef.current;
@@ -53,6 +71,9 @@ export default function Home() {
 
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
+
+  const [loginWorking, setLoginWorking] = useState(false);
+  const [loginError, setLoginError] = useState(null);
 
   useEffect(() => {
     const key = "evt_home_viewed_v21";
@@ -78,12 +99,49 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Log in -> Discover
+  // Log in -> Discover (and show errors if auth fails)
   async function handleLoginOnly() {
+    if (loginWorking) return;
+
+    setLoginError(null);
+    setLoginWorking(true);
+
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
-    const ok = await safeSignIn();
-    if (!ok) return;
-    await waitForSeason(seasonRef);
+
+    const res = await safeSignIn();
+
+    if (!res.ok) {
+      const msg = res.error?.message || "Sign-in failed.";
+      setLoginError(msg);
+
+      trackEvent({
+        event_name: "cta_login_failed",
+        source: "home",
+        via: "hero_login",
+        error: msg
+      });
+
+      setLoginWorking(false);
+      return;
+    }
+
+    // Give the auth state time to hydrate
+    const s = await waitForSeason(seasonRef);
+
+    // If we still don't have accountId, don't silently “do nothing”
+    if (!s?.accountId) {
+      setLoginError(
+        "Login started, but we couldn’t confirm your session yet. If nothing happens, check popup blockers and try again."
+      );
+      trackEvent({ event_name: "cta_login_no_session", source: "home" });
+      setLoginWorking(false);
+      return;
+    }
+
+    trackEvent({ event_name: "cta_login_success", source: "home" });
+    setLoginWorking(false);
+
+    // Discover may still route-guard to Profile if needed (expected)
     nav(createPageUrl("Discover"));
   }
 
@@ -143,18 +201,52 @@ export default function Home() {
 
                 {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button onClick={handleLoginOnly} className="btn-brand w-full">
-                    <LogIn className="w-4 h-4 mr-2" />
-                    Log in
+                  <Button
+                    onClick={handleLoginOnly}
+                    className="btn-brand w-full"
+                    disabled={loginWorking}
+                  >
+                    {loginWorking ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Logging in…
+                      </>
+                    ) : (
+                      <>
+                        <LogIn className="w-4 h-4 mr-2" />
+                        Log in
+                      </>
+                    )}
                   </Button>
                 </div>
+
+                {/* Visible login error (mobile + desktop) */}
+                {loginError && (
+                  <div className="mt-3 w-full text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">
+                    {loginError}
+                  </div>
+                )}
               </div>
 
               {/* Desktop: login to the right (only one login total) */}
               <div className="hidden md:flex">
-                <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
-                  <LogIn className="w-4 h-4 mr-2" />
-                  Log in
+                <Button
+                  variant="outline"
+                  onClick={handleLoginOnly}
+                  className="text-ink"
+                  disabled={loginWorking}
+                >
+                  {loginWorking ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Logging in…
+                    </>
+                  ) : (
+                    <>
+                      <LogIn className="w-4 h-4 mr-2" />
+                      Log in
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
