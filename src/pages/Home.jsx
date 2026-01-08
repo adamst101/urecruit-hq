@@ -83,18 +83,20 @@ export default function Home() {
 
     try {
       const next = absoluteUrl(createPageUrl("Discover") + "?source=login_home");
+      console.log("Attempting login redirect to:", next);
+      console.log("base44.auth available:", !!base44?.auth);
+      console.log("redirectToLogin type:", typeof base44?.auth?.redirectToLogin);
+      
       const ok = redirectToBase44Login(next);
 
       if (!ok) {
-        // If this triggers, your app is not in "user authentication mode"
-        // or base44Client isn't configured with auth.
-        console.error("base44.auth.redirectToLogin is not available. Check Base44 auth mode.");
-        alert("Login is not configured (Base44 auth module unavailable).");
+        console.error("Login redirect returned false");
+        alert("Login system not available. Please refresh the page and try again.");
       }
-      // If ok=true, browser redirects immediately.
+      // If ok=true, browser redirects immediately so code below won't run
     } catch (e) {
-      console.error("Login redirect failed:", e);
-      alert("Login failed to start. Check console for details.");
+      console.error("Login redirect error:", e);
+      alert("Login failed. Please try again.");
     } finally {
       setLoginWorking(false);
     }
