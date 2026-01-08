@@ -21,7 +21,9 @@ function trackEvent(payload) {
   } catch {}
 }
 
-export default function Subscribe() {
+import RouteGuard from "../components/auth/RouteGuard";
+
+function SubscribePage() {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -208,3 +210,10 @@ function Feature({ children }) {
   );
 }
 
+export default function Subscribe() {
+  return (
+    <RouteGuard requireAuth={true}>
+      <SubscribePage />
+    </RouteGuard>
+  );
+}

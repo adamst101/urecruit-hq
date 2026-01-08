@@ -122,11 +122,8 @@ function MyCampsPage() {
 }
 
 export default function MyCamps() {
-  // MyCamps is paid-only and requires athlete profile.
-  // If user is demo or not subscribed => RouteGuard sends them to Subscribe.
-  // If paid + no profile => RouteGuard sends them to Profile (with next=...).
   return (
-    <RouteGuard requireSub={true} requireChild={true} allowProfileWithoutSub={true}>
+    <RouteGuard requireAuth={true} requirePaid={true} requireProfile={true}>
       <MyCampsPage />
     </RouteGuard>
   );
@@ -153,4 +150,3 @@ function CampRow({ camp }) {
     </Card>
   );
 }
-

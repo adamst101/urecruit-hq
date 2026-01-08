@@ -69,7 +69,9 @@ function normalizeSportIdMaybe(rawSportId, sports) {
   return null;
 }
 
-export default function Profile() {
+import RouteGuard from "../components/auth/RouteGuard";
+
+function ProfilePage() {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -357,5 +359,13 @@ export default function Profile() {
         {sportMissing && <div className="text-xs text-red-600">Select a sport to continue.</div>}
       </Card>
     </div>
+  );
+}
+
+export default function Profile() {
+  return (
+    <RouteGuard requireAuth={true}>
+      <ProfilePage />
+    </RouteGuard>
   );
 }

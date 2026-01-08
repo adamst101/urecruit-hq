@@ -579,12 +579,11 @@ function DiscoverPage({ gate }) {
 }
 
 export default function Discover() {
-  // KEY FIX: Demo should NOT require athlete profile. Paid should.
   const gate = useWriteGate();
   const requireProfile = gate.mode === "paid";
 
   return (
-    <RouteGuard requireProfile={requireProfile}>
+    <RouteGuard requireAuth={true} requireProfile={requireProfile}>
       <DiscoverPage gate={gate} />
     </RouteGuard>
   );
