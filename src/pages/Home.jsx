@@ -21,43 +21,16 @@ function trackEvent(payload) {
   } catch {}
 }
 
-function absUrl(path) {
-  // createPageUrl typically returns a path; make it absolute for redirect callbacks
+async function safeSignIn() {
   try {
-    return new URL(path, window.location.origin).toString();
-  } catch {
-    return window.location.href;
-  }
-}
-
-/**
- * Base44 auth:
- * - Primary: base44.auth.redirectToLogin(nextUrl)  (browser redirect)
- * - Fallbacks: (older builds) base44.auth.signIn()
- */
-async function startLogin({ nextUrl }) {
-  const auth = base44?.auth;
-
-  // Preferred Base44 method (documented)
-  if (auth && typeof auth.redirectToLogin === "function") {
-    auth.redirectToLogin(nextUrl);
-    return { ok: true, redirected: true };
-  }
-
-  // Legacy / alternate method (if present)
-  if (auth && typeof auth.signIn === "function") {
-    try {
-      await auth.signIn();
-      return { ok: true, redirected: false };
-    } catch (e) {
-      return { ok: false, error: e };
+    if (typeof base44.auth?.signIn === "function") {
+      await base44.auth.signIn();
+      return true;
     }
-  }
-
-  return { ok: false, error: new Error("No sign-in method found on base44.auth.") };
+  } catch {}
+  return false;
 }
 
-// Only used for “signIn” style flows (non-redirect). For redirectToLogin, we do not need this.
 async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } = {}) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -128,7 +101,7 @@ export default function Home() {
     () => [
       { a: "Find dates fast.", b: "Camps and dates are scattered across school sites. We bring them together." },
       { a: "Plan the sequence.", b: "Overlay schools + position-specific sessions to avoid conflicts." },
-      { a: "Track what’s real.", b: "Planning vs registered vs completed—so the plan actually happens." }
+      { a: "Track what's real.", b: "Planning vs registered vs completed—so the plan actually happens." }
     ],
     []
   );
