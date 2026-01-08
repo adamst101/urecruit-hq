@@ -62,7 +62,7 @@ function chunk(arr, size = 50) {
 /**
  * Base44-safe entity bulk fetch:
  * - Try "in" (chunked)
- * - Fall back to per-id PARALLEL
+ * - Fall back to per-id PARALLEL (not sequential)
  */
 async function fetchEntityMap(entityName, ids) {
   const map = new Map();
@@ -72,18 +72,24 @@ async function fetchEntityMap(entityName, ids) {
   let rows = [];
   const chunks = chunk(cleanIds, 50);
 
+  // 1) Try "in" in chunks
   try {
-    const results = await Promise.all(chunks.map((c) => base44.entities[entityName].filter({ id: { in: c } })));
+    const results = await Promise.all(
+      chunks.map((c) => base44.entities[entityName].filter({ id: { in: c } }))
+    );
     rows = results.flat().filter(Boolean);
   } catch {
     try {
-      const results2 = await Promise.all(chunks.map((c) => base44.entities[entityName].filter({ _id: { in: c } })));
+      const results2 = await Promise.all(
+        chunks.map((c) => base44.entities[entityName].filter({ _id: { in: c } }))
+      );
       rows = results2.flat().filter(Boolean);
     } catch {
       rows = [];
     }
   }
 
+  // 2) If "in" didn’t work, do parallel per-id lookups
   if (!Array.isArray(rows) || rows.length === 0) {
     const settles = await Promise.allSettled(
       cleanIds.map(async (id) => {
@@ -111,11 +117,8 @@ async function fetchEntityMap(entityName, ids) {
 
 /**
  * DEMO:
- * - Pull Camps with optional equality filters
- * - Fixes:
- *   1) normalize demoProfile.sport_id (object -> string id)
- *   2) if server-side filters return 0, retry broader + client-filter
- *   3) never rely on Camp.filter({}) returning “all rows” (it may page/limit)
+ * - Robust against Base44 returning [] silently for unsupported operators
+ * - Tries server-side date bounds first; if empty, falls back and filters client-side
  */
 async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   if (!demoYear) return [];
@@ -126,38 +129,40 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   const start = `${Number(demoYear)}-01-01`;
   const next = `${Number(demoYear) + 1}-01-01`;
 
-  // Build tight server filter (fast path)
+  // tight equality filters (safe)
   const whereTight = {};
   if (demoSportId) whereTight.sport_id = demoSportId;
   if (demoState) whereTight.state = demoState;
 
-  async function tryFetch(where) {
-    // try date bounds server-side first
+  async function fetchWithOptionalDate(where) {
+    // 1) try server-side date bounds
+    let rows = [];
     try {
-      const rows = await base44.entities.Camp.filter({
+      const r1 = await base44.entities.Camp.filter({
         ...where,
         start_date: { gte: start, lt: next }
       });
-      return Array.isArray(rows) ? rows : [];
+      rows = Array.isArray(r1) ? r1 : [];
     } catch {
-      // fallback: fetch without date operators, then client filter
+      rows = [];
+    }
+
+    // 2) if empty, try without date bounds (then enforce year client-side)
+    if (!rows.length) {
       try {
-        const rows2 = await base44.entities.Camp.filter(where);
-        return Array.isArray(rows2) ? rows2 : [];
+        const r2 = await base44.entities.Camp.filter(where);
+        rows = Array.isArray(r2) ? r2 : [];
       } catch {
-        return [];
+        rows = [];
       }
     }
+
+    return rows;
   }
 
-  // 1) Tight fetch
-  let campsAll = await tryFetch(whereTight);
-
-  // 2) If tight returns nothing, retry broader fetch (year-only), then client-filter sport/state.
-  // This covers: sport_id stored as relation object, type mismatch, or Base44 filter quirks.
-  if (campsAll.length === 0) {
-    campsAll = await tryFetch({});
-  }
+  // Try tight first, then broaden if nothing
+  let campsAll = await fetchWithOptionalDate(whereTight);
+  if (!campsAll.length) campsAll = await fetchWithOptionalDate({});
 
   const campsNorm = (campsAll || [])
     .map((c) => ({
@@ -168,13 +173,13 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     }))
     .filter((c) => c.camp_id);
 
-  // Always enforce year client-side (safe no matter what Base44 supported)
+  // Enforce year client-side (handles timestamps like 2025-06-01T00:00:00Z)
   let camps = campsNorm.filter((c) => {
-    const d = c?.start_date;
-    return typeof d === "string" && d >= start && d < next;
+    const d = typeof c?.start_date === "string" ? c.start_date.slice(0, 10) : null; // YYYY-MM-DD
+    return d && d >= start && d < next;
   });
 
-  // Client-side sport/state safety filters (handles mismatched server-side types)
+  // Enforce sport/state client-side too (protects against type quirks)
   if (demoSportId) camps = camps.filter((c) => normId(c.sport_id) === demoSportId);
   if (demoState) camps = camps.filter((c) => (c.state || null) === demoState);
 
@@ -236,22 +241,25 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   });
 }
 
-function DiscoverPage() {
+function DiscoverPage({ gate }) {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
 
   const { isLoading: accessLoading, currentYear } = useSeasonAccess();
+
+  // NOTE: we still call this hook, but only *use* it for paid mode.
   const { athleteProfile, isLoading: identityLoading, isError: identityError } = useAthleteIdentity();
 
   const { loaded: demoLoaded, demoProfile, demoProfileId } = useDemoProfile();
-  const gate = useWriteGate();
 
+  // Trigger rerender when demo favorites change (localStorage is not reactive)
   const [, setDemoFavTick] = useState(0);
 
   const athleteId = athleteProfile?.id;
   const sportId = athleteProfile?.sport_id;
 
+  // Prefer explicit demo year from query (?season=YYYY), else prior year.
   const urlParams = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
   const urlSeason = urlParams.get("season");
   const urlDemoYear = urlSeason && Number.isFinite(Number(urlSeason)) ? Number(urlSeason) : null;
@@ -263,16 +271,17 @@ function DiscoverPage() {
   });
 
   const resolvedDemoYear = urlDemoYear || Number(currentYear) - 1;
-
-  // NOTE: demoEnabled must wait for demo profile to load
   const demoEnabled = gate.mode !== "paid" && demoLoaded;
 
-  // Normalize demo key fields (prevents “object id” cache keys and filter mismatches)
-  const demoSportIdKey = normId(demoProfile?.sport_id) || null;
-  const demoPosKey = Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids.join(",") : "";
-
   const demoSummariesQuery = useQuery({
-    queryKey: ["demoCampSummaries", resolvedDemoYear, demoSportIdKey, demoProfile?.state || null, demoProfile?.division || null, demoPosKey],
+    queryKey: [
+      "demoCampSummaries",
+      resolvedDemoYear,
+      normId(demoProfile?.sport_id) || null,
+      demoProfile?.state || null,
+      demoProfile?.division || null,
+      Array.isArray(demoProfile?.position_ids) ? [...demoProfile.position_ids].sort().join(",") : ""
+    ],
     enabled: demoEnabled && !!resolvedDemoYear,
     queryFn: () => fetchDemoCampSummaries({ demoYear: resolvedDemoYear, demoProfile }),
     staleTime: 5 * 60 * 1000,
@@ -422,6 +431,7 @@ function DiscoverPage() {
         </div>
       </div>
 
+      {/* DEMO SUBSCRIBE BANNER */}
       {gate.mode !== "paid" && (
         <div className="max-w-md mx-auto px-4 pt-3">
           <Card className="p-3 border-amber-200 bg-amber-50">
@@ -456,11 +466,6 @@ function DiscoverPage() {
                 ? "No camps matched your current filters."
                 : `No ${resolvedDemoYear} camps match your demo filters. Try clearing filters in Personalize.`}
             </div>
-            {gate.mode !== "paid" && (
-              <Button className="w-full mt-3" variant="outline" onClick={() => navigate(createPageUrl("DemoSetup"))}>
-                Clear / Update Demo Filters
-              </Button>
-            )}
           </Card>
         ) : (
           summaries.map((s) => {
@@ -518,6 +523,7 @@ function DiscoverPage() {
                 onFavoriteToggle={() => {
                   gate.write({
                     demo: () => {
+                      // Mirror paid rule: can't favorite if registered
                       if (isDemoRegistered(effectiveDemoProfileId, s.camp_id)) return;
 
                       trackEvent({
@@ -573,9 +579,13 @@ function DiscoverPage() {
 }
 
 export default function Discover() {
+  // KEY FIX: Demo should NOT require athlete profile. Paid should.
+  const gate = useWriteGate();
+  const requireProfile = gate.mode === "paid";
+
   return (
-    <RouteGuard requireProfile={true}>
-      <DiscoverPage />
+    <RouteGuard requireProfile={requireProfile}>
+      <DiscoverPage gate={gate} />
     </RouteGuard>
   );
 }
