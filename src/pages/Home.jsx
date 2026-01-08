@@ -12,6 +12,9 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode";
 
+const LOGO_URL =
+  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
+
 function trackEvent(payload) {
   try {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
@@ -38,19 +41,6 @@ async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } =
   return seasonRef.current;
 }
 
-// Optional: detect profile (only used after paid=true)
-// If you already have a hook for this (useAthleteIdentity), swap it in.
-async function hasAthleteProfile() {
-  try {
-    // If this exists in your app, it’s the cleanest check:
-    if (typeof base44.functions?.getAthleteProfile === "function") {
-      const p = await base44.functions.getAthleteProfile();
-      return !!p;
-    }
-  } catch {}
-  return false;
-}
-
 export default function Home() {
   const nav = useNavigate();
 
@@ -62,9 +52,10 @@ export default function Home() {
   }, [season]);
 
   const { demoSeasonYear } = getDemoDefaults();
+  const [logoOk, setLogoOk] = useState(true);
 
   useEffect(() => {
-    const key = "evt_home_viewed_v23";
+    const key = "evt_home_viewed_v20";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -87,48 +78,19 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Login (header)
+  // Login (top): after sign-in, go to UserHome
   async function handleLoginOnly() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "header" });
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "top_right_or_mobile" });
     const ok = await safeSignIn();
     if (!ok) return;
     await waitForSeason(seasonRef);
     nav(createPageUrl("UserHome"));
   }
 
-  // ✅ Primary CTA: View pricing / Sign-Up (must route, not scroll)
-  async function handlePricingSignup() {
+  // Primary CTA: go to Subscribe (not scroll)
+  function handlePricingSignup() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
-
-    // 1) Ensure signed in (your product requires login to purchase)
-    if (!seasonRef.current?.accountId) {
-      trackEvent({ event_name: "cta_login_click", source: "home", via: "pricing_signup" });
-      const ok = await safeSignIn();
-      if (!ok) return;
-      await waitForSeason(seasonRef);
-    }
-
-    const s = seasonRef.current || {};
-    const authed = !!s.accountId;
-    const paid = s.mode === "paid";
-
-    if (!authed) return;
-
-    // 2) If not paid -> go to Subscribe (checkout)
-    if (!paid) {
-      nav(createPageUrl("Subscribe"));
-      return;
-    }
-
-    // 3) Paid but missing profile -> go to Profile setup (your “select sport” page)
-    const profileExists = await hasAthleteProfile();
-    if (!profileExists) {
-      nav(createPageUrl("Profile"));
-      return;
-    }
-
-    // 4) Paid + profile -> go to UserHome
-    nav(createPageUrl("UserHome"));
+    nav(createPageUrl("Subscribe") + `?source=home_pricing`);
   }
 
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
@@ -155,22 +117,68 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-surface">
-      <div className="max-w-5xl mx-auto px-6 py-6 md:py-8 space-y-8">
-        {/* HERO */}
-        <Card className="bg-white border-0 shadow-md rounded-2xl">
-          <div className="p-7 md:p-10 space-y-6">
-            <div className="max-w-3xl space-y-3">
-              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
-              <div className="h-1 w-14 rounded bg-accent" />
-              <p className="text-muted md:text-lg leading-relaxed text-center md:text-left">{heroParagraph}</p>
+      <div className="max-w-5xl mx-auto px-6 py-6 md:py-8 space-y-6">
+        {/* Top brand header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          {/* Logo + tagline */}
+          <div className="flex flex-col items-start">
+            {logoOk ? (
+              <img
+                src={LOGO_URL}
+                alt="URecruit HQ"
+                loading="eager"
+                onError={() => setLogoOk(false)}
+                // 30% smaller than prior, and mobile ~100% larger than baseline:
+                // mobile: h-24 (instead of h-20) | desktop: md:h-40 (instead of md:h-56)
+                className="h-24 md:h-40 w-auto block object-contain"
+              />
+            ) : (
+              <div className="text-3xl md:text-4xl font-extrabold text-brand leading-none">URecruit HQ</div>
+            )}
+
+            {/* Tagline: bold, +2 sizes, directly under logo */}
+            <div className="mt-1 text-base md:text-lg font-bold text-ink leading-tight">
+              Your college recruiting camp planning HQ
             </div>
 
+            {/* Mobile: login under tagline */}
+            <div className="mt-3 md:hidden">
+              <Button onClick={handleLoginOnly} className="btn-brand w-full">
+                <LogIn className="w-4 h-4 mr-2" />
+                Log in
+              </Button>
+            </div>
+          </div>
+
+          {/* Desktop: login on right (no Pricing text) */}
+          <div className="hidden md:flex gap-2 items-center">
+            <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
+              <LogIn className="w-4 h-4 mr-2" />
+              Log in
+            </Button>
+          </div>
+        </div>
+
+        {/* HERO */}
+        <Card className="bg-white border-0 shadow-md rounded-2xl">
+          <div className="p-6 md:p-10 space-y-6">
+            {/* Copy */}
+            <div className="max-w-3xl space-y-3 text-center md:text-left">
+              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
+
+              {/* Gold accent (subtle) */}
+              <div className="h-1 w-14 rounded bg-accent mx-auto md:mx-0" />
+
+              <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
+            </div>
+
+            {/* Outcome cards */}
             <div className="grid md:grid-cols-3 gap-4">
               {bullets.map((x) => (
                 <div key={x.a} className="rounded-xl bg-surface border border-default p-4">
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="w-5 h-5 mt-0.5 text-muted" />
-                    <div className="text-sm">
+                    <div className="text-sm text-left">
                       <div className="font-bold text-brand">{x.a}</div>
                       <div className="text-muted">{x.b}</div>
                     </div>
@@ -179,10 +187,11 @@ export default function Home() {
               ))}
             </div>
 
+            {/* How it works strip */}
             <div className="rounded-xl border border-default bg-white p-4">
               <div className="grid md:grid-cols-3 gap-4">
                 {howStrip.map((x) => (
-                  <div key={x.title} className="text-sm">
+                  <div key={x.title} className="text-sm text-left">
                     <div className="font-bold text-brand">{x.title}</div>
                     <div className="text-muted">{x.body}</div>
                   </div>
@@ -203,13 +212,12 @@ export default function Home() {
               </Button>
             </div>
 
-            <div className="pt-2 text-xs text-muted">
+            {/* Trust microcopy at bottom; no "(read-only)" */}
+            <div className="pt-2 text-xs text-muted text-center md:text-left">
               Independent planning tool · Not affiliated with camps · Demo uses prior-season data
             </div>
           </div>
         </Card>
-
-        <div id="pricing" />
       </div>
     </div>
   );
