@@ -160,7 +160,10 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-8 space-y-8">
-
+        {/* Tagline */}
+        <div className="text-sm md:text-lg text-muted font-semibold">
+          Your college recruiting camp planning HQ
+        </div>
 
         {/* HERO */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
