@@ -21,41 +21,16 @@ function trackEvent(payload) {
   } catch {}
 }
 
-async function safeSignIn() {
-  try {
-    if (typeof base44.auth?.signIn === "function") {
-      await base44.auth.signIn();
-      return true;
-    }
-  } catch {}
-  return false;
-}
 
-async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } = {}) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const s = seasonRef.current;
-    if (s && s.accountId) return s;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-  return seasonRef.current;
-}
 
 export default function Home() {
   const nav = useNavigate();
-
-  const season = useSeasonAccess();
-  const seasonRef = useRef(season);
-
-  useEffect(() => {
-    seasonRef.current = season;
-  }, [season]);
 
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
 
   useEffect(() => {
-    const key = "evt_home_viewed_v23";
+    const key = "evt_home_viewed_v24";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -63,11 +38,8 @@ export default function Home() {
 
     trackEvent({
       event_name: "home_view",
-      source: "home",
-      auth_state: season?.accountId ? "authed" : "anon",
-      mode: season?.mode === "paid" ? "paid" : "not_paid"
+      source: "home"
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Access Demo (no login required)
@@ -79,12 +51,9 @@ export default function Home() {
   }
 
   // Log in -> Discover
-  async function handleLoginOnly() {
+  function handleLoginOnly() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
-    const ok = await safeSignIn();
-    if (!ok) return;
-    await waitForSeason(seasonRef);
-    nav(createPageUrl("Discover"));
+    base44.auth.redirectToLogin(createPageUrl("Discover"));
   }
 
   // View pricing / Sign-Up -> Subscribe
