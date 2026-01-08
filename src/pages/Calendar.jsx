@@ -20,8 +20,8 @@ import { useDemoProfile } from "../components/hooks/useDemoProfile";
  * CalendarPage
  * - Default view: LIST (better for finding camps)
  * - Optional view: CALENDAR (better for spotting conflicts)
- * - Demo: shows preview list/calendar + upgrade CTA (not a dead-end)
- * - Paid: shows real data list/calendar
+ * - Demo/Anon: shows preview list/calendar + upgrade CTA (not a dead-end)
+ * - Paid+Authed: shows real data list/calendar
  */
 
 const VIEW_KEY = "urecruit_calendar_view";
@@ -30,11 +30,18 @@ const VIEW_CAL = "calendar";
 
 function CalendarPage() {
   const navigate = useNavigate();
-  const { mode, currentYear } = useSeasonAccess();
+
+  // IMPORTANT: require auth for paid
+  const { mode, currentYear, accountId } = useSeasonAccess();
+  const authed = !!accountId;
+
+  // If mode can be "paid" while not authed, do NOT treat as paid yet.
+  const isPaid = mode === "paid" && authed;
+
+  // Hook stays mounted; but we only block UI with loading when truly paid+authed.
   const { athleteProfile, isLoading: identityLoading, isError: identityError, error } = useAthleteIdentity();
   const { demoProfileId } = useDemoProfile();
 
-  const isPaid = mode === "paid";
   const athleteId = athleteProfile?.id;
   const sportId = athleteProfile?.sport_id;
 
@@ -54,15 +61,16 @@ function CalendarPage() {
     } catch {}
   }, [viewMode]);
 
-  // Paid query only
+  // Paid query only when paid+authed+profile present
   const paidQuery = useCampSummariesClient({
     athleteId,
     sportId,
     enabled: isPaid && !!athleteId
   });
 
+  // This is what was causing your forever-spinner: isPaid was true while not authed.
   const loading = isPaid && (identityLoading || paidQuery.isLoading);
-  const isError = isPaid && (identityError || paidQuery.isError);
+  const isErr = isPaid && (identityError || paidQuery.isError);
   const errObj = error || paidQuery.error;
 
   const paidCamps = useMemo(() => {
@@ -77,8 +85,6 @@ function CalendarPage() {
   const camps = isPaid ? paidCamps : demoCamps;
 
   const scheduleItems = useMemo(() => {
-    // In paid mode, show only favorites + registered/completed (like your current logic)
-    // In demo mode, show preview items (already filtered to "meaningful").
     const filtered = isPaid
       ? camps.filter(
           (c) =>
@@ -92,7 +98,6 @@ function CalendarPage() {
   }, [camps, isPaid]);
 
   const calendarEvents = useMemo(() => {
-    // events = [{ date: "YYYY-MM-DD", label, kind }]
     return buildEventsFromCamps(scheduleItems, { includeMultiDay: true });
   }, [scheduleItems]);
 
@@ -104,7 +109,7 @@ function CalendarPage() {
     );
   }
 
-  if (isError) {
+  if (isErr) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 pb-20">
         <Card className="max-w-md mx-auto p-4 border-rose-200 bg-rose-50 text-rose-700">
@@ -134,7 +139,7 @@ function CalendarPage() {
             </div>
           </div>
 
-          {/* Toggle (List-first) */}
+          {/* Toggle */}
           <SegmentedToggle
             value={viewMode}
             onChange={setViewMode}
@@ -145,13 +150,12 @@ function CalendarPage() {
           <div className="text-sm text-slate-600">
             {viewMode === VIEW_LIST
               ? "Find what’s next fast. Switch to Calendar when you want to see conflicts."
-              : "See timing and overlaps. Tap back to List to find specific camps quickly."}
+              : "See timing and overlaps. Use List to quickly find specific camps."}
           </div>
         </div>
       </div>
 
       <div className="max-w-md mx-auto p-4 space-y-4">
-        {/* Main content (List or Calendar) */}
         {viewMode === VIEW_LIST ? (
           <ListView
             isPaid={isPaid}
@@ -162,7 +166,7 @@ function CalendarPage() {
           <CalendarView events={calendarEvents} />
         )}
 
-        {/* Demo upsell stays, but does NOT replace the feature */}
+        {/* Demo upsell (secondary) */}
         {!isPaid && (
           <>
             <Card className="p-4 border-amber-200 bg-amber-50">
@@ -227,7 +231,7 @@ function SegmentedToggle({ value, onChange, left, right }) {
 }
 
 /* ------------------------
-   LIST VIEW (default)
+   LIST VIEW
 ------------------------ */
 function ListView({ isPaid, items, onGoDiscover }) {
   if (!items || items.length === 0) {
@@ -250,7 +254,6 @@ function ListView({ isPaid, items, onGoDiscover }) {
     );
   }
 
-  // Grouping: upcoming vs later (simple and effective)
   const { upcoming, later } = groupUpcoming(items);
 
   return (
@@ -286,7 +289,13 @@ function Section({ title, children }) {
 function CampRow({ camp }) {
   const status = camp.intent_status || "planned";
   const statusLabel =
-    status === "registered" ? "Registered" : status === "completed" ? "Completed" : status === "favorite" ? "Favorite" : "Planned";
+    status === "registered"
+      ? "Registered"
+      : status === "completed"
+      ? "Completed"
+      : status === "favorite"
+      ? "Favorite"
+      : "Planned";
 
   const statusClass =
     status === "registered"
@@ -321,7 +330,7 @@ function CampRow({ camp }) {
 }
 
 /* ------------------------
-   CALENDAR VIEW (optional)
+   CALENDAR VIEW
 ------------------------ */
 function CalendarView({ events }) {
   return (
@@ -426,12 +435,15 @@ function MonthGrid({ events = [] }) {
    Helpers
 ------------------------ */
 function stableKey(c) {
-  return c.camp_id || c.id || `${c.school_name || c.school || "school"}-${c.camp_name || "camp"}-${c.start_date || "na"}`;
+  return (
+    c.camp_id ||
+    c.id ||
+    `${c.school_name || c.school || "school"}-${c.camp_name || "camp"}-${c.start_date || "na"}`
+  );
 }
 
 function parseISODate(s) {
   if (!s || typeof s !== "string") return null;
-  // expects YYYY-MM-DD
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.trim());
   if (!m) return null;
   const y = Number(m[1]);
@@ -503,14 +515,15 @@ function buildEventsFromCamps(items, { includeMultiDay = true } = {}) {
 
     const end = parseISODate(c.end_date);
 
-    const label = `${(c.school_name || c.school || "School").toString()}${c.camp_name ? ` — ${c.camp_name}` : ""}`;
+    const label = `${(c.school_name || c.school || "School").toString()}${
+      c.camp_name ? ` — ${c.camp_name}` : ""
+    }`;
 
     if (!includeMultiDay || !end || end < start) {
       out.push({ date: toISODate(start), label, kind });
       continue;
     }
 
-    // Multi-day: add up to 14 days to avoid runaway rendering
     const maxDays = 14;
     let cur = new Date(start);
     let count = 0;
@@ -523,7 +536,6 @@ function buildEventsFromCamps(items, { includeMultiDay = true } = {}) {
   return out;
 }
 
-// Demo preview camps (explicit preview, not “real” user data)
 function buildDemoPreviewCamps() {
   const now = new Date();
   const y = now.getFullYear();
@@ -587,7 +599,7 @@ function buildMonthCells(monthStart) {
   const month = monthStart.getMonth();
 
   const first = new Date(year, month, 1);
-  const startDow = first.getDay(); // 0=Sun
+  const startDow = first.getDay();
   const gridStart = new Date(year, month, 1 - startDow);
 
   const cells = [];
