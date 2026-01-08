@@ -66,10 +66,9 @@ export default function Home() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
     
     try {
-      await base44.auth.signIn();
+      await base44.auth.redirectToLogin(createPageUrl("Discover"));
     } catch (e) {
       console.error("Login error:", e);
-    } finally {
       setLoginWorking(false);
     }
   }

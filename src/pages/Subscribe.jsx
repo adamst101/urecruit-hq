@@ -211,9 +211,5 @@ function Feature({ children }) {
 }
 
 export default function Subscribe() {
-  return (
-    <RouteGuard requireAuth={true}>
-      <SubscribePage />
-    </RouteGuard>
-  );
+  return <SubscribePage />;
 }

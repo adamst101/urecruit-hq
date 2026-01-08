@@ -16,9 +16,7 @@ export default function Layout({ children }) {
 
   async function handleLogin() {
     try {
-      if (typeof base44.auth?.signIn === "function") {
-        await base44.auth.signIn();
-      }
+      await base44.auth.redirectToLogin();
     } catch {}
   }
 
