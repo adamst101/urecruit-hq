@@ -62,34 +62,28 @@ function chunk(arr, size = 50) {
 /**
  * Base44-safe entity bulk fetch:
  * - Try "in" (chunked)
- * - Fall back to per-id PARALLEL (not sequential)
+ * - Fall back to per-id PARALLEL
  */
 async function fetchEntityMap(entityName, ids) {
   const map = new Map();
   const cleanIds = uniq((ids || []).map(normId)).filter(Boolean);
   if (!cleanIds.length) return map;
 
-  // 1) Try "in" in chunks (more reliable)
   let rows = [];
   const chunks = chunk(cleanIds, 50);
 
   try {
-    const results = await Promise.all(
-      chunks.map((c) => base44.entities[entityName].filter({ id: { in: c } }))
-    );
+    const results = await Promise.all(chunks.map((c) => base44.entities[entityName].filter({ id: { in: c } })));
     rows = results.flat().filter(Boolean);
   } catch {
     try {
-      const results2 = await Promise.all(
-        chunks.map((c) => base44.entities[entityName].filter({ _id: { in: c } }))
-      );
+      const results2 = await Promise.all(chunks.map((c) => base44.entities[entityName].filter({ _id: { in: c } })));
       rows = results2.flat().filter(Boolean);
     } catch {
       rows = [];
     }
   }
 
-  // 2) If "in" didn’t work, do parallel per-id lookups (fastest safe fallback)
   if (!Array.isArray(rows) || rows.length === 0) {
     const settles = await Promise.allSettled(
       cleanIds.map(async (id) => {
@@ -117,35 +111,55 @@ async function fetchEntityMap(entityName, ids) {
 
 /**
  * DEMO:
- * - Pull Camps with optional equality filters (sport/state/division/positions)
- * - IMPORTANT: try to filter year in the query to avoid massive downloads
+ * - Pull Camps with optional equality filters
+ * - Fixes:
+ *   1) normalize demoProfile.sport_id (object -> string id)
+ *   2) if server-side filters return 0, retry broader + client-filter
+ *   3) never rely on Camp.filter({}) returning “all rows” (it may page/limit)
  */
 async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
   if (!demoYear) return [];
 
-  const whereBase = {};
-  if (demoProfile?.sport_id) whereBase.sport_id = demoProfile.sport_id;
-  if (demoProfile?.state) whereBase.state = demoProfile.state;
+  const demoSportId = normId(demoProfile?.sport_id);
+  const demoState = demoProfile?.state || null;
 
   const start = `${Number(demoYear)}-01-01`;
   const next = `${Number(demoYear) + 1}-01-01`;
 
-  let campsAll = [];
+  // Build tight server filter (fast path)
+  const whereTight = {};
+  if (demoSportId) whereTight.sport_id = demoSportId;
+  if (demoState) whereTight.state = demoState;
 
-  // Try server-side date bounds first (huge performance win)
-  try {
-    const rows = await base44.entities.Camp.filter({
-      ...whereBase,
-      start_date: { gte: start, lt: next }
-    });
-    campsAll = Array.isArray(rows) ? rows : [];
-  } catch {
-    // Fallback: old behavior (fetch then client-filter)
-    const rows = await base44.entities.Camp.filter(whereBase);
-    campsAll = Array.isArray(rows) ? rows : [];
+  async function tryFetch(where) {
+    // try date bounds server-side first
+    try {
+      const rows = await base44.entities.Camp.filter({
+        ...where,
+        start_date: { gte: start, lt: next }
+      });
+      return Array.isArray(rows) ? rows : [];
+    } catch {
+      // fallback: fetch without date operators, then client filter
+      try {
+        const rows2 = await base44.entities.Camp.filter(where);
+        return Array.isArray(rows2) ? rows2 : [];
+      } catch {
+        return [];
+      }
+    }
   }
 
-  const campsNorm = campsAll
+  // 1) Tight fetch
+  let campsAll = await tryFetch(whereTight);
+
+  // 2) If tight returns nothing, retry broader fetch (year-only), then client-filter sport/state.
+  // This covers: sport_id stored as relation object, type mismatch, or Base44 filter quirks.
+  if (campsAll.length === 0) {
+    campsAll = await tryFetch({});
+  }
+
+  const campsNorm = (campsAll || [])
     .map((c) => ({
       ...c,
       camp_id: normId(c),
@@ -154,13 +168,17 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     }))
     .filter((c) => c.camp_id);
 
-  // If we had to fall back, filter by year client-side
+  // Always enforce year client-side (safe no matter what Base44 supported)
   let camps = campsNorm.filter((c) => {
     const d = c?.start_date;
     return typeof d === "string" && d >= start && d < next;
   });
 
-  // dedupe by camp_id
+  // Client-side sport/state safety filters (handles mismatched server-side types)
+  if (demoSportId) camps = camps.filter((c) => normId(c.sport_id) === demoSportId);
+  if (demoState) camps = camps.filter((c) => (c.state || null) === demoState);
+
+  // Dedup
   const seen = new Set();
   camps = camps.filter((c) => (seen.has(c.camp_id) ? false : (seen.add(c.camp_id), true)));
 
@@ -181,7 +199,7 @@ async function fetchDemoCampSummaries({ demoYear, demoProfile }) {
     });
   }
 
-  // optional positions filter (camp.position_ids intersects demoProfile.position_ids)
+  // optional positions filter
   const pos = Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids.filter(Boolean) : [];
   if (pos.length) {
     camps = camps.filter((c) => {
@@ -245,17 +263,16 @@ function DiscoverPage() {
   });
 
   const resolvedDemoYear = urlDemoYear || Number(currentYear) - 1;
+
+  // NOTE: demoEnabled must wait for demo profile to load
   const demoEnabled = gate.mode !== "paid" && demoLoaded;
 
+  // Normalize demo key fields (prevents “object id” cache keys and filter mismatches)
+  const demoSportIdKey = normId(demoProfile?.sport_id) || null;
+  const demoPosKey = Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids.join(",") : "";
+
   const demoSummariesQuery = useQuery({
-    queryKey: [
-      "demoCampSummaries",
-      resolvedDemoYear,
-      demoProfile?.sport_id || null,
-      demoProfile?.state || null,
-      demoProfile?.division || null,
-      Array.isArray(demoProfile?.position_ids) ? demoProfile.position_ids.join(",") : ""
-    ],
+    queryKey: ["demoCampSummaries", resolvedDemoYear, demoSportIdKey, demoProfile?.state || null, demoProfile?.division || null, demoPosKey],
     enabled: demoEnabled && !!resolvedDemoYear,
     queryFn: () => fetchDemoCampSummaries({ demoYear: resolvedDemoYear, demoProfile }),
     staleTime: 5 * 60 * 1000,
@@ -439,6 +456,11 @@ function DiscoverPage() {
                 ? "No camps matched your current filters."
                 : `No ${resolvedDemoYear} camps match your demo filters. Try clearing filters in Personalize.`}
             </div>
+            {gate.mode !== "paid" && (
+              <Button className="w-full mt-3" variant="outline" onClick={() => navigate(createPageUrl("DemoSetup"))}>
+                Clear / Update Demo Filters
+              </Button>
+            )}
           </Card>
         ) : (
           summaries.map((s) => {
