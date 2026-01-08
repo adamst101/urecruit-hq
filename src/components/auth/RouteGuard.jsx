@@ -74,7 +74,7 @@ export default function RouteGuard({
 
     // 1) Auth required
     if (requireAuth && !accountId) {
-      safeReplace(createPageUrl("Home") + `?next=${nextParam}`);
+      base44.auth.redirectToLogin(currentPath);
       return;
     }
 
