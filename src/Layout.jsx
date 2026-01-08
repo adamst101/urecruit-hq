@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
 import { base44 } from './api/base44Client';
 import { createPageUrl } from './utils';
@@ -9,7 +9,10 @@ const LOGO_URL =
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [logoOk, setLogoOk] = useState(true);
+  
+  const isHomePage = location.pathname === '/' || location.pathname === '/Home';
 
   async function handleLogin() {
     try {
@@ -25,32 +28,34 @@ export default function Layout({ children }) {
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Global Header */}
-      <div className="bg-white border-b border-default sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
-          <button onClick={goHome} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            {logoOk ? (
-              <img
-                src={LOGO_URL}
-                alt="URecruit HQ"
-                loading="eager"
-                onError={() => setLogoOk(false)}
-                className="h-8 md:h-10 w-auto object-contain"
-              />
-            ) : (
-              <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
-            )}
-          </button>
+      {/* Global Header - hidden on Home page */}
+      {!isHomePage && (
+        <div className="bg-white border-b border-default sticky top-0 z-50">
+          <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+            <button onClick={goHome} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+              {logoOk ? (
+                <img
+                  src={LOGO_URL}
+                  alt="URecruit HQ"
+                  loading="eager"
+                  onError={() => setLogoOk(false)}
+                  className="h-8 md:h-10 w-auto object-contain"
+                />
+              ) : (
+                <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
+              )}
+            </button>
 
-          <button
-            onClick={handleLogin}
-            className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2"
-          >
-            <LogIn className="w-4 h-4" />
-            <span className="hidden sm:inline">Log in</span>
-          </button>
+            <button
+              onClick={handleLogin}
+              className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2"
+            >
+              <LogIn className="w-4 h-4" />
+              <span className="hidden sm:inline">Log in</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       <style>{`
         :root {
