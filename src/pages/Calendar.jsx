@@ -21,6 +21,9 @@ import { useCampSummariesClient } from "../components/hooks/useCampSummariesClie
  * - Optional view: CALENDAR (better for spotting conflicts)
  * - Demo/Anon: shows preview list/calendar + upgrade CTA (not a dead-end)
  * - Paid+Authed: shows real data list/calendar
+ *
+ * NOTE:
+ * - Removed ALL demo profile display content (both views) per request.
  */
 
 const VIEW_KEY = "urecruit_calendar_view";
@@ -66,7 +69,7 @@ function CalendarPage() {
     enabled: isPaid && !!athleteId
   });
 
-  // This prevents the forever-spinner: isPaid must be true AND authed.
+  // Prevent forever-spinner: only block when truly paid+authed.
   const loading = isPaid && (identityLoading || paidQuery.isLoading);
   const isErr = isPaid && (identityError || paidQuery.isError);
   const errObj = error || paidQuery.error;
@@ -390,7 +393,12 @@ function MonthGrid({ events = [] }) {
                 isToday ? "ring-2 ring-amber-300" : ""
               ].join(" ")}
             >
-              <div className={["text-[11px] font-semibold", cell.inMonth ? "text-deep-navy" : "text-slate-400"].join(" ")}>
+              <div
+                className={[
+                  "text-[11px] font-semibold",
+                  cell.inMonth ? "text-deep-navy" : "text-slate-400"
+                ].join(" ")}
+              >
                 {cell.day}
               </div>
 
@@ -411,7 +419,9 @@ function MonthGrid({ events = [] }) {
                     {e.label}
                   </div>
                 ))}
-                {cellEvents.length > 2 && <div className="text-[10px] text-slate-500">+{cellEvents.length - 2}</div>}
+                {cellEvents.length > 2 && (
+                  <div className="text-[10px] text-slate-500">+{cellEvents.length - 2}</div>
+                )}
               </div>
             </div>
           );
