@@ -13,38 +13,33 @@ import { readDemoMode } from "../hooks/demoMode";
  * - Paid users: Discover, Calendar, MyCamps, Profile
  * - Demo users: Discover, Calendar, Upgrade (Subscribe)
  *
- * IMPORTANT:
- * - Demo mode can be forced via localStorage (setDemoMode) or URL (?mode=demo on the page itself).
- * - Nav should respect local demo mode to avoid showing paid-only routes.
+ * Critical fix:
+ * - Determine effectiveMode using:
+ *    1) URL ?mode=demo
+ *    2) localStorage demo mode (setDemoMode)
+ *    3) entitlement mode from useSeasonAccess
  */
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const season = useSeasonAccess();
 
-  // Local demo override (set by setDemoMode)
-  const localDemo = useMemo(() => {
-    try {
-      return readDemoMode()?.mode === "demo";
-    } catch {
-      return false;
-    }
-  }, []);
-
-  // URL demo override for current page (if present)
-  const urlDemo = useMemo(() => {
-    try {
-      const sp = new URLSearchParams(location?.search || "");
-      return sp.get("mode") === "demo";
-    } catch {
-      return false;
-    }
-  }, [location?.search]);
-
   const effectiveMode = useMemo(() => {
-    if (urlDemo || localDemo) return "demo";
+    // 1) URL override
+    try {
+      const sp = new URLSearchParams(location.search || "");
+      if (sp.get("mode") === "demo") return "demo";
+    } catch {}
+
+    // 2) localStorage demo mode
+    try {
+      const local = readDemoMode(); // { mode, seasonYear }
+      if (local?.mode === "demo") return "demo";
+    } catch {}
+
+    // 3) entitlement-derived mode
     return season.mode === "paid" ? "paid" : "demo";
-  }, [urlDemo, localDemo, season.mode]);
+  }, [location.search, season.mode]);
 
   const items = useMemo(() => {
     if (effectiveMode === "paid") {
