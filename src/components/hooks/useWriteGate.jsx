@@ -2,10 +2,10 @@
 import { useMemo, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "../../utils";
+
 import { useSeasonAccess } from "./useSeasonAccess";
 import { useAthleteIdentity } from "../useAthleteIdentity";
-
-import { readDemoMode, getDemoDefaults } from "./demoMode";
+import { readDemoMode } from "./demoMode";
 
 /**
  * useWriteGate
@@ -15,10 +15,10 @@ import { readDemoMode, getDemoDefaults } from "./demoMode";
  * - paid   => backend writes allowed ONLY when (accountId && athleteProfile)
  * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
  *
- * Deterministic mode rules (MUST match RouteGuard/BottomNav intent):
- * 1) URL override ?mode=demo always wins
- * 2) Local demo mode (setDemoMode/readDemoMode) next
- * 3) Otherwise: season.mode from entitlements
+ * Deterministic mode resolution (highest wins):
+ * 1) URL ?mode=demo
+ * 2) LocalStorage demo mode (setDemoMode / clearDemoMode)
+ * 3) Entitlement-derived mode (useSeasonAccess)
  */
 export function useWriteGate() {
   const navigate = useNavigate();
@@ -37,11 +37,16 @@ export function useWriteGate() {
     }
   }, [loc.search]);
 
-  // 2) Local demo contract (set by setDemoMode)
-  const localDemo = useMemo(() => readDemoMode(), []);
-  const demoDefaults = useMemo(() => getDemoDefaults(), []);
+  // 2) Local demo contract (persisted)
+  const localDemo = useMemo(() => {
+    try {
+      return readDemoMode(); // { mode: "demo"|null, seasonYear: number|null }
+    } catch {
+      return { mode: null, seasonYear: null };
+    }
+  }, []);
 
-  // Effective mode: url demo OR local demo -> demo; else follow entitlement mode
+  // Effective mode: demo wins if url says demo OR local says demo
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
@@ -51,7 +56,7 @@ export function useWriteGate() {
   const isPaidMode = effectiveMode === "paid";
   const hasAccount = !!season.accountId;
 
-  // Only meaningful in paid mode (hook itself is enabled only when accountId exists)
+  // Always call hook (React rule), but only *use* it for gating in paid mode.
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
   const hasProfile = !!athleteProfile;
 
@@ -74,12 +79,12 @@ export function useWriteGate() {
     }
 
     return { mode: "paid", reason: null };
-  }, [isPaidMode, hasAccount, hasProfile, identityLoading]);
+  }, [isPaidMode, hasAccount, identityLoading, hasProfile]);
 
   /**
    * Default blocked behavior:
    * - Paid but missing profile => Profile
-   * - Missing account => Home (sign in)
+   * - Missing account => Home (front door has sign-in CTA)
    */
   const defaultBlocked = useCallback(
     (opts = {}) => {
@@ -129,15 +134,11 @@ export function useWriteGate() {
       if (gate.mode === "paid") return true;
 
       if (gate.mode === "demo") {
-        const seasonParam =
-          season.currentYear ||
-          (Number.isFinite(localDemo?.seasonYear) ? localDemo.seasonYear : demoDefaults.demoSeasonYear);
-
         navigate(
           createPageUrl("Subscribe") +
-            `?force=1&source=${encodeURIComponent(source)}` +
-            `&next=${encodeURIComponent(next)}` +
-            `&season=${encodeURIComponent(String(seasonParam || ""))}`,
+            `?force=1&source=${encodeURIComponent(source)}&next=${encodeURIComponent(
+              next
+            )}&season=${encodeURIComponent(String(season.currentYear || ""))}`,
           { replace: false }
         );
         return false;
@@ -146,13 +147,13 @@ export function useWriteGate() {
       defaultBlocked({ next });
       return false;
     },
-    [gate.mode, navigate, season.currentYear, localDemo?.seasonYear, demoDefaults.demoSeasonYear, defaultBlocked]
+    [gate.mode, navigate, season.currentYear, defaultBlocked]
   );
 
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
-    effectiveMode, // debug signal
+    effectiveMode, // optional debug signal
     write,
     requirePaid,
   };
