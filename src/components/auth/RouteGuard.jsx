@@ -7,16 +7,14 @@ import { createPageUrl } from "../../utils";
 import { useAccessContext } from "../hooks/useAccessContext";
 
 /**
- * RouteGuard (hardened)
+ * RouteGuard
  *
- * Uses useAccessContext as the single source of truth.
- * - effectiveMode: "demo" | "paid"
- * - loading: blocks redirects until mode/identity are resolved
+ * Enforces:
+ * - requireAuth
+ * - requirePaid
+ * - requireProfile (paid-only)
  *
- * Rules:
- * 1) requireAuth  -> if not authed, go Login
- * 2) requirePaid  -> if not in paid mode, go Subscribe
- * 3) requireProfile -> ONLY enforced in paid mode; if missing, go Profile
+ * Demo override is already handled by useAccessContext (URL/local demo wins).
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -27,22 +25,14 @@ export default function RouteGuard({
   const nav = useNavigate();
   const loc = useLocation();
 
-  const {
-    effectiveMode,
-    loading,
-    accountId,
-    hasProfile,
-    identityError,
-  } = useAccessContext();
+  const access = useAccessContext();
 
-  const currentPath = useMemo(() => {
-    return (loc?.pathname || "") + (loc?.search || "");
-  }, [loc?.pathname, loc?.search]);
-
-  const nextParam = useMemo(
-    () => encodeURIComponent(currentPath),
-    [currentPath]
+  const currentPath = useMemo(
+    () => (loc?.pathname || "") + (loc?.search || ""),
+    [loc?.pathname, loc?.search]
   );
+
+  const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
   const safeReplace = useCallback(
     (to) => {
@@ -53,53 +43,41 @@ export default function RouteGuard({
     [nav, currentPath]
   );
 
+  const loading = access.loading;
+
   useEffect(() => {
     if (loading) return;
 
-    const isAuthed = !!accountId;
-    const isPaid = effectiveMode === "paid";
-
-    // If profile is required in paid mode and identity query errored, route to Profile with error
-    if (requireProfile && isPaid && identityError) {
-      safeReplace(
-        createPageUrl("Profile") +
-          `?next=${nextParam}&err=profile_load_failed`
-      );
-      return;
-    }
-
     // 1) Auth required
-    if (requireAuth && !isAuthed) {
+    if (requireAuth && !access.accountId) {
       safeReplace(createPageUrl("Login") + `?next=${nextParam}`);
       return;
     }
 
     // 2) Paid required
-    if (requirePaid && !isPaid) {
+    if (requirePaid && !access.isPaid) {
       safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
     }
 
-    // 3) Profile required (paid-only enforcement)
-    if (requireProfile && isPaid && !hasProfile) {
+    // 3) Profile required (paid only)
+    if (requireProfile && access.isPaid && !access.hasProfile) {
       const profileUrl = createPageUrl("Profile");
       if ((loc?.pathname || "") !== profileUrl) {
         safeReplace(profileUrl + `?next=${nextParam}`);
       }
-      return;
     }
   }, [
     loading,
-    effectiveMode,
-    accountId,
-    hasProfile,
-    identityError,
     requireAuth,
     requirePaid,
     requireProfile,
+    access.accountId,
+    access.isPaid,
+    access.hasProfile,
     nextParam,
-    safeReplace,
     loc?.pathname,
+    safeReplace,
   ]);
 
   if (loading) {
