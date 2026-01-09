@@ -1,3 +1,4 @@
+// src/components/SportSelector.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 
@@ -6,17 +7,6 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Input } from "./ui/input";
 
-/**
- * Assumptions:
- * - You have a base44 entity: base44.entities.Sport
- * - Each Sport has at least: { id, name } and optionally { is_active, slug }
- *
- * Props:
- * - value: sport_id (string | null)
- * - onChange: (sportId: string | null, sportObj?: object) => void
- * - disabled?: boolean
- * - placeholder?: string
- */
 export default function SportSelector({
   value,
   onChange,
@@ -28,19 +18,15 @@ export default function SportSelector({
   const [sports, setSports] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Load sports once
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       try {
-        // Prefer active sports if field exists; otherwise just list all.
-        // If your SDK supports query options, adjust accordingly.
-        const rows = await base44.entities.Sport.list();
+        const rows = await base44.entities.Sport.list?.();
         if (!mounted) return;
 
         const normalized = Array.isArray(rows) ? rows : [];
-        // If there's an is_active flag, show active first.
         normalized.sort((a, b) => {
           const aa = a?.is_active === false ? 1 : 0;
           const bb = b?.is_active === false ? 1 : 0;
@@ -90,9 +76,7 @@ export default function SportSelector({
         disabled={disabled || loading}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="truncate">
-          {selectedSport?.name || placeholder}
-        </span>
+        <span className="truncate">{selectedSport?.name || placeholder}</span>
         <ChevronDown className="h-4 w-4 opacity-60" />
       </Button>
 
