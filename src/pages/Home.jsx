@@ -1,7 +1,7 @@
 // src/pages/Home.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
+import { ArrowRight, LogIn, CheckCircle2, Loader2 } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -21,12 +21,71 @@ function trackEvent(payload) {
   } catch {}
 }
 
+// Try Base44 “standard” auth entrypoints (different builds expose different method names).
+async function startBase44Login({ redirectTo } = {}) {
+  const auth = base44?.auth;
+  if (!auth) return { ok: false, reason: "No base44.auth found." };
+
+  const attempts = [
+    // Most common
+    { name: "auth.signIn()", fn: auth.signIn, args: [] },
+    { name: "auth.login()", fn: auth.login, args: [] },
+
+    // OAuth-style variants (signatures vary, so we try a couple)
+    { name: "auth.signInWithOAuth()", fn: auth.signInWithOAuth, args: [] },
+    { name: "auth.signInWithOAuth({ redirectTo })", fn: auth.signInWithOAuth, args: [{ redirectTo }] },
+    { name: "auth.signInWithOAuth({ provider:'base44', redirectTo })", fn: auth.signInWithOAuth, args: [{ provider: "base44", redirectTo }] },
+
+    { name: "auth.startOAuth({ redirectTo })", fn: auth.startOAuth, args: [{ redirectTo }] },
+    { name: "auth.authenticate({ redirectTo })", fn: auth.authenticate, args: [{ redirectTo }] }
+  ];
+
+  let lastErr = null;
+
+  for (const a of attempts) {
+    if (typeof a.fn !== "function") continue;
+    try {
+      await a.fn(...a.args);
+      return { ok: true, used: a.name };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  return {
+    ok: false,
+    reason:
+      lastErr?.message ||
+      "No working sign-in method was found on base44.auth. Confirm Base44 OAuth is enabled and saved.",
+    lastErr
+  };
+}
+
+async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } = {}) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const s = seasonRef.current;
+    if (s && s.accountId) return s;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return seasonRef.current;
+}
+
 export default function Home() {
   const nav = useNavigate();
-  const season = useSeasonAccess(); // used only for analytics; Home remains public
+
+  const season = useSeasonAccess();
+  const seasonRef = useRef(season);
+
+  useEffect(() => {
+    seasonRef.current = season;
+  }, [season]);
 
   const { demoSeasonYear } = getDemoDefaults();
+
   const [logoOk, setLogoOk] = useState(true);
+  const [loginWorking, setLoginWorking] = useState(false);
+  const [loginError, setLoginError] = useState("");
 
   useEffect(() => {
     const key = "evt_home_viewed_v22";
@@ -45,29 +104,59 @@ export default function Home() {
   }, []);
 
   // Access Demo (no login required)
-  function handleTryDemo() {
+  const handleTryDemo = useCallback(() => {
+    setLoginError("");
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
     setDemoMode(demoSeasonYear);
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
-  }
+  }, [demoSeasonYear, nav]);
 
-  /**
-   * Login:
-   * We do NOT call base44.auth.signIn().
-   * With Base44 App Visibility = Public, you send the user to a protected page.
-   * RouteGuard (or Base44) will force the standard login flow if they aren’t authed.
-   */
-  function handleLogin() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
-    nav(createPageUrl("Discover") + "?source=home_login");
-  }
+  // Log in -> Discover (paid flow)
+  const handleLoginOnly = useCallback(
+    async (e) => {
+      // Prevent “flash” from submit-like behavior
+      try {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+      } catch {}
 
-  // View pricing / Sign-Up -> Subscribe (should be accessible from Home)
-  function handlePricingSignup() {
+      if (loginWorking) return;
+
+      setLoginError("");
+      setLoginWorking(true);
+
+      trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
+
+      const redirectTo = `${window.location.origin}${createPageUrl("Discover")}`;
+
+      const res = await startBase44Login({ redirectTo });
+
+      if (!res.ok) {
+        setLoginWorking(false);
+        setLoginError(
+          res.reason ||
+            "Login failed. Check Base44 Authentication settings (Default Base44 OAuth) and click Update/Save."
+        );
+        return;
+      }
+
+      // If auth is popup-based, wait briefly for session to populate, then navigate.
+      await waitForSeason(seasonRef);
+      setLoginWorking(false);
+
+      // Go to Discover; your RouteGuard will enforce auth/profile on paid routes.
+      nav(createPageUrl("Discover"));
+    },
+    [loginWorking, nav]
+  );
+
+  // View pricing / Sign-Up -> Subscribe
+  const handlePricingSignup = useCallback(() => {
+    setLoginError("");
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
-    nav(createPageUrl("Subscribe") + "?source=home_pricing");
-  }
+    nav(createPageUrl("Subscribe") + `?source=home_pricing`);
+  }, [nav]);
 
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
   const heroParagraph =
@@ -94,10 +183,9 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
-        {/* HERO ONLY (no top bar header to avoid duplicate logo/login) */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* Brand row: big logo + login (single login button, responsive layout) */}
+            {/* Brand row: big logo + login */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -112,28 +200,45 @@ export default function Home() {
                   <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">URecruit HQ</div>
                 )}
 
-                {/* Tagline directly under logo (mobile centered, desktop left) */}
-                <div className="mt-2 text-sm md:text-lg font-bold text-ink text-center md:text-left leading-tight">
+                <div className="mt-2 text-base md:text-lg font-bold text-ink text-center md:text-left leading-tight">
                   Your college recruiting camp planning HQ
                 </div>
 
                 {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button onClick={handleLogin} className="btn-brand w-full">
-                    <LogIn className="w-4 h-4 mr-2" />
+                  <Button
+                    type="button"
+                    onClick={handleLoginOnly}
+                    className="btn-brand w-full"
+                    disabled={loginWorking}
+                  >
+                    {loginWorking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <LogIn className="w-4 h-4 mr-2" />}
                     Log in
                   </Button>
                 </div>
               </div>
 
-              {/* Desktop: login to the right (only one login total) */}
+              {/* Desktop: login to the right */}
               <div className="hidden md:flex">
-                <Button variant="outline" onClick={handleLogin} className="text-ink">
-                  <LogIn className="w-4 h-4 mr-2" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleLoginOnly}
+                  className="text-ink"
+                  disabled={loginWorking}
+                >
+                  {loginWorking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <LogIn className="w-4 h-4 mr-2" />}
                   Log in
                 </Button>
               </div>
             </div>
+
+            {/* Visible auth error */}
+            {loginError ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {loginError}
+              </div>
+            ) : null}
 
             {/* Copy */}
             <div className="max-w-3xl space-y-3 text-center md:text-left">
@@ -157,7 +262,7 @@ export default function Home() {
               ))}
             </div>
 
-            {/* How it works strip */}
+            {/* How it works */}
             <div className="rounded-xl border border-default bg-white p-4">
               <div className="grid md:grid-cols-3 gap-4">
                 {howStrip.map((x) => (
@@ -171,18 +276,17 @@ export default function Home() {
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-2 items-stretch">
-              <Button className="sm:flex-1 btn-brand" onClick={handlePricingSignup}>
+              <Button type="button" className="sm:flex-1 btn-brand" onClick={handlePricingSignup}>
                 View pricing / Sign-Up
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
 
-              <Button className="sm:flex-1 btn-brand" onClick={handleTryDemo}>
+              <Button type="button" className="sm:flex-1 btn-brand" onClick={handleTryDemo}>
                 Access Demo
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
 
-            {/* Trust microcopy */}
             <div className="pt-2 text-xs text-muted text-center md:text-left">
               Independent planning tool · Not affiliated with camps · Demo uses prior-season data
             </div>
