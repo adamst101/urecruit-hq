@@ -11,16 +11,13 @@ import { useAthleteIdentity } from "../useAthleteIdentity";
  * RouteGuard
  *
  * Goals:
- * - Keep Home as a true front door (no auto-redirect here)
+ * - Home must be a true front door (NEVER auto-redirect away)
  * - Allow demo browsing where desired
  * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
  *
  * Important fix:
  * - Redirect unauth users to Home (NOT Login) because Login route may not exist
- *   Home can trigger sign-in when it sees ?signin=1
- *
- * Demo override:
- * - If URL has ?mode=demo, bypass paid/profile gating (lets demo always work)
+ * - Hard bypass for Home route to prevent "/" -> Profile loops due to mis-wired guards
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -44,7 +41,20 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Demo override (critical to stop "paid profile redirect" when user intends demo)
+  // Determine Home pathname reliably
+  const homePath = useMemo(() => {
+    const hp = createPageUrl("Home");
+    // some apps return "" or "/" for home
+    return hp && typeof hp === "string" ? hp : "/";
+  }, []);
+
+  const isHomeRoute = useMemo(() => {
+    const p = loc?.pathname || "/";
+    // treat both "/" and homePath as Home
+    return p === "/" || p === homePath;
+  }, [loc?.pathname, homePath]);
+
+  // Demo override: ?mode=demo bypasses paid/profile gating
   const forceDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
@@ -70,6 +80,9 @@ export default function RouteGuard({
 
   useEffect(() => {
     if (loading) return;
+
+    // ✅ HARD RULE: Home is the front door. Never redirect away from it.
+    if (isHomeRoute) return;
 
     // If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
@@ -106,6 +119,7 @@ export default function RouteGuard({
     }
   }, [
     loading,
+    isHomeRoute,
     requireAuth,
     requirePaid,
     requireProfile,
