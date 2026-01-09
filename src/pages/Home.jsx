@@ -1,5 +1,5 @@
 // src/pages/Home.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
@@ -9,6 +9,7 @@ import { createPageUrl } from "../utils";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode";
 
 const LOGO_URL =
@@ -20,39 +21,18 @@ function trackEvent(payload) {
   } catch {}
 }
 
-/**
- * Base44-standard login redirect.
- * - Do NOT rely on window.base44 (it’s typically undefined in Base44 apps).
- * - Use base44.auth.redirectToLogin(nextUrl).  :contentReference[oaicite:1]{index=1}
- */
-function base44LoginRedirect(nextUrl) {
-  // Debug helper (optional): exposes SDK so you can inspect in console if you want
-  try {
-    if (typeof window !== "undefined") window.__B44 = base44;
-  } catch {}
-
-  const auth = base44?.auth;
-
-  // Preferred / documented approach
-  if (auth && typeof auth.redirectToLogin === "function") {
-    auth.redirectToLogin(nextUrl);
-    return true;
-  }
-
-  // Some apps expose a slightly different name—keep a safe fallback
-  if (auth && typeof auth.login === "function") {
-    auth.login({ nextUrl });
-    return true;
-  }
-
-  return false;
-}
-
 export default function Home() {
   const nav = useNavigate();
+
+  const season = useSeasonAccess();
+  const seasonRef = useRef(season);
+
+  useEffect(() => {
+    seasonRef.current = season;
+  }, [season]);
+
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
-  const [authError, setAuthError] = useState(null);
 
   useEffect(() => {
     const key = "evt_home_viewed_v22";
@@ -63,7 +43,9 @@ export default function Home() {
 
     trackEvent({
       event_name: "home_view",
-      source: "home"
+      source: "home",
+      auth_state: season?.accountId ? "authed" : "anon",
+      mode: season?.mode === "paid" ? "paid" : "demo"
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -75,23 +57,20 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Log in -> redirect to Base44 hosted login -> returns to Discover
-  function handleLoginOnly() {
-    setAuthError(null);
+  // ✅ Correct Base44 pattern: route to /login page (you must implement Login.jsx)
+  function handleLogin() {
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    const nextUrl = createPageUrl("Discover"); // after login, land here
-    trackEvent({ event_name: "cta_login_click", source: "home", next: nextUrl });
-
-    const ok = base44LoginRedirect(nextUrl);
-    if (!ok) {
-      setAuthError(
-        "Login isn’t configured yet. In Base44: enable OAuth/login provider AND use base44.auth.redirectToLogin(nextUrl)."
-      );
-      trackEvent({ event_name: "cta_login_failed_no_method", source: "home" });
+    // If already authed via Base44 session cookie, skip login page.
+    if (season?.accountId) {
+      nav(createPageUrl("Discover"));
+      return;
     }
+
+    const next = encodeURIComponent(createPageUrl("Discover"));
+    nav(`${createPageUrl("Login")}?next=${next}&source=home_login`);
   }
 
-  // View pricing / Sign-Up -> Subscribe (your paywall page)
   function handlePricingSignup() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     nav(createPageUrl("Subscribe") + `?source=home_pricing`);
@@ -124,7 +103,7 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* Brand row: big logo + login */}
+            {/* Brand row: big logo + login (single login button) */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -139,35 +118,27 @@ export default function Home() {
                   <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">URecruit HQ</div>
                 )}
 
-                {/* Tagline */}
-                <div className="mt-2 text-sm md:text-lg font-bold text-ink text-center md:text-left leading-tight">
+                <div className="mt-2 text-base md:text-lg font-bold text-ink text-center md:text-left leading-tight">
                   Your college recruiting camp planning HQ
                 </div>
 
-                {/* Mobile login under tagline */}
+                {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button onClick={handleLoginOnly} className="btn-brand w-full">
+                  <Button onClick={handleLogin} className="btn-brand w-full">
                     <LogIn className="w-4 h-4 mr-2" />
                     Log in
                   </Button>
                 </div>
               </div>
 
-              {/* Desktop login right */}
+              {/* Desktop: login to the right */}
               <div className="hidden md:flex">
-                <Button variant="outline" onClick={handleLoginOnly} className="text-ink">
+                <Button variant="outline" onClick={handleLogin} className="text-ink">
                   <LogIn className="w-4 h-4 mr-2" />
                   Log in
                 </Button>
               </div>
             </div>
-
-            {/* Auth error (only shows if no method exists) */}
-            {authError && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-                {authError}
-              </div>
-            )}
 
             {/* Copy */}
             <div className="max-w-3xl space-y-3 text-center md:text-left">
@@ -191,7 +162,7 @@ export default function Home() {
               ))}
             </div>
 
-            {/* How it works */}
+            {/* How it works strip */}
             <div className="rounded-xl border border-default bg-white p-4">
               <div className="grid md:grid-cols-3 gap-4">
                 {howStrip.map((x) => (
