@@ -6,18 +6,18 @@ import { Loader2 } from "lucide-react";
 import { createPageUrl } from "../../utils";
 import { useSeasonAccess } from "../hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../useAthleteIdentity";
+import { readDemoMode } from "../hooks/demoMode";
 
 /**
  * RouteGuard
  *
  * Goals:
- * - Home must be a true front door (NEVER auto-redirect away)
+ * - Keep Home as a true front door (no auto-redirect here)
  * - Allow demo browsing where desired
  * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
  *
- * Important fix:
- * - Redirect unauth users to Home (NOT Login) because Login route may not exist
- * - Hard bypass for Home route to prevent "/" -> Profile loops due to mis-wired guards
+ * Demo override:
+ * - If URL has ?mode=demo OR localStorage demo mode is set, bypass paid/profile gating
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -29,11 +29,8 @@ export default function RouteGuard({
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-  const {
-    athleteProfile,
-    isLoading: identityLoading,
-    isError: identityError
-  } = useAthleteIdentity();
+  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
+    useAthleteIdentity();
 
   const currentPath = useMemo(() => {
     return (loc?.pathname || "") + (loc?.search || "");
@@ -41,21 +38,8 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Determine Home pathname reliably
-  const homePath = useMemo(() => {
-    const hp = createPageUrl("Home");
-    // some apps return "" or "/" for home
-    return hp && typeof hp === "string" ? hp : "/";
-  }, []);
-
-  const isHomeRoute = useMemo(() => {
-    const p = loc?.pathname || "/";
-    // treat both "/" and homePath as Home
-    return p === "/" || p === homePath;
-  }, [loc?.pathname, homePath]);
-
-  // Demo override: ?mode=demo bypasses paid/profile gating
-  const forceDemo = useMemo(() => {
+  // URL override (critical for sharable demo links)
+  const urlForcesDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
       return sp.get("mode") === "demo";
@@ -64,7 +48,21 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
+  // Local demo override (critical for "View Demo" flows that set localStorage)
+  const localForcesDemo = useMemo(() => {
+    try {
+      return readDemoMode()?.mode === "demo";
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const forceDemo = urlForcesDemo || localForcesDemo;
+
+  // Only treat as paid when NOT demo-forced
   const isPaid = !forceDemo && mode === "paid";
+
+  // Only require identity (athleteProfile) for paid/profile gated pages
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
@@ -81,9 +79,6 @@ export default function RouteGuard({
   useEffect(() => {
     if (loading) return;
 
-    // ✅ HARD RULE: Home is the front door. Never redirect away from it.
-    if (isHomeRoute) return;
-
     // If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
       safeReplace(
@@ -95,11 +90,7 @@ export default function RouteGuard({
 
     // 1) Auth required
     if (requireAuth && !accountId) {
-      // FIX: Login route may not exist. Send to Home with a signin hint.
-      safeReplace(
-        createPageUrl("Home") +
-          `?signin=1&next=${nextParam}&reason=auth_required`
-      );
+      safeReplace(createPageUrl("Login") + `?next=${nextParam}`);
       return;
     }
 
@@ -119,7 +110,6 @@ export default function RouteGuard({
     }
   }, [
     loading,
-    isHomeRoute,
     requireAuth,
     requirePaid,
     requireProfile,
@@ -129,8 +119,8 @@ export default function RouteGuard({
     isPaid,
     athleteProfile,
     nextParam,
-    loc?.pathname,
-    safeReplace
+    safeReplace,
+    loc?.pathname
   ]);
 
   if (loading) {
