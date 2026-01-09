@@ -1,5 +1,5 @@
 // src/components/auth/RouteGuard.jsx
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
@@ -15,8 +15,11 @@ import { useAthleteIdentity } from "../useAthleteIdentity";
  * - Allow demo browsing where desired
  * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
  *
- * NEW:
- * - Redirect unauth users to Login (not Home) for protected pages
+ * Important fix:
+ * - Redirect unauth users to Home (NOT Login) because Login route may not exist
+ *   Home can trigger sign-in when it sees ?signin=1
+ *
+ * Demo override:
  * - If URL has ?mode=demo, bypass paid/profile gating (lets demo always work)
  */
 export default function RouteGuard({
@@ -56,24 +59,34 @@ export default function RouteGuard({
 
   const loading = accessLoading || (needsIdentity && identityLoading);
 
-  const safeReplace = (to) => {
-    if (!to) return;
-    if (to === currentPath) return;
-    nav(to, { replace: true });
-  };
+  const safeReplace = useCallback(
+    (to) => {
+      if (!to) return;
+      if (to === currentPath) return;
+      nav(to, { replace: true });
+    },
+    [nav, currentPath]
+  );
 
   useEffect(() => {
     if (loading) return;
 
     // If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
-      safeReplace(createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`);
+      safeReplace(
+        createPageUrl("Profile") +
+          `?next=${nextParam}&err=profile_load_failed`
+      );
       return;
     }
 
     // 1) Auth required
     if (requireAuth && !accountId) {
-      safeReplace(createPageUrl("Login") + `?next=${nextParam}`);
+      // FIX: Login route may not exist. Send to Home with a signin hint.
+      safeReplace(
+        createPageUrl("Home") +
+          `?signin=1&next=${nextParam}&reason=auth_required`
+      );
       return;
     }
 
@@ -102,8 +115,6 @@ export default function RouteGuard({
     isPaid,
     athleteProfile,
     nextParam,
-    currentPath,
-    nav,
     loc?.pathname,
     safeReplace
   ]);
