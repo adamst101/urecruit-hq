@@ -4,32 +4,27 @@ import { useLocation } from "react-router-dom";
 
 import { useSeasonAccess } from "./useSeasonAccess";
 import { useAthleteIdentity } from "../useAthleteIdentity";
-import { readDemoMode, getDemoDefaults } from "./demoMode";
+import { readDemoMode } from "./demoMode";
 
 /**
  * useAccessContext
  *
- * SINGLE SOURCE OF TRUTH for:
- * - effectiveMode: "demo" | "paid"
- * - seasonYear (demo year vs current year)
- * - canWriteBackend (paid + authed + hasProfile)
- * - accountId / entitlement
- * - hasProfile
- * - loading (prevents early redirects)
+ * Single canonical truth for:
+ * - accountId / entitlement / paid vs demo
+ * - effectiveMode resolution (URL ?mode=demo wins, then localStorage demoMode, then season access)
+ * - athleteProfile presence (only meaningful for paid mode)
  *
- * Precedence:
- * 1) URL ?mode=demo (force demo)
- * 2) localStorage demo mode (setDemoMode)
- * 3) season entitlement (useSeasonAccess)
+ * Why this exists:
+ * You currently have multiple “identity systems” that disagree.
+ * This hook becomes the ONE source pages/components should read.
  */
 export function useAccessContext() {
   const loc = useLocation();
-  const season = useSeasonAccess();
 
-  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
-    useAthleteIdentity();
+  // Base canonical access (auth + entitlement -> paid/demo)
+  const season = useSeasonAccess(); // { isLoading, mode, accountId, entitlement, currentYear, demoYear, seasonYear, ... }
 
-  // --- URL override ---
+  // URL override: ?mode=demo always wins
   const urlMode = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc.search || "");
@@ -40,80 +35,63 @@ export function useAccessContext() {
     }
   }, [loc.search]);
 
-  // --- Local demo mode (READ EVERY RENDER; same-tab changes won't trigger storage event) ---
-  const localDemo = (() => {
-    try {
-      return readDemoMode(); // { mode: "demo" | null, seasonYear: number|null }
-    } catch {
-      return { mode: null, seasonYear: null };
-    }
-  })();
+  // Local demo mode (set by setDemoMode)
+  const localDemo = useMemo(() => readDemoMode(), []);
 
-  const defaults = useMemo(() => getDemoDefaults(), []);
-
-  // --- Effective mode (single truth) ---
+  // Effective mode (the only mode the UI should trust)
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
     return season.mode === "paid" ? "paid" : "demo";
   }, [urlMode, localDemo?.mode, season.mode]);
 
-  // --- Season year selection ---
-  const seasonYear = useMemo(() => {
-    if (effectiveMode === "paid") return season.currentYear;
+  const isPaid = effectiveMode === "paid";
+  const isDemo = !isPaid;
 
-    const localYear = Number(localDemo?.seasonYear);
-    if (Number.isFinite(localYear) && localYear > 1900) return localYear;
+  // Athlete identity (profile) resolver
+  // NOTE: useAthleteIdentity currently runs whenever accountId exists.
+  // We'll tighten that in a later step, but this hook standardizes how callers interpret it.
+  const identity = useAthleteIdentity(); // { athleteProfile, isLoading, isError, error }
 
-    return defaults.demoSeasonYear || season.demoYear;
-  }, [
-    effectiveMode,
-    localDemo?.seasonYear,
-    defaults.demoSeasonYear,
-    season.currentYear,
-    season.demoYear,
-  ]);
+  const hasProfile = useMemo(() => {
+    // Only enforce/meaningfully report profile in paid mode.
+    if (!isPaid) return false;
+    return !!identity.athleteProfile;
+  }, [isPaid, identity.athleteProfile]);
 
-  const hasAccount = !!season.accountId;
-  const hasProfile = !!athleteProfile;
-
-  // --- Loading (critical to stop premature redirects) ---
-  const accessLoading = !!season.isLoading || !!season.loading;
-
-  // Only consider identity loading when in paid mode (demo should not wait on profile)
-  const loading =
-    accessLoading || (effectiveMode === "paid" && hasAccount && identityLoading);
-
-  // --- Capability ---
-  const canWriteBackend = useMemo(() => {
-    if (effectiveMode !== "paid") return false;
-    if (!hasAccount) return false;
-    if (identityLoading) return false;
-    if (!hasProfile) return false;
-    return true;
-  }, [effectiveMode, hasAccount, identityLoading, hasProfile]);
+  const loading = useMemo(() => {
+    // In demo mode we should NOT block UI waiting on identity
+    if (isDemo) return !!season.isLoading;
+    // Paid mode: season + identity can matter
+    return !!season.isLoading || !!identity.isLoading;
+  }, [isDemo, season.isLoading, identity.isLoading]);
 
   return {
-    // canonical
-    effectiveMode, // "demo" | "paid"
-    seasonYear,
-
     // loading
-    accessLoading,
     loading,
+    accessLoading: !!season.isLoading,
+    identityLoading: !!identity.isLoading,
 
-    // identity/subscription
+    // mode
+    effectiveMode, // "demo" | "paid"
+    mode: season.mode, // raw seasonAccess mode (still useful for debugging)
+    isPaid,
+    isDemo,
+
+    // identity / access
     accountId: season.accountId || null,
     entitlement: season.entitlement || null,
-    isAuthenticated: !!season.accountId,
-
-    // profile
-    athleteProfile: athleteProfile || null,
+    athleteProfile: identity.athleteProfile || null,
     hasProfile,
-    identityLoading,
-    identityError,
 
-    // capabilities
-    canWriteBackend,
+    // season years
+    currentYear: season.currentYear,
+    demoYear: season.demoYear,
+    seasonYear: season.seasonYear,
+
+    // debug signals (optional)
+    urlMode,
+    localDemoSeasonYear: localDemo?.seasonYear || null,
+    identityError: identity.isError ? identity.error : null,
   };
 }
