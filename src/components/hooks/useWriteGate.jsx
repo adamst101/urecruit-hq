@@ -5,7 +5,7 @@ import { createPageUrl } from "../../utils";
 import { useSeasonAccess } from "./useSeasonAccess";
 import { useAthleteIdentity } from "../useAthleteIdentity";
 
-import { getDemoDefaults } from "./demoMode";
+import { readDemoMode, getDemoDefaults } from "./demoMode";
 
 /**
  * useWriteGate
@@ -15,9 +15,10 @@ import { getDemoDefaults } from "./demoMode";
  * - paid   => backend writes allowed ONLY when (accountId && athleteProfile)
  * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
  *
- * IMPORTANT:
- * - Demo must be deterministic across the app (URL / local demo mode wins over paid)
- * - In demo mode, never depend on athlete identity loading
+ * Deterministic mode rules (MUST match RouteGuard/BottomNav intent):
+ * 1) URL override ?mode=demo always wins
+ * 2) Local demo mode (setDemoMode/readDemoMode) next
+ * 3) Otherwise: season.mode from entitlements
  */
 export function useWriteGate() {
   const navigate = useNavigate();
@@ -37,19 +38,20 @@ export function useWriteGate() {
   }, [loc.search]);
 
   // 2) Local demo contract (set by setDemoMode)
-  const demoDefaults = getDemoDefaults();
+  const localDemo = useMemo(() => readDemoMode(), []);
+  const demoDefaults = useMemo(() => getDemoDefaults(), []);
 
-  // Effective mode: demo wins if url says demo OR local says demo
+  // Effective mode: url demo OR local demo -> demo; else follow entitlement mode
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
-    if (demoDefaults?.mode === "demo") return "demo";
+    if (localDemo?.mode === "demo") return "demo";
     return season.mode === "paid" ? "paid" : "demo";
-  }, [urlMode, demoDefaults?.mode, season.mode]);
+  }, [urlMode, localDemo?.mode, season.mode]);
 
   const isPaidMode = effectiveMode === "paid";
   const hasAccount = !!season.accountId;
 
-  // Only read identity when we truly need it (paid mode)
+  // Only meaningful in paid mode (hook itself is enabled only when accountId exists)
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
   const hasProfile = !!athleteProfile;
 
@@ -88,7 +90,7 @@ export function useWriteGate() {
 
       if (isPaidMode && hasAccount) {
         navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
-          replace: false
+          replace: false,
         });
         return;
       }
@@ -127,11 +129,15 @@ export function useWriteGate() {
       if (gate.mode === "paid") return true;
 
       if (gate.mode === "demo") {
+        const seasonParam =
+          season.currentYear ||
+          (Number.isFinite(localDemo?.seasonYear) ? localDemo.seasonYear : demoDefaults.demoSeasonYear);
+
         navigate(
           createPageUrl("Subscribe") +
-            `?force=1&source=${encodeURIComponent(source)}&next=${encodeURIComponent(
-              next
-            )}&season=${encodeURIComponent(String(season.currentYear || ""))}`,
+            `?force=1&source=${encodeURIComponent(source)}` +
+            `&next=${encodeURIComponent(next)}` +
+            `&season=${encodeURIComponent(String(seasonParam || ""))}`,
           { replace: false }
         );
         return false;
@@ -140,14 +146,14 @@ export function useWriteGate() {
       defaultBlocked({ next });
       return false;
     },
-    [gate.mode, navigate, season.currentYear, defaultBlocked]
+    [gate.mode, navigate, season.currentYear, localDemo?.seasonYear, demoDefaults.demoSeasonYear, defaultBlocked]
   );
 
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
-    effectiveMode, // optional debug signal
+    effectiveMode, // debug signal
     write,
-    requirePaid
+    requirePaid,
   };
 }
