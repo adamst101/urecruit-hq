@@ -1,11 +1,12 @@
 // src/components/auth/RouteGuard.jsx
-import React, { useEffect, useMemo, useCallback } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
 import { createPageUrl } from "../../utils";
 import { useSeasonAccess } from "../hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../useAthleteIdentity";
+import { readDemoMode } from "../hooks/demoMode";
 
 /**
  * RouteGuard
@@ -15,9 +16,8 @@ import { useAthleteIdentity } from "../useAthleteIdentity";
  * - Allow demo browsing where desired
  * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
  *
- * NEW:
- * - Redirect unauth users to Login (not Home) for protected pages
- * - If URL has ?mode=demo, bypass paid/profile gating (lets demo always work)
+ * Demo override:
+ * - If URL has ?mode=demo OR localStorage demo mode is set, bypass paid/profile gating
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -41,8 +41,8 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Demo override (critical to stop "paid profile redirect" when user intends demo)
-  const forceDemo = useMemo(() => {
+  // 1) URL override: ?mode=demo always wins
+  const urlForcesDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
       return sp.get("mode") === "demo";
@@ -51,19 +51,31 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
+  // 2) Local demo mode (set by setDemoMode)
+  const localDemo = useMemo(() => {
+    try {
+      const dm = readDemoMode();
+      return dm?.mode === "demo";
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const forceDemo = urlForcesDemo || localDemo;
+
+  // Effective paid state (demo override defeats paid gating)
   const isPaid = !forceDemo && mode === "paid";
+
+  // Only require identity when profile is required AND we’re truly in paid mode
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
 
-  const safeReplace = useCallback(
-    (to) => {
-      if (!to) return;
-      if (to === currentPath) return;
-      nav(to, { replace: true });
-    },
-    [nav, currentPath]
-  );
+  const safeReplace = (to) => {
+    if (!to) return;
+    if (to === currentPath) return;
+    nav(to, { replace: true });
+  };
 
   useEffect(() => {
     if (loading) return;
@@ -108,8 +120,9 @@ export default function RouteGuard({
     isPaid,
     athleteProfile,
     nextParam,
-    loc?.pathname,
-    safeReplace
+    currentPath,
+    nav,
+    loc?.pathname
   ]);
 
   if (loading) {
