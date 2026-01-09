@@ -21,19 +21,8 @@ function trackEvent(payload) {
   } catch {}
 }
 
-async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } = {}) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const s = seasonRef.current;
-    if (s && s.accountId) return s;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-  return seasonRef.current;
-}
-
 export default function Home() {
   const nav = useNavigate();
-
   const season = useSeasonAccess();
   const seasonRef = useRef(season);
 
@@ -41,11 +30,13 @@ export default function Home() {
     seasonRef.current = season;
   }, [season]);
 
+  const isAuthed = !!season?.accountId;
+
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
 
   useEffect(() => {
-    const key = "evt_home_viewed_v22";
+    const key = "evt_home_viewed_v23";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -54,13 +45,12 @@ export default function Home() {
     trackEvent({
       event_name: "home_view",
       source: "home",
-      auth_state: season?.accountId ? "authed" : "anon",
+      auth_state: isAuthed ? "authed" : "anon",
       mode: season?.mode === "paid" ? "paid" : "not_paid"
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Access Demo (no login required)
   function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
     setDemoMode(demoSeasonYear);
@@ -68,37 +58,30 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Log in (Base44 standard): redirect to Base44 login, then return to Discover
-  async function handleLoginOnly() {
+  function handlePricingSignup() {
+    trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
+    nav(createPageUrl("Subscribe") + `?source=home_pricing`);
+  }
+
+  function handleLoginOrContinue() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // Best-effort: clear demo mode so user doesn't land in demo after auth
-    try {
-      setDemoMode(null);
-    } catch {}
-
-    // If already authed, just go to Discover (RouteGuard will send to Profile if needed)
+    // If already authenticated, don't pretend to "log in" — just continue.
     if (seasonRef.current?.accountId) {
       nav(createPageUrl("Discover"));
       return;
     }
 
+    // Otherwise redirect to Base44 login (standard)
     const nextUrl = `${window.location.origin}${createPageUrl("Discover")}`;
 
-    // Base44 standard login redirect
     if (base44?.auth?.redirectToLogin) {
       base44.auth.redirectToLogin(nextUrl);
       return;
     }
 
-    // Fallback: go to Discover (won't authenticate, but avoids dead button)
+    // Fallback: send to Discover (RouteGuard should bounce back to Home if auth required)
     nav(createPageUrl("Discover"));
-  }
-
-  // View pricing / Sign-Up -> Subscribe
-  function handlePricingSignup() {
-    trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
-    nav(createPageUrl("Subscribe") + `?source=home_pricing`);
   }
 
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
@@ -126,10 +109,8 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
-        {/* HERO ONLY (no top bar header to avoid duplicate logo/login) */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* Brand row: big logo + login */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -148,32 +129,30 @@ export default function Home() {
                   Your college recruiting camp planning HQ
                 </div>
 
-                {/* Mobile: login under tagline */}
+                {/* Mobile */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button onClick={handleLoginOnly} className="btn-brand w-full" type="button">
+                  <Button onClick={handleLoginOrContinue} className="btn-brand w-full" type="button">
                     <LogIn className="w-4 h-4 mr-2" />
-                    Log in
+                    {isAuthed ? "Continue" : "Log in"}
                   </Button>
                 </div>
               </div>
 
-              {/* Desktop: login on right */}
+              {/* Desktop */}
               <div className="hidden md:flex">
-                <Button variant="outline" onClick={handleLoginOnly} className="text-ink" type="button">
+                <Button variant="outline" onClick={handleLoginOrContinue} className="text-ink" type="button">
                   <LogIn className="w-4 h-4 mr-2" />
-                  Log in
+                  {isAuthed ? "Continue" : "Log in"}
                 </Button>
               </div>
             </div>
 
-            {/* Copy */}
             <div className="max-w-3xl space-y-3 text-center md:text-left">
               <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
               <div className="h-1 w-14 rounded bg-accent mx-auto md:mx-0" />
               <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
 
-            {/* Outcome cards */}
             <div className="grid md:grid-cols-3 gap-4">
               {bullets.map((x) => (
                 <div key={x.a} className="rounded-xl bg-surface border border-default p-4">
@@ -188,7 +167,6 @@ export default function Home() {
               ))}
             </div>
 
-            {/* How it works */}
             <div className="rounded-xl border border-default bg-white p-4">
               <div className="grid md:grid-cols-3 gap-4">
                 {howStrip.map((x) => (
@@ -200,7 +178,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-2 items-stretch">
               <Button className="sm:flex-1 btn-brand" onClick={handlePricingSignup} type="button">
                 View pricing / Sign-Up
