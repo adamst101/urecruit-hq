@@ -16,7 +16,7 @@ import { readDemoMode } from "./demoMode";
  * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
  *
  * IMPORTANT:
- * - Demo must be deterministic across the app (URL demo mode wins, then local demo mode)
+ * - Demo must be deterministic across the app (URL override wins, then local demo mode)
  * - In demo mode, never depend on athlete identity loading
  */
 export function useWriteGate() {
@@ -37,9 +37,14 @@ export function useWriteGate() {
   }, [loc.search]);
 
   // 2) Local demo contract (set by setDemoMode)
-  const localDemo = useMemo(() => readDemoMode(), []);
+  const localDemo = useMemo(() => {
+    return readDemoMode(); // { mode: "demo" | null, seasonYear: number|null }
+  }, []);
 
-  // Effective mode: URL demo wins, then local demo, else season mode
+  // Effective mode resolution:
+  // - URL demo wins
+  // - else local demo wins
+  // - else use paid/demo from season access
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
