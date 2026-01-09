@@ -1,108 +1,87 @@
 // src/components/auth/RouteGuard.jsx
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
 import { createPageUrl } from "../../utils";
-import { useSeasonAccess } from "../hooks/useSeasonAccess";
-import { useAthleteIdentity } from "../useAthleteIdentity";
-import { readDemoMode } from "../hooks/demoMode";
+import { useAccessContext } from "../hooks/useAccessContext";
 
 /**
- * RouteGuard
+ * RouteGuard (hardened)
  *
- * Goals:
- * - Keep Home as a true front door (no auto-redirect here)
- * - Allow demo browsing where desired
- * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
+ * Uses useAccessContext as the single source of truth.
+ * - effectiveMode: "demo" | "paid"
+ * - loading: blocks redirects until mode/identity are resolved
  *
  * Rules:
- * - URL override (?mode=demo) always wins
- * - Local demo mode (setDemoMode) is the secondary override
+ * 1) requireAuth  -> if not authed, go Login
+ * 2) requirePaid  -> if not in paid mode, go Subscribe
+ * 3) requireProfile -> ONLY enforced in paid mode; if missing, go Profile
  */
 export default function RouteGuard({
   requireAuth = false,
   requirePaid = false,
   requireProfile = false,
-  children
+  children,
 }) {
   const nav = useNavigate();
   const loc = useLocation();
 
-  const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
   const {
-    athleteProfile,
-    isLoading: identityLoading,
-    isError: identityError
-  } = useAthleteIdentity();
+    effectiveMode,
+    loading,
+    accountId,
+    hasProfile,
+    identityError,
+  } = useAccessContext();
 
   const currentPath = useMemo(() => {
     return (loc?.pathname || "") + (loc?.search || "");
   }, [loc?.pathname, loc?.search]);
 
-  const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
+  const nextParam = useMemo(
+    () => encodeURIComponent(currentPath),
+    [currentPath]
+  );
 
-  // URL demo override
-  const urlForcesDemo = useMemo(() => {
-    try {
-      const sp = new URLSearchParams(loc?.search || "");
-      return sp.get("mode") === "demo";
-    } catch {
-      return false;
-    }
-  }, [loc?.search]);
-
-  // Local demo override (persisted)
-  const localDemo = useMemo(() => {
-    try {
-      const d = readDemoMode(); // { mode, seasonYear }
-      return d?.mode === "demo";
-    } catch {
-      return false;
-    }
-  }, []);
-
-  const forceDemo = urlForcesDemo || localDemo;
-
-  // Paid means: seasonAccess says paid AND we are not forcing demo
-  const isPaid = !forceDemo && mode === "paid";
-
-  // Only require identity when profile gating applies in paid mode
-  const needsIdentity = requireProfile && isPaid;
-
-  const loading = accessLoading || (needsIdentity && identityLoading);
-
-  const safeReplace = (to) => {
-    if (!to) return;
-    if (to === currentPath) return;
-    nav(to, { replace: true });
-  };
+  const safeReplace = useCallback(
+    (to) => {
+      if (!to) return;
+      if (to === currentPath) return;
+      nav(to, { replace: true });
+    },
+    [nav, currentPath]
+  );
 
   useEffect(() => {
     if (loading) return;
 
-    // If we need identity and it errored, route to Profile (recoverable)
-    if (needsIdentity && identityError) {
+    const isAuthed = !!accountId;
+    const isPaid = effectiveMode === "paid";
+
+    // If profile is required in paid mode and identity query errored, route to Profile with error
+    if (requireProfile && isPaid && identityError) {
       safeReplace(
-        createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`
+        createPageUrl("Profile") +
+          `?next=${nextParam}&err=profile_load_failed`
       );
       return;
     }
 
     // 1) Auth required
-    if (requireAuth && !accountId) {
+    if (requireAuth && !isAuthed) {
       safeReplace(createPageUrl("Login") + `?next=${nextParam}`);
       return;
     }
 
-    // 2) Paid required (ignored in demo override)
+    // 2) Paid required
     if (requirePaid && !isPaid) {
       safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
     }
 
     // 3) Profile required (paid-only enforcement)
-    if (requireProfile && isPaid && !athleteProfile) {
+    if (requireProfile && isPaid && !hasProfile) {
       const profileUrl = createPageUrl("Profile");
       if ((loc?.pathname || "") !== profileUrl) {
         safeReplace(profileUrl + `?next=${nextParam}`);
@@ -111,18 +90,16 @@ export default function RouteGuard({
     }
   }, [
     loading,
+    effectiveMode,
+    accountId,
+    hasProfile,
+    identityError,
     requireAuth,
     requirePaid,
     requireProfile,
-    needsIdentity,
-    identityError,
-    accountId,
-    isPaid,
-    athleteProfile,
     nextParam,
-    currentPath,
-    nav,
-    loc?.pathname
+    safeReplace,
+    loc?.pathname,
   ]);
 
   if (loading) {
