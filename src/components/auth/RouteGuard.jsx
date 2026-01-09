@@ -3,7 +3,6 @@ import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
-import { base44 } from "../../api/base44Client";
 import { createPageUrl } from "../../utils";
 import { useSeasonAccess } from "../hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../useAthleteIdentity";
@@ -11,27 +10,16 @@ import { useAthleteIdentity } from "../useAthleteIdentity";
 /**
  * RouteGuard
  *
- * Key fix:
- * - Do NOT treat "mode === paid" as paid unless user is actually authenticated.
- * - Prevents public visitors from being shoved into Profile setup.
+ * Goals:
+ * - Keep Home as a true front door (no auto-redirect here)
+ * - Allow demo browsing without auth where desired
+ * - Enforce: Paid users MUST create athlete profile before accessing paid features
+ *
+ * Flags:
+ * - requireAuth: user must be signed in (accountId required)
+ * - requirePaid: user must be paid (mode === "paid" AND authed)
+ * - requireProfile: paid users must have athleteProfile (paid+authed only)
  */
-function getAuthedUserId() {
-  try {
-    const auth = base44?.auth;
-    const user =
-      auth?.user ||
-      auth?.currentUser ||
-      auth?.session?.user ||
-      auth?.getSession?.()?.user ||
-      null;
-
-    const id = user?.id || user?._id || user?.uuid || null;
-    return id ? String(id) : null;
-  } catch {
-    return null;
-  }
-}
-
 export default function RouteGuard({
   requireAuth = false,
   requirePaid = false,
@@ -41,12 +29,11 @@ export default function RouteGuard({
   const nav = useNavigate();
   const loc = useLocation();
 
-  const { isLoading: accessLoading, mode } = useSeasonAccess();
+  const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
   const {
     athleteProfile,
     isLoading: identityLoading,
-    isError: identityError,
-    error: identityErrorObj
+    isError: identityError
   } = useAthleteIdentity();
 
   const currentPath = useMemo(() => {
@@ -55,14 +42,11 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // ✅ REAL auth check (NOT accountId)
-  const authedUserId = useMemo(() => getAuthedUserId(), [loc?.pathname, loc?.search]);
-  const isAuthed = !!authedUserId;
-
-  // ✅ Only consider "paid" when authenticated
+  // IMPORTANT: "paid" only counts when authenticated
+  const isAuthed = !!accountId;
   const isPaid = mode === "paid" && isAuthed;
 
-  // Only load identity when paid+profile is required
+  // Only load identity when we truly need it (paid+authed + requireProfile)
   const needsIdentity = requireProfile && isPaid;
   const loading = accessLoading || (needsIdentity && identityLoading);
 
@@ -75,7 +59,7 @@ export default function RouteGuard({
   useEffect(() => {
     if (loading) return;
 
-    // If paid+profile required but identity errored, route to Profile setup (recoverable)
+    // If identity load fails for a paid+authed user, route them to Profile to recover
     if (needsIdentity && identityError) {
       safeReplace(createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`);
       return;
@@ -87,13 +71,13 @@ export default function RouteGuard({
       return;
     }
 
-    // 2) Paid required (only when authed)
+    // 2) Paid required (paid only if authed)
     if (requirePaid && !isPaid) {
       safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
     }
 
-    // 3) Profile required (paid-only enforcement, paid-only when authed)
+    // 3) Profile required (paid+authed only)
     if (requireProfile && isPaid && !athleteProfile) {
       const profileUrl = createPageUrl("Profile");
       if ((loc?.pathname || "") !== profileUrl) {
@@ -108,7 +92,6 @@ export default function RouteGuard({
     requireProfile,
     needsIdentity,
     identityError,
-    identityErrorObj,
     isAuthed,
     isPaid,
     athleteProfile,
