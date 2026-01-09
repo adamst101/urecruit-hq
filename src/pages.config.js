@@ -33,7 +33,7 @@ export const PAGES = {
 }
 
 export const pagesConfig = {
-    mainPage: "Profile",
+    mainPage: "Upgrade",
     Pages: PAGES,
     Layout: __Layout,
 };
