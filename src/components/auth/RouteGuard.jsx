@@ -12,13 +12,12 @@ import { useAthleteIdentity } from "../useAthleteIdentity";
  *
  * Goals:
  * - Keep Home as a true front door (no auto-redirect here)
- * - Allow demo browsing without auth where desired
- * - Enforce: Paid users MUST create athlete profile before accessing paid features
+ * - Allow demo browsing where desired
+ * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
  *
- * Flags:
- * - requireAuth: user must be signed in (accountId required)
- * - requirePaid: user must be paid (mode === "paid" AND authed)
- * - requireProfile: paid users must have athleteProfile (paid+authed only)
+ * NEW:
+ * - Redirect unauth users to Login (not Home) for protected pages
+ * - If URL has ?mode=demo, bypass paid/profile gating (lets demo always work)
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -42,12 +41,19 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // IMPORTANT: "paid" only counts when authenticated
-  const isAuthed = !!accountId;
-  const isPaid = mode === "paid" && isAuthed;
+  // Demo override (critical to stop "paid profile redirect" when user intends demo)
+  const forceDemo = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(loc?.search || "");
+      return sp.get("mode") === "demo";
+    } catch {
+      return false;
+    }
+  }, [loc?.search]);
 
-  // Only load identity when we truly need it (paid+authed + requireProfile)
+  const isPaid = !forceDemo && mode === "paid";
   const needsIdentity = requireProfile && isPaid;
+
   const loading = accessLoading || (needsIdentity && identityLoading);
 
   const safeReplace = (to) => {
@@ -59,25 +65,25 @@ export default function RouteGuard({
   useEffect(() => {
     if (loading) return;
 
-    // If identity load fails for a paid+authed user, route them to Profile to recover
+    // If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
       safeReplace(createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`);
       return;
     }
 
     // 1) Auth required
-    if (requireAuth && !isAuthed) {
-      safeReplace(createPageUrl("Home") + `?next=${nextParam}`);
+    if (requireAuth && !accountId) {
+      safeReplace(createPageUrl("Login") + `?next=${nextParam}`);
       return;
     }
 
-    // 2) Paid required (paid only if authed)
+    // 2) Paid required (ignored in demo override)
     if (requirePaid && !isPaid) {
       safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
     }
 
-    // 3) Profile required (paid+authed only)
+    // 3) Profile required (paid-only enforcement)
     if (requireProfile && isPaid && !athleteProfile) {
       const profileUrl = createPageUrl("Profile");
       if ((loc?.pathname || "") !== profileUrl) {
@@ -92,13 +98,14 @@ export default function RouteGuard({
     requireProfile,
     needsIdentity,
     identityError,
-    isAuthed,
+    accountId,
     isPaid,
     athleteProfile,
     nextParam,
     currentPath,
     nav,
-    loc?.pathname
+    loc?.pathname,
+    safeReplace
   ]);
 
   if (loading) {
