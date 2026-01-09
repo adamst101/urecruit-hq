@@ -6,15 +6,14 @@ import { CalendarDays, Compass, Lock, User } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { createPageUrl } from "../../utils";
 import { useSeasonAccess } from "../hooks/useSeasonAccess";
-import { readDemoMode } from "../hooks/demoMode";
 
 /**
  * BottomNav
  * - Paid users: Discover, Calendar, MyCamps, Profile
  * - Demo users: Discover, Calendar, Upgrade (Subscribe)
  *
- * Goal: prevent demo users from navigating to paid-only pages (MyCamps).
- * Also: honor ?mode=demo and local demo mode even if user is authed/paid.
+ * IMPORTANT:
+ * - Respect URL override: ?mode=demo must force demo nav even for paid accounts.
  */
 export default function BottomNav() {
   const navigate = useNavigate();
@@ -32,16 +31,7 @@ export default function BottomNav() {
     }
   }, [location?.search]);
 
-  // Local demo mode (set by setDemoMode)
-  const localDemo = useMemo(() => {
-    return readDemoMode(); // { mode, seasonYear }
-  }, []);
-
-  const effectiveMode = useMemo(() => {
-    if (urlMode === "demo") return "demo";
-    if (localDemo?.mode === "demo") return "demo";
-    return season.mode === "paid" ? "paid" : "demo";
-  }, [urlMode, localDemo?.mode, season.mode]);
+  const effectiveMode = urlMode === "demo" ? "demo" : season.mode;
 
   const items = useMemo(() => {
     if (effectiveMode === "paid") {
@@ -53,17 +43,18 @@ export default function BottomNav() {
       ];
     }
 
-    // Demo mode: Upgrade goes to Subscribe and carries user back to Discover
+    // Demo mode: Upgrade goes to Subscribe and carries user back to Discover (preserve demo intent if present)
+    const next = createPageUrl("Discover") + (urlMode === "demo" ? "?mode=demo" : "");
     const upgradeUrl =
       createPageUrl("Subscribe") +
-      `?source=bottom_nav_upgrade&next=${encodeURIComponent(createPageUrl("Discover"))}`;
+      `?source=bottom_nav_upgrade&next=${encodeURIComponent(next)}`;
 
     return [
-      { key: "Discover", label: "Discover", icon: Compass, to: createPageUrl("Discover") },
-      { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") },
+      { key: "Discover", label: "Discover", icon: Compass, to: next },
+      { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") + (urlMode === "demo" ? "?mode=demo" : "") },
       { key: "Upgrade", label: "Upgrade", icon: Lock, to: upgradeUrl },
     ];
-  }, [effectiveMode]);
+  }, [effectiveMode, urlMode]);
 
   const pathname = location?.pathname || "";
 
