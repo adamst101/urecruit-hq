@@ -1,22 +1,8 @@
 // src/components/hooks/useDemoProfile.js
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-/**
- * useDemoProfile
- *
- * Demo personalization stored in localStorage.
- * - Provides a stable demoProfile.id (required for demo-local favorites keys)
- * - Backward-compatible API:
- *    { loaded, demoProfile, demoProfileId,
- *      updateDemoProfile, clearDemoProfile, refresh,
- *      setDemoProfile, resetDemoProfile }
- *
- * Storage keys:
- * - demo:profile:v1   => profile object
- */
 const STORAGE_KEY = "demo:profile:v1";
 
-// ---------- helpers ----------
 function safeParse(json) {
   try {
     return JSON.parse(json);
@@ -36,19 +22,16 @@ function uniq(arr) {
 }
 
 function makeId() {
-  // stable enough for local demo identity; avoids crypto dependency
   return `dp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function defaultProfile(existingId) {
   return {
     id: existingId || makeId(),
-    // Demo filters (null means "no filter")
     sport_id: null,
     state: null,
     division: null,
     position_ids: [],
-    // Optional future fields
     grad_year: null,
   };
 }
@@ -104,7 +87,6 @@ export function useDemoProfile() {
   const [loaded, setLoaded] = useState(false);
   const [demoProfile, setDemoProfileState] = useState(() => defaultProfile());
 
-  // Load once + ensure persisted shape
   useEffect(() => {
     const fromStorage = readFromStorage();
     const next = fromStorage ? fromStorage : normalizeProfile(demoProfile);
@@ -115,7 +97,6 @@ export function useDemoProfile() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync across tabs/windows
   useEffect(() => {
     function onStorage(e) {
       if (!e) return;
@@ -125,7 +106,6 @@ export function useDemoProfile() {
       if (!next) return;
 
       setDemoProfileState((prev) => {
-        // Avoid useless rerenders
         const prevStr = JSON.stringify(prev);
         const nextStr = JSON.stringify(next);
         return prevStr === nextStr ? prev : next;
@@ -137,32 +117,23 @@ export function useDemoProfile() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Core write-through setter (patch or updater)
   const setDemoProfile = useCallback((patchOrUpdater) => {
     setDemoProfileState((prev) => {
-      const patch =
-        typeof patchOrUpdater === "function" ? patchOrUpdater(prev) : patchOrUpdater;
-
+      const patch = typeof patchOrUpdater === "function" ? patchOrUpdater(prev) : patchOrUpdater;
       const merged = normalizeProfile({ ...prev, ...(patch || {}) });
       writeToStorage(merged);
       return merged;
     });
   }, []);
 
-  // Back-compat alias used by your pages (DemoSetup etc.)
-  const updateDemoProfile = useCallback(
-    (patch) => setDemoProfile(patch),
-    [setDemoProfile]
-  );
+  const updateDemoProfile = useCallback((patch) => setDemoProfile(patch), [setDemoProfile]);
 
-  // Hard refresh from localStorage (useful if storage updated outside React)
   const refresh = useCallback(() => {
     const next = readFromStorage();
     if (next) setDemoProfileState(next);
     setLoaded(true);
   }, []);
 
-  // Reset filters but KEEP SAME id (favorites remain tied)
   const resetDemoProfile = useCallback(() => {
     setDemoProfileState((prev) => {
       const next = defaultProfile(prev?.id);
@@ -171,7 +142,6 @@ export function useDemoProfile() {
     });
   }, []);
 
-  // Back-compat alias used by your pages
   const clearDemoProfile = useCallback(() => {
     resetDemoProfile();
   }, [resetDemoProfile]);
@@ -185,13 +155,9 @@ export function useDemoProfile() {
     loaded,
     demoProfile,
     demoProfileId,
-
-    // Preferred API
     setDemoProfile,
     resetDemoProfile,
     refresh,
-
-    // Backward-compatible API for existing callers
     updateDemoProfile,
     clearDemoProfile,
   };
