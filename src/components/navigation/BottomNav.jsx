@@ -6,6 +6,7 @@ import { CalendarDays, Compass, Lock, User } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { createPageUrl } from "../../utils";
 import { useSeasonAccess } from "../hooks/useSeasonAccess";
+import { readDemoMode } from "../hooks/demoMode";
 
 /**
  * BottomNav
@@ -13,25 +14,38 @@ import { useSeasonAccess } from "../hooks/useSeasonAccess";
  * - Demo users: Discover, Calendar, Upgrade (Subscribe)
  *
  * IMPORTANT:
- * - Respect URL override: ?mode=demo must force demo nav even for paid accounts.
+ * - Demo override must match RouteGuard/useWriteGate:
+ *   URL ?mode=demo OR local demo mode => treat as demo for nav.
  */
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const season = useSeasonAccess();
+  const { mode: seasonMode } = useSeasonAccess();
 
-  // URL override: ?mode=demo wins
-  const urlMode = useMemo(() => {
+  // URL demo override
+  const urlForcesDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(location?.search || "");
-      const m = sp.get("mode");
-      return m ? String(m).toLowerCase() : null;
+      return sp.get("mode") === "demo";
     } catch {
-      return null;
+      return false;
     }
   }, [location?.search]);
 
-  const effectiveMode = urlMode === "demo" ? "demo" : season.mode;
+  // Local demo override
+  const localDemo = useMemo(() => {
+    try {
+      const d = readDemoMode();
+      return d?.mode === "demo";
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const effectiveMode = useMemo(() => {
+    if (urlForcesDemo || localDemo) return "demo";
+    return seasonMode === "paid" ? "paid" : "demo";
+  }, [seasonMode, urlForcesDemo, localDemo]);
 
   const items = useMemo(() => {
     if (effectiveMode === "paid") {
@@ -43,18 +57,17 @@ export default function BottomNav() {
       ];
     }
 
-    // Demo mode: Upgrade goes to Subscribe and carries user back to Discover (preserve demo intent if present)
-    const next = createPageUrl("Discover") + (urlMode === "demo" ? "?mode=demo" : "");
+    // Demo mode: Upgrade goes to Subscribe and carries user back to Discover
     const upgradeUrl =
       createPageUrl("Subscribe") +
-      `?source=bottom_nav_upgrade&next=${encodeURIComponent(next)}`;
+      `?source=bottom_nav_upgrade&next=${encodeURIComponent(createPageUrl("Discover"))}`;
 
     return [
-      { key: "Discover", label: "Discover", icon: Compass, to: next },
-      { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") + (urlMode === "demo" ? "?mode=demo" : "") },
+      { key: "Discover", label: "Discover", icon: Compass, to: createPageUrl("Discover") },
+      { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") },
       { key: "Upgrade", label: "Upgrade", icon: Lock, to: upgradeUrl },
     ];
-  }, [effectiveMode, urlMode]);
+  }, [effectiveMode]);
 
   const pathname = location?.pathname || "";
 
