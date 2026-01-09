@@ -12,15 +12,33 @@ import { useSeasonAccess } from "../hooks/useSeasonAccess";
  * - Paid users: Discover, Calendar, MyCamps, Profile
  * - Demo users: Discover, Calendar, Upgrade (Subscribe)
  *
- * Goal: prevent demo users from navigating to paid-only pages (MyCamps).
+ * IMPORTANT:
+ * - Must respect URL demo override (?mode=demo) so paid users can view demo safely
+ *   without the nav pulling them into paid-only pages.
  */
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { mode } = useSeasonAccess();
+  const season = useSeasonAccess();
+
+  // URL override: ?mode=demo ALWAYS wins
+  const urlMode = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(location.search || "");
+      const m = sp.get("mode");
+      return m ? String(m).toLowerCase() : null;
+    } catch {
+      return null;
+    }
+  }, [location.search]);
+
+  const effectiveMode = useMemo(() => {
+    if (urlMode === "demo") return "demo";
+    return season.mode; // "paid" | "demo"
+  }, [urlMode, season.mode]);
 
   const items = useMemo(() => {
-    if (mode === "paid") {
+    if (effectiveMode === "paid") {
       return [
         { key: "Discover", label: "Discover", icon: Compass, to: createPageUrl("Discover") },
         { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") },
@@ -29,17 +47,18 @@ export default function BottomNav() {
       ];
     }
 
-    // Demo mode: Upgrade goes to Subscribe and carries user back to Discover
+    // Demo mode: Upgrade goes to Subscribe and carries user back to Discover (keep mode=demo context if present)
+    const next = createPageUrl("Discover") + (urlMode === "demo" ? "?mode=demo" : "");
     const upgradeUrl =
       createPageUrl("Subscribe") +
-      `?source=bottom_nav_upgrade&next=${encodeURIComponent(createPageUrl("Discover"))}`;
+      `?source=bottom_nav_upgrade&next=${encodeURIComponent(next)}`;
 
     return [
-      { key: "Discover", label: "Discover", icon: Compass, to: createPageUrl("Discover") },
-      { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") },
+      { key: "Discover", label: "Discover", icon: Compass, to: createPageUrl("Discover") + (urlMode === "demo" ? "?mode=demo" : "") },
+      { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") + (urlMode === "demo" ? "?mode=demo" : "") },
       { key: "Upgrade", label: "Upgrade", icon: Lock, to: upgradeUrl },
     ];
-  }, [mode]);
+  }, [effectiveMode, urlMode]);
 
   const pathname = location?.pathname || "";
 
@@ -51,7 +70,10 @@ export default function BottomNav() {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50">
       <div className="max-w-md mx-auto bg-white border-t border-slate-200">
-        <div className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+        >
           {items.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.to);
