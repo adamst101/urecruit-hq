@@ -16,8 +16,9 @@ import { readDemoMode } from "./demoMode";
  * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
  *
  * IMPORTANT:
- * - Demo must be deterministic across the app (URL / local demo mode wins over paid)
- * - In demo mode, never depend on athlete identity loading
+ * - Demo must be deterministic across the app:
+ *     URL ?mode=demo wins, else local demoMode wins, else season.mode drives.
+ * - In demo mode, never depend on athlete identity loading for allowing demo writes.
  */
 export function useWriteGate() {
   const navigate = useNavigate();
@@ -36,12 +37,12 @@ export function useWriteGate() {
     }
   }, [loc.search]);
 
-  // 2) Local demo contract (set by setDemoMode)
+  // 2) Local demo contract (set by setDemoMode / clearDemoMode)
   const localDemo = useMemo(() => {
     return readDemoMode(); // { mode: "demo" | null, seasonYear: number|null }
   }, []);
 
-  // Effective mode: demo wins if url says demo OR local storage says demo
+  // Effective mode: URL demo > local demo > season access
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
@@ -51,7 +52,8 @@ export function useWriteGate() {
   const isPaidMode = effectiveMode === "paid";
   const hasAccount = !!season.accountId;
 
-  // Only read identity when we truly need it (paid mode)
+  // Only read athlete identity when we truly need it (paid mode).
+  // In demo mode, we should not block demo writes due to identity loading.
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
   const hasProfile = !!athleteProfile;
 
@@ -79,25 +81,29 @@ export function useWriteGate() {
   /**
    * Default blocked behavior:
    * - Paid but missing profile => Profile
-   * - Missing account => Home (sign in)
+   * - Missing account => Login
    */
   const defaultBlocked = useCallback(
     (opts = {}) => {
       const next =
         typeof opts?.next === "string" && opts.next.trim()
           ? opts.next
-          : createPageUrl("Discover");
+          : (loc?.pathname || createPageUrl("Discover")) + (loc?.search || "");
 
+      // Paid mode + authed => profile completion
       if (isPaidMode && hasAccount) {
         navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
-          replace: false
+          replace: false,
         });
         return;
       }
 
-      navigate(createPageUrl("Home"), { replace: false });
+      // Otherwise, ask for login
+      navigate(createPageUrl("Login") + `?next=${encodeURIComponent(next)}`, {
+        replace: false,
+      });
     },
-    [navigate, isPaidMode, hasAccount]
+    [navigate, isPaidMode, hasAccount, loc?.pathname, loc?.search]
   );
 
   // Main router for writes
@@ -116,14 +122,15 @@ export function useWriteGate() {
   /**
    * Helper for actions that MUST be paid.
    * - If in demo => Subscribe
-   * - If paid but blocked => Profile (or Home if not authed)
+   * - If paid but blocked => Profile/Login depending on state
    */
   const requirePaid = useCallback(
     (opts = {}) => {
       const next =
         typeof opts?.next === "string" && opts.next.trim()
           ? opts.next
-          : createPageUrl("Discover");
+          : (loc?.pathname || createPageUrl("Discover")) + (loc?.search || "");
+
       const source = opts?.source ? String(opts.source) : "write_gate";
 
       if (gate.mode === "paid") return true;
@@ -142,16 +149,21 @@ export function useWriteGate() {
       defaultBlocked({ next });
       return false;
     },
-    [gate.mode, navigate, season.currentYear, defaultBlocked]
+    [
+      gate.mode,
+      navigate,
+      season.currentYear,
+      defaultBlocked,
+      loc?.pathname,
+      loc?.search,
+    ]
   );
 
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
-    effectiveMode, // optional debug signal
+    effectiveMode, // debug signal
     write,
     requirePaid,
-    // helpful debug
-    localDemo
   };
 }
