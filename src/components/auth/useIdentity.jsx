@@ -1,159 +1,77 @@
 // src/components/auth/useIdentity.js
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-
-import { base44 } from "../../api/base44Client";
-import { useSeasonAccess } from "../hooks/useSeasonAccess";
+import { useMemo, useCallback, useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAccessContext } from "../hooks/useAccessContext";
 
 /**
- * useIdentity (updated)
+ * useIdentity (final)
  *
- * Central identity resolver aligned to your current architecture:
- * - Auth user (base44.auth.me)
- * - Subscription status (from useSeasonAccess: mode/entitlement)
- * - "Children" == AthleteProfiles for the signed-in account
- * - Active child stored in localStorage (per account)
+ * Backward-compatible return contract for pages/components that expect:
+ * - user/subscription/children/activeChildId
  *
- * Notes:
- * - No base44.functions.* dependencies
- * - Avoids queryClient in effect deps (prevents reload loops)
- * - Keeps the same return contract your pages expect
+ * IMPORTANT:
+ * - "children" are AthleteProfiles in paid mode only
+ * - In demo mode, this keeps contract stable without forcing profile fetch/gating
  */
 export function useIdentity() {
   const queryClient = useQueryClient();
+  const access = useAccessContext();
 
-  // Use your canonical access model (demo vs paid)
-  const { isLoading: accessLoading, mode, accountId, entitlement } = useSeasonAccess();
+  // "user" object is not reliably available in your current codebase without base44.auth.me usage here.
+  // Keep it null to avoid reintroducing competing identity logic.
+  const user = null;
 
-  // 1) Auth user (best effort) — IMPORTANT: use unique cache key to avoid collisions with useSeasonAccess
-  const meQuery = useQuery({
-    queryKey: ["auth_me_identity"],
-    queryFn: async () => {
-      try {
-        // prefer strict call if available
-        if (typeof base44.auth?.me === "function") return await base44.auth.me();
-        return null;
-      } catch {
-        return null;
-      }
-    },
-    retry: false,
-    staleTime: 0
-  });
-
-  const user = meQuery.data || null;
-
-  // Subscription modeled consistently with the rest of your app
   const subscription = useMemo(() => {
-    if (!accountId) return { status: "inactive" };
-    if (mode === "paid") return { status: "active", entitlement: entitlement || null };
+    if (!access.accountId) return { status: "inactive" };
+    if (access.isPaid) return { status: "active", entitlement: access.entitlement || null };
     return { status: "inactive", entitlement: null };
-  }, [accountId, mode, entitlement]);
+  }, [access.accountId, access.isPaid, access.entitlement]);
 
-  // 2) Children == athlete profiles for account (active only)
-  const childrenQuery = useQuery({
-    queryKey: ["athleteProfiles", accountId],
-    enabled: !!accountId && !accessLoading,
-    retry: false,
-    queryFn: async () => {
-      try {
-        const rows = await base44.entities.AthleteProfile.filter({
-          account_id: accountId,
-          active: true
-        });
-        return Array.isArray(rows) ? rows : [];
-      } catch {
-        return [];
-      }
-    }
-  });
+  // Children list compatibility: only meaningful in paid mode
+  const children = useMemo(() => {
+    if (!access.isPaid) return [];
+    return access.athleteProfile ? [access.athleteProfile] : [];
+  }, [access.isPaid, access.athleteProfile]);
 
-  const children = childrenQuery.data || [];
+  const hasChild = (children || []).length > 0;
 
-  // Local storage active child (per account)
-  const activeChildKey = useMemo(() => {
-    const uid = accountId || "anon";
-    return `activeChildId:${uid}`;
-  }, [accountId]);
-
+  // Active child compatibility (single profile environment)
   const [activeChildId, setActiveChildId] = useState(null);
 
-  // Resolve active child when children list loads/changes
   useEffect(() => {
-    if (!accountId) {
+    if (!access.isPaid || !access.athleteProfile?.id) {
       setActiveChildId(null);
       return;
     }
-
-    const kids = Array.isArray(children) ? children : [];
-    if (kids.length === 0) {
-      setActiveChildId(null);
-      try {
-        window.localStorage.removeItem(activeChildKey);
-      } catch {}
-      return;
-    }
-
-    let saved = null;
-    try {
-      saved = window.localStorage.getItem(activeChildKey);
-    } catch {}
-
-    const savedValid = saved && kids.some((k) => String(k.id) === String(saved));
-    const fallback = kids[0]?.id ?? null;
-    const resolved = savedValid ? saved : fallback;
-
-    setActiveChildId(resolved ? String(resolved) : null);
-
-    try {
-      if (resolved) window.localStorage.setItem(activeChildKey, String(resolved));
-    } catch {}
-  }, [accountId, children, activeChildKey]);
-
-  const isAuthed = !!accountId;
-  const isSubscribed = subscription?.status === "active";
-  const hasChild = (children || []).length > 0;
+    setActiveChildId(String(access.athleteProfile.id));
+  }, [access.isPaid, access.athleteProfile]);
 
   const setActiveChild = useCallback(
     (id) => {
       const next = id ? String(id) : null;
       setActiveChildId(next);
-
-      try {
-        if (next) window.localStorage.setItem(activeChildKey, next);
-        else window.localStorage.removeItem(activeChildKey);
-      } catch {}
-
-      // Invalidate only the queries that are realistically dependent on "active child"
       try {
         queryClient.invalidateQueries({ queryKey: ["athleteIdentity"], exact: false });
         queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
       } catch {}
     },
-    [activeChildKey, queryClient]
+    [queryClient]
   );
 
-  const loading =
-    accessLoading ||
-    meQuery.isLoading ||
-    (isAuthed && childrenQuery.isLoading);
-
-  const error = meQuery.error || childrenQuery.error || null;
-
   return {
-    loading,
-    error,
+    loading: access.loading,
+    error: access.identityError || null,
 
     user,
     subscription,
 
-    isAuthed,
-    isSubscribed,
+    isAuthed: !!access.accountId,
+    isSubscribed: access.isPaid,
 
     children,
     hasChild,
 
     activeChildId,
-    setActiveChild
+    setActiveChild,
   };
 }
