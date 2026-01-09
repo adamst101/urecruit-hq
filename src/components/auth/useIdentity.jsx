@@ -25,12 +25,14 @@ export function useIdentity() {
   // Use your canonical access model (demo vs paid)
   const { isLoading: accessLoading, mode, accountId, entitlement } = useSeasonAccess();
 
-  // 1) Auth user (best effort)
+  // 1) Auth user (best effort) — IMPORTANT: use unique cache key to avoid collisions with useSeasonAccess
   const meQuery = useQuery({
-    queryKey: ["auth_me"],
+    queryKey: ["auth_me_identity"],
     queryFn: async () => {
       try {
-        return await base44.auth.me?.();
+        // prefer strict call if available
+        if (typeof base44.auth?.me === "function") return await base44.auth.me();
+        return null;
       } catch {
         return null;
       }
@@ -70,7 +72,6 @@ export function useIdentity() {
 
   // Local storage active child (per account)
   const activeChildKey = useMemo(() => {
-    // Use accountId (stable) instead of user object (can vary by shape)
     const uid = accountId || "anon";
     return `activeChildId:${uid}`;
   }, [accountId]);
@@ -124,7 +125,6 @@ export function useIdentity() {
       } catch {}
 
       // Invalidate only the queries that are realistically dependent on "active child"
-      // (don’t nuke the whole cache).
       try {
         queryClient.invalidateQueries({ queryKey: ["athleteIdentity"], exact: false });
         queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
