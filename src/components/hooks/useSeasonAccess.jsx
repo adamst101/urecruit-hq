@@ -15,10 +15,37 @@ import { base44 } from "../../api/base44Client";
  * Hardening:
  * - Use UTC year to avoid Jan 1 timezone edge cases
  * - Handle season_year stored as number OR string
- * - Work around Base44 filter operator variance (id/in/$in, etc.)
  * - Keep query keys stable
  * - Return a consistent contract used across pages (Subscribe/Profile/Discover/etc.)
  */
+
+// Try hard to extract a stable "account id" from base44.auth.me()
+function resolveAccountId(me) {
+  if (!me) return null;
+
+  // Common Base44 patterns
+  const candidates = [
+    me.account_id,
+    me.accountId,
+    me.account?.id,
+    me.account?._id,
+    me.account?.uuid,
+    me.org_id,
+    me.orgId,
+
+    // Last resort: user id (works only if your app uses user as account)
+    me.id,
+    me._id,
+    me.uuid
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c;
+    if (typeof c === "number" && Number.isFinite(c)) return String(c);
+  }
+  return null;
+}
+
 export function useSeasonAccess() {
   // Stable season years (UTC)
   const { currentYear, demoYear } = useMemo(() => {
@@ -26,7 +53,7 @@ export function useSeasonAccess() {
     const currentYearUTC = now.getUTCFullYear();
     return {
       currentYear: currentYearUTC,
-      demoYear: currentYearUTC - 1,
+      demoYear: currentYearUTC - 1
     };
   }, []);
 
@@ -42,10 +69,11 @@ export function useSeasonAccess() {
       } catch {
         return null;
       }
-    },
+    }
   });
 
-  const accountId = meQuery.data?.id || null;
+  const me = meQuery.data || null;
+  const accountId = resolveAccountId(me);
 
   // Only check entitlements when auth is resolved and we have an accountId
   const canCheckEntitlements = !!accountId && !meQuery.isLoading;
@@ -56,25 +84,24 @@ export function useSeasonAccess() {
     retry: false,
     staleTime: 0,
     queryFn: async () => {
-      // 1) Fast path: strict filter (works when Base44 supports equality filters well)
+      // 1) Fast path: strict filter
       try {
         const rows = await base44.entities.Entitlement.filter({
           account_id: accountId,
           season_year: currentYear,
-          status: "active",
+          status: "active"
         });
         if (Array.isArray(rows) && rows[0]) return rows[0];
       } catch {
         // fall through
       }
 
-      // 2) Fallback: season_year might be stored as string OR filter might be picky.
-      // Pull active entitlements for the account and match in memory.
+      // 2) Fallback: pull active entitlements then match in memory
       let allActive = [];
       try {
         allActive = await base44.entities.Entitlement.filter({
           account_id: accountId,
-          status: "active",
+          status: "active"
         });
       } catch {
         allActive = [];
@@ -86,7 +113,7 @@ export function useSeasonAccess() {
       });
 
       return match || null;
-    },
+    }
   });
 
   const loading =
@@ -112,8 +139,9 @@ export function useSeasonAccess() {
     // identity
     accountId,
     entitlement: entitlementQuery.data || null,
+    me, // optional debug, harmless
 
     // flags
-    isAuthenticated: !!accountId,
+    isAuthenticated: !!accountId
   };
 }
