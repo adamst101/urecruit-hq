@@ -13,29 +13,31 @@ import { readDemoMode } from "../hooks/demoMode";
  * - Paid users: Discover, Calendar, MyCamps, Profile
  * - Demo users: Discover, Calendar, Upgrade (Subscribe)
  *
- * Must respect demo override:
- * - If URL has ?mode=demo OR local demo mode is set, treat as demo nav
+ * Goal: prevent demo users from navigating to paid-only pages (MyCamps).
+ * HARDENING:
+ * - Respect demo override via ?mode=demo
+ * - Respect local demo mode set by setDemoMode()
  */
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const season = useSeasonAccess();
 
-  // URL override: ?mode=demo always wins
+  // URL override: ?mode=demo wins
   const urlMode = useMemo(() => {
     try {
-      const sp = new URLSearchParams(location.search || "");
+      const sp = new URLSearchParams(location?.search || "");
       const m = sp.get("mode");
       return m ? String(m).toLowerCase() : null;
     } catch {
       return null;
     }
-  }, [location.search]);
+  }, [location?.search]);
 
-  // Local demo (set by setDemoMode)
+  // Local demo flag (setDemoMode)
   const localDemo = useMemo(() => {
     try {
-      return readDemoMode();
+      return readDemoMode(); // { mode: "demo" | null, seasonYear }
     } catch {
       return { mode: null, seasonYear: null };
     }
