@@ -1,30 +1,30 @@
 // src/components/hooks/useWriteGate.js
 import { useMemo, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { createPageUrl } from "../../utils";
-import { useSeasonAccess } from "./useSeasonAccess";
-import { useAthleteIdentity } from "../useAthleteIdentity";
 
-import { readDemoMode, getDemoDefaults } from "./demoMode";
+import { createPageUrl } from "../../utils";
+import { useAccessContext } from "./useAccessContext";
+import { readDemoMode } from "./demoMode";
 
 /**
- * useWriteGate
+ * useWriteGate (fixed + aligned)
  *
- * Standardizes "where writes go":
- * - demo   => local writes allowed (no auth required)
- * - paid   => backend writes allowed ONLY when (accountId && athleteProfile)
- * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
+ * Single, consistent write gating:
+ * - Demo mode: allow LOCAL writes (even anonymous)
+ * - Paid mode: allow BACKEND writes only when (accountId && hasProfile)
+ * - Blocked: redirect to Profile (if authed) or Login/Home (if not)
  *
- * IMPORTANT:
- * - Demo must be deterministic across the app:
- *    URL ?mode=demo OR local demo mode => demo
- * - In demo mode, never depend on athlete identity loading
+ * Mode resolution priority:
+ * 1) URL ?mode=demo  (always wins)
+ * 2) localStorage demoMode (setDemoMode/readDemoMode)
+ * 3) accessContext.effectiveMode
  */
 export function useWriteGate() {
   const navigate = useNavigate();
   const loc = useLocation();
 
-  const season = useSeasonAccess();
+  const { effectiveMode: accessMode, accountId, hasProfile, identityLoading } =
+    useAccessContext();
 
   // 1) URL override: ?mode=demo always wins
   const urlMode = useMemo(() => {
@@ -39,29 +39,18 @@ export function useWriteGate() {
 
   // 2) Local demo contract (set by setDemoMode)
   const localDemo = useMemo(() => {
-    try {
-      return readDemoMode(); // { mode, seasonYear }
-    } catch {
-      return { mode: null, seasonYear: null };
-    }
+    return readDemoMode(); // { mode: "demo" | null, seasonYear: number|null }
   }, []);
 
-  // Keep defaults available if you need a safe fallback year somewhere
-  const demoDefaults = useMemo(() => getDemoDefaults(), []);
-
-  // Effective mode: demo wins if url says demo OR local says demo
+  // Effective mode
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
-    return season.mode === "paid" ? "paid" : "demo";
-  }, [urlMode, localDemo?.mode, season.mode]);
+    return accessMode === "paid" ? "paid" : "demo";
+  }, [urlMode, localDemo?.mode, accessMode]);
 
   const isPaidMode = effectiveMode === "paid";
-  const hasAccount = !!season.accountId;
-
-  // Only read identity when we truly need it (paid mode)
-  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
-  const hasProfile = !!athleteProfile;
+  const hasAccount = !!accountId;
 
   // Gate mode + reason
   const gate = useMemo(() => {
@@ -70,7 +59,7 @@ export function useWriteGate() {
       return { mode: "demo", reason: null };
     }
 
-    // Paid mode but not ready -> blocked
+    // Paid mode: must be authed + have profile
     if (!hasAccount) {
       return { mode: "blocked", reason: "Sign in required" };
     }
@@ -82,12 +71,12 @@ export function useWriteGate() {
     }
 
     return { mode: "paid", reason: null };
-  }, [isPaidMode, hasAccount, hasProfile, identityLoading]);
+  }, [isPaidMode, hasAccount, identityLoading, hasProfile]);
 
   /**
    * Default blocked behavior:
    * - Paid but missing profile => Profile
-   * - Missing account => Home
+   * - Missing account => Login (prefer) or Home (fallback)
    */
   const defaultBlocked = useCallback(
     (opts = {}) => {
@@ -96,14 +85,18 @@ export function useWriteGate() {
           ? opts.next
           : createPageUrl("Discover");
 
+      // If we're aiming for paid writes and user is authed, push them to Profile completion
       if (isPaidMode && hasAccount) {
         navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
-          replace: false
+          replace: false,
         });
         return;
       }
 
-      navigate(createPageUrl("Home"), { replace: false });
+      // Otherwise, get them to auth front door
+      navigate(createPageUrl("Login") + `?next=${encodeURIComponent(next)}`, {
+        replace: false,
+      });
     },
     [navigate, isPaidMode, hasAccount]
   );
@@ -122,9 +115,9 @@ export function useWriteGate() {
   );
 
   /**
-   * Helper for actions that MUST be paid.
-   * - If in demo => Subscribe
-   * - If paid but blocked => Profile (or Home if not authed)
+   * Helper for actions that MUST be paid:
+   * - Demo => Subscribe (and come back)
+   * - Blocked in paid => Profile (or Login)
    */
   const requirePaid = useCallback(
     (opts = {}) => {
@@ -134,6 +127,9 @@ export function useWriteGate() {
           : createPageUrl("Discover");
       const source = opts?.source ? String(opts.source) : "write_gate";
 
+      // Compute current year in UTC (stable for season switching)
+      const currentYearUTC = new Date().getUTCFullYear();
+
       if (gate.mode === "paid") return true;
 
       if (gate.mode === "demo") {
@@ -141,7 +137,7 @@ export function useWriteGate() {
           createPageUrl("Subscribe") +
             `?force=1&source=${encodeURIComponent(source)}&next=${encodeURIComponent(
               next
-            )}&season=${encodeURIComponent(String(season.currentYear || ""))}`,
+            )}&season=${encodeURIComponent(String(currentYearUTC))}`,
           { replace: false }
         );
         return false;
@@ -150,21 +146,15 @@ export function useWriteGate() {
       defaultBlocked({ next });
       return false;
     },
-    [gate.mode, navigate, season.currentYear, defaultBlocked]
+    [gate.mode, navigate, defaultBlocked]
   );
 
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
     effectiveMode,
-
-    // optional debug signals if you ever need them
-    demoSeasonYear:
-      localDemo?.mode === "demo"
-        ? localDemo.seasonYear || demoDefaults.demoSeasonYear
-        : null,
-
+    demoSeasonYear: localDemo?.seasonYear || null, // optional debug/use
     write,
-    requirePaid
+    requirePaid,
   };
 }
