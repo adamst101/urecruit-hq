@@ -1,35 +1,89 @@
 // src/components/hooks/useWriteGate.js
-import { useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMemo, useCallback } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "../../utils";
-import { useAccessContext } from "./useAccessContext";
+import { useSeasonAccess } from "./useSeasonAccess";
+import { useAthleteIdentity } from "../useAthleteIdentity";
+
+import { readDemoMode } from "./demoMode";
 
 /**
- * useWriteGate (final)
+ * useWriteGate
  *
- * Standardizes where writes go:
- * - demo => local writes allowed (no auth required)
- * - paid => backend writes allowed ONLY when (accountId && athleteProfile)
- * - blocked => redirect to Subscribe/Profile/Login depending on state
+ * Standardizes "where writes go":
+ * - demo   => local writes allowed (no auth required)
+ * - paid   => backend writes allowed ONLY when (accountId && athleteProfile)
+ * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
+ *
+ * Deterministic mode rules:
+ *  1) URL ?mode=demo always wins
+ *  2) localStorage demo mode (setDemoMode/readDemoMode) next
+ *  3) else useSeasonAccess.mode ("paid" if entitled for current season, else "demo")
+ *
+ * In demo mode, never depend on athlete identity loading.
  */
 export function useWriteGate() {
   const navigate = useNavigate();
-  const access = useAccessContext();
+  const loc = useLocation();
 
-  const hasAccount = !!access.accountId;
-  const hasProfile = !!access.athleteProfile;
+  const season = useSeasonAccess();
 
-  const gate =
-    !access.isPaid
-      ? { mode: "demo", reason: null }
-      : !hasAccount
-        ? { mode: "blocked", reason: "Sign in required" }
-        : access.identityLoading
-          ? { mode: "blocked", reason: "Loading profile" }
-          : !hasProfile
-            ? { mode: "blocked", reason: "Complete athlete profile" }
-            : { mode: "paid", reason: null };
+  // 1) URL override: ?mode=demo always wins
+  const urlMode = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(loc.search || "");
+      const m = sp.get("mode");
+      return m ? String(m).toLowerCase() : null;
+    } catch {
+      return null;
+    }
+  }, [loc.search]);
 
+  // 2) Local demo contract (set by setDemoMode)
+  const localDemo = useMemo(() => {
+    return readDemoMode(); // { mode: "demo"|null, seasonYear: number|null }
+  }, []);
+
+  // Effective mode
+  const effectiveMode = useMemo(() => {
+    if (urlMode === "demo") return "demo";
+    if (localDemo?.mode === "demo") return "demo";
+    return season.mode === "paid" ? "paid" : "demo";
+  }, [urlMode, localDemo?.mode, season.mode]);
+
+  const isPaidMode = effectiveMode === "paid";
+  const hasAccount = !!season.accountId;
+
+  // Only relevant for paid-mode backend writes
+  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
+  const hasProfile = !!athleteProfile;
+
+  // Gate mode + reason
+  const gate = useMemo(() => {
+    // Demo mode: always allow local writes (even anonymous)
+    if (!isPaidMode) {
+      return { mode: "demo", reason: null };
+    }
+
+    // Paid mode but not ready -> blocked
+    if (!hasAccount) {
+      return { mode: "blocked", reason: "Sign in required" };
+    }
+    if (identityLoading) {
+      return { mode: "blocked", reason: "Loading profile" };
+    }
+    if (!hasProfile) {
+      return { mode: "blocked", reason: "Complete athlete profile" };
+    }
+
+    return { mode: "paid", reason: null };
+  }, [isPaidMode, hasAccount, hasProfile, identityLoading]);
+
+  /**
+   * Default blocked behavior:
+   * - Paid but missing profile => Profile
+   * - Missing account => Home (sign in)
+   */
   const defaultBlocked = useCallback(
     (opts = {}) => {
       const next =
@@ -37,7 +91,7 @@ export function useWriteGate() {
           ? opts.next
           : createPageUrl("Discover");
 
-      if (access.isPaid && hasAccount) {
+      if (isPaidMode && hasAccount) {
         navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
           replace: false,
         });
@@ -46,27 +100,33 @@ export function useWriteGate() {
 
       navigate(createPageUrl("Home"), { replace: false });
     },
-    [navigate, access.isPaid, hasAccount]
+    [navigate, isPaidMode, hasAccount]
   );
 
+  // Main router for writes
   const write = useCallback(
     async ({ demo, paid, blocked, next }) => {
       if (gate.mode === "paid") return paid ? await paid() : undefined;
       if (gate.mode === "demo") return demo ? await demo() : undefined;
 
+      // blocked
       if (blocked) return await blocked(gate.reason);
       return defaultBlocked({ next });
     },
     [gate.mode, gate.reason, defaultBlocked]
   );
 
+  /**
+   * Helper for actions that MUST be paid.
+   * - If in demo => Subscribe
+   * - If paid but blocked => Profile (or Home if not authed)
+   */
   const requirePaid = useCallback(
     (opts = {}) => {
       const next =
         typeof opts?.next === "string" && opts.next.trim()
           ? opts.next
           : createPageUrl("Discover");
-
       const source = opts?.source ? String(opts.source) : "write_gate";
 
       if (gate.mode === "paid") return true;
@@ -74,7 +134,9 @@ export function useWriteGate() {
       if (gate.mode === "demo") {
         navigate(
           createPageUrl("Subscribe") +
-            `?force=1&source=${encodeURIComponent(source)}&next=${encodeURIComponent(next)}`,
+            `?force=1&source=${encodeURIComponent(source)}&next=${encodeURIComponent(
+              next
+            )}&season=${encodeURIComponent(String(season.currentYear || ""))}`,
           { replace: false }
         );
         return false;
@@ -83,13 +145,13 @@ export function useWriteGate() {
       defaultBlocked({ next });
       return false;
     },
-    [gate.mode, navigate, defaultBlocked]
+    [gate.mode, navigate, season.currentYear, defaultBlocked]
   );
 
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
-    effectiveMode: access.effectiveMode,
+    effectiveMode, // debug signal
     write,
     requirePaid,
   };
