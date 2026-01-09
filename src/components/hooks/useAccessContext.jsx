@@ -15,6 +15,7 @@ import { readDemoMode, getDemoDefaults } from "./demoMode";
  * - canWriteBackend (paid + authed + hasProfile)
  * - accountId / entitlement
  * - hasProfile
+ * - loading (prevents early redirects)
  *
  * Precedence:
  * 1) URL ?mode=demo (force demo)
@@ -24,9 +25,11 @@ import { readDemoMode, getDemoDefaults } from "./demoMode";
 export function useAccessContext() {
   const loc = useLocation();
   const season = useSeasonAccess();
+
   const { athleteProfile, isLoading: identityLoading, isError: identityError } =
     useAthleteIdentity();
 
+  // --- URL override ---
   const urlMode = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc.search || "");
@@ -37,37 +40,52 @@ export function useAccessContext() {
     }
   }, [loc.search]);
 
-  const localDemo = useMemo(() => {
+  // --- Local demo mode (READ EVERY RENDER; same-tab changes won't trigger storage event) ---
+  const localDemo = (() => {
     try {
-      return readDemoMode(); // { mode, seasonYear }
+      return readDemoMode(); // { mode: "demo" | null, seasonYear: number|null }
     } catch {
       return { mode: null, seasonYear: null };
     }
-  }, []);
+  })();
 
   const defaults = useMemo(() => getDemoDefaults(), []);
 
+  // --- Effective mode (single truth) ---
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
     return season.mode === "paid" ? "paid" : "demo";
   }, [urlMode, localDemo?.mode, season.mode]);
 
+  // --- Season year selection ---
   const seasonYear = useMemo(() => {
     if (effectiveMode === "paid") return season.currentYear;
-    // demo: use locally stored seasonYear if present, else default demoYear
-    return (
-      (Number.isFinite(Number(localDemo?.seasonYear)) && Number(localDemo.seasonYear)) ||
-      defaults.demoSeasonYear ||
-      season.demoYear
-    );
-  }, [effectiveMode, localDemo?.seasonYear, defaults.demoSeasonYear, season.currentYear, season.demoYear]);
+
+    const localYear = Number(localDemo?.seasonYear);
+    if (Number.isFinite(localYear) && localYear > 1900) return localYear;
+
+    return defaults.demoSeasonYear || season.demoYear;
+  }, [
+    effectiveMode,
+    localDemo?.seasonYear,
+    defaults.demoSeasonYear,
+    season.currentYear,
+    season.demoYear,
+  ]);
 
   const hasAccount = !!season.accountId;
   const hasProfile = !!athleteProfile;
 
+  // --- Loading (critical to stop premature redirects) ---
+  const accessLoading = !!season.isLoading || !!season.loading;
+
+  // Only consider identity loading when in paid mode (demo should not wait on profile)
+  const loading =
+    accessLoading || (effectiveMode === "paid" && hasAccount && identityLoading);
+
+  // --- Capability ---
   const canWriteBackend = useMemo(() => {
-    // backend writes only allowed in paid mode + authed + profile loaded/present
     if (effectiveMode !== "paid") return false;
     if (!hasAccount) return false;
     if (identityLoading) return false;
@@ -79,6 +97,10 @@ export function useAccessContext() {
     // canonical
     effectiveMode, // "demo" | "paid"
     seasonYear,
+
+    // loading
+    accessLoading,
+    loading,
 
     // identity/subscription
     accountId: season.accountId || null,
