@@ -17,20 +17,23 @@ import { readDemoMode } from "../hooks/demoMode";
  * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
  *
  * Demo override:
- * - If URL has ?mode=demo OR localStorage demo mode is set, bypass paid/profile gating
+ * - URL ?mode=demo OR localStorage demo mode (setDemoMode) bypasses paid/profile gating
  */
 export default function RouteGuard({
   requireAuth = false,
   requirePaid = false,
   requireProfile = false,
-  children
+  children,
 }) {
   const nav = useNavigate();
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
-    useAthleteIdentity();
+  const {
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError,
+  } = useAthleteIdentity();
 
   const currentPath = useMemo(() => {
     return (loc?.pathname || "") + (loc?.search || "");
@@ -38,31 +41,27 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // URL override (critical for sharable demo links)
-  const urlForcesDemo = useMemo(() => {
+  // Demo override: URL wins, else localStorage demo mode
+  const forceDemo = useMemo(() => {
+    // 1) URL override
     try {
       const sp = new URLSearchParams(loc?.search || "");
-      return sp.get("mode") === "demo";
+      if (sp.get("mode") === "demo") return true;
+    } catch {}
+
+    // 2) LocalStorage demo mode
+    try {
+      const { mode: localMode } = readDemoMode(); // { mode, seasonYear }
+      return localMode === "demo";
     } catch {
       return false;
     }
   }, [loc?.search]);
 
-  // Local demo override (critical for "View Demo" flows that set localStorage)
-  const localForcesDemo = useMemo(() => {
-    try {
-      return readDemoMode()?.mode === "demo";
-    } catch {
-      return false;
-    }
-  }, []);
-
-  const forceDemo = urlForcesDemo || localForcesDemo;
-
-  // Only treat as paid when NOT demo-forced
+  // "Paid" only when not in demo override and entitlement says paid
   const isPaid = !forceDemo && mode === "paid";
 
-  // Only require identity (athleteProfile) for paid/profile gated pages
+  // Only require athlete identity when profile is required AND we're actually in paid mode
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
@@ -82,8 +81,7 @@ export default function RouteGuard({
     // If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
       safeReplace(
-        createPageUrl("Profile") +
-          `?next=${nextParam}&err=profile_load_failed`
+        createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`
       );
       return;
     }
@@ -94,7 +92,7 @@ export default function RouteGuard({
       return;
     }
 
-    // 2) Paid required (ignored in demo override)
+    // 2) Paid required (bypassed in demo override)
     if (requirePaid && !isPaid) {
       safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
@@ -110,17 +108,17 @@ export default function RouteGuard({
     }
   }, [
     loading,
+    needsIdentity,
+    identityError,
     requireAuth,
     requirePaid,
     requireProfile,
-    needsIdentity,
-    identityError,
     accountId,
     isPaid,
     athleteProfile,
     nextParam,
+    loc?.pathname,
     safeReplace,
-    loc?.pathname
   ]);
 
   if (loading) {
