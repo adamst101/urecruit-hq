@@ -16,9 +16,8 @@ import { readDemoMode } from "./demoMode";
  * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
  *
  * IMPORTANT:
- * - Demo must be deterministic across the app:
- *     URL ?mode=demo wins, else local demoMode wins, else season.mode drives.
- * - In demo mode, never depend on athlete identity loading for allowing demo writes.
+ * - Demo must be deterministic across the app (URL / local demo mode wins over paid)
+ * - In demo mode, never depend on athlete identity loading
  */
 export function useWriteGate() {
   const navigate = useNavigate();
@@ -37,12 +36,12 @@ export function useWriteGate() {
     }
   }, [loc.search]);
 
-  // 2) Local demo contract (set by setDemoMode / clearDemoMode)
+  // 2) Local demo contract (set by setDemoMode / cleared by clearDemoMode)
   const localDemo = useMemo(() => {
-    return readDemoMode(); // { mode: "demo" | null, seasonYear: number|null }
+    return readDemoMode(); // { mode: "demo" | null, seasonYear: number | null }
   }, []);
 
-  // Effective mode: URL demo > local demo > season access
+  // Effective mode: demo wins if url says demo OR local says demo
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
@@ -52,8 +51,7 @@ export function useWriteGate() {
   const isPaidMode = effectiveMode === "paid";
   const hasAccount = !!season.accountId;
 
-  // Only read athlete identity when we truly need it (paid mode).
-  // In demo mode, we should not block demo writes due to identity loading.
+  // Only read identity when we truly need it (paid mode)
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
   const hasProfile = !!athleteProfile;
 
@@ -81,29 +79,25 @@ export function useWriteGate() {
   /**
    * Default blocked behavior:
    * - Paid but missing profile => Profile
-   * - Missing account => Login
+   * - Missing account => Home (sign in)
    */
   const defaultBlocked = useCallback(
     (opts = {}) => {
       const next =
         typeof opts?.next === "string" && opts.next.trim()
           ? opts.next
-          : (loc?.pathname || createPageUrl("Discover")) + (loc?.search || "");
+          : createPageUrl("Discover");
 
-      // Paid mode + authed => profile completion
       if (isPaidMode && hasAccount) {
         navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
-          replace: false,
+          replace: false
         });
         return;
       }
 
-      // Otherwise, ask for login
-      navigate(createPageUrl("Login") + `?next=${encodeURIComponent(next)}`, {
-        replace: false,
-      });
+      navigate(createPageUrl("Home"), { replace: false });
     },
-    [navigate, isPaidMode, hasAccount, loc?.pathname, loc?.search]
+    [navigate, isPaidMode, hasAccount]
   );
 
   // Main router for writes
@@ -122,15 +116,14 @@ export function useWriteGate() {
   /**
    * Helper for actions that MUST be paid.
    * - If in demo => Subscribe
-   * - If paid but blocked => Profile/Login depending on state
+   * - If paid but blocked => Profile (or Home if not authed)
    */
   const requirePaid = useCallback(
     (opts = {}) => {
       const next =
         typeof opts?.next === "string" && opts.next.trim()
           ? opts.next
-          : (loc?.pathname || createPageUrl("Discover")) + (loc?.search || "");
-
+          : createPageUrl("Discover");
       const source = opts?.source ? String(opts.source) : "write_gate";
 
       if (gate.mode === "paid") return true;
@@ -149,21 +142,14 @@ export function useWriteGate() {
       defaultBlocked({ next });
       return false;
     },
-    [
-      gate.mode,
-      navigate,
-      season.currentYear,
-      defaultBlocked,
-      loc?.pathname,
-      loc?.search,
-    ]
+    [gate.mode, navigate, season.currentYear, defaultBlocked]
   );
 
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
-    effectiveMode, // debug signal
+    effectiveMode, // optional debug signal
     write,
-    requirePaid,
+    requirePaid
   };
 }
