@@ -6,13 +6,14 @@ import Checkout from './pages/Checkout';
 import DemoSetup from './pages/DemoSetup';
 import Discover from './pages/Discover';
 import Home from './pages/Home';
+import Index from './pages/Index';
 import LogoutDebug from './pages/LogoutDebug';
 import MyCamps from './pages/MyCamps';
 import Profile from './pages/Profile';
 import Subscribe from './pages/Subscribe';
 import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
-import Index from './pages/Index';
+import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import __Layout from './Layout.jsx';
 
 
@@ -25,13 +26,14 @@ export const PAGES = {
     "DemoSetup": DemoSetup,
     "Discover": Discover,
     "Home": Home,
+    "Index": Index,
     "LogoutDebug": LogoutDebug,
     "MyCamps": MyCamps,
     "Profile": Profile,
     "Subscribe": Subscribe,
     "TestFunctions": TestFunctions,
     "Upgrade": Upgrade,
-    "Index": Index,
+    "UserNotRegisteredError": UserNotRegisteredError,
 }
 
 export const pagesConfig = {
