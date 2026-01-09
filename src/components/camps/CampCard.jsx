@@ -26,15 +26,14 @@ export default function CampCard({
   isRegistered,
   onFavoriteToggle,
   onClick,
-  // optional flags for demo/paid UI (won’t break existing callers)
-  mode, // "demo" | "paid" (optional)
-  disabledFavorite // optional: force-disable favorite button
+  mode, // "demo" | "paid"
+  disabledFavorite,
 }) {
   const division = school?.division || school?.school_division || null;
   const sportName = sport?.sport_name || sport?.name || null;
 
   const priceIsNumber = typeof camp?.price === "number" && !Number.isNaN(camp.price);
-  const showPrice = priceIsNumber; // show Free / $X if number provided
+  const showPrice = priceIsNumber;
 
   const isDemo = mode === "demo";
 
@@ -51,16 +50,12 @@ export default function CampCard({
         if (e.key === "Enter" || e.key === " ") onClick?.();
       }}
     >
-      {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             {division && <Badge className="bg-slate-900 text-white text-xs">{division}</Badge>}
-
             {sportName && <span className="text-xs text-slate-500 font-medium">{sportName}</span>}
-
             {isDemo && <Badge variant="outline" className="text-xs">Demo</Badge>}
-
             {isRegistered && <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>}
           </div>
 
@@ -70,7 +65,6 @@ export default function CampCard({
           <div className="text-sm text-slate-600 truncate">{camp?.camp_name || "Camp"}</div>
         </div>
 
-        {/* Favorite */}
         <Button
           type="button"
           variant="ghost"
@@ -78,12 +72,18 @@ export default function CampCard({
           disabled={!!disabledFavorite}
           onClick={(e) => {
             e.preventDefault();
-            e.stopPropagation(); // ✅ do NOT navigate when favoriting
+            e.stopPropagation();
             if (disabledFavorite) return;
             onFavoriteToggle?.();
           }}
           aria-label={isFavorite ? "Remove favorite" : "Add favorite"}
-          title={disabledFavorite ? "Favorites are disabled" : isFavorite ? "Remove favorite" : "Add favorite"}
+          title={
+            disabledFavorite
+              ? "Favorites are disabled"
+              : isFavorite
+                ? "Remove favorite"
+                : "Add favorite"
+          }
         >
           <Star
             className={cn(
@@ -94,13 +94,14 @@ export default function CampCard({
         </Button>
       </div>
 
-      {/* Details */}
       <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-slate-400" />
           <span>
             {safeFormatDate(camp?.start_date)}
-            {camp?.end_date && camp?.end_date !== camp?.start_date ? `–${safeFormatDate(camp?.end_date)}` : ""}
+            {camp?.end_date && camp?.end_date !== camp?.start_date
+              ? `–${safeFormatDate(camp?.end_date)}`
+              : ""}
           </span>
         </div>
 
@@ -119,7 +120,6 @@ export default function CampCard({
         )}
       </div>
 
-      {/* Positions */}
       {Array.isArray(positions) && positions.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {positions.slice(0, 6).map((p, idx) => {
