@@ -1,5 +1,5 @@
 // src/pages/Home.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
@@ -9,13 +9,10 @@ import { createPageUrl } from "../utils";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
-
-const POST_LOGIN_NEXT_KEY = "post_login_next_v1";
 
 function trackEvent(payload) {
   try {
@@ -24,55 +21,38 @@ function trackEvent(payload) {
 }
 
 /**
- * Base44 auth method names vary by template/version.
- * We try the likely ones, in order.
+ * Base44-standard login redirect.
+ * - Do NOT rely on window.base44 (it’s typically undefined in Base44 apps).
+ * - Use base44.auth.redirectToLogin(nextUrl).  :contentReference[oaicite:1]{index=1}
  */
-async function base44RedirectToLogin() {
-  const a = base44?.auth;
+function base44LoginRedirect(nextUrl) {
+  // Debug helper (optional): exposes SDK so you can inspect in console if you want
+  try {
+    if (typeof window !== "undefined") window.__B44 = base44;
+  } catch {}
 
-  // Most common in Base44 templates (OAuth redirect)
-  if (a && typeof a.redirectToLogin === "function") return a.redirectToLogin();
+  const auth = base44?.auth;
 
-  // Some templates use these names
-  if (a && typeof a.login === "function") return a.login();
-  if (a && typeof a.signIn === "function") return a.signIn();
+  // Preferred / documented approach
+  if (auth && typeof auth.redirectToLogin === "function") {
+    auth.redirectToLogin(nextUrl);
+    return true;
+  }
 
-  // If none exist, we can't trigger Base44 auth
-  throw new Error(
-    "No working Base44 login redirect method found on base44.auth. Ensure 'Use the default Base44 OAuth' is selected AND saved (Update)."
-  );
+  // Some apps expose a slightly different name—keep a safe fallback
+  if (auth && typeof auth.login === "function") {
+    auth.login({ nextUrl });
+    return true;
+  }
+
+  return false;
 }
 
 export default function Home() {
   const nav = useNavigate();
-
-  const season = useSeasonAccess();
-  const seasonRef = useRef(season);
-
-  useEffect(() => {
-    seasonRef.current = season;
-  }, [season]);
-
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
-  const [loginErr, setLoginErr] = useState("");
-
-  // On return from Base44 OAuth: if authenticated and we have a stored next, go there.
-  useEffect(() => {
-    if (!season?.accountId) return;
-
-    let next = null;
-    try {
-      next = sessionStorage.getItem(POST_LOGIN_NEXT_KEY);
-    } catch {}
-
-    if (next) {
-      try {
-        sessionStorage.removeItem(POST_LOGIN_NEXT_KEY);
-      } catch {}
-      nav(next, { replace: true });
-    }
-  }, [season?.accountId, nav]);
+  const [authError, setAuthError] = useState(null);
 
   useEffect(() => {
     const key = "evt_home_viewed_v22";
@@ -83,49 +63,36 @@ export default function Home() {
 
     trackEvent({
       event_name: "home_view",
-      source: "home",
-      auth_state: season?.accountId ? "authed" : "anon",
-      mode: season?.mode === "paid" ? "paid" : "not_paid"
+      source: "home"
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Access Demo (no login required)
   function handleTryDemo() {
-    setLoginErr("");
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
     setDemoMode(demoSeasonYear);
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
-  // Log in (Base44 OAuth redirect) -> return -> Discover (paid flow)
-  async function handleLoginOnly() {
-    setLoginErr("");
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
+  // Log in -> redirect to Base44 hosted login -> returns to Discover
+  function handleLoginOnly() {
+    setAuthError(null);
 
-    // If already authed (common when you're logged into Base44 builder), just go straight.
-    if (seasonRef.current?.accountId) {
-      nav(createPageUrl("Discover"));
-      return;
-    }
+    const nextUrl = createPageUrl("Discover"); // after login, land here
+    trackEvent({ event_name: "cta_login_click", source: "home", next: nextUrl });
 
-    // Store intended destination for post-login redirect
-    try {
-      sessionStorage.setItem(POST_LOGIN_NEXT_KEY, createPageUrl("Discover"));
-    } catch {}
-
-    try {
-      await base44RedirectToLogin();
-      // redirect happens; code usually won't continue
-    } catch (e) {
-      setLoginErr(String(e?.message || e));
+    const ok = base44LoginRedirect(nextUrl);
+    if (!ok) {
+      setAuthError(
+        "Login isn’t configured yet. In Base44: enable OAuth/login provider AND use base44.auth.redirectToLogin(nextUrl)."
+      );
+      trackEvent({ event_name: "cta_login_failed_no_method", source: "home" });
     }
   }
 
-  // View pricing / Sign-Up -> Subscribe
+  // View pricing / Sign-Up -> Subscribe (your paywall page)
   function handlePricingSignup() {
-    setLoginErr("");
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     nav(createPageUrl("Subscribe") + `?source=home_pricing`);
   }
@@ -172,7 +139,8 @@ export default function Home() {
                   <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">URecruit HQ</div>
                 )}
 
-                <div className="mt-2 text-base md:text-lg font-bold text-ink text-center md:text-left leading-tight">
+                {/* Tagline */}
+                <div className="mt-2 text-sm md:text-lg font-bold text-ink text-center md:text-left leading-tight">
                   Your college recruiting camp planning HQ
                 </div>
 
@@ -194,10 +162,10 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Auth error banner */}
-            {loginErr && (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 p-3 text-sm">
-                {loginErr}
+            {/* Auth error (only shows if no method exists) */}
+            {authError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                {authError}
               </div>
             )}
 
@@ -223,7 +191,7 @@ export default function Home() {
               ))}
             </div>
 
-            {/* How it works strip */}
+            {/* How it works */}
             <div className="rounded-xl border border-default bg-white p-4">
               <div className="grid md:grid-cols-3 gap-4">
                 {howStrip.map((x) => (
@@ -257,4 +225,3 @@ export default function Home() {
     </div>
   );
 }
-
