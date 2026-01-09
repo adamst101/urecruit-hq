@@ -1,10 +1,4 @@
 // src/components/hooks/demoFavorites.js
-
-/**
- * Demo favorites are intentionally client-only.
- * Scope by demoProfileId AND seasonYear to avoid cross-season bleed.
- */
-
 function normId(x) {
   if (x == null) return null;
   return String(x);
@@ -22,7 +16,6 @@ export function getDemoFavorites(demoProfileId, seasonYear) {
     const arr = raw ? JSON.parse(raw) : [];
     return Array.isArray(arr) ? arr.map(normId).filter(Boolean) : [];
   } catch {
-    // corrupted or blocked storage → fail safe
     return [];
   }
 }
@@ -37,13 +30,8 @@ export function toggleDemoFavorite(demoProfileId, campId, seasonYear) {
     : [...existing, id];
 
   try {
-    localStorage.setItem(
-      keyFor(demoProfileId, seasonYear),
-      JSON.stringify(next)
-    );
-  } catch {
-    // ignore quota / private mode errors
-  }
+    localStorage.setItem(keyFor(demoProfileId, seasonYear), JSON.stringify(next));
+  } catch {}
 
   return next;
 }
