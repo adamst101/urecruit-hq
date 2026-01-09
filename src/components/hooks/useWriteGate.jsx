@@ -36,10 +36,8 @@ export function useWriteGate() {
     }
   }, [loc.search]);
 
-  // 2) Local demo contract (set by setDemoMode / cleared by clearDemoMode)
-  const localDemo = useMemo(() => {
-    return readDemoMode(); // { mode: "demo" | null, seasonYear: number | null }
-  }, []);
+  // 2) Local demo contract (set by setDemoMode / clearDemoMode)
+  const localDemo = useMemo(() => readDemoMode(), []);
 
   // Effective mode: demo wins if url says demo OR local says demo
   const effectiveMode = useMemo(() => {
