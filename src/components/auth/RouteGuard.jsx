@@ -16,8 +16,9 @@ import { readDemoMode } from "../hooks/demoMode";
  * - Allow demo browsing where desired
  * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
  *
- * Demo override:
- * - If URL has ?mode=demo OR localStorage demo mode is set, bypass paid/profile gating
+ * Rules:
+ * - URL override (?mode=demo) always wins
+ * - Local demo mode (setDemoMode) is the secondary override
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -41,7 +42,7 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // 1) URL override: ?mode=demo always wins
+  // URL demo override
   const urlForcesDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
@@ -51,11 +52,11 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
-  // 2) Local demo mode (set by setDemoMode)
+  // Local demo override (persisted)
   const localDemo = useMemo(() => {
     try {
-      const dm = readDemoMode();
-      return dm?.mode === "demo";
+      const d = readDemoMode(); // { mode, seasonYear }
+      return d?.mode === "demo";
     } catch {
       return false;
     }
@@ -63,10 +64,10 @@ export default function RouteGuard({
 
   const forceDemo = urlForcesDemo || localDemo;
 
-  // Effective paid state (demo override defeats paid gating)
+  // Paid means: seasonAccess says paid AND we are not forcing demo
   const isPaid = !forceDemo && mode === "paid";
 
-  // Only require identity when profile is required AND we’re truly in paid mode
+  // Only require identity when profile gating applies in paid mode
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
@@ -83,8 +84,7 @@ export default function RouteGuard({
     // If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
       safeReplace(
-        createPageUrl("Profile") +
-          `?next=${nextParam}&err=profile_load_failed`
+        createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`
       );
       return;
     }
