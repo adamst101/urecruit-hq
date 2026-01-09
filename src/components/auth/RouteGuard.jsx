@@ -1,12 +1,11 @@
 // src/components/auth/RouteGuard.jsx
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
 import { createPageUrl } from "../../utils";
 import { useSeasonAccess } from "../hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../useAthleteIdentity";
-import { readDemoMode } from "../hooks/demoMode";
 
 /**
  * RouteGuard
@@ -16,9 +15,8 @@ import { readDemoMode } from "../hooks/demoMode";
  * - Allow demo browsing where desired
  * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
  *
- * Demo rules:
- * - URL ?mode=demo always wins
- * - localStorage demo mode (setDemoMode/readDemoMode) is honored
+ * Notes:
+ * - If URL has ?mode=demo, bypass paid/profile gating (lets demo always work)
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -42,8 +40,8 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // URL demo override
-  const urlForceDemo = useMemo(() => {
+  // Demo override
+  const forceDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
       return sp.get("mode") === "demo";
@@ -52,32 +50,19 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
-  // Local demo mode (setDemoMode)
-  const localForceDemo = useMemo(() => {
-    try {
-      const x = readDemoMode();
-      return x?.mode === "demo";
-    } catch {
-      return false;
-    }
-  }, []);
-
-  // Demo wins if either URL or local demo says demo
-  const forceDemo = urlForceDemo || localForceDemo;
-
-  // Paid is only true if NOT forced demo and season says paid
   const isPaid = !forceDemo && mode === "paid";
-
-  // Only require identity when we are truly enforcing profile in paid mode
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
 
-  const safeReplace = (to) => {
-    if (!to) return;
-    if (to === currentPath) return;
-    nav(to, { replace: true });
-  };
+  const safeReplace = useCallback(
+    (to) => {
+      if (!to) return;
+      if (to === currentPath) return;
+      nav(to, { replace: true });
+    },
+    [nav, currentPath]
+  );
 
   useEffect(() => {
     if (loading) return;
@@ -121,8 +106,7 @@ export default function RouteGuard({
     isPaid,
     athleteProfile,
     nextParam,
-    currentPath,
-    nav,
+    safeReplace,
     loc?.pathname
   ]);
 
