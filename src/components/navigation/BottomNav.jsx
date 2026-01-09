@@ -5,50 +5,20 @@ import { CalendarDays, Compass, Lock, User } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 import { createPageUrl } from "../../utils";
-import { useSeasonAccess } from "../hooks/useSeasonAccess";
-import { readDemoMode } from "../hooks/demoMode";
+import { useAccessContext } from "../hooks/useAccessContext";
 
 /**
- * BottomNav
- * - Paid users: Discover, Calendar, MyCamps, Profile
- * - Demo users: Discover, Calendar, Upgrade (Subscribe)
- *
- * IMPORTANT:
- * - Demo override must match RouteGuard/useWriteGate:
- *   URL ?mode=demo OR local demo mode => treat as demo for nav.
+ * BottomNav (final)
+ * - Paid: Discover, Calendar, MyCamps, Profile
+ * - Demo: Discover, Calendar, Upgrade
  */
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { mode: seasonMode } = useSeasonAccess();
-
-  // URL demo override
-  const urlForcesDemo = useMemo(() => {
-    try {
-      const sp = new URLSearchParams(location?.search || "");
-      return sp.get("mode") === "demo";
-    } catch {
-      return false;
-    }
-  }, [location?.search]);
-
-  // Local demo override
-  const localDemo = useMemo(() => {
-    try {
-      const d = readDemoMode();
-      return d?.mode === "demo";
-    } catch {
-      return false;
-    }
-  }, []);
-
-  const effectiveMode = useMemo(() => {
-    if (urlForcesDemo || localDemo) return "demo";
-    return seasonMode === "paid" ? "paid" : "demo";
-  }, [seasonMode, urlForcesDemo, localDemo]);
+  const access = useAccessContext();
 
   const items = useMemo(() => {
-    if (effectiveMode === "paid") {
+    if (access.isPaid) {
       return [
         { key: "Discover", label: "Discover", icon: Compass, to: createPageUrl("Discover") },
         { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") },
@@ -57,7 +27,6 @@ export default function BottomNav() {
       ];
     }
 
-    // Demo mode: Upgrade goes to Subscribe and carries user back to Discover
     const upgradeUrl =
       createPageUrl("Subscribe") +
       `?source=bottom_nav_upgrade&next=${encodeURIComponent(createPageUrl("Discover"))}`;
@@ -67,14 +36,10 @@ export default function BottomNav() {
       { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") },
       { key: "Upgrade", label: "Upgrade", icon: Lock, to: upgradeUrl },
     ];
-  }, [effectiveMode]);
+  }, [access.isPaid]);
 
   const pathname = location?.pathname || "";
-
-  const isActive = (to) => {
-    const cleanTo = String(to || "").split("?")[0];
-    return pathname === cleanTo;
-  };
+  const isActive = (to) => String(to || "").split("?")[0] === pathname;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50">
