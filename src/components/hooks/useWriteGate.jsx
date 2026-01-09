@@ -15,9 +15,10 @@ import { readDemoMode } from "./demoMode";
  * - paid   => backend writes allowed ONLY when (accountId && athleteProfile)
  * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
  *
- * IMPORTANT:
- * - Demo must be deterministic across the app (URL / local demo mode wins over paid)
- * - In demo mode, never depend on athlete identity loading
+ * Determinism:
+ * - URL ?mode=demo always wins
+ * - localStorage demoMode (setDemoMode) is honored
+ * - otherwise fall back to season.mode (paid vs demo)
  */
 export function useWriteGate() {
   const navigate = useNavigate();
@@ -36,16 +37,16 @@ export function useWriteGate() {
     }
   }, [loc.search]);
 
-  // 2) Local demo contract (set by setDemoMode)
+  // 2) Local demo contract (set by setDemoMode/readDemoMode)
   const localDemo = useMemo(() => {
     try {
       return readDemoMode(); // { mode: "demo" | null, seasonYear: number | null }
     } catch {
       return { mode: null, seasonYear: null };
     }
-  }, [loc.search]);
+  }, []);
 
-  // Effective mode: demo wins if url says demo OR local says demo
+  // Effective mode
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
@@ -83,7 +84,7 @@ export function useWriteGate() {
   /**
    * Default blocked behavior:
    * - Paid but missing profile => Profile
-   * - Missing account => Home
+   * - Missing account => Home (sign in)
    */
   const defaultBlocked = useCallback(
     (opts = {}) => {
@@ -152,7 +153,7 @@ export function useWriteGate() {
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
-    effectiveMode, // debug
+    effectiveMode, // optional debug signal
     write,
     requirePaid
   };
