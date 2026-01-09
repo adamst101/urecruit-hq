@@ -1,5 +1,5 @@
 // src/components/auth/RouteGuard.jsx
-import React, { useEffect, useMemo, useCallback } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
@@ -16,9 +16,9 @@ import { readDemoMode } from "../hooks/demoMode";
  * - Allow demo browsing where desired
  * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
  *
- * Rules:
- * - If URL has ?mode=demo, demo always wins (bypass paid/profile gating)
- * - If localStorage demo mode is enabled, demo wins as well
+ * Demo rules:
+ * - URL ?mode=demo always wins
+ * - localStorage demo mode (setDemoMode/readDemoMode) is honored
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -30,8 +30,11 @@ export default function RouteGuard({
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
-    useAthleteIdentity();
+  const {
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError
+  } = useAthleteIdentity();
 
   const currentPath = useMemo(() => {
     return (loc?.pathname || "") + (loc?.search || "");
@@ -40,7 +43,7 @@ export default function RouteGuard({
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
   // URL demo override
-  const urlForcesDemo = useMemo(() => {
+  const urlForceDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
       return sp.get("mode") === "demo";
@@ -49,33 +52,32 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
-  // Local demo mode (set by setDemoMode)
-  const localDemo = useMemo(() => {
+  // Local demo mode (setDemoMode)
+  const localForceDemo = useMemo(() => {
     try {
-      return readDemoMode(); // { mode: "demo" | null, seasonYear: number | null }
+      const x = readDemoMode();
+      return x?.mode === "demo";
     } catch {
-      return { mode: null, seasonYear: null };
+      return false;
     }
   }, []);
 
-  const forceDemo = urlForcesDemo || localDemo?.mode === "demo";
+  // Demo wins if either URL or local demo says demo
+  const forceDemo = urlForceDemo || localForceDemo;
 
-  // If demo is forced, treat as NOT paid for gating purposes
+  // Paid is only true if NOT forced demo and season says paid
   const isPaid = !forceDemo && mode === "paid";
 
-  // Only require identity if profile gating is required AND we are truly in paid mode
+  // Only require identity when we are truly enforcing profile in paid mode
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
 
-  const safeReplace = useCallback(
-    (to) => {
-      if (!to) return;
-      if (to === currentPath) return;
-      nav(to, { replace: true });
-    },
-    [nav, currentPath]
-  );
+  const safeReplace = (to) => {
+    if (!to) return;
+    if (to === currentPath) return;
+    nav(to, { replace: true });
+  };
 
   useEffect(() => {
     if (loading) return;
@@ -119,8 +121,9 @@ export default function RouteGuard({
     isPaid,
     athleteProfile,
     nextParam,
-    loc?.pathname,
-    safeReplace
+    currentPath,
+    nav,
+    loc?.pathname
   ]);
 
   if (loading) {
