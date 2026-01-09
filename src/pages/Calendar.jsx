@@ -13,7 +13,7 @@ import RouteGuard from "../components/auth/RouteGuard";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
-import { usePublicCampSummariesClient } from "../components/hooks/useCampSummariesClient";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
 
 /**
  * CalendarPage
@@ -63,8 +63,8 @@ function CalendarPage() {
   }, [viewMode]);
 
   // Paid query only when paid+authed+profile present
-  const paidQuery = usePublicCampSummariesClient({
-    seasonYear: currentYear,
+  const paidQuery = useCampSummariesClient({
+    athleteId,
     sportId,
     enabled: isPaid && !!athleteId
   });
