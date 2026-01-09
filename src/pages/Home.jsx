@@ -1,7 +1,7 @@
 // src/pages/Home.jsx
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, LogIn, CheckCircle2, Loader2 } from "lucide-react";
+import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -19,46 +19,6 @@ function trackEvent(payload) {
   try {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
   } catch {}
-}
-
-// Try Base44 “standard” auth entrypoints (different builds expose different method names).
-async function startBase44Login({ redirectTo } = {}) {
-  const auth = base44?.auth;
-  if (!auth) return { ok: false, reason: "No base44.auth found." };
-
-  const attempts = [
-    // Most common
-    { name: "auth.signIn()", fn: auth.signIn, args: [] },
-    { name: "auth.login()", fn: auth.login, args: [] },
-
-    // OAuth-style variants (signatures vary, so we try a couple)
-    { name: "auth.signInWithOAuth()", fn: auth.signInWithOAuth, args: [] },
-    { name: "auth.signInWithOAuth({ redirectTo })", fn: auth.signInWithOAuth, args: [{ redirectTo }] },
-    { name: "auth.signInWithOAuth({ provider:'base44', redirectTo })", fn: auth.signInWithOAuth, args: [{ provider: "base44", redirectTo }] },
-
-    { name: "auth.startOAuth({ redirectTo })", fn: auth.startOAuth, args: [{ redirectTo }] },
-    { name: "auth.authenticate({ redirectTo })", fn: auth.authenticate, args: [{ redirectTo }] }
-  ];
-
-  let lastErr = null;
-
-  for (const a of attempts) {
-    if (typeof a.fn !== "function") continue;
-    try {
-      await a.fn(...a.args);
-      return { ok: true, used: a.name };
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-
-  return {
-    ok: false,
-    reason:
-      lastErr?.message ||
-      "No working sign-in method was found on base44.auth. Confirm Base44 OAuth is enabled and saved.",
-    lastErr
-  };
 }
 
 async function waitForSeason(seasonRef, { timeoutMs = 2500, intervalMs = 100 } = {}) {
@@ -82,10 +42,7 @@ export default function Home() {
   }, [season]);
 
   const { demoSeasonYear } = getDemoDefaults();
-
   const [logoOk, setLogoOk] = useState(true);
-  const [loginWorking, setLoginWorking] = useState(false);
-  const [loginError, setLoginError] = useState("");
 
   useEffect(() => {
     const key = "evt_home_viewed_v22";
@@ -104,59 +61,45 @@ export default function Home() {
   }, []);
 
   // Access Demo (no login required)
-  const handleTryDemo = useCallback(() => {
-    setLoginError("");
+  function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
     setDemoMode(demoSeasonYear);
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
-  }, [demoSeasonYear, nav]);
+  }
 
-  // Log in -> Discover (paid flow)
-  const handleLoginOnly = useCallback(
-    async (e) => {
-      // Prevent “flash” from submit-like behavior
-      try {
-        e?.preventDefault?.();
-        e?.stopPropagation?.();
-      } catch {}
+  // Log in (Base44 standard): redirect to Base44 login, then return to Discover
+  async function handleLoginOnly() {
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-      if (loginWorking) return;
+    // Best-effort: clear demo mode so user doesn't land in demo after auth
+    try {
+      setDemoMode(null);
+    } catch {}
 
-      setLoginError("");
-      setLoginWorking(true);
-
-      trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
-
-      const redirectTo = `${window.location.origin}${createPageUrl("Discover")}`;
-
-      const res = await startBase44Login({ redirectTo });
-
-      if (!res.ok) {
-        setLoginWorking(false);
-        setLoginError(
-          res.reason ||
-            "Login failed. Check Base44 Authentication settings (Default Base44 OAuth) and click Update/Save."
-        );
-        return;
-      }
-
-      // If auth is popup-based, wait briefly for session to populate, then navigate.
-      await waitForSeason(seasonRef);
-      setLoginWorking(false);
-
-      // Go to Discover; your RouteGuard will enforce auth/profile on paid routes.
+    // If already authed, just go to Discover (RouteGuard will send to Profile if needed)
+    if (seasonRef.current?.accountId) {
       nav(createPageUrl("Discover"));
-    },
-    [loginWorking, nav]
-  );
+      return;
+    }
+
+    const nextUrl = `${window.location.origin}${createPageUrl("Discover")}`;
+
+    // Base44 standard login redirect
+    if (base44?.auth?.redirectToLogin) {
+      base44.auth.redirectToLogin(nextUrl);
+      return;
+    }
+
+    // Fallback: go to Discover (won't authenticate, but avoids dead button)
+    nav(createPageUrl("Discover"));
+  }
 
   // View pricing / Sign-Up -> Subscribe
-  const handlePricingSignup = useCallback(() => {
-    setLoginError("");
+  function handlePricingSignup() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
     nav(createPageUrl("Subscribe") + `?source=home_pricing`);
-  }, [nav]);
+  }
 
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
   const heroParagraph =
@@ -183,6 +126,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
+        {/* HERO ONLY (no top bar header to avoid duplicate logo/login) */}
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
             {/* Brand row: big logo + login */}
@@ -206,39 +150,21 @@ export default function Home() {
 
                 {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button
-                    type="button"
-                    onClick={handleLoginOnly}
-                    className="btn-brand w-full"
-                    disabled={loginWorking}
-                  >
-                    {loginWorking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <LogIn className="w-4 h-4 mr-2" />}
+                  <Button onClick={handleLoginOnly} className="btn-brand w-full" type="button">
+                    <LogIn className="w-4 h-4 mr-2" />
                     Log in
                   </Button>
                 </div>
               </div>
 
-              {/* Desktop: login to the right */}
+              {/* Desktop: login on right */}
               <div className="hidden md:flex">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleLoginOnly}
-                  className="text-ink"
-                  disabled={loginWorking}
-                >
-                  {loginWorking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <LogIn className="w-4 h-4 mr-2" />}
+                <Button variant="outline" onClick={handleLoginOnly} className="text-ink" type="button">
+                  <LogIn className="w-4 h-4 mr-2" />
                   Log in
                 </Button>
               </div>
             </div>
-
-            {/* Visible auth error */}
-            {loginError ? (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                {loginError}
-              </div>
-            ) : null}
 
             {/* Copy */}
             <div className="max-w-3xl space-y-3 text-center md:text-left">
@@ -276,12 +202,12 @@ export default function Home() {
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-2 items-stretch">
-              <Button type="button" className="sm:flex-1 btn-brand" onClick={handlePricingSignup}>
+              <Button className="sm:flex-1 btn-brand" onClick={handlePricingSignup} type="button">
                 View pricing / Sign-Up
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
 
-              <Button type="button" className="sm:flex-1 btn-brand" onClick={handleTryDemo}>
+              <Button className="sm:flex-1 btn-brand" onClick={handleTryDemo} type="button">
                 Access Demo
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
