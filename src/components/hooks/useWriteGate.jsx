@@ -5,7 +5,7 @@ import { createPageUrl } from "../../utils";
 import { useSeasonAccess } from "./useSeasonAccess";
 import { useAthleteIdentity } from "../useAthleteIdentity";
 
-import { readDemoMode } from "./demoMode";
+import { readDemoMode, getDemoDefaults } from "./demoMode";
 
 /**
  * useWriteGate
@@ -16,8 +16,9 @@ import { readDemoMode } from "./demoMode";
  * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
  *
  * IMPORTANT:
- * - URL override (?mode=demo) always wins
- * - Local demo mode (readDemoMode) is the secondary override
+ * - Demo must be deterministic across the app:
+ *    URL ?mode=demo OR local demo mode => demo
+ * - In demo mode, never depend on athlete identity loading
  */
 export function useWriteGate() {
   const navigate = useNavigate();
@@ -36,12 +37,19 @@ export function useWriteGate() {
     }
   }, [loc.search]);
 
-  // 2) Local demo contract (set by setDemoMode / clearDemoMode)
+  // 2) Local demo contract (set by setDemoMode)
   const localDemo = useMemo(() => {
-    return readDemoMode(); // { mode: "demo" | null, seasonYear: number | null }
+    try {
+      return readDemoMode(); // { mode, seasonYear }
+    } catch {
+      return { mode: null, seasonYear: null };
+    }
   }, []);
 
-  // Effective mode (deterministic)
+  // Keep defaults available if you need a safe fallback year somewhere
+  const demoDefaults = useMemo(() => getDemoDefaults(), []);
+
+  // Effective mode: demo wins if url says demo OR local says demo
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
@@ -79,7 +87,7 @@ export function useWriteGate() {
   /**
    * Default blocked behavior:
    * - Paid but missing profile => Profile
-   * - Missing account => Home (sign in)
+   * - Missing account => Home
    */
   const defaultBlocked = useCallback(
     (opts = {}) => {
@@ -148,7 +156,14 @@ export function useWriteGate() {
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
-    effectiveMode, // optional debug signal
+    effectiveMode,
+
+    // optional debug signals if you ever need them
+    demoSeasonYear:
+      localDemo?.mode === "demo"
+        ? localDemo.seasonYear || demoDefaults.demoSeasonYear
+        : null,
+
     write,
     requirePaid
   };
