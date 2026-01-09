@@ -2,9 +2,9 @@
 import { useMemo, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "../../utils";
-
 import { useSeasonAccess } from "./useSeasonAccess";
 import { useAthleteIdentity } from "../useAthleteIdentity";
+
 import { readDemoMode } from "./demoMode";
 
 /**
@@ -15,10 +15,10 @@ import { readDemoMode } from "./demoMode";
  * - paid   => backend writes allowed ONLY when (accountId && athleteProfile)
  * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
  *
- * Deterministic mode resolution (highest wins):
- * 1) URL ?mode=demo
- * 2) LocalStorage demo mode (setDemoMode / clearDemoMode)
- * 3) Entitlement-derived mode (useSeasonAccess)
+ * Deterministic mode precedence:
+ *  1) URL ?mode=demo wins
+ *  2) localStorage demo mode (setDemoMode/readDemoMode)
+ *  3) entitlement-derived mode from useSeasonAccess
  */
 export function useWriteGate() {
   const navigate = useNavigate();
@@ -37,10 +37,10 @@ export function useWriteGate() {
     }
   }, [loc.search]);
 
-  // 2) Local demo contract (persisted)
+  // 2) Local demo contract (set by setDemoMode)
   const localDemo = useMemo(() => {
     try {
-      return readDemoMode(); // { mode: "demo"|null, seasonYear: number|null }
+      return readDemoMode(); // { mode: "demo" | null, seasonYear: number|null }
     } catch {
       return { mode: null, seasonYear: null };
     }
@@ -56,7 +56,7 @@ export function useWriteGate() {
   const isPaidMode = effectiveMode === "paid";
   const hasAccount = !!season.accountId;
 
-  // Always call hook (React rule), but only *use* it for gating in paid mode.
+  // Only read identity when we truly need it (paid mode)
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
   const hasProfile = !!athleteProfile;
 
@@ -79,12 +79,12 @@ export function useWriteGate() {
     }
 
     return { mode: "paid", reason: null };
-  }, [isPaidMode, hasAccount, identityLoading, hasProfile]);
+  }, [isPaidMode, hasAccount, hasProfile, identityLoading]);
 
   /**
    * Default blocked behavior:
    * - Paid but missing profile => Profile
-   * - Missing account => Home (front door has sign-in CTA)
+   * - Missing account => Home (sign in)
    */
   const defaultBlocked = useCallback(
     (opts = {}) => {
@@ -95,7 +95,7 @@ export function useWriteGate() {
 
       if (isPaidMode && hasAccount) {
         navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
-          replace: false,
+          replace: false
         });
         return;
       }
@@ -155,6 +155,6 @@ export function useWriteGate() {
     reason: gate.reason,
     effectiveMode, // optional debug signal
     write,
-    requirePaid,
+    requirePaid
   };
 }
