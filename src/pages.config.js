@@ -12,7 +12,6 @@ import Profile from './pages/Profile';
 import Subscribe from './pages/Subscribe';
 import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
-import index from './pages/index';
 import __Layout from './Layout.jsx';
 
 
@@ -31,7 +30,6 @@ export const PAGES = {
     "Subscribe": Subscribe,
     "TestFunctions": TestFunctions,
     "Upgrade": Upgrade,
-    "index": index,
 }
 
 export const pagesConfig = {
