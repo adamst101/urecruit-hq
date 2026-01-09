@@ -15,10 +15,9 @@ import { readDemoMode } from "./demoMode";
  * - paid   => backend writes allowed ONLY when (accountId && athleteProfile)
  * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
  *
- * Deterministic mode precedence:
- *  1) URL ?mode=demo wins
- *  2) localStorage demo mode (setDemoMode/readDemoMode)
- *  3) entitlement-derived mode from useSeasonAccess
+ * IMPORTANT:
+ * - Demo must be deterministic across the app (URL ?mode=demo wins; then localStorage demoMode; else season access)
+ * - In demo mode, never depend on athlete identity loading
  */
 export function useWriteGate() {
   const navigate = useNavigate();
@@ -38,15 +37,9 @@ export function useWriteGate() {
   }, [loc.search]);
 
   // 2) Local demo contract (set by setDemoMode)
-  const localDemo = useMemo(() => {
-    try {
-      return readDemoMode(); // { mode: "demo" | null, seasonYear: number|null }
-    } catch {
-      return { mode: null, seasonYear: null };
-    }
-  }, []);
+  const localDemo = useMemo(() => readDemoMode(), []);
 
-  // Effective mode: demo wins if url says demo OR local says demo
+  // Effective mode resolution
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
@@ -63,20 +56,12 @@ export function useWriteGate() {
   // Gate mode + reason
   const gate = useMemo(() => {
     // Demo mode: always allow local writes (even anonymous)
-    if (!isPaidMode) {
-      return { mode: "demo", reason: null };
-    }
+    if (!isPaidMode) return { mode: "demo", reason: null };
 
     // Paid mode but not ready -> blocked
-    if (!hasAccount) {
-      return { mode: "blocked", reason: "Sign in required" };
-    }
-    if (identityLoading) {
-      return { mode: "blocked", reason: "Loading profile" };
-    }
-    if (!hasProfile) {
-      return { mode: "blocked", reason: "Complete athlete profile" };
-    }
+    if (!hasAccount) return { mode: "blocked", reason: "Sign in required" };
+    if (identityLoading) return { mode: "blocked", reason: "Loading profile" };
+    if (!hasProfile) return { mode: "blocked", reason: "Complete athlete profile" };
 
     return { mode: "paid", reason: null };
   }, [isPaidMode, hasAccount, hasProfile, identityLoading]);
@@ -84,7 +69,7 @@ export function useWriteGate() {
   /**
    * Default blocked behavior:
    * - Paid but missing profile => Profile
-   * - Missing account => Home (sign in)
+   * - Missing account => Home
    */
   const defaultBlocked = useCallback(
     (opts = {}) => {
@@ -95,7 +80,7 @@ export function useWriteGate() {
 
       if (isPaidMode && hasAccount) {
         navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
-          replace: false
+          replace: false,
         });
         return;
       }
@@ -153,8 +138,8 @@ export function useWriteGate() {
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
-    effectiveMode, // optional debug signal
+    effectiveMode, // debug
     write,
-    requirePaid
+    requirePaid,
   };
 }
