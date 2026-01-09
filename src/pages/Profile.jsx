@@ -364,7 +364,7 @@ function ProfilePage() {
 
 export default function Profile() {
   return (
-    <RouteGuard requireAuth={true}>
+    <RouteGuard requireAuth={true} requirePaid={true}>
       <ProfilePage />
     </RouteGuard>
   );
