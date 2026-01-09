@@ -2,18 +2,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
 
-/**
- * useCampSummariesClient
- * Single source of truth for the client-composed camp summary read model.
- *
- * Query key MUST remain stable across the app:
- *   ["myCampsSummaries_client", athleteId, sportId]
- *
- * Backend entities remain the system of record.
- * Frontend is the system of composition.
- */
-
-// ---------- helpers ----------
 function clean(v) {
   if (v === undefined || v === null) return undefined;
   if (typeof v === "string" && v.trim() === "") return undefined;
@@ -30,11 +18,6 @@ function uniq(arr) {
   return Array.from(new Set((arr || []).map(normId).filter(Boolean)));
 }
 
-/**
- * Base44-safe bulk fetch:
- * - Try { id: { in: [...] } } (Base44 pattern you’ve used elsewhere)
- * - Fall back to per-id fetch
- */
 async function fetchEntityMap(entityName, ids) {
   const map = new Map();
   const cleanIds = uniq(ids);
@@ -47,7 +30,6 @@ async function fetchEntityMap(entityName, ids) {
     rows = [];
   }
 
-  // fallback to per-id
   if (!Array.isArray(rows) || rows.length === 0) {
     rows = [];
     for (const id of cleanIds) {
@@ -66,18 +48,13 @@ async function fetchEntityMap(entityName, ids) {
 
   (rows || []).forEach((r) => {
     const key = normId(r);
-    if (key) map.set(key, r);
+    if (key) map.set(String(key), r);
   });
 
   return map;
 }
 
-export function useCampSummariesClient({
-  athleteId,
-  sportId,
-  limit = 500,
-  enabled = true,
-}) {
+export function useCampSummariesClient({ athleteId, sportId, limit = 500, enabled = true }) {
   const aId = clean(athleteId);
   const sId = clean(sportId);
 
@@ -87,34 +64,23 @@ export function useCampSummariesClient({
     retry: false,
     staleTime: 0,
     queryFn: async () => {
-      // 1) Camps (optionally by sport)
       const campWhere = {};
       if (sId) campWhere.sport_id = sId;
 
-      // Base44 ordering arg varies by implementation; keep your existing pattern
-      const campsRaw = await base44.entities.Camp.filter(
-        campWhere,
-        "-start_date",
-        limit || 500
-      );
-
+      const campsRaw = await base44.entities.Camp.filter(campWhere, "-start_date", limit || 500);
       const camps = Array.isArray(campsRaw) ? campsRaw : [];
       if (camps.length === 0) return [];
 
-      // normalize camp ids + reference ids
       const campsNorm = camps
         .map((c) => ({
           ...c,
           _camp_id: normId(c),
           _school_id: normId(c.school_id) || c.school_id || null,
           _sport_id: normId(c.sport_id) || c.sport_id || null,
-          _position_ids: Array.isArray(c.position_ids)
-            ? c.position_ids.map(normId).filter(Boolean)
-            : [],
+          _position_ids: Array.isArray(c.position_ids) ? c.position_ids.map(normId).filter(Boolean) : [],
         }))
         .filter((c) => c._camp_id);
 
-      // 2) Batch join: School / Sport / Position (only positions we need)
       const schoolIds = uniq(campsNorm.map((c) => c._school_id));
       const sportIds = uniq(campsNorm.map((c) => c._sport_id));
       const positionIds = uniq(campsNorm.flatMap((c) => c._position_ids));
@@ -125,7 +91,6 @@ export function useCampSummariesClient({
         fetchEntityMap("Position", positionIds),
       ]);
 
-      // 3) Athlete-specific: CampIntent + TargetSchool
       const [intentsRaw, targetsRaw] = await Promise.all([
         base44.entities.CampIntent.filter({ athlete_id: aId }),
         base44.entities.TargetSchool.filter({ athlete_id: aId }),
@@ -134,7 +99,6 @@ export function useCampSummariesClient({
       const intents = Array.isArray(intentsRaw) ? intentsRaw : [];
       const targets = Array.isArray(targetsRaw) ? targetsRaw : [];
 
-      // Map intents by camp_id (normalized), not by intent record id
       const intentMap = new Map();
       for (const i of intents) {
         const campKey = normId(i.camp_id) || i.camp_id;
@@ -145,7 +109,6 @@ export function useCampSummariesClient({
         targets.map((t) => String(normId(t.school_id) || t.school_id)).filter(Boolean)
       );
 
-      // 4) Summaries
       return campsNorm.map((camp) => {
         const campId = String(camp._camp_id);
         const schoolId = camp._school_id ? String(camp._school_id) : null;
@@ -160,7 +123,6 @@ export function useCampSummariesClient({
           .filter(Boolean);
 
         return {
-          // Camp
           camp_id: campId,
           camp_name: camp.camp_name,
           start_date: camp.start_date,
@@ -173,7 +135,6 @@ export function useCampSummariesClient({
           position_ids: camp._position_ids,
           position_codes: campPositions.map((p) => p.position_code).filter(Boolean),
 
-          // School
           school_id: schoolId,
           school_name: school?.school_name || school?.name || null,
           school_division: school?.division || school?.school_division || null,
@@ -182,15 +143,12 @@ export function useCampSummariesClient({
           school_state: school?.state || null,
           school_conference: school?.conference || null,
 
-          // Sport
           sport_id: sportId2,
           sport_name: sport?.sport_name || sport?.name || null,
 
-          // Intent
           intent_status: intent?.status || null,
           intent_priority: intent?.priority || null,
 
-          // Targeting
           is_target_school: !!(schoolId && targetSchoolIds.has(schoolId)),
         };
       });
