@@ -1,5 +1,5 @@
 // src/components/auth/RouteGuard.jsx
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
@@ -15,9 +15,9 @@ import { useAthleteIdentity } from "../useAthleteIdentity";
  * - Allow demo browsing where desired
  * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
  *
- * Demo override:
+ * NEW:
+ * - Redirect unauth users to Login (not Home) for protected pages
  * - If URL has ?mode=demo, bypass paid/profile gating (lets demo always work)
- * - Auth gating remains optional per page (requireAuth)
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -41,7 +41,7 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Demo override
+  // Demo override (critical to stop "paid profile redirect" when user intends demo)
   const forceDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
@@ -51,36 +51,28 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
-  // Canonical paid flag (independent of demo override)
-  const isPaid = mode === "paid";
-
-  // If demo is forced, we should NOT require identity for gating
-  const needsIdentity = requireProfile && isPaid && !forceDemo;
+  const isPaid = !forceDemo && mode === "paid";
+  const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
 
-  const safeReplace = (to) => {
-    if (!to) return;
-    if (to === currentPath) return;
-    nav(to, { replace: true });
-  };
+  const safeReplace = useCallback(
+    (to) => {
+      if (!to) return;
+      if (to === currentPath) return;
+      nav(to, { replace: true });
+    },
+    [nav, currentPath]
+  );
 
   useEffect(() => {
     if (loading) return;
 
-    // If demo is forced, bypass paid/profile gating entirely
-    if (forceDemo) {
-      // Still enforce auth only if the page explicitly requires it
-      if (requireAuth && !accountId) {
-        safeReplace(createPageUrl("Login") + `?next=${nextParam}`);
-      }
-      return;
-    }
-
     // If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
       safeReplace(
-        createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`
+        createPageUrl("Profile") +
+          `?next=${nextParam}&err=profile_load_failed`
       );
       return;
     }
@@ -91,7 +83,7 @@ export default function RouteGuard({
       return;
     }
 
-    // 2) Paid required (only applies when not forcing demo)
+    // 2) Paid required (ignored in demo override)
     if (requirePaid && !isPaid) {
       safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
@@ -107,7 +99,6 @@ export default function RouteGuard({
     }
   }, [
     loading,
-    forceDemo,
     requireAuth,
     requirePaid,
     requireProfile,
@@ -117,9 +108,8 @@ export default function RouteGuard({
     isPaid,
     athleteProfile,
     nextParam,
-    currentPath,
-    nav,
-    loc?.pathname
+    loc?.pathname,
+    safeReplace
   ]);
 
   if (loading) {
