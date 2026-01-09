@@ -2,10 +2,11 @@
 import { useMemo, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "../../utils";
+
 import { useSeasonAccess } from "./useSeasonAccess";
 import { useAthleteIdentity } from "../useAthleteIdentity";
 
-import { readDemoMode } from "./demoMode";
+import { readDemoMode, getDemoDefaults } from "./demoMode";
 
 /**
  * useWriteGate
@@ -15,10 +16,10 @@ import { readDemoMode } from "./demoMode";
  * - paid   => backend writes allowed ONLY when (accountId && athleteProfile)
  * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
  *
- * Determinism:
- * - URL ?mode=demo always wins
- * - localStorage demoMode (setDemoMode) is honored
- * - otherwise fall back to season.mode (paid vs demo)
+ * Demo mode MUST be deterministic:
+ * - URL override (?mode=demo) wins
+ * - Otherwise localStorage demo mode (setDemoMode/readDemoMode) wins
+ * - Otherwise fall back to season.mode from Entitlement
  */
 export function useWriteGate() {
   const navigate = useNavigate();
@@ -37,26 +38,40 @@ export function useWriteGate() {
     }
   }, [loc.search]);
 
-  // 2) Local demo contract (set by setDemoMode/readDemoMode)
-  const localDemo = useMemo(() => {
-    try {
-      return readDemoMode(); // { mode: "demo" | null, seasonYear: number | null }
-    } catch {
-      return { mode: null, seasonYear: null };
-    }
-  }, []);
+  // 2) Local demo mode (set by setDemoMode)
+  const localDemo = useMemo(() => readDemoMode(), []);
+  const demoDefaults = useMemo(() => getDemoDefaults(), []);
 
-  // Effective mode
+  // Effective mode: URL demo OR local demo OR entitlement-paid
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
     return season.mode === "paid" ? "paid" : "demo";
   }, [urlMode, localDemo?.mode, season.mode]);
 
+  // Helpful: which season year should demo read against (optional debug signal)
+  const effectiveSeasonYear = useMemo(() => {
+    if (effectiveMode !== "demo") return season.seasonYear;
+    if (urlMode === "demo") return season.demoYear; // URL demo forces demo year
+    if (localDemo?.mode === "demo" && Number.isFinite(localDemo?.seasonYear)) {
+      return localDemo.seasonYear;
+    }
+    return demoDefaults?.demoSeasonYear || season.demoYear;
+  }, [
+    effectiveMode,
+    urlMode,
+    localDemo?.mode,
+    localDemo?.seasonYear,
+    demoDefaults?.demoSeasonYear,
+    season.seasonYear,
+    season.demoYear
+  ]);
+
   const isPaidMode = effectiveMode === "paid";
   const hasAccount = !!season.accountId;
 
-  // Only read identity when we truly need it (paid mode)
+  // Identity hook is safe: it only fetches when accountId exists.
+  // But we only *use* it for paid gating.
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
   const hasProfile = !!athleteProfile;
 
@@ -84,7 +99,7 @@ export function useWriteGate() {
   /**
    * Default blocked behavior:
    * - Paid but missing profile => Profile
-   * - Missing account => Home (sign in)
+   * - Missing account => Login
    */
   const defaultBlocked = useCallback(
     (opts = {}) => {
@@ -93,6 +108,7 @@ export function useWriteGate() {
           ? opts.next
           : createPageUrl("Discover");
 
+      // Paid mode, authed, missing profile -> go Profile
       if (isPaidMode && hasAccount) {
         navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
           replace: false
@@ -100,7 +116,10 @@ export function useWriteGate() {
         return;
       }
 
-      navigate(createPageUrl("Home"), { replace: false });
+      // Not authed -> Login (not Home)
+      navigate(createPageUrl("Login") + `?next=${encodeURIComponent(next)}`, {
+        replace: false
+      });
     },
     [navigate, isPaidMode, hasAccount]
   );
@@ -121,7 +140,7 @@ export function useWriteGate() {
   /**
    * Helper for actions that MUST be paid.
    * - If in demo => Subscribe
-   * - If paid but blocked => Profile (or Home if not authed)
+   * - If paid but blocked => Profile (or Login if not authed)
    */
   const requirePaid = useCallback(
     (opts = {}) => {
@@ -153,7 +172,11 @@ export function useWriteGate() {
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
-    effectiveMode, // optional debug signal
+
+    // useful debug signals
+    effectiveMode,
+    effectiveSeasonYear,
+
     write,
     requirePaid
   };
