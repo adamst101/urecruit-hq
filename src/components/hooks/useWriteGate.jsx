@@ -16,7 +16,7 @@ import { readDemoMode } from "./demoMode";
  * - blocked => cannot write to backend; redirect to Profile/Subscribe depending on state
  *
  * IMPORTANT:
- * - Demo must be deterministic across the app (URL ?mode=demo wins; then localStorage demoMode; else season access)
+ * - Demo must be deterministic across the app (URL / local demo mode wins over paid)
  * - In demo mode, never depend on athlete identity loading
  */
 export function useWriteGate() {
@@ -37,9 +37,15 @@ export function useWriteGate() {
   }, [loc.search]);
 
   // 2) Local demo contract (set by setDemoMode)
-  const localDemo = useMemo(() => readDemoMode(), []);
+  const localDemo = useMemo(() => {
+    try {
+      return readDemoMode(); // { mode: "demo" | null, seasonYear: number | null }
+    } catch {
+      return { mode: null, seasonYear: null };
+    }
+  }, [loc.search]);
 
-  // Effective mode resolution
+  // Effective mode: demo wins if url says demo OR local says demo
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
@@ -56,12 +62,20 @@ export function useWriteGate() {
   // Gate mode + reason
   const gate = useMemo(() => {
     // Demo mode: always allow local writes (even anonymous)
-    if (!isPaidMode) return { mode: "demo", reason: null };
+    if (!isPaidMode) {
+      return { mode: "demo", reason: null };
+    }
 
     // Paid mode but not ready -> blocked
-    if (!hasAccount) return { mode: "blocked", reason: "Sign in required" };
-    if (identityLoading) return { mode: "blocked", reason: "Loading profile" };
-    if (!hasProfile) return { mode: "blocked", reason: "Complete athlete profile" };
+    if (!hasAccount) {
+      return { mode: "blocked", reason: "Sign in required" };
+    }
+    if (identityLoading) {
+      return { mode: "blocked", reason: "Loading profile" };
+    }
+    if (!hasProfile) {
+      return { mode: "blocked", reason: "Complete athlete profile" };
+    }
 
     return { mode: "paid", reason: null };
   }, [isPaidMode, hasAccount, hasProfile, identityLoading]);
@@ -80,7 +94,7 @@ export function useWriteGate() {
 
       if (isPaidMode && hasAccount) {
         navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
-          replace: false,
+          replace: false
         });
         return;
       }
@@ -140,6 +154,6 @@ export function useWriteGate() {
     reason: gate.reason,
     effectiveMode, // debug
     write,
-    requirePaid,
+    requirePaid
   };
 }
