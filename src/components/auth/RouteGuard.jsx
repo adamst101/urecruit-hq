@@ -8,17 +8,18 @@ import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
 
 /**
- * RouteGuard (best-practice hardened)
+ * RouteGuard (best-practice hardened for Base44)
  *
  * Goals:
- * - Home remains a true front door (no auto-redirect here unless explicitly required by props)
- * - Demo override via ?mode=demo bypasses paid/profile gating
- * - Avoid redirect loops by using stable callbacks + conservative redirects
+ * - Home stays a true front door (no auto-redirect unless the page itself is guarded)
+ * - Allow demo browsing when URL has ?mode=demo
+ * - Enforce: Auth and/or Paid and/or Profile on protected pages
  *
- * Notes:
- * - Do NOT hard-depend on a /Login page existing (Base44 can 404 it).
- *   If auth is required and user is not authed, we route to Home with ?signin=1.
+ * IMPORTANT (Base44 reality):
+ * - Do NOT redirect to a non-existent /Login page (causes 404).
+ * - For auth-required pages, route to Home with signin intent + next param.
  */
+
 export default function RouteGuard({
   requireAuth = false,
   requirePaid = false,
@@ -29,11 +30,8 @@ export default function RouteGuard({
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-  const {
-    athleteProfile,
-    isLoading: identityLoading,
-    isError: identityError
-  } = useAthleteIdentity();
+  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
+    useAthleteIdentity();
 
   const currentPath = useMemo(() => {
     return (loc?.pathname || "") + (loc?.search || "");
@@ -41,17 +39,20 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Demo override: if URL has ?mode=demo then demo always wins
+  // URL override: ?mode=demo forces demo behavior even if user is paid
   const forceDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
-      return sp.get("mode") === "demo";
+      return String(sp.get("mode") || "").toLowerCase() === "demo";
     } catch {
       return false;
     }
   }, [loc?.search]);
 
+  // Paid is only true when not forcing demo
   const isPaid = !forceDemo && mode === "paid";
+
+  // Only require identity when profile is required AND we're truly in paid mode
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
@@ -77,13 +78,13 @@ export default function RouteGuard({
     }
 
     // 1) Auth required
+    // Base44 note: don’t route to /Login (often not implemented). Use Home as sign-in gateway.
     if (requireAuth && !accountId) {
-      // Avoid hard dependency on a /Login page that may not exist in Base44
       safeReplace(createPageUrl("Home") + `?signin=1&next=${nextParam}`);
       return;
     }
 
-    // 2) Paid required (ignored in demo override)
+    // 2) Paid required (ignored when forceDemo is true)
     if (requirePaid && !isPaid) {
       safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
@@ -108,8 +109,8 @@ export default function RouteGuard({
     isPaid,
     athleteProfile,
     nextParam,
-    loc?.pathname,
-    safeReplace
+    safeReplace,
+    loc?.pathname
   ]);
 
   if (loading) {
