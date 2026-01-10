@@ -3,17 +3,17 @@ const RM_MODE_KEY = "rm_mode";
 const RM_DEMO_SEASON_KEY = "rm_demo_season";
 
 /**
- * Demo mode persistence for your app.
- *
- * Keys:
- * - rm_mode = "demo" | null
- * - rm_demo_season = "2025" etc.
+ * Defaults:
+ * - Demo season is prior UTC year
  */
 export function getDemoDefaults() {
-  const y = new Date().getFullYear();
+  const y = new Date().getUTCFullYear();
   return { demoSeasonYear: y - 1 };
 }
 
+/**
+ * Persist demo mode + selected season year
+ */
 export function setDemoMode(seasonYear) {
   try {
     localStorage.setItem(RM_MODE_KEY, "demo");
@@ -28,6 +28,10 @@ export function clearDemoMode() {
   } catch {}
 }
 
+/**
+ * Read persisted demo mode (if any)
+ * Returns: { mode: "demo" | null, seasonYear: number | null }
+ */
 export function readDemoMode() {
   try {
     const mode = localStorage.getItem(RM_MODE_KEY);
