@@ -5,7 +5,7 @@ import { createPageUrl } from "../../utils";
 import { useSeasonAccess } from "./useSeasonAccess";
 import { useAthleteIdentity } from "../useAthleteIdentity";
 
-import { readDemoMode } from "./demoMode";
+import { readDemoMode, getDemoDefaults } from "./demoMode.js";
 
 /**
  * useWriteGate
@@ -17,7 +17,7 @@ import { readDemoMode } from "./demoMode";
  *
  * IMPORTANT:
  * - Demo must be deterministic across the app (URL ?mode=demo wins)
- * - In demo mode, never block on athlete identity loading
+ * - In demo mode, never depend on athlete identity loading
  */
 export function useWriteGate() {
   const navigate = useNavigate();
@@ -36,15 +36,27 @@ export function useWriteGate() {
     }
   }, [loc.search]);
 
-  // 2) Local persisted demo mode (rm_mode + rm_demo_season)
-  const localDemo = useMemo(() => readDemoMode(), []);
+  // 2) Local demo contract (set by setDemoMode)
+  const localDemo = useMemo(() => {
+    return readDemoMode(); // { mode, seasonYear }
+  }, []);
 
-  // Effective mode: demo wins if url says demo OR local says demo
+  // 3) Default demo season (used when no explicit season stored)
+  const demoDefaults = useMemo(() => getDemoDefaults(), []);
+
+  // Effective mode: URL demo OR local demo OR seasonAccess mode
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
     if (localDemo?.mode === "demo") return "demo";
     return season.mode === "paid" ? "paid" : "demo";
   }, [urlMode, localDemo?.mode, season.mode]);
+
+  // Optional: effective season year for demo browsing (doesn't change paid year)
+  const effectiveSeasonYear = useMemo(() => {
+    if (effectiveMode === "paid") return season.currentYear;
+    // demo mode: prefer stored demo year, else default demo year
+    return localDemo?.seasonYear || demoDefaults?.demoSeasonYear || season.demoYear;
+  }, [effectiveMode, season.currentYear, season.demoYear, localDemo?.seasonYear, demoDefaults?.demoSeasonYear]);
 
   const isPaidMode = effectiveMode === "paid";
   const hasAccount = !!season.accountId;
@@ -77,7 +89,7 @@ export function useWriteGate() {
   /**
    * Default blocked behavior:
    * - Paid but missing profile => Profile
-   * - Missing account => Home
+   * - Missing account => Home (sign in)
    */
   const defaultBlocked = useCallback(
     (opts = {}) => {
@@ -88,7 +100,7 @@ export function useWriteGate() {
 
       if (isPaidMode && hasAccount) {
         navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
-          replace: false
+          replace: false,
         });
         return;
       }
@@ -146,8 +158,11 @@ export function useWriteGate() {
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
-    effectiveMode, // optional debug signal
+
+    effectiveMode, // debug signal
+    effectiveSeasonYear, // useful for demo browsing
+
     write,
-    requirePaid
+    requirePaid,
   };
 }
