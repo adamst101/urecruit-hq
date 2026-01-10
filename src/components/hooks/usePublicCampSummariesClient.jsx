@@ -1,4 +1,4 @@
-// src/components/hooks/usePublicCampSummariesClient.js
+// src/components/hooks/usePublicCampSummariesClient.jsx
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
 
@@ -40,15 +40,25 @@ async function filterCamps(where, limit) {
   return await base44.entities.Camp.filter(where || {}, "-start_date", lim || 500);
 }
 
+function withinYearISO(dateStr, start, next) {
+  // Works for "YYYY-MM-DD" lexicographically.
+  if (!dateStr || typeof dateStr !== "string") return false;
+  return dateStr >= start && dateStr < next;
+}
+
 /**
  * Try different filter syntaxes for date range until one works.
- * Returns { rows, used } where used is a string indicating which syntax succeeded.
+ *
+ * IMPORTANT HARDENING:
+ * Base44 can ignore unknown operators and return "some camps" anyway.
+ * So we VALIDATE that returned rows actually fall inside [start, next).
+ *
+ * Returns { rows, used }
  */
 async function filterCampsByYear(whereBase, year, limit = 500) {
   const start = yStart(year);
   const next = yNext(year);
 
-  // Candidate syntaxes (Base44 variants)
   const candidates = [
     {
       used: "object_ops_gte_lt",
@@ -68,28 +78,37 @@ async function filterCampsByYear(whereBase, year, limit = 500) {
     },
   ];
 
+  // 1) Attempt server-side filtering, but validate that it truly filtered
   for (const c of candidates) {
     try {
-      const rows = await filterCamps(c.where, limit);
-      if (Array.isArray(rows)) return { rows, used: c.used };
+      const rows = await filterCamps(c.where, Math.max(Number(limit) || 500, 500));
+      const arr = Array.isArray(rows) ? rows : [];
+
+      // ✅ Validate: at least one row must be in the year, otherwise operator was ignored
+      const anyInYear = arr.some((r) => withinYearISO(r?.start_date, start, next));
+      if (anyInYear) {
+        // keep only in-year rows (guards against partially ignored ops)
+        const filtered = arr.filter((r) => withinYearISO(r?.start_date, start, next));
+        return { rows: filtered.slice(0, Number(limit) || 500), used: c.used };
+      }
     } catch {
-      // try next
+      // try next syntax
     }
   }
 
-  // Fallback: pull with base filters + client-side year gating.
-  // Keep limit a bit larger to reduce false negatives.
-  const wider = Math.max(Number(limit) || 500, 2000);
+  // 2) Fallback: wide fetch with base filters + client-side year gating
+  // Use a wider limit to reduce false negatives when many camps exist.
+  const wider = Math.max(Number(limit) || 500, 3000);
 
   const rows = await filterCamps(whereBase, wider);
   const arr = Array.isArray(rows) ? rows : [];
 
-  const filtered = arr.filter((c) => {
-    const d = c?.start_date;
-    return typeof d === "string" && d >= start && d < next;
-  });
+  const filtered = arr.filter((c) => withinYearISO(c?.start_date, start, next));
 
-  return { rows: filtered.slice(0, Number(limit) || 500), used: "client_side_fallback" };
+  return {
+    rows: filtered.slice(0, Number(limit) || 500),
+    used: "client_side_fallback",
+  };
 }
 
 /**
@@ -133,7 +152,7 @@ async function fetchEntityMap(entityName, ids) {
 }
 
 /**
- * Returns summaries shaped for Discover (public/demo-style):
+ * Returns summaries shaped for Discover/Calendar (public/demo-style):
  * {
  *  camp_id, camp_name, start_date, end_date, city, state, price, link_url, notes, position_ids,
  *  school_id, school_name, school_division,
@@ -177,11 +196,17 @@ async function fetchPublicCampSummaries({
     ? positionIds.map(normId).filter(Boolean)
     : [];
   if (pos.length) {
-    camps = camps.filter((c) => pos.some((p) => (c.position_ids || []).includes(p)));
+    camps = camps.filter((c) =>
+      pos.some((p) => (c.position_ids || []).includes(p))
+    );
   }
 
-  const schoolIds = uniq(camps.map((c) => c.school_id)).filter(Boolean).map(String);
-  const sportIds = uniq(camps.map((c) => c.sport_id)).filter(Boolean).map(String);
+  const schoolIds = uniq(camps.map((c) => c.school_id))
+    .filter(Boolean)
+    .map(String);
+  const sportIds = uniq(camps.map((c) => c.sport_id))
+    .filter(Boolean)
+    .map(String);
 
   const [schoolMap, sportMap] = await Promise.all([
     fetchEntityMap("School", schoolIds),
@@ -220,7 +245,7 @@ async function fetchPublicCampSummaries({
 
       sport_name: pickSportName(sp),
 
-      // keep parity with other summary shapes (optional)
+      // parity with other summary shapes
       intent_status: null,
     };
   });
@@ -242,7 +267,9 @@ export function usePublicCampSummariesClient({
       normId(sportId) || null,
       state || null,
       division || null,
-      Array.isArray(positionIds) ? positionIds.map(normId).filter(Boolean).join(",") : "",
+      Array.isArray(positionIds)
+        ? positionIds.map(normId).filter(Boolean).join(",")
+        : "",
       Number(limit) || 500,
     ],
     enabled: Boolean(enabled) && !!seasonYear,
@@ -261,11 +288,10 @@ export function usePublicCampSummariesClient({
 }
 
 /**
- * Used by Discover Option A year resolver.
- * Checks if ANY camps exist in the year using the same operator-adaptive logic.
+ * Used by Calendar/Discover year resolver.
+ * Checks if ANY camps exist in the year using the same hardened logic.
  */
 export async function publicCampYearHasData(year) {
-  const { rows } = await filterCampsByYear({}, year, 1);
+  const { rows } = await filterCampsByYear({}, year, 25);
   return Array.isArray(rows) && rows.length > 0;
 }
-
