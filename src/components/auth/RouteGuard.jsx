@@ -8,20 +8,14 @@ import { createPageUrl } from "../../utils";
 // ✅ Explicit .jsx imports (your repo standard)
 import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
-import { readDemoMode } from "../hooks/demoMode.jsx";
 
 /**
  * RouteGuard
  *
  * Goals:
  * - Keep Home as a true front door (no auto-redirect here)
- * - Allow demo browsing where desired
- * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
- *
- * Rules:
- * - If URL has ?mode=demo, treat as demo regardless of entitlement
- * - If localStorage demo mode is set, also treat as demo
- * - Paid gating only applies when effectiveMode === "paid"
+ * - Enforce Auth / Paid / Profile on protected pages
+ * - URL override: ?mode=demo bypasses PAID + PROFILE gating (but NOT auth)
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -33,11 +27,8 @@ export default function RouteGuard({
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-  const {
-    athleteProfile,
-    isLoading: identityLoading,
-    isError: identityError
-  } = useAthleteIdentity();
+  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
+    useAthleteIdentity();
 
   const currentPath = useMemo(() => {
     return (loc?.pathname || "") + (loc?.search || "");
@@ -45,8 +36,8 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // 1) URL override: ?mode=demo always wins
-  const urlForcesDemo = useMemo(() => {
+  // URL override: demo mode (bypass paid/profile gating)
+  const forceDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
       return sp.get("mode") === "demo";
@@ -55,19 +46,10 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
-  // 2) Local demo mode (set by setDemoMode)
-  const localForcesDemo = useMemo(() => {
-    try {
-      const d = readDemoMode?.();
-      return d?.mode === "demo";
-    } catch {
-      return false;
-    }
-  }, []);
+  const bypassPaidProfile = forceDemo === true;
 
-  // Effective paid state (demo wins over paid)
-  const isPaid = !urlForcesDemo && !localForcesDemo && mode === "paid";
-  const needsIdentity = requireProfile && isPaid;
+  const isPaid = mode === "paid" && !bypassPaidProfile;
+  const needsIdentity = requireProfile && isPaid; // only when paid + profile required
 
   const loading = accessLoading || (needsIdentity && identityLoading);
 
@@ -83,26 +65,28 @@ export default function RouteGuard({
   useEffect(() => {
     if (loading) return;
 
-    // If we need identity and it errored, route to Profile (recoverable)
+    // 0) If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
-      safeReplace(createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`);
+      safeReplace(
+        createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`
+      );
       return;
     }
 
-    // 1) Auth required
+    // 1) Auth required (NOT bypassed by demo mode)
     if (requireAuth && !accountId) {
       safeReplace(createPageUrl("Login") + `?next=${nextParam}`);
       return;
     }
 
-    // 2) Paid required (ignored in demo override)
-    if (requirePaid && !isPaid) {
+    // 2) Paid required (bypassed by ?mode=demo)
+    if (!bypassPaidProfile && requirePaid && !isPaid) {
       safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
     }
 
-    // 3) Profile required (paid-only enforcement)
-    if (requireProfile && isPaid && !athleteProfile) {
+    // 3) Profile required (paid-only enforcement; bypassed by ?mode=demo)
+    if (!bypassPaidProfile && requireProfile && isPaid && !athleteProfile) {
       const profileUrl = createPageUrl("Profile");
       if ((loc?.pathname || "") !== profileUrl) {
         safeReplace(profileUrl + `?next=${nextParam}`);
@@ -111,11 +95,12 @@ export default function RouteGuard({
     }
   }, [
     loading,
+    needsIdentity,
+    identityError,
     requireAuth,
     requirePaid,
     requireProfile,
-    needsIdentity,
-    identityError,
+    bypassPaidProfile,
     accountId,
     isPaid,
     athleteProfile,
