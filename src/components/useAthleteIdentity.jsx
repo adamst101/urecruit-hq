@@ -3,7 +3,7 @@ import { useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { base44 } from "../api/base44Client";
-import { useSeasonAccess } from "./hooks/useSeasonAccess";
+import { useSeasonAccess } from "./hooks/useSeasonAccess.jsx";
 
 /**
  * useAthleteIdentity
@@ -12,8 +12,8 @@ import { useSeasonAccess } from "./hooks/useSeasonAccess";
  * - If logged out (no accountId) -> athleteProfile=null immediately (no stale leak)
  * - Scope cache by accountId
  * - Only fetch when authenticated
- * - Prefer active profile if field exists, but don't hard-fail if schema differs
- * - Be resilient to Base44 id field variations (id/_id/uuid)
+ * - Prefer active profile if present
+ * - Normalize id field (id/_id/uuid)
  */
 function normId(x) {
   if (!x) return null;
@@ -48,7 +48,7 @@ export function useAthleteIdentity() {
       let profiles = [];
       try {
         profiles = await base44.entities.AthleteProfile.filter({
-          account_id: accountId,
+          account_id: accountId
         });
       } catch (e) {
         throw e;
@@ -57,15 +57,15 @@ export function useAthleteIdentity() {
       const list = Array.isArray(profiles) ? profiles : [];
       const active = list.find((p) => p?.active === true) || null;
       const first = list[0] || null;
-
       const chosen = active || first || null;
+
       if (!chosen) return null;
 
       return {
         ...chosen,
-        id: normId(chosen) || chosen.id || chosen._id || chosen.uuid || null,
+        id: normId(chosen) || null
       };
-    },
+    }
   });
 
   return useMemo(() => {
@@ -74,7 +74,7 @@ export function useAthleteIdentity() {
         athleteProfile: null,
         isLoading: false,
         isError: false,
-        error: null,
+        error: null
       };
     }
 
@@ -82,7 +82,7 @@ export function useAthleteIdentity() {
       athleteProfile: query.data || null,
       isLoading: query.isLoading,
       isError: query.isError,
-      error: query.error,
+      error: query.error
     };
   }, [isAuthed, query.data, query.isLoading, query.isError, query.error]);
 }
