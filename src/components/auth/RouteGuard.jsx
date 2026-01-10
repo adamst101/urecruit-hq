@@ -4,17 +4,21 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
 import { createPageUrl } from "../../utils";
+
 import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
 
 /**
  * RouteGuard
  *
- * Best-practice goals:
- * - Home remains a true front door (no auto-redirect)
- * - Supports demo override: ?mode=demo bypasses auth/paid/profile gating
- * - Enforces requireAuth / requirePaid / requireProfile consistently
- * - Avoids redirect loops by using a stable safeReplace callback
+ * Goals:
+ * - Keep Home as a true front door (no auto-redirect here)
+ * - Allow demo browsing where desired
+ * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
+ *
+ * Notes:
+ * - URL ?mode=demo bypasses paid/profile gating (demo always works)
+ * - Uses stable callbacks to avoid redirect loops
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -35,7 +39,7 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Demo override: if URL explicitly says demo, bypass ALL gating
+  // Demo override (critical to stop "paid/profile redirect" when user intends demo)
   const forceDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
@@ -45,10 +49,7 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
-  // Only treat as "paid" if not forceDemo
   const isPaid = !forceDemo && mode === "paid";
-
-  // Only fetch/require identity when we are enforcing a paid-profile requirement
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
@@ -65,39 +66,34 @@ export default function RouteGuard({
   useEffect(() => {
     if (loading) return;
 
-    // 0) Demo override: bypass all redirects, render page as demo
-    if (forceDemo) return;
-
-    // 1) If we needed identity and it errored, route to Profile (recoverable)
+    // If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
-      safeReplace(
-        createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`
-      );
+      safeReplace(createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`);
       return;
     }
 
-    // 2) Auth required
+    // 1) Auth required
     if (requireAuth && !accountId) {
       safeReplace(createPageUrl("Login") + `?next=${nextParam}`);
       return;
     }
 
-    // 3) Paid required
+    // 2) Paid required (ignored in demo override)
     if (requirePaid && !isPaid) {
       safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
     }
 
-    // 4) Profile required (paid-only enforcement)
+    // 3) Profile required (paid-only enforcement)
     if (requireProfile && isPaid && !athleteProfile) {
       const profileUrl = createPageUrl("Profile");
       if ((loc?.pathname || "") !== profileUrl) {
         safeReplace(profileUrl + `?next=${nextParam}`);
       }
+      return;
     }
   }, [
     loading,
-    forceDemo,
     needsIdentity,
     identityError,
     requireAuth,
