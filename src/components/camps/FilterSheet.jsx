@@ -248,10 +248,7 @@ export default function FilterSheet({
           <Button variant="outline" onClick={onClear} className="flex-1">
             Clear All
           </Button>
-          <Button
-            onClick={onApply}
-            className="flex-1 bg-electric-blue hover:bg-deep-navy"
-          >
+          <Button onClick={onApply} className="flex-1 bg-electric-blue hover:bg-deep-navy">
             Apply Filters
           </Button>
         </SheetFooter>
