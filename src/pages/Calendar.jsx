@@ -1,18 +1,23 @@
 // src/pages/Calendar.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { SlidersHorizontal } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
+import { createPageUrl } from "../utils";
 
 import BottomNav from "../components/navigation/BottomNav.jsx";
+import FilterSheet from "../components/filters/FilterSheet.jsx";
+
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 
-import FilterSheet from "../components/filters/FilterSheet.jsx";
+import CampCard from "../components/camps/CampCard.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { useWriteGate } from "../components/hooks/useWriteGate.jsx";
 
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
@@ -69,56 +74,87 @@ function sportMatch(sportId, selectedSport) {
   return String(sportId || "") === String(selectedSport);
 }
 
-function groupByStartDate(rows) {
-  const map = new Map();
-  for (const r of rows) {
-    const key = safeDateStr(r?.start_date) || "TBD";
-    if (!map.has(key)) map.set(key, []);
-    map.get(key).push(r);
+function formatDayLabel(yyyyMmDd) {
+  try {
+    if (!yyyyMmDd) return "TBD";
+    const [y, m, d] = yyyyMmDd.split("-").map(Number);
+    const dt = new Date(y, (m || 1) - 1, d || 1);
+    return dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  } catch {
+    return yyyyMmDd || "TBD";
   }
-
-  // sort days ascending, keep TBD last
-  const keys = Array.from(map.keys()).sort((a, b) => {
-    if (a === "TBD") return 1;
-    if (b === "TBD") return -1;
-    return a.localeCompare(b);
-  });
-
-  return keys.map((k) => ({
-    date: k,
-    rows: map.get(k) || []
-  }));
 }
 
-// ---------------- page ----------------
-export default function Calendar() {
-  const { mode, seasonYear } = useSeasonAccess();
-  const isDemo = mode !== "paid";
+// Paid intent upsert (Base44-safe)
+async function upsertCampIntent({ athleteId, campId, patch }) {
+  if (!athleteId || !campId) return null;
 
-  const { athleteProfile } = useAthleteIdentity(); // only meaningful in paid
+  let existing = null;
+  try {
+    const rows = await base44.entities.CampIntent.filter({
+      athlete_id: athleteId,
+      camp_id: campId
+    });
+    existing = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  } catch {
+    existing = null;
+  }
+
+  try {
+    if (existing?.id) {
+      return await base44.entities.CampIntent.update(existing.id, {
+        ...patch,
+        athlete_id: athleteId,
+        camp_id: campId
+      });
+    }
+  } catch {
+    // fall through to create
+  }
+
+  try {
+    return await base44.entities.CampIntent.create({
+      athlete_id: athleteId,
+      camp_id: campId,
+      ...patch
+    });
+  } catch {
+    return null;
+  }
+}
+
+export default function Calendar() {
+  const nav = useNavigate();
+
+  const season = useSeasonAccess();
+  const isDemo = season.mode !== "paid";
+
+  const { athleteProfile } = useAthleteIdentity();
   const athleteId = athleteProfile?.id ? String(athleteProfile.id) : null;
 
-  // Demo profile id (used for demo-local favorites/registered)
+  const gate = useWriteGate();
+
+  // Demo identity for local keys
   const { demoProfileId, loaded: demoLoaded } = useDemoProfile();
 
   const [filterOpen, setFilterOpen] = useState(false);
 
-  // FilterSheet contract (use these exact keys)
+  // Calendar filters
   const [filters, setFilters] = useState({
-    sport: "", // sport id string
-    state: "", // state code
-    divisions: [], // array of division strings
-    positions: [], // array of position ids (strings)
+    sport: "",
+    state: "",
+    divisions: [],
+    positions: [],
     startDate: "",
     endDate: ""
   });
 
-  // Reference data for filter UI
+  // Reference data for FilterSheet + positions rendering
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
+  const [posMap, setPosMap] = useState(new Map());
 
-  // Load sports/positions once (simple + Base44-safe)
-  React.useEffect(() => {
+  useEffect(() => {
     let mounted = true;
 
     (async () => {
@@ -131,9 +167,21 @@ export default function Calendar() {
 
       try {
         const p = await base44.entities.Position.list();
-        if (mounted) setPositions(Array.isArray(p) ? p : []);
+        const arr = Array.isArray(p) ? p : [];
+        if (mounted) {
+          setPositions(arr);
+          const m = new Map();
+          arr.forEach((row) => {
+            const id = normId(row);
+            if (id) m.set(String(id), row);
+          });
+          setPosMap(m);
+        }
       } catch {
-        if (mounted) setPositions([]);
+        if (mounted) {
+          setPositions([]);
+          setPosMap(new Map());
+        }
       }
     })();
 
@@ -142,67 +190,76 @@ export default function Calendar() {
     };
   }, []);
 
-  // --- Data sources ---
-  // Demo/public summaries (already joined to school/sport names)
+  // Demo/public summaries (browse data)
   const publicQuery = usePublicCampSummariesClient({
-    seasonYear,
+    seasonYear: season.seasonYear,
     sportId: filters.sport || null,
     state: filters.state || null,
-    division: null, // we apply multi-division client-side
+    division: null, // multi-division handled client-side
     positionIds: asArray(filters.positions),
-    limit: 500,
-    enabled: isDemo && !!seasonYear
+    limit: 1000,
+    enabled: isDemo && !!season.seasonYear
   });
 
-  // Paid summaries (athlete-scoped, joined + intent_status)
+  // Paid summaries (has intent_status)
   const paidQuery = useCampSummariesClient({
     athleteId,
     sportId: filters.sport || null,
-    limit: 500,
+    limit: 1000,
     enabled: !isDemo && !!athleteId
   });
 
   const loading =
-    (isDemo ? publicQuery.isLoading : paidQuery.isLoading) ||
-    (isDemo ? !demoLoaded : false);
+    (isDemo ? publicQuery.isLoading : paidQuery.isLoading) || (isDemo ? !demoLoaded : false);
+
+  const error = isDemo ? publicQuery.isError : paidQuery.isError;
 
   const rawRows = useMemo(() => {
-    const rows = isDemo ? publicQuery.data : paidQuery.data;
-    return Array.isArray(rows) ? rows : [];
+    if (isDemo) return Array.isArray(publicQuery.data) ? publicQuery.data : [];
+    return Array.isArray(paidQuery.data) ? paidQuery.data : [];
   }, [isDemo, publicQuery.data, paidQuery.data]);
 
-  // Normalize rows to one common shape for rendering + filtering
   const rows = useMemo(() => {
-    return rawRows.map((r) => ({
-      camp_id: String(r?.camp_id || normId(r) || ""),
-      camp_name: r?.camp_name || "Camp",
-      start_date: r?.start_date || null,
-      end_date: r?.end_date || null,
-      city: r?.city || null,
-      state: r?.state || null,
-      price: typeof r?.price === "number" ? r.price : null,
+    return rawRows
+      .map((r) => ({
+        camp_id: String(r?.camp_id || normId(r) || ""),
+        camp_name: r?.camp_name || "Camp",
+        start_date: r?.start_date || null,
+        end_date: r?.end_date || null,
+        city: r?.city || null,
+        state: r?.state || null,
+        price: typeof r?.price === "number" ? r.price : null,
+        link_url: r?.link_url || null,
+        notes: r?.notes || null,
 
-      sport_id: r?.sport_id ? String(r.sport_id) : null,
-      sport_name: r?.sport_name || null,
+        position_ids: asArray(r?.position_ids),
 
-      school_id: r?.school_id ? String(r.school_id) : null,
-      school_name: r?.school_name || null,
-      school_division: r?.school_division || null,
+        sport_id: r?.sport_id ? String(r.sport_id) : null,
+        sport_name: r?.sport_name || null,
 
-      position_ids: asArray(r?.position_ids),
+        school_id: r?.school_id ? String(r.school_id) : null,
+        school_name: r?.school_name || null,
+        school_division: r?.school_division || null,
 
-      // Paid-only
-      intent_status: r?.intent_status || null
-    }));
+        intent_status: r?.intent_status || null
+      }))
+      .filter((r) => !!r.camp_id);
   }, [rawRows]);
 
-  // Apply filters client-side (consistent for demo + paid)
-  const filteredRows = useMemo(() => {
+  // Demo-local states
+  const demoFavs = useMemo(() => {
+    if (!isDemo) return [];
+    return getDemoFavorites(demoProfileId, season.seasonYear);
+  }, [isDemo, demoProfileId, season.seasonYear]);
+
+  // Calendar should show "your camps":
+  // - demo: local favorites OR registered
+  // - paid: intent_status favorite OR registered
+  const myRows = useMemo(() => {
     const start = filters.startDate ? safeDateStr(filters.startDate) : "";
     const end = filters.endDate ? safeDateStr(filters.endDate) : "";
 
-    return rows
-      .filter((r) => r.camp_id)
+    const base = rows
       .filter((r) => sportMatch(r.sport_id, filters.sport))
       .filter((r) => stateMatch(r.state, filters.state))
       .filter((r) => divisionMatch(r.school_division, filters.divisions))
@@ -211,28 +268,35 @@ export default function Calendar() {
         if (!start && !end) return true;
         return withinRange(r.start_date, start, end);
       });
-  }, [rows, filters]);
 
-  const grouped = useMemo(() => groupByStartDate(filteredRows), [filteredRows]);
+    if (isDemo) {
+      return base.filter((r) => {
+        const cid = String(r.camp_id);
+        const fav = demoFavs.includes(cid);
+        const reg = isDemoRegistered(demoProfileId, cid);
+        return fav || reg;
+      });
+    }
 
-  // Demo-local favorites + registered
-  const demoFavs = useMemo(() => {
-    if (!isDemo) return [];
-    return getDemoFavorites(demoProfileId, seasonYear);
-  }, [isDemo, demoProfileId, seasonYear]);
+    // Paid
+    return base.filter((r) => r.intent_status === "favorite" || r.intent_status === "registered");
+  }, [rows, filters, isDemo, demoFavs, demoProfileId]);
 
-  const toggleFavorite = (campId) => {
-    if (!isDemo) return; // paid favorites handled elsewhere (not in this file)
-    toggleDemoFavorite(demoProfileId, campId, seasonYear);
-    // force rerender by touching state
-    setFilters((f) => ({ ...f }));
-  };
-
-  const toggleRegistered = (campId) => {
-    if (!isDemo) return;
-    toggleDemoRegistered(demoProfileId, campId);
-    setFilters((f) => ({ ...f }));
-  };
+  // Group by start_date
+  const grouped = useMemo(() => {
+    const m = new Map();
+    for (const r of myRows) {
+      const key = safeDateStr(r.start_date) || "TBD";
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(r);
+    }
+    const keys = Array.from(m.keys()).sort((a, b) => String(a).localeCompare(String(b)));
+    return keys.map((k) => ({
+      key: k,
+      label: k === "TBD" ? "TBD" : formatDayLabel(k),
+      items: m.get(k).sort((a, b) => String(a.camp_name).localeCompare(String(b.camp_name)))
+    }));
+  }, [myRows]);
 
   const clearFilters = () => {
     setFilters({
@@ -245,6 +309,68 @@ export default function Calendar() {
     });
   };
 
+  const onOpenCamp = (campId) => {
+    nav(createPageUrl("CampDetail") + `?id=${encodeURIComponent(String(campId))}`);
+  };
+
+  const onToggleFavorite = async (campId) => {
+    const cid = String(campId || "");
+    if (!cid) return;
+
+    await gate.write({
+      demo: async () => {
+        toggleDemoFavorite(demoProfileId, cid, season.seasonYear);
+        setFilters((f) => ({ ...f }));
+      },
+      paid: async () => {
+        if (!athleteId) {
+          gate.requirePaid({ next: createPageUrl("Calendar"), source: "calendar_favorite" });
+          return;
+        }
+
+        const row = rows.find((r) => String(r.camp_id) === cid);
+        const currentlyFav = row?.intent_status === "favorite";
+
+        await upsertCampIntent({
+          athleteId,
+          campId: cid,
+          patch: { status: currentlyFav ? null : "favorite" }
+        });
+
+        setFilters((f) => ({ ...f }));
+      }
+    });
+  };
+
+  const onToggleRegistered = async (campId) => {
+    const cid = String(campId || "");
+    if (!cid) return;
+
+    await gate.write({
+      demo: async () => {
+        toggleDemoRegistered(demoProfileId, cid);
+        setFilters((f) => ({ ...f }));
+      },
+      paid: async () => {
+        if (!athleteId) {
+          gate.requirePaid({ next: createPageUrl("Calendar"), source: "calendar_registered" });
+          return;
+        }
+
+        const row = rows.find((r) => String(r.camp_id) === cid);
+        const currentlyReg = row?.intent_status === "registered";
+
+        await upsertCampIntent({
+          athleteId,
+          campId: cid,
+          patch: { status: currentlyReg ? null : "registered" }
+        });
+
+        setFilters((f) => ({ ...f }));
+      }
+    });
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="max-w-md mx-auto px-4 pt-5">
@@ -254,11 +380,11 @@ export default function Calendar() {
             <div className="text-xs text-slate-500 mt-1">
               {isDemo ? (
                 <>
-                  Demo season <Badge variant="outline">{seasonYear}</Badge>
+                  Demo season <Badge variant="outline">{season.seasonYear}</Badge>
                 </>
               ) : (
                 <>
-                  Your season <Badge variant="outline">{seasonYear}</Badge>
+                  Season <Badge variant="outline">{season.seasonYear}</Badge>
                 </>
               )}
             </div>
@@ -270,42 +396,42 @@ export default function Calendar() {
           </Button>
         </div>
 
-        {/* Errors */}
-        {(isDemo ? publicQuery.isError : paidQuery.isError) && (
+        {error && (
           <Card className="mt-4 p-4 border-rose-200 bg-rose-50">
-            <div className="text-sm text-rose-700 font-medium">Couldn’t load camps.</div>
-            <div className="text-xs text-rose-600 mt-1">
-              Try refreshing. If it persists, your Base44 entities/filters may be rejecting a query shape.
-            </div>
+            <div className="text-sm text-rose-700 font-medium">Couldn’t load calendar camps.</div>
+            <div className="text-xs text-rose-600 mt-1">Refresh first; if it persists, we’ll tighten the Base44 queries.</div>
           </Card>
         )}
 
-        {/* Empty */}
-        {!loading && grouped.length === 0 && (
+        {loading ? (
+          <div className="mt-6 text-sm text-slate-500">Loading…</div>
+        ) : grouped.length === 0 ? (
           <Card className="mt-4 p-5 border-slate-200">
-            <div className="text-sm font-medium text-slate-900">No camps match your filters.</div>
-            <div className="text-xs text-slate-500 mt-1">Try clearing filters.</div>
-            <div className="mt-3">
+            <div className="text-sm font-medium text-slate-900">No camps on your calendar yet.</div>
+            <div className="text-xs text-slate-500 mt-1">
+              {isDemo
+                ? "In demo mode, favorite or mark a camp as registered to see it here."
+                : "Favorite or register camps in Discover to see them here."}
+            </div>
+            <div className="mt-3 flex gap-2">
               <Button variant="outline" onClick={clearFilters}>
                 Clear filters
               </Button>
+              <Button onClick={() => nav(createPageUrl("Discover"))}>
+                Go to Discover
+              </Button>
             </div>
           </Card>
-        )}
-
-        {/* List */}
-        {loading ? (
-          <div className="mt-6 text-sm text-slate-500">Loading…</div>
         ) : (
-          <div className="mt-5 space-y-6">
+          <div className="mt-5 space-y-5">
             {grouped.map((g) => (
-              <div key={g.date}>
-                <div className="text-xs font-semibold text-slate-600 mb-2">
-                  {g.date === "TBD" ? "TBD" : g.date}
+              <div key={g.key}>
+                <div className="sticky top-0 z-10 bg-slate-50 py-2">
+                  <div className="text-xs font-semibold text-slate-600">{g.label}</div>
                 </div>
 
                 <div className="space-y-3">
-                  {g.rows.map((r) => {
+                  {g.items.map((r) => {
                     const isFav = isDemo
                       ? demoFavs.includes(String(r.camp_id))
                       : r.intent_status === "favorite";
@@ -314,69 +440,65 @@ export default function Calendar() {
                       ? isDemoRegistered(demoProfileId, r.camp_id)
                       : r.intent_status === "registered";
 
+                    const school = {
+                      id: r.school_id,
+                      school_name: r.school_name,
+                      division: r.school_division
+                    };
+
+                    const sport = {
+                      id: r.sport_id,
+                      sport_name: r.sport_name
+                    };
+
+                    const camp = {
+                      id: r.camp_id,
+                      camp_name: r.camp_name,
+                      start_date: r.start_date,
+                      end_date: r.end_date,
+                      city: r.city,
+                      state: r.state,
+                      price: r.price,
+                      link_url: r.link_url,
+                      notes: r.notes,
+                      position_ids: r.position_ids
+                    };
+
+                    const posObjs = asArray(r.position_ids)
+                      .map((pid) => posMap.get(String(pid)))
+                      .filter(Boolean);
+
                     return (
-                      <Card key={r.camp_id} className="p-4 border-slate-200 bg-white">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {r.school_division && (
-                                <Badge className="bg-slate-900 text-white text-xs">
-                                  {r.school_division}
-                                </Badge>
-                              )}
-                              {r.sport_name && (
-                                <span className="text-xs text-slate-500 font-medium">
-                                  {r.sport_name}
-                                </span>
-                              )}
-                              {isDemo && (
-                                <Badge variant="outline" className="text-xs">
-                                  Demo
-                                </Badge>
-                              )}
-                              {isReg && (
-                                <Badge className="bg-emerald-600 text-white text-xs">
-                                  Registered
-                                </Badge>
-                              )}
-                            </div>
+                      <div key={r.camp_id} className="space-y-2">
+                        <CampCard
+                          camp={camp}
+                          school={school}
+                          sport={sport}
+                          positions={posObjs}
+                          isFavorite={!!isFav}
+                          isRegistered={!!isReg}
+                          onFavoriteToggle={() => onToggleFavorite(r.camp_id)}
+                          onClick={() => onOpenCamp(r.camp_id)}
+                          mode={isDemo ? "demo" : "paid"}
+                        />
 
-                            <div className="text-base font-semibold text-deep-navy mt-1 truncate">
-                              {r.school_name || "Unknown School"}
-                            </div>
-                            <div className="text-sm text-slate-600 truncate">
-                              {r.camp_name || "Camp"}
-                            </div>
-
-                            {(r.city || r.state) && (
-                              <div className="text-xs text-slate-500 mt-1 truncate">
-                                {[r.city, r.state].filter(Boolean).join(", ")}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Demo-only actions (keeps paid behavior untouched) */}
-                          {isDemo && (
-                            <div className="flex flex-col gap-2">
-                              <Button
-                                variant={isFav ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => toggleFavorite(r.camp_id)}
-                              >
-                                {isFav ? "Favorited" : "Favorite"}
-                              </Button>
-
-                              <Button
-                                variant={isReg ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => toggleRegistered(r.camp_id)}
-                              >
-                                {isReg ? "Registered" : "Register"}
-                              </Button>
-                            </div>
-                          )}
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => onToggleFavorite(r.camp_id)}
+                          >
+                            {isFav ? "Unfavorite" : "Favorite"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => onToggleRegistered(r.camp_id)}
+                          >
+                            {isReg ? "Unregister" : "Registered"}
+                          </Button>
                         </div>
-                      </Card>
+                      </div>
                     );
                   })}
                 </div>
