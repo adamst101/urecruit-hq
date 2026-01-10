@@ -1,7 +1,14 @@
-// src/components/hooks/demoMode.js
+// src/components/hooks/demoMode.jsx
 const RM_MODE_KEY = "rm_mode";
 const RM_DEMO_SEASON_KEY = "rm_demo_season";
 
+/**
+ * Demo mode persistence for your app.
+ *
+ * Keys:
+ * - rm_mode = "demo" | null
+ * - rm_demo_season = "2025" etc.
+ */
 export function getDemoDefaults() {
   const y = new Date().getFullYear();
   return { demoSeasonYear: y - 1 };
@@ -25,11 +32,13 @@ export function readDemoMode() {
   try {
     const mode = localStorage.getItem(RM_MODE_KEY);
     const season = localStorage.getItem(RM_DEMO_SEASON_KEY);
+
     if (mode !== "demo") return { mode: null, seasonYear: null };
+
     const seasonYear = season ? Number(season) : null;
     return {
       mode: "demo",
-      seasonYear: Number.isFinite(seasonYear) ? seasonYear : null,
+      seasonYear: Number.isFinite(seasonYear) ? seasonYear : null
     };
   } catch {
     return { mode: null, seasonYear: null };
