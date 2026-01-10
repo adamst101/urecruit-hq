@@ -1,17 +1,18 @@
 // src/pages/Calendar.jsx
 import React, { useMemo, useState } from "react";
 
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess.js";
-import { useAthleteIdentity } from "../components/useAthleteIdentity.js";
+// ✅ Remove explicit extensions (Base44 resolves these more reliably)
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { useAthleteIdentity } from "../components/useAthleteIdentity";
 
-import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
-import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.js";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
+import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient";
 
-import FilterSheet from "../components/filters/FilterSheet.jsx";
-import CampCard from "../components/camps/CampCard.jsx";
-import BottomNav from "../components/navigation/BottomNav.jsx";
+import FilterSheet from "../components/filters/FilterSheet";
+import CampCard from "../components/camps/CampCard";
+import BottomNav from "../components/navigation/BottomNav";
 
-import { Button } from "../components/ui/button.jsx";
+import { Button } from "../components/ui/button";
 
 function safeDateKey(d) {
   try {
@@ -52,7 +53,7 @@ export default function Calendar() {
     seasonYear: season.seasonYear,
     sportId: filters.sport || null,
     state: filters.state || null,
-    division: (filters.divisions || [])[0] || null, // Calendar keeps it simple
+    division: (filters.divisions || [])[0] || null,
     positionIds: filters.positions || [],
     enabled: !isPaid,
     limit: 500,
@@ -60,7 +61,6 @@ export default function Calendar() {
 
   const rows = useMemo(() => {
     const arr = isPaid ? (paidQuery.data || []) : (demoQuery.data || []);
-    // Normalize into a common shape for rendering
     return (arr || []).map((r) => ({
       camp_id: r.camp_id,
       camp_name: r.camp_name,
@@ -77,7 +77,6 @@ export default function Calendar() {
       sport_id: r.sport_id,
       sport_name: r.sport_name,
 
-      // paid-only
       intent_status: r.intent_status || null,
     }));
   }, [isPaid, paidQuery.data, demoQuery.data]);
@@ -89,7 +88,6 @@ export default function Calendar() {
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(r);
     }
-    // Sort by date key descending (newest first), but keep TBD last
     const keys = Array.from(map.keys()).sort((a, b) => {
       if (a === "TBD") return 1;
       if (b === "TBD") return -1;
@@ -145,9 +143,7 @@ export default function Calendar() {
                         school_name: r.school_name,
                         school_division: r.school_division,
                       }}
-                      sport={{
-                        sport_name: r.sport_name,
-                      }}
+                      sport={{ sport_name: r.sport_name }}
                       positions={[]}
                       isFavorite={false}
                       isRegistered={r.intent_status === "registered"}
