@@ -240,7 +240,7 @@ export default function FilterSheet({
 
             {startDate && endDate && endDate < startDate && (
               <div className="text-xs text-rose-600">
-                End date can’t be earlier than start date.
+                End date can't be earlier than start date.
               </div>
             )}
           </div>
