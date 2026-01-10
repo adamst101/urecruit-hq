@@ -8,44 +8,47 @@ import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 /**
  * useIdentity
  *
- * Central identity resolver aligned to your current architecture:
+ * Canonical identity resolver:
  * - Auth user (base44.auth.me)
  * - Subscription status (from useSeasonAccess: mode/entitlement)
  * - "Children" == AthleteProfiles for the signed-in account (active only)
- * - Active child stored in localStorage (scoped by accountId)
+ * - Active child stored in localStorage (per account)
  *
- * Notes:
- * - No base44.functions.* dependencies
- * - Avoids unstable deps that can cause redirect / reload loops
+ * Best practices:
+ * - Query keys scoped by accountId
+ * - No redirect logic here (pure state)
+ * - Minimal cache invalidation (only dependent queries)
  */
 export function useIdentity() {
   const queryClient = useQueryClient();
-  const { isLoading: accessLoading, mode, accountId, entitlement } = useSeasonAccess();
+
+  const { isLoading: accessLoading, mode, accountId, entitlement } =
+    useSeasonAccess();
 
   // 1) Auth user (best effort)
   const meQuery = useQuery({
     queryKey: ["auth_me"],
+    retry: false,
+    staleTime: 0,
     queryFn: async () => {
       try {
-        return await base44.auth.me?.();
+        return await base44.auth.me();
       } catch {
         return null;
       }
     },
-    retry: false,
-    staleTime: 0
   });
 
   const user = meQuery.data || null;
 
-  // Subscription modeled consistently with the rest of your app
+  // Subscription modeled consistently with the rest of the app
   const subscription = useMemo(() => {
     if (!accountId) return { status: "inactive", entitlement: null };
     if (mode === "paid") return { status: "active", entitlement: entitlement || null };
     return { status: "inactive", entitlement: null };
   }, [accountId, mode, entitlement]);
 
-  // 2) Children == active athlete profiles for account
+  // 2) Children == athlete profiles for account (active only)
   const childrenQuery = useQuery({
     queryKey: ["athleteProfiles", accountId],
     enabled: !!accountId && !accessLoading,
@@ -55,13 +58,13 @@ export function useIdentity() {
       try {
         const rows = await base44.entities.AthleteProfile.filter({
           account_id: accountId,
-          active: true
+          active: true,
         });
         return Array.isArray(rows) ? rows : [];
       } catch {
         return [];
       }
-    }
+    },
   });
 
   const children = childrenQuery.data || [];
@@ -95,7 +98,9 @@ export function useIdentity() {
       saved = window.localStorage.getItem(activeChildKey);
     } catch {}
 
-    const savedValid = saved && kids.some((k) => String(k?.id) === String(saved));
+    const savedValid =
+      saved && kids.some((k) => String(k?.id) === String(saved));
+
     const fallback = kids[0]?.id ?? null;
     const resolved = savedValid ? saved : fallback;
 
@@ -120,7 +125,7 @@ export function useIdentity() {
         else window.localStorage.removeItem(activeChildKey);
       } catch {}
 
-      // Invalidate only what depends on active child
+      // Invalidate only queries that depend on active child selection
       try {
         queryClient.invalidateQueries({ queryKey: ["athleteIdentity"], exact: false });
         queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
@@ -148,7 +153,6 @@ export function useIdentity() {
     hasChild,
 
     activeChildId,
-    setActiveChild
+    setActiveChild,
   };
 }
-
