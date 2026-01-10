@@ -5,17 +5,18 @@ import { base44 } from "../../api/base44Client";
 
 /**
  * useSeasonAccess
- * Single source of truth for demo vs paid access.
+ * Single source of truth for whether the user is in demo mode or paid mode.
  *
  * Rules:
- * - Not authenticated => demo
- * - Authenticated + active entitlement for current UTC year => paid
- * - Else => demo
+ * - If user is NOT authenticated -> demo
+ * - If authenticated AND has active Entitlement for currentYear -> paid
+ * - Else -> demo
  *
- * Notes:
- * - Uses UTC year to avoid timezone edge cases
- * - Handles season_year stored as string or number
- * - Keeps return contract stable across the app
+ * Hardening:
+ * - Use UTC year to avoid Jan 1 timezone edge cases
+ * - Handle season_year stored as number OR string
+ * - Keep query keys stable
+ * - Return a consistent contract used across pages
  */
 export function useSeasonAccess() {
   // Stable season years (UTC)
@@ -28,7 +29,7 @@ export function useSeasonAccess() {
     };
   }, []);
 
-  // Who is the user?
+  // Auth identity (treat failure as logged out)
   const meQuery = useQuery({
     queryKey: ["auth_me"],
     retry: false,
@@ -44,7 +45,7 @@ export function useSeasonAccess() {
 
   const accountId = meQuery.data?.id || null;
 
-  // Only check entitlements when auth is resolved
+  // Only check entitlements when we have accountId and auth is resolved
   const canCheckEntitlements = !!accountId && !meQuery.isLoading;
 
   const entitlementQuery = useQuery({
@@ -53,7 +54,7 @@ export function useSeasonAccess() {
     retry: false,
     staleTime: 0,
     queryFn: async () => {
-      // 1) Strict filter (fast path)
+      // 1) Fast path: strict filter
       try {
         const rows = await base44.entities.Entitlement.filter({
           account_id: accountId,
@@ -65,7 +66,7 @@ export function useSeasonAccess() {
         // fall through
       }
 
-      // 2) Fallback: pull all active for account and match in memory (handles string/number issues)
+      // 2) Fallback: match season_year as string
       let allActive = [];
       try {
         allActive = await base44.entities.Entitlement.filter({
@@ -81,17 +82,17 @@ export function useSeasonAccess() {
     }
   });
 
-  const loading = meQuery.isLoading || (canCheckEntitlements && entitlementQuery.isLoading);
+  const loading =
+    meQuery.isLoading || (canCheckEntitlements && entitlementQuery.isLoading);
 
   const isPaid = !!accountId && !!entitlementQuery.data;
   const seasonYear = isPaid ? currentYear : demoYear;
 
   return {
-    // canonical loading flags
+    // canonical
     loading,
     isLoading: loading,
 
-    // access mode
     mode: isPaid ? "paid" : "demo",
     hasAccess: isPaid,
 
@@ -109,3 +110,9 @@ export function useSeasonAccess() {
     isAuthenticated: !!accountId
   };
 }
+
+/**
+ * Backward-compatible default export.
+ * Some files may import `useSeasonAccess` as default.
+ */
+export default useSeasonAccess;
