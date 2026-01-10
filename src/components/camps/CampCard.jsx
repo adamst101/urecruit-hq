@@ -3,10 +3,14 @@ import React from "react";
 import { Calendar, MapPin, DollarSign, Star } from "lucide-react";
 import { format } from "date-fns";
 
-import { cn } from "@/lib/utils";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Card } from "../ui/card";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+
+// local cn helper (removes dependency on @/lib/utils)
+function cn(...classes) {
+  return classes.filter(Boolean).join(" ");
+}
 
 function safeFormatDate(d) {
   try {
@@ -26,8 +30,9 @@ export default function CampCard({
   isRegistered,
   onFavoriteToggle,
   onClick,
-  mode, // "demo" | "paid"
-  disabledFavorite,
+  // optional flags for demo/paid UI (won’t break existing callers)
+  mode, // "demo" | "paid" (optional)
+  disabledFavorite // optional: force-disable favorite button
 }) {
   const division = school?.division || school?.school_division || null;
   const sportName = sport?.sport_name || sport?.name || null;
@@ -50,6 +55,7 @@ export default function CampCard({
         if (e.key === "Enter" || e.key === " ") onClick?.();
       }}
     >
+      {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -65,6 +71,7 @@ export default function CampCard({
           <div className="text-sm text-slate-600 truncate">{camp?.camp_name || "Camp"}</div>
         </div>
 
+        {/* Favorite */}
         <Button
           type="button"
           variant="ghost"
@@ -77,13 +84,7 @@ export default function CampCard({
             onFavoriteToggle?.();
           }}
           aria-label={isFavorite ? "Remove favorite" : "Add favorite"}
-          title={
-            disabledFavorite
-              ? "Favorites are disabled"
-              : isFavorite
-                ? "Remove favorite"
-                : "Add favorite"
-          }
+          title={disabledFavorite ? "Favorites are disabled" : isFavorite ? "Remove favorite" : "Add favorite"}
         >
           <Star
             className={cn(
@@ -94,6 +95,7 @@ export default function CampCard({
         </Button>
       </div>
 
+      {/* Details */}
       <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-slate-400" />
@@ -120,6 +122,7 @@ export default function CampCard({
         )}
       </div>
 
+      {/* Positions */}
       {Array.isArray(positions) && positions.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {positions.slice(0, 6).map((p, idx) => {
