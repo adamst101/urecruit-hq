@@ -1,23 +1,49 @@
 // src/pages/Calendar.jsx
-import React, { useMemo, useState } from "react";
-import { CalendarDays, Filter } from "lucide-react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { CalendarDays, Filter as FilterIcon } from "lucide-react";
 
-import { createPageUrl } from "../utils";
+import { base44 } from "../api/base44Client";
 
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
-import BottomNav from "../components/navigation/BottomNav.jsx";
+import FilterSheet from "../components/filters/FilterSheet.jsx";
 
-// ✅ All your hooks/components are .jsx — use explicit .jsx paths
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
-import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
-import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
 
-// ✅ FilterSheet is in src/components/filters/FilterSheet.jsx
-import FilterSheet from "../components/filters/FilterSheet.jsx";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
+import {
+  usePublicCampSummariesClient,
+  publicCampYearHasData,
+} from "../components/hooks/usePublicCampSummariesClient.jsx";
+
+// ---------------- helpers ----------------
+function safeStr(x) {
+  if (x === undefined || x === null) return "";
+  return String(x);
+}
+
+function parseISODate(s) {
+  // expects YYYY-MM-DD; returns Date or null
+  if (!s || typeof s !== "string") return null;
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return null;
+  const d = new Date(s);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+function ymd(d) {
+  if (!(d instanceof Date)) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function uniq(arr) {
+  return Array.from(new Set((arr || []).filter(Boolean)));
+}
 
 function normId(x) {
   if (!x) return null;
@@ -25,258 +51,387 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
+const FILTER_KEY = "rm_calendar_filters_v1";
+
+function readFilters() {
+  try {
+    const raw = localStorage.getItem(FILTER_KEY);
+    const obj = raw ? JSON.parse(raw) : null;
+    return obj && typeof obj === "object" ? obj : null;
+  } catch {
+    return null;
+  }
 }
 
-function ymd(d) {
-  // expects "YYYY-MM-DD" in data; if not, returns ""
-  if (!d) return "";
-  const s = String(d).slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+function writeFilters(next) {
+  try {
+    localStorage.setItem(FILTER_KEY, JSON.stringify(next || {}));
+  } catch {}
 }
 
-function inDateRange(start, end, from, to) {
-  const s = ymd(start);
-  const e = ymd(end) || s;
-  if (!s) return false;
-
-  if (from && e < from) return false; // camp ends before window
-  if (to && s > to) return false;     // camp starts after window
-  return true;
-}
-
-export default function Calendar() {
-  const season = useSeasonAccess();
-  const { athleteProfile } = useAthleteIdentity();
-
-  const mode = season.mode; // "demo" | "paid"
-  const isPaid = mode === "paid";
-  const seasonYear = season.seasonYear;
-
-  // ---------- Filters (shared UI w/ Discover) ----------
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [filters, setFilters] = useState({
+function defaultFilters() {
+  return {
     sport: "",
     state: "",
     divisions: [],
     positions: [],
     startDate: "",
-    endDate: ""
-  });
+    endDate: "",
+  };
+}
 
-  // For now: Calendar uses same filter model, applied client-side
-  const selectedSportId = filters.sport ? String(filters.sport) : null;
+// ---------------- page ----------------
+export default function Calendar() {
+  const season = useSeasonAccess();
+  const { athleteProfile } = useAthleteIdentity();
+
+  const isDemo = season.mode !== "paid";
+  const athleteId = athleteProfile?.id ? String(athleteProfile.id) : null;
+
+  // Filters (persisted)
+  const [filters, setFilters] = useState(() => readFilters() || defaultFilters());
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const onFilterChange = useCallback((next) => {
+    setFilters(next || {});
+    writeFilters(next || {});
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    const next = defaultFilters();
+    setFilters(next);
+    writeFilters(next);
+  }, []);
+
+  // Load Sports + Positions for FilterSheet (best-effort)
+  const [sports, setSports] = useState([]);
+  const [positions, setPositions] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        const rows = await base44.entities.Sport?.list?.();
+        if (!mounted) return;
+        setSports(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (mounted) setSports([]);
+      }
+    })();
+
+    (async () => {
+      try {
+        const rows = await base44.entities.Position?.list?.();
+        if (!mounted) return;
+        setPositions(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (mounted) setPositions([]);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // ---------- Demo Year Resolver (critical fix) ----------
+  const [resolvedYear, setResolvedYear] = useState(season.seasonYear);
+  const [resolvingYear, setResolvingYear] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resolve() {
+      // Paid mode: always use current paid seasonYear
+      if (!isDemo) {
+        setResolvedYear(season.seasonYear);
+        return;
+      }
+
+      // Demo: try season.seasonYear first, then walk forward/back a bit
+      const start = Number(season.seasonYear);
+      if (!Number.isFinite(start)) {
+        setResolvedYear(season.seasonYear);
+        return;
+      }
+
+      setResolvingYear(true);
+
+      const candidates = uniq([
+        start,
+        start + 1, // in case data exists for current year but demo defaults to prior
+        start - 1,
+        start + 2,
+        start - 2,
+      ]);
+
+      for (const y of candidates) {
+        try {
+          const ok = await publicCampYearHasData(y);
+          if (cancelled) return;
+          if (ok) {
+            setResolvedYear(y);
+            setResolvingYear(false);
+            return;
+          }
+        } catch {
+          // keep trying
+        }
+      }
+
+      // If nothing found, keep original (shows empty state truthfully)
+      setResolvedYear(season.seasonYear);
+      setResolvingYear(false);
+    }
+
+    resolve();
+    return () => {
+      cancelled = true;
+    };
+  }, [isDemo, season.seasonYear]);
+
+  // Normalize filter inputs for queries
+  const qSportId = useMemo(() => {
+    const v = safeStr(filters?.sport).trim();
+    return v ? v : null;
+  }, [filters?.sport]);
+
+  const qState = useMemo(() => {
+    const v = safeStr(filters?.state).trim();
+    return v ? v : null;
+  }, [filters?.state]);
+
+  const qDivision = useMemo(() => {
+    // FilterSheet currently writes divisions[]; Calendar supports single-division filtering by applying client-side
+    const arr = Array.isArray(filters?.divisions) ? filters.divisions : [];
+    return arr.length ? arr : [];
+  }, [filters?.divisions]);
+
+  const qPositionIds = useMemo(() => {
+    const arr = Array.isArray(filters?.positions) ? filters.positions : [];
+    return arr.map(normId).filter(Boolean);
+  }, [filters?.positions]);
+
+  const startDate = useMemo(() => safeStr(filters?.startDate).trim(), [filters?.startDate]);
+  const endDate = useMemo(() => safeStr(filters?.endDate).trim(), [filters?.endDate]);
 
   // ---------- Data ----------
-  // Paid: pull full summaries tied to athlete (intent + target school flags, etc.)
-  const paidSummaries = useCampSummariesClient({
-    athleteId: normId(athleteProfile) || athleteProfile?.id || null,
-    sportId: selectedSportId,
-    enabled: isPaid && !!athleteProfile
+  // Paid: athlete-scoped summaries (best source of truth for personalized calendar)
+  const paidQuery = useCampSummariesClient({
+    athleteId,
+    sportId: qSportId || undefined,
+    enabled: !!athleteId && season.mode === "paid",
   });
 
-  // Demo/Public: pull public summaries by seasonYear and filters
-  const publicSummaries = usePublicCampSummariesClient({
-    seasonYear,
-    sportId: selectedSportId,
-    state: filters.state || null,
-    division: null, // division is applied client-side after join in hook; keep null here for simplicity
-    positionIds: asArray(filters.positions),
-    enabled: !isPaid
+  // Demo / Public: year-scoped summaries
+  const publicQuery = usePublicCampSummariesClient({
+    seasonYear: resolvedYear,
+    sportId: qSportId || null,
+    state: qState || null,
+    // division and positions are handled client-side below (because your FilterSheet supports multi-select)
+    division: null,
+    positionIds: [],
+    enabled: true,
+    limit: 1000,
   });
 
-  const loading = paidSummaries.isLoading || publicSummaries.isLoading;
+  const loading =
+    season.isLoading ||
+    resolvingYear ||
+    (season.mode === "paid" ? paidQuery.isLoading : publicQuery.isLoading);
 
-  const raw = useMemo(() => {
-    if (isPaid) return asArray(paidSummaries.data);
-    return asArray(publicSummaries.data);
-  }, [isPaid, paidSummaries.data, publicSummaries.data]);
+  const rawRows = useMemo(() => {
+    const rows =
+      season.mode === "paid"
+        ? (paidQuery.data || [])
+        : (publicQuery.data || []);
 
-  // ---------- Client-side filtering (best-practice safety net) ----------
-  const filtered = useMemo(() => {
-    const divisions = asArray(filters.divisions);
-    const positions = asArray(filters.positions).map(String);
+    return Array.isArray(rows) ? rows : [];
+  }, [season.mode, paidQuery.data, publicQuery.data]);
 
-    return raw.filter((r) => {
-      // division filter
-      if (divisions.length) {
-        const div = r?.school_division || r?.division || null;
-        if (!divisions.includes(div)) return false;
-      }
+  // ---------- Client-side filtering (multi-select division + positions + date range) ----------
+  const filteredRows = useMemo(() => {
+    let rows = rawRows.slice();
 
-      // positions filter
-      if (positions.length) {
-        const campPosIds = asArray(r?.position_ids).map(String);
-        const match = positions.some((p) => campPosIds.includes(p));
-        if (!match) return false;
-      }
+    // If we’re in paid mode, state/positions/division might not be pre-filtered by query
+    if (qState) {
+      rows = rows.filter((r) => safeStr(r?.state || r?.camp_state).toUpperCase() === qState.toUpperCase());
+    }
 
-      // date range filter
-      const from = filters.startDate ? String(filters.startDate) : "";
-      const to = filters.endDate ? String(filters.endDate) : "";
-      if ((from || to) && !inDateRange(r?.start_date, r?.end_date, from, to)) return false;
+    if (qDivision.length) {
+      rows = rows.filter((r) => qDivision.includes(r?.school_division || r?.division || r?.school_division_code));
+    }
 
-      return true;
-    });
-  }, [raw, filters.divisions, filters.positions, filters.startDate, filters.endDate]);
+    if (qPositionIds.length) {
+      rows = rows.filter((r) => {
+        const ids = Array.isArray(r?.position_ids) ? r.position_ids.map(normId).filter(Boolean) : [];
+        return qPositionIds.some((p) => ids.includes(p));
+      });
+    }
 
-  // ---------- Lightweight “calendar-like” grouping ----------
+    if (startDate) {
+      rows = rows.filter((r) => {
+        const d = parseISODate(r?.start_date);
+        return d ? ymd(d) >= startDate : false;
+      });
+    }
+
+    if (endDate) {
+      rows = rows.filter((r) => {
+        const d = parseISODate(r?.start_date);
+        return d ? ymd(d) <= endDate : false;
+      });
+    }
+
+    return rows;
+  }, [rawRows, qState, qDivision, qPositionIds, startDate, endDate]);
+
+  // Group by start_date for a calendar-style list
   const grouped = useMemo(() => {
     const map = new Map();
-    for (const c of filtered) {
-      const key = ymd(c?.start_date) || "TBD";
+    for (const r of filteredRows) {
+      const key = safeStr(r?.start_date) || "TBD";
       if (!map.has(key)) map.set(key, []);
-      map.get(key).push(c);
+      map.get(key).push(r);
     }
-    // sort keys desc (latest first), TBD last
-    const keys = Array.from(map.keys()).sort((a, b) => {
-      if (a === "TBD") return 1;
-      if (b === "TBD") return -1;
-      return a < b ? 1 : -1;
-    });
+    const keys = Array.from(map.keys()).sort();
     return keys.map((k) => ({ date: k, items: map.get(k) || [] }));
-  }, [filtered]);
-
-  const appliedCount = useMemo(() => {
-    let n = 0;
-    if (filters.sport) n += 1;
-    if (filters.state) n += 1;
-    if (asArray(filters.divisions).length) n += 1;
-    if (asArray(filters.positions).length) n += 1;
-    if (filters.startDate || filters.endDate) n += 1;
-    return n;
-  }, [filters]);
+  }, [filteredRows]);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
       <div className="max-w-md mx-auto px-4 pt-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CalendarDays className="w-5 h-5 text-slate-600" />
+            <CalendarDays className="w-5 h-5 text-slate-700" />
             <h1 className="text-xl font-semibold text-deep-navy">Calendar</h1>
-            {mode === "demo" && (
-              <Badge variant="outline" className="ml-2">
-                Demo
-              </Badge>
-            )}
+            {isDemo && <Badge variant="outline">Demo</Badge>}
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setFiltersOpen(true)}
-            className="gap-2"
-          >
-            <Filter className="w-4 h-4" />
-            Filters
-            {appliedCount > 0 && (
-              <span className="ml-1 rounded-full bg-slate-900 text-white text-xs px-2 py-0.5">
-                {appliedCount}
-              </span>
-            )}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFilterOpen(true)}
+            >
+              <FilterIcon className="w-4 h-4 mr-2" />
+              Filters
+            </Button>
+          </div>
         </div>
 
-        {/* Body */}
-        {loading ? (
-          <div className="text-sm text-slate-500">Loading camps…</div>
-        ) : grouped.length === 0 ? (
-          <Card className="p-4 border-slate-200">
-            <div className="text-sm text-slate-600">
-              No camps match your current filters.
-            </div>
-            <div className="text-xs text-slate-500 mt-2">
-              Try clearing filters or switching the sport/state/date range.
-            </div>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {grouped.map((g) => (
-              <Card key={g.date} className="p-4 border-slate-200">
-                <div className="text-sm font-semibold text-slate-800">
-                  {g.date === "TBD" ? "Date TBD" : g.date}
-                </div>
+        {/* Subheader */}
+        <div className="mt-2 text-xs text-slate-500">
+          {isDemo ? (
+            <span>
+              Showing season <span className="font-medium">{resolvedYear}</span>
+              {resolvingYear ? " (resolving…)" : ""}
+            </span>
+          ) : (
+            <span>Showing your personalized camp calendar</span>
+          )}
+        </div>
 
-                <div className="mt-3 space-y-2">
-                  {g.items.slice(0, 15).map((c) => {
-                    const title = c?.school_name || "Unknown School";
-                    const subtitle = c?.camp_name || "Camp";
-                    const loc = [c?.city, c?.state].filter(Boolean).join(", ");
-                    const div = c?.school_division || null;
+        {/* Content */}
+        <div className="mt-5">
+          {loading ? (
+            <Card className="p-4 border-slate-200">
+              <div className="text-sm text-slate-600">Loading camps…</div>
+            </Card>
+          ) : grouped.length === 0 ? (
+            <Card className="p-4 border-slate-200">
+              <div className="text-sm text-slate-700 font-medium">
+                No camps match your current filters.
+              </div>
+              <div className="text-sm text-slate-500 mt-1">
+                Try clearing filters or switching sport/state/date range.
+              </div>
 
-                    return (
-                      <button
-                        key={String(c?.camp_id || c?.id || Math.random())}
-                        type="button"
-                        className="w-full text-left rounded-lg border border-slate-200 bg-white p-3 hover:shadow-sm transition"
-                        onClick={() => {
-                          // Keep this simple: go to Discover for now (detail view can be wired later)
-                          window.location.href =
-                            createPageUrl("Discover") +
-                            `?from=calendar&camp=${encodeURIComponent(String(c?.camp_id || ""))}` +
-                            (mode === "demo" ? "&mode=demo" : "");
-                        }}
+              <div className="mt-3 flex gap-2">
+                <Button variant="outline" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+                {isDemo && (
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      // Force re-resolve year on demand
+                      setResolvingYear(true);
+                      try {
+                        // trigger effect by temporarily bumping year then restoring
+                        setResolvedYear((y) => y);
+                      } finally {
+                        setResolvingYear(false);
+                      }
+                    }}
+                  >
+                    Re-check season
+                  </Button>
+                )}
+              </div>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {grouped.map((g) => (
+                <div key={g.date}>
+                  <div className="text-xs font-semibold text-slate-500 mb-2">
+                    {g.date}
+                  </div>
+
+                  <div className="space-y-2">
+                    {g.items.map((r) => (
+                      <Card
+                        key={safeStr(r?.camp_id || r?.id) + ":" + safeStr(r?.school_id)}
+                        className="p-3 border-slate-200 bg-white"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="font-semibold text-deep-navy truncate">
-                              {title}
-                            </div>
-                            <div className="text-sm text-slate-600 truncate">
-                              {subtitle}
-                            </div>
-                            {loc && (
-                              <div className="text-xs text-slate-500 mt-1 truncate">
-                                {loc}
-                              </div>
-                            )}
-                          </div>
-                          {div && (
-                            <Badge className="bg-slate-900 text-white text-xs">
-                              {div}
+                        <div className="text-sm font-semibold text-deep-navy">
+                          {r?.school_name || "Unknown School"}
+                        </div>
+                        <div className="text-sm text-slate-600">
+                          {r?.camp_name || "Camp"}
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                          {(r?.school_division || null) && (
+                            <Badge className="bg-slate-900 text-white">
+                              {r.school_division}
                             </Badge>
                           )}
+                          {(r?.sport_name || null) && (
+                            <span className="font-medium">{r.sport_name}</span>
+                          )}
+                          {(r?.city || r?.state) && (
+                            <span>
+                              {[r?.city, r?.state].filter(Boolean).join(", ")}
+                            </span>
+                          )}
                         </div>
-                      </button>
-                    );
-                  })}
-                  {g.items.length > 15 && (
-                    <div className="text-xs text-slate-500 pt-2">
-                      Showing first 15 camps for this date.
-                    </div>
-                  )}
+                      </Card>
+                    ))}
+                  </div>
                 </div>
-              </Card>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Filters */}
+      {/* FilterSheet */}
       <FilterSheet
-        isOpen={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
+        isOpen={filterOpen}
+        onClose={() => setFilterOpen(false)}
         filters={filters}
-        onFilterChange={setFilters}
-        positions={[]} // optional: wire when you have Position list in Discover
-        sports={[]}    // optional: wire when you have Sport list in Discover
-        onApply={() => setFiltersOpen(false)}
+        onFilterChange={onFilterChange}
+        sports={sports}
+        positions={positions}
+        onApply={() => setFilterOpen(false)}
         onClear={() => {
-          setFilters({
-            sport: "",
-            state: "",
-            divisions: [],
-            positions: [],
-            startDate: "",
-            endDate: ""
-          });
-          setFiltersOpen(false);
+          clearFilters();
+          setFilterOpen(false);
         }}
       />
-
-      <BottomNav />
     </div>
   );
 }
