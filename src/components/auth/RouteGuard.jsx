@@ -8,14 +8,16 @@ import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
 
 /**
- * RouteGuard
+ * RouteGuard (best-practice hardened)
  *
- * Best-practice goals:
- * - Home stays a true front door (no auto-redirect here unless a page requires it)
- * - Demo override: ?mode=demo always bypasses paid/profile gating
- * - Enforce requireAuth / requirePaid / requireProfile in a deterministic order
- * - Avoid redirect loops (replace navigation, guard against same-path redirects)
- * - Avoid loading athlete identity in demo mode
+ * Goals:
+ * - Home remains a true front door (no auto-redirect here unless explicitly required by props)
+ * - Demo override via ?mode=demo bypasses paid/profile gating
+ * - Avoid redirect loops by using stable callbacks + conservative redirects
+ *
+ * Notes:
+ * - Do NOT hard-depend on a /Login page existing (Base44 can 404 it).
+ *   If auth is required and user is not authed, we route to Home with ?signin=1.
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -27,8 +29,11 @@ export default function RouteGuard({
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
-    useAthleteIdentity();
+  const {
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError
+  } = useAthleteIdentity();
 
   const currentPath = useMemo(() => {
     return (loc?.pathname || "") + (loc?.search || "");
@@ -36,7 +41,7 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // URL demo override always wins (lets users browse demo even if authed/paid)
+  // Demo override: if URL has ?mode=demo then demo always wins
   const forceDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
@@ -46,10 +51,7 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
-  // Paid is only “paid” when not forcing demo
   const isPaid = !forceDemo && mode === "paid";
-
-  // Only require identity when profile is required AND user is actually in paid mode
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
@@ -66,18 +68,18 @@ export default function RouteGuard({
   useEffect(() => {
     if (loading) return;
 
-    // If we need identity and it errored, route to Profile (recoverable path)
+    // If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
       safeReplace(
-        createPageUrl("Profile") +
-          `?next=${nextParam}&err=profile_load_failed`
+        createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`
       );
       return;
     }
 
     // 1) Auth required
     if (requireAuth && !accountId) {
-      safeReplace(createPageUrl("Login") + `?next=${nextParam}`);
+      // Avoid hard dependency on a /Login page that may not exist in Base44
+      safeReplace(createPageUrl("Home") + `?signin=1&next=${nextParam}`);
       return;
     }
 
