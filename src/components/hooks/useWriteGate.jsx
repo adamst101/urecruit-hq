@@ -1,47 +1,26 @@
 // src/components/hooks/useWriteGate.jsx
-import { useCallback, useMemo } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useMemo, useCallback } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 
 import { createPageUrl } from "../../utils";
-
-// IMPORTANT: your repo is .jsx — do not import .js
 import { useSeasonAccess } from "./useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
+
+import { readDemoMode } from "./demoMode.jsx";
 
 /**
  * useWriteGate
  *
- * Best-practice goals:
- * - ONE authoritative place to decide: demo vs paid vs blocked
- * - Demo writes are always allowed locally (even if not signed in)
- * - Paid writes are allowed only when:
- *    - accountId exists AND
- *    - athleteProfile exists
- * - Never import demoMode.* (eliminates extension/path drift issues)
- * - URL ?mode=demo ALWAYS forces demo behavior (preview/sales flows)
+ * Best-practice contract for "where writes go":
+ * - demo   => local writes allowed (no auth required)
+ * - paid   => backend writes allowed ONLY when (accountId && athleteProfile)
+ * - blocked => cannot write to backend; redirect to Login/Profile depending on state
  *
- * Returns:
- *  {
- *    mode: "demo" | "paid" | "blocked",
- *    reason: string|null,
- *    effectiveMode: "demo" | "paid",
- *    write({ demo, paid, blocked, next }),
- *    requirePaid({ next, source })
- *  }
+ * Deterministic mode precedence:
+ * 1) URL override: ?mode=demo wins
+ * 2) Local demo mode: readDemoMode() (set by setDemoMode) next
+ * 3) Server entitlement: useSeasonAccess().mode
  */
-
-// --- local demo mode reader (no imports) ---
-const RM_MODE_KEY = "rm_mode";
-
-function readLocalDemoMode() {
-  try {
-    const mode = localStorage.getItem(RM_MODE_KEY);
-    return mode === "demo";
-  } catch {
-    return false;
-  }
-}
-
 export function useWriteGate() {
   const navigate = useNavigate();
   const loc = useLocation();
@@ -59,29 +38,35 @@ export function useWriteGate() {
     }
   }, [loc.search]);
 
-  // 2) Local demo override: set by localStorage rm_mode=demo (if you use it anywhere)
-  const localDemo = useMemo(() => readLocalDemoMode(), []);
+  // 2) Local demo contract (set by setDemoMode)
+  const localDemo = useMemo(() => {
+    try {
+      return readDemoMode(); // { mode: "demo" | null, seasonYear: number | null }
+    } catch {
+      return { mode: null, seasonYear: null };
+    }
+  }, []);
 
-  // 3) Effective mode
+  // Effective mode
   const effectiveMode = useMemo(() => {
     if (urlMode === "demo") return "demo";
-    if (localDemo) return "demo";
+    if (localDemo?.mode === "demo") return "demo";
     return season.mode === "paid" ? "paid" : "demo";
-  }, [urlMode, localDemo, season.mode]);
+  }, [urlMode, localDemo?.mode, season.mode]);
 
   const isPaidMode = effectiveMode === "paid";
   const hasAccount = !!season.accountId;
 
-  // Only load athlete identity when we truly need it (paid mode).
+  // Identity is only meaningful in paid mode, but hook is safe because it no-ops when not authed.
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
   const hasProfile = !!athleteProfile;
 
-  // Gate decision
+  // Gate mode + reason
   const gate = useMemo(() => {
-    // Demo: always allow local writes
+    // Demo mode: always allow local writes (even anonymous)
     if (!isPaidMode) return { mode: "demo", reason: null };
 
-    // Paid mode: block until ready
+    // Paid mode but not ready -> blocked
     if (!hasAccount) return { mode: "blocked", reason: "Sign in required" };
     if (identityLoading) return { mode: "blocked", reason: "Loading profile" };
     if (!hasProfile) return { mode: "blocked", reason: "Complete athlete profile" };
@@ -89,7 +74,11 @@ export function useWriteGate() {
     return { mode: "paid", reason: null };
   }, [isPaidMode, hasAccount, identityLoading, hasProfile]);
 
-  // Default blocked routing (best practice: deterministic + carries next)
+  /**
+   * Default blocked behavior:
+   * - Paid but missing account => Login (with next)
+   * - Paid + account but missing profile => Profile (with next)
+   */
   const defaultBlocked = useCallback(
     (opts = {}) => {
       const next =
@@ -97,25 +86,23 @@ export function useWriteGate() {
           ? opts.next
           : createPageUrl("Discover");
 
-      // Paid mode, authed, missing profile => Profile
-      if (isPaidMode && hasAccount) {
-        navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
+      if (!hasAccount) {
+        navigate(createPageUrl("Login") + `?next=${encodeURIComponent(next)}`, {
           replace: false
         });
         return;
       }
 
-      // Not authed => Login
-      navigate(createPageUrl("Login") + `?next=${encodeURIComponent(next)}`, {
+      navigate(createPageUrl("Profile") + `?next=${encodeURIComponent(next)}`, {
         replace: false
       });
     },
-    [navigate, isPaidMode, hasAccount]
+    [navigate, hasAccount]
   );
 
   // Main router for writes
   const write = useCallback(
-    async ({ demo, paid, blocked, next } = {}) => {
+    async ({ demo, paid, blocked, next }) => {
       if (gate.mode === "paid") return paid ? await paid() : undefined;
       if (gate.mode === "demo") return demo ? await demo() : undefined;
 
@@ -127,9 +114,9 @@ export function useWriteGate() {
   );
 
   /**
-   * Helper for actions that MUST be paid (e.g., backend writes).
-   * - If in demo => go Subscribe
-   * - If blocked in paid => go Profile/Login as appropriate
+   * Helper for actions that MUST be paid.
+   * - If in demo => Subscribe
+   * - If paid but blocked => Login/Profile (defaultBlocked)
    */
   const requirePaid = useCallback(
     (opts = {}) => {
@@ -141,7 +128,6 @@ export function useWriteGate() {
 
       if (gate.mode === "paid") return true;
 
-      // In demo => upgrade path
       if (gate.mode === "demo") {
         navigate(
           createPageUrl("Subscribe") +
@@ -153,7 +139,6 @@ export function useWriteGate() {
         return false;
       }
 
-      // blocked in paid
       defaultBlocked({ next });
       return false;
     },
@@ -163,7 +148,7 @@ export function useWriteGate() {
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
-    effectiveMode,
+    effectiveMode, // debug signal
     write,
     requirePaid
   };
