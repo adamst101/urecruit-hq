@@ -1,18 +1,18 @@
 // src/components/filters/FilterSheet.jsx
 import React, { useMemo } from "react";
 
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "../ui/sheet.jsx";
-import { Button } from "../ui/button.jsx";
-import { Label } from "../ui/label.jsx";
-import { Checkbox } from "../ui/checkbox.jsx";
-import { Input } from "../ui/input.jsx";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "../ui/sheet";
+import { Button } from "../ui/button";
+import { Label } from "../ui/label";
+import { Checkbox } from "../ui/checkbox";
+import { Input } from "../ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../ui/select.jsx";
+} from "../ui/select";
 
 const DIVISIONS = ["D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"];
 const STATES = [
@@ -130,6 +130,7 @@ export default function FilterSheet({
         </SheetHeader>
 
         <div className="space-y-6 py-6">
+          {/* Sport */}
           {sportsList.length > 1 && (
             <div>
               <Label className="text-sm font-semibold mb-2 block">Sport</Label>
@@ -149,6 +150,7 @@ export default function FilterSheet({
             </div>
           )}
 
+          {/* Divisions */}
           <div>
             <Label className="text-sm font-semibold mb-2 block">Division</Label>
             <div className="grid grid-cols-3 gap-2">
@@ -167,6 +169,7 @@ export default function FilterSheet({
             </div>
           </div>
 
+          {/* Positions */}
           {positionsList.length > 0 && (
             <div>
               <Label className="text-sm font-semibold mb-2 block">Position</Label>
@@ -187,6 +190,7 @@ export default function FilterSheet({
             </div>
           )}
 
+          {/* State */}
           <div>
             <Label className="text-sm font-semibold mb-2 block">State</Label>
             <Select value={selectedState} onValueChange={onStateChange}>
@@ -204,6 +208,7 @@ export default function FilterSheet({
             </Select>
           </div>
 
+          {/* Date Range */}
           <div className="space-y-3">
             <Label className="text-sm font-semibold block">Date Range</Label>
 
