@@ -9,16 +9,15 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
-import FilterSheet from "../components/filters/FilterSheet"; // ✅ no extension
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess"; // ✅ no extension
-import { useAthleteIdentity } from "../components/useAthleteIdentity"; // ✅ no extension
-import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient"; // ✅ no extension
-import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient"; // ✅ no extension
+import FilterSheet from "../components/filters/FilterSheet.jsx"; // ✅ FORCE .jsx
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { useAthleteIdentity } from "../components/useAthleteIdentity";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
+import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient";
 
 function safeDateKey(d) {
   if (!d) return "TBD";
   const s = String(d);
-  // expecting YYYY-MM-DD
   return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : s;
 }
 
@@ -36,7 +35,6 @@ function prettyDate(d) {
 
 function applyClientFilters(rows, filters) {
   const f = filters || {};
-
   const state = (f.state || "").trim();
   const divisions = Array.isArray(f.divisions) ? f.divisions : [];
   const startDate = f.startDate ? String(f.startDate) : "";
@@ -45,13 +43,11 @@ function applyClientFilters(rows, filters) {
   return (rows || []).filter((r) => {
     if (state && String(r?.state || "") !== state) return false;
 
-    // divisions: allow multi-select; match any
     if (divisions.length) {
       const div = r?.school_division || r?.division || null;
       if (!div || !divisions.includes(String(div))) return false;
     }
 
-    // date range (compare YYYY-MM-DD strings)
     const sd = safeDateKey(r?.start_date);
     if (startDate && sd !== "TBD" && sd < startDate) return false;
     if (endDate && sd !== "TBD" && sd > endDate) return false;
@@ -66,9 +62,8 @@ export default function Calendar() {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Filter model matches FilterSheet contract
   const [filters, setFilters] = useState({
-    sport: "", // sport id or ""
+    sport: "",
     divisions: [],
     positions: [],
     state: "",
@@ -78,7 +73,6 @@ export default function Calendar() {
 
   const sportId = filters.sport ? String(filters.sport) : null;
 
-  // Load sports/positions for the sheet (best-effort; safe if entities missing)
   const sportsQuery = useQuery({
     queryKey: ["sports_list"],
     retry: false,
@@ -112,7 +106,6 @@ export default function Calendar() {
   const isPaid = season.mode === "paid";
   const paidReady = isPaid && !!athleteProfile?.id;
 
-  // Paid data (athlete-scoped)
   const paidSummaries = useCampSummariesClient({
     athleteId: athleteProfile?.id || null,
     sportId: sportId || null,
@@ -120,14 +113,13 @@ export default function Calendar() {
     limit: 2000,
   });
 
-  // Demo/public data (season-scoped)
   const publicSummaries = usePublicCampSummariesClient({
     seasonYear: season.seasonYear,
     sportId: sportId || null,
-    state: "", // state filter applied client-side (avoid backend filter variance)
-    division: "", // division filter applied client-side
+    state: "",
+    division: "",
     positionIds: Array.isArray(filters.positions) ? filters.positions : [],
-    enabled: !paidReady, // use public when not paid-ready
+    enabled: !paidReady,
     limit: 2000,
   });
 
@@ -139,7 +131,6 @@ export default function Calendar() {
   const rawRows = paidReady ? paidSummaries.data || [] : publicSummaries.data || [];
 
   const rows = useMemo(() => {
-    // Normalize field names to a common display model
     const normalized = (rawRows || []).map((r) => ({
       camp_id: r?.camp_id || r?.id || null,
       camp_name: r?.camp_name || "Camp",
@@ -157,10 +148,8 @@ export default function Calendar() {
       intent_status: r?.intent_status || null,
     }));
 
-    // Apply client-side filters consistently (avoids Base44 filter syntax issues)
     const filtered = applyClientFilters(normalized, filters);
 
-    // Sort by start_date (TBD last)
     filtered.sort((a, b) => {
       const ad = safeDateKey(a.start_date);
       const bd = safeDateKey(b.start_date);
@@ -186,7 +175,6 @@ export default function Calendar() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pb-24">
       <div className="max-w-md mx-auto p-4 space-y-4">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-deep-navy">Calendar</h1>
@@ -211,7 +199,6 @@ export default function Calendar() {
           </Button>
         </div>
 
-        {/* Loading */}
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
@@ -231,14 +218,15 @@ export default function Calendar() {
               <div key={dateKey} className="space-y-2">
                 <div className="text-sm font-semibold text-slate-700">
                   {dateKey === "TBD" ? "Date TBD" : prettyDate(dateKey)}
-                  <span className="ml-2 text-xs text-slate-500">
-                    ({items.length})
-                  </span>
+                  <span className="ml-2 text-xs text-slate-500">({items.length})</span>
                 </div>
 
                 <div className="space-y-2">
                   {items.map((c) => (
-                    <Card key={String(c.camp_id || Math.random())} className="p-4 border-slate-200">
+                    <Card
+                      key={String(c.camp_id || Math.random())}
+                      className="p-4 border-slate-200"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -267,9 +255,7 @@ export default function Calendar() {
                           <div className="text-base font-semibold text-deep-navy truncate">
                             {c.school_name}
                           </div>
-                          <div className="text-sm text-slate-600 truncate">
-                            {c.camp_name}
-                          </div>
+                          <div className="text-sm text-slate-600 truncate">{c.camp_name}</div>
 
                           {(c.city || c.state) && (
                             <div className="text-xs text-slate-500 mt-1">
@@ -292,7 +278,6 @@ export default function Calendar() {
           </div>
         )}
 
-        {/* Filter Sheet */}
         <FilterSheet
           isOpen={filtersOpen}
           onClose={() => setFiltersOpen(false)}
