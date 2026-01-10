@@ -25,9 +25,15 @@ export function readDemoMode() {
   try {
     const mode = localStorage.getItem(RM_MODE_KEY);
     const season = localStorage.getItem(RM_DEMO_SEASON_KEY);
+
     if (mode !== "demo") return { mode: null, seasonYear: null };
+
     const seasonYear = season ? Number(season) : null;
-    return { mode: "demo", seasonYear: Number.isFinite(seasonYear) ? seasonYear : null };
+
+    return {
+      mode: "demo",
+      seasonYear: Number.isFinite(seasonYear) ? seasonYear : null
+    };
   } catch {
     return { mode: null, seasonYear: null };
   }
