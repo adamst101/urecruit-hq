@@ -1,427 +1,331 @@
 // src/pages/Calendar.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, Filter } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { base44 } from "../api/base44Client";
+import { createPageUrl } from "../utils";
 
-import { Card } from "../components/ui/card";
-import { Button } from "../components/ui/button";
-
-import BottomNav from "../components/navigation/BottomNav";
-import FilterSheet from "../components/filters/FilterSheet";
-import CampCard from "../components/camps/CampCard";
+import BottomNav from "../components/navigation/BottomNav.jsx";
+import FilterSheet from "../components/filters/FilterSheet.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
 
-// -------------------- demo local helpers (no imports = no path issues) --------------------
-function demoFavKey(seasonYear) {
-  return `demo:favorites:default:${seasonYear || "na"}`;
-}
-function readDemoFavs(seasonYear) {
-  try {
-    const raw = localStorage.getItem(demoFavKey(seasonYear));
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr.map(String).filter(Boolean) : [];
-  } catch {
-    return [];
-  }
-}
-function toggleDemoFav(seasonYear, campId) {
-  const id = campId ? String(campId) : null;
-  if (!id) return readDemoFavs(seasonYear);
-
-  const cur = readDemoFavs(seasonYear);
-  const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-
-  try {
-    localStorage.setItem(demoFavKey(seasonYear), JSON.stringify(next));
-  } catch {}
-
-  return next;
-}
-function demoRegKey(seasonYear) {
-  return `demo:registered:default:${seasonYear || "na"}`;
-}
-function readDemoRegs(seasonYear) {
-  try {
-    const raw = localStorage.getItem(demoRegKey(seasonYear));
-    const obj = raw ? JSON.parse(raw) : {};
-    return obj && typeof obj === "object" ? obj : {};
-  } catch {
-    return {};
-  }
-}
-
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
-}
-function cleanStr(x) {
+// ---------- helpers ----------
+function safeStr(x) {
   if (x == null) return "";
-  return String(x).trim();
+  return String(x);
 }
-function isDateStr(x) {
-  return typeof x === "string" && /^\d{4}-\d{2}-\d{2}/.test(x);
+
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
+}
+
+function isoDateOnly(v) {
+  // expects "YYYY-MM-DD" or full ISO; returns "YYYY-MM-DD" or ""
+  const s = safeStr(v).trim();
+  if (!s) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // try to slice ISO
+  if (s.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return "";
+}
+
+function inDateRange(cStart, startDate, endDate) {
+  const d = isoDateOnly(cStart);
+  if (!d) return false;
+  if (startDate && d < startDate) return false;
+  if (endDate && d > endDate) return false;
+  return true;
+}
+
+function groupByDate(rows) {
+  const map = new Map();
+  for (const r of rows || []) {
+    const d = isoDateOnly(r?.start_date);
+    if (!d) continue;
+    if (!map.has(d)) map.set(d, []);
+    map.get(d).push(r);
+  }
+  // sort within day by school then camp
+  for (const [k, list] of map.entries()) {
+    list.sort((a, b) => {
+      const sa = safeStr(a?.school_name).toLowerCase();
+      const sb = safeStr(b?.school_name).toLowerCase();
+      if (sa !== sb) return sa.localeCompare(sb);
+      return safeStr(a?.camp_name).toLowerCase().localeCompare(safeStr(b?.camp_name).toLowerCase());
+    });
+    map.set(k, list);
+  }
+  // return sorted keys asc
+  const keys = Array.from(map.keys()).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return { map, keys };
 }
 
 export default function Calendar() {
-  const qc = useQueryClient();
-
   const season = useSeasonAccess();
-  const { mode, seasonYear } = season;
-  const isPaid = mode === "paid";
-
   const { athleteProfile } = useAthleteIdentity();
-  const athleteId = athleteProfile?.id ? String(athleteProfile.id) : null;
 
-  // Filters
+  const isPaid = season.mode === "paid";
+  const athleteId = isPaid ? (athleteProfile?.id ? String(athleteProfile.id) : null) : null;
+
+  // Filters (shared by demo + paid)
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState({
-    sport: "",
-    divisions: [],
-    positions: [],
-    state: "",
+    sport: "", // sport id
+    divisions: [], // array of division labels
+    positions: [], // array of position ids (string)
+    state: "", // "TX"
     startDate: "",
-    endDate: "",
+    endDate: ""
   });
-  const [draftFilters, setDraftFilters] = useState(filters);
 
-  useEffect(() => {
-    if (filtersOpen) setDraftFilters(filters);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtersOpen]);
-
-  // FilterSheet lookup lists (best effort)
+  // Load sports/positions lists for the filter UI
   const sportsQuery = useQuery({
     queryKey: ["sports_list"],
     retry: false,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
     queryFn: async () => {
       try {
-        if (typeof base44.entities?.Sport?.list === "function") {
-          const rows = await base44.entities.Sport.list();
-          return Array.isArray(rows) ? rows : [];
-        }
-      } catch {}
-      try {
-        const rows = await base44.entities.Sport.filter({});
+        const rows = await base44.entities.Sport.list();
         return Array.isArray(rows) ? rows : [];
       } catch {
         return [];
       }
-    },
+    }
   });
 
   const positionsQuery = useQuery({
     queryKey: ["positions_list"],
     retry: false,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
     queryFn: async () => {
       try {
-        if (typeof base44.entities?.Position?.list === "function") {
-          const rows = await base44.entities.Position.list();
-          return Array.isArray(rows) ? rows : [];
-        }
-      } catch {}
-      try {
-        const rows = await base44.entities.Position.filter({});
+        const rows = await base44.entities.Position.list();
         return Array.isArray(rows) ? rows : [];
       } catch {
         return [];
       }
-    },
+    }
   });
 
-  // Base dataset for Calendar:
-  // Use public summaries for BOTH demo and paid (seasonYear already switches by entitlement).
-  const publicQuery = usePublicCampSummariesClient({
-    seasonYear,
-    sportId: cleanStr(filters.sport) || null,
-    state: cleanStr(filters.state) || null,
-    division: null, // multi-division handled client-side
-    positionIds: asArray(filters.positions),
-    enabled: !!seasonYear,
-    limit: 2000, // calendar view benefits from a larger pool
+  // Paid: camp summaries with intent fields (athlete-scoped)
+  const paidSummaries = useCampSummariesClient({
+    athleteId,
+    sportId: filters.sport ? String(filters.sport) : undefined,
+    enabled: isPaid && !!athleteId
   });
 
-  // Paid intent overlay (optional)
-  const intentsQuery = useQuery({
-    queryKey: ["camp_intents", athleteId],
-    enabled: isPaid && !!athleteId,
-    retry: false,
-    staleTime: 0,
-    queryFn: async () => {
-      try {
-        const rows = await base44.entities.CampIntent.filter({ athlete_id: athleteId });
-        return Array.isArray(rows) ? rows : [];
-      } catch {
-        return [];
-      }
-    },
+  // Demo/Public: camp summaries filtered by seasonYear (no athlete scope)
+  const publicSummaries = usePublicCampSummariesClient({
+    seasonYear: season.seasonYear,
+    sportId: filters.sport ? String(filters.sport) : null,
+    state: filters.state ? String(filters.state) : null,
+    // division/positions/date range applied client-side below
+    division: null,
+    positionIds: [],
+    limit: 500,
+    enabled: !isPaid
   });
 
-  const intentByCampId = useMemo(() => {
-    const map = new Map();
-    for (const i of asArray(intentsQuery.data)) {
-      const campKey = i?.camp_id ? String(i.camp_id) : null;
-      if (campKey) map.set(campKey, i);
-    }
-    return map;
-  }, [intentsQuery.data]);
+  const loading =
+    season.isLoading ||
+    sportsQuery.isLoading ||
+    positionsQuery.isLoading ||
+    (isPaid ? paidSummaries.isLoading : publicSummaries.isLoading);
 
-  // Demo local state for favorites/registered badges
-  const [demoFavs, setDemoFavs] = useState(() => readDemoFavs(seasonYear));
-  const [demoRegs, setDemoRegs] = useState(() => readDemoRegs(seasonYear));
-  useEffect(() => {
-    if (!isPaid) {
-      setDemoFavs(readDemoFavs(seasonYear));
-      setDemoRegs(readDemoRegs(seasonYear));
-    }
-  }, [isPaid, seasonYear]);
+  const rawRows = useMemo(() => {
+    const rows = isPaid ? (paidSummaries.data || []) : (publicSummaries.data || []);
+    return Array.isArray(rows) ? rows : [];
+  }, [isPaid, paidSummaries.data, publicSummaries.data]);
 
-  const rawSummaries = useMemo(() => asArray(publicQuery.data), [publicQuery.data]);
+  // Client-side filter application (consistent across modes)
+  const filteredRows = useMemo(() => {
+    const selectedDivisions = Array.isArray(filters.divisions) ? filters.divisions : [];
+    const selectedPositions = Array.isArray(filters.positions) ? filters.positions.map(String) : [];
+    const state = filters.state ? String(filters.state) : "";
+    const startDate = filters.startDate ? String(filters.startDate) : "";
+    const endDate = filters.endDate ? String(filters.endDate) : "";
 
-  // Apply remaining filters client-side (date range + multi-division)
-  const filtered = useMemo(() => {
-    const divs = asArray(filters.divisions).map(String);
-    const st = cleanStr(filters.state);
-    const start = cleanStr(filters.startDate);
-    const end = cleanStr(filters.endDate);
-
-    let out = asArray(rawSummaries);
-
-    if (st) out = out.filter((x) => String(x?.state || "") === st);
-
-    if (divs.length) {
-      out = out.filter((x) => divs.includes(String(x?.school_division || "")));
-    }
-
-    if (start && isDateStr(start)) {
-      out = out.filter((x) => isDateStr(x?.start_date) && String(x.start_date) >= start);
-    }
-
-    if (end && isDateStr(end)) {
-      out = out.filter((x) => isDateStr(x?.start_date) && String(x.start_date) <= end);
-    }
-
-    // Calendar = chronological (soonest first)
-    out.sort((a, b) => String(a?.start_date || "").localeCompare(String(b?.start_date || "")));
-    return out;
-  }, [rawSummaries, filters.divisions, filters.state, filters.startDate, filters.endDate]);
-
-  // Group by start_date (YYYY-MM-DD)
-  const grouped = useMemo(() => {
-    const map = new Map();
-    for (const s of filtered) {
-      const key = isDateStr(s?.start_date) ? String(s.start_date).slice(0, 10) : "TBD";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(s);
-    }
-    // stable order by date
-    const keys = Array.from(map.keys()).sort((a, b) => String(a).localeCompare(String(b)));
-    return keys.map((k) => ({ date: k, items: map.get(k) || [] }));
-  }, [filtered]);
-
-  const loading = season.isLoading || publicQuery.isLoading;
-
-  const isFavorite = useCallback(
-    (s) => {
-      const campId = s?.camp_id ? String(s.camp_id) : null;
-      if (!campId) return false;
-
-      if (!isPaid) return demoFavs.includes(campId);
-
-      const row = intentByCampId.get(campId);
-      return String(row?.status || "").toLowerCase() === "favorite";
-    },
-    [isPaid, demoFavs, intentByCampId]
-  );
-
-  const isRegistered = useCallback(
-    (s) => {
-      const campId = s?.camp_id ? String(s.camp_id) : null;
-      if (!campId) return false;
-
-      if (!isPaid) return !!demoRegs?.[campId];
-
-      const row = intentByCampId.get(campId);
-      return String(row?.status || "").toLowerCase() === "registered";
-    },
-    [isPaid, demoRegs, intentByCampId]
-  );
-
-  const toggleFavorite = useCallback(
-    async (summary) => {
-      const campId = summary?.camp_id ? String(summary.camp_id) : null;
-      if (!campId) return;
-
-      // Demo: local only
-      if (!isPaid) {
-        const next = toggleDemoFav(seasonYear, campId);
-        setDemoFavs(next);
-        return;
+    return (rawRows || []).filter((r) => {
+      // State
+      if (state) {
+        const rs = safeStr(r?.state);
+        if (rs !== state) return false;
       }
 
-      // Paid: require athlete profile for backend writes
-      if (!athleteId) return;
+      // Division (row shape varies by source)
+      if (selectedDivisions.length) {
+        const div = r?.school_division || r?.division || null;
+        if (!div || !selectedDivisions.includes(String(div))) return false;
+      }
 
-      try {
-        const existing = await base44.entities.CampIntent.filter({
-          athlete_id: athleteId,
-          camp_id: campId,
-        });
-        const row = Array.isArray(existing) ? existing[0] : null;
-        const cur = String(row?.status || "").toLowerCase();
-        const nextStatus = cur === "favorite" ? null : "favorite";
+      // Positions (row may have position_ids)
+      if (selectedPositions.length) {
+        const posIds = Array.isArray(r?.position_ids) ? r.position_ids.map(String) : [];
+        if (!posIds.length) return false;
+        if (!selectedPositions.some((p) => posIds.includes(p))) return false;
+      }
 
-        if (row && row.id) {
-          if (typeof base44.entities.CampIntent.update === "function") {
-            await base44.entities.CampIntent.update(row.id, { status: nextStatus });
-          } else if (typeof base44.entities.CampIntent.patch === "function") {
-            await base44.entities.CampIntent.patch(row.id, { status: nextStatus });
-          }
-        } else if (nextStatus) {
-          if (typeof base44.entities.CampIntent.create === "function") {
-            await base44.entities.CampIntent.create({
-              athlete_id: athleteId,
-              camp_id: campId,
-              status: "favorite",
-            });
-          }
-        }
-      } catch {}
+      // Date range
+      if (startDate || endDate) {
+        if (!inDateRange(r?.start_date, startDate, endDate)) return false;
+      }
 
-      // Refresh intents
-      try {
-        qc.invalidateQueries({ queryKey: ["camp_intents"], exact: false });
-        qc.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
-      } catch {}
-    },
-    [isPaid, seasonYear, athleteId, qc]
-  );
-
-  const clearAll = () => {
-    setDraftFilters({
-      sport: "",
-      divisions: [],
-      positions: [],
-      state: "",
-      startDate: "",
-      endDate: "",
+      return true;
     });
-  };
+  }, [rawRows, filters]);
 
-  const applyFilters = () => {
-    setFilters(draftFilters);
-    setFiltersOpen(false);
-  };
+  const { map: byDateMap, keys: dateKeys } = useMemo(() => groupByDate(filteredRows), [filteredRows]);
+
+  const hasFilters = useMemo(() => {
+    return !!(
+      (filters.sport && String(filters.sport).trim()) ||
+      (filters.state && String(filters.state).trim()) ||
+      (Array.isArray(filters.divisions) && filters.divisions.length) ||
+      (Array.isArray(filters.positions) && filters.positions.length) ||
+      (filters.startDate && String(filters.startDate).trim()) ||
+      (filters.endDate && String(filters.endDate).trim())
+    );
+  }, [filters]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pb-20">
-      <div className="max-w-md mx-auto p-4 space-y-4">
+    <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pb-24">
+      <div className="max-w-md mx-auto px-4 pt-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="w-5 h-5 text-slate-700" />
-            <h1 className="text-xl font-bold text-deep-navy">Calendar</h1>
-          </div>
-
-          <Button variant="outline" onClick={() => setFiltersOpen(true)}>
-            <Filter className="w-4 h-4 mr-2" />
-            Filters
-          </Button>
-        </div>
-
-        <div className="text-xs text-slate-500">
-          {isPaid ? `Paid workspace • Season ${seasonYear}` : `Demo view • Season ${seasonYear}`}
-        </div>
-
-        {/* Body */}
-        {loading ? (
-          <Card className="p-4 border-slate-200">
-            <div className="text-sm text-slate-600">Loading calendar…</div>
-          </Card>
-        ) : filtered.length === 0 ? (
-          <Card className="p-4 border-slate-200">
-            <div className="text-sm text-slate-600">No camps match your filters.</div>
-            <div className="mt-3">
-              <Button variant="outline" onClick={() => setFiltersOpen(true)}>
-                Adjust filters
-              </Button>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <CalendarDays className="w-5 h-5 text-slate-600" />
+              <h1 className="text-xl font-bold text-deep-navy">Calendar</h1>
             </div>
-          </Card>
-        ) : (
-          <div className="space-y-6">
-            {grouped.map((g) => (
-              <div key={g.date} className="space-y-3">
-                <div className="text-sm font-semibold text-slate-700">
-                  {g.date === "TBD" ? "TBD" : g.date}
-                </div>
-
-                <div className="space-y-3">
-                  {g.items.map((s) => {
-                    const camp = {
-                      camp_name: s.camp_name,
-                      start_date: s.start_date,
-                      end_date: s.end_date,
-                      price: s.price,
-                      city: s.city,
-                      state: s.state,
-                    };
-
-                    const school = {
-                      school_name: s.school_name,
-                      division: s.school_division,
-                    };
-
-                    const sport = {
-                      name: s.sport_name,
-                      sport_name: s.sport_name,
-                    };
-
-                    const positions = asArray(s.position_codes).map((code) => ({
-                      position_code: code,
-                    }));
-
-                    const disabledFavorite = isPaid && !athleteId;
-
-                    return (
-                      <CampCard
-                        key={String(s.camp_id)}
-                        camp={camp}
-                        school={school}
-                        sport={sport}
-                        positions={positions}
-                        mode={isPaid ? "paid" : "demo"}
-                        isFavorite={isFavorite(s)}
-                        isRegistered={isRegistered(s)}
-                        disabledFavorite={disabledFavorite}
-                        onFavoriteToggle={() => toggleFavorite(s)}
-                        onClick={() => {
-                          // Wire CampDetail later if/when you add it
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+            <p className="text-sm text-slate-600 mt-1">
+              {isPaid ? "Your season workspace view" : "Demo season view"} • Season {season.seasonYear}
+            </p>
           </div>
-        )}
+
+          <button
+            type="button"
+            onClick={() => setFiltersOpen(true)}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Filter className="w-4 h-4" />
+            Filters
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="mt-5">
+          {loading ? (
+            <div className="text-sm text-slate-600">Loading…</div>
+          ) : filteredRows.length === 0 ? (
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-deep-navy">No camps match your filters.</div>
+              <div className="text-sm text-slate-600 mt-1">
+                {hasFilters ? "Try clearing filters." : "No camps available for this season."}
+              </div>
+
+              {hasFilters && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFilters({
+                      sport: "",
+                      divisions: [],
+                      positions: [],
+                      state: "",
+                      startDate: "",
+                      endDate: ""
+                    })
+                  }
+                  className="mt-3 text-sm font-medium text-electric-blue hover:underline"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {dateKeys.map((d) => {
+                const list = byDateMap.get(d) || [];
+                return (
+                  <div key={d} className="rounded-lg border border-slate-200 bg-white">
+                    <div className="px-4 py-3 border-b border-slate-100">
+                      <div className="text-sm font-semibold text-deep-navy">{d}</div>
+                      <div className="text-xs text-slate-500">{list.length} camp{list.length === 1 ? "" : "s"}</div>
+                    </div>
+
+                    <div className="divide-y divide-slate-100">
+                      {list.map((r) => {
+                        const campId = r?.camp_id || r?.id || null;
+                        const schoolName = r?.school_name || "Unknown School";
+                        const campName = r?.camp_name || "Camp";
+                        const loc = [r?.city, r?.state].filter(Boolean).join(", ");
+
+                        return (
+                          <button
+                            key={String(campId || `${schoolName}-${campName}-${d}`)}
+                            type="button"
+                            className="w-full text-left px-4 py-3 hover:bg-slate-50"
+                            onClick={() => {
+                              // Best-effort: route to CampDetail if your app uses it; otherwise no-op.
+                              // If CampDetail page exists, it usually takes an id param.
+                              try {
+                                if (campId) window.location.assign(createPageUrl("CampDetail") + `?id=${encodeURIComponent(String(campId))}`);
+                              } catch {}
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-deep-navy truncate">{schoolName}</div>
+                                <div className="text-sm text-slate-600 truncate">{campName}</div>
+                                {loc ? <div className="text-xs text-slate-500 mt-1">{loc}</div> : null}
+                              </div>
+
+                              {r?.intent_status ? (
+                                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">
+                                  {String(r.intent_status)}
+                                </span>
+                              ) : null}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Filters */}
+      {/* Filter Sheet */}
       <FilterSheet
         isOpen={filtersOpen}
         onClose={() => setFiltersOpen(false)}
-        filters={draftFilters}
-        onFilterChange={setDraftFilters}
-        positions={asArray(positionsQuery.data)}
-        sports={asArray(sportsQuery.data)}
-        onApply={applyFilters}
-        onClear={clearAll}
+        filters={filters}
+        onFilterChange={setFilters}
+        positions={positionsQuery.data || []}
+        sports={sportsQuery.data || []}
+        onApply={() => setFiltersOpen(false)}
+        onClear={() => {
+          setFilters({
+            sport: "",
+            divisions: [],
+            positions: [],
+            state: "",
+            startDate: "",
+            endDate: ""
+          });
+          setFiltersOpen(false);
+        }}
       />
 
       <BottomNav />
