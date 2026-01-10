@@ -8,13 +8,14 @@ import { useSeasonAccess } from "./hooks/useSeasonAccess.jsx";
 /**
  * useAthleteIdentity
  *
- * Goals:
- * - If logged out (no accountId) -> athleteProfile=null immediately (no stale leak)
+ * Best-practice goals:
+ * - If logged out -> athleteProfile=null immediately (no stale leak)
  * - Scope cache by accountId
  * - Only fetch when authenticated
  * - Prefer active profile if present
- * - Normalize id field (id/_id/uuid)
+ * - Resilient to Base44 id field variations (id/_id/uuid)
  */
+
 function normId(x) {
   if (!x) return null;
   if (typeof x === "string") return x;
@@ -34,7 +35,6 @@ export function useAthleteIdentity() {
       queryClient.removeQueries({ queryKey: ["athleteIdentity"], exact: false });
       queryClient.removeQueries({ queryKey: ["athleteProfile"], exact: false });
       queryClient.removeQueries({ queryKey: ["getAthleteProfile"], exact: false });
-      queryClient.removeQueries({ queryKey: ["auth_me"], exact: false });
     } catch {}
   }, [isAuthed, queryClient]);
 
@@ -45,16 +45,14 @@ export function useAthleteIdentity() {
     staleTime: 0,
     gcTime: 5 * 60 * 1000,
     queryFn: async () => {
-      let profiles = [];
-      try {
-        profiles = await base44.entities.AthleteProfile.filter({
-          account_id: accountId
-        });
-      } catch (e) {
-        throw e;
-      }
+      // Pull profiles for this account
+      const profiles = await base44.entities.AthleteProfile.filter({
+        account_id: accountId
+      });
 
       const list = Array.isArray(profiles) ? profiles : [];
+
+      // Prefer active if present
       const active = list.find((p) => p?.active === true) || null;
       const first = list[0] || null;
       const chosen = active || first || null;
@@ -68,6 +66,7 @@ export function useAthleteIdentity() {
     }
   });
 
+  // Stable response shape
   return useMemo(() => {
     if (!isAuthed) {
       return {
