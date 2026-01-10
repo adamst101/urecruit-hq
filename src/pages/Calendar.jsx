@@ -1,6 +1,6 @@
 // src/pages/Calendar.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { Filter } from "lucide-react";
+import { Filter, X } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 
@@ -9,21 +9,31 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
 import BottomNav from "../components/navigation/BottomNav.jsx";
-import FilterSheet from "../components/filters/FilterSheet.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.js";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.js";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.js";
 
+// --- constants (kept local so we don't depend on FilterSheet file) ---
+const DIVISIONS = ["D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"];
+const STATES = [
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
+  "ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK",
+  "OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"
+];
+
 // ---------- helpers ----------
 function safeStr(x) {
   if (x === undefined || x === null) return "";
   return String(x);
 }
-
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
+}
 function toDateKey(d) {
-  // Expect "YYYY-MM-DD" or ISO; normalize to "YYYY-MM-DD" if possible
   try {
     if (!d) return "";
     const s = String(d);
@@ -38,7 +48,6 @@ function toDateKey(d) {
     return "";
   }
 }
-
 function inRange(dateKey, startDate, endDate) {
   if (!dateKey) return false;
   if (startDate && dateKey < startDate) return false;
@@ -52,27 +61,30 @@ export default function Calendar() {
 
   const [filterOpen, setFilterOpen] = useState(false);
 
-  // Keep FilterSheet contract stable
+  // Local filters (native UI to avoid missing component imports)
   const [filters, setFilters] = useState({
-    sport: "",
-    state: "",
-    divisions: [],
-    positions: [],
+    sport: "",        // sport id
+    state: "",        // state code
+    division: "",     // single division
+    positions: [],    // array of position ids (strings)
     startDate: "",
     endDate: "",
   });
 
-  // Optional: populate sport/position picklists for FilterSheet (safe best-effort)
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
+  // best-effort lists
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
         const s = await base44.entities.Sport.list();
-        if (mounted) setSports(Array.isArray(s) ? s : []);
+        if (!mounted) return;
+        const arr = Array.isArray(s) ? s : [];
+        arr.sort((a, b) => String(a?.name || a?.sport_name || "").localeCompare(String(b?.name || b?.sport_name || "")));
+        setSports(arr);
       } catch {
         if (mounted) setSports([]);
       }
@@ -81,21 +93,22 @@ export default function Calendar() {
     (async () => {
       try {
         const p = await base44.entities.Position.list();
-        if (mounted) setPositions(Array.isArray(p) ? p : []);
+        if (!mounted) return;
+        const arr = Array.isArray(p) ? p : [];
+        arr.sort((a, b) => String(a?.position_code || a?.code || "").localeCompare(String(b?.position_code || b?.code || "")));
+        setPositions(arr);
       } catch {
         if (mounted) setPositions([]);
       }
     })();
 
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   const isPaid = season.mode === "paid" && !!season.accountId;
   const athleteId = athleteProfile?.id ? String(athleteProfile.id) : null;
 
-  // Paid data (only meaningful if athlete exists)
+  // Paid data
   const paidQuery = useCampSummariesClient({
     athleteId,
     sportId: filters.sport ? String(filters.sport) : undefined,
@@ -103,19 +116,14 @@ export default function Calendar() {
     limit: 2000,
   });
 
-  // Public/demo data
-  const demoDivision =
-    Array.isArray(filters.divisions) && filters.divisions.length > 0
-      ? String(filters.divisions[0])
-      : "";
-
+  // Demo/public data
   const demoQuery = usePublicCampSummariesClient({
     seasonYear: season.seasonYear,
     sportId: filters.sport ? String(filters.sport) : null,
     state: filters.state ? String(filters.state) : null,
-    division: demoDivision || null,
+    division: filters.division ? String(filters.division) : null,
     positionIds: Array.isArray(filters.positions) ? filters.positions : [],
-    enabled: !isPaid, // demo/unauth uses public summaries
+    enabled: !isPaid,
     limit: 2000,
   });
 
@@ -128,31 +136,25 @@ export default function Calendar() {
     return Array.isArray(rows) ? rows : [];
   }, [isPaid, paidQuery.data, demoQuery.data]);
 
-  // Normalize to one shape
   const rows = useMemo(() => {
     const startDate = safeStr(filters.startDate);
     const endDate = safeStr(filters.endDate);
 
     const normalized = rawRows.map((r) => {
       const start_key = toDateKey(r.start_date);
-      const end_key = toDateKey(r.end_date);
-
       return {
         camp_id: safeStr(r.camp_id || r.id),
         camp_name: r.camp_name || "Camp",
         start_date: r.start_date || null,
         end_date: r.end_date || null,
         start_key,
-        end_key,
 
         city: r.city || null,
         state: r.state || null,
 
-        school_id: r.school_id ? safeStr(r.school_id) : null,
         school_name: r.school_name || "Unknown School",
         school_division: r.school_division || null,
 
-        sport_id: r.sport_id ? safeStr(r.sport_id) : null,
         sport_name: r.sport_name || null,
 
         intent_status: r.intent_status || null,
@@ -160,14 +162,14 @@ export default function Calendar() {
       };
     });
 
-    // Apply date range filter (client-side, works for both paid/demo)
+    // Date range filter (client-side for both modes)
     const filtered = normalized.filter((r) => {
       if (!startDate && !endDate) return true;
       if (!r.start_key) return false;
       return inRange(r.start_key, startDate, endDate);
     });
 
-    // Sort descending by start date
+    // Sort desc
     filtered.sort((a, b) => String(b.start_key).localeCompare(String(a.start_key)));
     return filtered;
   }, [rawRows, filters.startDate, filters.endDate]);
@@ -179,7 +181,6 @@ export default function Calendar() {
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(r);
     }
-    // Convert to array sorted desc; keep TBD last
     const keys = Array.from(map.keys()).sort((a, b) => {
       if (a === "TBD") return 1;
       if (b === "TBD") return -1;
@@ -188,15 +189,23 @@ export default function Calendar() {
     return keys.map((k) => ({ dateKey: k, items: map.get(k) || [] }));
   }, [rows]);
 
-  const onApply = () => setFilterOpen(false);
-  const onClear = () => {
+  const clearAll = () => {
     setFilters({
       sport: "",
       state: "",
-      divisions: [],
+      division: "",
       positions: [],
       startDate: "",
       endDate: "",
+    });
+  };
+
+  const togglePosition = (id) => {
+    const pid = String(id);
+    setFilters((prev) => {
+      const cur = Array.isArray(prev.positions) ? prev.positions : [];
+      const next = cur.includes(pid) ? cur.filter((x) => x !== pid) : [...cur, pid];
+      return { ...prev, positions: next };
     });
   };
 
@@ -210,17 +219,11 @@ export default function Calendar() {
               <Badge variant="outline" className="text-xs">
                 {isPaid ? "Paid" : "Demo"}
               </Badge>
-              <span className="text-xs text-slate-500">
-                Season {season.seasonYear}
-              </span>
+              <span className="text-xs text-slate-500">Season {season.seasonYear}</span>
             </div>
           </div>
 
-          <Button
-            variant="outline"
-            onClick={() => setFilterOpen(true)}
-            className="gap-2"
-          >
+          <Button variant="outline" onClick={() => setFilterOpen(true)} className="gap-2">
             <Filter className="w-4 h-4" />
             Filters
           </Button>
@@ -276,9 +279,7 @@ export default function Calendar() {
                           <div className="mt-1 text-base font-semibold text-deep-navy truncate">
                             {c.school_name}
                           </div>
-                          <div className="text-sm text-slate-600 truncate">
-                            {c.camp_name}
-                          </div>
+                          <div className="text-sm text-slate-600 truncate">{c.camp_name}</div>
 
                           {(c.city || c.state) && (
                             <div className="text-xs text-slate-500 mt-1">
@@ -300,16 +301,157 @@ export default function Calendar() {
         )}
       </div>
 
-      <FilterSheet
-        isOpen={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        filters={filters}
-        onFilterChange={setFilters}
-        positions={positions}
-        sports={sports}
-        onApply={onApply}
-        onClear={onClear}
-      />
+      {/* Inline filter modal (no external FilterSheet file) */}
+      {filterOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setFilterOpen(false)}
+          />
+          <div className="relative w-full max-w-md bg-white rounded-t-2xl border border-slate-200 p-4 max-h-[85vh] overflow-auto">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-deep-navy">Filter Camps</div>
+              <Button variant="ghost" size="icon" onClick={() => setFilterOpen(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div className="mt-4 space-y-5">
+              {/* Sport */}
+              <div>
+                <div className="text-xs font-semibold text-slate-600 mb-2">Sport</div>
+                <select
+                  className="w-full border border-slate-200 rounded-md p-2 text-sm"
+                  value={filters.sport || ""}
+                  onChange={(e) => setFilters((p) => ({ ...p, sport: e.target.value }))}
+                >
+                  <option value="">All Sports</option>
+                  {sports.map((s) => {
+                    const id = normId(s);
+                    const name = s?.sport_name || s?.name || "Sport";
+                    if (!id) return null;
+                    return (
+                      <option key={String(id)} value={String(id)}>
+                        {name}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Division */}
+              <div>
+                <div className="text-xs font-semibold text-slate-600 mb-2">Division</div>
+                <select
+                  className="w-full border border-slate-200 rounded-md p-2 text-sm"
+                  value={filters.division || ""}
+                  onChange={(e) => setFilters((p) => ({ ...p, division: e.target.value }))}
+                >
+                  <option value="">All Divisions</option>
+                  {DIVISIONS.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* State */}
+              <div>
+                <div className="text-xs font-semibold text-slate-600 mb-2">State</div>
+                <select
+                  className="w-full border border-slate-200 rounded-md p-2 text-sm"
+                  value={filters.state || ""}
+                  onChange={(e) => setFilters((p) => ({ ...p, state: e.target.value }))}
+                >
+                  <option value="">All States</option>
+                  {STATES.map((st) => (
+                    <option key={st} value={st}>{st}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Positions */}
+              {positions.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-slate-600 mb-2">Positions</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {positions.slice(0, 30).map((pos) => {
+                      const id = normId(pos);
+                      if (!id) return null;
+                      const label = pos?.position_code || pos?.code || pos?.position_name || "POS";
+                      const checked = (filters.positions || []).includes(String(id));
+                      return (
+                        <label
+                          key={String(id)}
+                          className="flex items-center gap-2 text-sm text-slate-700"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => togglePosition(id)}
+                          />
+                          <span className="truncate">{label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {positions.length > 30 && (
+                    <div className="text-xs text-slate-500 mt-2">
+                      Showing first 30 positions.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Date Range */}
+              <div>
+                <div className="text-xs font-semibold text-slate-600 mb-2">Date Range</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-[11px] text-slate-500 mb-1">Start</div>
+                    <input
+                      type="date"
+                      className="w-full border border-slate-200 rounded-md p-2 text-sm"
+                      value={filters.startDate || ""}
+                      onChange={(e) => {
+                        const v = e.target.value || "";
+                        setFilters((p) => {
+                          const end = p.endDate && v && p.endDate < v ? "" : p.endDate;
+                          return { ...p, startDate: v, endDate: end };
+                        });
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-slate-500 mb-1">End</div>
+                    <input
+                      type="date"
+                      className="w-full border border-slate-200 rounded-md p-2 text-sm"
+                      min={filters.startDate || undefined}
+                      value={filters.endDate || ""}
+                      onChange={(e) => {
+                        const v = e.target.value || "";
+                        setFilters((p) => {
+                          if (p.startDate && v && v < p.startDate) return { ...p, endDate: "" };
+                          return { ...p, endDate: v };
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={clearAll}>
+                Clear All
+              </Button>
+              <Button className="flex-1" onClick={() => setFilterOpen(false)}>
+                Apply
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomNav />
     </div>
