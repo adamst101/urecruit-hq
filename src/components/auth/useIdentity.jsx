@@ -9,26 +9,18 @@ import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
  * useIdentity
  *
  * Best-practice goals:
- * - Single, stable identity contract for pages/components
- * - Reuse react-query cache keys (shares results with useSeasonAccess)
- * - Children == AthleteProfiles for signed-in account
- * - Active child stored per-account in localStorage
- * - No .js import extensions anywhere (this repo is .jsx)
+ * - One canonical “identity + subscription + profiles” hook for pages that need it
+ * - No .js imports (all .jsx in this app)
+ * - Keep query keys stable
+ * - Avoid cache-nuke; invalidate only relevant queries when active child changes
  */
-
-function normId(x) {
-  if (!x) return null;
-  if (typeof x === "string") return x;
-  return x.id || x._id || x.uuid || null;
-}
-
 export function useIdentity() {
   const queryClient = useQueryClient();
 
-  // Canonical access model (demo vs paid)
+  // Canonical access model
   const { isLoading: accessLoading, mode, accountId, entitlement } = useSeasonAccess();
 
-  // 1) Auth user (best-effort). Uses SAME key as useSeasonAccess => shared cache.
+  // 1) Auth user (best effort)
   const meQuery = useQuery({
     queryKey: ["auth_me"],
     retry: false,
@@ -44,14 +36,14 @@ export function useIdentity() {
 
   const user = meQuery.data || null;
 
-  // Subscription modeled consistently with the rest of your app
+  // Subscription modeled consistently with app
   const subscription = useMemo(() => {
     if (!accountId) return { status: "inactive", entitlement: null };
     if (mode === "paid") return { status: "active", entitlement: entitlement || null };
     return { status: "inactive", entitlement: null };
   }, [accountId, mode, entitlement]);
 
-  // 2) Children == athlete profiles for account
+  // 2) Children == active athlete profiles for account
   const childrenQuery = useQuery({
     queryKey: ["athleteProfiles", accountId],
     enabled: !!accountId && !accessLoading,
@@ -60,7 +52,8 @@ export function useIdentity() {
     queryFn: async () => {
       try {
         const rows = await base44.entities.AthleteProfile.filter({
-          account_id: accountId
+          account_id: accountId,
+          active: true
         });
         return Array.isArray(rows) ? rows : [];
       } catch {
@@ -69,9 +62,9 @@ export function useIdentity() {
     }
   });
 
-  const children = Array.isArray(childrenQuery.data) ? childrenQuery.data : [];
+  const children = childrenQuery.data || [];
 
-  // Local storage active child (scoped per account)
+  // Local storage key for active child (per account)
   const activeChildKey = useMemo(() => {
     const uid = accountId || "anon";
     return `activeChildId:${uid}`;
@@ -79,14 +72,15 @@ export function useIdentity() {
 
   const [activeChildId, setActiveChildId] = useState(null);
 
-  // Resolve active child when children change
+  // Resolve active child when children list loads/changes
   useEffect(() => {
     if (!accountId) {
       setActiveChildId(null);
       return;
     }
 
-    if (!children.length) {
+    const kids = Array.isArray(children) ? children : [];
+    if (kids.length === 0) {
       setActiveChildId(null);
       try {
         window.localStorage.removeItem(activeChildKey);
@@ -99,10 +93,8 @@ export function useIdentity() {
       saved = window.localStorage.getItem(activeChildKey);
     } catch {}
 
-    const savedValid =
-      saved && children.some((k) => String(normId(k)) === String(saved));
-
-    const fallback = normId(children[0]) || children[0]?.id || null;
+    const savedValid = saved && kids.some((k) => String(k.id) === String(saved));
+    const fallback = kids[0]?.id ?? null;
     const resolved = savedValid ? saved : fallback;
 
     setActiveChildId(resolved ? String(resolved) : null);
@@ -114,7 +106,7 @@ export function useIdentity() {
 
   const isAuthed = !!accountId;
   const isSubscribed = subscription?.status === "active";
-  const hasChild = children.length > 0;
+  const hasChild = (children || []).length > 0;
 
   const setActiveChild = useCallback(
     (id) => {
@@ -126,7 +118,7 @@ export function useIdentity() {
         else window.localStorage.removeItem(activeChildKey);
       } catch {}
 
-      // Invalidate only dependent read models
+      // Invalidate only queries dependent on active child / identity
       try {
         queryClient.invalidateQueries({ queryKey: ["athleteIdentity"], exact: false });
         queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
