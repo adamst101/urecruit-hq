@@ -26,7 +26,6 @@ function safeStr(x) {
 }
 
 function parseISODate(s) {
-  // expects YYYY-MM-DD; returns Date or null
   if (!s || typeof s !== "string") return null;
   if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return null;
   const d = new Date(s);
@@ -49,6 +48,12 @@ function normId(x) {
   if (!x) return null;
   if (typeof x === "string") return x;
   return x.id || x._id || x.uuid || null;
+}
+
+function inferYearFromStartDate(s) {
+  const str = safeStr(s);
+  const y = Number(str.slice(0, 4));
+  return Number.isFinite(y) && y >= 2000 && y <= 2100 ? y : null;
 }
 
 const FILTER_KEY = "rm_calendar_filters_v1";
@@ -135,61 +140,84 @@ export default function Calendar() {
     };
   }, []);
 
-  // ---------- Demo Year Resolver (critical fix) ----------
+  // ---------- Demo Year Resolver (robust) ----------
   const [resolvedYear, setResolvedYear] = useState(season.seasonYear);
   const [resolvingYear, setResolvingYear] = useState(false);
+  const [yearProbeError, setYearProbeError] = useState(null);
+  const [probeTick, setProbeTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function resolve() {
-      // Paid mode: always use current paid seasonYear
+    async function resolveDemoYear() {
+      setYearProbeError(null);
+
+      // Paid mode: always show the paid seasonYear
       if (!isDemo) {
         setResolvedYear(season.seasonYear);
         return;
       }
 
-      // Demo: try season.seasonYear first, then walk forward/back a bit
-      const start = Number(season.seasonYear);
-      if (!Number.isFinite(start)) {
-        setResolvedYear(season.seasonYear);
-        return;
-      }
+      const baseYear = Number(season.seasonYear);
+      const currentUTC = Number(season.currentYear);
+
+      const candidates = uniq([
+        baseYear,
+        currentUTC,
+        currentUTC - 1,
+        baseYear + 1,
+        baseYear - 1,
+        baseYear + 2,
+        baseYear - 2,
+        baseYear + 3,
+        baseYear - 3,
+      ]).filter((y) => Number.isFinite(Number(y)));
 
       setResolvingYear(true);
 
-      const candidates = uniq([
-        start,
-        start + 1, // in case data exists for current year but demo defaults to prior
-        start - 1,
-        start + 2,
-        start - 2,
-      ]);
-
+      // 1) Try your existing year-has-data check across multiple nearby years
       for (const y of candidates) {
         try {
           const ok = await publicCampYearHasData(y);
           if (cancelled) return;
           if (ok) {
-            setResolvedYear(y);
+            setResolvedYear(Number(y));
             setResolvingYear(false);
             return;
           }
-        } catch {
-          // keep trying
+        } catch (e) {
+          // keep trying, but remember last error
+          setYearProbeError(e ? String(e) : "year_probe_failed");
         }
       }
 
-      // If nothing found, keep original (shows empty state truthfully)
-      setResolvedYear(season.seasonYear);
-      setResolvingYear(false);
+      // 2) If year probes all failed OR returned false, infer from the newest camp in the database
+      try {
+        const rows = await base44.entities.Camp.filter({}, "-start_date", 1);
+        const latest = Array.isArray(rows) && rows[0] ? rows[0] : null;
+        const inferred = inferYearFromStartDate(latest?.start_date);
+        if (!cancelled && inferred) {
+          setResolvedYear(inferred);
+          setResolvingYear(false);
+          return;
+        }
+      } catch (e) {
+        if (!cancelled) setYearProbeError(e ? String(e) : "latest_camp_probe_failed");
+      }
+
+      // 3) Fallback: keep configured demo year
+      if (!cancelled) {
+        setResolvedYear(season.seasonYear);
+        setResolvingYear(false);
+      }
     }
 
-    resolve();
+    resolveDemoYear();
+
     return () => {
       cancelled = true;
     };
-  }, [isDemo, season.seasonYear]);
+  }, [isDemo, season.seasonYear, season.currentYear, probeTick]);
 
   // Normalize filter inputs for queries
   const qSportId = useMemo(() => {
@@ -202,10 +230,9 @@ export default function Calendar() {
     return v ? v : null;
   }, [filters?.state]);
 
-  const qDivision = useMemo(() => {
-    // FilterSheet currently writes divisions[]; Calendar supports single-division filtering by applying client-side
+  const qDivisions = useMemo(() => {
     const arr = Array.isArray(filters?.divisions) ? filters.divisions : [];
-    return arr.length ? arr : [];
+    return arr.filter(Boolean);
   }, [filters?.divisions]);
 
   const qPositionIds = useMemo(() => {
@@ -217,23 +244,20 @@ export default function Calendar() {
   const endDate = useMemo(() => safeStr(filters?.endDate).trim(), [filters?.endDate]);
 
   // ---------- Data ----------
-  // Paid: athlete-scoped summaries (best source of truth for personalized calendar)
   const paidQuery = useCampSummariesClient({
     athleteId,
     sportId: qSportId || undefined,
     enabled: !!athleteId && season.mode === "paid",
   });
 
-  // Demo / Public: year-scoped summaries
   const publicQuery = usePublicCampSummariesClient({
     seasonYear: resolvedYear,
     sportId: qSportId || null,
     state: qState || null,
-    // division and positions are handled client-side below (because your FilterSheet supports multi-select)
-    division: null,
-    positionIds: [],
+    division: null,     // multi-select handled client-side
+    positionIds: [],    // multi-select handled client-side
     enabled: true,
-    limit: 1000,
+    limit: 2000,
   });
 
   const loading =
@@ -246,21 +270,15 @@ export default function Calendar() {
       season.mode === "paid"
         ? (paidQuery.data || [])
         : (publicQuery.data || []);
-
     return Array.isArray(rows) ? rows : [];
   }, [season.mode, paidQuery.data, publicQuery.data]);
 
-  // ---------- Client-side filtering (multi-select division + positions + date range) ----------
+  // ---------- Client-side filtering ----------
   const filteredRows = useMemo(() => {
     let rows = rawRows.slice();
 
-    // If we’re in paid mode, state/positions/division might not be pre-filtered by query
-    if (qState) {
-      rows = rows.filter((r) => safeStr(r?.state || r?.camp_state).toUpperCase() === qState.toUpperCase());
-    }
-
-    if (qDivision.length) {
-      rows = rows.filter((r) => qDivision.includes(r?.school_division || r?.division || r?.school_division_code));
+    if (qDivisions.length) {
+      rows = rows.filter((r) => qDivisions.includes(r?.school_division || r?.division || null));
     }
 
     if (qPositionIds.length) {
@@ -285,7 +303,7 @@ export default function Calendar() {
     }
 
     return rows;
-  }, [rawRows, qState, qDivision, qPositionIds, startDate, endDate]);
+  }, [rawRows, qDivisions, qPositionIds, startDate, endDate]);
 
   // Group by start_date for a calendar-style list
   const grouped = useMemo(() => {
@@ -310,16 +328,10 @@ export default function Calendar() {
             {isDemo && <Badge variant="outline">Demo</Badge>}
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setFilterOpen(true)}
-            >
-              <FilterIcon className="w-4 h-4 mr-2" />
-              Filters
-            </Button>
-          </div>
+          <Button variant="outline" size="sm" onClick={() => setFilterOpen(true)}>
+            <FilterIcon className="w-4 h-4 mr-2" />
+            Filters
+          </Button>
         </div>
 
         {/* Subheader */}
@@ -349,23 +361,21 @@ export default function Calendar() {
                 Try clearing filters or switching sport/state/date range.
               </div>
 
+              {!!yearProbeError && (
+                <div className="mt-3 text-xs text-slate-400">
+                  Season detection note: {safeStr(yearProbeError)}
+                </div>
+              )}
+
               <div className="mt-3 flex gap-2">
                 <Button variant="outline" onClick={clearFilters}>
                   Clear filters
                 </Button>
+
                 {isDemo && (
                   <Button
                     variant="outline"
-                    onClick={async () => {
-                      // Force re-resolve year on demand
-                      setResolvingYear(true);
-                      try {
-                        // trigger effect by temporarily bumping year then restoring
-                        setResolvedYear((y) => y);
-                      } finally {
-                        setResolvingYear(false);
-                      }
-                    }}
+                    onClick={() => setProbeTick((t) => t + 1)}
                   >
                     Re-check season
                   </Button>
