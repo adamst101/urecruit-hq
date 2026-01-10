@@ -1,11 +1,23 @@
 // src/components/filters/FilterSheet.jsx
 import React, { useMemo } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetFooter,
+} from "../ui/sheet";
+import { Button } from "../ui/button";
+import { Label } from "../ui/label";
+import { Checkbox } from "../ui/checkbox";
+import { Input } from "../ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 
 const DIVISIONS = ["D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"];
 const STATES = [
@@ -44,16 +56,24 @@ export default function FilterSheet({
 
   const sportsList = useMemo(() => {
     const list = asArray(sports)
-      .map((s) => ({ id: normId(s), sport_name: s?.sport_name || s?.name || "Sport" }))
+      .map((s) => ({
+        id: normId(s),
+        sport_name: s?.sport_name || s?.name || "Sport",
+      }))
       .filter((s) => s.id);
+
     list.sort((a, b) => String(a.sport_name).localeCompare(String(b.sport_name)));
     return list;
   }, [sports]);
 
   const positionsList = useMemo(() => {
     const list = asArray(positions)
-      .map((p) => ({ id: normId(p), position_code: p?.position_code || p?.code || p?.position_name || "POS" }))
+      .map((p) => ({
+        id: normId(p),
+        position_code: p?.position_code || p?.code || p?.position_name || "POS",
+      }))
       .filter((p) => p.id);
+
     list.sort((a, b) => String(a.position_code).localeCompare(String(b.position_code)));
     return list;
   }, [positions]);
@@ -84,8 +104,13 @@ export default function FilterSheet({
     setFilters({ ...safeFilters, positions: next });
   };
 
-  const onSportChange = (value) => setFilters({ ...safeFilters, sport: value === "all" ? "" : value });
-  const onStateChange = (value) => setFilters({ ...safeFilters, state: value === "all" ? "" : value });
+  const onSportChange = (value) => {
+    setFilters({ ...safeFilters, sport: value === "all" ? "" : value });
+  };
+
+  const onStateChange = (value) => {
+    setFilters({ ...safeFilters, state: value === "all" ? "" : value });
+  };
 
   const onStartDateChange = (value) => {
     const v = sanitizeDateStr(value);
@@ -110,6 +135,7 @@ export default function FilterSheet({
         </SheetHeader>
 
         <div className="space-y-6 py-6">
+          {/* Sport */}
           {sportsList.length > 1 && (
             <div>
               <Label className="text-sm font-semibold mb-2 block">Sport</Label>
@@ -129,6 +155,7 @@ export default function FilterSheet({
             </div>
           )}
 
+          {/* Divisions */}
           <div>
             <Label className="text-sm font-semibold mb-2 block">Division</Label>
             <div className="grid grid-cols-3 gap-2">
@@ -147,6 +174,7 @@ export default function FilterSheet({
             </div>
           </div>
 
+          {/* Positions */}
           {positionsList.length > 0 && (
             <div>
               <Label className="text-sm font-semibold mb-2 block">Position</Label>
@@ -167,6 +195,7 @@ export default function FilterSheet({
             </div>
           )}
 
+          {/* State */}
           <div>
             <Label className="text-sm font-semibold mb-2 block">State</Label>
             <Select value={selectedState} onValueChange={onStateChange}>
@@ -184,12 +213,17 @@ export default function FilterSheet({
             </Select>
           </div>
 
+          {/* Date Range */}
           <div className="space-y-3">
             <Label className="text-sm font-semibold block">Date Range</Label>
 
             <div>
               <Label className="text-xs text-slate-500">Start Date</Label>
-              <Input type="date" value={startDate} onChange={(e) => onStartDateChange(e.target.value)} />
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => onStartDateChange(e.target.value)}
+              />
             </div>
 
             <div>
@@ -203,7 +237,9 @@ export default function FilterSheet({
             </div>
 
             {startDate && endDate && endDate < startDate && (
-              <div className="text-xs text-rose-600">End date can’t be earlier than start date.</div>
+              <div className="text-xs text-rose-600">
+                End date can’t be earlier than start date.
+              </div>
             )}
           </div>
         </div>
