@@ -1,5 +1,5 @@
 // src/pages/Calendar.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CalendarDays, Filter, Loader2 } from "lucide-react";
 
@@ -9,7 +9,7 @@ import { base44 } from "../api/base44Client";
 import BottomNav from "../components/navigation/BottomNav";
 import CampCard from "../components/camps/CampCard";
 
-// ✅ FIX: no @ alias; explicit relative path + extension
+// ✅ FIX: Base44 project does NOT resolve "@/..." alias, so use relative + extension
 import FilterSheet from "../components/filters/FilterSheet.jsx";
 
 import RouteGuard from "../components/auth/RouteGuard";
@@ -70,11 +70,13 @@ function groupByDay(summaries) {
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(s);
   }
+
   const keys = Array.from(map.keys()).sort((a, b) => {
     if (a === "TBD") return 1;
     if (b === "TBD") return -1;
     return a.localeCompare(b);
   });
+
   return keys.map((k) => ({ day: k, items: map.get(k) || [] }));
 }
 
@@ -84,6 +86,7 @@ export default function Calendar() {
   const season = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
+  // Filters for this page
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState({
     sport: "",
@@ -98,24 +101,31 @@ export default function Calendar() {
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
-  useMemo(() => {
+  // ✅ UseEffect (not useMemo) for side effects
+  useEffect(() => {
+    let mounted = true;
+
     (async () => {
       try {
         const rows = await base44.entities.Sport.list();
-        setSports(Array.isArray(rows) ? rows : []);
+        if (mounted) setSports(Array.isArray(rows) ? rows : []);
       } catch {
-        setSports([]);
+        if (mounted) setSports([]);
       }
     })();
+
     (async () => {
       try {
         const rows = await base44.entities.Position.list();
-        setPositions(Array.isArray(rows) ? rows : []);
+        if (mounted) setPositions(Array.isArray(rows) ? rows : []);
       } catch {
-        setPositions([]);
+        if (mounted) setPositions([]);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const startDate = sanitizeDateStr(filters.startDate);
@@ -124,6 +134,7 @@ export default function Calendar() {
   const isPaid = season.mode === "paid";
   const athleteId = athleteProfile?.id || null;
 
+  // Paid: athlete-aware summaries
   const paidQuery = useCampSummariesClient({
     athleteId,
     sportId: filters.sport || undefined,
@@ -131,12 +142,13 @@ export default function Calendar() {
     limit: 1000,
   });
 
+  // Demo/public: seasonYear summaries
   const demoQuery = usePublicCampSummariesClient({
     seasonYear: season.seasonYear,
     sportId: filters.sport || null,
     state: filters.state || null,
-    division: "", // keep division client-side
-    positionIds: [], // keep positions client-side
+    division: "", // keep division client-side in this page
+    positionIds: [], // keep positions client-side in this page
     enabled: !isPaid,
     limit: 1000,
   });
@@ -158,6 +170,7 @@ export default function Calendar() {
     arr.sort((a, b) =>
       String(a?.start_date || "9999-12-31").localeCompare(String(b?.start_date || "9999-12-31"))
     );
+
     return arr;
   }, [raw, filters.sport, filters.state, filters.divisions, filters.positions, startDate, endDate]);
 
@@ -199,9 +212,7 @@ export default function Calendar() {
           ) : error ? (
             <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-700">
               <div className="font-semibold mb-1">Calendar couldn’t load</div>
-              <div className="text-slate-600">
-                Try refreshing. If it persists, the Base44 entity filters may be rejecting the query.
-              </div>
+              <div className="text-slate-600">Refresh. If it persists, an entity filter is failing.</div>
             </div>
           ) : filtered.length === 0 ? (
             <div className="bg-white border border-slate-200 rounded-xl p-6 text-center">
@@ -264,13 +275,7 @@ export default function Calendar() {
                         mode={season.mode}
                         disabledFavorite={season.mode !== "paid"}
                         onFavoriteToggle={() => {}}
-                        onClick={() => {
-                          try {
-                            nav(createPageUrl("CampDetail") + `?id=${encodeURIComponent(String(s.camp_id))}`);
-                          } catch {
-                            nav(createPageUrl("Discover"));
-                          }
-                        }}
+                        onClick={() => nav(createPageUrl("Discover"))}
                       />
                     ))}
                   </div>
