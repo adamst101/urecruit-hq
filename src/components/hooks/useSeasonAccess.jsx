@@ -4,50 +4,46 @@ import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
 
 /**
- * useSeasonAccess
- * Single source of truth for demo vs paid access.
+ * useSeasonAccess (canonical)
+ *
+ * Contract:
+ * - Always returns stable fields used across the app
+ * - Never throws; failures degrade to demo mode
  *
  * Rules:
  * - Not authenticated => demo
- * - Authenticated AND active Entitlement for current UTC year => paid
+ * - Authenticated + active entitlement for current UTC year => paid
  * - Else => demo
  *
- * Contract (stable):
- * {
- *   loading, isLoading,
- *   mode: "paid" | "demo",
- *   hasAccess,
- *   currentYear, demoYear, seasonYear, season,
- *   accountId, entitlement,
- *   isAuthenticated
- * }
+ * Notes:
+ * - Uses UTC year (avoids timezone edge cases on Jan 1)
+ * - Handles season_year stored as number OR string
+ * - Uses safe fallback query patterns if strict filters fail
  */
 export function useSeasonAccess() {
-  // Stable season years (UTC)
   const { currentYear, demoYear } = useMemo(() => {
     const now = new Date();
     const y = now.getUTCFullYear();
     return { currentYear: y, demoYear: y - 1 };
   }, []);
 
-  // Auth user (treat any failure as logged out)
+  // --- Auth resolver (treat errors as logged out) ---
   const meQuery = useQuery({
     queryKey: ["auth_me"],
     retry: false,
     staleTime: 0,
     queryFn: async () => {
       try {
-        // base44.auth.me exists on this platform when auth is configured
-        const me = await base44.auth.me();
-        return me || null;
+        return await base44.auth.me();
       } catch {
         return null;
       }
     }
   });
 
-  const accountId = meQuery.data?.id ? String(meQuery.data.id) : null;
+  const accountId = meQuery.data?.id || null;
 
+  // --- Entitlement resolver (only when authed) ---
   const canCheckEntitlements = !!accountId && !meQuery.isLoading;
 
   const entitlementQuery = useQuery({
@@ -56,7 +52,7 @@ export function useSeasonAccess() {
     retry: false,
     staleTime: 0,
     queryFn: async () => {
-      // 1) strict filter (best case)
+      // 1) strict filter
       try {
         const rows = await base44.entities.Entitlement.filter({
           account_id: accountId,
@@ -68,43 +64,52 @@ export function useSeasonAccess() {
         // fall through
       }
 
-      // 2) fallback: pull active entitlements and match year in-memory
-      let allActive = [];
+      // 2) fallback: pull all active for account; match in memory (string-safe)
       try {
-        allActive = await base44.entities.Entitlement.filter({
+        const allActive = await base44.entities.Entitlement.filter({
           account_id: accountId,
           status: "active"
         });
-      } catch {
-        allActive = [];
-      }
 
-      const match = (allActive || []).find((e) => String(e?.season_year) === String(currentYear));
-      return match || null;
+        const match = (Array.isArray(allActive) ? allActive : []).find((e) => {
+          const y = e?.season_year;
+          return String(y) === String(currentYear);
+        });
+
+        return match || null;
+      } catch {
+        return null;
+      }
     }
   });
 
-  const loading =
-    meQuery.isLoading || (canCheckEntitlements && entitlementQuery.isLoading);
+  const loading = meQuery.isLoading || (canCheckEntitlements && entitlementQuery.isLoading);
 
-  const isPaid = !!accountId && !!entitlementQuery.data;
-  const seasonYear = isPaid ? currentYear : demoYear;
+  const hasEntitlement = !!entitlementQuery.data;
+  const mode = accountId && hasEntitlement ? "paid" : "demo";
+
+  const seasonYear = mode === "paid" ? currentYear : demoYear;
 
   return {
+    // canonical loading flags
     loading,
     isLoading: loading,
 
-    mode: isPaid ? "paid" : "demo",
-    hasAccess: isPaid,
+    // canonical access model
+    mode, // "paid" | "demo"
+    hasAccess: mode === "paid",
 
+    // seasons
     currentYear,
     demoYear,
     seasonYear,
     season: seasonYear, // legacy alias
 
+    // identity
     accountId,
     entitlement: entitlementQuery.data || null,
 
+    // flags
     isAuthenticated: !!accountId
   };
 }
