@@ -9,8 +9,8 @@ import { base44 } from "../api/base44Client";
 import BottomNav from "../components/navigation/BottomNav";
 import CampCard from "../components/camps/CampCard";
 
-// ✅ FIX: correct import path for your file location
-import FilterSheet from "@/components/filters/FilterSheet";
+// ✅ FIX: no @ alias; explicit relative path + extension
+import FilterSheet from "../components/filters/FilterSheet.jsx";
 
 import RouteGuard from "../components/auth/RouteGuard";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
@@ -70,7 +70,6 @@ function groupByDay(summaries) {
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(s);
   }
-  // Sort by date ascending (TBD at end)
   const keys = Array.from(map.keys()).sort((a, b) => {
     if (a === "TBD") return 1;
     if (b === "TBD") return -1;
@@ -85,7 +84,6 @@ export default function Calendar() {
   const season = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // Filters for this page
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState({
     sport: "",
@@ -96,12 +94,11 @@ export default function Calendar() {
     endDate: "",
   });
 
-  // Load reference lists for FilterSheet (best-effort; no hard dependency)
+  // Reference lists for FilterSheet (best-effort)
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
   useMemo(() => {
-    // fire-and-forget (Base44 pages don’t always love extra query libs here)
     (async () => {
       try {
         const rows = await base44.entities.Sport.list();
@@ -118,7 +115,6 @@ export default function Calendar() {
         setPositions([]);
       }
     })();
-    // run once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -128,7 +124,6 @@ export default function Calendar() {
   const isPaid = season.mode === "paid";
   const athleteId = athleteProfile?.id || null;
 
-  // Paid: show athlete-aware summaries
   const paidQuery = useCampSummariesClient({
     athleteId,
     sportId: filters.sport || undefined,
@@ -136,13 +131,12 @@ export default function Calendar() {
     limit: 1000,
   });
 
-  // Demo/public: show public summaries for seasonYear
   const demoQuery = usePublicCampSummariesClient({
     seasonYear: season.seasonYear,
     sportId: filters.sport || null,
     state: filters.state || null,
-    division: "", // keep division client-side here since we already filter locally
-    positionIds: [], // keep positions client-side here
+    division: "", // keep division client-side
+    positionIds: [], // keep positions client-side
     enabled: !isPaid,
     limit: 1000,
   });
@@ -155,15 +149,15 @@ export default function Calendar() {
   const filtered = useMemo(() => {
     let arr = Array.isArray(raw) ? raw : [];
 
-    // client-side filters (works for both demo + paid)
     arr = arr.filter((s) => matchesSport(s, filters.sport));
     arr = arr.filter((s) => matchesState(s, filters.state));
     arr = arr.filter((s) => matchesDivisions(s, filters.divisions));
     arr = arr.filter((s) => matchesPositions(s, filters.positions));
     arr = arr.filter((s) => inDateRange(s?.start_date, startDate, endDate));
 
-    // sort by start date asc
-    arr.sort((a, b) => String(a?.start_date || "9999-12-31").localeCompare(String(b?.start_date || "9999-12-31")));
+    arr.sort((a, b) =>
+      String(a?.start_date || "9999-12-31").localeCompare(String(b?.start_date || "9999-12-31"))
+    );
     return arr;
   }, [raw, filters.sport, filters.state, filters.divisions, filters.positions, startDate, endDate]);
 
@@ -271,7 +265,6 @@ export default function Calendar() {
                         disabledFavorite={season.mode !== "paid"}
                         onFavoriteToggle={() => {}}
                         onClick={() => {
-                          // Navigate to detail if you have CampDetail; otherwise keep it harmless
                           try {
                             nav(createPageUrl("CampDetail") + `?id=${encodeURIComponent(String(s.camp_id))}`);
                           } catch {
