@@ -8,12 +8,12 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
-import BottomNav from "../components/navigation/BottomNav.jsx";
+import BottomNav from "../components/navigation/BottomNav";
 
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess.js";
-import { useAthleteIdentity } from "../components/useAthleteIdentity.js";
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { useAthleteIdentity } from "../components/useAthleteIdentity";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
-import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.js";
+import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient";
 
 // --- constants (kept local so we don't depend on FilterSheet file) ---
 const DIVISIONS = ["D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"];
@@ -83,7 +83,11 @@ export default function Calendar() {
         const s = await base44.entities.Sport.list();
         if (!mounted) return;
         const arr = Array.isArray(s) ? s : [];
-        arr.sort((a, b) => String(a?.name || a?.sport_name || "").localeCompare(String(b?.name || b?.sport_name || "")));
+        arr.sort((a, b) =>
+          String(a?.name || a?.sport_name || "").localeCompare(
+            String(b?.name || b?.sport_name || "")
+          )
+        );
         setSports(arr);
       } catch {
         if (mounted) setSports([]);
@@ -95,14 +99,20 @@ export default function Calendar() {
         const p = await base44.entities.Position.list();
         if (!mounted) return;
         const arr = Array.isArray(p) ? p : [];
-        arr.sort((a, b) => String(a?.position_code || a?.code || "").localeCompare(String(b?.position_code || b?.code || "")));
+        arr.sort((a, b) =>
+          String(a?.position_code || a?.code || "").localeCompare(
+            String(b?.position_code || b?.code || "")
+          )
+        );
         setPositions(arr);
       } catch {
         if (mounted) setPositions([]);
       }
     })();
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const isPaid = season.mode === "paid" && !!season.accountId;
@@ -128,8 +138,7 @@ export default function Calendar() {
   });
 
   const loading =
-    season.isLoading ||
-    (isPaid ? paidQuery.isLoading : demoQuery.isLoading);
+    season.isLoading || (isPaid ? paidQuery.isLoading : demoQuery.isLoading);
 
   const rawRows = useMemo(() => {
     const rows = isPaid ? paidQuery.data : demoQuery.data;
