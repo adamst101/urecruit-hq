@@ -1,232 +1,301 @@
 // src/pages/Calendar.jsx
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarDays, Filter } from "lucide-react";
+import { CalendarDays, Filter, Loader2 } from "lucide-react";
 
 import { createPageUrl } from "../utils";
+import { base44 } from "../api/base44Client";
 
-import { Card } from "../components/ui/card";
-import { Button } from "../components/ui/button";
-import { Badge } from "../components/ui/badge";
+import BottomNav from "../components/navigation/BottomNav";
+import CampCard from "../components/camps/CampCard";
+
+// ✅ FIX: correct import path for your file location
+import FilterSheet from "@/components/filters/FilterSheet";
 
 import RouteGuard from "../components/auth/RouteGuard";
-import BottomNav from "../components/navigation/BottomNav";
-
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
-import { useDemoProfile } from "../components/hooks/useDemoProfile";
 
-import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
 
-import FilterSheet from "../components/filters/FilterSheet";
-
-function normId(x) {
-  if (!x) return null;
-  if (typeof x === "string") return x;
-  return x.id || x._id || x.uuid || null;
+// ---------- helpers ----------
+function asArray(x) {
+  return Array.isArray(x) ? x : [];
 }
 
-function toDateKey(d) {
-  try {
-    if (!d) return null;
-    const s = String(d).slice(0, 10);
-    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
-  } catch {
-    return null;
+function sanitizeDateStr(v) {
+  if (!v) return "";
+  const s = String(v).trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+function inDateRange(start, startDate, endDate) {
+  if (!start) return true;
+  const d = String(start).slice(0, 10);
+  if (startDate && d < startDate) return false;
+  if (endDate && d > endDate) return false;
+  return true;
+}
+
+function matchesDivisions(summary, divisions) {
+  const divs = asArray(divisions);
+  if (!divs.length) return true;
+  const d = summary?.school_division || summary?.division || null;
+  return d ? divs.includes(d) : false;
+}
+
+function matchesPositions(summary, positions) {
+  const want = asArray(positions).map(String).filter(Boolean);
+  if (!want.length) return true;
+
+  const have = asArray(summary?.position_ids).map(String).filter(Boolean);
+  return want.some((p) => have.includes(p));
+}
+
+function matchesSport(summary, sportId) {
+  if (!sportId) return true;
+  return String(summary?.sport_id || "") === String(sportId);
+}
+
+function matchesState(summary, state) {
+  if (!state) return true;
+  return String(summary?.state || "") === String(state);
+}
+
+function groupByDay(summaries) {
+  const map = new Map();
+  for (const s of summaries) {
+    const key = (s?.start_date ? String(s.start_date).slice(0, 10) : "TBD") || "TBD";
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(s);
   }
+  // Sort by date ascending (TBD at end)
+  const keys = Array.from(map.keys()).sort((a, b) => {
+    if (a === "TBD") return 1;
+    if (b === "TBD") return -1;
+    return a.localeCompare(b);
+  });
+  return keys.map((k) => ({ day: k, items: map.get(k) || [] }));
 }
 
 export default function Calendar() {
   const nav = useNavigate();
 
-  // Access + identity
   const season = useSeasonAccess();
-  const { athleteProfile } = useAthleteIdentity();
-  const { loaded: demoLoaded, demoProfile, demoProfileId } = useDemoProfile();
+  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  const isPaid = season.mode === "paid";
-  const athleteId = isPaid ? normId(athleteProfile) : null;
-
-  // Filters (shared UI; demo actually uses these)
+  // Filters for this page
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState({
     sport: "",
     state: "",
     divisions: [],
     positions: [],
     startDate: "",
-    endDate: ""
+    endDate: "",
   });
 
-  // Effective sport id:
-  // - Paid: use UI selection if set; otherwise let it be empty (all)
-  // - Demo: default to demoProfile.sport_id if UI not chosen
-  const effectiveSportId = useMemo(() => {
-    const uiSport = filters.sport ? String(filters.sport) : "";
-    if (uiSport) return uiSport;
+  // Load reference lists for FilterSheet (best-effort; no hard dependency)
+  const [sports, setSports] = useState([]);
+  const [positions, setPositions] = useState([]);
 
-    const demoSport = demoProfile?.sport_id ? String(normId(demoProfile.sport_id)) : "";
-    return demoSport || "";
-  }, [filters.sport, demoProfile?.sport_id]);
+  useMemo(() => {
+    // fire-and-forget (Base44 pages don’t always love extra query libs here)
+    (async () => {
+      try {
+        const rows = await base44.entities.Sport.list();
+        setSports(Array.isArray(rows) ? rows : []);
+      } catch {
+        setSports([]);
+      }
+    })();
+    (async () => {
+      try {
+        const rows = await base44.entities.Position.list();
+        setPositions(Array.isArray(rows) ? rows : []);
+      } catch {
+        setPositions([]);
+      }
+    })();
+    // run once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Demo-only filters
-  const demoState = useMemo(() => {
-    const ui = filters.state ? String(filters.state) : "";
-    return ui || (demoProfile?.state || "");
-  }, [filters.state, demoProfile?.state]);
+  const startDate = sanitizeDateStr(filters.startDate);
+  const endDate = sanitizeDateStr(filters.endDate);
 
-  const demoDivision = useMemo(() => {
-    // your demoProfile uses single division; FilterSheet uses divisions[]
-    const ui = Array.isArray(filters.divisions) && filters.divisions[0] ? String(filters.divisions[0]) : "";
-    return ui || (demoProfile?.division || "");
-  }, [filters.divisions, demoProfile?.division]);
+  const isPaid = season.mode === "paid";
+  const athleteId = athleteProfile?.id || null;
 
-  const demoPositionIds = useMemo(() => {
-    const ui = Array.isArray(filters.positions) ? filters.positions.map(String).filter(Boolean) : [];
-    if (ui.length) return ui;
-
-    const dp = Array.isArray(demoProfile?.position_ids)
-      ? demoProfile.position_ids.map((x) => String(normId(x))).filter(Boolean)
-      : [];
-    return dp;
-  }, [filters.positions, demoProfile?.position_ids]);
-
-  // DATA: paid vs demo
+  // Paid: show athlete-aware summaries
   const paidQuery = useCampSummariesClient({
     athleteId,
-    sportId: effectiveSportId || undefined,
-    enabled: isPaid && !!athleteId
+    sportId: filters.sport || undefined,
+    enabled: isPaid && !!athleteId && !identityLoading,
+    limit: 1000,
   });
 
+  // Demo/public: show public summaries for seasonYear
   const demoQuery = usePublicCampSummariesClient({
     seasonYear: season.seasonYear,
-    sportId: effectiveSportId || undefined,
-    state: demoState || undefined,
-    division: demoDivision || undefined,
-    positionIds: demoPositionIds,
-    enabled: !isPaid && demoLoaded
+    sportId: filters.sport || null,
+    state: filters.state || null,
+    division: "", // keep division client-side here since we already filter locally
+    positionIds: [], // keep positions client-side here
+    enabled: !isPaid,
+    limit: 1000,
   });
 
-  const rows = (isPaid ? paidQuery.data : demoQuery.data) || [];
-  const loading = isPaid ? paidQuery.isLoading : demoQuery.isLoading;
+  const loading = season.loading || (isPaid ? paidQuery.isLoading : demoQuery.isLoading);
+  const error = isPaid ? paidQuery.error : demoQuery.error;
 
-  // Group by date for a simple “calendar list” view (good enough for now)
-  const byDate = useMemo(() => {
-    const map = new Map();
-    for (const r of rows) {
-      const k = toDateKey(r?.start_date);
-      if (!k) continue;
-      if (!map.has(k)) map.set(k, []);
-      map.get(k).push(r);
-    }
-    const keys = Array.from(map.keys()).sort();
-    return keys.map((k) => ({ date: k, items: map.get(k) }));
-  }, [rows]);
+  const raw = isPaid ? (paidQuery.data || []) : (demoQuery.data || []);
 
-  const [filterOpen, setFilterOpen] = useState(false);
+  const filtered = useMemo(() => {
+    let arr = Array.isArray(raw) ? raw : [];
+
+    // client-side filters (works for both demo + paid)
+    arr = arr.filter((s) => matchesSport(s, filters.sport));
+    arr = arr.filter((s) => matchesState(s, filters.state));
+    arr = arr.filter((s) => matchesDivisions(s, filters.divisions));
+    arr = arr.filter((s) => matchesPositions(s, filters.positions));
+    arr = arr.filter((s) => inDateRange(s?.start_date, startDate, endDate));
+
+    // sort by start date asc
+    arr.sort((a, b) => String(a?.start_date || "9999-12-31").localeCompare(String(b?.start_date || "9999-12-31")));
+    return arr;
+  }, [raw, filters.sport, filters.state, filters.divisions, filters.positions, startDate, endDate]);
+
+  const grouped = useMemo(() => groupByDay(filtered), [filtered]);
 
   return (
     <RouteGuard requireAuth={false} requirePaid={false} requireProfile={false}>
-      <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pb-20">
-        <div className="max-w-md mx-auto px-4 pt-6">
+      <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pb-24">
+        <div className="max-w-md mx-auto p-4">
           {/* Header */}
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <CalendarDays className="w-5 h-5 text-slate-600" />
-                <h1 className="text-xl font-bold text-deep-navy">Calendar</h1>
-                {!isPaid && <Badge variant="outline">Demo</Badge>}
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+                <CalendarDays className="w-5 h-5" />
               </div>
-              <div className="text-sm text-slate-600 mt-1">
-                {isPaid
-                  ? "Your season schedule across saved and registered camps."
-                  : "Demo schedule based on your demo preferences."}
+              <div>
+                <div className="text-lg font-semibold text-deep-navy">Calendar</div>
+                <div className="text-xs text-slate-500">
+                  {season.mode === "paid" ? "Paid season workspace" : `Demo season: ${season.seasonYear}`}
+                </div>
               </div>
             </div>
 
-            <Button variant="outline" onClick={() => setFilterOpen(true)}>
-              <Filter className="w-4 h-4 mr-2" />
-              Filters
-            </Button>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+            >
+              <Filter className="w-4 h-4" />
+              <span className="text-sm font-medium">Filters</span>
+            </button>
           </div>
 
           {/* Body */}
           {loading ? (
-            <Card className="p-6 border-slate-200">
-              <div className="text-sm text-slate-600">Loading calendar…</div>
-            </Card>
-          ) : byDate.length === 0 ? (
-            <Card className="p-6 border-slate-200">
-              <div className="text-sm text-slate-600">
-                No camps found for your current filters.
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+            </div>
+          ) : error ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-700">
+              <div className="font-semibold mb-1">Calendar couldn’t load</div>
+              <div className="text-slate-600">
+                Try refreshing. If it persists, the Base44 entity filters may be rejecting the query.
               </div>
-              <div className="mt-3 flex gap-2">
-                <Button variant="outline" onClick={() => setFilterOpen(true)}>
-                  Adjust Filters
-                </Button>
-                <Button
-                  onClick={() => nav(createPageUrl("Discover") + (!isPaid ? "?mode=demo" : ""))}
-                >
-                  Go to Discover
-                </Button>
-              </div>
-            </Card>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-6 text-center">
+              <div className="text-sm text-slate-600">No camps match your filters.</div>
+              <button
+                type="button"
+                className="mt-3 text-sm font-medium text-deep-navy underline"
+                onClick={() =>
+                  setFilters({
+                    sport: "",
+                    state: "",
+                    divisions: [],
+                    positions: [],
+                    startDate: "",
+                    endDate: "",
+                  })
+                }
+              >
+                Clear filters
+              </button>
+            </div>
           ) : (
-            <div className="space-y-3">
-              {byDate.map((g) => (
-                <Card key={g.date} className="p-4 border-slate-200">
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold text-deep-navy">{g.date}</div>
-                    <div className="text-xs text-slate-500">{g.items.length} camp(s)</div>
+            <div className="space-y-6">
+              {grouped.map((group) => (
+                <div key={group.day}>
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                    {group.day === "TBD" ? "TBD" : group.day}
                   </div>
 
-                  <div className="mt-3 space-y-2">
-                    {g.items.map((c) => (
-                      <button
-                        key={String(c.camp_id)}
-                        type="button"
-                        className="w-full text-left rounded-md p-3 bg-white border border-slate-100 hover:border-slate-200 hover:shadow-sm transition"
-                        onClick={() => {
-                          const url =
-                            createPageUrl("CampDetail") +
-                            `?id=${encodeURIComponent(String(c.camp_id))}` +
-                            (!isPaid ? `&mode=demo&demoProfileId=${encodeURIComponent(String(demoProfileId || "default"))}` : "");
-                          nav(url);
+                  <div className="space-y-3">
+                    {group.items.map((s) => (
+                      <CampCard
+                        key={String(s.camp_id)}
+                        camp={{
+                          camp_name: s.camp_name,
+                          start_date: s.start_date,
+                          end_date: s.end_date,
+                          price: s.price,
+                          link_url: s.link_url,
+                          notes: s.notes,
+                          city: s.city,
+                          state: s.state,
                         }}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-deep-navy truncate">
-                              {c.school_name || "Unknown School"}
-                            </div>
-                            <div className="text-xs text-slate-600 truncate">
-                              {c.camp_name || "Camp"}
-                            </div>
-                          </div>
-                          {c.school_division && (
-                            <Badge className="bg-slate-900 text-white text-xs">
-                              {c.school_division}
-                            </Badge>
-                          )}
-                        </div>
-                      </button>
+                        school={{
+                          school_name: s.school_name,
+                          name: s.school_name,
+                          division: s.school_division,
+                          school_division: s.school_division,
+                        }}
+                        sport={{
+                          sport_name: s.sport_name,
+                          name: s.sport_name,
+                        }}
+                        positions={(s.position_ids || []).map((id) => ({
+                          id,
+                          position_code: (s.position_codes || [])[0] || null,
+                        }))}
+                        isFavorite={false}
+                        isRegistered={s.intent_status === "registered"}
+                        mode={season.mode}
+                        disabledFavorite={season.mode !== "paid"}
+                        onFavoriteToggle={() => {}}
+                        onClick={() => {
+                          // Navigate to detail if you have CampDetail; otherwise keep it harmless
+                          try {
+                            nav(createPageUrl("CampDetail") + `?id=${encodeURIComponent(String(s.camp_id))}`);
+                          } catch {
+                            nav(createPageUrl("Discover"));
+                          }
+                        }}
+                      />
                     ))}
                   </div>
-                </Card>
+                </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Filter sheet */}
+        {/* Filter Sheet */}
         <FilterSheet
-          isOpen={filterOpen}
-          onClose={() => setFilterOpen(false)}
+          isOpen={filtersOpen}
+          onClose={() => setFiltersOpen(false)}
           filters={filters}
-          onFilterChange={setFilters}
-          positions={[]}
-          sports={[]}
-          onApply={() => setFilterOpen(false)}
+          onFilterChange={(next) => setFilters(next)}
+          sports={sports}
+          positions={positions}
+          onApply={() => setFiltersOpen(false)}
           onClear={() => {
             setFilters({
               sport: "",
@@ -234,9 +303,9 @@ export default function Calendar() {
               divisions: [],
               positions: [],
               startDate: "",
-              endDate: ""
+              endDate: "",
             });
-            setFilterOpen(false);
+            setFiltersOpen(false);
           }}
         />
 
