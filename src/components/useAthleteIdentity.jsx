@@ -1,4 +1,4 @@
-// src/components/useAthleteIdentity.js
+// src/components/useAthleteIdentity.jsx
 import { useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -9,11 +9,11 @@ import { useSeasonAccess } from "./hooks/useSeasonAccess";
  * useAthleteIdentity
  *
  * Goals:
- * - Never leak stale profile across logout
+ * - If logged out (no accountId) -> athleteProfile=null immediately (no stale leak)
  * - Scope cache by accountId
- * - Only fetch when enabled AND authenticated
- * - Prefer active profile if present
- * - Be resilient to id field variations (id/_id/uuid)
+ * - Only fetch when authenticated
+ * - Prefer active profile if field exists, but don't hard-fail if schema differs
+ * - Be resilient to Base44 id field variations (id/_id/uuid)
  */
 function normId(x) {
   if (!x) return null;
@@ -21,27 +21,26 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
-export function useAthleteIdentity(opts = {}) {
+export function useAthleteIdentity() {
   const queryClient = useQueryClient();
   const { accountId } = useSeasonAccess();
-
-  const enabled = opts?.enabled !== undefined ? !!opts.enabled : true;
   const isAuthed = !!accountId;
-  const canRun = enabled && isAuthed;
 
-  // Purge cached identity when accountId goes null
+  // When accountId goes null, purge cached identity so nothing stale leaks into UI.
   useEffect(() => {
     if (isAuthed) return;
 
-    queryClient.removeQueries({ queryKey: ["athleteIdentity"], exact: false });
-    queryClient.removeQueries({ queryKey: ["athleteProfile"], exact: false });
-    queryClient.removeQueries({ queryKey: ["getAthleteProfile"], exact: false });
-    queryClient.removeQueries({ queryKey: ["auth_me"], exact: false });
+    try {
+      queryClient.removeQueries({ queryKey: ["athleteIdentity"], exact: false });
+      queryClient.removeQueries({ queryKey: ["athleteProfile"], exact: false });
+      queryClient.removeQueries({ queryKey: ["getAthleteProfile"], exact: false });
+      queryClient.removeQueries({ queryKey: ["auth_me"], exact: false });
+    } catch {}
   }, [isAuthed, queryClient]);
 
   const query = useQuery({
     queryKey: ["athleteIdentity", accountId],
-    enabled: canRun,
+    enabled: isAuthed,
     retry: false,
     staleTime: 0,
     gcTime: 5 * 60 * 1000,
@@ -58,8 +57,8 @@ export function useAthleteIdentity(opts = {}) {
       const list = Array.isArray(profiles) ? profiles : [];
       const active = list.find((p) => p?.active === true) || null;
       const first = list[0] || null;
-      const chosen = active || first || null;
 
+      const chosen = active || first || null;
       if (!chosen) return null;
 
       return {
@@ -70,14 +69,20 @@ export function useAthleteIdentity(opts = {}) {
   });
 
   return useMemo(() => {
-    if (!canRun) {
-      return { athleteProfile: null, isLoading: false, isError: false, error: null };
+    if (!isAuthed) {
+      return {
+        athleteProfile: null,
+        isLoading: false,
+        isError: false,
+        error: null,
+      };
     }
+
     return {
       athleteProfile: query.data || null,
       isLoading: query.isLoading,
       isError: query.isError,
       error: query.error,
     };
-  }, [canRun, query.data, query.isLoading, query.isError, query.error]);
+  }, [isAuthed, query.data, query.isLoading, query.isError, query.error]);
 }
