@@ -11,12 +11,15 @@ import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
  * RouteGuard
  *
  * Goals:
- * - Keep Home as a true front door (no auto-redirect here)
+ * - Home is a true front door (no auto-redirect here)
  * - Allow demo browsing where desired
- * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
+ * - Enforce: Auth and/or Paid and/or Profile on protected pages
  *
- * Notes:
- * - If URL has ?mode=demo, bypass paid/profile gating (demo always works)
+ * Rules:
+ * - If URL has ?mode=demo, bypass paid/profile gating (lets demo always work)
+ * - Redirect unauth users to Login when requireAuth=true
+ * - Redirect unpaid users to Subscribe when requirePaid=true (unless demo override)
+ * - Redirect paid users missing profile to Profile when requireProfile=true
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -28,19 +31,19 @@ export default function RouteGuard({
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
-    useAthleteIdentity();
+  const {
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError,
+  } = useAthleteIdentity();
 
   const currentPath = useMemo(() => {
     return (loc?.pathname || "") + (loc?.search || "");
   }, [loc?.pathname, loc?.search]);
 
-  const nextParam = useMemo(
-    () => encodeURIComponent(currentPath),
-    [currentPath]
-  );
+  const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // URL override: ?mode=demo means demo UX even if user is paid
+  // Demo override: ?mode=demo always wins (prevents paid/profile redirects)
   const forceDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
@@ -50,9 +53,11 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
+  // Paid is only true when NOT forcing demo
   const isPaid = !forceDemo && mode === "paid";
-  const needsIdentity = requireProfile && isPaid;
 
+  // Only require identity load when profile is required AND user is paid (not demo)
+  const needsIdentity = requireProfile && isPaid;
   const loading = accessLoading || (needsIdentity && identityLoading);
 
   const safeReplace = useCallback(
@@ -67,7 +72,7 @@ export default function RouteGuard({
   useEffect(() => {
     if (loading) return;
 
-    // If we needed identity and it errored, route to Profile as recoverable action
+    // If we needed identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
       safeReplace(
         createPageUrl("Profile") +
@@ -107,8 +112,8 @@ export default function RouteGuard({
     isPaid,
     athleteProfile,
     nextParam,
-    safeReplace,
     loc?.pathname,
+    safeReplace,
   ]);
 
   if (loading) {
