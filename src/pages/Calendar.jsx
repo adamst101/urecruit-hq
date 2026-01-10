@@ -26,20 +26,14 @@ function safeStr(x) {
 }
 
 function ymd(v) {
-  // expects YYYY-MM-DD or ISO-like; returns YYYY-MM-DD or ""
   const s = safeStr(v).slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
 }
 
-/**
- * Normalize division values so UI labels (e.g., "D1 (FBS)") match stored data
- * Stored values vary wildly: "FBS", "D1 (FBS)", "D1", "D2", "NAIA", etc.
- */
 function normalizeDivision(v) {
   const s = safeStr(v).trim().toUpperCase();
   if (!s) return "";
 
-  // Accept common variants
   if (s.includes("FBS")) return "D1 (FBS)";
   if (s.includes("FCS")) return "D1 (FCS)";
   if (s === "D1" || s === "DI" || s.includes("DIVISION I")) return "D1";
@@ -48,11 +42,86 @@ function normalizeDivision(v) {
   if (s.includes("NAIA")) return "NAIA";
   if (s.includes("JUCO") || s.includes("NJCAA")) return "JUCO";
 
-  // If stored already in UI label form, keep it
   if (s.startsWith("D1 (FBS)")) return "D1 (FBS)";
   if (s.startsWith("D1 (FCS)")) return "D1 (FCS)";
 
-  return safeStr(v).trim(); // fall back
+  return safeStr(v).trim();
+}
+
+// Full-name -> abbreviation map (for resilient filtering)
+const STATE_NAME_TO_ABBR = {
+  ALABAMA: "AL",
+  ALASKA: "AK",
+  ARIZONA: "AZ",
+  ARKANSAS: "AR",
+  CALIFORNIA: "CA",
+  COLORADO: "CO",
+  CONNECTICUT: "CT",
+  DELAWARE: "DE",
+  FLORIDA: "FL",
+  GEORGIA: "GA",
+  HAWAII: "HI",
+  IDAHO: "ID",
+  ILLINOIS: "IL",
+  INDIANA: "IN",
+  IOWA: "IA",
+  KANSAS: "KS",
+  KENTUCKY: "KY",
+  LOUISIANA: "LA",
+  MAINE: "ME",
+  MARYLAND: "MD",
+  MASSACHUSETTS: "MA",
+  MICHIGAN: "MI",
+  MINNESOTA: "MN",
+  MISSISSIPPI: "MS",
+  MISSOURI: "MO",
+  MONTANA: "MT",
+  NEBRASKA: "NE",
+  NEVADA: "NV",
+  "NEW HAMPSHIRE": "NH",
+  "NEW JERSEY": "NJ",
+  "NEW MEXICO": "NM",
+  "NEW YORK": "NY",
+  "NORTH CAROLINA": "NC",
+  "NORTH DAKOTA": "ND",
+  OHIO: "OH",
+  OKLAHOMA: "OK",
+  OREGON: "OR",
+  PENNSYLVANIA: "PA",
+  "RHODE ISLAND": "RI",
+  "SOUTH CAROLINA": "SC",
+  "SOUTH DAKOTA": "SD",
+  TENNESSEE: "TN",
+  TEXAS: "TX",
+  UTAH: "UT",
+  VERMONT: "VT",
+  VIRGINIA: "VA",
+  WASHINGTON: "WA",
+  "WEST VIRGINIA": "WV",
+  WISCONSIN: "WI",
+  WYOMING: "WY",
+  "DISTRICT OF COLUMBIA": "DC"
+};
+
+function normalizeState(v) {
+  const s = safeStr(v).trim();
+  if (!s) return "";
+
+  const upper = s.toUpperCase();
+
+  // Already 2-letter code (TX)
+  if (/^[A-Z]{2}$/.test(upper)) return upper;
+
+  // Might be "Texas", "texas", etc.
+  const abbr = STATE_NAME_TO_ABBR[upper];
+  if (abbr) return abbr;
+
+  // Sometimes stored like "TX - Texas" or "Texas (TX)"
+  // Extract first 2-letter code if present
+  const m = upper.match(/\b[A-Z]{2}\b/);
+  if (m && m[0]) return m[0];
+
+  return upper;
 }
 
 function inDateRange(campStart, campEnd, startFilter, endFilter) {
@@ -62,16 +131,10 @@ function inDateRange(campStart, campEnd, startFilter, endFilter) {
   const fs = ymd(startFilter);
   const fe = ymd(endFilter);
 
-  // No filters => always in range
   if (!fs && !fe) return true;
-
-  // If only start date filter
   if (fs && !fe) return cs >= fs;
-
-  // If only end date filter
   if (!fs && fe) return cs <= fe;
 
-  // Both: overlap test (camp range intersects filter range)
   return !(ce < fs || cs > fe);
 }
 
@@ -88,12 +151,11 @@ export default function Calendar() {
   const nav = useNavigate();
   const season = useSeasonAccess();
 
-  // UI state
   const [filterOpen, setFilterOpen] = useState(false);
 
-  // The editable filter form state
+  // Editable filters
   const [filters, setFilters] = useState({
-    sport: "", // sport_id
+    sport: "",
     state: "",
     divisions: [],
     positions: [],
@@ -101,14 +163,13 @@ export default function Calendar() {
     endDate: ""
   });
 
-  // Applied filters (only change when user hits Apply)
+  // Applied filters
   const [applied, setApplied] = useState(filters);
 
   // Options for FilterSheet
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
-  // Load sports/positions for the filter sheet (best effort)
   useEffect(() => {
     let mounted = true;
 
@@ -137,28 +198,27 @@ export default function Calendar() {
     };
   }, []);
 
-  // IMPORTANT: only server-filter by season + (optional) sport + state.
-  // Do NOT server-filter division/positions because those values frequently mismatch.
   const seasonYear = season.seasonYear;
 
+  // Server-filter ONLY by season (+ optional sport). State is client-side now.
   const sportId = applied.sport ? String(applied.sport) : null;
-  const state = applied.state ? String(applied.state) : null;
 
   const { data: publicSummaries, isLoading } = usePublicCampSummariesClient({
     seasonYear,
     sportId,
-    state,
-    division: null,     // <- intentionally null (client-side)
-    positionIds: null,  // <- intentionally null (client-side)
+    state: null,        // ✅ do NOT server-filter state
+    division: null,     // ✅ client-side
+    positionIds: null,  // ✅ client-side
     limit: 2000,
     enabled: !!seasonYear
   });
 
   const mode = season.mode; // "demo" | "paid"
 
-  // Client-side filtering (division, positions, date range)
   const rows = useMemo(() => {
     const list = Array.isArray(publicSummaries) ? publicSummaries : [];
+
+    const selectedState = applied.state ? normalizeState(applied.state) : "";
 
     const selectedDivs = Array.isArray(applied.divisions)
       ? applied.divisions.map((d) => normalizeDivision(d)).filter(Boolean)
@@ -172,6 +232,13 @@ export default function Calendar() {
     const endFilter = applied.endDate || "";
 
     return list.filter((c) => {
+      // ✅ State (match against camp.state OR school_state)
+      if (selectedState) {
+        const campState = normalizeState(c.state || "");
+        const schoolState = normalizeState(c.school_state || "");
+        if (campState !== selectedState && schoolState !== selectedState) return false;
+      }
+
       // Division
       if (selectedDivs.length) {
         const campDiv = normalizeDivision(c.school_division);
@@ -183,7 +250,6 @@ export default function Calendar() {
         const campPos = Array.isArray(c.position_ids)
           ? c.position_ids.map((x) => String(normId(x) || x)).filter(Boolean)
           : [];
-        // require any overlap
         if (!selectedPos.some((p) => campPos.includes(p))) return false;
       }
 
@@ -219,7 +285,6 @@ export default function Calendar() {
   };
 
   const recheckSeason = () => {
-    // best-effort: just hard refresh the page state
     window.location.reload();
   };
 
@@ -246,9 +311,7 @@ export default function Calendar() {
           </Button>
         </div>
 
-        <div className="text-sm text-slate-500 mt-2">
-          Showing season {seasonYear}
-        </div>
+        <div className="text-sm text-slate-500 mt-2">Showing season {seasonYear}</div>
 
         {/* Content */}
         <div className="mt-5 space-y-3">
@@ -319,8 +382,6 @@ export default function Calendar() {
                     <Button
                       variant="outline"
                       onClick={() => {
-                        // Keep it simple: route to CampDetail if you have it.
-                        // If you don’t, replace this with whatever page you use.
                         nav(
                           createPageUrl("CampDetail") +
                             `?campId=${encodeURIComponent(String(c.camp_id))}` +
