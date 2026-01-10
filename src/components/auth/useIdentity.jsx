@@ -8,47 +8,50 @@ import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 /**
  * useIdentity
  *
- * Canonical identity resolver:
- * - Auth user (base44.auth.me)
- * - Subscription status (from useSeasonAccess: mode/entitlement)
- * - "Children" == AthleteProfiles for the signed-in account (active only)
- * - Active child stored in localStorage (per account)
- *
- * Best practices:
- * - Query keys scoped by accountId
- * - No redirect logic here (pure state)
- * - Minimal cache invalidation (only dependent queries)
+ * Best-practice goals:
+ * - Single, stable identity contract for pages/components
+ * - Reuse react-query cache keys (shares results with useSeasonAccess)
+ * - Children == AthleteProfiles for signed-in account
+ * - Active child stored per-account in localStorage
+ * - No .js import extensions anywhere (this repo is .jsx)
  */
+
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
+}
+
 export function useIdentity() {
   const queryClient = useQueryClient();
 
-  const { isLoading: accessLoading, mode, accountId, entitlement } =
-    useSeasonAccess();
+  // Canonical access model (demo vs paid)
+  const { isLoading: accessLoading, mode, accountId, entitlement } = useSeasonAccess();
 
-  // 1) Auth user (best effort)
+  // 1) Auth user (best-effort). Uses SAME key as useSeasonAccess => shared cache.
   const meQuery = useQuery({
     queryKey: ["auth_me"],
     retry: false,
     staleTime: 0,
     queryFn: async () => {
       try {
-        return await base44.auth.me();
+        return await base44.auth.me?.();
       } catch {
         return null;
       }
-    },
+    }
   });
 
   const user = meQuery.data || null;
 
-  // Subscription modeled consistently with the rest of the app
+  // Subscription modeled consistently with the rest of your app
   const subscription = useMemo(() => {
     if (!accountId) return { status: "inactive", entitlement: null };
     if (mode === "paid") return { status: "active", entitlement: entitlement || null };
     return { status: "inactive", entitlement: null };
   }, [accountId, mode, entitlement]);
 
-  // 2) Children == athlete profiles for account (active only)
+  // 2) Children == athlete profiles for account
   const childrenQuery = useQuery({
     queryKey: ["athleteProfiles", accountId],
     enabled: !!accountId && !accessLoading,
@@ -57,19 +60,18 @@ export function useIdentity() {
     queryFn: async () => {
       try {
         const rows = await base44.entities.AthleteProfile.filter({
-          account_id: accountId,
-          active: true,
+          account_id: accountId
         });
         return Array.isArray(rows) ? rows : [];
       } catch {
         return [];
       }
-    },
+    }
   });
 
-  const children = childrenQuery.data || [];
+  const children = Array.isArray(childrenQuery.data) ? childrenQuery.data : [];
 
-  // Local storage active child (per account)
+  // Local storage active child (scoped per account)
   const activeChildKey = useMemo(() => {
     const uid = accountId || "anon";
     return `activeChildId:${uid}`;
@@ -77,15 +79,14 @@ export function useIdentity() {
 
   const [activeChildId, setActiveChildId] = useState(null);
 
-  // Resolve active child when children list loads/changes
+  // Resolve active child when children change
   useEffect(() => {
     if (!accountId) {
       setActiveChildId(null);
       return;
     }
 
-    const kids = Array.isArray(children) ? children : [];
-    if (kids.length === 0) {
+    if (!children.length) {
       setActiveChildId(null);
       try {
         window.localStorage.removeItem(activeChildKey);
@@ -99,9 +100,9 @@ export function useIdentity() {
     } catch {}
 
     const savedValid =
-      saved && kids.some((k) => String(k?.id) === String(saved));
+      saved && children.some((k) => String(normId(k)) === String(saved));
 
-    const fallback = kids[0]?.id ?? null;
+    const fallback = normId(children[0]) || children[0]?.id || null;
     const resolved = savedValid ? saved : fallback;
 
     setActiveChildId(resolved ? String(resolved) : null);
@@ -113,7 +114,7 @@ export function useIdentity() {
 
   const isAuthed = !!accountId;
   const isSubscribed = subscription?.status === "active";
-  const hasChild = (children || []).length > 0;
+  const hasChild = children.length > 0;
 
   const setActiveChild = useCallback(
     (id) => {
@@ -125,7 +126,7 @@ export function useIdentity() {
         else window.localStorage.removeItem(activeChildKey);
       } catch {}
 
-      // Invalidate only queries that depend on active child selection
+      // Invalidate only dependent read models
       try {
         queryClient.invalidateQueries({ queryKey: ["athleteIdentity"], exact: false });
         queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
@@ -135,7 +136,9 @@ export function useIdentity() {
   );
 
   const loading =
-    accessLoading || meQuery.isLoading || (isAuthed && childrenQuery.isLoading);
+    accessLoading ||
+    meQuery.isLoading ||
+    (isAuthed && childrenQuery.isLoading);
 
   const error = meQuery.error || childrenQuery.error || null;
 
@@ -153,6 +156,6 @@ export function useIdentity() {
     hasChild,
 
     activeChildId,
-    setActiveChild,
+    setActiveChild
   };
 }
