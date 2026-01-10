@@ -8,33 +8,36 @@ import { createPageUrl } from "../../utils";
 // ✅ Explicit .jsx imports (your repo standard)
 import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
+import { readDemoMode } from "../hooks/demoMode.jsx";
 
 /**
  * RouteGuard
  *
  * Goals:
- * - Home stays a true front door (no auto-redirect here)
- * - Demo browsing supported
- * - Enforce Auth / Paid / Profile on protected pages
+ * - Keep Home as a true front door (no auto-redirect here)
+ * - Allow demo browsing where desired
+ * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
  *
  * Rules:
- * - If URL has ?mode=demo -> treat as demo (bypass paid/profile gating)
- * - If requireAuth and not authed -> redirect to Login?next=
- * - If requirePaid and not paid -> redirect to Subscribe?next=
- * - If requireProfile and paid but missing profile -> redirect to Profile?next=
+ * - If URL has ?mode=demo, treat as demo regardless of entitlement
+ * - If localStorage demo mode is set, also treat as demo
+ * - Paid gating only applies when effectiveMode === "paid"
  */
 export default function RouteGuard({
   requireAuth = false,
   requirePaid = false,
   requireProfile = false,
-  children,
+  children
 }) {
   const nav = useNavigate();
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
-    useAthleteIdentity();
+  const {
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError
+  } = useAthleteIdentity();
 
   const currentPath = useMemo(() => {
     return (loc?.pathname || "") + (loc?.search || "");
@@ -42,8 +45,8 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Demo override via URL
-  const forceDemo = useMemo(() => {
+  // 1) URL override: ?mode=demo always wins
+  const urlForcesDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
       return sp.get("mode") === "demo";
@@ -52,12 +55,22 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
-  const isPaid = !forceDemo && mode === "paid";
+  // 2) Local demo mode (set by setDemoMode)
+  const localForcesDemo = useMemo(() => {
+    try {
+      const d = readDemoMode?.();
+      return d?.mode === "demo";
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Effective paid state (demo wins over paid)
+  const isPaid = !urlForcesDemo && !localForcesDemo && mode === "paid";
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
 
-  // ✅ stable replace helper (prevents effect dependency churn)
   const safeReplace = useCallback(
     (to) => {
       if (!to) return;
@@ -72,10 +85,7 @@ export default function RouteGuard({
 
     // If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
-      safeReplace(
-        createPageUrl("Profile") +
-          `?next=${nextParam}&err=profile_load_failed`
-      );
+      safeReplace(createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`);
       return;
     }
 
@@ -85,13 +95,13 @@ export default function RouteGuard({
       return;
     }
 
-    // 2) Paid required (ignored in demo)
+    // 2) Paid required (ignored in demo override)
     if (requirePaid && !isPaid) {
       safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
     }
 
-    // 3) Profile required (paid-only)
+    // 3) Profile required (paid-only enforcement)
     if (requireProfile && isPaid && !athleteProfile) {
       const profileUrl = createPageUrl("Profile");
       if ((loc?.pathname || "") !== profileUrl) {
@@ -101,17 +111,17 @@ export default function RouteGuard({
     }
   }, [
     loading,
-    needsIdentity,
-    identityError,
     requireAuth,
     requirePaid,
     requireProfile,
+    needsIdentity,
+    identityError,
     accountId,
     isPaid,
     athleteProfile,
     nextParam,
     loc?.pathname,
-    safeReplace,
+    safeReplace
   ]);
 
   if (loading) {
