@@ -1,45 +1,43 @@
 // src/pages/Calendar.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { CalendarDays, Filter } from "lucide-react";
 
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
-import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient";
+import { base44 } from "../api/base44Client";
 
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
+import { Badge } from "../components/ui/badge";
 
-/**
- * Calendar (stable compile version)
- * - Eliminates dependency on ../components/filters/FilterSheet(.jsx)
- * - Uses public summaries for both demo + paid (safe read-only calendar view)
- * - Inline filter panel (no shadcn Sheet/Select imports)
- */
+import BottomNav from "../components/navigation/BottomNav.jsx";
 
-const DIVISIONS = ["D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"];
-const STATES = [
-  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
-  "ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK",
-  "OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"
-];
+// ✅ MUST match your actual file locations
+import FilterSheet from "../components/filters/FilterSheet.jsx";
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess.js";
+import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
 
-function safeStr(x) {
-  if (x === undefined || x === null) return "";
-  return String(x);
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
 }
 
-function normalizeDateStr(d) {
-  // expects YYYY-MM-DD; if not, return ""
-  const s = safeStr(d).trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+function asDateStr(d) {
+  try {
+    if (!d) return "";
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dt.toISOString().slice(0, 10);
+  } catch {
+    return "";
+  }
 }
 
-function inDateRange(d, start, end) {
-  const dd = normalizeDateStr(d);
-  if (!dd) return false;
-  const s = normalizeDateStr(start);
-  const e = normalizeDateStr(end);
-  if (s && dd < s) return false;
-  if (e && dd > e) return false;
+function inRange(dateStr, startStr, endStr) {
+  // All are "YYYY-MM-DD" (lexicographic safe)
+  if (!dateStr) return true;
+  const d = String(dateStr);
+  if (startStr && d < startStr) return false;
+  if (endStr && d > endStr) return false;
   return true;
 }
 
@@ -49,213 +47,219 @@ export default function Calendar() {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Inline filters (no external FilterSheet)
-  const [sportId, setSportId] = useState("");
-  const [stateCode, setStateCode] = useState("");
-  const [division, setDivision] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Filters compatible with FilterSheet
+  const [filters, setFilters] = useState({
+    sport: "",
+    divisions: [],
+    positions: [],
+    state: "",
+    startDate: "",
+    endDate: ""
+  });
 
-  const { data, isLoading, isError } = usePublicCampSummariesClient({
+  // Lists for FilterSheet
+  const [sports, setSports] = useState([]);
+  const [positions, setPositions] = useState([]);
+
+  // Load sports + positions (best-effort; page still works if these fail)
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        const s = await base44.entities.Sport?.list?.();
+        if (mounted) setSports(Array.isArray(s) ? s : []);
+      } catch {
+        if (mounted) setSports([]);
+      }
+    })();
+
+    (async () => {
+      try {
+        const p = await base44.entities.Position?.list?.();
+        if (mounted) setPositions(Array.isArray(p) ? p : []);
+      } catch {
+        if (mounted) setPositions([]);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const selectedDivision =
+    Array.isArray(filters.divisions) && filters.divisions.length === 1
+      ? filters.divisions[0]
+      : ""; // FilterSheet supports multi; public hook supports single division
+  const selectedPositions = Array.isArray(filters.positions) ? filters.positions : [];
+
+  const publicQuery = usePublicCampSummariesClient({
     seasonYear,
-    sportId: sportId || null,
-    state: stateCode || null,
-    division: division || null,
-    positionIds: [],
-    limit: 2000,
+    sportId: filters.sport || null,
+    state: filters.state || null,
+    division: selectedDivision || null,
+    positionIds: selectedPositions,
+    limit: 800,
     enabled: !!seasonYear
   });
 
-  const rows = Array.isArray(data) ? data : [];
+  const summaries = Array.isArray(publicQuery.data) ? publicQuery.data : [];
 
+  // Apply date range client-side (hook filters by year; this tightens within year)
   const filtered = useMemo(() => {
-    // Public hook already filters by sport/state/division if passed.
-    // Here we do only date-range client filtering for safety.
-    const s = normalizeDateStr(startDate);
-    const e = normalizeDateStr(endDate);
+    const start = filters.startDate ? String(filters.startDate) : "";
+    const end = filters.endDate ? String(filters.endDate) : "";
 
-    if (!s && !e) return rows;
-
-    return rows.filter((r) => inDateRange(r?.start_date, s, e));
-  }, [rows, startDate, endDate]);
+    return summaries
+      .filter((c) => {
+        const d = asDateStr(c?.start_date);
+        return inRange(d, start, end);
+      })
+      .sort((a, b) => String(b?.start_date || "").localeCompare(String(a?.start_date || "")));
+  }, [summaries, filters.startDate, filters.endDate]);
 
   const grouped = useMemo(() => {
     const map = new Map();
-    for (const r of filtered) {
-      const d = normalizeDateStr(r?.start_date) || "TBD";
-      if (!map.has(d)) map.set(d, []);
-      map.get(d).push(r);
+    for (const c of filtered) {
+      const key = asDateStr(c?.start_date) || "TBD";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(c);
     }
-    // sort by date asc; TBD last
-    const keys = Array.from(map.keys()).sort((a, b) => {
-      if (a === "TBD") return 1;
-      if (b === "TBD") return -1;
-      return a.localeCompare(b);
-    });
-
-    return keys.map((k) => ({
-      date: k,
-      items: map.get(k) || []
-    }));
+    return Array.from(map.entries()).sort((a, b) => String(b[0]).localeCompare(String(a[0])));
   }, [filtered]);
 
-  const clearAll = () => {
-    setSportId("");
-    setStateCode("");
-    setDivision("");
-    setStartDate("");
-    setEndDate("");
-  };
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (filters.sport) n += 1;
+    if (filters.state) n += 1;
+    if (Array.isArray(filters.divisions) && filters.divisions.length) n += 1;
+    if (Array.isArray(filters.positions) && filters.positions.length) n += 1;
+    if (filters.startDate) n += 1;
+    if (filters.endDate) n += 1;
+    return n;
+  }, [filters]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 p-4 pb-24">
-      <div className="max-w-md mx-auto space-y-4">
+    <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pb-20">
+      <div className="max-w-md mx-auto p-4 space-y-4">
         {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-deep-navy">Calendar</h1>
-            <p className="text-sm text-slate-600 mt-1">
-              Season: <span className="font-semibold">{seasonYear || "—"}</span>{" "}
-              <span className="ml-2 inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
-                {season?.mode === "paid" ? "Paid" : "Demo"}
-              </span>
-            </p>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="w-5 h-5 text-slate-700" />
+            <h1 className="text-xl font-semibold text-deep-navy">Calendar</h1>
           </div>
 
-          <Button variant="outline" onClick={() => setFiltersOpen((v) => !v)}>
+          <Button variant="outline" onClick={() => setFiltersOpen(true)}>
+            <Filter className="w-4 h-4 mr-2" />
             Filters
+            {activeFilterCount > 0 && (
+              <Badge className="ml-2 bg-slate-900 text-white">{activeFilterCount}</Badge>
+            )}
           </Button>
         </div>
 
-        {/* Inline filter panel */}
-        {filtersOpen && (
-          <Card className="p-4 border-slate-200 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-xs font-semibold text-slate-700 mb-1">Sport ID</div>
-                <Input
-                  value={sportId}
-                  onChange={(e) => setSportId(e.target.value)}
-                  placeholder="(optional)"
-                />
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold text-slate-700 mb-1">State</div>
-                <select
-                  className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm"
-                  value={stateCode || ""}
-                  onChange={(e) => setStateCode(e.target.value)}
-                >
-                  <option value="">All</option>
-                  {STATES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="col-span-2">
-                <div className="text-xs font-semibold text-slate-700 mb-1">Division</div>
-                <select
-                  className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm"
-                  value={division || ""}
-                  onChange={(e) => setDivision(e.target.value)}
-                >
-                  <option value="">All</option>
-                  {DIVISIONS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold text-slate-700 mb-1">Start Date</div>
-                <Input
-                  type="date"
-                  value={normalizeDateStr(startDate)}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold text-slate-700 mb-1">End Date</div>
-                <Input
-                  type="date"
-                  value={normalizeDateStr(endDate)}
-                  min={normalizeDateStr(startDate) || undefined}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </div>
+        {/* Mode banner */}
+        <Card className="p-3 border-slate-200 bg-white">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-slate-700">
+              Season: <span className="font-semibold">{seasonYear || "—"}</span>
             </div>
+            <Badge variant="outline" className="text-xs">
+              {season?.mode === "paid" ? "Paid" : "Demo"}
+            </Badge>
+          </div>
+        </Card>
 
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={clearAll}>
-                Clear
-              </Button>
-              <Button className="flex-1" onClick={() => setFiltersOpen(false)}>
-                Apply
-              </Button>
-            </div>
-
-            <div className="text-xs text-slate-500">
-              Note: “Sport ID” is a temporary field (until SportSelector is wired into Calendar).
-            </div>
-          </Card>
-        )}
-
-        {/* Body */}
-        {isLoading ? (
-          <Card className="p-6 border-slate-200">
-            <div className="text-sm text-slate-600">Loading camps…</div>
-          </Card>
-        ) : isError ? (
-          <Card className="p-6 border-slate-200">
-            <div className="text-sm text-rose-600">Failed to load camps.</div>
+        {/* Content */}
+        {publicQuery.isLoading ? (
+          <Card className="p-6 border-slate-200 bg-white text-sm text-slate-600">
+            Loading camps…
           </Card>
         ) : grouped.length === 0 ? (
-          <Card className="p-6 border-slate-200">
-            <div className="text-sm text-slate-600">No camps found for these filters.</div>
+          <Card className="p-6 border-slate-200 bg-white">
+            <div className="text-sm text-slate-700 font-medium">No camps found.</div>
+            <div className="text-sm text-slate-500 mt-1">
+              Try clearing filters or choosing a different sport/state/date range.
+            </div>
           </Card>
         ) : (
-          <div className="space-y-3">
-            {grouped.map((g) => (
-              <Card key={g.date} className="p-4 border-slate-200">
-                <div className="text-sm font-semibold text-slate-800 mb-3">
-                  {g.date === "TBD" ? "TBD Dates" : g.date}
-                  <span className="ml-2 text-xs font-normal text-slate-500">
-                    ({g.items.length})
-                  </span>
+          <div className="space-y-4">
+            {grouped.map(([dateKey, items]) => (
+              <Card key={dateKey} className="p-4 border-slate-200 bg-white">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm font-semibold text-deep-navy">
+                    {dateKey === "TBD" ? "Date TBD" : dateKey}
+                  </div>
+                  <div className="text-xs text-slate-500">{items.length} camp(s)</div>
                 </div>
 
-                <div className="space-y-2">
-                  {g.items.map((r) => (
-                    <div
-                      key={safeStr(r?.camp_id)}
-                      className="rounded-md border border-slate-100 bg-white p-3"
-                    >
-                      <div className="text-sm font-semibold text-deep-navy truncate">
-                        {r?.school_name || "Unknown School"}
+                <div className="space-y-3">
+                  {items.map((c) => {
+                    const id = String(c?.camp_id || normId(c) || Math.random());
+                    return (
+                      <div key={id} className="rounded-lg border border-slate-200 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900 truncate">
+                              {c?.school_name || "Unknown School"}
+                            </div>
+                            <div className="text-sm text-slate-600 truncate">
+                              {c?.camp_name || "Camp"}
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {c?.school_division && (
+                                <Badge className="bg-slate-900 text-white text-xs">
+                                  {c.school_division}
+                                </Badge>
+                              )}
+                              {c?.sport_name && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {c.sport_name}
+                                </Badge>
+                              )}
+                              {c?.state && (
+                                <Badge variant="outline" className="text-xs">
+                                  {c.state}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-sm text-slate-700 truncate">
-                        {r?.camp_name || "Camp"}
-                      </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        {(r?.sport_name && `Sport: ${r.sport_name}`) || ""}
-                        {(r?.school_division && ` • ${r.school_division}`) || ""}
-                        {(r?.state && ` • ${r.state}`) || ""}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </Card>
             ))}
           </div>
         )}
       </div>
+
+      {/* Filter sheet */}
+      <FilterSheet
+        isOpen={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        filters={filters}
+        onFilterChange={(next) => setFilters(next || {})}
+        positions={positions}
+        sports={sports}
+        onApply={() => setFiltersOpen(false)}
+        onClear={() => {
+          setFilters({
+            sport: "",
+            divisions: [],
+            positions: [],
+            state: "",
+            startDate: "",
+            endDate: ""
+          });
+          setFiltersOpen(false);
+        }}
+      />
+
+      <BottomNav />
     </div>
   );
 }
