@@ -26,9 +26,8 @@ export default function CampCard({
   isRegistered,
   onFavoriteToggle,
   onClick,
-  // optional flags for demo/paid UI (won’t break existing callers)
   mode, // "demo" | "paid" (optional)
-  disabledFavorite, // optional: force-disable favorite button
+  disabledFavorite, // optional
 }) {
   const division = school?.division || school?.school_division || null;
   const sportName = sport?.sport_name || sport?.name || null;
@@ -63,11 +62,7 @@ export default function CampCard({
               <span className="text-xs text-slate-500 font-medium">{sportName}</span>
             )}
 
-            {isDemo && (
-              <Badge variant="outline" className="text-xs">
-                Demo
-              </Badge>
-            )}
+            {isDemo && <Badge variant="outline" className="text-xs">Demo</Badge>}
 
             {isRegistered && (
               <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>
@@ -90,7 +85,7 @@ export default function CampCard({
           disabled={!!disabledFavorite}
           onClick={(e) => {
             e.preventDefault();
-            e.stopPropagation(); // do NOT navigate when favoriting
+            e.stopPropagation();
             if (disabledFavorite) return;
             onFavoriteToggle?.();
           }}
@@ -99,8 +94,8 @@ export default function CampCard({
             disabledFavorite
               ? "Favorites are disabled"
               : isFavorite
-              ? "Remove favorite"
-              : "Add favorite"
+                ? "Remove favorite"
+                : "Add favorite"
           }
         >
           <Star
@@ -146,14 +141,9 @@ export default function CampCard({
         <div className="mt-3 flex flex-wrap gap-2">
           {positions.slice(0, 6).map((p, idx) => {
             const key = p?.position_id || p?.id || `${idx}`;
-            const label =
-              p?.position_code || p?.code || p?.position_name || "POS";
+            const label = p?.position_code || p?.code || p?.position_name || "POS";
             return (
-              <Badge
-                key={key}
-                variant="secondary"
-                className="bg-slate-100 text-slate-700"
-              >
+              <Badge key={key} variant="secondary" className="bg-slate-100 text-slate-700">
                 {label}
               </Badge>
             );
