@@ -1,87 +1,123 @@
-// src/components/useAthleteIdentity.jsx
-import { useEffect, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+// src/components/auth/RouteGuard.jsx
+import React, { useEffect, useMemo, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 
-import { base44 } from "../api/base44Client";
-import { useSeasonAccess } from "./hooks/useSeasonAccess.jsx";
+import { createPageUrl } from "../../utils";
+import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
+import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
 
 /**
- * useAthleteIdentity
+ * RouteGuard
  *
- * Best-practice goals:
- * - If logged out -> athleteProfile=null immediately (no stale leak)
- * - Scope cache by accountId
- * - Only fetch when authenticated
- * - Prefer active profile if present
- * - Resilient to Base44 id field variations (id/_id/uuid)
+ * Goals:
+ * - Keep Home as a true front door (no auto-redirect here)
+ * - Allow demo browsing where desired
+ * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
+ *
+ * Notes:
+ * - If URL has ?mode=demo, bypass paid/profile gating (demo always works)
  */
+export default function RouteGuard({
+  requireAuth = false,
+  requirePaid = false,
+  requireProfile = false,
+  children,
+}) {
+  const nav = useNavigate();
+  const loc = useLocation();
 
-function normId(x) {
-  if (!x) return null;
-  if (typeof x === "string") return x;
-  return x.id || x._id || x.uuid || null;
-}
+  const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
+  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
+    useAthleteIdentity();
 
-export function useAthleteIdentity() {
-  const queryClient = useQueryClient();
-  const { accountId } = useSeasonAccess();
-  const isAuthed = !!accountId;
+  const currentPath = useMemo(() => {
+    return (loc?.pathname || "") + (loc?.search || "");
+  }, [loc?.pathname, loc?.search]);
 
-  // When accountId goes null, purge cached identity so nothing stale leaks into UI.
-  useEffect(() => {
-    if (isAuthed) return;
+  const nextParam = useMemo(
+    () => encodeURIComponent(currentPath),
+    [currentPath]
+  );
 
+  // URL override: ?mode=demo means demo UX even if user is paid
+  const forceDemo = useMemo(() => {
     try {
-      queryClient.removeQueries({ queryKey: ["athleteIdentity"], exact: false });
-      queryClient.removeQueries({ queryKey: ["athleteProfile"], exact: false });
-      queryClient.removeQueries({ queryKey: ["getAthleteProfile"], exact: false });
-    } catch {}
-  }, [isAuthed, queryClient]);
-
-  const query = useQuery({
-    queryKey: ["athleteIdentity", accountId],
-    enabled: isAuthed,
-    retry: false,
-    staleTime: 0,
-    gcTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      // Pull profiles for this account
-      const profiles = await base44.entities.AthleteProfile.filter({
-        account_id: accountId
-      });
-
-      const list = Array.isArray(profiles) ? profiles : [];
-
-      // Prefer active if present
-      const active = list.find((p) => p?.active === true) || null;
-      const first = list[0] || null;
-      const chosen = active || first || null;
-
-      if (!chosen) return null;
-
-      return {
-        ...chosen,
-        id: normId(chosen) || null
-      };
+      const sp = new URLSearchParams(loc?.search || "");
+      return sp.get("mode") === "demo";
+    } catch {
+      return false;
     }
-  });
+  }, [loc?.search]);
 
-  // Stable response shape
-  return useMemo(() => {
-    if (!isAuthed) {
-      return {
-        athleteProfile: null,
-        isLoading: false,
-        isError: false,
-        error: null
-      };
+  const isPaid = !forceDemo && mode === "paid";
+  const needsIdentity = requireProfile && isPaid;
+
+  const loading = accessLoading || (needsIdentity && identityLoading);
+
+  const safeReplace = useCallback(
+    (to) => {
+      if (!to) return;
+      if (to === currentPath) return;
+      nav(to, { replace: true });
+    },
+    [nav, currentPath]
+  );
+
+  useEffect(() => {
+    if (loading) return;
+
+    // If we needed identity and it errored, route to Profile as recoverable action
+    if (needsIdentity && identityError) {
+      safeReplace(
+        createPageUrl("Profile") +
+          `?next=${nextParam}&err=profile_load_failed`
+      );
+      return;
     }
 
-    return {
-      athleteProfile: query.data || null,
-      isLoading: query.isLoading,
-      isError: query.isError,
-      error: query.error
-    };
-  }, [isAuthed, query.data, query.isLoading, query.isError, query.error]);
+    // 1) Auth required
+    if (requireAuth && !accountId) {
+      safeReplace(createPageUrl("Login") + `?next=${nextParam}`);
+      return;
+    }
+
+    // 2) Paid required (ignored in demo override)
+    if (requirePaid && !isPaid) {
+      safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
+      return;
+    }
+
+    // 3) Profile required (paid-only enforcement)
+    if (requireProfile && isPaid && !athleteProfile) {
+      const profileUrl = createPageUrl("Profile");
+      if ((loc?.pathname || "") !== profileUrl) {
+        safeReplace(profileUrl + `?next=${nextParam}`);
+      }
+      return;
+    }
+  }, [
+    loading,
+    needsIdentity,
+    identityError,
+    requireAuth,
+    requirePaid,
+    requireProfile,
+    accountId,
+    isPaid,
+    athleteProfile,
+    nextParam,
+    safeReplace,
+    loc?.pathname,
+  ]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  return <>{children}</>;
 }
