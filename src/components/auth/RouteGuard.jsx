@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 
 import { createPageUrl } from "../../utils";
 
-// ✅ repo uses .jsx
+// ✅ Explicit .jsx imports (your repo standard)
 import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
 
@@ -13,38 +13,34 @@ import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
  * RouteGuard
  *
  * Goals:
- * - Keep Home as a true front door (no auto-redirect here)
- * - Allow demo browsing where desired
- * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
+ * - Home stays a true front door (no auto-redirect here)
+ * - Demo browsing supported
+ * - Enforce Auth / Paid / Profile on protected pages
  *
  * Rules:
- * - If URL has ?mode=demo, bypass paid/profile gating (demo always works)
- * - Redirect unauth users to Login for protected pages
+ * - If URL has ?mode=demo -> treat as demo (bypass paid/profile gating)
+ * - If requireAuth and not authed -> redirect to Login?next=
+ * - If requirePaid and not paid -> redirect to Subscribe?next=
+ * - If requireProfile and paid but missing profile -> redirect to Profile?next=
  */
 export default function RouteGuard({
   requireAuth = false,
   requirePaid = false,
   requireProfile = false,
-  children
+  children,
 }) {
   const nav = useNavigate();
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-
-  // Only used when profile gating is actually needed
   const { athleteProfile, isLoading: identityLoading, isError: identityError } =
     useAthleteIdentity();
 
-  const currentPath = useMemo(
-    () => (loc?.pathname || "") + (loc?.search || ""),
-    [loc?.pathname, loc?.search]
-  );
+  const currentPath = useMemo(() => {
+    return (loc?.pathname || "") + (loc?.search || "");
+  }, [loc?.pathname, loc?.search]);
 
-  const nextParam = useMemo(
-    () => encodeURIComponent(currentPath),
-    [currentPath]
-  );
+  const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
   // Demo override via URL
   const forceDemo = useMemo(() => {
@@ -61,6 +57,7 @@ export default function RouteGuard({
 
   const loading = accessLoading || (needsIdentity && identityLoading);
 
+  // ✅ stable replace helper (prevents effect dependency churn)
   const safeReplace = useCallback(
     (to) => {
       if (!to) return;
@@ -88,13 +85,13 @@ export default function RouteGuard({
       return;
     }
 
-    // 2) Paid required (ignored in demo override)
+    // 2) Paid required (ignored in demo)
     if (requirePaid && !isPaid) {
       safeReplace(createPageUrl("Subscribe") + `?next=${nextParam}`);
       return;
     }
 
-    // 3) Profile required (paid-only enforcement)
+    // 3) Profile required (paid-only)
     if (requireProfile && isPaid && !athleteProfile) {
       const profileUrl = createPageUrl("Profile");
       if ((loc?.pathname || "") !== profileUrl) {
@@ -114,7 +111,7 @@ export default function RouteGuard({
     athleteProfile,
     nextParam,
     loc?.pathname,
-    safeReplace
+    safeReplace,
   ]);
 
   if (loading) {
