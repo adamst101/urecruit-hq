@@ -6,10 +6,11 @@ import { base44 } from "../../api/base44Client";
  * useCampSummariesClient
  * Single source of truth for the client-composed camp summary read model.
  *
- * Named export REQUIRED because callers import:
- *   import { useCampSummariesClient } from ".../useCampSummariesClient";
+ * Query key:
+ *   ["myCampsSummaries_client", athleteId, sportId]
  *
- * Also provides a default export as a safety net.
+ * Backend entities remain the system of record.
+ * Frontend is the system of composition.
  */
 
 // ---------- helpers ----------
@@ -54,6 +55,7 @@ async function fetchEntityMap(entityName, ids) {
         const one = await base44.entities[entityName].filter({ id });
         if (Array.isArray(one) && one[0]) rows.push(one[0]);
       } catch {}
+
       if (!rows.find((r) => normId(r) === id)) {
         try {
           const one2 = await base44.entities[entityName].filter({ _id: id });
@@ -82,7 +84,7 @@ export function useCampSummariesClient({
 
   return useQuery({
     queryKey: ["myCampsSummaries_client", aId, sId],
-    enabled: Boolean(aId) && enabled,
+    enabled: Boolean(aId) && Boolean(enabled),
     retry: false,
     staleTime: 0,
     queryFn: async () => {
@@ -90,10 +92,12 @@ export function useCampSummariesClient({
       const campWhere = {};
       if (sId) campWhere.sport_id = sId;
 
+      // Base44 filter signature in this app:
+      // entity.filter(where, sort, limit)
       const campsRaw = await base44.entities.Camp.filter(
         campWhere,
         "-start_date",
-        limit || 500
+        Number(limit) || 500
       );
 
       const camps = Array.isArray(campsRaw) ? campsRaw : [];
@@ -132,7 +136,7 @@ export function useCampSummariesClient({
       const intents = Array.isArray(intentsRaw) ? intentsRaw : [];
       const targets = Array.isArray(targetsRaw) ? targetsRaw : [];
 
-      // Map intents by camp_id
+      // Map intents by camp_id (normalized), not by intent record id
       const intentMap = new Map();
       for (const i of intents) {
         const campKey = normId(i.camp_id) || i.camp_id;
@@ -171,7 +175,9 @@ export function useCampSummariesClient({
           city: camp.city || null,
           state: camp.state || null,
           position_ids: camp._position_ids,
-          position_codes: campPositions.map((p) => p.position_code).filter(Boolean),
+          position_codes: campPositions
+            .map((p) => p?.position_code)
+            .filter(Boolean),
 
           // School
           school_id: schoolId,
@@ -198,5 +204,5 @@ export function useCampSummariesClient({
   });
 }
 
-// Safety net: allow default import too (won’t break named import users)
+// ✅ default export for compatibility if any page imports it as default
 export default useCampSummariesClient;
