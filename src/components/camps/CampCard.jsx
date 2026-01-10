@@ -28,7 +28,7 @@ export default function CampCard({
   onClick,
   // optional flags for demo/paid UI (won’t break existing callers)
   mode, // "demo" | "paid" (optional)
-  disabledFavorite // optional: force-disable favorite button
+  disabledFavorite, // optional: force-disable favorite button
 }) {
   const division = school?.division || school?.school_division || null;
   const sportName = sport?.sport_name || sport?.name || null;
@@ -90,7 +90,7 @@ export default function CampCard({
           disabled={!!disabledFavorite}
           onClick={(e) => {
             e.preventDefault();
-            e.stopPropagation(); // do NOT navigate when favoriting
+            e.stopPropagation();
             if (disabledFavorite) return;
             onFavoriteToggle?.();
           }}
@@ -148,11 +148,7 @@ export default function CampCard({
             const key = p?.position_id || p?.id || `${idx}`;
             const label = p?.position_code || p?.code || p?.position_name || "POS";
             return (
-              <Badge
-                key={key}
-                variant="secondary"
-                className="bg-slate-100 text-slate-700"
-              >
+              <Badge key={key} variant="secondary" className="bg-slate-100 text-slate-700">
                 {label}
               </Badge>
             );
