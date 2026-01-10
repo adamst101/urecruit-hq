@@ -10,13 +10,12 @@ import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
 /**
  * RouteGuard
  *
- * Goals:
- * - Keep Home as a true front door (no auto-redirect here)
- * - Allow demo browsing where desired
- * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
- *
- * Rule:
- * - If URL has ?mode=demo, bypass paid/profile gating (lets demo always work)
+ * Principles:
+ * - Home is a true front door (no auto-redirect here)
+ * - Demo mode (?mode=demo) bypasses paid/profile gating
+ * - Auth gating sends to Login
+ * - Paid gating sends to Subscribe
+ * - Profile gating only applies in PAID mode
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -28,11 +27,8 @@ export default function RouteGuard({
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-  const {
-    athleteProfile,
-    isLoading: identityLoading,
-    isError: identityError
-  } = useAthleteIdentity();
+  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
+    useAthleteIdentity();
 
   const currentPath = useMemo(() => {
     return (loc?.pathname || "") + (loc?.search || "");
@@ -40,7 +36,7 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Demo override (?mode=demo)
+  // URL override: ?mode=demo always wins
   const forceDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
@@ -50,7 +46,10 @@ export default function RouteGuard({
     }
   }, [loc?.search]);
 
+  // Paid only when not forced demo
   const isPaid = !forceDemo && mode === "paid";
+
+  // Only require athlete identity when profile is required AND in paid mode
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
