@@ -1,5 +1,16 @@
 // src/components/filters/FilterSheet.jsx
 import React, { useMemo } from "react";
+import { Button } from "../ui/button";
+import { Label } from "../ui/label";
+import { Checkbox } from "../ui/checkbox";
+import { Input } from "../ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 
 import {
   Sheet,
@@ -9,20 +20,8 @@ import {
   SheetFooter,
 } from "../ui/sheet";
 
-import { Button } from "../ui/button";
-import { Label } from "../ui/label";
-import { Checkbox } from "../ui/checkbox";
-import { Input } from "../ui/input";
-
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
-
 const DIVISIONS = ["D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"];
+
 const STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
   "ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK",
@@ -251,10 +250,7 @@ export default function FilterSheet({
           <Button variant="outline" onClick={onClear} className="flex-1">
             Clear All
           </Button>
-          <Button
-            onClick={onApply}
-            className="flex-1 bg-electric-blue hover:bg-deep-navy"
-          >
+          <Button onClick={onApply} className="flex-1 bg-electric-blue hover:bg-deep-navy">
             Apply Filters
           </Button>
         </SheetFooter>
