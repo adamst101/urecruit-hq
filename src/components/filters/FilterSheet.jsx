@@ -54,6 +54,7 @@ export default function FilterSheet({
 }) {
   const safeFilters = filters || {};
 
+  // Normalize lists (prevents key warnings + supports id/_id/uuid)
   const sportsList = useMemo(() => {
     const list = asArray(sports)
       .map((s) => ({
@@ -127,48 +128,42 @@ export default function FilterSheet({
     setFilters({ ...safeFilters, endDate: v });
   };
 
-  const activeCount = useMemo(() => {
-    let n = 0;
-    if (safeFilters.sport) n += 1;
-    if (safeFilters.state) n += 1;
-    if (asArray(safeFilters.divisions).length) n += 1;
-    if (asArray(safeFilters.positions).length) n += 1;
-    if (safeFilters.startDate) n += 1;
-    if (safeFilters.endDate) n += 1;
-    return n;
-  }, [safeFilters]);
+  const activeCount =
+    (safeFilters.sport ? 1 : 0) +
+    (safeFilters.state ? 1 : 0) +
+    (selectedDivisions.length ? 1 : 0) +
+    (selectedPositions.length ? 1 : 0) +
+    (startDate ? 1 : 0) +
+    (endDate ? 1 : 0);
 
   return (
     <Sheet open={!!isOpen} onOpenChange={(open) => (!open ? onClose?.() : null)}>
-      <SheetContent side="bottom" className="h-[88vh] overflow-y-auto px-4 pb-24 pt-4">
-        <SheetHeader className="pb-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <SheetTitle className="text-lg font-extrabold text-deep-navy">
-                Filter Camps
-              </SheetTitle>
-              <div className="text-xs text-slate-500 mt-1">
-                Narrow results by sport, division, position, state, and dates.
-              </div>
-            </div>
+      <SheetContent side="bottom" className="h-[88vh] overflow-y-auto px-4">
+        <SheetHeader className="pt-2">
+          <div className="flex items-center justify-between gap-3">
+            <SheetTitle className="text-base font-extrabold text-deep-navy">
+              Filter Camps
+            </SheetTitle>
 
             {activeCount > 0 && (
-              <div className="shrink-0 rounded-full bg-slate-900 text-white text-xs px-2 py-1">
+              <div className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-700">
                 {activeCount} active
               </div>
             )}
           </div>
+
+          <div className="text-xs text-slate-500 mt-1">
+            Apply one filter at a time if you’re not seeing results.
+          </div>
         </SheetHeader>
 
-        <div className="space-y-5">
+        <div className="space-y-4 py-5">
           {/* Sport */}
           {sportsList.length > 1 && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <Label className="text-sm font-semibold mb-2 block text-slate-800">
-                Sport
-              </Label>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <Label className="text-sm font-bold text-deep-navy mb-2 block">Sport</Label>
               <Select value={selectedSport} onValueChange={onSportChange}>
-                <SelectTrigger className="bg-white">
+                <SelectTrigger>
                   <SelectValue placeholder="All Sports" />
                 </SelectTrigger>
                 <SelectContent>
@@ -184,17 +179,23 @@ export default function FilterSheet({
           )}
 
           {/* Division */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <Label className="text-sm font-semibold mb-2 block text-slate-800">
-              Division
-            </Label>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-bold text-deep-navy mb-2 block">Division</Label>
+              {selectedDivisions.length > 0 && (
+                <div className="text-xs text-slate-500">{selectedDivisions.length} selected</div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
               {DIVISIONS.map((div) => (
                 <label
                   key={div}
-                  className="flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2 cursor-pointer hover:border-slate-300"
+                  htmlFor={`div-${div}`}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 cursor-pointer"
                 >
                   <Checkbox
+                    id={`div-${div}`}
                     checked={selectedDivisions.includes(div)}
                     onCheckedChange={() => toggleDivision(div)}
                   />
@@ -206,23 +207,23 @@ export default function FilterSheet({
 
           {/* Positions */}
           {positionsList.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <Label className="text-sm font-semibold text-slate-800">
-                  Position
-                </Label>
-                <div className="text-xs text-slate-500">
-                  {selectedPositions.length} selected
-                </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-bold text-deep-navy mb-2 block">Position</Label>
+                {selectedPositions.length > 0 && (
+                  <div className="text-xs text-slate-500">{selectedPositions.length} selected</div>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {positionsList.map((pos) => (
                   <label
                     key={pos.id}
-                    className="flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2 cursor-pointer hover:border-slate-300"
+                    htmlFor={`pos-${pos.id}`}
+                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 cursor-pointer"
                   >
                     <Checkbox
+                      id={`pos-${pos.id}`}
                       checked={selectedPositions.includes(String(pos.id))}
                       onCheckedChange={() => togglePosition(pos.id)}
                     />
@@ -234,12 +235,10 @@ export default function FilterSheet({
           )}
 
           {/* State */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <Label className="text-sm font-semibold mb-2 block text-slate-800">
-              State
-            </Label>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <Label className="text-sm font-bold text-deep-navy mb-2 block">State</Label>
             <Select value={selectedState} onValueChange={onStateChange}>
-              <SelectTrigger className="bg-white">
+              <SelectTrigger>
                 <SelectValue placeholder="All States" />
               </SelectTrigger>
               <SelectContent>
@@ -251,33 +250,31 @@ export default function FilterSheet({
                 ))}
               </SelectContent>
             </Select>
-            <div className="text-xs text-slate-500 mt-2">
-              Uses 2-letter codes (TX, OK, CA…).
+
+            <div className="text-[11px] text-slate-500 mt-2">
+              If your data stores full state names (e.g., “Texas”), filters still work via normalization.
             </div>
           </div>
 
           {/* Date Range */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <Label className="text-sm font-semibold block text-slate-800 mb-3">
-              Date Range
-            </Label>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <Label className="text-sm font-bold text-deep-navy block">Date Range</Label>
+            <div className="text-xs text-slate-500 mt-1">Filters match camp start date.</div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs text-slate-500">Start Date</Label>
+                <Label className="text-xs text-slate-500">Start</Label>
                 <Input
                   type="date"
-                  className="bg-white"
                   value={startDate}
                   onChange={(e) => onStartDateChange(e.target.value)}
                 />
               </div>
 
               <div>
-                <Label className="text-xs text-slate-500">End Date</Label>
+                <Label className="text-xs text-slate-500">End</Label>
                 <Input
                   type="date"
-                  className="bg-white"
                   value={endDate}
                   min={startDate || undefined}
                   onChange={(e) => onEndDateChange(e.target.value)}
@@ -293,21 +290,15 @@ export default function FilterSheet({
           </div>
         </div>
 
-        {/* Sticky footer */}
-        <SheetFooter className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 px-4 py-3">
-          <div className="max-w-5xl mx-auto w-full flex gap-2">
-            <Button variant="outline" onClick={onClear} className="flex-1">
-              Clear All
-            </Button>
+        <SheetFooter className="gap-2 pb-4">
+          <Button variant="outline" onClick={onClear} className="flex-1">
+            Clear All
+          </Button>
 
-            {/* FIX: force visible label */}
-            <Button
-              onClick={onApply}
-              className="flex-1 bg-electric-blue text-white hover:bg-deep-navy"
-            >
-              Apply Filters
-            </Button>
-          </div>
+          {/* IMPORTANT: Use default Button styling so text is always visible */}
+          <Button onClick={onApply} className="flex-1">
+            Apply Filters
+          </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>
