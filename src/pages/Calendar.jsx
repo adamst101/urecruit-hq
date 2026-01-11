@@ -1,7 +1,7 @@
-// src/pages/Discover.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+// src/pages/Calendar.jsx
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Compass, Filter, CalendarDays, Lock } from "lucide-react";
+import { CalendarDays, Filter, Compass, Lock } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -100,7 +100,30 @@ function withinDateRange(summary, startDate, endDate) {
   return true;
 }
 
-export default function Discover() {
+function startOfWeekISO(d) {
+  // Monday start
+  const x = new Date(d);
+  const day = x.getDay(); // 0 Sun .. 6 Sat
+  const diff = (day === 0 ? -6 : 1) - day;
+  x.setDate(x.getDate() + diff);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function addDays(d, n) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+function fmtYMD(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${da}`;
+}
+
+export default function Calendar() {
   const nav = useNavigate();
   const loc = useLocation();
 
@@ -209,7 +232,7 @@ export default function Discover() {
   const publicQuery = usePublicCampSummariesClient({
     seasonYear,
     sportId: filters.sport || null,
-    state: null, // do state client-side (Camp.state may be inconsistent)
+    state: null, // state client-side (data inconsistency)
     division: null,
     positionIds: Array.isArray(filters.positions) ? filters.positions : [],
     limit: 5000,
@@ -262,61 +285,48 @@ export default function Discover() {
       .sort((a, b) => String(a?.start_date || "").localeCompare(String(b?.start_date || "")));
   }, [rawRows, filters]);
 
-  // -------- map summary -> CampCard compatible objects --------
-  const cards = useMemo(() => {
-    return (filtered || []).map((r) => {
-      const camp = {
-        id: r.camp_id,
-        camp_name: r.camp_name,
-        start_date: r.start_date,
-        end_date: r.end_date,
-        price: r.price ?? null,
-        link_url: r.link_url || null,
-        notes: r.notes || null,
-        city: r.city || null,
-        state: r.state || null,
-        position_ids: Array.isArray(r.position_ids) ? r.position_ids : [],
-      };
+  // -------- calendar week view --------
+  const [weekStart, setWeekStart] = useState(() => startOfWeekISO(new Date()));
 
-      const school = {
-        id: r.school_id,
-        school_name: r.school_name,
-        division: r.school_division,
-        school_division: r.school_division,
-      };
+  const weekDays = useMemo(() => {
+    const days = [];
+    for (let i = 0; i < 7; i++) days.push(addDays(weekStart, i));
+    return days;
+  }, [weekStart]);
 
-      const sport = {
-        id: r.sport_id,
-        sport_name: r.sport_name,
-        name: r.sport_name,
-      };
+  const weekStartStr = useMemo(() => fmtYMD(weekStart), [weekStart]);
+  const weekEndStr = useMemo(() => fmtYMD(addDays(weekStart, 6)), [weekStart]);
 
-      const positionsResolved = (Array.isArray(r.position_ids) ? r.position_ids : []).map((id) => ({
-        id,
-        position_id: id,
-        position_code: null,
-      }));
-
-      const campId = String(r.camp_id);
-      const status = String(r?.intent_status || "").toLowerCase();
-
-      const isFavorite = isDemo ? demoFavIds.includes(campId) : ["favorite", "planned", "considering"].includes(status);
-      const isRegistered = isDemo ? isDemoRegistered(demoProfileId, campId) : status === "registered";
-
-      return { camp, school, sport, positions: positionsResolved, isFavorite, isRegistered };
+  const weekRows = useMemo(() => {
+    // show only camps that start within the selected week range
+    return (filtered || []).filter((r) => {
+      const sd = r?.start_date ? String(r.start_date) : "";
+      if (!sd) return false;
+      return sd >= weekStartStr && sd <= weekEndStr;
     });
-  }, [filtered, isDemo, demoFavIds, demoProfileId]);
+  }, [filtered, weekStartStr, weekEndStr]);
+
+  const groups = useMemo(() => {
+    const byDay = new Map();
+    for (const d of weekDays) byDay.set(fmtYMD(d), []);
+    for (const r of weekRows) {
+      const key = String(r.start_date || "");
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key).push(r);
+    }
+    return byDay;
+  }, [weekDays, weekRows]);
 
   // -------- view tracking --------
   useEffect(() => {
-    const key = `evt_discover_viewed_${isDemo ? "demo" : "paid"}_${seasonYear}`;
+    const key = `evt_calendar_viewed_${isDemo ? "demo" : "paid"}_${seasonYear}`;
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
     } catch {}
 
     trackEvent({
-      event_name: "discover_view",
+      event_name: "calendar_view",
       mode: isDemo ? "demo" : "paid",
       season_year: seasonYear,
       authed: season.accountId ? 1 : 0,
@@ -336,7 +346,7 @@ export default function Discover() {
             icon: Lock,
             to:
               createPageUrl("Subscribe") +
-              `?source=bottom_nav_upgrade&next=${encodeURIComponent(pageUrl("Discover"))}`,
+              `?source=bottom_nav_upgrade&next=${encodeURIComponent(pageUrl("Calendar"))}`,
           },
         ]
       : [
@@ -393,7 +403,7 @@ export default function Discover() {
                 onClick={() =>
                   nav(
                     createPageUrl("Subscribe") +
-                      `?source=demo_banner_discover&next=${encodeURIComponent(pageUrl("Discover"))}`
+                      `?source=demo_banner_calendar&next=${encodeURIComponent(pageUrl("Calendar"))}`
                   )
                 }
               >
@@ -406,16 +416,18 @@ export default function Discover() {
         {/* Header */}
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-xl font-extrabold text-deep-navy">Discover</div>
+            <div className="text-xl font-extrabold text-deep-navy">Calendar</div>
             <div className="text-xs text-slate-500">
-              {isDemo ? `Demo season ${seasonYear}` : `Season ${seasonYear}`} · {filtered.length} camps
+              Week of {weekStartStr} · {weekRows.length} camps
             </div>
           </div>
 
-          <Button variant="outline" onClick={() => setSheetOpen(true)} className="shrink-0">
-            <Filter className="w-4 h-4 mr-2" />
-            Filters
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setSheetOpen(true)} className="shrink-0">
+              <Filter className="w-4 h-4 mr-2" />
+              Filters
+            </Button>
+          </div>
         </div>
 
         {/* Active filter pills */}
@@ -432,14 +444,25 @@ export default function Discover() {
           {!!filters.endDate && <Badge variant="secondary">To: {filters.endDate}</Badge>}
         </div>
 
-        {/* List */}
-        <div className="mt-4 space-y-3">
+        {/* Week controls */}
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <Button variant="outline" onClick={() => setWeekStart((d) => addDays(d, -7))}>
+            Prev
+          </Button>
+          <div className="text-xs text-slate-600">Mon–Sun</div>
+          <Button variant="outline" onClick={() => setWeekStart((d) => addDays(d, 7))}>
+            Next
+          </Button>
+        </div>
+
+        {/* Content */}
+        <div className="mt-4 space-y-4">
           {loading ? (
             <Card className="p-4 text-sm text-slate-600">Loading camps…</Card>
-          ) : cards.length === 0 ? (
+          ) : weekRows.length === 0 ? (
             <Card className="p-4">
-              <div className="text-sm font-semibold text-deep-navy">No camps found</div>
-              <div className="text-xs text-slate-600 mt-1">Clear filters and try again.</div>
+              <div className="text-sm font-semibold text-deep-navy">No camps this week</div>
+              <div className="text-xs text-slate-600 mt-1">Try another week or clear filters.</div>
               <div className="mt-3 flex gap-2">
                 <Button
                   variant="outline"
@@ -453,43 +476,90 @@ export default function Discover() {
               </div>
             </Card>
           ) : (
-            cards.map((x) => (
-              <CampCard
-                key={String(x.camp.id)}
-                camp={x.camp}
-                school={x.school}
-                sport={x.sport}
-                positions={x.positions}
-                isFavorite={x.isFavorite}
-                isRegistered={x.isRegistered}
-                mode={isDemo ? "demo" : "paid"}
-                onClick={() => {
-                  const base = createPageUrl("CampDetail");
-                  const to = isDemo
-                    ? `${base}?id=${encodeURIComponent(String(x.camp.id))}&mode=demo&season=${encodeURIComponent(
-                        String(seasonYear)
-                      )}`
-                    : `${base}?id=${encodeURIComponent(String(x.camp.id))}`;
-                  nav(to);
-                }}
-                onFavoriteToggle={() => {
-                  const campId = String(x.camp.id);
+            weekDays.map((d) => {
+              const key = fmtYMD(d);
+              const dayRows = groups.get(key) || [];
+              return (
+                <div key={key}>
+                  <div className="mb-2 text-sm font-bold text-deep-navy">{key}</div>
+                  <div className="space-y-3">
+                    {dayRows.map((r) => {
+                      const camp = {
+                        id: r.camp_id,
+                        camp_name: r.camp_name,
+                        start_date: r.start_date,
+                        end_date: r.end_date,
+                        price: r.price ?? null,
+                        link_url: r.link_url || null,
+                        notes: r.notes || null,
+                        city: r.city || null,
+                        state: r.state || null,
+                        position_ids: Array.isArray(r.position_ids) ? r.position_ids : [],
+                      };
 
-                  if (isDemo) {
-                    toggleDemoFavorite(demoProfileId, campId, seasonYear);
-                    trackEvent({ event_name: "demo_favorite_toggled", camp_id: campId, season_year: seasonYear });
-                    // no need to set state; useMemo reads from localStorage each render cycle
-                    // trigger a rerender:
-                    setFilters((f) => ({ ...f }));
-                    return;
-                  }
+                      const school = {
+                        id: r.school_id,
+                        school_name: r.school_name,
+                        division: r.school_division,
+                        school_division: r.school_division,
+                      };
 
-                  // Paid favorite is handled on CampDetail / MyCamps flows; Discover is view-first.
-                  trackEvent({ event_name: "paid_favorite_click_discover", camp_id: campId });
-                  nav(createPageUrl("CampDetail") + `?id=${encodeURIComponent(campId)}`);
-                }}
-              />
-            ))
+                      const sport = {
+                        id: r.sport_id,
+                        sport_name: r.sport_name,
+                        name: r.sport_name,
+                      };
+
+                      const campId = String(r.camp_id);
+                      const status = String(r?.intent_status || "").toLowerCase();
+
+                      const isFavorite = isDemo
+                        ? demoFavIds.includes(campId)
+                        : ["favorite", "planned", "considering"].includes(status);
+
+                      const isRegistered = isDemo ? isDemoRegistered(demoProfileId, campId) : status === "registered";
+
+                      return (
+                        <CampCard
+                          key={campId}
+                          camp={camp}
+                          school={school}
+                          sport={sport}
+                          positions={[]}
+                          isFavorite={isFavorite}
+                          isRegistered={isRegistered}
+                          mode={isDemo ? "demo" : "paid"}
+                          onClick={() => {
+                            const base = createPageUrl("CampDetail");
+                            const to = isDemo
+                              ? `${base}?id=${encodeURIComponent(campId)}&mode=demo&season=${encodeURIComponent(
+                                  String(seasonYear)
+                                )}`
+                              : `${base}?id=${encodeURIComponent(campId)}`;
+                            nav(to);
+                          }}
+                          onFavoriteToggle={() => {
+                            if (isDemo) {
+                              toggleDemoFavorite(demoProfileId, campId, seasonYear);
+                              trackEvent({
+                                event_name: "demo_favorite_toggled_calendar",
+                                camp_id: campId,
+                                season_year: seasonYear,
+                              });
+                              // force rerender
+                              setFilters((f) => ({ ...f }));
+                              return;
+                            }
+                            trackEvent({ event_name: "paid_favorite_click_calendar", camp_id: campId });
+                            nav(createPageUrl("CampDetail") + `?id=${encodeURIComponent(campId)}`);
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </div>
@@ -508,12 +578,12 @@ export default function Discover() {
         onClear={() => {
           setFilters({ sport: "", state: "", divisions: [], positions: [], startDate: "", endDate: "" });
           setSheetOpen(false);
-          trackEvent({ event_name: "discover_filters_cleared", mode: isDemo ? "demo" : "paid", season_year: seasonYear });
+          trackEvent({ event_name: "calendar_filters_cleared", mode: isDemo ? "demo" : "paid", season_year: seasonYear });
         }}
         onApply={() => {
           setSheetOpen(false);
           trackEvent({
-            event_name: "discover_filters_applied",
+            event_name: "calendar_filters_applied",
             mode: isDemo ? "demo" : "paid",
             season_year: seasonYear,
             sport: filters.sport || null,
