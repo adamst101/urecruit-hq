@@ -1,17 +1,18 @@
 // src/pages/Calendar.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useMemo, useState } from "react";
 import { CalendarDays, Filter as FilterIcon } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
-import { createPageUrl } from "../utils";
-
-import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
+import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
+import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
+
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
 
 // ---------------- helpers ----------------
@@ -33,22 +34,15 @@ function ymd(v) {
 function normalizeDivision(v) {
   const s = safeStr(v).trim().toUpperCase();
   if (!s) return "";
-
   if (s.includes("FBS")) return "D1 (FBS)";
   if (s.includes("FCS")) return "D1 (FCS)";
-  if (s === "D1" || s === "DI" || s.includes("DIVISION I")) return "D1";
   if (s === "D2" || s === "DII" || s.includes("DIVISION II")) return "D2";
   if (s === "D3" || s === "DIII" || s.includes("DIVISION III")) return "D3";
   if (s.includes("NAIA")) return "NAIA";
   if (s.includes("JUCO") || s.includes("NJCAA")) return "JUCO";
-
-  if (s.startsWith("D1 (FBS)")) return "D1 (FBS)";
-  if (s.startsWith("D1 (FCS)")) return "D1 (FCS)";
-
   return safeStr(v).trim();
 }
 
-// Full-name -> abbreviation map (for resilient filtering)
 const STATE_NAME_TO_ABBR = {
   ALABAMA: "AL",
   ALASKA: "AK",
@@ -100,27 +94,18 @@ const STATE_NAME_TO_ABBR = {
   "WEST VIRGINIA": "WV",
   WISCONSIN: "WI",
   WYOMING: "WY",
-  "DISTRICT OF COLUMBIA": "DC"
+  "DISTRICT OF COLUMBIA": "DC",
 };
 
 function normalizeState(v) {
   const s = safeStr(v).trim();
   if (!s) return "";
-
   const upper = s.toUpperCase();
-
-  // Already 2-letter code (TX)
   if (/^[A-Z]{2}$/.test(upper)) return upper;
-
-  // Might be "Texas", "texas", etc.
   const abbr = STATE_NAME_TO_ABBR[upper];
   if (abbr) return abbr;
-
-  // Sometimes stored like "TX - Texas" or "Texas (TX)"
-  // Extract first 2-letter code if present
   const m = upper.match(/\b[A-Z]{2}\b/);
   if (m && m[0]) return m[0];
-
   return upper;
 }
 
@@ -138,46 +123,43 @@ function inDateRange(campStart, campEnd, startFilter, endFilter) {
   return !(ce < fs || cs > fe);
 }
 
-function formatRange(start, end) {
-  const s = ymd(start);
-  const e = ymd(end);
-  if (!s) return "TBD";
-  if (!e || e === s) return s;
-  return `${s} – ${e}`;
+function toDateKey(d) {
+  const s = ymd(d);
+  return s || "";
 }
 
 // ---------------- component ----------------
 export default function Calendar() {
-  const nav = useNavigate();
   const season = useSeasonAccess();
+  const { athleteProfile } = useAthleteIdentity();
 
+  const mode = season.mode; // "paid" | "demo"
+  const seasonYear = season.seasonYear;
+
+  // Filter UI state
   const [filterOpen, setFilterOpen] = useState(false);
-
-  // Editable filters
   const [filters, setFilters] = useState({
     sport: "",
     state: "",
     divisions: [],
     positions: [],
     startDate: "",
-    endDate: ""
+    endDate: "",
   });
-
-  // Applied filters
   const [applied, setApplied] = useState(filters);
 
-  // Options for FilterSheet
+  // Reference lists for FilterSheet
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
-  useEffect(() => {
+  // Lazy-load filter picklists (non-blocking)
+  React.useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
         const rows = await base44.entities.Sport.list();
-        if (!mounted) return;
-        setSports(Array.isArray(rows) ? rows : []);
+        if (mounted) setSports(Array.isArray(rows) ? rows : []);
       } catch {
         if (mounted) setSports([]);
       }
@@ -186,8 +168,7 @@ export default function Calendar() {
     (async () => {
       try {
         const rows = await base44.entities.Position.list();
-        if (!mounted) return;
-        setPositions(Array.isArray(rows) ? rows : []);
+        if (mounted) setPositions(Array.isArray(rows) ? rows : []);
       } catch {
         if (mounted) setPositions([]);
       }
@@ -198,78 +179,124 @@ export default function Calendar() {
     };
   }, []);
 
-  const seasonYear = season.seasonYear;
-
-  // Server-filter ONLY by season (+ optional sport). State is client-side now.
   const sportId = applied.sport ? String(applied.sport) : null;
 
-  const { data: publicSummaries, isLoading } = usePublicCampSummariesClient({
+  // Paid: use athlete-aware list; Demo: use public list
+  const paidQuery = useCampSummariesClient({
+    athleteId: athleteProfile?.id ? String(athleteProfile.id) : null,
+    sportId,
+    limit: 2000,
+    enabled: mode === "paid" && !!athleteProfile?.id,
+  });
+
+  const demoQuery = usePublicCampSummariesClient({
     seasonYear,
     sportId,
-    state: null,        // ✅ do NOT server-filter state
+    state: null,        // ✅ client-side
     division: null,     // ✅ client-side
     positionIds: null,  // ✅ client-side
     limit: 2000,
-    enabled: !!seasonYear
+    enabled: mode !== "paid" && !!seasonYear,
   });
 
-  const mode = season.mode; // "demo" | "paid"
+  const loading = mode === "paid" ? paidQuery.isLoading : demoQuery.isLoading;
 
-  const rows = useMemo(() => {
-    const list = Array.isArray(publicSummaries) ? publicSummaries : [];
+  const raw = useMemo(() => {
+    const list =
+      mode === "paid"
+        ? Array.isArray(paidQuery.data) ? paidQuery.data : []
+        : Array.isArray(demoQuery.data) ? demoQuery.data : [];
 
+    // Normalize into a consistent shape for calendar rendering
+    return list.map((c) => ({
+      camp_id: String(c.camp_id || c.id || normId(c) || ""),
+      camp_name: c.camp_name || "Camp",
+      start_date: c.start_date,
+      end_date: c.end_date || null,
+      city: c.city || null,
+      state: c.state || null,
+
+      school_id: c.school_id ? String(c.school_id) : null,
+      school_name: c.school_name || c.school?.school_name || c.school?.name || "Unknown School",
+      school_division: c.school_division || null,
+      school_state: c.school_state || c.school?.state || null,
+
+      sport_id: c.sport_id ? String(c.sport_id) : null,
+      sport_name: c.sport_name || null,
+
+      position_ids: Array.isArray(c.position_ids) ? c.position_ids.map((x) => String(normId(x) || x)).filter(Boolean) : [],
+
+      // paid-only fields (safe in demo too)
+      intent_status: c.intent_status || null,
+      intent_priority: c.intent_priority || null,
+      is_target_school: !!c.is_target_school,
+    }));
+  }, [mode, paidQuery.data, demoQuery.data]);
+
+  const filtered = useMemo(() => {
     const selectedState = applied.state ? normalizeState(applied.state) : "";
-
     const selectedDivs = Array.isArray(applied.divisions)
       ? applied.divisions.map((d) => normalizeDivision(d)).filter(Boolean)
       : [];
-
     const selectedPos = Array.isArray(applied.positions)
       ? applied.positions.map((p) => String(p)).filter(Boolean)
       : [];
-
     const startFilter = applied.startDate || "";
     const endFilter = applied.endDate || "";
 
-    return list.filter((c) => {
-      // ✅ State (match against camp.state OR school_state)
+    return raw.filter((c) => {
+      // state: match camp.state OR school_state
       if (selectedState) {
         const campState = normalizeState(c.state || "");
         const schoolState = normalizeState(c.school_state || "");
         if (campState !== selectedState && schoolState !== selectedState) return false;
       }
 
-      // Division
+      // division
       if (selectedDivs.length) {
-        const campDiv = normalizeDivision(c.school_division);
-        if (!selectedDivs.includes(campDiv)) return false;
+        const div = normalizeDivision(c.school_division);
+        if (!selectedDivs.includes(div)) return false;
       }
 
-      // Positions (camp.position_ids contains ids)
+      // positions (any match)
       if (selectedPos.length) {
-        const campPos = Array.isArray(c.position_ids)
-          ? c.position_ids.map((x) => String(normId(x) || x)).filter(Boolean)
-          : [];
+        const campPos = Array.isArray(c.position_ids) ? c.position_ids : [];
         if (!selectedPos.some((p) => campPos.includes(p))) return false;
       }
 
-      // Date range
+      // date range overlap
       if (!inDateRange(c.start_date, c.end_date, startFilter, endFilter)) return false;
 
       return true;
     });
-  }, [publicSummaries, applied]);
+  }, [raw, applied]);
 
-  const hasFilters = useMemo(() => {
-    return !!(
-      applied.sport ||
-      applied.state ||
-      (applied.divisions && applied.divisions.length) ||
-      (applied.positions && applied.positions.length) ||
-      applied.startDate ||
-      applied.endDate
-    );
-  }, [applied]);
+  // Simple “by-day” buckets for display
+  const byDay = useMemo(() => {
+    const map = new Map();
+    for (const c of filtered) {
+      const k = toDateKey(c.start_date);
+      if (!k) continue;
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(c);
+    }
+    // sort each day
+    for (const [k, arr] of map.entries()) {
+      arr.sort((a, b) => safeStr(a.school_name).localeCompare(safeStr(b.school_name)));
+      map.set(k, arr);
+    }
+    // sorted keys desc (newest first)
+    return Array.from(map.entries()).sort((a, b) => String(b[0]).localeCompare(String(a[0])));
+  }, [filtered]);
+
+  const hasFilters = !!(
+    applied.sport ||
+    applied.state ||
+    (applied.divisions && applied.divisions.length) ||
+    (applied.positions && applied.positions.length) ||
+    applied.startDate ||
+    applied.endDate
+  );
 
   const clearFilters = () => {
     const next = {
@@ -278,34 +305,24 @@ export default function Calendar() {
       divisions: [],
       positions: [],
       startDate: "",
-      endDate: ""
+      endDate: "",
     };
     setFilters(next);
     setApplied(next);
   };
 
-  const recheckSeason = () => {
-    window.location.reload();
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-slate-50 pb-24">
       <div className="max-w-md mx-auto px-4 pt-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CalendarDays className="w-5 h-5 text-slate-700" />
             <h1 className="text-xl font-bold text-deep-navy">Calendar</h1>
-            <Badge variant="outline" className="ml-1">
-              {mode === "paid" ? "Paid" : "Demo"}
-            </Badge>
+            <Badge variant="outline">{mode === "paid" ? "Paid" : "Demo"}</Badge>
           </div>
 
-          <Button
-            variant="outline"
-            onClick={() => setFilterOpen(true)}
-            className="gap-2"
-          >
+          <Button variant="outline" className="gap-2" onClick={() => setFilterOpen(true)}>
             <FilterIcon className="w-4 h-4" />
             Filters
           </Button>
@@ -315,86 +332,77 @@ export default function Calendar() {
 
         {/* Content */}
         <div className="mt-5 space-y-3">
-          {isLoading ? (
+          {loading ? (
             <Card className="p-4 border-slate-200">
               <div className="text-sm text-slate-600">Loading camps…</div>
             </Card>
-          ) : rows.length === 0 ? (
+          ) : byDay.length === 0 ? (
             <Card className="p-4 border-slate-200">
               <div className="text-sm font-semibold text-deep-navy">
                 No camps match your current filters.
               </div>
               <div className="text-sm text-slate-600 mt-1">
-                Try clearing filters or switching sport/state/date range.
+                Try clearing filters or adjusting state/division/date range.
               </div>
 
               <div className="mt-4 flex gap-2">
                 <Button
                   variant="outline"
+                  className="flex-1"
                   onClick={clearFilters}
                   disabled={!hasFilters}
-                  className="flex-1"
                 >
                   Clear filters
                 </Button>
-                <Button variant="outline" onClick={recheckSeason} className="flex-1">
-                  Re-check season
+                <Button variant="outline" className="flex-1" onClick={() => setFilterOpen(true)}>
+                  Edit filters
                 </Button>
               </div>
             </Card>
           ) : (
-            rows.map((c) => {
-              const div = normalizeDivision(c.school_division);
-              const sportName = c.sport_name || "Sport";
-              const location = [c.city, c.state].filter(Boolean).join(", ");
+            byDay.map(([day, items]) => (
+              <div key={day} className="space-y-2">
+                <div className="text-xs font-semibold text-slate-600">{day}</div>
 
-              return (
-                <Card key={String(c.camp_id)} className="p-4 border-slate-200 bg-white">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {div ? (
-                          <Badge className="bg-slate-900 text-white text-xs">{div}</Badge>
-                        ) : null}
-                        <span className="text-xs text-slate-500 font-medium">
-                          {sportName}
-                        </span>
-                        {mode !== "paid" && (
-                          <Badge variant="outline" className="text-xs">
-                            Demo
-                          </Badge>
-                        )}
-                      </div>
+                {items.map((c) => {
+                  const div = normalizeDivision(c.school_division);
+                  const stateLabel = [c.city, c.state].filter(Boolean).join(", ");
 
-                      <div className="mt-1 text-base font-semibold text-deep-navy truncate">
-                        {c.school_name || "Unknown School"}
-                      </div>
-                      <div className="text-sm text-slate-600 truncate">
-                        {c.camp_name || "Camp"}
-                      </div>
+                  return (
+                    <Card key={c.camp_id} className="p-4 border-slate-200 bg-white">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {div ? (
+                              <Badge className="bg-slate-900 text-white text-xs">{div}</Badge>
+                            ) : null}
+                            {c.sport_name ? (
+                              <span className="text-xs text-slate-500 font-medium">
+                                {c.sport_name}
+                              </span>
+                            ) : null}
+                            {mode !== "paid" ? (
+                              <Badge variant="outline" className="text-xs">
+                                Demo
+                              </Badge>
+                            ) : null}
+                          </div>
 
-                      <div className="mt-2 text-xs text-slate-500">
-                        {formatRange(c.start_date, c.end_date)}
-                        {location ? ` • ${location}` : ""}
-                      </div>
-                    </div>
+                          <div className="mt-1 text-base font-semibold text-deep-navy truncate">
+                            {c.school_name}
+                          </div>
+                          <div className="text-sm text-slate-600 truncate">{c.camp_name}</div>
 
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        nav(
-                          createPageUrl("CampDetail") +
-                            `?campId=${encodeURIComponent(String(c.camp_id))}` +
-                            (mode !== "paid" ? `&mode=demo` : "")
-                        );
-                      }}
-                    >
-                      View
-                    </Button>
-                  </div>
-                </Card>
-              );
-            })
+                          {stateLabel ? (
+                            <div className="mt-2 text-xs text-slate-500">{stateLabel}</div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            ))
           )}
         </div>
       </div>
@@ -413,6 +421,9 @@ export default function Calendar() {
           setFilterOpen(false);
         }}
       />
+
+      {/* Bottom navigation */}
+      <BottomNav />
     </div>
   );
 }
