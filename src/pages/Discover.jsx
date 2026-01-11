@@ -1,7 +1,7 @@
 // src/pages/Discover.jsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Compass, Filter, CalendarDays, Lock } from "lucide-react";
+import { Filter, Compass, CalendarDays, Lock } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -10,18 +10,15 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
-import CampCard from "../components/camps/CampCard.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { readDemoMode, getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
-import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
-import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
+import { getDemoFavorites } from "../components/hooks/demoFavorites.jsx";
+import { isDemoRegistered } from "../components/hooks/demoRegistered.jsx";
 
-import { useWriteGate } from "../components/hooks/useWriteGate.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
-
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
 
@@ -108,9 +105,8 @@ export default function Discover() {
 
   const season = useSeasonAccess();
   const { athleteProfile } = useAthleteIdentity();
-  const writeGate = useWriteGate();
 
-  // -------- resolve effective mode + seasonYear (URL > local demo > entitlement) --------
+  // -------- resolve effective mode + seasonYear --------
   const { effectiveMode, seasonYear } = useMemo(() => {
     let urlMode = null;
     let urlSeason = null;
@@ -151,7 +147,21 @@ export default function Discover() {
   const isDemo = effectiveMode === "demo";
   const hasProfile = !!athleteProfile?.id;
 
-  // -------- filters state --------
+  // -------- URL builder that preserves demo params --------
+  const pageUrl = useCallback(
+    (pageName) => {
+      const base = createPageUrl(pageName);
+      if (!isDemo) return base;
+
+      const sp = new URLSearchParams();
+      sp.set("mode", "demo");
+      sp.set("season", String(seasonYear));
+      return `${base}?${sp.toString()}`;
+    },
+    [isDemo, seasonYear]
+  );
+
+  // -------- filters --------
   const [sheetOpen, setSheetOpen] = useState(false);
   const [filters, setFilters] = useState({
     sport: "",
@@ -162,7 +172,7 @@ export default function Discover() {
     endDate: "",
   });
 
-  // Load sports/positions for FilterSheet (safe, optional)
+  // Load sports/positions for FilterSheet (safe)
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
   useEffect(() => {
@@ -186,7 +196,7 @@ export default function Discover() {
     };
   }, []);
 
-  // -------- demo profile + local status --------
+  // demo profile
   const { loaded: demoLoaded, demoProfileId } = useDemoProfile();
 
   const demoFavIds = useMemo(() => {
@@ -196,10 +206,13 @@ export default function Discover() {
   }, [isDemo, demoLoaded, demoProfileId, seasonYear]);
 
   // -------- data source --------
+  // IMPORTANT:
+  // - usePublicCampSummariesClient supports state filtering server-side in some Base44 setups,
+  //   but we keep state client-side because your Camp.state can be inconsistent (TX vs Texas).
   const publicQuery = usePublicCampSummariesClient({
     seasonYear,
     sportId: filters.sport || null,
-    state: null, // do state client-side
+    state: null,
     division: null,
     positionIds: Array.isArray(filters.positions) ? filters.positions : [],
     limit: 5000,
@@ -221,7 +234,7 @@ export default function Discover() {
     return publicQuery.data || [];
   }, [isDemo, hasProfile, publicQuery.data, personalQuery.data]);
 
-  // -------- client-side filtering (robust) --------
+  // -------- apply filters client-side --------
   const filtered = useMemo(() => {
     const rows = Array.isArray(rawRows) ? rawRows : [];
 
@@ -252,21 +265,35 @@ export default function Discover() {
       .sort((a, b) => String(a?.start_date || "").localeCompare(String(b?.start_date || "")));
   }, [rawRows, filters]);
 
-  // -------- navigation helper (preserve demo params) --------
-  const pageUrl = useCallback(
-    (pageName) => {
-      const base = createPageUrl(pageName);
-      if (!isDemo) return base;
+  // -------- view tracking --------
+  useEffect(() => {
+    const key = `evt_discover_viewed_${isDemo ? "demo" : "paid"}_${seasonYear}`;
+    try {
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
 
-      const sp = new URLSearchParams();
-      sp.set("mode", "demo");
-      sp.set("season", String(seasonYear));
-      return `${base}?${sp.toString()}`;
+    trackEvent({
+      event_name: "discover_view",
+      mode: isDemo ? "demo" : "paid",
+      season_year: seasonYear,
+      authed: season.accountId ? 1 : 0,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemo, seasonYear]);
+
+  const flagsFor = useCallback(
+    (r) => {
+      const campId = String(r.camp_id);
+      const status = String(r?.intent_status || "").toLowerCase();
+      const isFavorite = isDemo ? demoFavIds.includes(campId) : ["favorite", "planned", "considering"].includes(status);
+      const isRegistered = isDemo ? isDemoRegistered(demoProfileId, campId) : status === "registered";
+      return { isFavorite, isRegistered };
     },
-    [isDemo, seasonYear]
+    [isDemo, demoFavIds, demoProfileId]
   );
 
-  // -------- bottom nav --------
+  // -------- bottom nav (inline, stable) --------
   const BottomNavInline = useMemo(() => {
     const items = isDemo
       ? [
@@ -319,121 +346,6 @@ export default function Discover() {
     };
   }, [isDemo, pageUrl, loc?.pathname, nav]);
 
-  // -------- view tracking --------
-  useEffect(() => {
-    const key = `evt_discover_viewed_${isDemo ? "demo" : "paid"}_${seasonYear}`;
-    try {
-      if (sessionStorage.getItem(key) === "1") return;
-      sessionStorage.setItem(key, "1");
-    } catch {}
-
-    trackEvent({
-      event_name: "discover_view",
-      mode: isDemo ? "demo" : "paid",
-      season_year: seasonYear,
-      authed: season.accountId ? 1 : 0,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDemo, seasonYear]);
-
-  // -------- click handlers --------
-  const openCamp = useCallback(
-    (campId) => {
-      // If you have CampDetail, route there. Otherwise, keep them in Discover for now.
-      // nav(pageUrl("CampDetail") + `?id=${encodeURIComponent(String(campId))}`);
-      trackEvent({ event_name: "camp_open_clicked", camp_id: String(campId), mode: isDemo ? "demo" : "paid" });
-    },
-    [isDemo]
-  );
-
-  const onToggleFavorite = useCallback(
-    async (campId) => {
-      const cid = String(campId);
-
-      if (isDemo) {
-        toggleDemoFavorite(demoProfileId, cid, seasonYear);
-        trackEvent({ event_name: "demo_favorite_toggled", camp_id: cid, season_year: seasonYear });
-        return;
-      }
-
-      // Paid writes must go through gate
-      await writeGate.write({
-        paid: async () => {
-          // In this app, the “favorite” state is represented via CampIntent
-          // If your backend uses a different model, adjust here.
-          try {
-            const athleteId = String(athleteProfile.id);
-            const existing = await base44.entities.CampIntent.filter({ athlete_id: athleteId, camp_id: cid });
-            const row = Array.isArray(existing) ? existing[0] : null;
-
-            if (row?.id) {
-              // toggle off -> delete intent or set status null
-              try {
-                await base44.entities.CampIntent.delete(row.id);
-              } catch {
-                await base44.entities.CampIntent.update(row.id, { status: null });
-              }
-            } else {
-              await base44.entities.CampIntent.create({ athlete_id: athleteId, camp_id: cid, status: "favorite" });
-            }
-
-            trackEvent({ event_name: "favorite_toggled", camp_id: cid, athlete_id: athleteId });
-          } catch {}
-        },
-        next: pageUrl("Discover"),
-      });
-    },
-    [isDemo, demoProfileId, seasonYear, writeGate, athleteProfile, pageUrl]
-  );
-
-  const onToggleRegistered = useCallback(
-    async (campId) => {
-      const cid = String(campId);
-
-      if (isDemo) {
-        toggleDemoRegistered(demoProfileId, cid);
-        trackEvent({ event_name: "demo_registered_toggled", camp_id: cid, season_year: seasonYear });
-        return;
-      }
-
-      await writeGate.write({
-        paid: async () => {
-          try {
-            const athleteId = String(athleteProfile.id);
-            const existing = await base44.entities.CampIntent.filter({ athlete_id: athleteId, camp_id: cid });
-            const row = Array.isArray(existing) ? existing[0] : null;
-
-            if (row?.id && String(row.status || "").toLowerCase() === "registered") {
-              await base44.entities.CampIntent.update(row.id, { status: "favorite" });
-            } else if (row?.id) {
-              await base44.entities.CampIntent.update(row.id, { status: "registered" });
-            } else {
-              await base44.entities.CampIntent.create({ athlete_id: athleteId, camp_id: cid, status: "registered" });
-            }
-
-            trackEvent({ event_name: "registered_toggled", camp_id: cid, athlete_id: athleteId });
-          } catch {}
-        },
-        next: pageUrl("Discover"),
-      });
-    },
-    [isDemo, demoProfileId, seasonYear, writeGate, athleteProfile, pageUrl]
-  );
-
-  // -------- derive favorite/registered per row --------
-  const deriveFlags = useCallback(
-    (r) => {
-      const campId = String(r.camp_id);
-      const status = String(r?.intent_status || "").toLowerCase();
-
-      const isFavorite = isDemo ? demoFavIds.includes(campId) : ["favorite", "planned", "considering"].includes(status);
-      const isRegistered = isDemo ? isDemoRegistered(demoProfileId, campId) : status === "registered";
-
-      return { isFavorite, isRegistered };
-    },
-    [isDemo, demoFavIds, demoProfileId]
-  );
-
   return (
     <div className="min-h-screen bg-surface pb-24">
       <div className="max-w-md mx-auto px-4 pt-5">
@@ -443,9 +355,7 @@ export default function Discover() {
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-bold text-amber-900">Demo Mode</div>
-                <div className="text-xs text-amber-800">
-                  Prior-season data ({seasonYear}). Favorites save on this device.
-                </div>
+                <div className="text-xs text-amber-800">Prior-season data ({seasonYear})</div>
               </div>
               <Button
                 className="shrink-0"
@@ -498,9 +408,7 @@ export default function Discover() {
           ) : filtered.length === 0 ? (
             <Card className="p-4">
               <div className="text-sm font-semibold text-deep-navy">No camps found</div>
-              <div className="text-xs text-slate-600 mt-1">
-                State is normalized (TX vs Texas). If you still get zero, clear State and try again.
-              </div>
+              <div className="text-xs text-slate-600 mt-1">Clear filters and try again.</div>
               <div className="mt-3 flex gap-2">
                 <Button
                   variant="outline"
@@ -515,32 +423,37 @@ export default function Discover() {
             </Card>
           ) : (
             filtered.map((r) => {
-              const { isFavorite, isRegistered } = deriveFlags(r);
+              const { isFavorite, isRegistered } = flagsFor(r);
               return (
-                <CampCard
+                <Card
                   key={String(r.camp_id)}
-                  camp={{
-                    camp_name: r.camp_name,
-                    start_date: r.start_date,
-                    end_date: r.end_date,
-                    price: r.price,
-                    city: r.city,
-                    state: r.state,
-                    position_ids: r.position_ids,
+                  className="p-4 border-slate-200 bg-white cursor-pointer hover:shadow-sm transition"
+                  onClick={() => {
+                    // If you have CampDetail, route there; otherwise no-op.
+                    // Keep demo params if demo.
+                    const base = createPageUrl("CampDetail");
+                    const to = isDemo
+                      ? `${base}?id=${encodeURIComponent(String(r.camp_id))}&mode=demo&season=${encodeURIComponent(
+                          String(seasonYear)
+                        )}`
+                      : `${base}?id=${encodeURIComponent(String(r.camp_id))}`;
+                    nav(to);
                   }}
-                  school={{
-                    school_name: r.school_name,
-                    division: r.school_division,
-                    logo_url: r.school_logo_url,
-                  }}
-                  sport={{ name: r.sport_name }}
-                  positions={[]}
-                  isFavorite={isFavorite}
-                  isRegistered={isRegistered}
-                  mode={isDemo ? "demo" : "paid"}
-                  onFavoriteToggle={() => onToggleFavorite(r.camp_id)}
-                  onClick={() => openCamp(r.camp_id)}
-                />
+                >
+                  <div className="text-sm font-bold text-deep-navy">{r.school_name || "Unknown School"}</div>
+                  <div className="text-xs text-slate-600">{r.camp_name || "Camp"}</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {r.school_division && <Badge variant="secondary">{r.school_division}</Badge>}
+                    {r.sport_name && <Badge variant="secondary">{r.sport_name}</Badge>}
+                    {isDemo && <Badge variant="outline">Demo</Badge>}
+                    {isRegistered && <Badge className="bg-emerald-600 text-white">Registered</Badge>}
+                    {isFavorite && <Badge className="bg-amber-500 text-white">Favorite</Badge>}
+                  </div>
+                  {(r.city || r.state) && (
+                    <div className="mt-2 text-xs text-slate-500">{[r.city, r.state].filter(Boolean).join(", ")}</div>
+                  )}
+                  {r.start_date && <div className="mt-1 text-xs text-slate-500">Start: {r.start_date}</div>}
+                </Card>
               );
             })
           )}
@@ -553,7 +466,6 @@ export default function Discover() {
         onClose={() => setSheetOpen(false)}
         filters={filters}
         onFilterChange={(next) => {
-          // normalize state immediately so comparisons are consistent everywhere
           const state = normStateCode(next?.state || "");
           setFilters({ ...next, state });
         }}
