@@ -5,85 +5,90 @@ import { CalendarDays, Compass, Lock, User } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 import { createPageUrl } from "../../utils";
+
 import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
-import { readDemoMode } from "../hooks/demoMode.jsx";
+import { readDemoMode, getDemoDefaults } from "../hooks/demoMode.jsx";
 
 /**
- * BottomNav
- * - Paid users: Discover, Calendar, MyCamps, Profile
- * - Demo users: Discover, Calendar, Upgrade (Subscribe)
- *
- * Critical behavior:
- * - If user is in demo (URL ?mode=demo OR local demoMode), preserve demo query params
- *   on all demo navigation so the app doesn't snap back to paid behavior.
+ * BottomNav (canonical)
+ * - MUST respect demo override via:
+ *    1) URL: ?mode=demo (& optional season=YYYY)
+ *    2) localStorage demoMode (readDemoMode)
+ * - MUST preserve demo params on navigation so users don't "fall back" into paid flows.
  */
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const season = useSeasonAccess();
 
-  const { effectiveMode, demoSeasonYear, demoQuery } = useMemo(() => {
+  const { effectiveMode, demoSeasonYear } = useMemo(() => {
+    // 1) URL override
     let urlMode = null;
     let urlSeason = null;
-
     try {
-      const sp = new URLSearchParams(location?.search || "");
+      const sp = new URLSearchParams(location.search || "");
       urlMode = sp.get("mode");
-      const s = sp.get("season");
-      urlSeason = s && Number.isFinite(Number(s)) ? Number(s) : null;
+      urlSeason = sp.get("season");
     } catch {}
 
-    const local = readDemoMode(); // { mode, seasonYear }
-    const localIsDemo = local?.mode === "demo";
-    const localSeason =
-      local && Number.isFinite(Number(local.seasonYear))
-        ? Number(local.seasonYear)
-        : null;
+    const urlForcesDemo = String(urlMode || "").toLowerCase() === "demo";
 
-    // Demo wins if URL says demo OR local storage says demo
-    const isDemo = urlMode === "demo" || localIsDemo;
+    // 2) local demo flag
+    const local = readDemoMode();
+    const defaults = getDemoDefaults();
 
-    const resolvedDemoSeason =
-      urlSeason || localSeason || season?.demoYear || new Date().getFullYear() - 1;
+    const localForcesDemo = local?.mode === "demo";
 
-    const q = isDemo
-      ? `?mode=demo&season=${encodeURIComponent(String(resolvedDemoSeason))}`
-      : "";
+    const parsed = Number(urlSeason);
+    const urlYear = Number.isFinite(parsed) ? parsed : null;
 
-    return {
-      effectiveMode: isDemo ? "demo" : season?.mode === "paid" ? "paid" : "demo",
-      demoSeasonYear: resolvedDemoSeason,
-      demoQuery: q
-    };
-  }, [location?.search, season?.mode, season?.demoYear]);
+    const resolvedDemoYear =
+      urlYear ||
+      (Number.isFinite(Number(local?.seasonYear)) ? Number(local.seasonYear) : null) ||
+      (Number.isFinite(Number(defaults?.demoSeasonYear)) ? Number(defaults.demoSeasonYear) : null) ||
+      season.demoYear;
+
+    const mode = urlForcesDemo || localForcesDemo ? "demo" : season.mode === "paid" ? "paid" : "demo";
+
+    return { effectiveMode: mode, demoSeasonYear: resolvedDemoYear };
+  }, [location.search, season.mode, season.demoYear]);
+
+  const isDemo = effectiveMode === "demo";
+
+  const withDemoParams = (url) => {
+    if (!isDemo) return url;
+    const base = String(url || "");
+    const hasQ = base.includes("?");
+    const join = hasQ ? "&" : "?";
+    return `${base}${join}mode=demo&season=${encodeURIComponent(String(demoSeasonYear))}`;
+  };
 
   const items = useMemo(() => {
-    if (effectiveMode === "paid") {
+    // Keep "next" pointing back to the current route (including demo params if present)
+    const current = (location?.pathname || "") + (location?.search || "");
+    const next = encodeURIComponent(current || createPageUrl("Discover"));
+
+    if (!isDemo && season.mode === "paid") {
       return [
         { key: "Discover", label: "Discover", icon: Compass, to: createPageUrl("Discover") },
         { key: "Calendar", label: "Calendar", icon: CalendarDays, to: createPageUrl("Calendar") },
         { key: "MyCamps", label: "MyCamps", icon: Lock, to: createPageUrl("MyCamps") },
-        { key: "Profile", label: "Profile", icon: User, to: createPageUrl("Profile") }
+        { key: "Profile", label: "Profile", icon: User, to: createPageUrl("Profile") },
       ];
     }
 
-    // Demo mode: preserve demo query string everywhere
-    const discover = createPageUrl("Discover") + demoQuery;
-    const calendar = createPageUrl("Calendar") + demoQuery;
-
-    // Upgrade returns user back into demo Discover context (keeps season)
-    const upgradeUrl =
-      createPageUrl("Subscribe") +
-      `?source=bottom_nav_upgrade&next=${encodeURIComponent(discover)}&demo_season=${encodeURIComponent(
-        String(demoSeasonYear)
-      )}`;
-
+    // Demo mode: never show MyCamps (paid workspace)
     return [
-      { key: "Discover", label: "Discover", icon: Compass, to: discover },
-      { key: "Calendar", label: "Calendar", icon: CalendarDays, to: calendar },
-      { key: "Upgrade", label: "Upgrade", icon: Lock, to: upgradeUrl }
+      { key: "Discover", label: "Discover", icon: Compass, to: withDemoParams(createPageUrl("Discover")) },
+      { key: "Calendar", label: "Calendar", icon: CalendarDays, to: withDemoParams(createPageUrl("Calendar")) },
+      {
+        key: "Upgrade",
+        label: "Upgrade",
+        icon: Lock,
+        to: createPageUrl("Subscribe") + `?source=bottom_nav_upgrade&next=${next}`,
+      },
     ];
-  }, [effectiveMode, demoQuery, demoSeasonYear]);
+  }, [isDemo, season.mode, location?.pathname, location?.search, demoSeasonYear]);
 
   const pathname = location?.pathname || "";
 
