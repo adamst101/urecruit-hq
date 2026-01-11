@@ -140,7 +140,6 @@ export default function FilterSheet({
 
   return (
     <Sheet open={!!isOpen} onOpenChange={(open) => (!open ? onClose?.() : null)}>
-      {/* Make the bottom sheet feel like a centered panel with sticky footer */}
       <SheetContent side="bottom" className="h-[85vh] p-0">
         <div className="h-full flex flex-col">
           <SheetHeader className="border-b border-slate-200 bg-white px-4 py-4">
@@ -152,10 +151,8 @@ export default function FilterSheet({
             </div>
           </SheetHeader>
 
-          {/* Scroll area */}
           <div className="flex-1 overflow-y-auto bg-slate-50 px-4 py-5">
             <div className="max-w-3xl mx-auto w-full space-y-4">
-              {/* Sport */}
               {sportsList.length > 1 && (
                 <Section title="Sport">
                   <Select value={selectedSport} onValueChange={onSportChange}>
@@ -174,7 +171,6 @@ export default function FilterSheet({
                 </Section>
               )}
 
-              {/* Division */}
               <Section title="Division">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {DIVISIONS.map((div) => (
@@ -194,7 +190,6 @@ export default function FilterSheet({
                 </div>
               </Section>
 
-              {/* Positions */}
               {positionsList.length > 0 && (
                 <Section title="Position">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -216,7 +211,6 @@ export default function FilterSheet({
                 </Section>
               )}
 
-              {/* State */}
               <Section title="State">
                 <Select value={selectedState} onValueChange={onStateChange}>
                   <SelectTrigger className="w-full bg-white">
@@ -233,7 +227,6 @@ export default function FilterSheet({
                 </Select>
               </Section>
 
-              {/* Date Range */}
               <Section title="Date Range">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -266,7 +259,6 @@ export default function FilterSheet({
             </div>
           </div>
 
-          {/* Sticky footer */}
           <SheetFooter className="border-t border-slate-200 bg-white px-4 py-3">
             <div className="max-w-3xl mx-auto w-full flex flex-col sm:flex-row gap-2">
               <Button
@@ -276,9 +268,10 @@ export default function FilterSheet({
               >
                 Clear All
               </Button>
+
               <Button
                 onClick={onApply}
-                className="w-full sm:w-1/2 bg-electric-blue hover:bg-deep-navy"
+                className="w-full sm:w-1/2 bg-electric-blue hover:bg-deep-navy text-white hover:text-white"
               >
                 Apply Filters
               </Button>
