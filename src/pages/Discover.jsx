@@ -10,6 +10,7 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 
+import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
@@ -95,7 +96,7 @@ const STATE_NAME_TO_ABBR = {
   "WEST VIRGINIA": "WV",
   WISCONSIN: "WI",
   WYOMING: "WY",
-  "DISTRICT OF COLUMBIA": "DC"
+  "DISTRICT OF COLUMBIA": "DC",
 };
 
 function normalizeState(v) {
@@ -150,7 +151,7 @@ export default function Discover() {
     divisions: [],
     positions: [],
     startDate: "",
-    endDate: ""
+    endDate: "",
   });
 
   // Applied filters (the ones that drive the list)
@@ -201,7 +202,7 @@ export default function Discover() {
     division: null,     // ✅ client-side
     positionIds: null,  // ✅ client-side
     limit: 2000,
-    enabled: !!seasonYear
+    enabled: !!seasonYear,
   });
 
   const rows = useMemo(() => {
@@ -267,14 +268,14 @@ export default function Discover() {
       divisions: [],
       positions: [],
       startDate: "",
-      endDate: ""
+      endDate: "",
     };
     setFilters(next);
     setApplied(next);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-slate-50 pb-24">
       <div className="max-w-md mx-auto px-4 pt-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -286,11 +287,7 @@ export default function Discover() {
             </Badge>
           </div>
 
-          <Button
-            variant="outline"
-            onClick={() => setFilterOpen(true)}
-            className="gap-2"
-          >
+          <Button variant="outline" onClick={() => setFilterOpen(true)} className="gap-2">
             <FilterIcon className="w-4 h-4" />
             Filters
           </Button>
@@ -341,9 +338,7 @@ export default function Discover() {
                         {div ? (
                           <Badge className="bg-slate-900 text-white text-xs">{div}</Badge>
                         ) : null}
-                        <span className="text-xs text-slate-500 font-medium">
-                          {sportName}
-                        </span>
+                        <span className="text-xs text-slate-500 font-medium">{sportName}</span>
                         {mode !== "paid" && (
                           <Badge variant="outline" className="text-xs">
                             Demo
@@ -398,6 +393,9 @@ export default function Discover() {
           setFilterOpen(false);
         }}
       />
+
+      {/* Bottom navigation */}
+      <BottomNav />
     </div>
   );
 }
