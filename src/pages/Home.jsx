@@ -57,17 +57,18 @@ export default function Home() {
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
+  // ✅ Correct Base44 pattern: route to /login page (you must implement Login.jsx)
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // If already authed, go to Discover
+    // If already authed via Base44 session cookie, skip login page.
     if (season?.accountId) {
       nav(createPageUrl("Discover"));
       return;
     }
 
-    // Use Base44 auth redirect
-    base44.auth.redirectToLogin(createPageUrl("Discover"));
+    const next = encodeURIComponent(createPageUrl("Discover"));
+    nav(`${createPageUrl("Login")}?next=${next}&source=home_login`);
   }
 
   function handlePricingSignup() {
