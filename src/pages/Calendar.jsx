@@ -1,8 +1,7 @@
 // src/pages/Calendar.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { CalendarDays, Filter, Lock, Compass } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { CalendarDays, Filter, Compass, Lock } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -19,9 +18,7 @@ import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { getDemoFavorites } from "../components/hooks/demoFavorites.jsx";
 import { isDemoRegistered } from "../components/hooks/demoRegistered.jsx";
 
-import { useWriteGate } from "../components/hooks/useWriteGate.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
-
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
 
@@ -34,13 +31,6 @@ function trackEvent(payload) {
 
 function normStr(x) {
   return String(x || "").trim();
-}
-
-function yStart(y) {
-  return `${Number(y)}-01-01`;
-}
-function yNext(y) {
-  return `${Number(y) + 1}-01-01`;
 }
 
 function normStateCode(raw) {
@@ -101,14 +91,6 @@ function normStateCode(raw) {
   return map[s] || "";
 }
 
-function dateInSeason(d, seasonYear) {
-  if (!d || !seasonYear) return true;
-  const start = yStart(seasonYear);
-  const next = yNext(seasonYear);
-  const s = String(d);
-  return s >= start && s < next;
-}
-
 function withinDateRange(summary, startDate, endDate) {
   const sd = summary?.start_date ? String(summary.start_date) : "";
   if (!sd) return true;
@@ -117,30 +99,25 @@ function withinDateRange(summary, startDate, endDate) {
   return true;
 }
 
-function toMonthKey(dateStr) {
-  if (!dateStr) return "TBD";
-  const s = String(dateStr);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "TBD";
-  return s.slice(0, 7); // YYYY-MM
-}
-
-function monthLabel(yyyyMm) {
-  if (!/^\d{4}-\d{2}$/.test(yyyyMm)) return "TBD";
-  const [y, m] = yyyyMm.split("-").map((x) => Number(x));
-  const dt = new Date(Date.UTC(y, m - 1, 1));
-  return dt.toLocaleString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+function groupByDay(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    const k = String(r?.start_date || "TBD");
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(r);
+  }
+  const keys = Array.from(map.keys()).sort((a, b) => String(a).localeCompare(String(b)));
+  return keys.map((k) => ({ day: k, items: map.get(k) || [] }));
 }
 
 export default function Calendar() {
   const nav = useNavigate();
   const loc = useLocation();
-  const queryClient = useQueryClient();
 
   const season = useSeasonAccess();
   const { athleteProfile } = useAthleteIdentity();
-  const writeGate = useWriteGate();
 
-  // -------- resolve effective mode + seasonYear (URL > local demo > entitlement) --------
+  // -------- resolve effective mode + seasonYear --------
   const { effectiveMode, seasonYear } = useMemo(() => {
     let urlMode = null;
     let urlSeason = null;
@@ -181,7 +158,7 @@ export default function Calendar() {
   const isDemo = effectiveMode === "demo";
   const hasProfile = !!athleteProfile?.id;
 
-  // -------- filters state --------
+  // -------- filters --------
   const [sheetOpen, setSheetOpen] = useState(false);
   const [filters, setFilters] = useState({
     sport: "",
@@ -192,7 +169,7 @@ export default function Calendar() {
     endDate: "",
   });
 
-  // Load sports/positions for FilterSheet (safe, optional)
+  // Load sports/positions for FilterSheet (safe)
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
   useEffect(() => {
@@ -216,8 +193,9 @@ export default function Calendar() {
     };
   }, []);
 
-  // -------- demo profile + local status --------
+  // demo profile
   const { loaded: demoLoaded, demoProfileId } = useDemoProfile();
+
   const demoFavIds = useMemo(() => {
     if (!isDemo) return [];
     if (!demoLoaded) return [];
@@ -228,7 +206,7 @@ export default function Calendar() {
   const publicQuery = usePublicCampSummariesClient({
     seasonYear,
     sportId: filters.sport || null,
-    state: null, // state is handled client-side
+    state: null, // state client-side
     division: null,
     positionIds: Array.isArray(filters.positions) ? filters.positions : [],
     limit: 5000,
@@ -243,13 +221,14 @@ export default function Calendar() {
   });
 
   const loading = isDemo ? publicQuery.isLoading : hasProfile ? personalQuery.isLoading : publicQuery.isLoading;
+
   const rawRows = useMemo(() => {
     if (isDemo) return publicQuery.data || [];
     if (hasProfile) return personalQuery.data || [];
     return publicQuery.data || [];
   }, [isDemo, hasProfile, publicQuery.data, personalQuery.data]);
 
-  // -------- client-side filtering (robust) --------
+  // -------- apply filters client-side --------
   const filtered = useMemo(() => {
     const rows = Array.isArray(rawRows) ? rawRows : [];
 
@@ -261,7 +240,6 @@ export default function Calendar() {
     const endDate = normStr(filters.endDate);
 
     return rows
-      .filter((r) => dateInSeason(r?.start_date, seasonYear))
       .filter((r) => {
         if (!selectedState) return true;
         const campState = normStateCode(r?.state);
@@ -279,22 +257,11 @@ export default function Calendar() {
       })
       .filter((r) => withinDateRange(r, startDate, endDate))
       .sort((a, b) => String(a?.start_date || "").localeCompare(String(b?.start_date || "")));
-  }, [rawRows, filters, seasonYear]);
+  }, [rawRows, filters]);
 
-  // -------- group by month for a simple calendar-like view --------
-  const grouped = useMemo(() => {
-    const map = new Map();
-    for (const r of filtered) {
-      const key = toMonthKey(r?.start_date);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(r);
-    }
-    // preserve chronological order
-    const keys = Array.from(map.keys()).sort((a, b) => String(a).localeCompare(String(b)));
-    return keys.map((k) => ({ key: k, label: k === "TBD" ? "Date TBD" : monthLabel(k), rows: map.get(k) }));
-  }, [filtered]);
+  const groups = useMemo(() => groupByDay(filtered), [filtered]);
 
-  // -------- navigation helper (preserve demo params) --------
+  // -------- preserve demo params when navigating --------
   const pageUrl = useCallback(
     (pageName) => {
       const base = createPageUrl(pageName);
@@ -308,7 +275,7 @@ export default function Calendar() {
     [isDemo, seasonYear]
   );
 
-  // -------- bottom nav --------
+  // -------- bottom nav (inline, stable) --------
   const BottomNavInline = useMemo(() => {
     const items = isDemo
       ? [
@@ -378,6 +345,17 @@ export default function Calendar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDemo, seasonYear]);
 
+  const flagsFor = useCallback(
+    (r) => {
+      const campId = String(r.camp_id);
+      const status = String(r?.intent_status || "").toLowerCase();
+      const isFavorite = isDemo ? demoFavIds.includes(campId) : ["favorite", "planned", "considering"].includes(status);
+      const isRegistered = isDemo ? isDemoRegistered(demoProfileId, campId) : status === "registered";
+      return { isFavorite, isRegistered };
+    },
+    [isDemo, demoFavIds, demoProfileId]
+  );
+
   return (
     <div className="min-h-screen bg-surface pb-24">
       <div className="max-w-md mx-auto px-4 pt-5">
@@ -387,9 +365,7 @@ export default function Calendar() {
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-bold text-amber-900">Demo Mode</div>
-                <div className="text-xs text-amber-800">
-                  Prior-season data ({seasonYear}). Favorites save on this device.
-                </div>
+                <div className="text-xs text-amber-800">Prior-season data ({seasonYear})</div>
               </div>
               <Button
                 className="shrink-0"
@@ -435,16 +411,14 @@ export default function Calendar() {
           {!!filters.endDate && <Badge variant="secondary">To: {filters.endDate}</Badge>}
         </div>
 
-        {/* Body */}
+        {/* Calendar list (grouped by start_date) */}
         <div className="mt-4 space-y-4">
           {loading ? (
-            <Card className="p-4 text-sm text-slate-600">Loading calendar…</Card>
-          ) : filtered.length === 0 ? (
+            <Card className="p-4 text-sm text-slate-600">Loading camps…</Card>
+          ) : groups.length === 0 ? (
             <Card className="p-4">
               <div className="text-sm font-semibold text-deep-navy">No camps found</div>
-              <div className="text-xs text-slate-600 mt-1">
-                State is normalized (TX vs Texas). If you still get zero, clear State and try again.
-              </div>
+              <div className="text-xs text-slate-600 mt-1">Clear filters and try again.</div>
               <div className="mt-3 flex gap-2">
                 <Button
                   variant="outline"
@@ -458,63 +432,28 @@ export default function Calendar() {
               </div>
             </Card>
           ) : (
-            grouped.map((bucket) => (
-              <div key={bucket.key}>
-                <div className="text-sm font-bold text-deep-navy mb-2">{bucket.label}</div>
+            groups.map((g) => (
+              <div key={g.day} className="space-y-2">
+                <div className="text-xs font-semibold text-slate-600">{g.day}</div>
                 <div className="space-y-3">
-                  {bucket.rows.map((r) => {
-                    const campId = String(r.camp_id);
-                    const status = String(r?.intent_status || "").toLowerCase();
-                    const isFav = isDemo ? demoFavIds.includes(campId) : ["favorite", "planned", "considering"].includes(status);
-                    const isReg = isDemo ? isDemoRegistered(demoProfileId, campId) : status === "registered";
-
+                  {g.items.map((r) => {
+                    const { isFavorite, isRegistered } = flagsFor(r);
                     return (
-                      <Card key={campId} className="p-4 border-slate-200 bg-white">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap mb-1">
-                              {r.school_division && (
-                                <Badge className="bg-slate-900 text-white text-xs">{r.school_division}</Badge>
-                              )}
-                              {r.sport_name && (
-                                <span className="text-xs text-slate-500 font-medium">{r.sport_name}</span>
-                              )}
-                              {isDemo && (
-                                <Badge variant="outline" className="text-xs">
-                                  Demo
-                                </Badge>
-                              )}
-                              {isReg && <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>}
-                              {isFav && !isReg && (
-                                <Badge variant="secondary" className="text-xs">
-                                  Favorited
-                                </Badge>
-                              )}
-                            </div>
-
-                            <div className="text-lg font-semibold text-deep-navy truncate">
-                              {r.school_name || "Unknown School"}
-                            </div>
-                            <div className="text-sm text-slate-600 truncate">{r.camp_name || "Camp"}</div>
-
-                            <div className="mt-2 text-xs text-slate-500">
-                              {(r.start_date || "TBD")}
-                              {r.city || r.state
-                                ? ` · ${[r.city, r.state].filter(Boolean).join(", ")}`
-                                : ""}
-                            </div>
-                          </div>
-
-                          <div className="shrink-0">
-                            <Button
-                              variant="outline"
-                              onClick={() => nav(pageUrl("Discover"))}
-                              title="Go to Discover to manage favorites/registered"
-                            >
-                              View
-                            </Button>
-                          </div>
+                      <Card key={String(r.camp_id)} className="p-4 border-slate-200 bg-white">
+                        <div className="text-sm font-bold text-deep-navy">{r.school_name || "Unknown School"}</div>
+                        <div className="text-xs text-slate-600">{r.camp_name || "Camp"}</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {r.school_division && <Badge variant="secondary">{r.school_division}</Badge>}
+                          {r.sport_name && <Badge variant="secondary">{r.sport_name}</Badge>}
+                          {isDemo && <Badge variant="outline">Demo</Badge>}
+                          {isRegistered && <Badge className="bg-emerald-600 text-white">Registered</Badge>}
+                          {isFavorite && <Badge className="bg-amber-500 text-white">Favorite</Badge>}
                         </div>
+                        {(r.city || r.state) && (
+                          <div className="mt-2 text-xs text-slate-500">
+                            {[r.city, r.state].filter(Boolean).join(", ")}
+                          </div>
+                        )}
                       </Card>
                     );
                   })}
@@ -530,7 +469,10 @@ export default function Calendar() {
         isOpen={sheetOpen}
         onClose={() => setSheetOpen(false)}
         filters={filters}
-        onFilterChange={setFilters}
+        onFilterChange={(next) => {
+          const state = normStateCode(next?.state || "");
+          setFilters({ ...next, state });
+        }}
         sports={sports}
         positions={positions}
         onClear={() => {
