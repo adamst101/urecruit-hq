@@ -1,24 +1,21 @@
 // src/components/auth/RouteGuard.jsx
-import React, { useEffect, useMemo, useCallback } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
 import { createPageUrl } from "../../utils";
-
 import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
 
 /**
- * RouteGuard
+ * RouteGuard (Base44-safe)
  *
- * Goals:
- * - Keep Home as a true front door (no auto-redirect here)
- * - Allow demo browsing where desired
- * - Enforce: Auth and/or Paid and/or Profile (paid-only) on protected pages
- *
- * Notes:
- * - URL ?mode=demo bypasses paid/profile gating (demo always works)
- * - Uses stable callbacks to avoid redirect loops
+ * Rules:
+ * - Home is the front door (no auto-redirect here)
+ * - Demo override: ?mode=demo bypasses paid/profile gating
+ * - If auth is required but user is not authed:
+ *     -> send to Home with next=... (since Login route may not exist in Base44)
+ * - Paid/profile gating only applies when not in demo override
  */
 export default function RouteGuard({
   requireAuth = false,
@@ -30,16 +27,20 @@ export default function RouteGuard({
   const loc = useLocation();
 
   const { isLoading: accessLoading, mode, accountId } = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading, isError: identityError } =
-    useAthleteIdentity();
+  const {
+    athleteProfile,
+    isLoading: identityLoading,
+    isError: identityError
+  } = useAthleteIdentity();
 
-  const currentPath = useMemo(() => {
-    return (loc?.pathname || "") + (loc?.search || "");
-  }, [loc?.pathname, loc?.search]);
+  const currentPath = useMemo(
+    () => (loc?.pathname || "") + (loc?.search || ""),
+    [loc?.pathname, loc?.search]
+  );
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Demo override (critical to stop "paid/profile redirect" when user intends demo)
+  // URL forces demo mode when explicitly set
   const forceDemo = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc?.search || "");
@@ -54,27 +55,27 @@ export default function RouteGuard({
 
   const loading = accessLoading || (needsIdentity && identityLoading);
 
-  const safeReplace = useCallback(
-    (to) => {
-      if (!to) return;
-      if (to === currentPath) return;
-      nav(to, { replace: true });
-    },
-    [nav, currentPath]
-  );
+  const safeReplace = (to) => {
+    if (!to) return;
+    if (to === currentPath) return;
+    nav(to, { replace: true });
+  };
 
   useEffect(() => {
     if (loading) return;
 
     // If we need identity and it errored, route to Profile (recoverable)
     if (needsIdentity && identityError) {
-      safeReplace(createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`);
+      safeReplace(
+        createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`
+      );
       return;
     }
 
     // 1) Auth required
     if (requireAuth && !accountId) {
-      safeReplace(createPageUrl("Login") + `?next=${nextParam}`);
+      // Base44-safe: don't assume Login route exists
+      safeReplace(createPageUrl("Home") + `?signin=1&next=${nextParam}`);
       return;
     }
 
@@ -94,17 +95,18 @@ export default function RouteGuard({
     }
   }, [
     loading,
-    needsIdentity,
-    identityError,
     requireAuth,
     requirePaid,
     requireProfile,
+    needsIdentity,
+    identityError,
     accountId,
     isPaid,
     athleteProfile,
     nextParam,
-    loc?.pathname,
-    safeReplace
+    currentPath,
+    nav,
+    loc?.pathname
   ]);
 
   if (loading) {
