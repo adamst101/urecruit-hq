@@ -1,5 +1,5 @@
 // src/pages/Calendar.jsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { CalendarDays, Filter, Compass, Lock } from "lucide-react";
 
@@ -101,11 +101,13 @@ function withinDateRange(summary, startDate, endDate) {
 
 function groupByDay(rows) {
   const map = new Map();
-  for (const r of rows) {
-    const k = String(r?.start_date || "TBD");
-    if (!map.has(k)) map.set(k, []);
-    map.get(k).push(r);
-  }
+  (rows || []).forEach((r) => {
+    const d = r?.start_date ? String(r.start_date) : "TBD";
+    if (!map.has(d)) map.set(d, []);
+    map.get(d).push(r);
+  });
+
+  // sort keys
   const keys = Array.from(map.keys()).sort((a, b) => String(a).localeCompare(String(b)));
   return keys.map((k) => ({ day: k, items: map.get(k) || [] }));
 }
@@ -158,6 +160,20 @@ export default function Calendar() {
   const isDemo = effectiveMode === "demo";
   const hasProfile = !!athleteProfile?.id;
 
+  // -------- URL builder that preserves demo params --------
+  const pageUrl = useCallback(
+    (pageName) => {
+      const base = createPageUrl(pageName);
+      if (!isDemo) return base;
+
+      const sp = new URLSearchParams();
+      sp.set("mode", "demo");
+      sp.set("season", String(seasonYear));
+      return `${base}?${sp.toString()}`;
+    },
+    [isDemo, seasonYear]
+  );
+
   // -------- filters --------
   const [sheetOpen, setSheetOpen] = useState(false);
   const [filters, setFilters] = useState({
@@ -169,7 +185,7 @@ export default function Calendar() {
     endDate: "",
   });
 
-  // Load sports/positions for FilterSheet (safe)
+  // Load sports/positions for FilterSheet
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
   useEffect(() => {
@@ -195,7 +211,6 @@ export default function Calendar() {
 
   // demo profile
   const { loaded: demoLoaded, demoProfileId } = useDemoProfile();
-
   const demoFavIds = useMemo(() => {
     if (!isDemo) return [];
     if (!demoLoaded) return [];
@@ -206,7 +221,7 @@ export default function Calendar() {
   const publicQuery = usePublicCampSummariesClient({
     seasonYear,
     sportId: filters.sport || null,
-    state: null, // state client-side
+    state: null, // keep state client-side; Camp.state may be inconsistent
     division: null,
     positionIds: Array.isArray(filters.positions) ? filters.positions : [],
     limit: 5000,
@@ -259,21 +274,35 @@ export default function Calendar() {
       .sort((a, b) => String(a?.start_date || "").localeCompare(String(b?.start_date || "")));
   }, [rawRows, filters]);
 
-  const groups = useMemo(() => groupByDay(filtered), [filtered]);
+  const grouped = useMemo(() => groupByDay(filtered), [filtered]);
 
-  // -------- preserve demo params when navigating --------
-  const pageUrl = useCallback(
-    (pageName) => {
-      const base = createPageUrl(pageName);
-      if (!isDemo) return base;
-
-      const sp = new URLSearchParams();
-      sp.set("mode", "demo");
-      sp.set("season", String(seasonYear));
-      return `${base}?${sp.toString()}`;
+  const flagsFor = useCallback(
+    (r) => {
+      const campId = String(r.camp_id);
+      const status = String(r?.intent_status || "").toLowerCase();
+      const isFavorite = isDemo ? demoFavIds.includes(campId) : ["favorite", "planned", "considering"].includes(status);
+      const isRegistered = isDemo ? isDemoRegistered(demoProfileId, campId) : status === "registered";
+      return { isFavorite, isRegistered };
     },
-    [isDemo, seasonYear]
+    [isDemo, demoFavIds, demoProfileId]
   );
+
+  // -------- view tracking --------
+  useEffect(() => {
+    const key = `evt_calendar_viewed_${isDemo ? "demo" : "paid"}_${seasonYear}`;
+    try {
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+
+    trackEvent({
+      event_name: "calendar_view",
+      mode: isDemo ? "demo" : "paid",
+      season_year: seasonYear,
+      authed: season.accountId ? 1 : 0,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemo, seasonYear]);
 
   // -------- bottom nav (inline, stable) --------
   const BottomNavInline = useMemo(() => {
@@ -327,34 +356,6 @@ export default function Calendar() {
       );
     };
   }, [isDemo, pageUrl, loc?.pathname, nav]);
-
-  // -------- view tracking --------
-  useEffect(() => {
-    const key = `evt_calendar_viewed_${isDemo ? "demo" : "paid"}_${seasonYear}`;
-    try {
-      if (sessionStorage.getItem(key) === "1") return;
-      sessionStorage.setItem(key, "1");
-    } catch {}
-
-    trackEvent({
-      event_name: "calendar_view",
-      mode: isDemo ? "demo" : "paid",
-      season_year: seasonYear,
-      authed: season.accountId ? 1 : 0,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDemo, seasonYear]);
-
-  const flagsFor = useCallback(
-    (r) => {
-      const campId = String(r.camp_id);
-      const status = String(r?.intent_status || "").toLowerCase();
-      const isFavorite = isDemo ? demoFavIds.includes(campId) : ["favorite", "planned", "considering"].includes(status);
-      const isRegistered = isDemo ? isDemoRegistered(demoProfileId, campId) : status === "registered";
-      return { isFavorite, isRegistered };
-    },
-    [isDemo, demoFavIds, demoProfileId]
-  );
 
   return (
     <div className="min-h-screen bg-surface pb-24">
@@ -415,7 +416,7 @@ export default function Calendar() {
         <div className="mt-4 space-y-4">
           {loading ? (
             <Card className="p-4 text-sm text-slate-600">Loading camps…</Card>
-          ) : groups.length === 0 ? (
+          ) : grouped.length === 0 ? (
             <Card className="p-4">
               <div className="text-sm font-semibold text-deep-navy">No camps found</div>
               <div className="text-xs text-slate-600 mt-1">Clear filters and try again.</div>
@@ -432,16 +433,29 @@ export default function Calendar() {
               </div>
             </Card>
           ) : (
-            groups.map((g) => (
-              <div key={g.day} className="space-y-2">
-                <div className="text-xs font-semibold text-slate-600">{g.day}</div>
+            grouped.map((g) => (
+              <div key={g.day}>
+                <div className="text-xs font-bold text-slate-600 mb-2">{g.day}</div>
                 <div className="space-y-3">
                   {g.items.map((r) => {
                     const { isFavorite, isRegistered } = flagsFor(r);
                     return (
-                      <Card key={String(r.camp_id)} className="p-4 border-slate-200 bg-white">
+                      <Card
+                        key={String(r.camp_id)}
+                        className="p-4 border-slate-200 bg-white cursor-pointer hover:shadow-sm transition"
+                        onClick={() => {
+                          const base = createPageUrl("CampDetail");
+                          const to = isDemo
+                            ? `${base}?id=${encodeURIComponent(String(r.camp_id))}&mode=demo&season=${encodeURIComponent(
+                                String(seasonYear)
+                              )}`
+                            : `${base}?id=${encodeURIComponent(String(r.camp_id))}`;
+                          nav(to);
+                        }}
+                      >
                         <div className="text-sm font-bold text-deep-navy">{r.school_name || "Unknown School"}</div>
                         <div className="text-xs text-slate-600">{r.camp_name || "Camp"}</div>
+
                         <div className="mt-2 flex flex-wrap gap-2">
                           {r.school_division && <Badge variant="secondary">{r.school_division}</Badge>}
                           {r.sport_name && <Badge variant="secondary">{r.sport_name}</Badge>}
@@ -449,6 +463,7 @@ export default function Calendar() {
                           {isRegistered && <Badge className="bg-emerald-600 text-white">Registered</Badge>}
                           {isFavorite && <Badge className="bg-amber-500 text-white">Favorite</Badge>}
                         </div>
+
                         {(r.city || r.state) && (
                           <div className="mt-2 text-xs text-slate-500">
                             {[r.city, r.state].filter(Boolean).join(", ")}
