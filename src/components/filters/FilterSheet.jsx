@@ -42,6 +42,17 @@ function sanitizeDateStr(v) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
 }
 
+function Section({ title, children }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3">
+        <div className="text-sm font-semibold text-slate-900">{title}</div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 export default function FilterSheet({
   isOpen,
   onClose,
@@ -129,132 +140,151 @@ export default function FilterSheet({
 
   return (
     <Sheet open={!!isOpen} onOpenChange={(open) => (!open ? onClose?.() : null)}>
-      <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>Filter Camps</SheetTitle>
-        </SheetHeader>
+      {/* Make the bottom sheet feel like a centered panel with sticky footer */}
+      <SheetContent side="bottom" className="h-[85vh] p-0">
+        <div className="h-full flex flex-col">
+          <SheetHeader className="border-b border-slate-200 bg-white px-4 py-4">
+            <div className="max-w-3xl mx-auto w-full">
+              <SheetTitle>Filter Camps</SheetTitle>
+              <div className="mt-1 text-xs text-slate-500">
+                Narrow results by sport, division, position, state, and date range.
+              </div>
+            </div>
+          </SheetHeader>
 
-        <div className="space-y-6 py-6">
-          {/* Sport */}
-          {sportsList.length > 1 && (
-            <div>
-              <Label className="text-sm font-semibold mb-2 block">Sport</Label>
-              <Select value={selectedSport} onValueChange={onSportChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Sports" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Sports</SelectItem>
-                  {sportsList.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.sport_name}
-                    </SelectItem>
+          {/* Scroll area */}
+          <div className="flex-1 overflow-y-auto bg-slate-50 px-4 py-5">
+            <div className="max-w-3xl mx-auto w-full space-y-4">
+              {/* Sport */}
+              {sportsList.length > 1 && (
+                <Section title="Sport">
+                  <Select value={selectedSport} onValueChange={onSportChange}>
+                    <SelectTrigger className="w-full bg-white">
+                      <SelectValue placeholder="All Sports" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Sports</SelectItem>
+                      {sportsList.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.sport_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Section>
+              )}
+
+              {/* Division */}
+              <Section title="Division">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {DIVISIONS.map((div) => (
+                    <label
+                      key={div}
+                      htmlFor={`div-${div}`}
+                      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 hover:bg-slate-50 cursor-pointer"
+                    >
+                      <Checkbox
+                        id={`div-${div}`}
+                        checked={selectedDivisions.includes(div)}
+                        onCheckedChange={() => toggleDivision(div)}
+                      />
+                      <span className="text-sm text-slate-800">{div}</span>
+                    </label>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Divisions */}
-          <div>
-            <Label className="text-sm font-semibold mb-2 block">Division</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {DIVISIONS.map((div) => (
-                <div key={div} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`div-${div}`}
-                    checked={selectedDivisions.includes(div)}
-                    onCheckedChange={() => toggleDivision(div)}
-                  />
-                  <Label htmlFor={`div-${div}`} className="text-sm cursor-pointer">
-                    {div}
-                  </Label>
                 </div>
-              ))}
-            </div>
-          </div>
+              </Section>
 
-          {/* Positions */}
-          {positionsList.length > 0 && (
-            <div>
-              <Label className="text-sm font-semibold mb-2 block">Position</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {positionsList.map((pos) => (
-                  <div key={pos.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`pos-${pos.id}`}
-                      checked={selectedPositions.includes(String(pos.id))}
-                      onCheckedChange={() => togglePosition(pos.id)}
-                    />
-                    <Label htmlFor={`pos-${pos.id}`} className="text-sm cursor-pointer">
-                      {pos.position_code}
-                    </Label>
+              {/* Positions */}
+              {positionsList.length > 0 && (
+                <Section title="Position">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {positionsList.map((pos) => (
+                      <label
+                        key={pos.id}
+                        htmlFor={`pos-${pos.id}`}
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 hover:bg-slate-50 cursor-pointer"
+                      >
+                        <Checkbox
+                          id={`pos-${pos.id}`}
+                          checked={selectedPositions.includes(String(pos.id))}
+                          onCheckedChange={() => togglePosition(pos.id)}
+                        />
+                        <span className="text-sm text-slate-800">{pos.position_code}</span>
+                      </label>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                </Section>
+              )}
 
-          {/* State */}
-          <div>
-            <Label className="text-sm font-semibold mb-2 block">State</Label>
-            <Select value={selectedState} onValueChange={onStateChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="All States" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All States</SelectItem>
-                {STATES.map((st) => (
-                  <SelectItem key={st} value={st}>
-                    {st}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              {/* State */}
+              <Section title="State">
+                <Select value={selectedState} onValueChange={onStateChange}>
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue placeholder="All States" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    <SelectItem value="all">All States</SelectItem>
+                    {STATES.map((st) => (
+                      <SelectItem key={st} value={st}>
+                        {st}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Section>
+
+              {/* Date Range */}
+              <Section title="Date Range">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs text-slate-600">Start Date</Label>
+                    <Input
+                      type="date"
+                      className="mt-1 bg-white"
+                      value={startDate}
+                      onChange={(e) => onStartDateChange(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-600">End Date</Label>
+                    <Input
+                      type="date"
+                      className="mt-1 bg-white"
+                      value={endDate}
+                      min={startDate || undefined}
+                      onChange={(e) => onEndDateChange(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {startDate && endDate && endDate < startDate && (
+                  <div className="mt-3 text-xs text-rose-600">
+                    End date can’t be earlier than start date.
+                  </div>
+                )}
+              </Section>
+            </div>
           </div>
 
-          {/* Date Range */}
-          <div className="space-y-3">
-            <Label className="text-sm font-semibold block">Date Range</Label>
-
-            <div>
-              <Label className="text-xs text-slate-500">Start Date</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => onStartDateChange(e.target.value)}
-              />
+          {/* Sticky footer */}
+          <SheetFooter className="border-t border-slate-200 bg-white px-4 py-3">
+            <div className="max-w-3xl mx-auto w-full flex flex-col sm:flex-row gap-2">
+              <Button
+                variant="outline"
+                onClick={onClear}
+                className="w-full sm:w-1/2"
+              >
+                Clear All
+              </Button>
+              <Button
+                onClick={onApply}
+                className="w-full sm:w-1/2 bg-electric-blue hover:bg-deep-navy"
+              >
+                Apply Filters
+              </Button>
             </div>
-
-            <div>
-              <Label className="text-xs text-slate-500">End Date</Label>
-              <Input
-                type="date"
-                value={endDate}
-                min={startDate || undefined}
-                onChange={(e) => onEndDateChange(e.target.value)}
-              />
-            </div>
-
-            {startDate && endDate && endDate < startDate && (
-              <div className="text-xs text-rose-600">
-                End date can’t be earlier than start date.
-              </div>
-            )}
-          </div>
+          </SheetFooter>
         </div>
-
-        <SheetFooter className="gap-2">
-          <Button variant="outline" onClick={onClear} className="flex-1">
-            Clear All
-          </Button>
-          <Button
-            onClick={onApply}
-            className="flex-1 bg-electric-blue hover:bg-deep-navy"
-          >
-            Apply Filters
-          </Button>
-        </SheetFooter>
       </SheetContent>
     </Sheet>
   );
