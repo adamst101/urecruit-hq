@@ -1,228 +1,116 @@
 // src/pages/Discover.jsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { Compass, Filter, CalendarDays, Lock } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Filter } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
 
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Badge } from "../components/ui/badge";
+
+import RouteGuard from "../components/auth/RouteGuard.jsx";
+import BottomNav from "../components/navigation/BottomNav.jsx";
 
 import CampCard from "../components/camps/CampCard.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
-import { readDemoMode, getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
+import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
 import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
 
-import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
 import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
 
-// ---------------- helpers ----------------
+/* ------------------ tracking ------------------ */
 function trackEvent(payload) {
   try {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
   } catch {}
 }
 
-function normStr(x) {
-  return String(x || "").trim();
+/* ------------------ helpers ------------------ */
+function safeNum(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
 }
 
-function normStateCode(raw) {
-  const s = normStr(raw).toUpperCase();
-  if (!s) return "";
-  if (/^[A-Z]{2}$/.test(s)) return s;
-
-  const map = {
-    TEXAS: "TX",
-    OKLAHOMA: "OK",
-    CALIFORNIA: "CA",
-    FLORIDA: "FL",
-    GEORGIA: "GA",
-    ALABAMA: "AL",
-    ARIZONA: "AZ",
-    ARKANSAS: "AR",
-    COLORADO: "CO",
-    CONNECTICUT: "CT",
-    DELAWARE: "DE",
-    ILLINOIS: "IL",
-    INDIANA: "IN",
-    IOWA: "IA",
-    KANSAS: "KS",
-    KENTUCKY: "KY",
-    LOUISIANA: "LA",
-    MAINE: "ME",
-    MARYLAND: "MD",
-    MASSACHUSETTS: "MA",
-    MICHIGAN: "MI",
-    MINNESOTA: "MN",
-    MISSISSIPPI: "MS",
-    MISSOURI: "MO",
-    MONTANA: "MT",
-    NEBRASKA: "NE",
-    NEVADA: "NV",
-    "NEW HAMPSHIRE": "NH",
-    "NEW JERSEY": "NJ",
-    "NEW MEXICO": "NM",
-    "NEW YORK": "NY",
-    "NORTH CAROLINA": "NC",
-    "NORTH DAKOTA": "ND",
-    OHIO: "OH",
-    OREGON: "OR",
-    PENNSYLVANIA: "PA",
-    "RHODE ISLAND": "RI",
-    "SOUTH CAROLINA": "SC",
-    "SOUTH DAKOTA": "SD",
-    TENNESSEE: "TN",
-    UTAH: "UT",
-    VERMONT: "VT",
-    VIRGINIA: "VA",
-    WASHINGTON: "WA",
-    "WEST VIRGINIA": "WV",
-    WISCONSIN: "WI",
-    WYOMING: "WY",
-  };
-
-  return map[s] || "";
+function normalizeState(v) {
+  if (!v) return "";
+  return String(v).trim().toUpperCase();
 }
 
-function withinDateRange(summary, startDate, endDate) {
-  const sd = summary?.start_date ? String(summary.start_date) : "";
-  if (!sd) return true;
-  if (startDate && sd < startDate) return false;
-  if (endDate && sd > endDate) return false;
+function normalizeDivision(v) {
+  if (!v) return "";
+  return String(v).trim();
+}
+
+function asArray(x) {
+  return Array.isArray(x) ? x : [];
+}
+
+function inRange(dateStr, start, end) {
+  if (!dateStr) return true;
+  const d = String(dateStr);
+  if (start && d < start) return false;
+  if (end && d > end) return false;
   return true;
 }
 
-// Convert summary to CampCard-compatible shapes
-function toCardModel(s) {
-  const camp = {
-    id: s?.camp_id,
-    camp_name: s?.camp_name,
-    start_date: s?.start_date,
-    end_date: s?.end_date,
-    price: s?.price ?? null,
-    link_url: s?.link_url || null,
-    notes: s?.notes || null,
-    city: s?.city || null,
-    state: s?.state || null,
-    position_ids: Array.isArray(s?.position_ids) ? s.position_ids : [],
-  };
-
-  const school = {
-    id: s?.school_id,
-    school_name: s?.school_name,
-    name: s?.school_name,
-    division: s?.school_division,
-    school_division: s?.school_division,
-  };
-
-  const sport = {
-    id: s?.sport_id,
-    sport_name: s?.sport_name,
-    name: s?.sport_name,
-  };
-
-  // CampCard expects "positions" array for pill labels. We can pass empty array safely.
-  return { camp, school, sport, positions: [] };
-}
-
+/**
+ * Discover
+ * - Demo: uses usePublicCampSummariesClient (no auth required)
+ * - Paid: uses useCampSummariesClient (athlete scoped)
+ * - Filters:
+ *    - sport (server-side where possible; otherwise client-safe)
+ *    - state (client-side; resilient to "TX" vs "Texas" mismatches)
+ *    - division (client-side after school join already in summary)
+ *    - positions (client-side)
+ *    - date range (client-side)
+ * - Always renders BottomNav
+ */
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
+  const [sp] = useSearchParams();
 
   const season = useSeasonAccess();
   const { athleteProfile } = useAthleteIdentity();
 
-  // -------- resolve effective mode + seasonYear (demo override safe) --------
-  const { effectiveMode, seasonYear } = useMemo(() => {
-    let urlMode = null;
-    let urlSeason = null;
-
+  // URL override for demo: ?mode=demo&season=YYYY
+  const urlMode = useMemo(() => {
     try {
-      const sp = new URLSearchParams(loc.search || "");
-      urlMode = sp.get("mode");
-      urlSeason = sp.get("season");
-    } catch {}
+      const m = sp.get("mode");
+      return m ? String(m).toLowerCase() : null;
+    } catch {
+      return null;
+    }
+  }, [sp]);
 
-    const local = readDemoMode();
-    const defaults = getDemoDefaults();
+  const forceDemo = urlMode === "demo";
 
-    const forcedDemo = String(urlMode || "").toLowerCase() === "demo" || local?.mode === "demo";
-
-    const parsedUrlSeason = Number(urlSeason);
-    const urlSeasonYear2 = Number.isFinite(parsedUrlSeason) ? parsedUrlSeason : null;
-
-    const resolvedDemoYear =
-      urlSeasonYear2 ||
-      (Number.isFinite(Number(local?.seasonYear)) ? Number(local.seasonYear) : null) ||
-      (Number.isFinite(Number(defaults?.demoSeasonYear)) ? Number(defaults.demoSeasonYear) : null) ||
-      season.demoYear;
-
-    const effMode = forcedDemo ? "demo" : season.mode === "paid" ? "paid" : "demo";
-    const effSeasonYear = effMode === "paid" ? season.currentYear : resolvedDemoYear;
-
-    return { effectiveMode: effMode, seasonYear: effSeasonYear };
-  }, [loc.search, season.mode, season.currentYear, season.demoYear]);
-
-  useEffect(() => {
-    if (effectiveMode !== "demo") return;
+  const urlSeasonYear = useMemo(() => {
     try {
-      setDemoMode(seasonYear);
-    } catch {}
-  }, [effectiveMode, seasonYear]);
+      const y = safeNum(sp.get("season"));
+      return y;
+    } catch {
+      return null;
+    }
+  }, [sp]);
 
-  const isDemo = effectiveMode === "demo";
-  const hasProfile = !!athleteProfile?.id;
+  const isPaid = !forceDemo && season.mode === "paid";
+  const seasonYear = forceDemo ? (urlSeasonYear || season.demoYear) : season.seasonYear;
 
-  // -------- URL builder that preserves demo params --------
-  const pageUrl = useCallback(
-    (pageName) => {
-      const base = createPageUrl(pageName);
-      if (!isDemo) return base;
+  // Demo profile (local personalization)
+  const { loaded: demoLoaded, demoProfile, demoProfileId } = useDemoProfile();
 
-      const sp = new URLSearchParams();
-      sp.set("mode", "demo");
-      sp.set("season", String(seasonYear));
-      return `${base}?${sp.toString()}`;
-    },
-    [isDemo, seasonYear]
-  );
-
-  // -------- FilterSheet options (sports/positions lists) --------
-  const [sports, setSports] = useState([]);
-  const [positions, setPositions] = useState([]);
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const sp = await base44.entities.Sport.list?.();
-        if (mounted) setSports(Array.isArray(sp) ? sp : []);
-      } catch {
-        if (mounted) setSports([]);
-      }
-      try {
-        const ps = await base44.entities.Position.list?.();
-        if (mounted) setPositions(Array.isArray(ps) ? ps : []);
-      } catch {
-        if (mounted) setPositions([]);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // -------- Filters --------
-  const [sheetOpen, setSheetOpen] = useState(false);
+  // Filters state
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState({
-    sport: "",
+    sport: "", // sport_id
     state: "",
     divisions: [],
     positions: [],
@@ -230,289 +118,315 @@ export default function Discover() {
     endDate: "",
   });
 
-  // -------- Demo profile + favorites --------
-  const { loaded: demoLoaded, demoProfileId } = useDemoProfile();
+  // Seed filters once (demo defaults only). Don't fight user changes.
+  useEffect(() => {
+    if (!forceDemo) return;
+    if (!demoLoaded) return;
 
-  const demoFavIds = useMemo(() => {
-    if (!isDemo) return [];
-    if (!demoLoaded) return [];
-    return getDemoFavorites(demoProfileId, seasonYear);
-  }, [isDemo, demoLoaded, demoProfileId, seasonYear]);
+    setFilters((prev) => {
+      // if user already set something, don't overwrite
+      const touched =
+        prev.sport || prev.state || asArray(prev.divisions).length || asArray(prev.positions).length || prev.startDate || prev.endDate;
+      if (touched) return prev;
 
-  // -------- Public summaries for Discover --------
-  // IMPORTANT:
-  // - do not pass state/division into the hook because Base44 data can be inconsistent
-  // - apply state/division/date filters client-side
-  const publicQuery = usePublicCampSummariesClient({
-    seasonYear,
-    sportId: filters.sport || null,
-    state: null,
-    division: null,
-    positionIds: Array.isArray(filters.positions) ? filters.positions : [],
-    limit: 10000,
-    enabled: true,
+      return {
+        ...prev,
+        sport: demoProfile?.sport_id ? String(demoProfile.sport_id) : "",
+        state: demoProfile?.state ? String(demoProfile.state) : "",
+        divisions: demoProfile?.division ? [String(demoProfile.division)] : [],
+        positions: asArray(demoProfile?.position_ids).map(String),
+      };
+    });
+  }, [forceDemo, demoLoaded, demoProfile]);
+
+  // Data sources
+  const athleteId = athleteProfile?.id ? String(athleteProfile.id) : null;
+
+  const paidQuery = useCampSummariesClient({
+    athleteId,
+    sportId: filters.sport ? String(filters.sport) : null,
+    enabled: isPaid && !!athleteId,
+    limit: 800,
   });
 
-  const loading = publicQuery.isLoading;
-  const rawRows = publicQuery.data || [];
+  const demoQuery = usePublicCampSummariesClient({
+    seasonYear,
+    sportId: filters.sport ? String(filters.sport) : null,
+    state: "", // IMPORTANT: do state filtering client-side (your state data may be inconsistent)
+    division: "", // IMPORTANT: do division client-side
+    positionIds: [], // IMPORTANT: do position filtering client-side
+    enabled: forceDemo || !isPaid,
+    limit: 800,
+  });
 
-  const filtered = useMemo(() => {
-    const rows = Array.isArray(rawRows) ? rawRows : [];
+  const rawRows = useMemo(() => {
+    const rows = isPaid ? paidQuery.data : demoQuery.data;
+    return Array.isArray(rows) ? rows : [];
+  }, [isPaid, paidQuery.data, demoQuery.data]);
 
-    const selectedState = normStateCode(filters.state);
-    const selectedDivisions = Array.isArray(filters.divisions) ? filters.divisions : [];
-    const selectedPositions = Array.isArray(filters.positions) ? filters.positions.map(String) : [];
+  // SPORTS + POSITIONS lists for filter UI
+  const [sports, setSports] = useState([]);
+  const [positions, setPositions] = useState([]);
 
-    const startDate = normStr(filters.startDate);
-    const endDate = normStr(filters.endDate);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [s, p] = await Promise.all([
+          base44.entities.Sport.list?.() || base44.entities.Sport.filter?.({}) || [],
+          base44.entities.Position.list?.() || base44.entities.Position.filter?.({}) || [],
+        ]);
+        if (!mounted) return;
+        setSports(Array.isArray(s) ? s : []);
+        setPositions(Array.isArray(p) ? p : []);
+      } catch {
+        if (!mounted) return;
+        setSports([]);
+        setPositions([]);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-    return rows
-      .filter((r) => {
-        if (!selectedState) return true;
-        const campState = normStateCode(r?.state);
-        return campState === selectedState;
-      })
-      .filter((r) => {
-        if (!selectedDivisions.length) return true;
-        const div = normStr(r?.school_division);
-        return selectedDivisions.includes(div);
-      })
-      .filter((r) => {
-        if (!selectedPositions.length) return true;
-        const ids = Array.isArray(r?.position_ids) ? r.position_ids.map(String) : [];
-        return selectedPositions.some((p) => ids.includes(p));
-      })
-      .filter((r) => withinDateRange(r, startDate, endDate));
+  // Apply filters client-side (authoritative)
+  const filteredRows = useMemo(() => {
+    const stateNeedle = normalizeState(filters.state);
+    const selectedDivs = asArray(filters.divisions).map(normalizeDivision).filter(Boolean);
+    const selectedPos = new Set(asArray(filters.positions).map(String).filter(Boolean));
+
+    const startDate = filters.startDate ? String(filters.startDate) : "";
+    const endDate = filters.endDate ? String(filters.endDate) : "";
+
+    return rawRows.filter((r) => {
+      // State
+      if (stateNeedle) {
+        const rs = normalizeState(r?.state || r?.school_state || "");
+        if (!rs) return false;
+        if (rs !== stateNeedle) return false;
+      }
+
+      // Division
+      if (selectedDivs.length) {
+        const div = normalizeDivision(r?.school_division || r?.division || "");
+        if (!div) return false;
+        if (!selectedDivs.includes(div)) return false;
+      }
+
+      // Positions
+      if (selectedPos.size) {
+        const ids = asArray(r?.position_ids).map(String);
+        const hit = ids.some((x) => selectedPos.has(x));
+        if (!hit) return false;
+      }
+
+      // Date range (use start_date as anchor)
+      if (!inRange(r?.start_date, startDate, endDate)) return false;
+
+      return true;
+    });
   }, [rawRows, filters]);
 
-  // -------- tracking --------
+  // Demo favorites/registered local state
+  const demoSeasonKey = String(seasonYear || "");
+  const [demoFavs, setDemoFavs] = useState([]);
+
   useEffect(() => {
-    const key = `evt_discover_viewed_${isDemo ? "demo" : "paid"}_${seasonYear}`;
+    if (!forceDemo && isPaid) return;
+    setDemoFavs(getDemoFavorites(demoProfileId, demoSeasonKey));
+  }, [forceDemo, isPaid, demoProfileId, demoSeasonKey]);
+
+  // Track view
+  useEffect(() => {
+    const key = `evt_discover_viewed_${forceDemo ? "demo" : "paid"}`;
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
     } catch {}
 
     trackEvent({
-      event_name: "discover_view",
-      mode: isDemo ? "demo" : "paid",
+      event_name: "discover_viewed",
+      mode: forceDemo ? "demo" : isPaid ? "paid" : "demo",
       season_year: seasonYear,
-      authed: season.accountId ? 1 : 0,
-      has_profile: hasProfile ? 1 : 0,
+      account_id: season.accountId || null,
+      athlete_id: athleteId || null,
+      source: "discover",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDemo, seasonYear]);
+  }, []);
 
-  // -------- bottom nav (inline) --------
-  const BottomNavInline = useMemo(() => {
-    const items = isDemo
-      ? [
-          { key: "Discover", label: "Discover", icon: Compass, to: pageUrl("Discover") },
-          { key: "Calendar", label: "Calendar", icon: CalendarDays, to: pageUrl("Calendar") },
-          {
-            key: "Upgrade",
-            label: "Upgrade",
-            icon: Lock,
-            to:
-              createPageUrl("Subscribe") +
-              `?source=bottom_nav_upgrade&next=${encodeURIComponent(pageUrl("Discover"))}`,
-          },
-        ]
-      : [
-          { key: "Discover", label: "Discover", icon: Compass, to: pageUrl("Discover") },
-          { key: "Calendar", label: "Calendar", icon: CalendarDays, to: pageUrl("Calendar") },
-          { key: "MyCamps", label: "MyCamps", icon: Lock, to: pageUrl("MyCamps") },
-        ];
+  // Favorite toggle
+  const onFavoriteToggle = async (row) => {
+    const campId = String(row?.camp_id || row?.id || "");
+    if (!campId) return;
 
-    return function Nav() {
-      const pathname = loc?.pathname || "";
-      const isActive = (to) => String(to || "").split("?")[0] === pathname;
+    if (!isPaid) {
+      const next = toggleDemoFavorite(demoProfileId, campId, demoSeasonKey);
+      setDemoFavs(next);
+      trackEvent({ event_name: "demo_favorite_toggled", camp_id: campId, season_year: seasonYear, source: "discover" });
+      return;
+    }
 
-      return (
-        <div className="fixed bottom-0 left-0 right-0 z-50">
-          <div className="max-w-md mx-auto bg-white border-t border-slate-200">
-            <div className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
-              {items.map((it) => {
-                const Icon = it.icon;
-                const active = isActive(it.to);
+    // Paid: write to backend intent (best effort)
+    try {
+      // If intent exists, update; else create.
+      // Status model can vary; keep simple: status="favorite"
+      const existing = await base44.entities.CampIntent.filter({
+        athlete_id: athleteId,
+        camp_id: campId,
+      });
+
+      const one = Array.isArray(existing) ? existing[0] : null;
+
+      if (one?.id) {
+        const nextStatus = one?.status === "favorite" ? "none" : "favorite";
+        await base44.entities.CampIntent.update(one.id, { status: nextStatus });
+      } else {
+        await base44.entities.CampIntent.create({
+          athlete_id: athleteId,
+          camp_id: campId,
+          status: "favorite",
+        });
+      }
+    } catch {}
+
+    try {
+      paidQuery.refetch?.();
+    } catch {}
+  };
+
+  // Click card -> CampDetail
+  const onOpenCamp = (row) => {
+    const campId = String(row?.camp_id || row?.id || "");
+    if (!campId) return;
+
+    const base = createPageUrl("CampDetail");
+    const url = `${base}?id=${encodeURIComponent(campId)}${forceDemo ? `&mode=demo&season=${encodeURIComponent(String(seasonYear))}` : ""}`;
+    nav(url);
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      sport: "",
+      state: "",
+      divisions: [],
+      positions: [],
+      startDate: "",
+      endDate: "",
+    });
+  };
+
+  const applyFilters = () => {
+    setFiltersOpen(false);
+  };
+
+  const loading = (isPaid ? paidQuery.isLoading : demoQuery.isLoading) || (forceDemo && !demoLoaded);
+  const error = isPaid ? paidQuery.isError : demoQuery.isError;
+
+  return (
+    <RouteGuard requireAuth={false} requirePaid={false} requireProfile={false}>
+      <div className="min-h-screen bg-surface pb-20">
+        <div className="max-w-md mx-auto px-4 py-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xl font-extrabold text-deep-navy">Discover</div>
+              <div className="text-xs text-slate-500">
+                {forceDemo || !isPaid ? `Demo season ${seasonYear}` : `Season ${seasonYear}`}
+              </div>
+            </div>
+
+            <Button variant="outline" onClick={() => setFiltersOpen(true)}>
+              <Filter className="w-4 h-4 mr-2" />
+              Filter
+            </Button>
+          </div>
+
+          <Card className="p-3 border-slate-200 bg-white">
+            <div className="text-sm text-slate-600">
+              {forceDemo || !isPaid ? (
+                <span>
+                  You’re in <span className="font-semibold">demo</span>. Favorites and registrations are saved on this device.
+                </span>
+              ) : (
+                <span>
+                  You’re in <span className="font-semibold">paid</span>. Favorites and registrations sync to your account.
+                </span>
+              )}
+            </div>
+          </Card>
+
+          {loading ? (
+            <div className="py-10 text-center text-sm text-slate-500">Loading camps…</div>
+          ) : error ? (
+            <div className="py-10 text-center text-sm text-rose-600">Couldn’t load camps.</div>
+          ) : filteredRows.length === 0 ? (
+            <div className="py-10 text-center text-sm text-slate-500">
+              No camps found. Try clearing filters.
+              <div className="mt-3">
+                <Button variant="outline" onClick={clearFilters}>
+                  Clear Filters
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredRows.map((r) => {
+                const campId = String(r?.camp_id || r?.id || "");
+                const isDemo = forceDemo || !isPaid;
+
+                const isFav = isDemo
+                  ? demoFavs.includes(campId)
+                  : String(r?.intent_status || "") === "favorite";
+
+                const isReg = isDemo
+                  ? isDemoRegistered(demoProfileId, campId)
+                  : String(r?.intent_status || "") === "registered";
+
                 return (
-                  <button
-                    key={it.key}
-                    type="button"
-                    onClick={() => nav(it.to)}
-                    className={`py-3 flex flex-col items-center justify-center gap-1 transition-colors ${
-                      active ? "text-deep-navy" : "text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    <Icon className={`w-5 h-5 ${active ? "text-deep-navy" : ""}`} />
-                    <span className={`text-xs font-medium ${active ? "text-deep-navy" : ""}`}>{it.label}</span>
-                  </button>
+                  <CampCard
+                    key={campId}
+                    camp={{
+                      camp_name: r.camp_name,
+                      start_date: r.start_date,
+                      end_date: r.end_date,
+                      price: r.price,
+                      city: r.city,
+                      state: r.state,
+                    }}
+                    school={{
+                      school_name: r.school_name,
+                      school_division: r.school_division,
+                    }}
+                    sport={{
+                      sport_name: r.sport_name,
+                    }}
+                    positions={(asArray(r.position_ids) || []).map((id) => ({ id }))}
+                    isFavorite={isFav}
+                    isRegistered={isReg}
+                    mode={isDemo ? "demo" : "paid"}
+                    onFavoriteToggle={() => onFavoriteToggle(r)}
+                    onClick={() => onOpenCamp(r)}
+                  />
                 );
               })}
             </div>
-          </div>
-        </div>
-      );
-    };
-  }, [isDemo, pageUrl, loc?.pathname, nav]);
-
-  return (
-    <div className="min-h-screen bg-surface pb-24">
-      <div className="max-w-md mx-auto px-4 pt-5">
-        {/* Demo banner */}
-        {isDemo && (
-          <Card className="mb-3 p-3 border-amber-200 bg-amber-50">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-bold text-amber-900">Demo Mode</div>
-                <div className="text-xs text-amber-800">Prior-season data ({seasonYear})</div>
-              </div>
-              <Button
-                className="shrink-0"
-                onClick={() =>
-                  nav(
-                    createPageUrl("Subscribe") +
-                      `?source=demo_banner_discover&next=${encodeURIComponent(pageUrl("Discover"))}`
-                  )
-                }
-              >
-                Upgrade
-              </Button>
-            </div>
-          </Card>
-        )}
-
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-xl font-extrabold text-deep-navy">Discover</div>
-            <div className="text-xs text-slate-500">{filtered.length} camps</div>
-          </div>
-
-          <Button variant="outline" onClick={() => setSheetOpen(true)} className="shrink-0">
-            <Filter className="w-4 h-4 mr-2" />
-            Filters
-          </Button>
-        </div>
-
-        {/* Active filter pills */}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {!!filters.sport && <Badge variant="secondary">Sport</Badge>}
-          {!!filters.state && <Badge variant="secondary">State: {filters.state}</Badge>}
-          {Array.isArray(filters.divisions) && filters.divisions.length > 0 && (
-            <Badge variant="secondary">Divisions: {filters.divisions.length}</Badge>
-          )}
-          {Array.isArray(filters.positions) && filters.positions.length > 0 && (
-            <Badge variant="secondary">Positions: {filters.positions.length}</Badge>
-          )}
-          {!!filters.startDate && <Badge variant="secondary">From: {filters.startDate}</Badge>}
-          {!!filters.endDate && <Badge variant="secondary">To: {filters.endDate}</Badge>}
-        </div>
-
-        {/* List */}
-        <div className="mt-4 space-y-3">
-          {loading ? (
-            <Card className="p-4 text-sm text-slate-600">Loading camps…</Card>
-          ) : filtered.length === 0 ? (
-            <Card className="p-4">
-              <div className="text-sm font-semibold text-deep-navy">No camps found</div>
-              <div className="text-xs text-slate-600 mt-1">
-                State/Division filters are applied client-side. Try clearing filters.
-              </div>
-              <div className="mt-3 flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    setFilters({ sport: "", state: "", divisions: [], positions: [], startDate: "", endDate: "" })
-                  }
-                >
-                  Clear
-                </Button>
-                <Button onClick={() => setSheetOpen(true)}>Edit filters</Button>
-              </div>
-            </Card>
-          ) : (
-            filtered.map((s) => {
-              const { camp, school, sport, positions: pos } = toCardModel(s);
-              const campId = String(s?.camp_id || "");
-
-              const isFavorite = isDemo ? demoFavIds.includes(campId) : false;
-              const isRegistered = isDemo ? isDemoRegistered(demoProfileId, campId) : false;
-
-              return (
-                <CampCard
-                  key={campId}
-                  camp={camp}
-                  school={school}
-                  sport={sport}
-                  positions={pos}
-                  isFavorite={isFavorite}
-                  isRegistered={isRegistered}
-                  mode={isDemo ? "demo" : "paid"}
-                  disabledFavorite={!isDemo} // paid favorites handled elsewhere
-                  onFavoriteToggle={() => {
-                    if (!isDemo) return;
-
-                    toggleDemoFavorite(demoProfileId, campId, seasonYear);
-                    trackEvent({
-                      event_name: "demo_favorite_toggled_discover",
-                      camp_id: campId,
-                      season_year: seasonYear,
-                    });
-
-                    // force rerender
-                    setFilters((f) => ({ ...f }));
-                  }}
-                  onClick={() => {
-                    const base = createPageUrl("CampDetail");
-                    const to = isDemo
-                      ? `${base}?id=${encodeURIComponent(campId)}&mode=demo&season=${encodeURIComponent(
-                          String(seasonYear)
-                        )}`
-                      : `${base}?id=${encodeURIComponent(campId)}`;
-                    nav(to);
-                  }}
-                />
-              );
-            })
           )}
         </div>
+
+        <FilterSheet
+          isOpen={filtersOpen}
+          onClose={() => setFiltersOpen(false)}
+          filters={filters}
+          onFilterChange={setFilters}
+          positions={positions}
+          sports={sports}
+          onApply={applyFilters}
+          onClear={clearFilters}
+        />
+
+        <BottomNav />
       </div>
-
-      {/* Filter sheet */}
-      <FilterSheet
-        isOpen={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        filters={filters}
-        onFilterChange={(next) => {
-          const state = normStateCode(next?.state || "");
-          setFilters({ ...next, state });
-        }}
-        sports={sports}
-        positions={positions}
-        onClear={() => {
-          setFilters({ sport: "", state: "", divisions: [], positions: [], startDate: "", endDate: "" });
-          setSheetOpen(false);
-          trackEvent({ event_name: "discover_filters_cleared", mode: isDemo ? "demo" : "paid", season_year: seasonYear });
-        }}
-        onApply={() => {
-          setSheetOpen(false);
-          trackEvent({
-            event_name: "discover_filters_applied",
-            mode: isDemo ? "demo" : "paid",
-            season_year: seasonYear,
-            sport: filters.sport || null,
-            state: filters.state || null,
-            divisions_count: Array.isArray(filters.divisions) ? filters.divisions.length : 0,
-            positions_count: Array.isArray(filters.positions) ? filters.positions.length : 0,
-            startDate: filters.startDate || null,
-            endDate: filters.endDate || null,
-          });
-        }}
-      />
-
-      {/* Bottom nav */}
-      <BottomNavInline />
-    </div>
+    </RouteGuard>
   );
 }
