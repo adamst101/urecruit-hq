@@ -1,10 +1,10 @@
 // src/pages/Discover.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { SlidersHorizontal, XCircle, ArrowRight } from "lucide-react";
+import { SlidersHorizontal, ArrowRight } from "lucide-react";
 
-import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
+import { base44 } from "../api/base44Client";
 
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -22,20 +22,20 @@ import { normalizeFilters, withinDateRange, normalizeState } from "../components
 
 import CampCard from "../components/camps/CampCard.jsx";
 
+function asArray(x) {
+  return Array.isArray(x) ? x : [];
+}
+
 function normId(x) {
   if (!x) return null;
   if (typeof x === "string") return x;
   return x.id || x._id || x.uuid || null;
 }
 
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
-}
-
 function getUrlParams(search) {
   try {
     const sp = new URLSearchParams(search || "");
-    const mode = sp.get("mode");
+    const mode = sp.get("mode"); // "demo" may be present from Home demo CTA
     const season = sp.get("season");
     return {
       mode: mode ? String(mode).toLowerCase() : null,
@@ -53,48 +53,42 @@ export default function Discover() {
   const season = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
+  // URL params (only "demo" should force demo)
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
+  const forceDemo = url.mode === "demo";
 
-  // ---- entitlement gate (Option B) ----
-  // If user is authenticated but NOT entitled, push them to Subscribe.
+  // IMPORTANT: Paid entitlement ALWAYS wins unless URL explicitly forces demo.
+  // This fixes: user logs in, but stays in demo due to stale URL state.
+  const effectiveMode = forceDemo ? "demo" : (season.mode === "paid" ? "paid" : "demo");
+  const isPaid = effectiveMode === "paid";
+
+  // SeasonYear: paid uses current seasonYear; demo can be overridden by URL
+  const seasonYear = useMemo(() => {
+    if (!isPaid && forceDemo && url.seasonYear) return url.seasonYear;
+    return season.seasonYear;
+  }, [isPaid, forceDemo, url.seasonYear, season.seasonYear]);
+
+  // If user becomes entitled while sitting on a demo URL, normalize the URL to paid view.
+  // (No query params in paid view)
+  useEffect(() => {
+    if (season.isLoading) return;
+    if (!isPaid) return;
+    if (!forceDemo) return;
+
+    nav(createPageUrl("Discover"), { replace: true });
+  }, [season.isLoading, isPaid, forceDemo, nav]);
+
+  // If authenticated but not entitled, route to Subscribe
   useEffect(() => {
     if (season.isLoading) return;
     if (!season.isAuthenticated) return;
+    if (season.mode === "paid") return;
 
-    if (season.mode !== "paid") {
-      const next = encodeURIComponent(createPageUrl("Discover"));
-      nav(`${createPageUrl("Subscribe")}?next=${next}&reason=entitlement_required`, { replace: true });
-    }
+    // Logged in but no entitlement => subscription flow
+    nav(createPageUrl("Subscribe") + `?source=discover_gate`, { replace: true });
   }, [season.isLoading, season.isAuthenticated, season.mode, nav]);
 
-  // ---- effective mode rules (stop "stuck in demo") ----
-  // Paid entitlement ALWAYS wins (even if URL still has ?mode=demo).
-  // Demo only when not entitled and explicitly forced or unauth.
-  const effectiveMode = useMemo(() => {
-    if (season.isAuthenticated && season.mode === "paid") return "paid";
-    if (url.mode === "demo") return "demo";
-    return season.mode; // "demo" | "paid"
-  }, [season.isAuthenticated, season.mode, url.mode]);
-
-  const isPaid = effectiveMode === "paid";
-
-  // If we are paid but URL still has demo params, strip them to avoid confusion.
-  useEffect(() => {
-    if (!isPaid) return;
-    if (url.mode !== "demo" && !url.seasonYear) return;
-
-    // replace to clean URL
-    nav(createPageUrl("Discover"), { replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPaid]);
-
-  // Demo seasonYear can be overridden by URL ?season=
-  const seasonYear = useMemo(() => {
-    if (!isPaid && url.seasonYear) return url.seasonYear;
-    return season.seasonYear;
-  }, [isPaid, url.seasonYear, season.seasonYear]);
-
-  // ---- filters (FilterSheet contract) ----
+  // ---- filters ----
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState({
     sport: "",
@@ -116,7 +110,7 @@ export default function Discover() {
     });
   };
 
-  // ---- load filter picklists: sports + positions ----
+  // ---- picklists ----
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
@@ -168,17 +162,15 @@ export default function Discover() {
 
   const nf = useMemo(() => normalizeFilters(filters), [filters]);
 
-  // ---- data source: paid vs demo ----
+  // ---- data sources ----
   const athleteId = isPaid ? (athleteProfile?.id ? String(athleteProfile.id) : null) : null;
 
-  // Paid query: keep it minimal and do additional filtering client-side.
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId || undefined,
     sportId: nf.sportId || undefined,
     enabled: isPaid && !!athleteId
   });
 
-  // Demo query: can accept filters directly.
   const demoQuery = usePublicCampSummariesClient({
     seasonYear,
     sportId: nf.sportId || null,
@@ -193,33 +185,26 @@ export default function Discover() {
     (isPaid && identityLoading) ||
     (isPaid ? paidQuery.isLoading : demoQuery.isLoading);
 
-  // ---- apply remaining filters client-side (especially for paid) ----
   const rows = useMemo(() => {
     const base = isPaid ? asArray(paidQuery.data) : asArray(demoQuery.data);
-
     const state2 = nf.state ? String(nf.state) : null;
 
     return base.filter((c) => {
-      // normalize camp state
       const campState = normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
 
-      // State
       if (state2 && campState !== state2) return false;
 
-      // Division
       if (nf.division) {
         const div = c?.school_division || c?.division || null;
         if (String(div || "") !== String(nf.division)) return false;
       }
 
-      // Positions
       if (nf.positionIds && nf.positionIds.length) {
         const campPos = asArray(c?.position_ids);
         const has = nf.positionIds.some((pid) => campPos.map(String).includes(String(pid)));
         if (!has) return false;
       }
 
-      // Date range
       const start = c?.start_date || null;
       if (!withinDateRange(start, nf.startDate || "", nf.endDate || "")) return false;
 
@@ -227,16 +212,18 @@ export default function Discover() {
     });
   }, [isPaid, paidQuery.data, demoQuery.data, nf]);
 
+  const title = "Discover";
+
   const renderBody = () => {
     if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
 
-    // Paid mode needs profile to be meaningful
+    // Paid workspace requires profile to function well
     if (isPaid && !athleteId) {
       return (
         <Card className="p-5 border-slate-200">
           <div className="text-lg font-semibold text-deep-navy">Complete your athlete profile</div>
           <div className="mt-1 text-sm text-slate-600">
-            Paid Discover uses your athlete profile to personalize intent and actions.
+            Your paid workspace needs an athlete profile to personalize results.
           </div>
           <div className="mt-4">
             <Button onClick={() => nav(createPageUrl("Profile"))}>Go to Profile</Button>
@@ -249,12 +236,9 @@ export default function Discover() {
       return (
         <Card className="p-5 border-slate-200">
           <div className="text-lg font-semibold text-deep-navy">No camps found</div>
-          <div className="mt-1 text-sm text-slate-600">
-            Try clearing filters or widening your date range.
-          </div>
+          <div className="mt-1 text-sm text-slate-600">Try clearing filters.</div>
           <div className="mt-4 flex gap-2">
             <Button variant="outline" onClick={clearFilters}>
-              <XCircle className="w-4 h-4 mr-2" />
               Clear filters
             </Button>
             <Button onClick={() => setFilterOpen(true)}>
@@ -321,9 +305,7 @@ export default function Discover() {
                   nav(createPageUrl("CampDetail") + `?id=${encodeURIComponent(campId)}`);
                 } catch {}
               }}
-              onFavoriteToggle={() => {
-                // keep write logic centralized elsewhere
-              }}
+              onFavoriteToggle={() => {}}
             />
           );
         })}
@@ -334,10 +316,9 @@ export default function Discover() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-md mx-auto px-4 pt-5 pb-24">
-        {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <div className="text-xl font-bold text-deep-navy">Discover</div>
+            <div className="text-xl font-bold text-deep-navy">{title}</div>
             <div className="text-xs text-slate-500">
               {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
             </div>
@@ -351,7 +332,6 @@ export default function Discover() {
           </div>
         </div>
 
-        {/* Active filter summary */}
         <div className="mb-4 flex flex-wrap gap-2">
           {(nf.sportId || nf.state || nf.division || (nf.positionIds || []).length || nf.startDate || nf.endDate) ? (
             <>
