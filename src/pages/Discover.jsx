@@ -32,7 +32,7 @@ function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
-function getUrlParams(search) {
+function parseUrl(search) {
   try {
     const sp = new URLSearchParams(search || "");
     const mode = sp.get("mode");
@@ -46,6 +46,18 @@ function getUrlParams(search) {
   }
 }
 
+function removeDemoParams(search) {
+  try {
+    const sp = new URLSearchParams(search || "");
+    sp.delete("mode");
+    sp.delete("season");
+    const s = sp.toString();
+    return s ? `?${s}` : "";
+  } catch {
+    return "";
+  }
+}
+
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
@@ -53,16 +65,36 @@ export default function Discover() {
   const season = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // ---- effective mode (URL ?mode=demo always wins) ----
-  const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
-  const forceDemo = url.mode === "demo";
-  const effectiveMode = forceDemo ? "demo" : season.mode;
+  const url = useMemo(() => parseUrl(loc.search), [loc.search]);
+
+  // ✅ Source of truth:
+  // - If you are entitled (paid), you should NEVER remain in demo mode.
+  // - Demo URL params are only honored when not paid.
+  const isEntitledPaid = season.mode === "paid";
+
+  const effectiveMode = useMemo(() => {
+    if (isEntitledPaid) return "paid";
+    if (url.mode === "demo") return "demo";
+    return season.mode; // "demo" | "paid" (but if paid, handled above)
+  }, [isEntitledPaid, url.mode, season.mode]);
+
   const isPaid = effectiveMode === "paid";
 
   const seasonYear = useMemo(() => {
-    if (forceDemo && url.seasonYear) return url.seasonYear;
+    // Only allow URL season override in demo mode
+    if (!isPaid && url.mode === "demo" && url.seasonYear) return url.seasonYear;
     return season.seasonYear;
-  }, [forceDemo, url.seasonYear, season.seasonYear]);
+  }, [isPaid, url.mode, url.seasonYear, season.seasonYear]);
+
+  // ✅ Auto-clean demo params once paid is detected (prevents "stuck in demo")
+  useEffect(() => {
+    if (!isEntitledPaid) return;
+    if (url.mode !== "demo" && url.seasonYear == null) return;
+
+    const cleaned = removeDemoParams(loc.search);
+    nav(createPageUrl("Discover") + cleaned, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEntitledPaid, url.mode, url.seasonYear]);
 
   // ---- filters ----
   const [filterOpen, setFilterOpen] = useState(false);
@@ -139,7 +171,7 @@ export default function Discover() {
   // ---- normalize filters ----
   const nf = useMemo(() => normalizeFilters(filters), [filters]);
 
-  // ---- data source: paid vs demo ----
+  // ---- data source ----
   const athleteId = isPaid ? (athleteProfile?.id ? String(athleteProfile.id) : null) : null;
 
   const paidQuery = useCampSummariesClient({
@@ -162,7 +194,7 @@ export default function Discover() {
     (isPaid && identityLoading) ||
     (isPaid ? paidQuery.isLoading : demoQuery.isLoading);
 
-  // ---- enforce filters client-side (so Discover always behaves correctly) ----
+  // ---- enforce filters client-side ----
   const rows = useMemo(() => {
     const base = isPaid ? asArray(paidQuery.data) : asArray(demoQuery.data);
 
@@ -171,27 +203,23 @@ export default function Discover() {
     const wantedPositions = asArray(nf.positionIds).map(String).filter(Boolean);
 
     return base.filter((c) => {
-      // State
       if (wantedState) {
         const campState = normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
         if (campState !== wantedState) return false;
       }
 
-      // Divisions (multi-select)
       if (wantedDivisions.length) {
         const div = c?.school_division || c?.division || null;
         const divStr = div ? String(div) : "";
         if (!divStr || !wantedDivisions.includes(divStr)) return false;
       }
 
-      // Positions
       if (wantedPositions.length) {
         const campPos = asArray(c?.position_ids).map(String);
         const hasAny = wantedPositions.some((pid) => campPos.includes(pid));
         if (!hasAny) return false;
       }
 
-      // Date range (simple)
       const start = c?.start_date || null;
       if (!withinDateRange(start, nf.startDate || "", nf.endDate || "")) return false;
 
@@ -202,7 +230,6 @@ export default function Discover() {
   const renderBody = () => {
     if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
 
-    // Paid mode needs profile to be meaningful
     if (isPaid && !athleteId) {
       return (
         <Card className="p-5 border-slate-200">
@@ -302,7 +329,6 @@ export default function Discover() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-md mx-auto px-4 pt-5 pb-24">
-        {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="text-xl font-bold text-deep-navy">Discover</div>
@@ -313,48 +339,6 @@ export default function Discover() {
             <SlidersHorizontal className="w-4 h-4 mr-2" />
             Filter
           </Button>
-        </div>
-
-        {/* Active filter summary */}
-        <div className="mb-4 flex flex-wrap gap-2">
-          {(nf.sportId ||
-            nf.state ||
-            (nf.divisions || []).length ||
-            (nf.positionIds || []).length ||
-            nf.startDate ||
-            nf.endDate) ? (
-            <>
-              <span className="text-xs text-slate-500">Active filters:</span>
-
-              {nf.state && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">State: {nf.state}</span>
-              )}
-
-              {(nf.divisions || []).length > 0 && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
-                  Divisions: {nf.divisions.length}
-                </span>
-              )}
-
-              {(nf.positionIds || []).length > 0 && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
-                  Positions: {nf.positionIds.length}
-                </span>
-              )}
-
-              {(nf.startDate || nf.endDate) && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
-                  Dates: {nf.startDate || "…"} → {nf.endDate || "…"}
-                </span>
-              )}
-
-              <button type="button" className="text-xs underline text-slate-600" onClick={clearFilters}>
-                Clear
-              </button>
-            </>
-          ) : (
-            <span className="text-xs text-slate-500">No filters applied.</span>
-          )}
         </div>
 
         {renderBody()}
