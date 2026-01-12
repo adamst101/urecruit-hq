@@ -1,7 +1,6 @@
 // src/pages/Discover.jsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
 import { SlidersHorizontal, XCircle } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
@@ -12,7 +11,6 @@ import { Card } from "../components/ui/card";
 
 import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
-import CampCard from "../components/camps/CampCard.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
@@ -22,9 +20,7 @@ import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampS
 
 import { normalizeFilters, withinDateRange, normalizeState } from "../components/filters/filterUtils.jsx";
 
-import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
-import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
-import { useWriteGate } from "../components/hooks/useWriteGate.jsx";
+import CampCard from "../components/camps/CampCard.jsx";
 
 function normId(x) {
   if (!x) return null;
@@ -50,88 +46,25 @@ function getUrlParams(search) {
   }
 }
 
-async function upsertFavoriteIntent({ athleteId, campId, makeFavorite }) {
-  // Base44 entity methods vary; use resilient patterns.
-  const aId = athleteId ? String(athleteId) : null;
-  const cId = campId ? String(campId) : null;
-  if (!aId || !cId) return;
-
-  // Find existing intent record for this athlete+camp
-  let existing = null;
-  try {
-    const rows = await base44.entities.CampIntent.filter({ athlete_id: aId, camp_id: cId });
-    existing = Array.isArray(rows) && rows[0] ? rows[0] : null;
-  } catch {
-    existing = null;
-  }
-
-  const nextStatus = makeFavorite ? "favorite" : null;
-
-  if (existing) {
-    const intentId = normId(existing) || existing?.id || existing?._id || null;
-
-    // Try update by (id, patch)
-    try {
-      if (typeof base44.entities.CampIntent.update === "function") {
-        await base44.entities.CampIntent.update(intentId, { status: nextStatus });
-        return;
-      }
-    } catch {}
-
-    // Try update by object
-    try {
-      if (typeof base44.entities.CampIntent.update === "function") {
-        await base44.entities.CampIntent.update({ id: intentId, status: nextStatus });
-        return;
-      }
-    } catch {}
-
-    // If update unsupported, fall back to create a new record (not ideal, but prevents dead button)
-    try {
-      await base44.entities.CampIntent.create({
-        athlete_id: aId,
-        camp_id: cId,
-        status: nextStatus
-      });
-    } catch {}
-    return;
-  }
-
-  // Create new
-  try {
-    await base44.entities.CampIntent.create({
-      athlete_id: aId,
-      camp_id: cId,
-      status: "favorite"
-    });
-  } catch {}
-}
-
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
-  const qc = useQueryClient();
 
   const season = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
-  const writeGate = useWriteGate();
 
-  // ---- effective mode: URL ?mode=demo always wins ----
+  // ---- effective mode (URL ?mode=demo always wins) ----
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const forceDemo = url.mode === "demo";
   const effectiveMode = forceDemo ? "demo" : season.mode;
   const isPaid = effectiveMode === "paid";
 
-  // demo seasonYear can be overridden by URL ?season=
   const seasonYear = useMemo(() => {
     if (forceDemo && url.seasonYear) return url.seasonYear;
     return season.seasonYear;
   }, [forceDemo, url.seasonYear, season.seasonYear]);
 
-  // Demo profile (scopes demo favorites keys)
-  const { demoProfileId } = useDemoProfile();
-
-  // ---- filters (shared FilterSheet contract) ----
+  // ---- filters ----
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState({
     sport: "",
@@ -153,7 +86,7 @@ export default function Discover() {
     });
   };
 
-  // Load filter picklists: sports + positions
+  // ---- load picklists ----
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
@@ -203,18 +136,12 @@ export default function Discover() {
     return m;
   }, [positions]);
 
-  // Normalize filters once
+  // ---- normalize filters ----
   const nf = useMemo(() => normalizeFilters(filters), [filters]);
 
-  // Paid athlete id
+  // ---- data source: paid vs demo ----
   const athleteId = isPaid ? (athleteProfile?.id ? String(athleteProfile.id) : null) : null;
 
-  // Data source:
-  // - Paid: useCampSummariesClient
-  // - Demo: usePublicCampSummariesClient
-  //
-  // IMPORTANT: Do NOT pass state into the public query because state values in Camp records
-  // are often inconsistent (TX vs Texas). We apply state filter client-side via normalizeState().
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId || undefined,
     sportId: nf.sportId || undefined,
@@ -224,7 +151,7 @@ export default function Discover() {
   const demoQuery = usePublicCampSummariesClient({
     seasonYear,
     sportId: nf.sportId || null,
-    state: null, // ✅ client-side state filtering for reliability
+    state: nf.state || null,
     division: nf.division || null,
     positionIds: nf.positionIds || [],
     enabled: !isPaid
@@ -235,38 +162,36 @@ export default function Discover() {
     (isPaid && identityLoading) ||
     (isPaid ? paidQuery.isLoading : demoQuery.isLoading);
 
-  // Demo favorites (local)
-  const demoFavorites = useMemo(() => {
-    if (isPaid) return [];
-    return getDemoFavorites(demoProfileId, seasonYear);
-  }, [isPaid, demoProfileId, seasonYear]);
-
-  // Apply remaining filters client-side
+  // ---- enforce filters client-side (so Discover always behaves correctly) ----
   const rows = useMemo(() => {
     const base = isPaid ? asArray(paidQuery.data) : asArray(demoQuery.data);
 
-    const state2 = nf.state ? String(nf.state) : null;
+    const wantedState = nf.state ? String(nf.state) : null;
+    const wantedDivisions = asArray(nf.divisions).map(String).filter(Boolean);
+    const wantedPositions = asArray(nf.positionIds).map(String).filter(Boolean);
 
     return base.filter((c) => {
-      const campState = normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
+      // State
+      if (wantedState) {
+        const campState = normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
+        if (campState !== wantedState) return false;
+      }
 
-      // State (client-side, normalized)
-      if (state2 && campState !== state2) return false;
-
-      // Division
-      if (nf.division) {
+      // Divisions (multi-select)
+      if (wantedDivisions.length) {
         const div = c?.school_division || c?.division || null;
-        if (String(div || "") !== String(nf.division)) return false;
+        const divStr = div ? String(div) : "";
+        if (!divStr || !wantedDivisions.includes(divStr)) return false;
       }
 
       // Positions
-      if (nf.positionIds && nf.positionIds.length) {
-        const campPos = asArray(c?.position_ids);
-        const has = nf.positionIds.some((pid) => campPos.map(String).includes(String(pid)));
-        if (!has) return false;
+      if (wantedPositions.length) {
+        const campPos = asArray(c?.position_ids).map(String);
+        const hasAny = wantedPositions.some((pid) => campPos.includes(pid));
+        if (!hasAny) return false;
       }
 
-      // Date range
+      // Date range (simple)
       const start = c?.start_date || null;
       if (!withinDateRange(start, nf.startDate || "", nf.endDate || "")) return false;
 
@@ -274,41 +199,10 @@ export default function Discover() {
     });
   }, [isPaid, paidQuery.data, demoQuery.data, nf]);
 
-  const onToggleFavorite = useCallback(
-    async (campId, currentIsFav) => {
-      const cid = campId ? String(campId) : null;
-      if (!cid) return;
-
-      // Demo: local toggle (always allowed)
-      if (!isPaid) {
-        toggleDemoFavorite(demoProfileId, cid, seasonYear);
-        // force rerender by touching state (cheap + safe)
-        setFilters((prev) => ({ ...prev }));
-        return;
-      }
-
-      // Paid: require backend write eligibility (account + athlete profile)
-      await writeGate.write({
-        next: createPageUrl("Discover"),
-        demo: async () => {},
-        paid: async () => {
-          const makeFavorite = !currentIsFav;
-          await upsertFavoriteIntent({ athleteId, campId: cid, makeFavorite });
-
-          // Refresh composed read model
-          try {
-            qc.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
-          } catch {}
-        }
-      });
-    },
-    [isPaid, demoProfileId, seasonYear, athleteId, qc, writeGate]
-  );
-
   const renderBody = () => {
     if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
 
-    // Paid mode needs profile
+    // Paid mode needs profile to be meaningful
     if (isPaid && !athleteId) {
       return (
         <Card className="p-5 border-slate-200">
@@ -327,9 +221,7 @@ export default function Discover() {
       return (
         <Card className="p-5 border-slate-200">
           <div className="text-lg font-semibold text-deep-navy">No camps found</div>
-          <div className="mt-1 text-sm text-slate-600">
-            Try clearing filters or widening your date range.
-          </div>
+          <div className="mt-1 text-sm text-slate-600">Try clearing filters or widening your date range.</div>
           <div className="mt-4 flex gap-2">
             <Button variant="outline" onClick={clearFilters}>
               <XCircle className="w-4 h-4 mr-2" />
@@ -383,11 +275,6 @@ export default function Discover() {
             .map((pid) => positionsMap.get(String(pid)))
             .filter(Boolean);
 
-          const paidIsFav = String(r?.intent_status || "").toLowerCase() === "favorite";
-          const isFav = isPaid ? paidIsFav : demoFavorites.includes(campId);
-
-          const paidIsReg = String(r?.intent_status || "").toLowerCase() === "registered";
-
           return (
             <CampCard
               key={campId}
@@ -395,16 +282,16 @@ export default function Discover() {
               school={school}
               sport={sport}
               positions={posObjs}
-              isFavorite={isFav}
-              isRegistered={paidIsReg}
+              isFavorite={String(r?.intent_status || "").toLowerCase() === "favorite"}
+              isRegistered={String(r?.intent_status || "").toLowerCase() === "registered"}
               mode={isPaid ? "paid" : "demo"}
-              disabledFavorite={false}
+              disabledFavorite={!isPaid}
               onClick={() => {
                 try {
                   nav(createPageUrl("CampDetail") + `?id=${encodeURIComponent(campId)}`);
                 } catch {}
               }}
-              onFavoriteToggle={() => onToggleFavorite(campId, isFav)}
+              onFavoriteToggle={() => {}}
             />
           );
         })}
@@ -419,9 +306,7 @@ export default function Discover() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="text-xl font-bold text-deep-navy">Discover</div>
-            <div className="text-xs text-slate-500">
-              {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
-            </div>
+            <div className="text-xs text-slate-500">{isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}</div>
           </div>
 
           <Button variant="outline" onClick={() => setFilterOpen(true)}>
@@ -430,36 +315,40 @@ export default function Discover() {
           </Button>
         </div>
 
-        {/* Filter summary */}
+        {/* Active filter summary */}
         <div className="mb-4 flex flex-wrap gap-2">
-          {(nf.sportId || nf.state || nf.division || (nf.positionIds || []).length || nf.startDate || nf.endDate) ? (
+          {(nf.sportId ||
+            nf.state ||
+            (nf.divisions || []).length ||
+            (nf.positionIds || []).length ||
+            nf.startDate ||
+            nf.endDate) ? (
             <>
               <span className="text-xs text-slate-500">Active filters:</span>
+
               {nf.state && (
+                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">State: {nf.state}</span>
+              )}
+
+              {(nf.divisions || []).length > 0 && (
                 <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
-                  State: {nf.state}
+                  Divisions: {nf.divisions.length}
                 </span>
               )}
-              {nf.division && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
-                  Division: {nf.division}
-                </span>
-              )}
+
               {(nf.positionIds || []).length > 0 && (
                 <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
                   Positions: {nf.positionIds.length}
                 </span>
               )}
+
               {(nf.startDate || nf.endDate) && (
                 <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
                   Dates: {nf.startDate || "…"} → {nf.endDate || "…"}
                 </span>
               )}
-              <button
-                type="button"
-                className="text-xs underline text-slate-600"
-                onClick={clearFilters}
-              >
+
+              <button type="button" className="text-xs underline text-slate-600" onClick={clearFilters}>
                 Clear
               </button>
             </>
