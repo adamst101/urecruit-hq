@@ -1,7 +1,7 @@
 // src/pages/Discover.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { SlidersHorizontal, ArrowRight } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 
 import { createPageUrl } from "../utils";
 import { base44 } from "../api/base44Client";
@@ -53,28 +53,23 @@ export default function Discover() {
   const season = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // URL params (only "demo" should force demo)
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const forceDemo = url.mode === "demo";
 
-  // IMPORTANT: Paid entitlement ALWAYS wins unless URL explicitly forces demo.
-  // This fixes: user logs in, but stays in demo due to stale URL state.
+  // Paid entitlement ALWAYS wins unless URL explicitly forces demo.
   const effectiveMode = forceDemo ? "demo" : (season.mode === "paid" ? "paid" : "demo");
   const isPaid = effectiveMode === "paid";
 
-  // SeasonYear: paid uses current seasonYear; demo can be overridden by URL
   const seasonYear = useMemo(() => {
     if (!isPaid && forceDemo && url.seasonYear) return url.seasonYear;
     return season.seasonYear;
   }, [isPaid, forceDemo, url.seasonYear, season.seasonYear]);
 
-  // If user becomes entitled while sitting on a demo URL, normalize the URL to paid view.
-  // (No query params in paid view)
+  // If user becomes entitled while sitting on a demo URL, normalize URL to paid view.
   useEffect(() => {
     if (season.isLoading) return;
     if (!isPaid) return;
     if (!forceDemo) return;
-
     nav(createPageUrl("Discover"), { replace: true });
   }, [season.isLoading, isPaid, forceDemo, nav]);
 
@@ -83,8 +78,6 @@ export default function Discover() {
     if (season.isLoading) return;
     if (!season.isAuthenticated) return;
     if (season.mode === "paid") return;
-
-    // Logged in but no entitlement => subscription flow
     nav(createPageUrl("Subscribe") + `?source=discover_gate`, { replace: true });
   }, [season.isLoading, season.isAuthenticated, season.mode, nav]);
 
@@ -118,7 +111,6 @@ export default function Discover() {
     let mounted = true;
 
     (async () => {
-      // Sports
       try {
         const rows = await base44.entities.Sport?.list?.();
         if (mounted) setSports(Array.isArray(rows) ? rows : []);
@@ -131,7 +123,6 @@ export default function Discover() {
         }
       }
 
-      // Positions
       try {
         const rows = await base44.entities.Position?.list?.();
         if (mounted) setPositions(Array.isArray(rows) ? rows : []);
@@ -217,7 +208,6 @@ export default function Discover() {
   const renderBody = () => {
     if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
 
-    // Paid workspace requires profile to function well
     if (isPaid && !athleteId) {
       return (
         <Card className="p-5 border-slate-200">
@@ -316,7 +306,7 @@ export default function Discover() {
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-md mx-auto px-4 pt-5 pb-24">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-2">
           <div>
             <div className="text-xl font-bold text-deep-navy">{title}</div>
             <div className="text-xs text-slate-500">
@@ -324,45 +314,22 @@ export default function Discover() {
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setFilterOpen(true)}>
-              <SlidersHorizontal className="w-4 h-4 mr-2" />
-              Filter
-            </Button>
-          </div>
+          <Button variant="outline" onClick={() => setFilterOpen(true)}>
+            <SlidersHorizontal className="w-4 h-4 mr-2" />
+            Filter
+          </Button>
         </div>
 
-        <div className="mb-4 flex flex-wrap gap-2">
-          {(nf.sportId || nf.state || nf.division || (nf.positionIds || []).length || nf.startDate || nf.endDate) ? (
-            <>
-              <span className="text-xs text-slate-500">Active filters:</span>
-              {nf.state && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
-                  State: {nf.state}
-                </span>
-              )}
-              {nf.division && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
-                  Division: {nf.division}
-                </span>
-              )}
-              {(nf.positionIds || []).length > 0 && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
-                  Positions: {nf.positionIds.length}
-                </span>
-              )}
-              {(nf.startDate || nf.endDate) && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
-                  Dates: {nf.startDate || "…"} → {nf.endDate || "…"}
-                </span>
-              )}
-              <button type="button" className="text-xs underline text-slate-600" onClick={clearFilters}>
-                Clear
-              </button>
-            </>
-          ) : (
-            <span className="text-xs text-slate-500">No filters applied.</span>
-          )}
+        {/* Truth banner */}
+        <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <span><b>effectiveMode:</b> {effectiveMode}</span>
+            <span><b>season.mode:</b> {season.mode}</span>
+            <span><b>isAuthenticated:</b> {String(!!season.isAuthenticated)}</span>
+            <span><b>accountId:</b> {season.accountId ? String(season.accountId) : "null"}</span>
+            <span><b>entitled:</b> {String(!!season.entitlement)}</span>
+            <span><b>forceDemo(url):</b> {String(!!forceDemo)}</span>
+          </div>
         </div>
 
         {renderBody()}
