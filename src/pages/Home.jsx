@@ -1,4 +1,3 @@
-// src/pages/Home.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
@@ -15,27 +14,10 @@ import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
-const POST_LOGIN_NEXT_KEY = "rm_post_login_next";
-
 function trackEvent(payload) {
   try {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
   } catch {}
-}
-
-function getAuthEntry() {
-  // We do NOT assume a fake /Login page exists.
-  // We detect what Base44 exposed in this app build.
-  const a = base44?.auth;
-
-  const fn =
-    a?.redirectToLogin ||
-    a?.signIn ||
-    a?.login ||
-    a?.startLogin ||
-    a?.openLogin;
-
-  return typeof fn === "function" ? fn : null;
 }
 
 export default function Home() {
@@ -50,9 +32,7 @@ export default function Home() {
 
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
-  const [authUnavailable, setAuthUnavailable] = useState(false);
 
-  // Track once per session
   useEffect(() => {
     const key = "evt_home_viewed_v23";
     try {
@@ -64,77 +44,24 @@ export default function Home() {
       event_name: "home_view",
       source: "home",
       auth_state: season?.accountId ? "authed" : "anon",
-      mode: season?.mode === "paid" ? "paid" : "demo",
+      mode: season?.mode === "paid" ? "paid" : "demo"
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // If user comes back from Base44 auth and we stored a "next", honor it once.
-  useEffect(() => {
-    if (!season?.accountId) return;
-
-    try {
-      const next = sessionStorage.getItem(POST_LOGIN_NEXT_KEY);
-      if (next) {
-        sessionStorage.removeItem(POST_LOGIN_NEXT_KEY);
-        nav(next, { replace: true });
-      }
-    } catch {}
-  }, [season?.accountId, nav]);
-
   function handleTryDemo() {
-    trackEvent({
-      event_name: "cta_demo_click",
-      source: "home",
-      demo_season: demoSeasonYear,
-    });
-
+    trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
     setDemoMode(demoSeasonYear);
-
-    trackEvent({
-      event_name: "demo_entered",
-      source: "home",
-      demo_season: demoSeasonYear,
-    });
-
-    nav(
-      `${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(
-        demoSeasonYear
-      )}`
-    );
+    trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
+    nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
+  // ✅ Best-practice: always route through AuthRedirect so entitlement decides the outcome.
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // Already authed? Just go in.
-    if (season?.accountId) {
-      nav(createPageUrl("Discover"));
-      return;
-    }
-
-    // Use Base44's built-in auth entry (if enabled in dashboard).
-    const next = createPageUrl("Discover");
-
-    try {
-      sessionStorage.setItem(POST_LOGIN_NEXT_KEY, next);
-    } catch {}
-
-    const authEntry = getAuthEntry();
-    if (authEntry) {
-      try {
-        // Some implementations accept a return URL, some ignore it. Safe either way.
-        authEntry(next);
-      } catch {
-        // If auth is misconfigured at runtime, show message instead of 404 loops.
-        setAuthUnavailable(true);
-      }
-      return;
-    }
-
-    // No auth methods exposed => auth not configured/enabled for this app build.
-    // Best-practice: do NOT route to a fake /Login page that doesn’t exist.
-    setAuthUnavailable(true);
+    const next = encodeURIComponent(createPageUrl("Discover"));
+    nav(`${createPageUrl("AuthRedirect")}?next=${next}`, { replace: false });
   }
 
   function handlePricingSignup() {
@@ -148,18 +75,9 @@ export default function Home() {
 
   const bullets = useMemo(
     () => [
-      {
-        a: "Find dates fast.",
-        b: "Camps and dates are scattered across school sites. We bring them together.",
-      },
-      {
-        a: "Plan the sequence.",
-        b: "Overlay schools + position-specific sessions to avoid conflicts.",
-      },
-      {
-        a: "Track what’s real.",
-        b: "Planning vs registered vs completed—so the plan actually happens.",
-      },
+      { a: "Find dates fast.", b: "Camps and dates are scattered across school sites. We bring them together." },
+      { a: "Plan the sequence.", b: "Overlay schools + position-specific sessions to avoid conflicts." },
+      { a: "Track what’s real.", b: "Planning vs registered vs completed—so the plan actually happens." }
     ],
     []
   );
@@ -168,7 +86,7 @@ export default function Home() {
     () => [
       { title: "Collect", body: "Bring camps + dates into one place." },
       { title: "Sequence", body: "Overlay targets + position sessions." },
-      { title: "Execute", body: "Track planning → registered → completed." },
+      { title: "Execute", body: "Track planning → registered → completed." }
     ],
     []
   );
@@ -178,7 +96,7 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* Brand row */}
+            {/* Brand row: big logo + login (single login button) */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -190,16 +108,14 @@ export default function Home() {
                     className="h-24 md:h-40 w-auto block object-contain"
                   />
                 ) : (
-                  <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">
-                    URecruit HQ
-                  </div>
+                  <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">URecruit HQ</div>
                 )}
 
                 <div className="mt-2 text-base md:text-lg font-bold text-ink text-center md:text-left leading-tight">
                   Your college recruiting camp planning HQ
                 </div>
 
-                {/* Mobile login */}
+                {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
                   <Button onClick={handleLogin} className="btn-brand w-full">
                     <LogIn className="w-4 h-4 mr-2" />
@@ -208,7 +124,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Desktop login */}
+              {/* Desktop: login to the right */}
               <div className="hidden md:flex">
                 <Button variant="outline" onClick={handleLogin} className="text-ink">
                   <LogIn className="w-4 h-4 mr-2" />
@@ -217,22 +133,9 @@ export default function Home() {
               </div>
             </div>
 
-            {/* If auth isn't configured, show a clear message (no 404 loops). */}
-            {authUnavailable && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                <div className="font-semibold mb-1">Login isn’t configured yet.</div>
-                <div className="opacity-90">
-                  Base44 auth methods aren’t available in this build. Enable Authentication/SSO in your Base44
-                  Dashboard settings, then republish.
-                </div>
-              </div>
-            )}
-
             {/* Copy */}
             <div className="max-w-3xl space-y-3 text-center md:text-left">
-              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">
-                {heroHeadline}
-              </h1>
+              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
               <div className="h-1 w-14 rounded bg-accent mx-auto md:mx-0" />
               <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
@@ -252,7 +155,7 @@ export default function Home() {
               ))}
             </div>
 
-            {/* How it works */}
+            {/* How it works strip */}
             <div className="rounded-xl border border-default bg-white p-4">
               <div className="grid md:grid-cols-3 gap-4">
                 {howStrip.map((x) => (
