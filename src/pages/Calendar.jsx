@@ -149,10 +149,12 @@ export default function Calendar() {
     enabled: isPaid && !!athleteId
   });
 
+  // Demo query can still take server-side filters where supported
   const demoQuery = usePublicCampSummariesClient({
     seasonYear,
     sportId: nf.sportId || null,
-    state: nf.state || null, // IMPORTANT: normalized state
+    state: nf.state || null,
+    // keep passing one division if the server only supports one, but we enforce multi-select client-side
     division: nf.division || null,
     positionIds: nf.positionIds || [],
     enabled: !isPaid
@@ -163,37 +165,39 @@ export default function Calendar() {
     (isPaid && identityLoading) ||
     (isPaid ? paidQuery.isLoading : demoQuery.isLoading);
 
-  // ---- apply remaining filters client-side (paid list needs division/pos/date filters) ----
+  // ---- apply filters client-side (source-agnostic) ----
   const rows = useMemo(() => {
     const base = isPaid ? asArray(paidQuery.data) : asArray(demoQuery.data);
 
-    // In paid mode, state/division/positions/date filtering is applied here.
-    // In demo mode, state/division/positions are already applied in query (plus we still enforce date range here).
-    const state2 = nf.state ? String(nf.state) : null;
+    const wantedState = nf.state ? String(nf.state) : null;
+    const wantedDivisions = asArray(nf.divisions).map(String).filter(Boolean);
+    const wantedPositions = asArray(nf.positionIds).map(String).filter(Boolean);
 
     return base.filter((c) => {
-      // normalize camp state
-      const campState = normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
+      // --- State ---
+      if (wantedState) {
+        const campState = normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
+        if (campState !== wantedState) return false;
+      }
 
-      // State
-      if (state2 && campState !== state2) return false;
-
-      // Division
-      if (nf.division) {
+      // --- Division (multi-select) ---
+      if (wantedDivisions.length) {
         const div = c?.school_division || c?.division || null;
-        if (String(div || "") !== String(nf.division)) return false;
+        const divStr = div ? String(div) : "";
+        if (!divStr || !wantedDivisions.includes(divStr)) return false;
       }
 
-      // Positions
-      if (nf.positionIds && nf.positionIds.length) {
-        const campPos = asArray(c?.position_ids);
-        const has = nf.positionIds.some((pid) => campPos.map(String).includes(String(pid)));
-        if (!has) return false;
+      // --- Positions ---
+      if (wantedPositions.length) {
+        const campPos = asArray(c?.position_ids).map(String);
+        const hasAny = wantedPositions.some((pid) => campPos.includes(pid));
+        if (!hasAny) return false;
       }
 
-      // Date range (always enforce client-side)
-      const start = c?.start_date || null;
-      if (!withinDateRange(start, nf.startDate || "", nf.endDate || "")) return false;
+      // --- Date range overlap (handles multi-day camps) ---
+      const campStart = c?.start_date || null;
+      const campEnd = c?.end_date || null;
+      if (!withinDateRange(campStart, nf.startDate || "", nf.endDate || "", campEnd)) return false;
 
       return true;
     });
@@ -201,7 +205,6 @@ export default function Calendar() {
 
   const title = "Calendar";
 
-  // ---- render helpers ----
   const renderBody = () => {
     if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
 
@@ -292,15 +295,11 @@ export default function Calendar() {
               mode={isPaid ? "paid" : "demo"}
               disabledFavorite={!isPaid}
               onClick={() => {
-                // optional detail page (if exists)
                 try {
                   nav(createPageUrl("CampDetail") + `?id=${encodeURIComponent(campId)}`);
                 } catch {}
               }}
-              onFavoriteToggle={() => {
-                // Calendar is read-first; keep write logic centralized elsewhere.
-                // If you want favoriting from Calendar later, route through useWriteGate.
-              }}
+              onFavoriteToggle={() => {}}
             />
           );
         })}
@@ -315,9 +314,7 @@ export default function Calendar() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="text-xl font-bold text-deep-navy">{title}</div>
-            <div className="text-xs text-slate-500">
-              {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
-            </div>
+            <div className="text-xs text-slate-500">{isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}</div>
           </div>
 
           <div className="flex gap-2">
@@ -330,34 +327,38 @@ export default function Calendar() {
 
         {/* Active filter summary */}
         <div className="mb-4 flex flex-wrap gap-2">
-          {(nf.sportId || nf.state || nf.division || (nf.positionIds || []).length || nf.startDate || nf.endDate) ? (
+          {(nf.sportId ||
+            nf.state ||
+            (nf.divisions || []).length ||
+            (nf.positionIds || []).length ||
+            nf.startDate ||
+            nf.endDate) ? (
             <>
               <span className="text-xs text-slate-500">Active filters:</span>
+
               {nf.state && (
+                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">State: {nf.state}</span>
+              )}
+
+              {(nf.divisions || []).length > 0 && (
                 <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
-                  State: {nf.state}
+                  Divisions: {nf.divisions.length}
                 </span>
               )}
-              {nf.division && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
-                  Division: {nf.division}
-                </span>
-              )}
+
               {(nf.positionIds || []).length > 0 && (
                 <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
                   Positions: {nf.positionIds.length}
                 </span>
               )}
+
               {(nf.startDate || nf.endDate) && (
                 <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
                   Dates: {nf.startDate || "…"} → {nf.endDate || "…"}
                 </span>
               )}
-              <button
-                type="button"
-                className="text-xs underline text-slate-600"
-                onClick={clearFilters}
-              >
+
+              <button type="button" className="text-xs underline text-slate-600" onClick={clearFilters}>
                 Clear
               </button>
             </>
