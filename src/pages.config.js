@@ -14,6 +14,7 @@ import Subscribe from './pages/Subscribe';
 import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
+import AuthRedirect from './pages/AuthRedirect';
 import __Layout from './Layout.jsx';
 
 
@@ -34,6 +35,7 @@ export const PAGES = {
     "TestFunctions": TestFunctions,
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
+    "AuthRedirect": AuthRedirect,
 }
 
 export const pagesConfig = {
