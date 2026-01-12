@@ -1,4 +1,3 @@
-// src/components/filters/FilterSheet.jsx
 import React, { useMemo } from "react";
 import {
   Sheet,
@@ -11,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -32,11 +30,9 @@ function normId(x) {
   if (typeof x === "string") return x;
   return x.id || x._id || x.uuid || null;
 }
-
 function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
-
 function sanitizeDateStr(v) {
   if (!v) return "";
   const s = String(v).trim();
@@ -128,42 +124,49 @@ export default function FilterSheet({
     setFilters({ ...safeFilters, endDate: v });
   };
 
-  const hasAnyFilters =
+  const hasActive =
     !!safeFilters.sport ||
     !!safeFilters.state ||
-    (selectedDivisions && selectedDivisions.length > 0) ||
-    (selectedPositions && selectedPositions.length > 0) ||
+    selectedDivisions.length > 0 ||
+    selectedPositions.length > 0 ||
     !!startDate ||
     !!endDate;
 
   return (
     <Sheet open={!!isOpen} onOpenChange={(open) => (!open ? onClose?.() : null)}>
-      <SheetContent side="bottom" className="h-[88vh] overflow-y-auto">
-        <SheetHeader className="pb-2">
-          <SheetTitle>Filter Camps</SheetTitle>
-          <div className="text-xs text-slate-500">
-            Narrow the list. If you get zero results, clear filters and re-apply one at a time.
-          </div>
-        </SheetHeader>
+      <SheetContent side="bottom" className="h-[88vh] overflow-y-auto p-0">
+        {/* Header */}
+        <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
+          <SheetHeader className="px-5 pt-5 pb-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <SheetTitle className="text-left">Filters</SheetTitle>
+                <div className="text-xs text-slate-500 mt-1">
+                  Narrow camps by division, state, position, and dates.
+                </div>
+              </div>
 
-        <div className="space-y-6 py-5">
+              {hasActive ? (
+                <Button
+                  variant="outline"
+                  onClick={onClear}
+                  className="shrink-0"
+                >
+                  Clear
+                </Button>
+              ) : null}
+            </div>
+          </SheetHeader>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-5 space-y-6">
           {/* Sport */}
           {sportsList.length > 1 && (
-            <section className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">Sport</Label>
-                {safeFilters.sport ? (
-                  <button
-                    type="button"
-                    className="text-xs text-slate-600 underline"
-                    onClick={() => setFilters({ ...safeFilters, sport: "" })}
-                  >
-                    Clear
-                  </button>
-                ) : null}
-              </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Sport</Label>
               <Select value={selectedSport} onValueChange={onSportChange}>
-                <SelectTrigger className="h-11">
+                <SelectTrigger>
                   <SelectValue placeholder="All Sports" />
                 </SelectTrigger>
                 <SelectContent>
@@ -175,29 +178,14 @@ export default function FilterSheet({
                   ))}
                 </SelectContent>
               </Select>
-            </section>
+            </div>
           )}
 
-          <Separator />
-
-          {/* Location */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-semibold">Location</Label>
-              {safeFilters.state ? (
-                <button
-                  type="button"
-                  className="text-xs text-slate-600 underline"
-                  onClick={() => setFilters({ ...safeFilters, state: "" })}
-                >
-                  Clear
-                </button>
-              ) : null}
-            </div>
-
-            <Label className="text-xs text-slate-500">State</Label>
+          {/* State */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">State</Label>
             <Select value={selectedState} onValueChange={onStateChange}>
-              <SelectTrigger className="h-11">
+              <SelectTrigger>
                 <SelectValue placeholder="All States" />
               </SelectTrigger>
               <SelectContent>
@@ -209,74 +197,44 @@ export default function FilterSheet({
                 ))}
               </SelectContent>
             </Select>
-
-            <div className="text-[11px] text-slate-500 leading-snug">
-              Note: State matching is normalized (e.g., “TX” vs “Texas”) on Discover/Calendar.
-            </div>
-          </section>
-
-          <Separator />
+          </div>
 
           {/* Division */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-semibold">Division</Label>
-              {selectedDivisions.length ? (
-                <button
-                  type="button"
-                  className="text-xs text-slate-600 underline"
-                  onClick={() => setFilters({ ...safeFilters, divisions: [] })}
-                >
-                  Clear
-                </button>
-              ) : null}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Division</Label>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="grid grid-cols-2 gap-2">
+                {DIVISIONS.map((div) => (
+                  <label
+                    key={div}
+                    className="flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2"
+                  >
+                    <Checkbox
+                      checked={selectedDivisions.includes(div)}
+                      onCheckedChange={() => toggleDivision(div)}
+                    />
+                    <span className="text-sm text-slate-800">{div}</span>
+                  </label>
+                ))}
+              </div>
             </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              {DIVISIONS.map((div) => (
-                <label
-                  key={div}
-                  htmlFor={`div-${div}`}
-                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 cursor-pointer"
-                >
-                  <Checkbox
-                    id={`div-${div}`}
-                    checked={selectedDivisions.includes(div)}
-                    onCheckedChange={() => toggleDivision(div)}
-                  />
-                  <span className="text-sm text-slate-800">{div}</span>
-                </label>
-              ))}
+            <div className="text-xs text-slate-500">
+              Tip: Select one or more divisions.
             </div>
-          </section>
+          </div>
 
           {/* Positions */}
           {positionsList.length > 0 && (
-            <>
-              <Separator />
-              <section className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-semibold">Position</Label>
-                  {selectedPositions.length ? (
-                    <button
-                      type="button"
-                      className="text-xs text-slate-600 underline"
-                      onClick={() => setFilters({ ...safeFilters, positions: [] })}
-                    >
-                      Clear
-                    </button>
-                  ) : null}
-                </div>
-
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Position</Label>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <div className="grid grid-cols-2 gap-2">
                   {positionsList.map((pos) => (
                     <label
                       key={pos.id}
-                      htmlFor={`pos-${pos.id}`}
-                      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 cursor-pointer"
+                      className="flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2"
                     >
                       <Checkbox
-                        id={`pos-${pos.id}`}
                         checked={selectedPositions.includes(String(pos.id))}
                         onCheckedChange={() => togglePosition(pos.id)}
                       />
@@ -284,33 +242,22 @@ export default function FilterSheet({
                     </label>
                   ))}
                 </div>
-              </section>
-            </>
+              </div>
+              <div className="text-xs text-slate-500">
+                Tip: Choose multiple if needed.
+              </div>
+            </div>
           )}
 
-          <Separator />
-
           {/* Date Range */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-semibold">Date Range</Label>
-              {(startDate || endDate) ? (
-                <button
-                  type="button"
-                  className="text-xs text-slate-600 underline"
-                  onClick={() => setFilters({ ...safeFilters, startDate: "", endDate: "" })}
-                >
-                  Clear
-                </button>
-              ) : null}
-            </div>
+          <div className="space-y-3">
+            <Label className="text-sm font-semibold">Date Range</Label>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs text-slate-500">Start</Label>
                 <Input
                   type="date"
-                  className="h-11"
                   value={startDate}
                   onChange={(e) => onStartDateChange(e.target.value)}
                 />
@@ -320,7 +267,6 @@ export default function FilterSheet({
                 <Label className="text-xs text-slate-500">End</Label>
                 <Input
                   type="date"
-                  className="h-11"
                   value={endDate}
                   min={startDate || undefined}
                   onChange={(e) => onEndDateChange(e.target.value)}
@@ -333,34 +279,20 @@ export default function FilterSheet({
                 End date can’t be earlier than start date.
               </div>
             )}
-          </section>
+          </div>
         </div>
 
-        <SheetFooter className="gap-2 pb-3">
-          <Button
-            variant="outline"
-            onClick={onClear}
-            className="flex-1 h-11"
-          >
-            Clear All
+        {/* Footer */}
+        <SheetFooter className="sticky bottom-0 z-10 border-t border-slate-200 bg-white px-5 py-4 gap-2">
+          <Button variant="outline" onClick={onClose} className="flex-1">
+            Cancel
           </Button>
 
-          {/* ✅ Fix text visibility: do NOT use custom bg classes that can conflict with Button text */}
-          <Button
-            onClick={onApply}
-            className="flex-1 h-11"
-          >
+          {/* IMPORTANT: no custom class that could hide text */}
+          <Button onClick={onApply} className="flex-1">
             Apply Filters
           </Button>
         </SheetFooter>
-
-        {hasAnyFilters ? (
-          <div className="pb-6 text-center text-xs text-slate-500">
-            Tip: If you get zero results, clear filters and add them back one at a time.
-          </div>
-        ) : (
-          <div className="pb-6" />
-        )}
       </SheetContent>
     </Sheet>
   );
