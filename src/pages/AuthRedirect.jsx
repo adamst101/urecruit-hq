@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Lock, LogOut } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -9,7 +8,6 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
-import { clearDemoMode, getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 
 function trackEvent(payload) {
   try {
@@ -17,163 +15,112 @@ function trackEvent(payload) {
   } catch {}
 }
 
+function safeDecode(x) {
+  try {
+    return decodeURIComponent(String(x || ""));
+  } catch {
+    return String(x || "");
+  }
+}
+
 function getNext(search) {
   try {
     const sp = new URLSearchParams(search || "");
     const next = sp.get("next");
-    // next can be a full path like "/discover" (preferred)
-    return next && String(next).trim() ? String(next) : null;
+    return next ? safeDecode(next) : createPageUrl("Discover");
   } catch {
-    return null;
+    return createPageUrl("Discover");
   }
 }
 
 export default function AuthRedirect() {
   const nav = useNavigate();
   const loc = useLocation();
+  const season = useSeasonAccess();
 
-  const season = useSeasonAccess(); // { isLoading, mode, accountId, currentYear, demoYear, ... }
+  const nextPath = useMemo(() => getNext(loc.search), [loc.search]);
 
-  const next = useMemo(() => getNext(loc.search), [loc.search]);
-  const nextUrl = next || createPageUrl("Discover");
+  // Keep the original "next" stable during redirects
+  const nextRef = useRef(nextPath);
+  useEffect(() => {
+    nextRef.current = nextPath;
+  }, [nextPath]);
 
-  const { demoSeasonYear } = getDemoDefaults();
-
-  // Core resolver: wait for season to load, then route.
+  // Core gate:
+  // 1) If not authenticated -> send to Base44 built-in /login, returning here after login
+  // 2) If authenticated + entitled -> go to next (paid workspace)
+  // 3) If authenticated + NOT entitled -> go to Subscribe
   useEffect(() => {
     if (season?.isLoading) return;
 
-    // Not authed -> send to Base44 login and return here
-    if (!season?.accountId) {
-      const back = encodeURIComponent(
-        createPageUrl("AuthRedirect") + `?next=${encodeURIComponent(nextUrl)}`
-      );
-      trackEvent({ event_name: "auth_redirect_to_login", source: "auth_redirect", next: nextUrl });
-      nav(`${createPageUrl("Login")}?next=${back}`, { replace: true });
-      return;
-    }
+    const accountId = season?.accountId || null;
+    const mode = season?.mode || "demo"; // "paid" | "demo"
+    const next = nextRef.current || createPageUrl("Discover");
 
-    // Authed + paid -> clear demo state and go to paid destination
-    if (season?.mode === "paid") {
-      try {
-        clearDemoMode();
-      } catch {}
-
-      trackEvent({
-        event_name: "auth_redirect_paid_success",
-        source: "auth_redirect",
-        next: nextUrl
-      });
-
-      nav(nextUrl, { replace: true });
-      return;
-    }
-
-    // Authed but NOT paid -> stay here and show the Upgrade / Demo choices (Option B)
     trackEvent({
-      event_name: "auth_redirect_not_entitled_view",
-      source: "auth_redirect",
-      next: nextUrl
+      event_name: "auth_redirect_eval",
+      source: "AuthRedirect",
+      auth_state: accountId ? "authed" : "anon",
+      mode
     });
-  }, [season?.isLoading, season?.accountId, season?.mode, nav, nextUrl]);
 
-  if (season?.isLoading) return null;
+    // 1) Not authed -> go to built-in /login and come back to this exact URL
+    if (!accountId) {
+      try {
+        const returnTo = window.location.pathname + window.location.search;
+        const url = `/login?next=${encodeURIComponent(returnTo)}`;
+        window.location.assign(url);
+      } catch {
+        // fallback (should rarely happen)
+        nav(createPageUrl("Home"), { replace: true });
+      }
+      return;
+    }
 
-  // If user is paid or not authed, the effect above will redirect.
-  // Render only when authed but not entitled.
-  const showNotEntitled = !!season?.accountId && season?.mode !== "paid";
-  if (!showNotEntitled) return null;
+    // 2) Authed + entitled -> paid
+    if (mode === "paid") {
+      trackEvent({
+        event_name: "auth_redirect_success_paid",
+        source: "AuthRedirect",
+        next
+      });
+      nav(next, { replace: true });
+      return;
+    }
+
+    // 3) Authed but NOT entitled -> force subscribe path
+    trackEvent({
+      event_name: "auth_redirect_block_no_entitlement",
+      source: "AuthRedirect",
+      next
+    });
+
+    const subscribeUrl =
+      createPageUrl("Subscribe") +
+      `?source=auth_gate&next=${encodeURIComponent(next)}`;
+
+    nav(subscribeUrl, { replace: true });
+  }, [season?.isLoading, season?.accountId, season?.mode, nav]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-white to-slate-50 p-4">
-      <Card className="max-w-md w-full p-8 border-slate-200">
-        <div className="text-center space-y-6">
-          <div className="mx-auto flex items-center justify-center w-16 h-16 rounded-full bg-amber-100">
-            <Lock className="w-8 h-8 text-amber-700" />
-          </div>
+    <div className="min-h-screen bg-surface flex items-center justify-center px-4">
+      <Card className="w-full max-w-md p-6 rounded-2xl shadow-sm border border-default bg-white">
+        <div className="text-lg font-bold text-deep-navy">Checking access…</div>
+        <div className="mt-2 text-sm text-slate-600">
+          Verifying your subscription and routing you to the correct workspace.
+        </div>
 
-          <div>
-            <h1 className="text-2xl font-bold text-deep-navy">Subscription required</h1>
-            <p className="text-slate-600 mt-2">
-              You're logged in, but your account doesn't have an active subscription for this season.
-            </p>
-          </div>
+        <div className="mt-5 flex gap-2">
+          <Button variant="outline" onClick={() => nav(createPageUrl("Home"), { replace: true })}>
+            Back to Home
+          </Button>
+          <Button onClick={() => nav(createPageUrl("Subscribe") + `?source=auth_redirect_cta`, { replace: false })}>
+            View pricing
+          </Button>
+        </div>
 
-          <div className="bg-slate-50 rounded-lg p-4 text-sm text-slate-600 text-left">
-            <p className="font-medium text-slate-700 mb-2">Choose an option:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Upgrade to unlock your paid workspace</li>
-              <li>Or continue in demo mode (prior-season data)</li>
-            </ul>
-          </div>
-
-          <div className="space-y-2">
-            <Button
-              className="w-full"
-              onClick={() => {
-                trackEvent({
-                  event_name: "auth_redirect_upgrade_clicked",
-                  source: "auth_redirect",
-                  next: nextUrl
-                });
-
-                nav(
-                  createPageUrl("Subscribe") +
-                    `?source=auth_redirect&reason=no_entitlement&next=${encodeURIComponent(nextUrl)}`,
-                  { replace: false }
-                );
-              }}
-            >
-              Upgrade to Paid
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                trackEvent({
-                  event_name: "auth_redirect_continue_demo_clicked",
-                  source: "auth_redirect",
-                  demo_season: demoSeasonYear
-                });
-
-                // Force demo explicitly (so user isn't confused why they see demo)
-                setDemoMode(demoSeasonYear);
-
-                nav(
-                  `${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(
-                    String(demoSeasonYear)
-                  )}`,
-                  { replace: true }
-                );
-              }}
-            >
-              Continue Demo
-            </Button>
-
-            <Button
-              variant="ghost"
-              className="w-full"
-              onClick={async () => {
-                trackEvent({ event_name: "auth_redirect_logout_clicked", source: "auth_redirect" });
-                try {
-                  await base44.auth?.signOut?.();
-                } catch {}
-                try {
-                  clearDemoMode();
-                } catch {}
-                nav(createPageUrl("Home"), { replace: true });
-              }}
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Log out
-            </Button>
-          </div>
-
-          <div className="text-xs text-slate-500">
-            If you believe you should have access, contact support to enable your subscription.
-          </div>
+        <div className="mt-3 text-xs text-slate-500">
+          If you’re not subscribed, you’ll be sent to pricing.
         </div>
       </Card>
     </div>
