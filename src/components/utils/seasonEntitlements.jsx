@@ -1,4 +1,4 @@
-// src/components/utils/seasonEntitlements.jsx
+// src/utils/seasonEntitlements.jsx
 
 /** Feb 1 rollover: Season YYYY runs Feb 1 YYYY → Jan 31 YYYY+1 */
 export function getSeasonYearForDate(date = new Date()) {
@@ -21,7 +21,7 @@ export function hasSeasonEntitlement(entitledSeasons = [], seasonYear) {
 
 /**
  * Determine if user can access a given season.
- * - Demo: you can decide to force demo to free season (recommended)
+ * - Demo: force demo to free season (recommended)
  * - Authed + owns season: allowed
  * - Free/anon: only last season allowed
  */
@@ -36,18 +36,24 @@ export function canAccessSeason({
   const freeSeason = getFreeSeasonYear(now);
 
   if (isDemo) return requested === freeSeason;
-
   if (!isAuthenticated) return requested === freeSeason;
 
   if (hasSeasonEntitlement(entitledSeasons, requested)) return true;
 
-  // Authenticated but not entitled: allow only free season (optional)
+  // Optional: allow authenticated-but-not-entitled users to see last season
   return requested === freeSeason;
 }
 
 /** Standard subscribe URL builder for a specific season */
 export function buildSubscribeUrl({ seasonYear, nextPath, source = "season_gate" }) {
   const y = Number(seasonYear);
-  const next = nextPath?.startsWith("/") ? nextPath : `/${String(nextPath || "").replace(/^\/+/, "")}`;
-  return `/Subscribe?source=${encodeURIComponent(source)}&season=${encodeURIComponent(y)}&next=${encodeURIComponent(next)}`;
+  const next = nextPath?.startsWith("/")
+    ? nextPath
+    : `/${String(nextPath || "").replace(/^\/+/, "")}`;
+
+  return (
+    `/Subscribe?source=${encodeURIComponent(source)}` +
+    `&season=${encodeURIComponent(y)}` +
+    `&next=${encodeURIComponent(next)}`
+  );
 }
