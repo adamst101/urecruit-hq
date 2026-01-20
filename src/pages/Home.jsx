@@ -16,33 +16,34 @@ const LOGO_URL =
 
 function trackEvent(payload) {
   try {
-    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+    const p = base44?.entities?.Event?.create?.({ ...payload, ts: new Date().toISOString() });
+    Promise.resolve(p).catch(() => {});
   } catch {}
 }
 
 export default function Home() {
   const nav = useNavigate();
-useEffect(() => {
-  // Log once per browser session so it doesn't spam
-  try {
-    const key = "dbg_useSeasonAccess_logged";
-    if (sessionStorage.getItem(key) === "1") return;
-    sessionStorage.setItem(key, "1");
-  } catch {}
 
-  // This prints the full object returned by useSeasonAccess()
-  console.log("useSeasonAccess()", season);
-
-  // Optional: print just the keys to make it easy to read
-  console.log("useSeasonAccess keys:", season ? Object.keys(season) : season);
-}, [season]);
-
+  // IMPORTANT: season must be declared before any useEffect references it
   const season = useSeasonAccess();
-
   const seasonRef = useRef(season);
 
   useEffect(() => {
     seasonRef.current = season;
+  }, [season]);
+
+  // One-time debug log (safe): shows what useSeasonAccess() returns
+  useEffect(() => {
+    try {
+      const key = "dbg_useSeasonAccess_logged_v1";
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+
+    // eslint-disable-next-line no-console
+    console.log("useSeasonAccess()", season);
+    // eslint-disable-next-line no-console
+    console.log("useSeasonAccess keys:", season ? Object.keys(season) : season);
   }, [season]);
 
   const { demoSeasonYear } = getDemoDefaults();
@@ -72,27 +73,20 @@ useEffect(() => {
   }
 
   /**
-   * UPDATED:
    * Home "Log in" should behave like "Log in" (not "Subscribe").
-   * We bypass AuthRedirect and send the user to Base44's login route:
-   *   /login?from_url=<absolute Subscribe?source=auth_gate&next=/Discover>
+   * Best UX: return user into the app (Workspace or Discover) after login.
    *
-   * This matches the URL pattern you pasted:
-   *   /login?from_url=https%3A%2F%2F...%2FSubscribe%3Fsource%3Dauth_gate%26next%3D%252FDiscover
+   * If you later create a Workspace page, change nextPath to createPageUrl("Workspace").
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    const nextPath = createPageUrl("Discover"); // typically "/Discover"
-
-    // from_url must be an ABSOLUTE URL. We want to land users at Subscribe gate after login
-    // (and preserve next=/Discover).
-    const fromUrl =
-      `${window.location.origin}${createPageUrl("Subscribe")}` +
-      `?source=auth_gate&next=${encodeURIComponent(nextPath)}`;
+    // After login, return directly into the app.
+    // (Avoid "login feels like subscribe".)
+    const nextPath = createPageUrl("Discover"); // or "Workspace" when you add it
+    const fromUrl = `${window.location.origin}${nextPath}`;
 
     const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
-
     window.location.assign(loginUrl);
   }
 
