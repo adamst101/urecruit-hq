@@ -11,7 +11,9 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 
 function trackEvent(payload) {
   try {
-    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+    // async-safe fire-and-forget (doesn't break UI on rejection)
+    const p = base44?.entities?.Event?.create?.({ ...payload, ts: new Date().toISOString() });
+    Promise.resolve(p).catch(() => {});
   } catch {}
 }
 
@@ -23,11 +25,33 @@ function safeDecode(x) {
   }
 }
 
+/**
+ * Prevent open-redirects + keep routing predictable:
+ * - Allow only internal app paths that start with "/"
+ * - Reject absolute URLs ("http", "//") and empty
+ */
+function normalizeNextPath(candidate) {
+  const s = String(candidate || "").trim();
+  if (!s) return createPageUrl("Discover");
+
+  // Block absolute URLs or protocol-relative URLs
+  const lower = s.toLowerCase();
+  if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("//")) {
+    return createPageUrl("Discover");
+  }
+
+  // Must be an internal route
+  if (!s.startsWith("/")) return createPageUrl("Discover");
+
+  return s;
+}
+
 function getNext(search) {
   try {
     const sp = new URLSearchParams(search || "");
-    const next = sp.get("next");
-    return next ? safeDecode(next) : createPageUrl("Discover");
+    const raw = sp.get("next");
+    const decoded = raw ? safeDecode(raw) : createPageUrl("Discover");
+    return normalizeNextPath(decoded);
   } catch {
     return createPageUrl("Discover");
   }
@@ -61,17 +85,19 @@ export default function AuthRedirect() {
       event_name: "auth_redirect_eval",
       source: "AuthRedirect",
       auth_state: accountId ? "authed" : "anon",
-      mode
+      mode,
+      next
     });
 
-    // 1) Not authed -> go to built-in /login and come back to this exact URL
+    // 1) Not authed -> go to Base44 /login and come back to this exact URL
     if (!accountId) {
       try {
-        const returnTo = window.location.pathname + window.location.search;
-        const url = `/login?next=${encodeURIComponent(returnTo)}`;
-        window.location.assign(url);
+        // Absolute URL back to this exact AuthRedirect URL (Base44 expects from_url)
+        const returnTo = `${window.location.origin}${window.location.pathname}${window.location.search}`;
+
+        const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(returnTo)}`;
+        window.location.assign(loginUrl);
       } catch {
-        // fallback (should rarely happen)
         nav(createPageUrl("Home"), { replace: true });
       }
       return;
@@ -96,8 +122,7 @@ export default function AuthRedirect() {
     });
 
     const subscribeUrl =
-      createPageUrl("Subscribe") +
-      `?source=auth_gate&next=${encodeURIComponent(next)}`;
+      createPageUrl("Subscribe") + `?source=auth_gate&next=${encodeURIComponent(next)}`;
 
     nav(subscribeUrl, { replace: true });
   }, [season?.isLoading, season?.accountId, season?.mode, nav]);
@@ -111,10 +136,17 @@ export default function AuthRedirect() {
         </div>
 
         <div className="mt-5 flex gap-2">
-          <Button variant="outline" onClick={() => nav(createPageUrl("Home"), { replace: true })}>
+          <Button
+            variant="outline"
+            onClick={() => nav(createPageUrl("Home"), { replace: true })}
+          >
             Back to Home
           </Button>
-          <Button onClick={() => nav(createPageUrl("Subscribe") + `?source=auth_redirect_cta`, { replace: false })}>
+          <Button
+            onClick={() =>
+              nav(createPageUrl("Subscribe") + `?source=auth_redirect_cta`, { replace: false })
+            }
+          >
             View pricing
           </Button>
         </div>
