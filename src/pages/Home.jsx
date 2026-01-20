@@ -24,26 +24,12 @@ function trackEvent(payload) {
 export default function Home() {
   const nav = useNavigate();
 
-  // IMPORTANT: season must be declared before any useEffect references it
+  // Must be declared before any useEffect references it
   const season = useSeasonAccess();
   const seasonRef = useRef(season);
 
   useEffect(() => {
     seasonRef.current = season;
-  }, [season]);
-
-  // One-time debug log (safe): shows what useSeasonAccess() returns
-  useEffect(() => {
-    try {
-      const key = "dbg_useSeasonAccess_logged_v1";
-      if (sessionStorage.getItem(key) === "1") return;
-      sessionStorage.setItem(key, "1");
-    } catch {}
-
-    // eslint-disable-next-line no-console
-    console.log("useSeasonAccess()", season);
-    // eslint-disable-next-line no-console
-    console.log("useSeasonAccess keys:", season ? Object.keys(season) : season);
   }, [season]);
 
   const { demoSeasonYear } = getDemoDefaults();
@@ -73,17 +59,13 @@ export default function Home() {
   }
 
   /**
-   * Home "Log in" should behave like "Log in" (not "Subscribe").
-   * Best UX: return user into the app (Workspace or Discover) after login.
-   *
-   * If you later create a Workspace page, change nextPath to createPageUrl("Workspace").
+   * Best UX: "Log in" should never feel like "Subscribe".
+   * So we return users into the app after login (Discover now; later you can switch to Workspace).
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // After login, return directly into the app.
-    // (Avoid "login feels like subscribe".)
-    const nextPath = createPageUrl("Discover"); // or "Workspace" when you add it
+    const nextPath = createPageUrl("Discover"); // change to "Workspace" once you add it
     const fromUrl = `${window.location.origin}${nextPath}`;
 
     const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
@@ -117,11 +99,28 @@ export default function Home() {
     []
   );
 
+  // Debug flag: show useSeasonAccess() on the page when URL contains ?debug=1
+  const showDebug = useMemo(() => {
+    try {
+      return new URLSearchParams(window.location.search).get("debug") === "1";
+    } catch {
+      return false;
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
+            {/* DEBUG: append ?debug=1 to show useSeasonAccess() */}
+            {showDebug && (
+              <div className="rounded-xl border border-default bg-surface p-4 text-xs">
+                <div className="font-bold mb-2">DEBUG: useSeasonAccess()</div>
+                <pre className="whitespace-pre-wrap break-words">{JSON.stringify(season, null, 2)}</pre>
+              </div>
+            )}
+
             {/* Brand row: big logo + login (single login button) */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
