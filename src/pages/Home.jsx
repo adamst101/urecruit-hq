@@ -57,12 +57,20 @@ export default function Home() {
   }
 
   // ✅ Best-practice: always route through AuthRedirect so entitlement decides the outcome.
-  function handleLogin() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
+function handleLogin() {
+  trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    const next = encodeURIComponent(createPageUrl("Discover"));
-    nav(`${createPageUrl("AuthRedirect")}?next=${next}`, { replace: false });
-  }
+  // After login, Base44 will send the user to from_url
+  // We want: /login?from_url=<absolute Subscribe?source=auth_gate&next=/Discover>
+  const nextPath = createPageUrl("Discover"); // likely "/Discover"
+  const fromUrl =
+    `${window.location.origin}${createPageUrl("Subscribe")}` +
+    `?source=auth_gate&next=${encodeURIComponent(nextPath)}`;
+
+  const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
+
+  window.location.assign(loginUrl);
+}
 
   function handlePricingSignup() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
