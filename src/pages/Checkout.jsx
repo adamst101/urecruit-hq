@@ -1,6 +1,5 @@
-// src/pages/Checkout.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2, CheckCircle2, CreditCard, ArrowLeft } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
@@ -20,10 +19,31 @@ function trackEvent(payload) {
   } catch {}
 }
 
+function safeNumber(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Season model: "Season YYYY" runs Feb 1 YYYY -> Feb 1 YYYY+1.
+ * We store ends_at as Feb 1 next year (UTC) so hooks can treat it as exclusive end boundary.
+ */
+function seasonEndsAtUtc(seasonYear) {
+  try {
+    const y = Number(seasonYear);
+    if (!Number.isFinite(y)) return null;
+    const d = new Date(Date.UTC(y + 1, 1, 1, 0, 0, 0)); // Feb(1) 1st, 00:00:00 UTC
+    return d.toISOString();
+  } catch {
+    return null;
+  }
+}
+
 export default function Checkout() {
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // ✅ Standard hook usage (fixes old `loading:` contract)
+  // ✅ Your hook (currentYear is still useful as a fallback)
   const { isLoading, mode, accountId, currentYear } = useSeasonAccess();
 
   const [working, setWorking] = useState(false);
@@ -35,6 +55,22 @@ export default function Checkout() {
   const homeTarget = useMemo(() => createPageUrl("Home"), []);
   const discoverTarget = useMemo(() => createPageUrl("Discover"), []);
   const profileTarget = useMemo(() => createPageUrl("Profile"), []);
+
+  // --- Read URL params: season + next + source ---
+  const params = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
+  const next = params.get("next");
+  const source = params.get("source") || "checkout_page";
+
+  // This is the key change: we sell *requested* season, not currentYear.
+  const soldYear = useMemo(() => {
+    const fromUrl = safeNumber(params.get("season"));
+    return fromUrl || currentYear;
+  }, [params, currentYear]);
+
+  const nextTarget = useMemo(() => {
+    // Always send them back somewhere sensible after purchase
+    return next || createPageUrl("Profile");
+  }, [next]);
 
   /* -------------------------------------------------------
      Guardrail: paid users should NEVER see Checkout
@@ -53,7 +89,7 @@ export default function Checkout() {
     if (isLoading) return;
     if (mode === "paid") return;
 
-    const key = `evt_checkout_viewed_${currentYear}`;
+    const key = `evt_checkout_viewed_${soldYear}`;
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -62,14 +98,16 @@ export default function Checkout() {
     trackEvent({
       event_name: "checkout_viewed",
       mode: "demo",
-      season_year: currentYear,
-      source: "checkout_page",
+      season_year: soldYear,
+      source,
       account_id: accountId || null,
+      next: next || null,
     });
-  }, [isLoading, mode, currentYear, accountId]);
+  }, [isLoading, mode, soldYear, source, accountId, next]);
 
   /* -------------------------------------------------------
      Purchase handler (test-mode entitlement)
+     ✅ Create Entitlement for soldYear from URL (?season=YYYY)
   ------------------------------------------------------- */
   const handleCompletePurchase = async () => {
     if (!signedIn) {
@@ -81,12 +119,12 @@ export default function Checkout() {
     setWorking(true);
 
     try {
-      // 1) Check existing entitlement
+      // 1) Check existing entitlement for THIS season
       let existing = [];
       try {
         existing = await base44.entities.Entitlement.filter({
           account_id: accountId,
-          season_year: currentYear,
+          season_year: soldYear,
           status: "active",
         });
       } catch {
@@ -94,13 +132,15 @@ export default function Checkout() {
       }
 
       // 2) Create entitlement if missing (test-mode)
+      // Align payload to your Entitlement schema (account_id, season_year, status, starts_at, ends_at, product)
       if (!Array.isArray(existing) || existing.length === 0) {
         await base44.entities.Entitlement.create({
           account_id: accountId,
-          season_year: currentYear,
+          season_year: soldYear,
           status: "active",
-          plan: "season",
-          source: "checkout_test",
+          starts_at: new Date().toISOString(),
+          ends_at: seasonEndsAtUtc(soldYear), // optional but recommended
+          product: "RecruitMeSeasonAccess",
         });
       }
 
@@ -108,16 +148,16 @@ export default function Checkout() {
       trackEvent({
         event_name: "purchase_completed",
         mode: "paid",
-        season_year: currentYear,
-        source: "checkout_page",
+        season_year: soldYear,
+        source,
         account_id: accountId,
+        next: next || null,
       });
 
-      // 4) Activate → Profile (athlete creation / selection)
-      //    NOTE: after entitlement create, useSeasonAccess will flip to paid.
-      //    We still route to Profile directly to continue funnel.
-      navigate(profileTarget, {
-        state: { postPurchase: true, season_year: currentYear },
+      // 4) Activate → nextTarget (default Profile)
+      // NOTE: after entitlement create, useSeasonAccess will flip to paid.
+      navigate(nextTarget, {
+        state: { postPurchase: true, season_year: soldYear },
         replace: true,
       });
     } catch (e) {
@@ -127,9 +167,10 @@ export default function Checkout() {
       trackEvent({
         event_name: "purchase_failed",
         mode: "demo",
-        season_year: currentYear,
-        source: "checkout_page",
+        season_year: soldYear,
+        source,
         account_id: accountId || null,
+        next: next || null,
         error: msg,
       });
     } finally {
@@ -150,9 +191,10 @@ export default function Checkout() {
             trackEvent({
               event_name: "checkout_back_clicked",
               mode: "demo",
-              season_year: currentYear,
-              source: "checkout_page",
+              season_year: soldYear,
+              source,
               account_id: accountId || null,
+              next: next || null,
             });
             navigate(backTarget);
           }}
@@ -165,16 +207,14 @@ export default function Checkout() {
         <div>
           <h1 className="text-2xl font-bold text-deep-navy">Checkout</h1>
           <p className="text-slate-600 mt-1">
-            Unlock the current season ({currentYear}). You’ll add athletes after purchase.
+            Unlock season ({soldYear}). You’ll add athletes after purchase.
           </p>
         </div>
 
         {!signedIn && (
           <Card className="p-4 border-rose-200 bg-rose-50 text-rose-700">
             <div className="font-semibold">Sign in required</div>
-            <div className="text-sm mt-1">
-              Please sign in to subscribe and unlock the current season.
-            </div>
+            <div className="text-sm mt-1">Please sign in to subscribe and unlock this season.</div>
 
             <Button
               className="w-full mt-4"
@@ -182,8 +222,8 @@ export default function Checkout() {
                 trackEvent({
                   event_name: "checkout_signin_required_clicked",
                   mode: "demo",
-                  season_year: currentYear,
-                  source: "checkout_page",
+                  season_year: soldYear,
+                  source,
                 });
                 navigate(homeTarget);
               }}
@@ -200,7 +240,7 @@ export default function Checkout() {
               <div className="flex-1">
                 <div className="text-lg font-bold text-deep-navy">Season Pass</div>
                 <div className="text-sm text-slate-600 mt-1">
-                  Current-year camps + planning tools.
+                  Full access to season {soldYear}: camps + planning tools.
                 </div>
 
                 <div className="mt-4 space-y-2">
@@ -225,9 +265,10 @@ export default function Checkout() {
                       trackEvent({
                         event_name: "checkout_back_to_pricing_clicked",
                         mode: "demo",
-                        season_year: currentYear,
-                        source: "checkout_page",
+                        season_year: soldYear,
+                        source,
                         account_id: accountId || null,
+                        next: next || null,
                       });
                       navigate(backTarget);
                     }}
@@ -254,4 +295,3 @@ export default function Checkout() {
     </div>
   );
 }
-
