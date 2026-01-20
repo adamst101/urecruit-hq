@@ -43,7 +43,7 @@ export default function Checkout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ Your hook (currentYear is still useful as a fallback)
+  // currentYear is still useful as a fallback
   const { isLoading, mode, accountId, currentYear } = useSeasonAccess();
 
   const [working, setWorking] = useState(false);
@@ -51,26 +51,35 @@ export default function Checkout() {
 
   const signedIn = !!accountId;
 
-  const backTarget = useMemo(() => createPageUrl("Subscribe"), []);
-  const homeTarget = useMemo(() => createPageUrl("Home"), []);
-  const discoverTarget = useMemo(() => createPageUrl("Discover"), []);
-  const profileTarget = useMemo(() => createPageUrl("Profile"), []);
-
   // --- Read URL params: season + next + source ---
   const params = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
   const next = params.get("next");
   const source = params.get("source") || "checkout_page";
 
-  // This is the key change: we sell *requested* season, not currentYear.
+  // ✅ sell *requested* season, not currentYear
   const soldYear = useMemo(() => {
     const fromUrl = safeNumber(params.get("season"));
     return fromUrl || currentYear;
   }, [params, currentYear]);
 
+  // ✅ Always send them back somewhere sensible after purchase
   const nextTarget = useMemo(() => {
-    // Always send them back somewhere sensible after purchase
     return next || createPageUrl("Profile");
   }, [next]);
+
+  // ✅ Back should preserve season + next context
+  const backToSubscribeUrl = useMemo(() => {
+    const targetNext = next || createPageUrl("Profile");
+    return (
+      createPageUrl("Subscribe") +
+      `?season=${encodeURIComponent(soldYear || "")}` +
+      `&next=${encodeURIComponent(targetNext)}` +
+      `&source=${encodeURIComponent(source)}`
+    );
+  }, [soldYear, next, source]);
+
+  const homeTarget = useMemo(() => createPageUrl("Home"), []);
+  const discoverTarget = useMemo(() => createPageUrl("Discover"), []);
 
   /* -------------------------------------------------------
      Guardrail: paid users should NEVER see Checkout
@@ -119,7 +128,7 @@ export default function Checkout() {
     setWorking(true);
 
     try {
-      // 1) Check existing entitlement for THIS season
+      // 1) Check existing entitlement for THIS season (robust to number/string)
       let existing = [];
       try {
         existing = await base44.entities.Entitlement.filter({
@@ -131,9 +140,17 @@ export default function Checkout() {
         existing = [];
       }
 
+      const hasExisting =
+        Array.isArray(existing) &&
+        existing.some(
+          (e) =>
+            String(e?.account_id) === String(accountId) &&
+            String(e?.status || "").toLowerCase() === "active" &&
+            String(e?.season_year) === String(soldYear)
+        );
+
       // 2) Create entitlement if missing (test-mode)
-      // Align payload to your Entitlement schema (account_id, season_year, status, starts_at, ends_at, product)
-      if (!Array.isArray(existing) || existing.length === 0) {
+      if (!hasExisting) {
         await base44.entities.Entitlement.create({
           account_id: accountId,
           season_year: soldYear,
@@ -154,8 +171,8 @@ export default function Checkout() {
         next: next || null,
       });
 
-      // 4) Activate → nextTarget (default Profile)
-      // NOTE: after entitlement create, useSeasonAccess will flip to paid.
+      // 4) Activate → nextTarget
+      // NOTE: after entitlement create, useSeasonAccess should flip to paid.
       navigate(nextTarget, {
         state: { postPurchase: true, season_year: soldYear },
         replace: true,
@@ -196,7 +213,7 @@ export default function Checkout() {
               account_id: accountId || null,
               next: next || null,
             });
-            navigate(backTarget);
+            navigate(backToSubscribeUrl);
           }}
           type="button"
         >
@@ -270,7 +287,7 @@ export default function Checkout() {
                         account_id: accountId || null,
                         next: next || null,
                       });
-                      navigate(backTarget);
+                      navigate(backToSubscribeUrl);
                     }}
                     disabled={working}
                   >
