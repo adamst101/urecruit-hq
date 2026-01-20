@@ -22,8 +22,23 @@ function trackEvent(payload) {
 
 export default function Home() {
   const nav = useNavigate();
+useEffect(() => {
+  // Log once per browser session so it doesn't spam
+  try {
+    const key = "dbg_useSeasonAccess_logged";
+    if (sessionStorage.getItem(key) === "1") return;
+    sessionStorage.setItem(key, "1");
+  } catch {}
+
+  // This prints the full object returned by useSeasonAccess()
+  console.log("useSeasonAccess()", season);
+
+  // Optional: print just the keys to make it easy to read
+  console.log("useSeasonAccess keys:", season ? Object.keys(season) : season);
+}, [season]);
 
   const season = useSeasonAccess();
+
   const seasonRef = useRef(season);
 
   useEffect(() => {
