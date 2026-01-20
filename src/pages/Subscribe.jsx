@@ -21,20 +21,27 @@ function trackEvent(payload) {
   } catch {}
 }
 
-import RouteGuard from "../components/auth/RouteGuard";
+function safeNumber(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
 
 function SubscribePage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ Standard contract
-  const { isLoading, mode, hasAccess, seasonYear, currentYear, demoYear, accountId } =
-    useSeasonAccess();
+  const { isLoading, mode, hasAccess, currentYear, demoYear, accountId } = useSeasonAccess();
 
   const params = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
+
   const force = params.get("force") === "1";
   const next = params.get("next"); // presence implies intentional navigation
   const source = params.get("source") || "subscribe_page";
+
+  // ✅ NEW: season being sold comes from URL (?season=YYYY), fallback to currentYear
+  const soldYear = useMemo(() => {
+    return safeNumber(params.get("season")) || currentYear;
+  }, [params, currentYear]);
 
   // ✅ Guardrail: paid users generally shouldn't see Subscribe (unless forced/intentional)
   useEffect(() => {
@@ -49,7 +56,7 @@ function SubscribePage() {
     if (isLoading) return;
     if (mode === "paid") return;
 
-    const key = `evt_subscribe_viewed_${currentYear || "na"}`;
+    const key = `evt_subscribe_viewed_${soldYear || "na"}`;
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -58,20 +65,24 @@ function SubscribePage() {
     trackEvent({
       event_name: "subscribe_viewed",
       mode: mode || "demo",
-      season_year: currentYear || null, // year being sold
+      season_year: soldYear || null, // ✅ year being sold
       source,
       account_id: accountId || null,
       force: force ? 1 : 0,
       next: next || null,
       has_access: !!hasAccess,
     });
-  }, [isLoading, mode, currentYear, source, accountId, force, next, hasAccess]);
+  }, [isLoading, mode, soldYear, source, accountId, force, next, hasAccess]);
 
   // While redirecting paid users, render nothing (prevents flicker)
   if (isLoading) return null;
   if (mode === "paid" && !force && !next) return null;
 
-  const soldYear = currentYear; // current season is what you're selling/unlocking
+  // Badge display: demo shows demoYear; paid shows soldYear (or currentYear fallback)
+  const badgeLabel =
+    mode === "demo"
+      ? `Demo ${demoYear || ""}`
+      : `Paid ${soldYear || currentYear || ""}`;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
@@ -81,14 +92,14 @@ function SubscribePage() {
             <h1 className="text-2xl font-bold text-deep-navy">Subscribe</h1>
 
             {mode === "demo" ? (
-              <Badge className="bg-slate-900 text-white">Demo {demoYear || ""}</Badge>
+              <Badge className="bg-slate-900 text-white">{badgeLabel}</Badge>
             ) : (
-              <Badge className="bg-emerald-700 text-white">Paid {soldYear || ""}</Badge>
+              <Badge className="bg-emerald-700 text-white">{badgeLabel}</Badge>
             )}
           </div>
 
           <p className="text-slate-600 mt-1">
-            Unlock the current season ({soldYear}) and planning tools.
+            Unlock season ({soldYear}) and planning tools.
           </p>
         </div>
 
@@ -98,11 +109,11 @@ function SubscribePage() {
             <div className="flex-1">
               <div className="font-semibold text-amber-900">Season Pass</div>
               <div className="text-sm text-amber-900/80 mt-1">
-                Current-year camp data + full planning experience for families.
+                Season-year camp data + full planning experience for families.
               </div>
 
               <div className="mt-3 space-y-2 text-sm text-amber-900/90">
-                <Feature>Current-year camps & updates</Feature>
+                <Feature>Season {soldYear} camps & updates</Feature>
                 <Feature>Unlimited favorites + registrations tracking</Feature>
                 <Feature>Calendar planning overlays & conflict detection</Feature>
                 <Feature>Multi-athlete support (one email, multiple kids)</Feature>
@@ -134,10 +145,14 @@ function SubscribePage() {
                     });
 
                     // ✅ Always send them back somewhere sensible after Checkout
-                    // If caller provided next, preserve it. Otherwise default to Profile (post-purchase activation).
                     const targetNext = next || createPageUrl("Profile");
+
+                    // ✅ NEW: pass season + next + source to Checkout
                     const checkoutUrl =
-                      createPageUrl("Checkout") + `?next=${encodeURIComponent(targetNext)}`;
+                      createPageUrl("Checkout") +
+                      `?season=${encodeURIComponent(soldYear || "")}` +
+                      `&next=${encodeURIComponent(targetNext)}` +
+                      `&source=${encodeURIComponent(source)}`;
 
                     navigate(checkoutUrl);
                   }}
