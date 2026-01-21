@@ -75,26 +75,24 @@ async function logoutBase44() {
 }
 
 /**
- * Patch 2:
- * Build the Base44 /login?from_url=... URL so that after login
- * the user returns to the EXACT target (including next + season).
+ * Step B:
+ * Home Login should return to AuthRedirect (not generic Subscribe).
  *
- * We return the user to /AuthRedirect?next=<target>&season=<year>&source=...
- * so AuthRedirect can handle:
- *  - authed+entitled -> go to next
- *  - authed+not entitled -> go to Subscribe?season=...&next=...
- *  - not authed -> stay in login flow
+ * Flow:
+ * Home -> /login?from_url=<ABSOLUTE AuthRedirect?next=...&season=...&source=...>
+ * After login Base44 returns to AuthRedirect which:
+ *  - if entitled -> nav(next)
+ *  - if not entitled -> nav(Subscribe?season=...&next=...)
  */
-function buildLoginUrlToExactTarget({ nextPath, seasonYear, source = "home_login" }) {
+function buildLoginUrlToAuthRedirect({ nextPath, seasonYear, source = "home_login" }) {
   const authRedirectPath = createPageUrl("AuthRedirect"); // "/AuthRedirect"
-
   const qs =
     `next=${encodeURIComponent(nextPath || createPageUrl("Discover"))}` +
     (seasonYear ? `&season=${encodeURIComponent(seasonYear)}` : "") +
     (source ? `&source=${encodeURIComponent(source)}` : "");
 
-  const returnTo = `${window.location.origin}${authRedirectPath}?${qs}`;
-  return `${window.location.origin}/login?from_url=${encodeURIComponent(returnTo)}`;
+  const returnToAbs = `${window.location.origin}${authRedirectPath}?${qs}`;
+  return `${window.location.origin}/login?from_url=${encodeURIComponent(returnToAbs)}`;
 }
 
 export default function Home() {
@@ -148,7 +146,7 @@ export default function Home() {
   function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
 
-    setForceDemoSession(true); // keep demo even if user is authed+entitled (testing)
+    setForceDemoSession(true);
     setDemoMode(demoSeasonYear);
 
     trackEvent({
@@ -167,10 +165,9 @@ export default function Home() {
   }
 
   /**
-   * Patch 2: Home "Log in" returns to EXACT target:
-   * After login, return to AuthRedirect with:
-   *   next=/Discover (or whatever you want)
-   *   season=<currentYear> (so Subscribe is season-aware if needed)
+   * Step B Login:
+   * Always returns to AuthRedirect with an exact next target.
+   * Default next: "/Discover" (paid path) — you can change this later to a dashboard.
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
@@ -178,10 +175,10 @@ export default function Home() {
     // Login is a paid intent; clear demo forcing
     setForceDemoSession(false);
 
-    const nextPath = createPageUrl("Discover");
-    const seasonYear = season?.currentYear || null;
+    const nextPath = createPageUrl("Discover"); // or your future dashboard: createPageUrl("Dashboard")
+    const seasonYear = season?.currentYear || null; // enables season-aware Subscribe if not entitled
 
-    const loginUrl = buildLoginUrlToExactTarget({
+    const loginUrl = buildLoginUrlToAuthRedirect({
       nextPath,
       seasonYear,
       source: "home_login",
@@ -195,7 +192,6 @@ export default function Home() {
 
     setForceDemoSession(false);
 
-    // Also pass season by default (currentYear) so pricing knows what you're selling
     const seasonYear = season?.currentYear || null;
     const url =
       createPageUrl("Subscribe") +
@@ -269,7 +265,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* DEBUG: useSeasonAccess() */}
+            {/* DEBUG */}
             {showDebug ? (
               <div className="rounded-xl border border-default bg-white p-4 text-xs">
                 <div className="font-bold mb-2">DEBUG: useSeasonAccess()</div>
@@ -284,7 +280,7 @@ export default function Home() {
                       onClick={async () => {
                         trackEvent({ event_name: "debug_logout_clicked", source: "home" });
                         try {
-                          clearDemoFlags(); // also clears force-demo session
+                          clearDemoFlags();
                           await logoutBase44();
                         } finally {
                           window.location.assign(`${window.location.origin}${createPageUrl("Home")}?debug=1`);
@@ -320,21 +316,11 @@ export default function Home() {
                     <Button
                       variant="outline"
                       onClick={() => {
-                        trackEvent({ event_name: "debug_clear_force_demo_session", source: "home" });
-                        setForceDemoSession(false);
-                        window.location.assign(`${window.location.origin}${createPageUrl("Home")}?debug=1`);
-                      }}
-                    >
-                      Clear force-demo session
-                    </Button>
+                        trackEvent({ event_name: "debug_login_to_authredirect", source: "home" });
 
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        trackEvent({ event_name: "debug_login_exact_target", source: "home" });
                         setForceDemoSession(false);
 
-                        const loginUrl = buildLoginUrlToExactTarget({
+                        const loginUrl = buildLoginUrlToAuthRedirect({
                           nextPath: createPageUrl("Discover"),
                           seasonYear: season?.currentYear || null,
                           source: "debug_home_login",
@@ -343,7 +329,7 @@ export default function Home() {
                         window.location.assign(loginUrl);
                       }}
                     >
-                      Debug: Login to Discover (exact)
+                      Debug: Login → AuthRedirect
                     </Button>
                   </div>
 
