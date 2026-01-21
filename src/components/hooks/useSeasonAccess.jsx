@@ -1,138 +1,193 @@
-// src/components/hooks/useSeasonAccess.jsx
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { base44 } from "../../api/base44Client";
 
-// Safely read a season year from URL (optional)
+/**
+ * Feb 1 rollover:
+ * - On Jan (month 0): seasonYear = year-1
+ * - On Feb..Dec: seasonYear = year
+ */
+function getSeasonYearForDate(date = new Date()) {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = d.getMonth(); // 0=Jan, 1=Feb
+  return month >= 1 ? year : year - 1;
+}
+
+function safeNumber(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
 function getSeasonFromUrl() {
   try {
     const sp = new URLSearchParams(window.location.search || "");
-    const s = sp.get("season");
-    if (!s) return null;
-    const y = Number(s);
-    return Number.isFinite(y) ? y : null;
+    return safeNumber(sp.get("season"));
   } catch {
     return null;
   }
 }
 
+async function fetchActiveEntitlement(accountId, seasonYear) {
+  if (!accountId || !seasonYear) return null;
+
+  // Primary attempt: strict filter with number
+  try {
+    const rows = await base44.entities.Entitlement.filter({
+      account_id: accountId,
+      season_year: seasonYear,
+      status: "active",
+    });
+    if (Array.isArray(rows) && rows.length) return rows[0];
+  } catch {}
+
+  // Fallback: strict filter with string season_year (defensive)
+  try {
+    const rows = await base44.entities.Entitlement.filter({
+      account_id: accountId,
+      season_year: String(seasonYear),
+      status: "active",
+    });
+    if (Array.isArray(rows) && rows.length) return rows[0];
+  } catch {}
+
+  // Fallback: pull all active for account then match in memory
+  try {
+    const rows = await base44.entities.Entitlement.filter({
+      account_id: accountId,
+      status: "active",
+    });
+    if (!Array.isArray(rows)) return null;
+
+    const hit = rows.find(
+      (r) =>
+        String(r?.status || "").toLowerCase() === "active" &&
+        String(r?.season_year) === String(seasonYear)
+    );
+    return hit || null;
+  } catch {}
+
+  return null;
+}
+
 export function useSeasonAccess() {
-  // Keep your existing year model (as currently observed on your debug box)
-  // currentYear: 2026, demoYear: 2025
-  const { currentYear, demoYear } = useMemo(() => {
+  const [state, setState] = useState({
+    loading: true,
+    isLoading: true,
+    mode: "demo",
+    hasAccess: false,
+
+    // Year model
+    currentYear: null, // "year being sold" (calendar year)
+    demoYear: null, // free/demo year
+    seasonYear: null, // Feb 1 rollover season year
+    season: null,
+
+    // Auth
+    accountId: null,
+    entitlement: null,
+    isAuthenticated: false,
+  });
+
+  // Compute your base year values once per mount
+  const computed = useMemo(() => {
     const now = new Date();
-    const y = now.getUTCFullYear();
-    return { currentYear: y, demoYear: y - 1 };
+
+    const calendarYear = now.getFullYear(); // 2026
+    const rolloverSeason = getSeasonYearForDate(now); // Jan 2026 => 2025
+    const demoYear = calendarYear - 1; // 2025 (your current pattern)
+
+    return {
+      calendarYear,
+      rolloverSeason,
+      demoYear,
+    };
   }, []);
 
-  // Optional: allow pages to request a specific season (single-season model)
-  const targetPaidYear = useMemo(() => getSeasonFromUrl() || currentYear, [currentYear]);
+  useEffect(() => {
+    let cancelled = false;
 
-  // --- Auth resolver (treat errors as logged out) ---
-  const meQuery = useQuery({
-    queryKey: ["auth_me"],
-    retry: false,
-    staleTime: 0,
-    queryFn: async () => {
+    async function run() {
+      // Determine which season we are checking entitlement for:
+      // - If a page passes ?season=YYYY, check that season
+      // - Else default to "currentYear" (the season you're selling)
+      const seasonFromUrl = getSeasonFromUrl();
+      const targetPaidYear = seasonFromUrl || computed.calendarYear;
+
+      // Start with a base state (demo by default)
+      const base = {
+        loading: true,
+        isLoading: true,
+        currentYear: computed.calendarYear,
+        demoYear: computed.demoYear,
+        seasonYear: computed.rolloverSeason,
+        season: computed.rolloverSeason,
+        mode: "demo",
+        hasAccess: false,
+        accountId: null,
+        entitlement: null,
+        isAuthenticated: false,
+      };
+
+      if (!cancelled) setState(base);
+
+      // 1) Who am I?
+      let me = null;
       try {
-        return await base44.auth.me();
+        me = await base44.auth.me();
       } catch {
-        return null;
+        me = null;
       }
-    },
-  });
 
-  const accountId = meQuery.data?.id || null;
+      const accountId = me?.id || null;
 
-  // --- Entitlement resolver (only when authed) ---
-  const canCheckEntitlements = !!accountId && !meQuery.isLoading;
-
-  const entitlementQuery = useQuery({
-    queryKey: ["entitlement_for_season", accountId, targetPaidYear],
-    enabled: canCheckEntitlements,
-    retry: false,
-    staleTime: 0,
-    queryFn: async () => {
-      const matchesYear = (row) => String(row?.season_year) === String(targetPaidYear);
-      const isActive = (row) => String(row?.status || "").toLowerCase() === "active";
-
-      // 1) strict filter (number year)
-      try {
-        const rows = await base44.entities.Entitlement.filter({
-          account_id: accountId,
-          season_year: targetPaidYear,
-          status: "active",
-        });
-        const list = Array.isArray(rows) ? rows : [];
-        const hit = list.find((r) => isActive(r) && matchesYear(r));
-        if (hit) return hit;
-      } catch {}
-
-      // 2) strict filter (string year)
-      try {
-        const rows = await base44.entities.Entitlement.filter({
-          account_id: accountId,
-          season_year: String(targetPaidYear),
-          status: "active",
-        });
-        const list = Array.isArray(rows) ? rows : [];
-        const hit = list.find((r) => isActive(r) && matchesYear(r));
-        if (hit) return hit;
-      } catch {}
-
-      // 3) pull all active for account; match in memory
-      try {
-        const allActive = await base44.entities.Entitlement.filter({
-          account_id: accountId,
-          status: "active",
-        });
-        const list = Array.isArray(allActive) ? allActive : [];
-        const hit = list.find((r) => isActive(r) && matchesYear(r));
-        return hit || null;
-      } catch {}
-
-      // 4) last resort: list then client-side filter (if supported)
-      try {
-        const all = await base44.entities.Entitlement?.list?.();
-        const list = Array.isArray(all) ? all : [];
-        const mine = list.filter((e) => String(e?.account_id) === String(accountId));
-        const active = mine.filter(isActive);
-        const hit = active.find(matchesYear);
-        return hit || null;
-      } catch {
-        return null;
+      // If not authenticated, stay demo
+      if (!accountId) {
+        if (!cancelled) {
+          setState({
+            ...base,
+            loading: false,
+            isLoading: false,
+          });
+        }
+        return;
       }
-    },
-  });
 
-  const loading =
-    meQuery.isLoading || (canCheckEntitlements && entitlementQuery.isLoading);
+      // 2) Do I have entitlement for the targetPaidYear?
+      const entitlement = await fetchActiveEntitlement(accountId, targetPaidYear);
+      const hasAccess = !!entitlement;
 
-  const entitlement = entitlementQuery.data || null;
-  const hasEntitlement = !!entitlement;
+      // Mode and season selection:
+      // - If entitled: paid + use targetPaidYear
+      // - If not: demo + use demoYear
+      const mode = hasAccess ? "paid" : "demo";
+      const effectiveSeason = hasAccess ? targetPaidYear : computed.demoYear;
 
-  // Mode + season selection:
-  // - paid => targetPaidYear (single-season purchase)
-  // - demo => demoYear
-  const mode = accountId && hasEntitlement ? "paid" : "demo";
-  const seasonYear = mode === "paid" ? targetPaidYear : demoYear;
+      if (!cancelled) {
+        setState({
+          loading: false,
+          isLoading: false,
+          currentYear: computed.calendarYear,
+          demoYear: computed.demoYear,
 
-  return {
-    loading,
-    isLoading: loading,
+          // rollover season is still useful for UI labels/logic
+          seasonYear: effectiveSeason,
+          season: effectiveSeason,
 
-    mode, // "paid" | "demo"
-    hasAccess: mode === "paid",
+          mode,
+          hasAccess,
 
-    currentYear,
-    demoYear,
+          accountId,
+          entitlement,
+          isAuthenticated: true,
+        });
+      }
+    }
 
-    seasonYear,
-    season: seasonYear,
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [computed.calendarYear, computed.demoYear, computed.rolloverSeason]);
 
-    accountId,
-    entitlement,
-
-    isAuthenticated: !!accountId,
-  };
+  return state;
 }
