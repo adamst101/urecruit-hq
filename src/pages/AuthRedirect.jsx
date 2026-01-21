@@ -18,12 +18,59 @@ function trackEvent(payload) {
   } catch {}
 }
 
-function safeDecode(x) {
-  try {
-    return decodeURIComponent(String(x || ""));
-  } catch {
-    return String(x || "");
+/**
+ * next often gets double-encoded in Base44 redirect chains (e.g., %252FDiscover%253F...)
+ * Decode up to 2 times, safely.
+ */
+function decodeMaybeTwice(input) {
+  const s0 = String(input || "");
+  let s = s0;
+
+  for (let i = 0; i < 2; i++) {
+    try {
+      const d = decodeURIComponent(s);
+      if (d === s) break;
+      s = d;
+    } catch {
+      break;
+    }
   }
+  return s;
+}
+
+/**
+ * Normalize next so we preserve querystring, and only allow internal navigation.
+ * Accepts:
+ *  - "/Discover?mode=demo&season=2025"
+ *  - "https://<same-origin>/Discover?..."
+ */
+function normalizeNext(nextRaw) {
+  const fallback = createPageUrl("Discover");
+
+  if (!nextRaw) return fallback;
+
+  const candidate = decodeMaybeTwice(nextRaw).trim();
+  if (!candidate) return fallback;
+
+  // If they passed a full URL, only accept if same origin
+  if (/^https?:\/\//i.test(candidate)) {
+    try {
+      const u = new URL(candidate);
+      if (u.origin === window.location.origin) {
+        const path = (u.pathname || "/") + (u.search || "") + (u.hash || "");
+        return path.startsWith("/") ? path : `/${path}`;
+      }
+      return fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  // Relative app path
+  if (candidate.startsWith("/")) return candidate;
+
+  // If someone sends "Discover?x=1", normalize to "/Discover?x=1"
+  return `/${candidate}`;
 }
 
 function safeNumber(x) {
@@ -34,17 +81,26 @@ function safeNumber(x) {
 function getParams(search) {
   try {
     const sp = new URLSearchParams(search || "");
+    // IMPORTANT: URLSearchParams.get() already decodes once.
+    // But Base44 chains can double-encode, so we still normalize.
     const next = sp.get("next");
     const mode = sp.get("mode"); // allow ?mode=demo for explicit demo routing
     const season = sp.get("season"); // optional requested season year
     return {
-      next: next ? safeDecode(next) : null,
+      nextRaw: next,
+      next: normalizeNext(next),
       mode: mode ? String(mode).toLowerCase() : null,
       seasonYear: safeNumber(season),
       source: sp.get("source") || "auth_redirect",
     };
   } catch {
-    return { next: null, mode: null, seasonYear: null, source: "auth_redirect" };
+    return {
+      nextRaw: null,
+      next: createPageUrl("Discover"),
+      mode: null,
+      seasonYear: null,
+      source: "auth_redirect",
+    };
   }
 }
 
@@ -63,16 +119,11 @@ export default function AuthRedirect() {
 
   const p = useMemo(() => getParams(loc.search), [loc.search]);
 
-  // Default next is Discover
-  const nextPath = useMemo(() => {
-    return p.next || createPageUrl("Discover");
-  }, [p.next]);
-
-  // Keep next stable during redirects
-  const nextRef = useRef(nextPath);
+  // Keep next stable during redirect chain
+  const nextRef = useRef(p.next);
   useEffect(() => {
-    nextRef.current = nextPath;
-  }, [nextPath]);
+    nextRef.current = p.next;
+  }, [p.next]);
 
   // Demo override: URL OR session flag
   const forceDemo = useMemo(() => {
@@ -91,25 +142,30 @@ export default function AuthRedirect() {
 
     const accountId = season?.accountId || null;
     const hasAccess = !!season?.hasAccess;
-    const mode = season?.mode || "demo"; // "paid" | "demo"
+    const hookMode = season?.mode || "demo"; // "paid" | "demo"
     const next = nextRef.current || createPageUrl("Discover");
 
     trackEvent({
       event_name: "auth_redirect_eval",
       source: "AuthRedirect",
       auth_state: accountId ? "authed" : "anon",
-      hook_mode: mode,
+      hook_mode: hookMode,
       has_access: hasAccess ? 1 : 0,
       force_demo: forceDemo ? 1 : 0,
       requested_season: requestedSeasonYear,
       next,
+      next_raw: p.nextRaw ? String(p.nextRaw) : null,
       entry_source: p.source,
     });
 
     // 0) Demo forced -> go straight to Discover demo (no subscribe gate)
     if (forceDemo) {
       const demoSeasonYear =
-        p.seasonYear || season?.demoYear || season?.seasonYear || season?.currentYear || null;
+        p.seasonYear ||
+        season?.demoYear ||
+        season?.seasonYear ||
+        season?.currentYear ||
+        null;
 
       const to =
         createPageUrl("Discover") +
@@ -128,13 +184,12 @@ export default function AuthRedirect() {
       return;
     }
 
-    // 1) Not authenticated -> send to Base44 /login and return to this exact URL after login
-    // This does NOT "auto-login"; it prompts for login.
+    // 1) Not authenticated -> send to Base44 /login and return to this exact AuthRedirect URL
+    // (which already contains next + season, including any querystring inside next)
     if (!accountId) {
       try {
-        const returnTo = window.location.pathname + window.location.search; // preserve next/season params
-        const fromUrl = `${window.location.origin}${returnTo}`;
-        const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
+        const returnToAbs = `${window.location.origin}${window.location.pathname}${window.location.search}`;
+        const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(returnToAbs)}`;
 
         trackEvent({
           event_name: "auth_redirect_to_login",
@@ -150,8 +205,8 @@ export default function AuthRedirect() {
       return;
     }
 
-    // 2) Authenticated + entitled -> go to next
-    if (mode === "paid" && hasAccess) {
+    // 2) Authenticated + entitled -> go to next (including querystring)
+    if (hookMode === "paid" && hasAccess) {
       trackEvent({
         event_name: "auth_redirect_success_paid",
         source: "AuthRedirect",
@@ -162,7 +217,7 @@ export default function AuthRedirect() {
       return;
     }
 
-    // 3) Authenticated but NOT entitled -> go to Subscribe (season-aware)
+    // 3) Authenticated but NOT entitled -> go to Subscribe (season-aware) and preserve next (including querystring)
     trackEvent({
       event_name: "auth_redirect_block_no_entitlement",
       source: "AuthRedirect",
@@ -189,6 +244,7 @@ export default function AuthRedirect() {
     requestedSeasonYear,
     p.seasonYear,
     p.source,
+    p.nextRaw,
     nav,
   ]);
 
