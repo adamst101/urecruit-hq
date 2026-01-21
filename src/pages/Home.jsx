@@ -15,6 +15,8 @@ import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
+const FORCE_DEMO_SESSION_KEY = "force_demo_session_v1";
+
 function trackEvent(payload) {
   try {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
@@ -53,6 +55,18 @@ function clearDemoFlags() {
   // if you ever added workspace intent (optional)
   try {
     sessionStorage.removeItem("workspace_intent_v1");
+  } catch {}
+
+  // ✅ also clear force-demo session override
+  try {
+    sessionStorage.removeItem(FORCE_DEMO_SESSION_KEY);
+  } catch {}
+}
+
+function setForceDemoSession(on) {
+  try {
+    if (on) sessionStorage.setItem(FORCE_DEMO_SESSION_KEY, "1");
+    else sessionStorage.removeItem(FORCE_DEMO_SESSION_KEY);
   } catch {}
 }
 
@@ -108,19 +122,35 @@ export default function Home() {
       console.log("base44.auth keys:", Object.keys(base44?.auth || {}));
       // eslint-disable-next-line no-console
       console.log("logout type:", typeof base44?.auth?.logout);
+      // eslint-disable-next-line no-console
+      console.log(
+        "force_demo_session_v1:",
+        sessionStorage.getItem(FORCE_DEMO_SESSION_KEY)
+      );
     } catch {}
   }, [showDebug]);
 
-  // ✅ DEMO CTA (HARD NAV): prevents Base44/router from stripping query params
+  // ✅ DEMO CTA (HARD NAV): forces demo session + persists demo season, prevents query stripping
   function handleTryDemo() {
-    trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
+    trackEvent({
+      event_name: "cta_demo_click",
+      source: "home",
+      demo_season: demoSeasonYear,
+    });
+
+    // ✅ Force demo for this session (so paid doesn't override demo during testing)
+    setForceDemoSession(true);
 
     // Persist demo selection
     setDemoMode(demoSeasonYear);
 
-    trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
+    trackEvent({
+      event_name: "demo_entered",
+      source: "home",
+      demo_season: demoSeasonYear,
+      force_demo_session: 1,
+    });
 
-    // Hard navigate so query params can't be stripped by router/guards
     const url =
       `${window.location.origin}${createPageUrl("Discover")}` +
       `?mode=demo&season=${encodeURIComponent(demoSeasonYear)}` +
@@ -136,6 +166,9 @@ export default function Home() {
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
+    // ✅ Clear forced demo session when user chooses to login
+    setForceDemoSession(false);
+
     const nextPath = createPageUrl("Discover"); // typically "/Discover"
     const fromUrl =
       `${window.location.origin}${createPageUrl("Subscribe")}` +
@@ -147,6 +180,10 @@ export default function Home() {
 
   function handlePricingSignup() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
+
+    // ✅ Pricing is a paid intent; clear forced demo session
+    setForceDemoSession(false);
+
     nav(createPageUrl("Subscribe") + `?source=home_pricing`);
   }
 
@@ -229,10 +266,12 @@ export default function Home() {
                       onClick={async () => {
                         trackEvent({ event_name: "debug_logout_clicked", source: "home" });
                         try {
-                          clearDemoFlags();
+                          clearDemoFlags(); // also clears force demo session
                           await logoutBase44();
                         } finally {
-                          window.location.assign(`${window.location.origin}${createPageUrl("Home")}?debug=1`);
+                          window.location.assign(
+                            `${window.location.origin}${createPageUrl("Home")}?debug=1`
+                          );
                         }
                       }}
                     >
@@ -249,6 +288,7 @@ export default function Home() {
                         });
                         try {
                           clearDemoFlags();
+                          setForceDemoSession(true);
                           setDemoMode(demoSeasonYear);
                         } finally {
                           const url =
@@ -259,6 +299,19 @@ export default function Home() {
                       }}
                     >
                       Go to Demo Discover
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        trackEvent({ event_name: "debug_clear_force_demo_session", source: "home" });
+                        setForceDemoSession(false);
+                        window.location.assign(
+                          `${window.location.origin}${createPageUrl("Home")}?debug=1`
+                        );
+                      }}
+                    >
+                      Clear force-demo session
                     </Button>
                   </div>
 
