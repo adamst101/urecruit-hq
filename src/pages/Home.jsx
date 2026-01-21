@@ -11,8 +11,8 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 
-// ✅ NEW: debug logout helpers (create this file: src/components/utils/authDebug.jsx)
-import { logoutBase44Safe, clearDemoFlags } from "../components/utils/authDebug.jsx";
+// ✅ NEW: debug helpers (create this file if you don't already have it)
+import { logoutBase44Safe, clearDemoFlags } from "../utils/authDebug.jsx";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -56,23 +56,19 @@ export default function Home() {
 
   function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
-
-    // Ensure demo flags are set for the session
     setDemoMode(demoSeasonYear);
-
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
-
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
   /**
-   * "Log in" should behave like "log in" — never like subscribe.
-   * Send to Base44 login, return into Discover.
+   * "Log in" should behave like log in (not subscribe).
+   * Send to Base44 built-in /login with from_url as an absolute URL back into the app.
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    const nextPath = createPageUrl("Discover"); // change to Workspace later if desired
+    const nextPath = createPageUrl("Discover"); // change to Workspace once you add it
     const fromUrl = `${window.location.origin}${nextPath}`;
 
     const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
@@ -106,7 +102,7 @@ export default function Home() {
     []
   );
 
-  // Debug flag: show useSeasonAccess() + auth controls when URL contains ?debug=1
+  // Debug flag: show debug panels when URL contains ?debug=1
   const showDebug = useMemo(() => {
     try {
       return new URLSearchParams(window.location.search).get("debug") === "1";
@@ -115,12 +111,30 @@ export default function Home() {
     }
   }, []);
 
+  // ✅ NEW: expose base44 to the console when debugging so you can inspect auth methods
+  useEffect(() => {
+    if (!showDebug) return;
+
+    try {
+      window.base44 = base44;
+    } catch {}
+
+    try {
+      // eslint-disable-next-line no-console
+      console.log("base44.auth keys:", Object.keys(base44?.auth || {}));
+      // eslint-disable-next-line no-console
+      console.log("logout type:", typeof base44?.auth?.logout);
+      // eslint-disable-next-line no-console
+      console.log("signOut type:", typeof base44?.auth?.signOut);
+    } catch {}
+  }, [showDebug]);
+
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* DEBUG: append ?debug=1 to show useSeasonAccess() + test controls */}
+            {/* DEBUG: append ?debug=1 to show useSeasonAccess() and debug controls */}
             {showDebug && (
               <div className="space-y-3">
                 <div className="rounded-xl border border-default bg-surface p-4 text-xs">
@@ -130,6 +144,7 @@ export default function Home() {
 
                 <div className="rounded-xl border border-default bg-white p-4 text-xs">
                   <div className="font-bold mb-2">DEBUG: Auth / Demo Controls</div>
+
                   <div className="flex flex-col sm:flex-row gap-2">
                     <Button
                       variant="outline"
@@ -164,7 +179,7 @@ export default function Home() {
                   </div>
 
                   <div className="mt-2 text-[11px] text-slate-500">
-                    Testing-only controls. Hide/remove before launch.
+                    Debug-only controls. Use for testing; remove or hide before launch.
                   </div>
                 </div>
               </div>
