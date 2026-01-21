@@ -33,12 +33,9 @@ function isDebugOn() {
 }
 
 /**
- * ✅ clearDemoFlags is defined HERE (inside Home.jsx).
- * This resets any demo-mode flags you've used during iteration/testing.
- * It does NOT log the user out; it only clears local/session toggles.
+ * Reset demo-mode flags (local + session). Does NOT log out.
  */
 function clearDemoFlags() {
-  // demoMode.jsx commonly uses localStorage; clear defensively
   const keys = [
     "demo_mode_v1",
     "demoMode",
@@ -52,12 +49,10 @@ function clearDemoFlags() {
     keys.forEach((k) => localStorage.removeItem(k));
   } catch {}
 
-  // if you ever added workspace intent (optional)
   try {
     sessionStorage.removeItem("workspace_intent_v1");
   } catch {}
 
-  // ✅ also clear force-demo session override
   try {
     sessionStorage.removeItem(FORCE_DEMO_SESSION_KEY);
   } catch {}
@@ -71,13 +66,35 @@ function setForceDemoSession(on) {
 }
 
 async function logoutBase44() {
-  // You verified this exists: typeof base44.auth.logout === "function"
   try {
     await base44.auth.logout();
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Patch 2:
+ * Build the Base44 /login?from_url=... URL so that after login
+ * the user returns to the EXACT target (including next + season).
+ *
+ * We return the user to /AuthRedirect?next=<target>&season=<year>&source=...
+ * so AuthRedirect can handle:
+ *  - authed+entitled -> go to next
+ *  - authed+not entitled -> go to Subscribe?season=...&next=...
+ *  - not authed -> stay in login flow
+ */
+function buildLoginUrlToExactTarget({ nextPath, seasonYear, source = "home_login" }) {
+  const authRedirectPath = createPageUrl("AuthRedirect"); // "/AuthRedirect"
+
+  const qs =
+    `next=${encodeURIComponent(nextPath || createPageUrl("Discover"))}` +
+    (seasonYear ? `&season=${encodeURIComponent(seasonYear)}` : "") +
+    (source ? `&source=${encodeURIComponent(source)}` : "");
+
+  const returnTo = `${window.location.origin}${authRedirectPath}?${qs}`;
+  return `${window.location.origin}/login?from_url=${encodeURIComponent(returnTo)}`;
 }
 
 export default function Home() {
@@ -123,25 +140,15 @@ export default function Home() {
       // eslint-disable-next-line no-console
       console.log("logout type:", typeof base44?.auth?.logout);
       // eslint-disable-next-line no-console
-      console.log(
-        "force_demo_session_v1:",
-        sessionStorage.getItem(FORCE_DEMO_SESSION_KEY)
-      );
+      console.log("force_demo_session_v1:", sessionStorage.getItem(FORCE_DEMO_SESSION_KEY));
     } catch {}
   }, [showDebug]);
 
-  // ✅ DEMO CTA (HARD NAV): forces demo session + persists demo season, prevents query stripping
+  // DEMO CTA (HARD NAV): forces demo session + persists demo season
   function handleTryDemo() {
-    trackEvent({
-      event_name: "cta_demo_click",
-      source: "home",
-      demo_season: demoSeasonYear,
-    });
+    trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
 
-    // ✅ Force demo for this session (so paid doesn't override demo during testing)
-    setForceDemoSession(true);
-
-    // Persist demo selection
+    setForceDemoSession(true); // keep demo even if user is authed+entitled (testing)
     setDemoMode(demoSeasonYear);
 
     trackEvent({
@@ -160,31 +167,42 @@ export default function Home() {
   }
 
   /**
-   * Login should behave like login (not subscribe).
-   * We send the user to Base44 built-in /login with a from_url that returns to Subscribe gate.
+   * Patch 2: Home "Log in" returns to EXACT target:
+   * After login, return to AuthRedirect with:
+   *   next=/Discover (or whatever you want)
+   *   season=<currentYear> (so Subscribe is season-aware if needed)
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // ✅ Clear forced demo session when user chooses to login
+    // Login is a paid intent; clear demo forcing
     setForceDemoSession(false);
 
-    const nextPath = createPageUrl("Discover"); // typically "/Discover"
-    const fromUrl =
-      `${window.location.origin}${createPageUrl("Subscribe")}` +
-      `?source=auth_gate&next=${encodeURIComponent(nextPath)}`;
+    const nextPath = createPageUrl("Discover");
+    const seasonYear = season?.currentYear || null;
 
-    const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
+    const loginUrl = buildLoginUrlToExactTarget({
+      nextPath,
+      seasonYear,
+      source: "home_login",
+    });
+
     window.location.assign(loginUrl);
   }
 
   function handlePricingSignup() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
 
-    // ✅ Pricing is a paid intent; clear forced demo session
     setForceDemoSession(false);
 
-    nav(createPageUrl("Subscribe") + `?source=home_pricing`);
+    // Also pass season by default (currentYear) so pricing knows what you're selling
+    const seasonYear = season?.currentYear || null;
+    const url =
+      createPageUrl("Subscribe") +
+      `?source=home_pricing` +
+      (seasonYear ? `&season=${encodeURIComponent(seasonYear)}` : "");
+
+    nav(url);
   }
 
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
@@ -266,12 +284,10 @@ export default function Home() {
                       onClick={async () => {
                         trackEvent({ event_name: "debug_logout_clicked", source: "home" });
                         try {
-                          clearDemoFlags(); // also clears force demo session
+                          clearDemoFlags(); // also clears force-demo session
                           await logoutBase44();
                         } finally {
-                          window.location.assign(
-                            `${window.location.origin}${createPageUrl("Home")}?debug=1`
-                          );
+                          window.location.assign(`${window.location.origin}${createPageUrl("Home")}?debug=1`);
                         }
                       }}
                     >
@@ -306,12 +322,28 @@ export default function Home() {
                       onClick={() => {
                         trackEvent({ event_name: "debug_clear_force_demo_session", source: "home" });
                         setForceDemoSession(false);
-                        window.location.assign(
-                          `${window.location.origin}${createPageUrl("Home")}?debug=1`
-                        );
+                        window.location.assign(`${window.location.origin}${createPageUrl("Home")}?debug=1`);
                       }}
                     >
                       Clear force-demo session
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        trackEvent({ event_name: "debug_login_exact_target", source: "home" });
+                        setForceDemoSession(false);
+
+                        const loginUrl = buildLoginUrlToExactTarget({
+                          nextPath: createPageUrl("Discover"),
+                          seasonYear: season?.currentYear || null,
+                          source: "debug_home_login",
+                        });
+
+                        window.location.assign(loginUrl);
+                      }}
+                    >
+                      Debug: Login to Discover (exact)
                     </Button>
                   </div>
 
