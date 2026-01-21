@@ -11,8 +11,8 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 
-// ✅ NEW: debug logout helpers (create this file: src/Components/utils/authDebug.jsx)
-import { logoutBase44Safe, clearDemoFlags } from "../Components/utils/authDebug.jsx";
+// ✅ NEW: debug logout helpers (create this file: src/components/utils/authDebug.jsx)
+import { logoutBase44Safe, clearDemoFlags } from "../components/utils/authDebug.jsx";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
