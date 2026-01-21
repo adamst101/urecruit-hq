@@ -1,3 +1,4 @@
+// src/pages/Home.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
@@ -11,23 +12,49 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 
-// ✅ NEW: debug helpers (create this file if you don't already have it)
-import { logoutBase44Safe, clearDemoFlags } from "../components/utils/authDebug.jsx";
-
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
 function trackEvent(payload) {
   try {
-    const p = base44?.entities?.Event?.create?.({ ...payload, ts: new Date().toISOString() });
-    Promise.resolve(p).catch(() => {});
+    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
   } catch {}
+}
+
+function isDebugOn() {
+  try {
+    const sp = new URLSearchParams(window.location.search || "");
+    return sp.get("debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function clearDemoFlags() {
+  // Be defensive: clear any keys you may have used while iterating
+  try {
+    localStorage.removeItem("demo_mode_v1");
+    localStorage.removeItem("demoMode");
+    localStorage.removeItem("demoSeasonYear");
+  } catch {}
+  try {
+    sessionStorage.removeItem("workspace_intent_v1");
+  } catch {}
+}
+
+async function logoutBase44() {
+  // You verified this exists: typeof base44.auth.logout === "function"
+  try {
+    await base44.auth.logout();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export default function Home() {
   const nav = useNavigate();
 
-  // Must be declared before any useEffect references it
   const season = useSeasonAccess();
   const seasonRef = useRef(season);
 
@@ -35,9 +62,12 @@ export default function Home() {
     seasonRef.current = season;
   }, [season]);
 
+  const showDebug = useMemo(() => isDebugOn(), []);
   const { demoSeasonYear } = getDemoDefaults();
+
   const [logoOk, setLogoOk] = useState(true);
 
+  // One-time page view tracking
   useEffect(() => {
     const key = "evt_home_viewed_v23";
     try {
@@ -54,22 +84,52 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Expose base44 to console only when debug=1
+  useEffect(() => {
+    if (!showDebug) return;
+
+    try {
+      window.base44 = base44;
+      // Helpful console prints so you don't have to remember commands
+      // eslint-disable-next-line no-console
+      console.log("base44.auth keys:", Object.keys(base44?.auth || {}));
+      // eslint-disable-next-line no-console
+      console.log("logout type:", typeof base44?.auth?.logout);
+      // eslint-disable-next-line no-console
+      console.log("signOut type:", typeof base44?.auth?.signOut);
+    } catch {}
+  }, [showDebug]);
+
+  // ✅ DEMO CTA (HARD NAV): prevents Base44/router from stripping query params
   function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
+
+    // Persist demo selection (your app already uses this pattern)
     setDemoMode(demoSeasonYear);
+
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
-    nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
+
+    // Hard navigate so query params can't be stripped by router/guards
+    const url =
+      `${window.location.origin}${createPageUrl("Discover")}` +
+      `?mode=demo&season=${encodeURIComponent(demoSeasonYear)}` +
+      `&src=home_demo`;
+
+    window.location.assign(url);
   }
 
   /**
-   * "Log in" should behave like log in (not subscribe).
-   * Send to Base44 built-in /login with from_url as an absolute URL back into the app.
+   * Login should behave like login (not subscribe).
+   * We send the user to Base44 built-in /login with a from_url that returns to Subscribe gate.
+   * NOTE: This is fine even for non-entitled users; entitlement is enforced after auth.
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    const nextPath = createPageUrl("Discover"); // change to Workspace once you add it
-    const fromUrl = `${window.location.origin}${nextPath}`;
+    const nextPath = createPageUrl("Discover"); // typically "/Discover"
+    const fromUrl =
+      `${window.location.origin}${createPageUrl("Subscribe")}` +
+      `?source=auth_gate&next=${encodeURIComponent(nextPath)}`;
 
     const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
     window.location.assign(loginUrl);
@@ -102,89 +162,11 @@ export default function Home() {
     []
   );
 
-  // Debug flag: show debug panels when URL contains ?debug=1
-  const showDebug = useMemo(() => {
-    try {
-      return new URLSearchParams(window.location.search).get("debug") === "1";
-    } catch {
-      return false;
-    }
-  }, []);
-
-  // ✅ NEW: expose base44 to the console when debugging so you can inspect auth methods
-  useEffect(() => {
-    if (!showDebug) return;
-
-    try {
-      window.base44 = base44;
-    } catch {}
-
-    try {
-      // eslint-disable-next-line no-console
-      console.log("base44.auth keys:", Object.keys(base44?.auth || {}));
-      // eslint-disable-next-line no-console
-      console.log("logout type:", typeof base44?.auth?.logout);
-      // eslint-disable-next-line no-console
-      console.log("signOut type:", typeof base44?.auth?.signOut);
-    } catch {}
-  }, [showDebug]);
-
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* DEBUG: append ?debug=1 to show useSeasonAccess() and debug controls */}
-            {showDebug && (
-              <div className="space-y-3">
-                <div className="rounded-xl border border-default bg-surface p-4 text-xs">
-                  <div className="font-bold mb-2">DEBUG: useSeasonAccess()</div>
-                  <pre className="whitespace-pre-wrap break-words">{JSON.stringify(season, null, 2)}</pre>
-                </div>
-
-                <div className="rounded-xl border border-default bg-white p-4 text-xs">
-                  <div className="font-bold mb-2">DEBUG: Auth / Demo Controls</div>
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={async () => {
-                        try {
-                          clearDemoFlags();
-                          await logoutBase44Safe();
-                        } finally {
-                          window.location.assign(`${window.location.origin}${createPageUrl("Home")}`);
-                        }
-                      }}
-                    >
-                      Log out (force demo testing)
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        try {
-                          clearDemoFlags();
-                        } finally {
-                          window.location.assign(
-                            `${window.location.origin}${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(
-                              demoSeasonYear
-                            )}`
-                          );
-                        }
-                      }}
-                    >
-                      Go to Demo Discover
-                    </Button>
-                  </div>
-
-                  <div className="mt-2 text-[11px] text-slate-500">
-                    Debug-only controls. Use for testing; remove or hide before launch.
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Brand row: big logo + login (single login button) */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
@@ -221,6 +203,59 @@ export default function Home() {
                 </Button>
               </div>
             </div>
+
+            {/* DEBUG: useSeasonAccess() */}
+            {showDebug ? (
+              <div className="rounded-xl border border-default bg-white p-4 text-xs">
+                <div className="font-bold mb-2">DEBUG: useSeasonAccess()</div>
+                <pre className="whitespace-pre-wrap break-words">
+                  {JSON.stringify(season || {}, null, 2)}
+                </pre>
+
+                <div className="mt-3 rounded-lg border border-default bg-slate-50 p-3">
+                  <div className="font-bold mb-2">DEBUG: Auth / Demo Controls</div>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        trackEvent({ event_name: "debug_logout_clicked", source: "home" });
+                        try {
+                          clearDemoFlags();
+                          await logoutBase44();
+                        } finally {
+                          window.location.assign(`${window.location.origin}${createPageUrl("Home")}?debug=1`);
+                        }
+                      }}
+                    >
+                      Log out (force demo testing)
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        trackEvent({ event_name: "debug_go_demo_discover", source: "home", demo_season: demoSeasonYear });
+                        try {
+                          clearDemoFlags();
+                          setDemoMode(demoSeasonYear);
+                        } finally {
+                          const url =
+                            `${window.location.origin}${createPageUrl("Discover")}` +
+                            `?mode=demo&season=${encodeURIComponent(demoSeasonYear)}&src=debug`;
+                          window.location.assign(url);
+                        }
+                      }}
+                    >
+                      Go to Demo Discover
+                    </Button>
+                  </div>
+
+                  <div className="mt-2 text-[11px] text-slate-500">
+                    Debug-only controls for testing. Hide/remove before production launch.
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {/* Copy */}
             <div className="max-w-3xl space-y-3 text-center md:text-left">
