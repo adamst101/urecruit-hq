@@ -11,15 +11,29 @@ import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
  * RouteGuard (Base44-safe)
  *
  * Rules:
- * - Home is the front door (no auto-redirect here)
- * - Demo override: ?mode=demo bypasses paid/profile gating
+ * - Demo override:
+ *     - URL: ?mode=demo
+ *     - Session: sessionStorage.force_demo_session_v1 === "1"
+ *   Either forces demo and bypasses paid/profile gating.
+ *
  * - If auth is required but user is not authed:
  *     -> send to Home with next=...
+ *
  * - Paid gating is season-aware:
  *     -> if requirePaid and user isn't entitled for the requested season,
  *        route to Subscribe?season=YYYY&next=...
+ *
  * - Profile gating applies only when paid (and not demo override)
  */
+
+function forceDemoSessionOn() {
+  try {
+    return sessionStorage.getItem("force_demo_session_v1") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function RouteGuard({
   requireAuth = false,
   requirePaid = false,
@@ -50,14 +64,15 @@ export default function RouteGuard({
 
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // URL forces demo mode when explicitly set
+  // Demo override: URL OR session flag
   const forceDemo = useMemo(() => {
+    let urlDemo = false;
     try {
       const sp = new URLSearchParams(loc?.search || "");
-      return sp.get("mode") === "demo";
-    } catch {
-      return false;
-    }
+      urlDemo = sp.get("mode") === "demo";
+    } catch {}
+    const sessionDemo = forceDemoSessionOn();
+    return urlDemo || sessionDemo;
   }, [loc?.search]);
 
   // Requested season from URL (if a paid route is season-specific)
@@ -73,7 +88,6 @@ export default function RouteGuard({
   }, [loc?.search]);
 
   // Paid means: not demo override AND hook says paid AND entitlement present
-  // (hasAccess is the entitlement-backed truth)
   const isPaid = !forceDemo && mode === "paid" && !!hasAccess;
 
   // Profile gating only makes sense in paid mode (and not demo override)
@@ -89,7 +103,7 @@ export default function RouteGuard({
 
   // Build the correct Subscribe URL for the season being requested
   const subscribeUrl = useMemo(() => {
-    const y = requestedSeason || seasonYear || null; // fallback defensively
+    const y = requestedSeason || seasonYear || null;
     const base = createPageUrl("Subscribe");
     const seasonPart = y ? `season=${encodeURIComponent(y)}` : "";
     const join = seasonPart ? "&" : "";
@@ -119,7 +133,6 @@ export default function RouteGuard({
     }
 
     // 2) Paid required (ignored in demo override)
-    // Season-aware: if they don't have entitlement, push to Subscribe with season
     if (requirePaid && !isPaid) {
       safeReplace(subscribeUrl);
       return;
@@ -148,6 +161,7 @@ export default function RouteGuard({
     nav,
     loc?.pathname,
     subscribeUrl,
+    safeReplace,
   ]);
 
   if (loading) {
