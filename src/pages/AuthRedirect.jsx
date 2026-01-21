@@ -1,3 +1,4 @@
+// src/pages/AuthRedirect.jsx
 import React, { useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -9,11 +10,11 @@ import { Button } from "../components/ui/button";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 
+const FORCE_DEMO_SESSION_KEY = "force_demo_session_v1";
+
 function trackEvent(payload) {
   try {
-    // async-safe fire-and-forget (doesn't break UI on rejection)
-    const p = base44?.entities?.Event?.create?.({ ...payload, ts: new Date().toISOString() });
-    Promise.resolve(p).catch(() => {});
+    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
   } catch {}
 }
 
@@ -25,35 +26,33 @@ function safeDecode(x) {
   }
 }
 
-/**
- * Prevent open-redirects + keep routing predictable:
- * - Allow only internal app paths that start with "/"
- * - Reject absolute URLs ("http", "//") and empty
- */
-function normalizeNextPath(candidate) {
-  const s = String(candidate || "").trim();
-  if (!s) return createPageUrl("Discover");
-
-  // Block absolute URLs or protocol-relative URLs
-  const lower = s.toLowerCase();
-  if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("//")) {
-    return createPageUrl("Discover");
-  }
-
-  // Must be an internal route
-  if (!s.startsWith("/")) return createPageUrl("Discover");
-
-  return s;
+function safeNumber(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
 }
 
-function getNext(search) {
+function getParams(search) {
   try {
     const sp = new URLSearchParams(search || "");
-    const raw = sp.get("next");
-    const decoded = raw ? safeDecode(raw) : createPageUrl("Discover");
-    return normalizeNextPath(decoded);
+    const next = sp.get("next");
+    const mode = sp.get("mode"); // allow ?mode=demo for explicit demo routing
+    const season = sp.get("season"); // optional requested season year
+    return {
+      next: next ? safeDecode(next) : null,
+      mode: mode ? String(mode).toLowerCase() : null,
+      seasonYear: safeNumber(season),
+      source: sp.get("source") || "auth_redirect",
+    };
   } catch {
-    return createPageUrl("Discover");
+    return { next: null, mode: null, seasonYear: null, source: "auth_redirect" };
+  }
+}
+
+function forceDemoSessionOn() {
+  try {
+    return sessionStorage.getItem(FORCE_DEMO_SESSION_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -62,22 +61,36 @@ export default function AuthRedirect() {
   const loc = useLocation();
   const season = useSeasonAccess();
 
-  const nextPath = useMemo(() => getNext(loc.search), [loc.search]);
+  const p = useMemo(() => getParams(loc.search), [loc.search]);
 
-  // Keep the original "next" stable during redirects
+  // Default next is Discover
+  const nextPath = useMemo(() => {
+    return p.next || createPageUrl("Discover");
+  }, [p.next]);
+
+  // Keep next stable during redirects
   const nextRef = useRef(nextPath);
   useEffect(() => {
     nextRef.current = nextPath;
   }, [nextPath]);
 
-  // Core gate:
-  // 1) If not authenticated -> send to Base44 built-in /login, returning here after login
-  // 2) If authenticated + entitled -> go to next (paid workspace)
-  // 3) If authenticated + NOT entitled -> go to Subscribe
+  // Demo override: URL OR session flag
+  const forceDemo = useMemo(() => {
+    const urlDemo = p.mode === "demo";
+    const sessionDemo = forceDemoSessionOn();
+    return urlDemo || sessionDemo;
+  }, [p.mode]);
+
+  // Which season are we selling/gating (if we need to send to Subscribe)
+  const requestedSeasonYear = useMemo(() => {
+    return p.seasonYear || season?.currentYear || null;
+  }, [p.seasonYear, season?.currentYear]);
+
   useEffect(() => {
     if (season?.isLoading) return;
 
     const accountId = season?.accountId || null;
+    const hasAccess = !!season?.hasAccess;
     const mode = season?.mode || "demo"; // "paid" | "demo"
     const next = nextRef.current || createPageUrl("Discover");
 
@@ -85,17 +98,51 @@ export default function AuthRedirect() {
       event_name: "auth_redirect_eval",
       source: "AuthRedirect",
       auth_state: accountId ? "authed" : "anon",
-      mode,
-      next
+      hook_mode: mode,
+      has_access: hasAccess ? 1 : 0,
+      force_demo: forceDemo ? 1 : 0,
+      requested_season: requestedSeasonYear,
+      next,
+      entry_source: p.source,
     });
 
-    // 1) Not authed -> go to Base44 /login and come back to this exact URL
+    // 0) Demo forced -> go straight to Discover demo (no subscribe gate)
+    if (forceDemo) {
+      const demoSeasonYear =
+        p.seasonYear || season?.demoYear || season?.seasonYear || season?.currentYear || null;
+
+      const to =
+        createPageUrl("Discover") +
+        `?mode=demo` +
+        (demoSeasonYear ? `&season=${encodeURIComponent(demoSeasonYear)}` : "") +
+        `&src=auth_redirect`;
+
+      trackEvent({
+        event_name: "auth_redirect_force_demo",
+        source: "AuthRedirect",
+        demo_season: demoSeasonYear,
+        next,
+      });
+
+      nav(to, { replace: true });
+      return;
+    }
+
+    // 1) Not authenticated -> send to Base44 /login and return to this exact URL after login
+    // This does NOT "auto-login"; it prompts for login.
     if (!accountId) {
       try {
-        // Absolute URL back to this exact AuthRedirect URL (Base44 expects from_url)
-        const returnTo = `${window.location.origin}${window.location.pathname}${window.location.search}`;
+        const returnTo = window.location.pathname + window.location.search; // preserve next/season params
+        const fromUrl = `${window.location.origin}${returnTo}`;
+        const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
 
-        const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(returnTo)}`;
+        trackEvent({
+          event_name: "auth_redirect_to_login",
+          source: "AuthRedirect",
+          next,
+          requested_season: requestedSeasonYear,
+        });
+
         window.location.assign(loginUrl);
       } catch {
         nav(createPageUrl("Home"), { replace: true });
@@ -103,48 +150,68 @@ export default function AuthRedirect() {
       return;
     }
 
-    // 2) Authed + entitled -> paid
-    if (mode === "paid") {
+    // 2) Authenticated + entitled -> go to next
+    if (mode === "paid" && hasAccess) {
       trackEvent({
         event_name: "auth_redirect_success_paid",
         source: "AuthRedirect",
-        next
+        next,
+        season_year: season?.seasonYear || null,
       });
       nav(next, { replace: true });
       return;
     }
 
-    // 3) Authed but NOT entitled -> force subscribe path
+    // 3) Authenticated but NOT entitled -> go to Subscribe (season-aware)
     trackEvent({
       event_name: "auth_redirect_block_no_entitlement",
       source: "AuthRedirect",
-      next
+      next,
+      requested_season: requestedSeasonYear,
     });
 
     const subscribeUrl =
-      createPageUrl("Subscribe") + `?source=auth_gate&next=${encodeURIComponent(next)}`;
+      createPageUrl("Subscribe") +
+      `?source=auth_gate` +
+      (requestedSeasonYear ? `&season=${encodeURIComponent(requestedSeasonYear)}` : "") +
+      `&next=${encodeURIComponent(next)}`;
 
     nav(subscribeUrl, { replace: true });
-  }, [season?.isLoading, season?.accountId, season?.mode, nav]);
+  }, [
+    season?.isLoading,
+    season?.accountId,
+    season?.mode,
+    season?.hasAccess,
+    season?.seasonYear,
+    season?.demoYear,
+    season?.currentYear,
+    forceDemo,
+    requestedSeasonYear,
+    p.seasonYear,
+    p.source,
+    nav,
+  ]);
 
   return (
     <div className="min-h-screen bg-surface flex items-center justify-center px-4">
       <Card className="w-full max-w-md p-6 rounded-2xl shadow-sm border border-default bg-white">
         <div className="text-lg font-bold text-deep-navy">Checking access…</div>
         <div className="mt-2 text-sm text-slate-600">
-          Verifying your subscription and routing you to the correct workspace.
+          Verifying your login and season access, then routing you to the right workspace.
         </div>
 
         <div className="mt-5 flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => nav(createPageUrl("Home"), { replace: true })}
-          >
+          <Button variant="outline" onClick={() => nav(createPageUrl("Home"), { replace: true })}>
             Back to Home
           </Button>
           <Button
             onClick={() =>
-              nav(createPageUrl("Subscribe") + `?source=auth_redirect_cta`, { replace: false })
+              nav(
+                createPageUrl("Subscribe") +
+                  `?source=auth_redirect_cta` +
+                  (requestedSeasonYear ? `&season=${encodeURIComponent(requestedSeasonYear)}` : ""),
+                { replace: false }
+              )
             }
           >
             View pricing
@@ -152,7 +219,7 @@ export default function AuthRedirect() {
         </div>
 
         <div className="mt-3 text-xs text-slate-500">
-          If you’re not subscribed, you’ll be sent to pricing.
+          If you’re not subscribed for the requested season, you’ll be sent to pricing.
         </div>
       </Card>
     </div>
