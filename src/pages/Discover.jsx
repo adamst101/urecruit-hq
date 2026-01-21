@@ -46,6 +46,15 @@ function getUrlParams(search) {
   }
 }
 
+// ✅ Session override: force demo for this browser session
+function forceDemoSessionOn() {
+  try {
+    return sessionStorage.getItem("force_demo_session_v1") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
@@ -54,32 +63,48 @@ export default function Discover() {
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
-  const forceDemo = url.mode === "demo";
 
-  // Paid entitlement ALWAYS wins unless URL explicitly forces demo.
+  // Demo can be forced by URL OR session override
+  const forceDemoUrl = url.mode === "demo";
+  const forceDemoSession = useMemo(() => forceDemoSessionOn(), []);
+  const forceDemo = forceDemoUrl || forceDemoSession;
+
+  // Paid entitlement wins ONLY if demo is not forced
   const effectiveMode = forceDemo ? "demo" : (season.mode === "paid" ? "paid" : "demo");
   const isPaid = effectiveMode === "paid";
 
+  // Season year choice:
+  // - If demo is forced and URL passed a season, use it (demo browsing)
+  // - Otherwise use season.seasonYear (paid season or demo default from hook)
   const seasonYear = useMemo(() => {
     if (!isPaid && forceDemo && url.seasonYear) return url.seasonYear;
     return season.seasonYear;
   }, [isPaid, forceDemo, url.seasonYear, season.seasonYear]);
 
-  // If user becomes entitled while sitting on a demo URL, normalize URL to paid view.
+  // If user becomes entitled while sitting on a demo URL,
+  // normalize URL to paid view ONLY when demo is forced by URL (not session testing).
   useEffect(() => {
     if (season.isLoading) return;
     if (!isPaid) return;
-    if (!forceDemo) return;
+
+    // If demo is forced via session override, do NOT normalize away demo.
+    if (forceDemoSession) return;
+
+    // If demo is forced via URL, normalize to paid.
+    if (!forceDemoUrl) return;
+
     nav(createPageUrl("Discover"), { replace: true });
-  }, [season.isLoading, isPaid, forceDemo, nav]);
+  }, [season.isLoading, isPaid, forceDemoSession, forceDemoUrl, nav]);
 
   // If authenticated but not entitled, route to Subscribe
+  // ✅ BUT NOT if demo is forced (URL or session). Demo must remain reachable.
   useEffect(() => {
     if (season.isLoading) return;
+    if (forceDemo) return; // <-- key fix
     if (!season.isAuthenticated) return;
     if (season.mode === "paid") return;
     nav(createPageUrl("Subscribe") + `?source=discover_gate`, { replace: true });
-  }, [season.isLoading, season.isAuthenticated, season.mode, nav]);
+  }, [season.isLoading, season.isAuthenticated, season.mode, forceDemo, nav]);
 
   // ---- filters ----
   const [filterOpen, setFilterOpen] = useState(false);
@@ -328,7 +353,8 @@ export default function Discover() {
             <span><b>isAuthenticated:</b> {String(!!season.isAuthenticated)}</span>
             <span><b>accountId:</b> {season.accountId ? String(season.accountId) : "null"}</span>
             <span><b>entitled:</b> {String(!!season.entitlement)}</span>
-            <span><b>forceDemo(url):</b> {String(!!forceDemo)}</span>
+            <span><b>forceDemo(url):</b> {String(!!forceDemoUrl)}</span>
+            <span><b>forceDemo(session):</b> {String(!!forceDemoSession)}</span>
           </div>
         </div>
 
