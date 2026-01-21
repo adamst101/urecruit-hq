@@ -11,6 +11,9 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 
+// ✅ NEW: debug logout helpers (create this file: src/utils/authDebug.jsx)
+import { logoutBase44Safe, clearDemoFlags } from "../utils/authDebug.jsx";
+
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
@@ -53,19 +56,23 @@ export default function Home() {
 
   function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
+
+    // Ensure demo flags are set for the session
     setDemoMode(demoSeasonYear);
+
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
+
     nav(`${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(demoSeasonYear)}`);
   }
 
   /**
-   * Best UX: "Log in" should never feel like "Subscribe".
-   * So we return users into the app after login (Discover now; later you can switch to Workspace).
+   * "Log in" should behave like "log in" — never like subscribe.
+   * Send to Base44 login, return into Discover.
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    const nextPath = createPageUrl("Discover"); // change to "Workspace" once you add it
+    const nextPath = createPageUrl("Discover"); // change to Workspace later if desired
     const fromUrl = `${window.location.origin}${nextPath}`;
 
     const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
@@ -99,7 +106,7 @@ export default function Home() {
     []
   );
 
-  // Debug flag: show useSeasonAccess() on the page when URL contains ?debug=1
+  // Debug flag: show useSeasonAccess() + auth controls when URL contains ?debug=1
   const showDebug = useMemo(() => {
     try {
       return new URLSearchParams(window.location.search).get("debug") === "1";
@@ -113,11 +120,53 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* DEBUG: append ?debug=1 to show useSeasonAccess() */}
+            {/* DEBUG: append ?debug=1 to show useSeasonAccess() + test controls */}
             {showDebug && (
-              <div className="rounded-xl border border-default bg-surface p-4 text-xs">
-                <div className="font-bold mb-2">DEBUG: useSeasonAccess()</div>
-                <pre className="whitespace-pre-wrap break-words">{JSON.stringify(season, null, 2)}</pre>
+              <div className="space-y-3">
+                <div className="rounded-xl border border-default bg-surface p-4 text-xs">
+                  <div className="font-bold mb-2">DEBUG: useSeasonAccess()</div>
+                  <pre className="whitespace-pre-wrap break-words">{JSON.stringify(season, null, 2)}</pre>
+                </div>
+
+                <div className="rounded-xl border border-default bg-white p-4 text-xs">
+                  <div className="font-bold mb-2">DEBUG: Auth / Demo Controls</div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          clearDemoFlags();
+                          await logoutBase44Safe();
+                        } finally {
+                          window.location.assign(`${window.location.origin}${createPageUrl("Home")}`);
+                        }
+                      }}
+                    >
+                      Log out (force demo testing)
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        try {
+                          clearDemoFlags();
+                        } finally {
+                          window.location.assign(
+                            `${window.location.origin}${createPageUrl("Discover")}?mode=demo&season=${encodeURIComponent(
+                              demoSeasonYear
+                            )}`
+                          );
+                        }
+                      }}
+                    >
+                      Go to Demo Discover
+                    </Button>
+                  </div>
+
+                  <div className="mt-2 text-[11px] text-slate-500">
+                    Testing-only controls. Hide/remove before launch.
+                  </div>
+                </div>
               </div>
             )}
 
