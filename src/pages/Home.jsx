@@ -30,13 +30,27 @@ function isDebugOn() {
   }
 }
 
+/**
+ * ✅ clearDemoFlags is defined HERE (inside Home.jsx).
+ * This resets any demo-mode flags you've used during iteration/testing.
+ * It does NOT log the user out; it only clears local/session toggles.
+ */
 function clearDemoFlags() {
-  // Be defensive: clear any keys you may have used while iterating
+  // demoMode.jsx commonly uses localStorage; clear defensively
+  const keys = [
+    "demo_mode_v1",
+    "demoMode",
+    "demoSeasonYear",
+    "demo_season_year",
+    "demoSeason",
+    "demo_mode",
+  ];
+
   try {
-    localStorage.removeItem("demo_mode_v1");
-    localStorage.removeItem("demoMode");
-    localStorage.removeItem("demoSeasonYear");
+    keys.forEach((k) => localStorage.removeItem(k));
   } catch {}
+
+  // if you ever added workspace intent (optional)
   try {
     sessionStorage.removeItem("workspace_intent_v1");
   } catch {}
@@ -90,13 +104,10 @@ export default function Home() {
 
     try {
       window.base44 = base44;
-      // Helpful console prints so you don't have to remember commands
       // eslint-disable-next-line no-console
       console.log("base44.auth keys:", Object.keys(base44?.auth || {}));
       // eslint-disable-next-line no-console
       console.log("logout type:", typeof base44?.auth?.logout);
-      // eslint-disable-next-line no-console
-      console.log("signOut type:", typeof base44?.auth?.signOut);
     } catch {}
   }, [showDebug]);
 
@@ -104,7 +115,7 @@ export default function Home() {
   function handleTryDemo() {
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoSeasonYear });
 
-    // Persist demo selection (your app already uses this pattern)
+    // Persist demo selection
     setDemoMode(demoSeasonYear);
 
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoSeasonYear });
@@ -121,7 +132,6 @@ export default function Home() {
   /**
    * Login should behave like login (not subscribe).
    * We send the user to Base44 built-in /login with a from_url that returns to Subscribe gate.
-   * NOTE: This is fine even for non-entitled users; entitlement is enforced after auth.
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
@@ -167,7 +177,7 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* Brand row: big logo + login (single login button) */}
+            {/* Brand row: big logo + login */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -208,9 +218,7 @@ export default function Home() {
             {showDebug ? (
               <div className="rounded-xl border border-default bg-white p-4 text-xs">
                 <div className="font-bold mb-2">DEBUG: useSeasonAccess()</div>
-                <pre className="whitespace-pre-wrap break-words">
-                  {JSON.stringify(season || {}, null, 2)}
-                </pre>
+                <pre className="whitespace-pre-wrap break-words">{JSON.stringify(season || {}, null, 2)}</pre>
 
                 <div className="mt-3 rounded-lg border border-default bg-slate-50 p-3">
                   <div className="font-bold mb-2">DEBUG: Auth / Demo Controls</div>
@@ -234,7 +242,11 @@ export default function Home() {
                     <Button
                       variant="outline"
                       onClick={() => {
-                        trackEvent({ event_name: "debug_go_demo_discover", source: "home", demo_season: demoSeasonYear });
+                        trackEvent({
+                          event_name: "debug_go_demo_discover",
+                          source: "home",
+                          demo_season: demoSeasonYear,
+                        });
                         try {
                           clearDemoFlags();
                           setDemoMode(demoSeasonYear);
