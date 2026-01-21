@@ -13,12 +13,18 @@ import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { readDemoMode } from "../components/hooks/demoMode.jsx";
+
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { useCampFilters } from "../components/filters/useCampFilters.jsx";
+import { useWriteGate } from "../components/hooks/useWriteGate.jsx";
 
-import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
-import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
-
-import { normalizeFilters, withinDateRange, normalizeState } from "../components/filters/filterUtils.jsx";
+import {
+  matchesDivision,
+  matchesSport,
+  matchesPositions,
+  matchesDateRange
+} from "../components/filters/filterUtils.jsx";
 
 import CampCard from "../components/camps/CampCard.jsx";
 
@@ -46,13 +52,10 @@ function getUrlParams(search) {
   }
 }
 
-// ✅ Session override: force demo for this browser session
-function forceDemoSessionOn() {
+function trackEvent(payload) {
   try {
-    return sessionStorage.getItem("force_demo_session_v1") === "1";
-  } catch {
-    return false;
-  }
+    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+  } catch {}
 }
 
 export default function Discover() {
@@ -60,169 +63,141 @@ export default function Discover() {
   const loc = useLocation();
 
   const season = useSeasonAccess();
+
+  const currentPath = useMemo(
+    () => (loc?.pathname || "") + (loc?.search || ""),
+    [loc?.pathname, loc?.search]
+  );
+  const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
+
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
+  const forceDemo = url.mode === "demo";
 
-  // Demo can be forced by URL OR session override
-  const forceDemoUrl = url.mode === "demo";
-  const forceDemoSession = useMemo(() => forceDemoSessionOn(), []);
-  const forceDemo = forceDemoUrl || forceDemoSession;
+  // Persisted demo mode (set by Home "Access Demo" CTA)
+  const demoSession = useMemo(() => readDemoMode(), []);
+  const forceDemoSession = String(demoSession?.mode || "").toLowerCase() === "demo";
 
-  // Paid entitlement wins ONLY if demo is not forced
-  const effectiveMode = forceDemo ? "demo" : (season.mode === "paid" ? "paid" : "demo");
+  // Paid entitlement ALWAYS wins unless URL explicitly forces demo.
+  // Session demo is allowed to keep you in demo when URL doesn't force paid.
+  const effectiveMode = (forceDemo || forceDemoSession)
+    ? "demo"
+    : (season.mode === "paid" ? "paid" : "demo");
+
   const isPaid = effectiveMode === "paid";
 
-  // Season year choice:
-  // - If demo is forced and URL passed a season, use it (demo browsing)
-  // - Otherwise use season.seasonYear (paid season or demo default from hook)
   const seasonYear = useMemo(() => {
-    if (!isPaid && forceDemo && url.seasonYear) return url.seasonYear;
-    return season.seasonYear;
-  }, [isPaid, forceDemo, url.seasonYear, season.seasonYear]);
-
-  // If user becomes entitled while sitting on a demo URL,
-  // normalize URL to paid view ONLY when demo is forced by URL (not session testing).
-  useEffect(() => {
-    if (season.isLoading) return;
-    if (!isPaid) return;
-
-    // If demo is forced via session override, do NOT normalize away demo.
-    if (forceDemoSession) return;
-
-    // If demo is forced via URL, normalize to paid.
-    if (!forceDemoUrl) return;
-
-    nav(createPageUrl("Discover"), { replace: true });
-  }, [season.isLoading, isPaid, forceDemoSession, forceDemoUrl, nav]);
-
-  // If authenticated but not entitled, route to Subscribe
-  // ✅ BUT NOT if demo is forced (URL or session). Demo must remain reachable.
-  useEffect(() => {
-    if (season.isLoading) return;
-    if (forceDemo) return; // <-- key fix
-    if (!season.isAuthenticated) return;
-    if (season.mode === "paid") return;
-    nav(createPageUrl("Subscribe") + `?source=discover_gate`, { replace: true });
-  }, [season.isLoading, season.isAuthenticated, season.mode, forceDemo, nav]);
-
-  // ---- filters ----
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [filters, setFilters] = useState({
-    sport: "",
-    state: "",
-    divisions: [],
-    positions: [],
-    startDate: "",
-    endDate: ""
-  });
-
-  const clearFilters = () => {
-    setFilters({
-      sport: "",
-      state: "",
-      divisions: [],
-      positions: [],
-      startDate: "",
-      endDate: ""
-    });
-  };
-
-  // ---- picklists ----
-  const [sports, setSports] = useState([]);
-  const [positions, setPositions] = useState([]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      try {
-        const rows = await base44.entities.Sport?.list?.();
-        if (mounted) setSports(Array.isArray(rows) ? rows : []);
-      } catch {
-        try {
-          const rows2 = await base44.entities.Sport?.filter?.({});
-          if (mounted) setSports(Array.isArray(rows2) ? rows2 : []);
-        } catch {
-          if (mounted) setSports([]);
-        }
-      }
-
-      try {
-        const rows = await base44.entities.Position?.list?.();
-        if (mounted) setPositions(Array.isArray(rows) ? rows : []);
-      } catch {
-        try {
-          const rows2 = await base44.entities.Position?.filter?.({});
-          if (mounted) setPositions(Array.isArray(rows2) ? rows2 : []);
-        } catch {
-          if (mounted) setPositions([]);
-        }
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const positionsMap = useMemo(() => {
-    const m = new Map();
-    for (const p of asArray(positions)) {
-      const id = normId(p);
-      if (!id) continue;
-      m.set(String(id), p);
+    // Demo: use URL season if provided, otherwise default to configured demo year.
+    if (forceDemo || forceDemoSession) {
+      return (
+        url.seasonYear ||
+        demoSession?.seasonYear ||
+        season.demoYear ||
+        season.seasonYear
+      );
     }
-    return m;
-  }, [positions]);
 
-  const nf = useMemo(() => normalizeFilters(filters), [filters]);
+    // Paid or non-demo: honor requested season if present (useSeasonAccess should validate entitlement)
+    if (url.seasonYear) return url.seasonYear;
 
-  // ---- data sources ----
-  const athleteId = isPaid ? (athleteProfile?.id ? String(athleteProfile.id) : null) : null;
+    // Default: whatever useSeasonAccess resolved (demo year when not entitled; paid season when entitled)
+    return season.seasonYear;
+  }, [forceDemo, forceDemoSession, demoSession?.seasonYear, url.seasonYear, season.demoYear, season.seasonYear]);
 
-  const paidQuery = useCampSummariesClient({
-    athleteId: athleteId || undefined,
-    sportId: nf.sportId || undefined,
-    enabled: isPaid && !!athleteId
-  });
+  // Season-aware gate:
+  // If the URL requests a non-demo season (e.g., ?season=2026) and the user did not explicitly force demo,
+  // do NOT silently downgrade to demo data. Require sign-in and entitlement instead.
+  useEffect(() => {
+    if (season.isLoading) return;
 
-  const demoQuery = usePublicCampSummariesClient({
-    seasonYear,
-    sportId: nf.sportId || null,
-    state: nf.state || null,
-    division: nf.division || null,
-    positionIds: nf.positionIds || [],
-    enabled: !isPaid
-  });
+    const requested = url.seasonYear; // from ?season=YYYY
+    const demoYear = season.demoYear;
+
+    // Explicit demo always wins (URL only)
+    if (forceDemo) return;
+
+    // No season requested → allow existing behavior
+    if (!requested) return;
+
+    // Requesting demo year is allowed without auth
+    if (demoYear && String(requested) === String(demoYear)) return;
+
+    // Non-demo season requested → gate
+    if (!season.accountId) {
+      nav(createPageUrl("Home") + `?signin=1&next=${nextParam}`, { replace: true });
+      return;
+    }
+
+    if (!season.hasAccess) {
+      nav(
+        createPageUrl("Subscribe") +
+          `?season=${encodeURIComponent(requested)}` +
+          `&source=${encodeURIComponent("discover_season_gate")}` +
+          `&next=${nextParam}`,
+        { replace: true }
+      );
+    }
+  }, [
+    season.isLoading,
+    season.accountId,
+    season.hasAccess,
+    season.demoYear,
+    forceDemo,
+    url.seasonYear,
+    nextParam,
+    nav
+  ]);
+
+  // Filters + UI state
+  const [filterOpen, setFilterOpen] = useState(false);
+  const { nf, setNF, clearFilters } = useCampFilters();
+
+  // Write gates for paid actions (favorites, registered, etc.)
+  const writeGate = useWriteGate();
+
+  const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
+
+  // Queries
+  const paidQuery = base44.useQuery(
+    "discover_paid",
+    async () => {
+      // Paid: needs athlete context for intents (favorites/registered)
+      // You can still list camps without athlete, but we enforce profile for MVP personalization.
+      const rows = await base44.entities.CampExpanded.filter({
+        season_year: seasonYear
+      });
+      return asArray(rows);
+    },
+    { enabled: !!isPaid && !season.isLoading }
+  );
+
+  const demoQuery = base44.useQuery(
+    "discover_demo",
+    async () => {
+      const rows = await base44.entities.CampExpanded.filter({
+        season_year: seasonYear
+      });
+      return asArray(rows);
+    },
+    { enabled: !isPaid && !season.isLoading }
+  );
 
   const loading =
     season.isLoading ||
-    (isPaid && identityLoading) ||
+    identityLoading ||
     (isPaid ? paidQuery.isLoading : demoQuery.isLoading);
 
   const rows = useMemo(() => {
-    const base = isPaid ? asArray(paidQuery.data) : asArray(demoQuery.data);
-    const state2 = nf.state ? String(nf.state) : null;
+    const data = isPaid ? paidQuery.data : demoQuery.data;
+    const src = asArray(data);
 
-    return base.filter((c) => {
-      const campState = normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
-
-      if (state2 && campState !== state2) return false;
-
-      if (nf.division) {
-        const div = c?.school_division || c?.division || null;
-        if (String(div || "") !== String(nf.division)) return false;
-      }
-
-      if (nf.positionIds && nf.positionIds.length) {
-        const campPos = asArray(c?.position_ids);
-        const has = nf.positionIds.some((pid) => campPos.map(String).includes(String(pid)));
-        if (!has) return false;
-      }
-
-      const start = c?.start_date || null;
-      if (!withinDateRange(start, nf.startDate || "", nf.endDate || "")) return false;
+    return src.filter((r) => {
+      // Apply filters (division / sport / positions / date range)
+      if (!matchesDivision(r, nf.divisions)) return false;
+      if (!matchesSport(r, nf.sports)) return false;
+      if (!matchesPositions(r, nf.positions)) return false;
+      if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
 
       return true;
     });
@@ -233,6 +208,7 @@ export default function Discover() {
   const renderBody = () => {
     if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
 
+    // Paid workspace requires athlete profile (MVP rule)
     if (isPaid && !athleteId) {
       return (
         <Card className="p-5 border-slate-200">
@@ -268,27 +244,25 @@ export default function Discover() {
     return (
       <div className="space-y-3">
         {rows.map((r) => {
-          const campId = String(r?.camp_id || r?.id || "");
-          const schoolId = r?.school_id ? String(r.school_id) : null;
-          const sportId = r?.sport_id ? String(r.sport_id) : null;
+          const campId = String(r?.camp_id ?? r?.id ?? "");
+          const schoolId = String(r?.school_id ?? "");
+          const sportId = String(r?.sport_id ?? "");
 
           const camp = {
             id: campId,
-            camp_name: r?.camp_name,
-            start_date: r?.start_date,
-            end_date: r?.end_date,
-            price: r?.price ?? null,
-            link_url: r?.link_url ?? null,
-            notes: r?.notes ?? null,
-            city: r?.city ?? null,
-            state: r?.state ?? null
+            name: r?.camp_name ?? r?.name ?? null,
+            camp_name: r?.camp_name ?? r?.name ?? null,
+            start_date: r?.start_date ?? null,
+            end_date: r?.end_date ?? null,
+            cost: r?.cost ?? null,
+            division: r?.division ?? null,
+            url: r?.url ?? null
           };
 
           const school = {
             id: schoolId,
+            name: r?.school_name ?? null,
             school_name: r?.school_name ?? null,
-            division: r?.school_division ?? null,
-            logo_url: r?.school_logo_url ?? null,
             city: r?.school_city ?? null,
             state: r?.school_state ?? null,
             conference: r?.school_conference ?? null
@@ -301,7 +275,7 @@ export default function Discover() {
           };
 
           const posObjs = asArray(r?.position_ids)
-            .map((pid) => positionsMap.get(String(pid)))
+            .map((pid) => (r?.positions_map ? r.positions_map[String(pid)] : null))
             .filter(Boolean);
 
           return (
@@ -314,13 +288,25 @@ export default function Discover() {
               isFavorite={String(r?.intent_status || "").toLowerCase() === "favorite"}
               isRegistered={String(r?.intent_status || "").toLowerCase() === "registered"}
               mode={isPaid ? "paid" : "demo"}
-              disabledFavorite={!isPaid}
-              onClick={() => {
-                try {
-                  nav(createPageUrl("CampDetail") + `?id=${encodeURIComponent(campId)}`);
-                } catch {}
+              onToggleFavorite={async () => {
+                // Block writes in demo
+                if (!isPaid) {
+                  trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "favorite" });
+                  return;
+                }
+                const ok = await writeGate.ensure("favorite");
+                if (!ok) return;
+                trackEvent({ event_name: "favorite_toggle", source: "discover", camp_id: campId });
               }}
-              onFavoriteToggle={() => {}}
+              onToggleRegistered={async () => {
+                if (!isPaid) {
+                  trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "registered" });
+                  return;
+                }
+                const ok = await writeGate.ensure("registered");
+                if (!ok) return;
+                trackEvent({ event_name: "registered_toggle", source: "discover", camp_id: campId });
+              }}
             />
           );
         })}
@@ -329,11 +315,11 @@ export default function Discover() {
   };
 
   return (
-    <div className="min-h-screen bg-surface">
-      <div className="max-w-md mx-auto px-4 pt-5 pb-24">
-        <div className="flex items-center justify-between mb-2">
+    <div className="min-h-screen bg-slate-50 pb-20">
+      <div className="max-w-5xl mx-auto px-4 pt-6">
+        <div className="flex items-center justify-between">
           <div>
-            <div className="text-xl font-bold text-deep-navy">{title}</div>
+            <div className="text-2xl font-bold text-deep-navy">{title}</div>
             <div className="text-xs text-slate-500">
               {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
             </div>
@@ -346,14 +332,14 @@ export default function Discover() {
         </div>
 
         {/* Truth banner */}
-        <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
+        <div className="mb-4 mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
           <div className="flex flex-wrap gap-x-3 gap-y-1">
             <span><b>effectiveMode:</b> {effectiveMode}</span>
             <span><b>season.mode:</b> {season.mode}</span>
             <span><b>isAuthenticated:</b> {String(!!season.isAuthenticated)}</span>
             <span><b>accountId:</b> {season.accountId ? String(season.accountId) : "null"}</span>
             <span><b>entitled:</b> {String(!!season.entitlement)}</span>
-            <span><b>forceDemo(url):</b> {String(!!forceDemoUrl)}</span>
+            <span><b>forceDemo(url):</b> {String(!!forceDemo)}</span>
             <span><b>forceDemo(session):</b> {String(!!forceDemoSession)}</span>
           </div>
         </div>
@@ -361,17 +347,11 @@ export default function Discover() {
         {renderBody()}
 
         <FilterSheet
-          isOpen={filterOpen}
-          onClose={() => setFilterOpen(false)}
-          filters={filters}
-          onFilterChange={setFilters}
-          sports={sports}
-          positions={positions}
-          onApply={() => setFilterOpen(false)}
-          onClear={() => {
-            clearFilters();
-            setFilterOpen(false);
-          }}
+          open={filterOpen}
+          setOpen={setFilterOpen}
+          nf={nf}
+          setNF={setNF}
+          onClear={clearFilters}
         />
       </div>
 
@@ -379,3 +359,4 @@ export default function Discover() {
     </div>
   );
 }
+
