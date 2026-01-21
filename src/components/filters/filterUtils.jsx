@@ -164,3 +164,29 @@ export function withinDateRange(campStartStr, filterStart, filterEnd, campEndStr
 
   return true;
 }
+
+/**
+ * Filter matching functions for Discover.jsx
+ */
+
+export function matchesDivision(camp, divisions) {
+  if (!Array.isArray(divisions) || divisions.length === 0) return true;
+  const campDiv = String(camp?.division || camp?.school_division || "");
+  return divisions.some((d) => String(d) === campDiv);
+}
+
+export function matchesSport(camp, sports) {
+  if (!Array.isArray(sports) || sports.length === 0) return true;
+  const campSport = String(camp?.sport_id || "");
+  return sports.some((s) => String(s) === campSport);
+}
+
+export function matchesPositions(camp, positions) {
+  if (!Array.isArray(positions) || positions.length === 0) return true;
+  const campPositions = asArray(camp?.position_ids).map(String);
+  return positions.some((p) => campPositions.includes(String(p)));
+}
+
+export function matchesDateRange(camp, startDate, endDate) {
+  return withinDateRange(camp?.start_date, startDate, endDate, camp?.end_date);
+}
