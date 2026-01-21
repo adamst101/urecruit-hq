@@ -1,5 +1,5 @@
 // src/pages/Discover.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SlidersHorizontal } from "lucide-react";
 
@@ -16,7 +16,6 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
 
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
-import { useCampFilters } from "../components/filters/useCampFilters.jsx";
 import { useWriteGate } from "../components/hooks/useWriteGate.jsx";
 
 import {
@@ -57,6 +56,38 @@ function trackEvent(payload) {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
   } catch {}
 }
+
+/* ---------------------------
+   Minimal filters (no hook file)
+---------------------------- */
+const FILTER_STORAGE_KEY = "camp_filters_v1";
+
+function safeParse(json) {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeFilters(raw) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  return {
+    divisions: Array.isArray(r.divisions) ? r.divisions : [],
+    sports: Array.isArray(r.sports) ? r.sports : [],
+    positions: Array.isArray(r.positions) ? r.positions : [],
+    startDate: typeof r.startDate === "string" ? r.startDate : "",
+    endDate: typeof r.endDate === "string" ? r.endDate : ""
+  };
+}
+
+const DEFAULT_FILTERS = {
+  divisions: [],
+  sports: [],
+  positions: [],
+  startDate: "",
+  endDate: ""
+};
 
 export default function Discover() {
   const nav = useNavigate();
@@ -103,7 +134,14 @@ export default function Discover() {
 
     // Default: whatever useSeasonAccess resolved (demo year when not entitled; paid season when entitled)
     return season.seasonYear;
-  }, [forceDemo, forceDemoSession, demoSession?.seasonYear, url.seasonYear, season.demoYear, season.seasonYear]);
+  }, [
+    forceDemo,
+    forceDemoSession,
+    demoSession?.seasonYear,
+    url.seasonYear,
+    season.demoYear,
+    season.seasonYear
+  ]);
 
   // Season-aware gate:
   // If the URL requests a non-demo season (e.g., ?season=2026) and the user did not explicitly force demo,
@@ -149,9 +187,30 @@ export default function Discover() {
     nav
   ]);
 
-  // Filters + UI state
+  // Filters + UI state (embedded)
   const [filterOpen, setFilterOpen] = useState(false);
-  const { nf, setNF, clearFilters } = useCampFilters();
+  const [nf, setNF] = useState(() => {
+    try {
+      const stored = localStorage.getItem(FILTER_STORAGE_KEY);
+      if (!stored) return DEFAULT_FILTERS;
+      return normalizeFilters(safeParse(stored));
+    } catch {
+      return DEFAULT_FILTERS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(nf));
+    } catch {}
+  }, [nf]);
+
+  const clearFilters = useCallback(() => {
+    setNF(DEFAULT_FILTERS);
+    try {
+      localStorage.removeItem(FILTER_STORAGE_KEY);
+    } catch {}
+  }, []);
 
   // Write gates for paid actions (favorites, registered, etc.)
   const writeGate = useWriteGate();
@@ -162,8 +221,6 @@ export default function Discover() {
   const paidQuery = base44.useQuery(
     "discover_paid",
     async () => {
-      // Paid: needs athlete context for intents (favorites/registered)
-      // You can still list camps without athlete, but we enforce profile for MVP personalization.
       const rows = await base44.entities.CampExpanded.filter({
         season_year: seasonYear
       });
@@ -193,12 +250,10 @@ export default function Discover() {
     const src = asArray(data);
 
     return src.filter((r) => {
-      // Apply filters (division / sport / positions / date range)
       if (!matchesDivision(r, nf.divisions)) return false;
       if (!matchesSport(r, nf.sports)) return false;
       if (!matchesPositions(r, nf.positions)) return false;
       if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
-
       return true;
     });
   }, [isPaid, paidQuery.data, demoQuery.data, nf]);
@@ -289,7 +344,6 @@ export default function Discover() {
               isRegistered={String(r?.intent_status || "").toLowerCase() === "registered"}
               mode={isPaid ? "paid" : "demo"}
               onToggleFavorite={async () => {
-                // Block writes in demo
                 if (!isPaid) {
                   trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "favorite" });
                   return;
