@@ -10,20 +10,11 @@ import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
 /**
  * RouteGuard (Base44-safe)
  *
- * Rules:
- * - Demo override:
- *     - URL: ?mode=demo
- *     - Session: sessionStorage.force_demo_session_v1 === "1"
- *   Either forces demo and bypasses paid/profile gating.
+ * Demo override sources:
+ * - URL: ?mode=demo
+ * - Session: sessionStorage.force_demo_session_v1 === "1"
  *
- * - If auth is required but user is not authed:
- *     -> send to Home with next=...
- *
- * - Paid gating is season-aware:
- *     -> if requirePaid and user isn't entitled for the requested season,
- *        route to Subscribe?season=YYYY&next=...
- *
- * - Profile gating applies only when paid (and not demo override)
+ * Either forces demo and bypasses paid/profile gating.
  */
 
 function forceDemoSessionOn() {
@@ -90,7 +81,7 @@ export default function RouteGuard({
   // Paid means: not demo override AND hook says paid AND entitlement present
   const isPaid = !forceDemo && mode === "paid" && !!hasAccess;
 
-  // Profile gating only makes sense in paid mode (and not demo override)
+  // Profile gating only in paid mode
   const needsIdentity = requireProfile && isPaid;
 
   const loading = accessLoading || (needsIdentity && identityLoading);
@@ -101,7 +92,6 @@ export default function RouteGuard({
     nav(to, { replace: true });
   };
 
-  // Build the correct Subscribe URL for the season being requested
   const subscribeUrl = useMemo(() => {
     const y = requestedSeason || seasonYear || null;
     const base = createPageUrl("Subscribe");
@@ -127,7 +117,6 @@ export default function RouteGuard({
 
     // 1) Auth required
     if (requireAuth && !accountId) {
-      // Base44-safe: don't assume Login route exists
       safeReplace(createPageUrl("Home") + `?signin=1&next=${nextParam}`);
       return;
     }
@@ -161,7 +150,6 @@ export default function RouteGuard({
     nav,
     loc?.pathname,
     subscribeUrl,
-    safeReplace,
   ]);
 
   if (loading) {
