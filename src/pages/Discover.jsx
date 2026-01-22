@@ -50,7 +50,7 @@ function getUrlParams(search) {
   try {
     const sp = new URLSearchParams(search || "");
     const mode = sp.get("mode"); // "demo"
-    const season = sp.get("season");
+    const season = sp.get("season"); // "YYYY"
     const src = sp.get("src");
     const debug = sp.get("debug");
     return {
@@ -83,63 +83,68 @@ export default function Discover() {
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const nextParam = useMemo(() => normalizeNext(loc.pathname, loc.search), [loc.pathname, loc.search]);
 
-  // Demo can be forced by URL OR session override
+  // Demo can be forced by URL OR session override (testing)
   const forceDemoUrl = url.mode === "demo";
   const forceDemoSession = useMemo(() => forceDemoSessionOn(), []);
   const forceDemo = forceDemoUrl || forceDemoSession;
 
-  // Paid entitlement wins only when demo isn't forced
+  // Paid wins only when demo isn't forced
   const effectiveMode = forceDemo ? "demo" : (season.mode === "paid" ? "paid" : "demo");
   const isPaid = effectiveMode === "paid";
 
-  // seasonYear selection:
+  // seasonYear used by demo query (URL wins for demo)
   const seasonYear = useMemo(() => {
     if (!isPaid && forceDemo && url.seasonYear) return url.seasonYear;
     return season.seasonYear;
   }, [isPaid, forceDemo, url.seasonYear, season.seasonYear]);
 
   /* ------------------------------------------------------------------
-     ✅ BULLETPROOF BASE44 GATE (Step requested)
-     Replace your current "Season-aware gate" useEffect with this.
-
-     Rule:
-     - If demo is forced -> never gate
-     - If not authed -> allow demo (do nothing; Home handles login)
-     - If authed but not entitled -> HARD redirect to Subscribe with next preserved
+     ✅ INCORPORATED: REQUESTED-SEASON GATE (your snippet)
+     Goal:
+     - Only gate when user explicitly requests a non-demo season via ?season=YYYY
+     - Allow demoYear request without auth
+     - Use window.location.replace() for Base44 bulletproof redirects
   ------------------------------------------------------------------ */
   useEffect(() => {
     if (season.isLoading) return;
 
-    // Never gate if the user explicitly forced demo (URL or session)
+    const requested = url.seasonYear; // from ?season=YYYY
+    const demoYear = season.demoYear;
+
+    // Explicit demo always wins (URL or session) — do not gate
     if (forceDemo) return;
 
-    // If not logged in, do NOT gate. They can browse demo.
-    if (!season.isAuthenticated) return;
+    // No season requested → allow existing behavior
+    if (!requested) return;
 
-    // If entitled, do NOT gate.
-    if (season.mode === "paid") return;
+    // Requesting demo year is allowed without auth
+    if (demoYear && String(requested) === String(demoYear)) return;
 
-    // Authenticated but not entitled -> hard redirect (Base44-safe)
-    const target =
-      `${window.location.origin}${createPageUrl("Subscribe")}` +
-      `?source=discover_gate&season=${encodeURIComponent(season.currentYear || seasonYear || "")}` +
-      `&next=${nextParam}`;
+    // Non-demo season requested → gate (HARD redirect)
+    if (!season.accountId) {
+      const target = createPageUrl("Home") + `?signin=1&next=${nextParam}`;
+      window.location.replace(target);
+      return;
+    }
 
-    // Avoid loops
-    const here = `${window.location.origin}${loc.pathname}${loc.search}`;
-    if (here === target) return;
+    if (!season.hasAccess) {
+      const target =
+        createPageUrl("Subscribe") +
+        `?season=${encodeURIComponent(requested)}` +
+        `&source=${encodeURIComponent("discover_season_gate")}` +
+        `&next=${nextParam}`;
 
-    window.location.replace(target);
+      window.location.replace(target);
+      return;
+    }
   }, [
     season.isLoading,
-    season.isAuthenticated,
-    season.mode,
-    season.currentYear,
-    seasonYear,
+    season.accountId,
+    season.hasAccess,
+    season.demoYear,
     forceDemo,
-    nextParam,
-    loc.pathname,
-    loc.search
+    url.seasonYear,
+    nextParam
   ]);
 
   // If user becomes paid while sitting on an explicit demo URL, normalize to paid Discover
@@ -442,10 +447,13 @@ export default function Discover() {
               <span><b>season.mode:</b> {season.mode}</span>
               <span><b>isAuthenticated:</b> {String(!!season.isAuthenticated)}</span>
               <span><b>accountId:</b> {season.accountId ? String(season.accountId) : "null"}</span>
+              <span><b>hasAccess:</b> {String(!!season.hasAccess)}</span>
               <span><b>entitled:</b> {String(!!season.entitlement)}</span>
               <span><b>forceDemo(url):</b> {String(!!forceDemoUrl)}</span>
               <span><b>forceDemo(session):</b> {String(!!forceDemoSession)}</span>
-              <span><b>seasonYear:</b> {String(seasonYear)}</span>
+              <span><b>requestedSeason(url):</b> {String(url.seasonYear || "")}</span>
+              <span><b>demoYear:</b> {String(season.demoYear || "")}</span>
+              <span><b>seasonYear(effective):</b> {String(seasonYear)}</span>
               <span><b>src:</b> {url.src ? url.src : "null"}</span>
               <span><b>paidEnabled:</b> {String(!!paidEnabled)}</span>
               <span><b>demoEnabled:</b> {String(!!demoEnabled)}</span>
@@ -474,3 +482,4 @@ export default function Discover() {
     </div>
   );
 }
+
