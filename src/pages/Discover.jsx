@@ -38,10 +38,6 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
-function safeBool(b) {
-  return !!b;
-}
-
 function forceDemoSessionOn() {
   try {
     return sessionStorage.getItem(FORCE_DEMO_SESSION_KEY) === "1";
@@ -87,35 +83,66 @@ export default function Discover() {
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const nextParam = useMemo(() => normalizeNext(loc.pathname, loc.search), [loc.pathname, loc.search]);
 
-  // ✅ Demo can be forced by URL OR session override (testing)
+  // Demo can be forced by URL OR session override
   const forceDemoUrl = url.mode === "demo";
   const forceDemoSession = useMemo(() => forceDemoSessionOn(), []);
   const forceDemo = forceDemoUrl || forceDemoSession;
 
-  // ✅ Paid entitlement wins only when demo isn't forced
+  // Paid entitlement wins only when demo isn't forced
   const effectiveMode = forceDemo ? "demo" : (season.mode === "paid" ? "paid" : "demo");
   const isPaid = effectiveMode === "paid";
 
-  // ✅ seasonYear selection:
-  // - If demo forced and URL has a season year, use it
-  // - Else use the hook-selected seasonYear (paid/current)
+  // seasonYear selection:
   const seasonYear = useMemo(() => {
     if (!isPaid && forceDemo && url.seasonYear) return url.seasonYear;
     return season.seasonYear;
   }, [isPaid, forceDemo, url.seasonYear, season.seasonYear]);
 
-  // ✅ If authenticated but not entitled, route to Subscribe
-  // BUT NEVER when demo is forced (URL or session)
+  /* ------------------------------------------------------------------
+     ✅ BULLETPROOF BASE44 GATE (Step requested)
+     Replace your current "Season-aware gate" useEffect with this.
+
+     Rule:
+     - If demo is forced -> never gate
+     - If not authed -> allow demo (do nothing; Home handles login)
+     - If authed but not entitled -> HARD redirect to Subscribe with next preserved
+  ------------------------------------------------------------------ */
   useEffect(() => {
     if (season.isLoading) return;
+
+    // Never gate if the user explicitly forced demo (URL or session)
     if (forceDemo) return;
-    if (!season.isAuthenticated) return; // not logged in: let them browse demo (effectiveMode already demo)
+
+    // If not logged in, do NOT gate. They can browse demo.
+    if (!season.isAuthenticated) return;
+
+    // If entitled, do NOT gate.
     if (season.mode === "paid") return;
 
-    nav(createPageUrl("Subscribe") + `?source=discover_gate&next=${nextParam}`, { replace: true });
-  }, [season.isLoading, season.isAuthenticated, season.mode, forceDemo, nextParam, nav]);
+    // Authenticated but not entitled -> hard redirect (Base44-safe)
+    const target =
+      `${window.location.origin}${createPageUrl("Subscribe")}` +
+      `?source=discover_gate&season=${encodeURIComponent(season.currentYear || seasonYear || "")}` +
+      `&next=${nextParam}`;
 
-  // ✅ If user becomes paid while sitting on an explicit demo URL, normalize to paid Discover
+    // Avoid loops
+    const here = `${window.location.origin}${loc.pathname}${loc.search}`;
+    if (here === target) return;
+
+    window.location.replace(target);
+  }, [
+    season.isLoading,
+    season.isAuthenticated,
+    season.mode,
+    season.currentYear,
+    seasonYear,
+    forceDemo,
+    nextParam,
+    loc.pathname,
+    loc.search
+  ]);
+
+  // If user becomes paid while sitting on an explicit demo URL, normalize to paid Discover
   // But don't override session-based demo testing
   useEffect(() => {
     if (season.isLoading) return;
@@ -170,7 +197,7 @@ export default function Discover() {
         } catch (e) {
           if (mounted) {
             setSports([]);
-            setPicklistErr(String(e?.message || e || "Failed to load picklists"));
+            setPicklistErr(String(e?.message || e || "Failed to load sports"));
           }
         }
       }
@@ -186,7 +213,7 @@ export default function Discover() {
         } catch (e) {
           if (mounted) {
             setPositions([]);
-            setPicklistErr(String(e?.message || e || "Failed to load picklists"));
+            setPicklistErr(String(e?.message || e || "Failed to load positions"));
           }
         }
       }
@@ -235,7 +262,6 @@ export default function Discover() {
     (isPaid && identityLoading) ||
     (isPaid ? paidQuery.isLoading : demoQuery.isLoading);
 
-  // ✅ Stop going blank: compute errors and render a visible fallback
   const dataError = useMemo(() => {
     const err =
       (isPaid ? paidQuery.error : demoQuery.error) ||
@@ -285,22 +311,13 @@ export default function Discover() {
           <div className="text-lg font-semibold text-rose-800">Discover couldn’t load</div>
           <div className="mt-2 text-sm text-rose-800/90 break-words">{dataError}</div>
           <div className="mt-4 flex gap-2">
-            <Button
-              onClick={() => window.location.reload()}
-              className="gap-2"
-            >
+            <Button onClick={() => window.location.reload()} className="gap-2">
               <RefreshCcw className="w-4 h-4" />
               Reload
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => nav(createPageUrl("Home"))}
-            >
+            <Button variant="outline" onClick={() => nav(createPageUrl("Home"))}>
               Back to Home
             </Button>
-          </div>
-          <div className="mt-3 text-xs text-rose-800/70">
-            This replaces “Safe Mode” behavior — we show the real error instead of a blank page.
           </div>
         </Card>
       );
@@ -418,13 +435,12 @@ export default function Discover() {
           </Button>
         </div>
 
-        {/* Optional debug banner (use ?debug=1) */}
         {url.debug ? (
           <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
             <div className="flex flex-wrap gap-x-3 gap-y-1">
               <span><b>effectiveMode:</b> {effectiveMode}</span>
               <span><b>season.mode:</b> {season.mode}</span>
-              <span><b>isAuthenticated:</b> {String(safeBool(season.isAuthenticated))}</span>
+              <span><b>isAuthenticated:</b> {String(!!season.isAuthenticated)}</span>
               <span><b>accountId:</b> {season.accountId ? String(season.accountId) : "null"}</span>
               <span><b>entitled:</b> {String(!!season.entitlement)}</span>
               <span><b>forceDemo(url):</b> {String(!!forceDemoUrl)}</span>
