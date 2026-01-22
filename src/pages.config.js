@@ -1,3 +1,4 @@
+import AdminBackfill from './pages/AdminBackfill';
 import AdminImport from './pages/AdminImport';
 import AuthRedirect from './pages/AuthRedirect';
 import Calendar from './pages/Calendar';
@@ -15,11 +16,11 @@ import Subscribe from './pages/Subscribe';
 import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
-import AdminBackfill from './pages/AdminBackfill';
 import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
+    "AdminBackfill": AdminBackfill,
     "AdminImport": AdminImport,
     "AuthRedirect": AuthRedirect,
     "Calendar": Calendar,
@@ -37,7 +38,6 @@ export const PAGES = {
     "TestFunctions": TestFunctions,
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
-    "AdminBackfill": AdminBackfill,
 }
 
 export const pagesConfig = {
