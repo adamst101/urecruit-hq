@@ -8,13 +8,16 @@ export function slugify(s) {
     .replace(/^-+|-+$/g, "");
 }
 
+// Return YYYY-MM-DD (UTC) or null
 export function toISODate(dateInput) {
   if (!dateInput) return null;
 
+  // Already ISO date?
   if (typeof dateInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
     return dateInput.trim();
   }
 
+  // Try parsing M/D/YYYY
   if (typeof dateInput === "string") {
     const s = dateInput.trim();
     const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -26,6 +29,7 @@ export function toISODate(dateInput) {
     }
   }
 
+  // Fallback: Date parse
   const d = new Date(dateInput);
   if (Number.isNaN(d.getTime())) return null;
 
@@ -42,10 +46,11 @@ export function computeSeasonYearFootball(startDateISO) {
   if (Number.isNaN(d.getTime())) return null;
 
   const y = d.getUTCFullYear();
-  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
+  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0)); // Feb 1
   return d >= feb1 ? y : y - 1;
 }
 
+// Simple stable hash (MVP-safe; not cryptographic)
 export function simpleHash(obj) {
   const str = typeof obj === "string" ? obj : JSON.stringify(obj ?? {});
   let h = 0;
@@ -56,24 +61,28 @@ export function simpleHash(obj) {
   return `h${Math.abs(h)}`;
 }
 
+// Deterministic program id when no Ryzer program_id is available
 export function seedProgramId({ school_id, camp_name }) {
   return `seed:${String(school_id || "na")}:${slugify(camp_name || "camp")}`;
 }
 
+// Unique per occurrence key for upsert
 export function buildEventKey({ source_platform, program_id, start_date, link_url, source_url }) {
   const platform = source_platform || "ryzer";
   const disc = link_url || source_url || "na";
   return `${platform}:${program_id}:${start_date || "na"}:${disc}`;
 }
 
+// Best-effort normalize price
 export function normalizePrice({ price_min, price_max, price_raw }) {
   const min = Number.isFinite(Number(price_min)) ? Number(price_min) : null;
   const max = Number.isFinite(Number(price_max)) ? Number(price_max) : null;
 
   let single = null;
   if (min != null && max == null) single = min;
-  if (min != null && max != null) single = min;
+  if (min != null && max != null) single = min; // choose min as representative
 
+  // If no parsed min/max but raw looks like "$75"
   if (single == null && typeof price_raw === "string") {
     const m = price_raw.replace(/,/g, "").match(/(\d+(\.\d+)?)/);
     if (m) single = Number(m[1]);
