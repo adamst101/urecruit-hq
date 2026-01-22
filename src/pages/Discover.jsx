@@ -1,76 +1,87 @@
-// src/pages/Discover.jsx (STABLE: Gate + Probe Entity + Safe Fetch)
+// src/pages/Discover.jsx (MVP: Gate + Event-by-season)
 import React, { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { SlidersHorizontal } from "lucide-react";
 
-import { createPageUrl } from "../utils";
 import { base44 } from "../api/base44Client";
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { createPageUrl } from "../utils";
 
-function getUrlParams(search) {
-  try {
-    const sp = new URLSearchParams(search || "");
-    const mode = String(sp.get("mode") || "").toLowerCase();
-    const season = sp.get("season");
-    const debug = sp.get("debug") === "1";
-    return {
-      forceDemo: mode === "demo",
-      requestedSeason: season && Number.isFinite(Number(season)) ? Number(season) : null,
-      debug
-    };
-  } catch {
-    return { forceDemo: false, requestedSeason: null, debug: false };
-  }
-}
+import { Button } from "../components/ui/button";
+import { Card } from "../components/ui/card";
+import BottomNav from "../components/navigation/BottomNav.jsx";
+import FilterSheet from "../components/filters/FilterSheet.jsx";
+
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { readDemoMode } from "../components/hooks/demoMode.jsx";
+
+import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { useCampFilters } from "../components/filters/useCampFilters.jsx";
+
+import {
+  matchesDivision,
+  matchesSport,
+  matchesPositions,
+  matchesDateRange
+} from "../components/filters/filterUtils.jsx";
+
+import CampCard from "../components/camps/CampCard.jsx";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
-function safeMsg(e) {
-  return String(e?.message || e || "unknown");
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
 }
 
-/**
- * Because Base44 entities can’t be enumerated reliably, we probe likely names.
- * Add/remove candidates as needed.
- */
-const ENTITY_CANDIDATES = [
-  "Camp",
-  "Camps",
-  "CampEvent",
-  "CampEvents",
-  "CampListing",
-  "CampListings",
-  "Event",
-  "Events"
-];
-
-async function probeEntityName(client) {
-  for (const name of ENTITY_CANDIDATES) {
-    const ent = client?.entities?.[name];
-    if (!ent?.filter) continue;
-
-    // Try the lightest possible call to confirm it exists
-    try {
-      await ent.filter({}, undefined, 1);
-      return name;
-    } catch {
-      // Some entities require specific filters; still counts as “exists”.
-      // We’ll treat “filter exists but query failed” as usable.
-      return name;
-    }
+function getUrlParams(search) {
+  try {
+    const sp = new URLSearchParams(search || "");
+    const mode = sp.get("mode");
+    const season = sp.get("season");
+    return {
+      mode: mode ? String(mode).toLowerCase() : null,
+      seasonYear: season && Number.isFinite(Number(season)) ? Number(season) : null
+    };
+  } catch {
+    return { mode: null, seasonYear: null };
   }
-  return null;
+}
+
+function trackEvent(payload) {
+  try {
+    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+  } catch {}
+}
+
+// Best-effort fetch by id (Base44-safe)
+async function fetchById(entity, id) {
+  if (!entity || !id) return null;
+  try {
+    if (typeof entity.get === "function") return await entity.get(id);
+  } catch {}
+  try {
+    const rows = await entity.filter({ id });
+    return asArray(rows)[0] || null;
+  } catch {
+    return null;
+  }
 }
 
 export default function Discover() {
+  const nav = useNavigate();
   const loc = useLocation();
-  const season = useSeasonAccess();
 
-  const { forceDemo, requestedSeason, debug } = useMemo(
-    () => getUrlParams(loc.search),
-    [loc.search]
-  );
+  const season = useSeasonAccess();
+  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
+
+  const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
+  const forceDemoUrl = url.mode === "demo";
+
+  const demoSession = useMemo(() => readDemoMode(), []);
+  const forceDemoSession = String(demoSession?.mode || "").toLowerCase() === "demo";
 
   const currentPath = useMemo(
     () => (loc?.pathname || "") + (loc?.search || ""),
@@ -78,67 +89,86 @@ export default function Discover() {
   );
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Choose season year
+  // Mode resolution (paid wins unless explicit demo)
+  const effectiveMode = (forceDemoUrl || forceDemoSession)
+    ? "demo"
+    : (season.mode === "paid" ? "paid" : "demo");
+
+  const isPaid = effectiveMode === "paid";
+
+  // Resolve seasonYear
   const seasonYear = useMemo(() => {
-    if (forceDemo) return requestedSeason || season?.demoYear || season?.seasonYear;
-    if (requestedSeason) return requestedSeason;
-    return season?.seasonYear || season?.demoYear;
-  }, [forceDemo, requestedSeason, season?.demoYear, season?.seasonYear]);
-
-  const effectiveMode = useMemo(() => {
-    if (forceDemo) return "demo";
-    return season?.mode === "paid" ? "paid" : "demo";
-  }, [forceDemo, season?.mode]);
-
-  // Hard gate: non-demo season requires auth + entitlement
-  useEffect(() => {
-    if (season?.isLoading) return;
-
-    const demoYear = season?.demoYear;
-
-    if (forceDemo) return;
-    if (!requestedSeason) return;
-    if (demoYear && String(requestedSeason) === String(demoYear)) return;
-
-    if (!season?.accountId) {
-      const target = createPageUrl("Home") + `?signin=1&next=${nextParam}`;
-      window.location.replace(target);
-      return;
+    // Explicit demo
+    if (forceDemoUrl || forceDemoSession) {
+      return (
+        url.seasonYear ||
+        demoSession?.seasonYear ||
+        season.demoYear ||
+        season.seasonYear
+      );
     }
 
-    if (!season?.hasAccess) {
-      const target =
-        createPageUrl("Subscribe") +
-        `?season=${encodeURIComponent(requestedSeason)}` +
-        `&source=${encodeURIComponent("discover_season_gate")}` +
-        `&next=${nextParam}`;
-      window.location.replace(target);
-      return;
-    }
+    // Paid/non-demo season requested
+    if (url.seasonYear) return url.seasonYear;
+
+    return season.seasonYear;
   }, [
-    season?.isLoading,
-    season?.accountId,
-    season?.hasAccess,
-    season?.demoYear,
-    forceDemo,
-    requestedSeason,
-    nextParam
+    forceDemoUrl,
+    forceDemoSession,
+    url.seasonYear,
+    demoSession?.seasonYear,
+    season.demoYear,
+    season.seasonYear
   ]);
 
-  // Debug “logout” button for testing
+  // Gate: requesting a non-demo season must not silently show demo
   useEffect(() => {
-    if (!debug) return;
-    // Optionally expose the imported client for console testing
-    try {
-      window.base44 = base44;
-    } catch {}
-  }, [debug]);
+    if (season.isLoading) return;
 
-  // Data loading (safe, no base44.useQuery)
-  const [entityName, setEntityName] = useState("");
+    const requested = url.seasonYear;
+    const demoYear = season.demoYear;
+
+    if (forceDemoUrl) return; // explicit demo is allowed
+    if (!requested) return;   // no season requested, normal flow
+    if (demoYear && String(requested) === String(demoYear)) return;
+
+    // Non-demo season requested -> require auth
+    if (!season.accountId) {
+      nav(createPageUrl("Home") + `?signin=1&next=${nextParam}`, { replace: true });
+      return;
+    }
+
+    // Auth but not entitled -> subscribe for that season
+    if (!season.hasAccess) {
+      nav(
+        createPageUrl("Subscribe") +
+          `?season=${encodeURIComponent(requested)}` +
+          `&source=${encodeURIComponent("discover_season_gate")}` +
+          `&next=${nextParam}`,
+        { replace: true }
+      );
+    }
+  }, [
+    season.isLoading,
+    season.accountId,
+    season.hasAccess,
+    season.demoYear,
+    forceDemoUrl,
+    url.seasonYear,
+    nextParam,
+    nav
+  ]);
+
+  // Filters
+  const [filterOpen, setFilterOpen] = useState(false);
+  const { nf, setNF, clearFilters } = useCampFilters();
+
+  const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
+
+  // Data state (no base44.useQuery -> prevents blank screen)
   const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState([]);
   const [err, setErr] = useState("");
+  const [rows, setRows] = useState([]);
 
   useEffect(() => {
     let alive = true;
@@ -149,37 +179,35 @@ export default function Discover() {
       setRows([]);
 
       try {
-        if (season?.isLoading) return;
-        if (!seasonYear) throw new Error("No seasonYear resolved.");
+        if (season.isLoading) return;
+        if (!seasonYear) return;
 
-        // If anon and requesting non-demo season, gate will redirect; avoid work
-        if (!forceDemo && requestedSeason && !season?.accountId) return;
+        // Pull Events for season_year
+        const events = await base44.entities.Event.filter({ season_year: seasonYear });
 
-        const name = await probeEntityName(base44);
-        if (!name) {
-          throw new Error(
-            `No known camp entity found. Tried: ${ENTITY_CANDIDATES.join(", ")}`
-          );
+        // Join minimal supporting data for MVP cards
+        const out = [];
+        for (const ev of asArray(events)) {
+          const camp = await fetchById(base44.entities.Camp, ev?.camp_id);
+          const school = await fetchById(base44.entities.School, ev?.school_id);
+          const sport = await fetchById(base44.entities.Sport, ev?.sport_id);
+
+          // Positions: if event has position_ids
+          let positions = [];
+          const pids = asArray(ev?.position_ids);
+          for (const pid of pids.slice(0, 12)) {
+            const p = await fetchById(base44.entities.Position, pid);
+            if (p) positions.push(p);
+          }
+
+          out.push({ ev, camp, school, sport, positions });
         }
 
         if (!alive) return;
-        setEntityName(name);
-
-        const ent = base44.entities[name];
-
-        // Try filtering by season_year first; if that field doesn’t exist, fallback to unfiltered.
-        let data;
-        try {
-          data = await ent.filter({ season_year: seasonYear });
-        } catch {
-          data = await ent.filter({});
-        }
-
-        if (!alive) return;
-        setRows(asArray(data));
+        setRows(out);
       } catch (e) {
         if (!alive) return;
-        setErr(safeMsg(e));
+        setErr(String(e?.message || e));
       } finally {
         if (!alive) return;
         setLoading(false);
@@ -187,78 +215,156 @@ export default function Discover() {
     }
 
     run();
-    return () => {
-      alive = false;
-    };
-  }, [season?.isLoading, season?.accountId, forceDemo, requestedSeason, seasonYear]);
+    return () => { alive = false; };
+  }, [season.isLoading, seasonYear]);
+
+  // Apply filters
+  const filtered = useMemo(() => {
+    return asArray(rows).filter(({ ev }) => {
+      if (!matchesDivision(ev, nf.divisions)) return false;
+      if (!matchesSport(ev, nf.sports)) return false;
+      if (!matchesPositions(ev, nf.positions)) return false;
+      if (!matchesDateRange(ev, nf.startDate || "", nf.endDate || "")) return false;
+      return true;
+    });
+  }, [rows, nf]);
+
+  const renderBody = () => {
+    if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
+    if (err) return (
+      <Card className="p-5 border-slate-200">
+        <div className="text-lg font-semibold text-deep-navy">Error</div>
+        <div className="mt-1 text-sm text-rose-700">{err}</div>
+        <div className="mt-3 text-sm text-slate-600">
+          Most common cause: <b>Event.season_year is blank</b> so the filter returns nothing. Backfill it first.
+        </div>
+      </Card>
+    );
+
+    // Optional: require profile only for paid actions, not for viewing
+    if (isPaid && !athleteId) {
+      return (
+        <Card className="p-5 border-slate-200">
+          <div className="text-lg font-semibold text-deep-navy">Complete your athlete profile</div>
+          <div className="mt-1 text-sm text-slate-600">
+            You can browse, but to save favorites / registrations you’ll need an athlete profile.
+          </div>
+          <div className="mt-4">
+            <Button onClick={() => nav(createPageUrl("Profile"))}>Go to Profile</Button>
+          </div>
+        </Card>
+      );
+    }
+
+    if (!filtered.length) {
+      return (
+        <Card className="p-5 border-slate-200">
+          <div className="text-lg font-semibold text-deep-navy">No camps found</div>
+          <div className="mt-1 text-sm text-slate-600">Try clearing filters or confirm Events have season_year.</div>
+          <div className="mt-4 flex gap-2">
+            <Button variant="outline" onClick={clearFilters}>Clear filters</Button>
+            <Button onClick={() => setFilterOpen(true)}>
+              <SlidersHorizontal className="w-4 h-4 mr-2" />
+              Edit filters
+            </Button>
+          </div>
+        </Card>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        {filtered.map(({ ev, camp, school, sport, positions }) => {
+          const campId = String(ev?.camp_id ?? camp?.id ?? ev?.id ?? "");
+          const schoolId = String(ev?.school_id ?? school?.id ?? "");
+          const sportId = String(ev?.sport_id ?? sport?.id ?? "");
+
+          return (
+            <CampCard
+              key={`${campId}-${ev?.id || ""}`}
+              camp={{
+                id: campId,
+                name: camp?.name || camp?.camp_name || ev?.camp_name || "Camp",
+                start_date: ev?.start_date || null,
+                end_date: ev?.end_date || null,
+                cost: ev?.cost ?? null,
+                division: ev?.division ?? null,
+                url: ev?.url || camp?.url || null
+              }}
+              school={{
+                id: schoolId,
+                name: school?.name || school?.school_name || ev?.school_name || null,
+                city: school?.city || ev?.school_city || null,
+                state: school?.state || ev?.school_state || null
+              }}
+              sport={{
+                id: sportId,
+                name: sport?.name || ev?.sport_name || null
+              }}
+              positions={positions || []}
+              mode={isPaid ? "paid" : "demo"}
+              onToggleFavorite={() => {
+                if (!isPaid) {
+                  trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "favorite" });
+                  return;
+                }
+                trackEvent({ event_name: "favorite_toggle", source: "discover", camp_id: campId });
+              }}
+              onToggleRegistered={() => {
+                if (!isPaid) {
+                  trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "registered" });
+                  return;
+                }
+                trackEvent({ event_name: "registered_toggle", source: "discover", camp_id: campId });
+              }}
+            />
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
-    <div style={{ padding: 16, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Discover</h1>
-          <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-            {effectiveMode === "paid" ? "Paid workspace" : `Demo season: ${seasonYear || ""}`}
+    <div className="min-h-screen bg-slate-50 pb-20">
+      <div className="max-w-5xl mx-auto px-4 pt-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-2xl font-bold text-deep-navy">Discover</div>
+            <div className="text-xs text-slate-500">
+              {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
+            </div>
+          </div>
+
+          <Button variant="outline" onClick={() => setFilterOpen(true)}>
+            <SlidersHorizontal className="w-4 h-4 mr-2" />
+            Filter
+          </Button>
+        </div>
+
+        {/* Truth banner */}
+        <div className="mb-4 mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <span><b>effectiveMode:</b> {effectiveMode}</span>
+            <span><b>seasonYear:</b> {String(seasonYear)}</span>
+            <span><b>accountId:</b> {season.accountId ? String(season.accountId) : "null"}</span>
+            <span><b>entitled:</b> {String(!!season.entitlement)}</span>
+            <span><b>forceDemo(url):</b> {String(!!forceDemoUrl)}</span>
+            <span><b>forceDemo(session):</b> {String(!!forceDemoSession)}</span>
           </div>
         </div>
 
-        {debug ? (
-          <button
-            onClick={() => {
-              try { base44?.auth?.logout?.(); } catch {}
-              try { localStorage.clear(); sessionStorage.clear(); } catch {}
-              window.location.reload();
-            }}
-            style={{
-              padding: "8px 10px",
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              background: "#111827",
-              color: "white",
-              cursor: "pointer",
-              fontSize: 12
-            }}
-          >
-            Debug: Logout + Clear
-          </button>
-        ) : null}
+        {renderBody()}
+
+        <FilterSheet
+          open={filterOpen}
+          setOpen={setFilterOpen}
+          nf={nf}
+          setNF={setNF}
+          onClear={clearFilters}
+        />
       </div>
 
-      <div style={{ marginTop: 12, border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, background: "white", fontSize: 12 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 14px" }}>
-          <span><b>URL:</b> {currentPath}</span>
-          <span><b>effectiveMode:</b> {effectiveMode}</span>
-          <span><b>seasonYear:</b> {String(seasonYear ?? "null")}</span>
-          <span><b>accountId:</b> {season?.accountId ? String(season.accountId) : "null"}</span>
-          <span><b>entitled:</b> {String(!!season?.entitlement)}</span>
-          <span><b>requestedSeason:</b> {String(requestedSeason ?? "null")}</span>
-          <span><b>entity:</b> {entityName || "(probing…)"}</span>
-        </div>
-      </div>
-
-      <div style={{ marginTop: 14 }}>
-        {loading ? (
-          <div style={{ color: "#6b7280" }}>Loading…</div>
-        ) : err ? (
-          <div style={{ color: "#b91c1c" }}>Error loading camps: {err}</div>
-        ) : (
-          <>
-            <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
-              Rows returned: <b>{rows.length}</b> (entity: <b>{entityName}</b>)
-            </div>
-
-            <div style={{ display: "grid", gap: 10 }}>
-              {rows.slice(0, 20).map((r, idx) => (
-                <div key={String(r?.id || idx)} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "white" }}>
-                  <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12 }}>
-                    {JSON.stringify(r, null, 2)}
-                  </pre>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+      <BottomNav />
     </div>
   );
 }
