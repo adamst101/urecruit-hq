@@ -1,7 +1,7 @@
 // src/pages/Discover.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { SlidersHorizontal, RefreshCcw } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 
 import { createPageUrl } from "../utils";
 import { base44 } from "../api/base44Client";
@@ -13,20 +13,20 @@ import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
-import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { readDemoMode } from "../components/hooks/demoMode.jsx";
 
-import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
-import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
+import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { useCampFilters } from "../components/filters/useCampFilters.jsx";
+import { useWriteGate } from "../components/hooks/useWriteGate.jsx";
 
 import {
-  normalizeFilters,
-  withinDateRange,
-  normalizeState
+  matchesDivision,
+  matchesSport,
+  matchesPositions,
+  matchesDateRange
 } from "../components/filters/filterUtils.jsx";
 
 import CampCard from "../components/camps/CampCard.jsx";
-
-const FORCE_DEMO_SESSION_KEY = "force_demo_session_v1";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -38,39 +38,24 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
-function forceDemoSessionOn() {
-  try {
-    return sessionStorage.getItem(FORCE_DEMO_SESSION_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
 function getUrlParams(search) {
   try {
     const sp = new URLSearchParams(search || "");
-    const mode = sp.get("mode"); // "demo"
-    const season = sp.get("season"); // "YYYY"
-    const src = sp.get("src");
-    const debug = sp.get("debug");
+    const mode = sp.get("mode"); // "demo" may be present from Home demo CTA
+    const season = sp.get("season");
     return {
       mode: mode ? String(mode).toLowerCase() : null,
-      seasonYear: season && Number.isFinite(Number(season)) ? Number(season) : null,
-      src: src ? String(src) : null,
-      debug: debug === "1"
+      seasonYear: season && Number.isFinite(Number(season)) ? Number(season) : null
     };
   } catch {
-    return { mode: null, seasonYear: null, src: null, debug: false };
+    return { mode: null, seasonYear: null };
   }
 }
 
-function normalizeNext(pathname, search) {
-  const p = (pathname || "") + (search || "");
+function trackEvent(payload) {
   try {
-    return encodeURIComponent(p || createPageUrl("Discover"));
-  } catch {
-    return encodeURIComponent(createPageUrl("Discover"));
-  }
+    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+  } catch {}
 }
 
 export default function Discover() {
@@ -78,40 +63,66 @@ export default function Discover() {
   const loc = useLocation();
 
   const season = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading, isError: identityError } = useAthleteIdentity();
+
+  const currentPath = useMemo(
+    () => (loc?.pathname || "") + (loc?.search || ""),
+    [loc?.pathname, loc?.search]
+  );
+  const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
+
+  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
+  const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
 
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
-  const nextParam = useMemo(() => normalizeNext(loc.pathname, loc.search), [loc.pathname, loc.search]);
+  const forceDemo = url.mode === "demo";
 
-  // Demo can be forced by URL OR session override (testing)
-  const forceDemoUrl = url.mode === "demo";
-  const forceDemoSession = useMemo(() => forceDemoSessionOn(), []);
-  const forceDemo = forceDemoUrl || forceDemoSession;
+  // Persisted demo mode (set by Home "Access Demo" CTA)
+  const demoSession = useMemo(() => readDemoMode(), []);
+  // IMPORTANT: only honor session-sticky demo when anonymous (prevents paid users getting stuck in demo)
+  const forceDemoSession =
+    !season.accountId && String(demoSession?.mode || "").toLowerCase() === "demo";
 
-  // Paid wins only when demo isn't forced
-  const effectiveMode = forceDemo ? "demo" : (season.mode === "paid" ? "paid" : "demo");
+  // effectiveMode: URL demo override wins; otherwise paid wins; otherwise demo (including anon demo session)
+  const effectiveMode = forceDemo
+    ? "demo"
+    : (season.mode === "paid" ? "paid" : (forceDemoSession ? "demo" : "demo"));
+
   const isPaid = effectiveMode === "paid";
 
-  // seasonYear used by demo query (URL wins for demo)
   const seasonYear = useMemo(() => {
-    if (!isPaid && forceDemo && url.seasonYear) return url.seasonYear;
-    return season.seasonYear;
-  }, [isPaid, forceDemo, url.seasonYear, season.seasonYear]);
+    // Demo: use URL season if provided, otherwise default to configured demo year.
+    if (forceDemo || forceDemoSession) {
+      return (
+        url.seasonYear ||
+        demoSession?.seasonYear ||
+        season.demoYear ||
+        season.seasonYear
+      );
+    }
 
-  /* ------------------------------------------------------------------
-     ✅ INCORPORATED: REQUESTED-SEASON GATE (your snippet)
-     Goal:
-     - Only gate when user explicitly requests a non-demo season via ?season=YYYY
-     - Allow demoYear request without auth
-     - Use window.location.replace() for Base44 bulletproof redirects
-  ------------------------------------------------------------------ */
+    // Paid or non-demo: honor requested season if present
+    if (url.seasonYear) return url.seasonYear;
+
+    // Default: whatever useSeasonAccess resolved
+    return season.seasonYear;
+  }, [
+    forceDemo,
+    forceDemoSession,
+    demoSession?.seasonYear,
+    url.seasonYear,
+    season.demoYear,
+    season.seasonYear
+  ]);
+
+  // Season-aware gate (HARD redirect; Base44-safe)
+  // If URL requests a non-demo season, do NOT show demo. Require sign-in + entitlement.
   useEffect(() => {
     if (season.isLoading) return;
 
     const requested = url.seasonYear; // from ?season=YYYY
     const demoYear = season.demoYear;
 
-    // Explicit demo always wins (URL or session) — do not gate
+    // Explicit demo always wins (URL only)
     if (forceDemo) return;
 
     // No season requested → allow existing behavior
@@ -120,7 +131,7 @@ export default function Discover() {
     // Requesting demo year is allowed without auth
     if (demoYear && String(requested) === String(demoYear)) return;
 
-    // Non-demo season requested → gate (HARD redirect)
+    // Non-demo season requested → gate
     if (!season.accountId) {
       const target = createPageUrl("Home") + `?signin=1&next=${nextParam}`;
       window.location.replace(target);
@@ -147,201 +158,58 @@ export default function Discover() {
     nextParam
   ]);
 
-  // If user becomes paid while sitting on an explicit demo URL, normalize to paid Discover
-  // But don't override session-based demo testing
-  useEffect(() => {
-    if (season.isLoading) return;
-    if (!isPaid) return;
-    if (!forceDemoUrl) return;
-    if (forceDemoSession) return;
-
-    nav(createPageUrl("Discover"), { replace: true });
-  }, [season.isLoading, isPaid, forceDemoUrl, forceDemoSession, nav]);
-
-  // ---- filters ----
+  // Filters + UI state
   const [filterOpen, setFilterOpen] = useState(false);
-  const [filters, setFilters] = useState({
-    sport: "",
-    state: "",
-    divisions: [],
-    positions: [],
-    startDate: "",
-    endDate: ""
-  });
+  const { nf, setNF, clearFilters } = useCampFilters();
 
-  const clearFilters = () => {
-    setFilters({
-      sport: "",
-      state: "",
-      divisions: [],
-      positions: [],
-      startDate: "",
-      endDate: ""
-    });
-  };
+  // Write gates for paid actions
+  const writeGate = useWriteGate();
 
-  // ---- picklists ----
-  const [sports, setSports] = useState([]);
-  const [positions, setPositions] = useState([]);
-  const [picklistErr, setPicklistErr] = useState("");
+  // Queries
+  const paidQuery = base44.useQuery(
+    "discover_paid",
+    async () => {
+      const rows = await base44.entities.CampExpanded.filter({
+        season_year: seasonYear
+      });
+      return asArray(rows);
+    },
+    { enabled: !!isPaid && !season.isLoading }
+  );
 
-  useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      setPicklistErr("");
-
-      // Sports
-      try {
-        const rows = await base44.entities.Sport?.list?.();
-        if (mounted) setSports(Array.isArray(rows) ? rows : []);
-      } catch {
-        try {
-          const rows2 = await base44.entities.Sport?.filter?.({});
-          if (mounted) setSports(Array.isArray(rows2) ? rows2 : []);
-        } catch (e) {
-          if (mounted) {
-            setSports([]);
-            setPicklistErr(String(e?.message || e || "Failed to load sports"));
-          }
-        }
-      }
-
-      // Positions
-      try {
-        const rows = await base44.entities.Position?.list?.();
-        if (mounted) setPositions(Array.isArray(rows) ? rows : []);
-      } catch {
-        try {
-          const rows2 = await base44.entities.Position?.filter?.({});
-          if (mounted) setPositions(Array.isArray(rows2) ? rows2 : []);
-        } catch (e) {
-          if (mounted) {
-            setPositions([]);
-            setPicklistErr(String(e?.message || e || "Failed to load positions"));
-          }
-        }
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const positionsMap = useMemo(() => {
-    const m = new Map();
-    for (const p of asArray(positions)) {
-      const id = normId(p);
-      if (!id) continue;
-      m.set(String(id), p);
-    }
-    return m;
-  }, [positions]);
-
-  const nf = useMemo(() => normalizeFilters(filters), [filters]);
-
-  // ---- data sources ----
-  const athleteId = isPaid ? (athleteProfile?.id ? String(athleteProfile.id) : null) : null;
-
-  const paidEnabled = isPaid && !!athleteId;
-  const demoEnabled = !isPaid;
-
-  const paidQuery = useCampSummariesClient({
-    athleteId: athleteId || undefined,
-    sportId: nf.sportId || undefined,
-    enabled: paidEnabled
-  });
-
-  const demoQuery = usePublicCampSummariesClient({
-    seasonYear,
-    sportId: nf.sportId || null,
-    state: nf.state || null,
-    division: nf.division || null,
-    positionIds: nf.positionIds || [],
-    enabled: demoEnabled
-  });
+  const demoQuery = base44.useQuery(
+    "discover_demo",
+    async () => {
+      const rows = await base44.entities.CampExpanded.filter({
+        season_year: seasonYear
+      });
+      return asArray(rows);
+    },
+    { enabled: !isPaid && !season.isLoading }
+  );
 
   const loading =
     season.isLoading ||
-    (isPaid && identityLoading) ||
+    identityLoading ||
     (isPaid ? paidQuery.isLoading : demoQuery.isLoading);
 
-  const dataError = useMemo(() => {
-    const err =
-      (isPaid ? paidQuery.error : demoQuery.error) ||
-      (isPaid && identityError ? "Profile lookup failed." : "") ||
-      picklistErr ||
-      "";
-    return err ? String(err) : "";
-  }, [isPaid, paidQuery.error, demoQuery.error, identityError, picklistErr]);
-
   const rows = useMemo(() => {
-    const base = isPaid ? asArray(paidQuery.data) : asArray(demoQuery.data);
-    const state2 = nf.state ? String(nf.state) : null;
+    const data = isPaid ? paidQuery.data : demoQuery.data;
+    const src = asArray(data);
 
-    return base.filter((c) => {
-      const campState = normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
-
-      if (state2 && campState !== state2) return false;
-
-      if (nf.division) {
-        const div = c?.school_division || c?.division || null;
-        if (String(div || "") !== String(nf.division)) return false;
-      }
-
-      if (nf.positionIds && nf.positionIds.length) {
-        const campPos = asArray(c?.position_ids);
-        const has = nf.positionIds.some((pid) => campPos.map(String).includes(String(pid)));
-        if (!has) return false;
-      }
-
-      const start = c?.start_date || null;
-      if (!withinDateRange(start, nf.startDate || "", nf.endDate || "")) return false;
-
+    return src.filter((r) => {
+      // Apply filters (division / sport / positions / date range)
+      if (!matchesDivision(r, nf.divisions)) return false;
+      if (!matchesSport(r, nf.sports)) return false;
+      if (!matchesPositions(r, nf.positions)) return false;
+      if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
       return true;
     });
   }, [isPaid, paidQuery.data, demoQuery.data, nf]);
 
   const title = "Discover";
 
-  const renderBody = () => {
-    if (loading) {
-      return <div className="py-10 text-center text-slate-500">Loading…</div>;
-    }
-
-    if (dataError) {
-      return (
-        <Card className="p-5 border-rose-200 bg-rose-50">
-          <div className="text-lg font-semibold text-rose-800">Discover couldn’t load</div>
-          <div className="mt-2 text-sm text-rose-800/90 break-words">{dataError}</div>
-          <div className="mt-4 flex gap-2">
-            <Button onClick={() => window.location.reload()} className="gap-2">
-              <RefreshCcw className="w-4 h-4" />
-              Reload
-            </Button>
-            <Button variant="outline" onClick={() => nav(createPageUrl("Home"))}>
-              Back to Home
-            </Button>
-          </div>
-        </Card>
-      );
-    }
-
-    if (isPaid && !athleteId) {
-      return (
-        <Card className="p-5 border-slate-200">
-          <div className="text-lg font-semibold text-deep-navy">Complete your athlete profile</div>
-          <div className="mt-1 text-sm text-slate-600">
-            Your paid workspace needs an athlete profile to personalize results.
-          </div>
-          <div className="mt-4">
-            <Button onClick={() => nav(createPageUrl("Profile"))}>Go to Profile</Button>
-          </div>
-        </Card>
-      );
-    }
-
+  const renderResults = useCallback(() => {
     if (!rows.length) {
       return (
         <Card className="p-5 border-slate-200">
@@ -363,27 +231,25 @@ export default function Discover() {
     return (
       <div className="space-y-3">
         {rows.map((r) => {
-          const campId = String(r?.camp_id || r?.id || "");
-          const schoolId = r?.school_id ? String(r.school_id) : null;
-          const sportId = r?.sport_id ? String(r.sport_id) : null;
+          const campId = String(r?.camp_id ?? r?.id ?? "");
+          const schoolId = String(r?.school_id ?? "");
+          const sportId = String(r?.sport_id ?? "");
 
           const camp = {
             id: campId,
-            camp_name: r?.camp_name,
-            start_date: r?.start_date,
-            end_date: r?.end_date,
-            price: r?.price ?? null,
-            link_url: r?.link_url ?? null,
-            notes: r?.notes ?? null,
-            city: r?.city ?? null,
-            state: r?.state ?? null
+            name: r?.camp_name ?? r?.name ?? null,
+            camp_name: r?.camp_name ?? r?.name ?? null,
+            start_date: r?.start_date ?? null,
+            end_date: r?.end_date ?? null,
+            cost: r?.cost ?? null,
+            division: r?.division ?? null,
+            url: r?.url ?? null
           };
 
           const school = {
             id: schoolId,
+            name: r?.school_name ?? null,
             school_name: r?.school_name ?? null,
-            division: r?.school_division ?? null,
-            logo_url: r?.school_logo_url ?? null,
             city: r?.school_city ?? null,
             state: r?.school_state ?? null,
             conference: r?.school_conference ?? null
@@ -396,7 +262,7 @@ export default function Discover() {
           };
 
           const posObjs = asArray(r?.position_ids)
-            .map((pid) => positionsMap.get(String(pid)))
+            .map((pid) => (r?.positions_map ? r.positions_map[String(pid)] : null))
             .filter(Boolean);
 
           return (
@@ -409,26 +275,76 @@ export default function Discover() {
               isFavorite={String(r?.intent_status || "").toLowerCase() === "favorite"}
               isRegistered={String(r?.intent_status || "").toLowerCase() === "registered"}
               mode={isPaid ? "paid" : "demo"}
-              disabledFavorite={!isPaid}
-              onClick={() => {
-                try {
-                  nav(createPageUrl("CampDetail") + `?id=${encodeURIComponent(campId)}`);
-                } catch {}
+              onToggleFavorite={async () => {
+                // Block writes in demo
+                if (!isPaid) {
+                  trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "favorite" });
+                  return;
+                }
+                const ok = await writeGate.ensure("favorite");
+                if (!ok) return;
+                trackEvent({ event_name: "favorite_toggle", source: "discover", camp_id: campId });
               }}
-              onFavoriteToggle={() => {}}
+              onToggleRegistered={async () => {
+                if (!isPaid) {
+                  trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "registered" });
+                  return;
+                }
+                const ok = await writeGate.ensure("registered");
+                if (!ok) return;
+                trackEvent({ event_name: "registered_toggle", source: "discover", camp_id: campId });
+              }}
             />
           );
         })}
       </div>
     );
+  }, [rows, isPaid, writeGate, clearFilters, setFilterOpen]);
+
+  const renderBody = () => {
+    if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
+
+    // SOFT GATE: paid users without athlete profile can browse, but get a nudge
+    const showProfileNudge = isPaid && !athleteId;
+
+    if (showProfileNudge) {
+      return (
+        <div className="space-y-4">
+          <Card className="p-5 border-slate-200">
+            <div className="text-lg font-semibold text-deep-navy">
+              Add an athlete to personalize results
+            </div>
+            <div className="mt-1 text-sm text-slate-600">
+              You can browse camps now. Create an athlete profile to enable favorites, registrations, and calendar planning.
+            </div>
+            <div className="mt-4">
+              <Button
+                onClick={() =>
+                  nav(
+                    createPageUrl("Profile") +
+                      `?next=${encodeURIComponent(currentPath)}`
+                  )
+                }
+              >
+                Go to Profile
+              </Button>
+            </div>
+          </Card>
+
+          {renderResults()}
+        </div>
+      );
+    }
+
+    return renderResults();
   };
 
   return (
-    <div className="min-h-screen bg-surface">
-      <div className="max-w-md mx-auto px-4 pt-5 pb-24">
-        <div className="flex items-center justify-between mb-2">
+    <div className="min-h-screen bg-slate-50 pb-20">
+      <div className="max-w-5xl mx-auto px-4 pt-6">
+        <div className="flex items-center justify-between">
           <div>
-            <div className="text-xl font-bold text-deep-navy">{title}</div>
+            <div className="text-2xl font-bold text-deep-navy">{title}</div>
             <div className="text-xs text-slate-500">
               {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
             </div>
@@ -440,41 +356,27 @@ export default function Discover() {
           </Button>
         </div>
 
-        {url.debug ? (
-          <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
-            <div className="flex flex-wrap gap-x-3 gap-y-1">
-              <span><b>effectiveMode:</b> {effectiveMode}</span>
-              <span><b>season.mode:</b> {season.mode}</span>
-              <span><b>isAuthenticated:</b> {String(!!season.isAuthenticated)}</span>
-              <span><b>accountId:</b> {season.accountId ? String(season.accountId) : "null"}</span>
-              <span><b>hasAccess:</b> {String(!!season.hasAccess)}</span>
-              <span><b>entitled:</b> {String(!!season.entitlement)}</span>
-              <span><b>forceDemo(url):</b> {String(!!forceDemoUrl)}</span>
-              <span><b>forceDemo(session):</b> {String(!!forceDemoSession)}</span>
-              <span><b>requestedSeason(url):</b> {String(url.seasonYear || "")}</span>
-              <span><b>demoYear:</b> {String(season.demoYear || "")}</span>
-              <span><b>seasonYear(effective):</b> {String(seasonYear)}</span>
-              <span><b>src:</b> {url.src ? url.src : "null"}</span>
-              <span><b>paidEnabled:</b> {String(!!paidEnabled)}</span>
-              <span><b>demoEnabled:</b> {String(!!demoEnabled)}</span>
-            </div>
+        {/* Truth banner */}
+        <div className="mb-4 mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <span><b>effectiveMode:</b> {effectiveMode}</span>
+            <span><b>season.mode:</b> {season.mode}</span>
+            <span><b>isAuthenticated:</b> {String(!!season.isAuthenticated)}</span>
+            <span><b>accountId:</b> {season.accountId ? String(season.accountId) : "null"}</span>
+            <span><b>entitled:</b> {String(!!season.entitlement)}</span>
+            <span><b>forceDemo(url):</b> {String(!!forceDemo)}</span>
+            <span><b>forceDemo(session):</b> {String(!!forceDemoSession)}</span>
           </div>
-        ) : null}
+        </div>
 
         {renderBody()}
 
         <FilterSheet
-          isOpen={filterOpen}
-          onClose={() => setFilterOpen(false)}
-          filters={filters}
-          onFilterChange={setFilters}
-          sports={sports}
-          positions={positions}
-          onApply={() => setFilterOpen(false)}
-          onClear={() => {
-            clearFilters();
-            setFilterOpen(false);
-          }}
+          open={filterOpen}
+          setOpen={setFilterOpen}
+          nf={nf}
+          setNF={setNF}
+          onClear={clearFilters}
         />
       </div>
 
@@ -482,4 +384,3 @@ export default function Discover() {
     </div>
   );
 }
-
