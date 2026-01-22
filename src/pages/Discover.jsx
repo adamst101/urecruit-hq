@@ -1,9 +1,9 @@
-// src/pages/Discover.jsx (DISCOVER v1: Gate + Simple Camp List)
-import React, { useEffect, useMemo } from "react";
+// src/pages/Discover.jsx (STABLE: Gate + Safe Fetch, no base44.useQuery)
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 
 import { createPageUrl } from "../utils";
-import { base44 } from "../api/base44Client";
+import { base44 as importedBase44 } from "../api/base44Client";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 
 function getUrlParams(search) {
@@ -26,6 +26,14 @@ function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
+function safeString(x) {
+  try {
+    return typeof x === "string" ? x : JSON.stringify(x);
+  } catch {
+    return String(x);
+  }
+}
+
 export default function Discover() {
   const loc = useLocation();
   const season = useSeasonAccess();
@@ -41,34 +49,46 @@ export default function Discover() {
   );
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Determine seasonYear to query
+  // Choose which season to query
   const seasonYear = useMemo(() => {
     // Explicit demo can request any season (for testing)
-    if (forceDemo) return requestedSeason || season.demoYear || season.seasonYear;
+    if (forceDemo) return requestedSeason || season?.demoYear || season?.seasonYear;
 
-    // If a season is requested, use it (gating will enforce auth/entitlement)
+    // If a season is requested, use it (gate will enforce auth/entitlement)
     if (requestedSeason) return requestedSeason;
 
-    // Default: demo year when anonymous; paid year when entitled; whatever hook resolved
-    return season.seasonYear || season.demoYear;
-  }, [forceDemo, requestedSeason, season.demoYear, season.seasonYear]);
+    // Default: whatever hook resolved
+    return season?.seasonYear || season?.demoYear;
+  }, [forceDemo, requestedSeason, season?.demoYear, season?.seasonYear]);
 
-  // HARD GATE for non-demo season requests
+  const effectiveMode = useMemo(() => {
+    if (forceDemo) return "demo";
+    return season?.mode === "paid" ? "paid" : "demo";
+  }, [forceDemo, season?.mode]);
+
+  // ---- HARD GATE (Base44-safe) ----
   useEffect(() => {
     if (season?.isLoading) return;
 
     const demoYear = season?.demoYear;
 
+    // explicit demo override wins
     if (forceDemo) return;
+
+    // no season requested -> allow normal /Discover behavior
     if (!requestedSeason) return;
+
+    // demo year allowed without auth
     if (demoYear && String(requestedSeason) === String(demoYear)) return;
 
+    // non-demo season requested -> require auth
     if (!season?.accountId) {
       const target = createPageUrl("Home") + `?signin=1&next=${nextParam}`;
       window.location.replace(target);
       return;
     }
 
+    // authed but not entitled -> subscribe for that season
     if (!season?.hasAccess) {
       const target =
         createPageUrl("Subscribe") +
@@ -88,32 +108,96 @@ export default function Discover() {
     nextParam
   ]);
 
-  const effectiveMode = useMemo(() => {
-    if (forceDemo) return "demo";
-    return season?.mode === "paid" ? "paid" : "demo";
-  }, [forceDemo, season?.mode]);
+  // ---- SAFE ERROR CAPTURE (so no more silent white pages) ----
+  const [fatal, setFatal] = useState("");
+  useEffect(() => {
+    const onErr = (msg, src, line, col, err) => {
+      const e = err ? (err.stack || err.message || safeString(err)) : "";
+      setFatal(`window.onerror: ${safeString(msg)}\n${e}`);
+      return false;
+    };
+    const onRej = (ev) => {
+      const r = ev?.reason;
+      const e = r ? (r.stack || r.message || safeString(r)) : "";
+      setFatal(`unhandledrejection: ${e || safeString(r)}`);
+    };
 
-  // Query camps (no dependencies)
-  const campsQuery = base44.useQuery(
-    `discover_v1_${effectiveMode}_${seasonYear}`,
-    async () => {
-      const rows = await base44.entities.CampExpanded.filter({ season_year: seasonYear });
-      return asArray(rows);
-    },
-    {
-      enabled: !season?.isLoading && !!seasonYear && (effectiveMode === "demo" || effectiveMode === "paid")
+    window.addEventListener("error", onErr);
+    window.addEventListener("unhandledrejection", onRej);
+    return () => {
+      window.removeEventListener("error", onErr);
+      window.removeEventListener("unhandledrejection", onRej);
+    };
+  }, []);
+
+  // ---- LOAD CAMPS (NO base44.useQuery) ----
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+
+    async function run() {
+      setLoading(true);
+      setErr("");
+
+      try {
+        // Don’t fetch until the season hook resolves
+        if (season?.isLoading) return;
+
+        // If we’re requesting a non-demo season and we’re anon, the gate will redirect.
+        // Avoid doing work in that window.
+        if (!forceDemo && requestedSeason && !season?.accountId) return;
+
+        // If seasonYear missing, stop
+        if (!seasonYear) {
+          if (alive) {
+            setRows([]);
+            setLoading(false);
+          }
+          return;
+        }
+
+        const client = importedBase44 || window.base44;
+        if (!client || !client.entities || !client.entities.CampExpanded) {
+          throw new Error("CampExpanded entity not available (client/entities missing).");
+        }
+
+        const data = await client.entities.CampExpanded.filter({ season_year: seasonYear });
+
+        if (!alive) return;
+        setRows(asArray(data));
+      } catch (e) {
+        if (!alive) return;
+        setErr(String(e?.message || e));
+      } finally {
+        if (!alive) return;
+        setLoading(false);
+      }
     }
-  );
 
-  const loading = season?.isLoading || campsQuery.isLoading;
+    run();
 
+    return () => {
+      alive = false;
+    };
+  }, [
+    season?.isLoading,
+    season?.accountId,
+    forceDemo,
+    requestedSeason,
+    seasonYear
+  ]);
+
+  // ---- UI ----
   return (
     <div style={{ padding: 16, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Discover</h1>
           <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-            {effectiveMode === "paid" ? "Paid workspace" : `Demo season: ${seasonYear}`}
+            {effectiveMode === "paid" ? "Paid workspace" : `Demo season: ${seasonYear || ""}`}
           </div>
         </div>
 
@@ -144,28 +228,39 @@ export default function Discover() {
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 14px" }}>
           <span><b>URL:</b> {currentPath}</span>
           <span><b>effectiveMode:</b> {effectiveMode}</span>
-          <span><b>seasonYear:</b> {String(seasonYear)}</span>
+          <span><b>seasonYear:</b> {String(seasonYear ?? "null")}</span>
           <span><b>accountId:</b> {season?.accountId ? String(season.accountId) : "null"}</span>
           <span><b>entitled:</b> {String(!!season?.entitlement)}</span>
           <span><b>forceDemo(url):</b> {String(forceDemo)}</span>
+          <span><b>requestedSeason:</b> {String(requestedSeason ?? "null")}</span>
         </div>
       </div>
 
+      {/* Fatal crash capture */}
+      {fatal ? (
+        <div style={{ marginTop: 12, border: "1px solid #fecaca", background: "#fff1f2", color: "#9f1239", borderRadius: 8, padding: 10, fontSize: 12 }}>
+          <b>Captured fatal error</b>
+          <pre style={{ whiteSpace: "pre-wrap", marginTop: 6 }}>{fatal}</pre>
+        </div>
+      ) : null}
+
+      {/* Data */}
       <div style={{ marginTop: 14 }}>
         {loading ? (
           <div style={{ color: "#6b7280" }}>Loading camps…</div>
-        ) : campsQuery.isError ? (
+        ) : err ? (
           <div style={{ color: "#b91c1c" }}>
-            Error loading camps: {String(campsQuery.error?.message || campsQuery.error || "unknown")}
+            Error loading camps: {err}
           </div>
         ) : (
           <>
             <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
-              Camps returned: <b>{asArray(campsQuery.data).length}</b>
+              Camps returned: <b>{rows.length}</b>
             </div>
 
             <div style={{ display: "grid", gap: 10 }}>
-              {asArray(campsQuery.data).slice(0, 50).map((r, idx) => {
+              {rows.slice(0, 50).map((r, idx) => {
+                const key = String(r?.id || r?.camp_id || idx);
                 const name = r?.camp_name || r?.name || "Camp";
                 const school = r?.school_name || "";
                 const div = r?.division || "";
@@ -176,7 +271,7 @@ export default function Discover() {
                 const cost = r?.cost != null ? `$${r.cost}` : "";
 
                 return (
-                  <div key={String(r?.id || r?.camp_id || idx)} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "white" }}>
+                  <div key={key} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "white" }}>
                     <div style={{ fontWeight: 800, fontSize: 16, color: "#111827" }}>{name}</div>
                     <div style={{ marginTop: 4, fontSize: 12, color: "#374151" }}>
                       <b>{school}</b> {div ? `• ${div}` : ""}
