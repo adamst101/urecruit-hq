@@ -7,9 +7,9 @@ import { createPageUrl } from "../utils";
 
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 
+// ✅ Use the file you already created
 import {
   toISODate,
   computeSeasonYearFootball,
@@ -17,7 +17,7 @@ import {
   buildEventKey,
   simpleHash,
   normalizePrice
-} from "../components/utils/ingestUtils";
+} from "../components/utils/ingestUtils.js";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -32,16 +32,10 @@ function safeJsonParse(text) {
 }
 
 /**
- * Map your ingestion record -> Base44 Camp entity payload (occurrence model)
+ * Map ingestion record -> Camp payload (treat Camp as "occurrence")
  *
- * Expected raw fields (you can paste JSON from your ingestor):
- * - school_id, sport_id (required)
- * - name (required), event_start_date (required), event_end_date
- * - program_id (optional; Ryzer stable series id preferred)
- * - registration_url, source_url, source_platform
- * - position_ids, city, state
- * - price_raw, price_min, price_max
- * - event_dates_raw, grades_raw, register_by_raw, sections_json, notes
+ * NOTE: This assumes you already added these fields to Camp entity:
+ * season_year, program_id, event_key, source_platform, source_url, last_seen_at, content_hash, etc.
  */
 function mapRawToCampPayload(raw) {
   const camp_name = raw?.name || raw?.camp_name || "";
@@ -59,16 +53,14 @@ function mapRawToCampPayload(raw) {
   const source_platform = raw?.source_platform || "ryzer";
   const source_url = raw?.source_url || link_url || null;
 
-  // program_id: use Ryzer program_id when present; otherwise deterministic seed
   const program_id =
     raw?.program_id && String(raw.program_id).trim()
       ? String(raw.program_id).trim()
       : seedProgramId({ school_id, camp_name });
 
-  // Football Feb 1 rollover for now (your stated MVP rule)
+  // MVP rule (football): Feb 1 rollover
   const season_year = computeSeasonYearFootball(start_date);
 
-  // event_key: unique per occurrence
   const event_key = buildEventKey({
     source_platform,
     program_id,
@@ -84,6 +76,8 @@ function mapRawToCampPayload(raw) {
   });
 
   const sections_json = raw?.sections_json || null;
+
+  const now = new Date().toISOString();
 
   const hashInput = {
     school_id,
@@ -108,16 +102,12 @@ function mapRawToCampPayload(raw) {
     sections_json
   };
 
-  const now = new Date().toISOString();
-
   return {
-    // Required by your Camp schema
+    // Existing Camp fields
     school_id,
     sport_id,
     camp_name,
     start_date,
-
-    // Existing optional fields in your Camp schema
     end_date: end_date || null,
     city,
     state,
@@ -126,7 +116,7 @@ function mapRawToCampPayload(raw) {
     link_url,
     notes: raw?.notes || null,
 
-    // MVP ingestion fields (must exist in Camp entity after Step 1)
+    // New MVP fields (must exist in Camp schema)
     season_year,
     program_id,
     event_key,
@@ -135,7 +125,7 @@ function mapRawToCampPayload(raw) {
     last_seen_at: now,
     content_hash: simpleHash(hashInput),
 
-    // Nice-to-have (must exist in Camp entity if you added them)
+    // Nice-to-have (must exist in Camp schema if you added them)
     event_dates_raw: raw?.event_dates_raw || null,
     grades_raw: raw?.grades_raw || null,
     register_by_raw: raw?.register_by_raw || null,
@@ -146,21 +136,20 @@ function mapRawToCampPayload(raw) {
   };
 }
 
+async function fetchExistingByEventKey(event_key) {
+  // Base44 filter signature varies; try both patterns.
+  try {
+    return await base44.entities.Camp.filter({ event_key }, "-start_date", 1);
+  } catch {
+    return await base44.entities.Camp.filter({ event_key });
+  }
+}
+
 async function upsertCampByEventKey(payload) {
   const event_key = payload?.event_key;
   if (!event_key) throw new Error("Missing event_key");
 
-  let existing = [];
-  try {
-    existing = await base44.entities.Camp.filter({ event_key }, "-start_date", 1);
-  } catch {
-    try {
-      existing = await base44.entities.Camp.filter({ event_key });
-    } catch {
-      existing = [];
-    }
-  }
-
+  const existing = await fetchExistingByEventKey(event_key);
   const row = Array.isArray(existing) ? existing[0] : null;
 
   // Create
@@ -169,8 +158,9 @@ async function upsertCampByEventKey(payload) {
     return { action: "created", id: created?.id || null };
   }
 
-  // Update only if changed, always touch last_seen_at
+  // Update only if content changed; always touch last_seen_at
   const patch = { last_seen_at: payload.last_seen_at };
+
   const oldHash = String(row?.content_hash || "");
   const newHash = String(payload?.content_hash || "");
 
@@ -218,8 +208,8 @@ export default function AdminImport() {
     setSummary({ created: 0, updated: 0, touched: 0, failed: 0 });
 
     if (!signedIn) {
-      push("❌ You must be signed in (owner-create policy) to write Camp records.");
-      push("Tip: go to Home → Log in, then return to AdminImport.");
+      push("❌ You must be signed in to write Camp records (owner policy).");
+      push("Go to Home → Log in → return to AdminImport.");
       return;
     }
 
@@ -230,7 +220,7 @@ export default function AdminImport() {
 
     const records = asArray(parsed.value);
     if (!records.length) {
-      push("❌ Expected an array of records (JSON).");
+      push("❌ Expected a JSON array of records.");
       return;
     }
 
@@ -246,24 +236,16 @@ export default function AdminImport() {
         try {
           const payload = mapRawToCampPayload(raw);
 
-          // Required guardrails
+          // Guardrails for your current Camp required fields
           if (!payload.school_id || !payload.sport_id || !payload.camp_name || !payload.start_date) {
             counts.failed += 1;
-            push(
-              `❌ [${i + 1}] missing required: school_id / sport_id / name(camp_name) / event_start_date(start_date)`
-            );
+            push(`❌ [${i + 1}] missing required: school_id, sport_id, name/camp_name, event_start_date`);
             continue;
           }
 
           if (!payload.season_year) {
             counts.failed += 1;
             push(`❌ [${i + 1}] season_year could not be computed (bad start_date)`);
-            continue;
-          }
-
-          if (!payload.event_key) {
-            counts.failed += 1;
-            push(`❌ [${i + 1}] event_key could not be built`);
             continue;
           }
 
@@ -281,7 +263,9 @@ export default function AdminImport() {
     } finally {
       setWorking(false);
       setSummary(counts);
-      push(`Done. created=${counts.created}, updated=${counts.updated}, touched=${counts.touched}, failed=${counts.failed}`);
+      push(
+        `Done. created=${counts.created}, updated=${counts.updated}, touched=${counts.touched}, failed=${counts.failed}`
+      );
     }
   };
 
@@ -290,18 +274,15 @@ export default function AdminImport() {
       <div className="max-w-4xl mx-auto space-y-4">
         <div className="flex items-center justify-between">
           <div className="text-2xl font-bold text-deep-navy">Admin Import</div>
-          <Button
-            variant="outline"
-            onClick={() => nav(createPageUrl("Home"))}
-          >
+          <Button variant="outline" onClick={() => nav(createPageUrl("Home"))}>
             Back to Home
           </Button>
         </div>
 
         <Card className="p-4">
           <div className="text-sm text-slate-600">
-            Paste JSON (array) and run ingestion. This will normalize dates, compute football season_year (Feb 1 rollover),
-            generate program_id + event_key, and upsert into <b>Camp</b> by event_key.
+            Paste JSON (array) and run ingestion. This will normalize dates, compute <b>football</b> season_year
+            (Feb 1 rollover), generate program_id + event_key, and upsert into <b>Camp</b> by event_key.
           </div>
 
           <div className="mt-2 text-xs text-slate-500">
@@ -315,9 +296,7 @@ export default function AdminImport() {
             onChange={(e) => setInput(e.target.value)}
           />
 
-          {!parsed.ok ? (
-            <div className="mt-2 text-sm text-rose-700">JSON error: {parsed.error}</div>
-          ) : null}
+          {!parsed.ok ? <div className="mt-2 text-sm text-rose-700">JSON error: {parsed.error}</div> : null}
 
           <div className="mt-3 flex gap-2 items-center">
             <Button onClick={run} disabled={working}>
