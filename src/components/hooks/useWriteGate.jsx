@@ -156,11 +156,22 @@ export function useWriteGate() {
     [gate.mode, navigate, season.currentYear, defaultBlocked, localDemo?.seasonYear, demoDefaults?.demoSeasonYear]
   );
 
+  const ensure = useCallback(
+    async (action) => {
+      if (gate.mode === "paid") return true;
+      if (gate.mode === "demo") return true;
+      defaultBlocked();
+      return false;
+    },
+    [gate.mode, defaultBlocked]
+  );
+
   return {
     mode: gate.mode, // "demo" | "paid" | "blocked"
     reason: gate.reason,
     effectiveMode,
     write,
-    requirePaid
+    requirePaid,
+    ensure
   };
 }
