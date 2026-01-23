@@ -19,7 +19,6 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 import { useCampFilters } from "../components/filters/useCampFilters.jsx";
 import { useWriteGate } from "../components/hooks/useWriteGate.jsx";
 
-// If these exist in your project, keep them. If you ever get an import error, tell me and I’ll inline them.
 import {
   matchesDivision,
   matchesSport,
@@ -42,7 +41,7 @@ function normId(x) {
 function getUrlParams(search) {
   try {
     const sp = new URLSearchParams(search || "");
-    const mode = sp.get("mode"); // "demo" may be present
+    const mode = sp.get("mode");
     const season = sp.get("season");
     return {
       mode: mode ? String(mode).toLowerCase() : null,
@@ -64,6 +63,8 @@ export default function Discover() {
   const loc = useLocation();
 
   const season = useSeasonAccess();
+  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
+  const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
 
   const currentPath = useMemo(
     () => (loc?.pathname || "") + (loc?.search || ""),
@@ -71,13 +72,9 @@ export default function Discover() {
   );
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
-  const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
-
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const forceDemoUrl = url.mode === "demo";
 
-  // Persisted demo mode (set by Home "Access Demo")
   const demoSession = useMemo(() => readDemoMode(), []);
   const forceDemoSession = String(demoSession?.mode || "").toLowerCase() === "demo";
 
@@ -88,9 +85,9 @@ export default function Discover() {
 
   const isPaid = effectiveMode === "paid";
 
-  // Resolve seasonYear to query
+  // Resolve seasonYear to show/query
   const seasonYear = useMemo(() => {
-    // If explicitly demo (url or session), allow season override
+    // If explicitly demo (url or session), allow a season override, else demo default
     if (forceDemoUrl || forceDemoSession) {
       return (
         url.seasonYear ||
@@ -115,26 +112,25 @@ export default function Discover() {
 
   /**
    * Season-aware gate:
-   * If user requests a non-demo season (e.g. /Discover?season=2026) AND isn't explicitly forcing demo:
-   * - if not authed -> Home?signin=1&next=...
-   * - if authed but not entitled -> Subscribe?season=...&next=...
+   * /Discover?season=2026 (no demo mode) should NOT show demo data.
+   * It should send you to Home signin, then Subscribe if not entitled.
    */
   useEffect(() => {
     if (season.isLoading) return;
 
-    const requested = url.seasonYear; // from ?season=YYYY
+    const requested = url.seasonYear;
     const demoYear = season.demoYear;
 
     // URL demo wins
     if (forceDemoUrl) return;
 
-    // No season requested → allow
+    // no season requested -> allow
     if (!requested) return;
 
-    // requesting demo year is always allowed
+    // demo year is allowed without auth
     if (demoYear && String(requested) === String(demoYear)) return;
 
-    // requesting non-demo season → gate
+    // non-demo season requested -> gate
     if (!season.accountId) {
       nav(createPageUrl("Home") + `?signin=1&next=${nextParam}`, { replace: true });
       return;
@@ -163,103 +159,132 @@ export default function Discover() {
   // Filters + UI state
   const [filterOpen, setFilterOpen] = useState(false);
   const { nf, setNF, clearFilters } = useCampFilters();
-
-  // Write gates for paid actions
   const writeGate = useWriteGate();
 
-  /* -------------------------------------------------------
-     DATA: Camps + lookup tables (School / Sport / Position)
-     We hydrate client-side because Base44 does not give us
-     a join/view entity like CampExpanded.
-  ------------------------------------------------------- */
+  // Data state (no base44.useQuery)
+  const [camps, setCamps] = useState([]);
+  const [schools, setSchools] = useState([]);
+  const [sports, setSports] = useState([]);
+  const [positions, setPositions] = useState([]);
 
-  const campsQuery = base44.useQuery(
-    ["discover_camps", seasonYear, effectiveMode],
-    async () => {
-      // You are using a single Camp table as “occurrences”
-      // Filter by season_year. If some old rows don’t have season_year yet, they won’t show.
-      const rows = await base44.entities.Camp.filter({
-        season_year: seasonYear
-      });
-      return asArray(rows);
-    },
-    { enabled: !season.isLoading && !!seasonYear }
-  );
+  const [dataLoading, setDataLoading] = useState(true);
+  const [dataErr, setDataErr] = useState("");
 
-  const schoolsQuery = base44.useQuery(
-    "discover_schools",
-    async () => asArray(await base44.entities.School.filter({})),
-    { enabled: !season.isLoading }
-  );
+  // Load lookup tables once (schools/sports/positions)
+  useEffect(() => {
+    let alive = true;
 
-  const sportsQuery = base44.useQuery(
-    "discover_sports",
-    async () => asArray(await base44.entities.Sport.filter({})),
-    { enabled: !season.isLoading }
-  );
+    async function loadLookups() {
+      try {
+        setDataErr("");
+        // Keep this separate from camps load so camps can reload by season
+        const [schoolRows, sportRows, positionRows] = await Promise.all([
+          base44.entities.School.filter({}),
+          base44.entities.Sport.filter({}),
+          base44.entities.Position.filter({})
+        ]);
 
-  const positionsQuery = base44.useQuery(
-    "discover_positions",
-    async () => asArray(await base44.entities.Position.filter({})),
-    { enabled: !season.isLoading }
-  );
+        if (!alive) return;
+
+        setSchools(asArray(schoolRows));
+        setSports(asArray(sportRows));
+        setPositions(asArray(positionRows));
+      } catch (e) {
+        if (!alive) return;
+        setDataErr(String(e?.message || e));
+      }
+    }
+
+    // Don’t block on season; lookup tables are global
+    loadLookups();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Load camps whenever seasonYear changes
+  useEffect(() => {
+    let alive = true;
+
+    async function loadCamps() {
+      if (season.isLoading) return;
+      if (!seasonYear) return;
+
+      setDataLoading(true);
+      setDataErr("");
+
+      try {
+        // IMPORTANT: your current browse table is Camp, not CampExpanded
+        const rows = await base44.entities.Camp.filter({ season_year: seasonYear });
+        if (!alive) return;
+
+        setCamps(asArray(rows));
+
+        trackEvent({
+          event_name: "discover_camps_loaded",
+          source: "discover",
+          effective_mode: effectiveMode,
+          season_year: seasonYear,
+          count: asArray(rows).length,
+          account_id: season.accountId || null
+        });
+      } catch (e) {
+        if (!alive) return;
+        setDataErr(String(e?.message || e));
+        setCamps([]);
+      } finally {
+        if (!alive) return;
+        setDataLoading(false);
+      }
+    }
+
+    loadCamps();
+
+    return () => {
+      alive = false;
+    };
+  }, [season.isLoading, seasonYear, effectiveMode, season.accountId]);
 
   const schoolMap = useMemo(() => {
     const m = {};
-    for (const s of asArray(schoolsQuery.data)) m[String(s.id)] = s;
+    for (const s of asArray(schools)) m[String(s.id)] = s;
     return m;
-  }, [schoolsQuery.data]);
+  }, [schools]);
 
   const sportMap = useMemo(() => {
     const m = {};
-    for (const s of asArray(sportsQuery.data)) m[String(s.id)] = s;
+    for (const s of asArray(sports)) m[String(s.id)] = s;
     return m;
-  }, [sportsQuery.data]);
+  }, [sports]);
 
   const positionMap = useMemo(() => {
     const m = {};
-    for (const p of asArray(positionsQuery.data)) m[String(p.id)] = p;
+    for (const p of asArray(positions)) m[String(p.id)] = p;
     return m;
-  }, [positionsQuery.data]);
+  }, [positions]);
 
-  const loading =
-    season.isLoading ||
-    identityLoading ||
-    campsQuery.isLoading ||
-    schoolsQuery.isLoading ||
-    sportsQuery.isLoading ||
-    positionsQuery.isLoading;
+  const loading = season.isLoading || identityLoading || dataLoading;
 
-  const error =
-    campsQuery.error ||
-    schoolsQuery.error ||
-    sportsQuery.error ||
-    positionsQuery.error;
-
-  const hydratedRows = useMemo(() => {
-    const src = asArray(campsQuery.data);
-
-    // If you have filter logic that expects fields not in Camp, keep it defensive.
+  const filteredRows = useMemo(() => {
+    const src = asArray(camps);
     return src.filter((r) => {
-      // Apply filters only if they are set
       if (!matchesDivision(r, nf.divisions)) return false;
       if (!matchesSport(r, nf.sports)) return false;
       if (!matchesPositions(r, nf.positions)) return false;
       if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
       return true;
     });
-  }, [campsQuery.data, nf]);
-
-  const title = "Discover";
+  }, [camps, nf]);
 
   const renderBody = () => {
     if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
 
-    if (error) {
+    if (dataErr) {
       return (
         <Card className="p-5 border-slate-200">
           <div className="text-lg font-semibold text-rose-700">Error loading camps</div>
-          <div className="mt-2 text-sm text-slate-600">{String(error?.message || error)}</div>
+          <div className="mt-2 text-sm text-slate-600">{dataErr}</div>
         </Card>
       );
     }
@@ -279,11 +304,13 @@ export default function Discover() {
       );
     }
 
-    if (!hydratedRows.length) {
+    if (!filteredRows.length) {
       return (
         <Card className="p-5 border-slate-200">
           <div className="text-lg font-semibold text-deep-navy">No camps found</div>
-          <div className="mt-1 text-sm text-slate-600">Try clearing filters or verify season_year data.</div>
+          <div className="mt-1 text-sm text-slate-600">
+            Try clearing filters or verify that camps exist for season_year {String(seasonYear)}.
+          </div>
           <div className="mt-4 flex gap-2">
             <Button variant="outline" onClick={clearFilters}>
               Clear filters
@@ -299,7 +326,7 @@ export default function Discover() {
 
     return (
       <div className="space-y-3">
-        {hydratedRows.map((r) => {
+        {filteredRows.map((r) => {
           const campId = String(r?.id ?? "");
           const school = schoolMap[String(r?.school_id)] || null;
           const sport = sportMap[String(r?.sport_id)] || null;
@@ -310,28 +337,26 @@ export default function Discover() {
 
           const camp = {
             id: campId,
-            name: r?.camp_name ?? r?.name ?? null,
-            camp_name: r?.camp_name ?? r?.name ?? null,
+            name: r?.camp_name ?? null,
+            camp_name: r?.camp_name ?? null,
             start_date: r?.start_date ?? null,
             end_date: r?.end_date ?? null,
             cost: r?.price ?? r?.price_min ?? null,
-            division: r?.division ?? null,
             url: r?.link_url ?? r?.registration_url ?? r?.source_url ?? null
           };
 
           const schoolObj = {
             id: school?.id || r?.school_id || "",
-            name: school?.school_name || school?.name || r?.school_name || "Unknown School",
-            school_name: school?.school_name || school?.name || r?.school_name || "Unknown School",
+            name: school?.school_name || school?.name || "Unknown School",
+            school_name: school?.school_name || school?.name || "Unknown School",
             city: r?.city || school?.city || null,
-            state: r?.state || school?.state || null,
-            conference: school?.conference || null
+            state: r?.state || school?.state || null
           };
 
           const sportObj = {
             id: sport?.id || r?.sport_id || "",
-            name: sport?.sport_name || sport?.name || r?.sport_name || "Camp",
-            sport_name: sport?.sport_name || sport?.name || r?.sport_name || "Camp"
+            name: sport?.sport_name || sport?.name || "Camp",
+            sport_name: sport?.sport_name || sport?.name || "Camp"
           };
 
           return (
@@ -374,7 +399,7 @@ export default function Discover() {
       <div className="max-w-5xl mx-auto px-4 pt-6">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-2xl font-bold text-deep-navy">{title}</div>
+            <div className="text-2xl font-bold text-deep-navy">Discover</div>
             <div className="text-xs text-slate-500">
               {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
             </div>
@@ -395,6 +420,7 @@ export default function Discover() {
             <span><b>entitled:</b> {String(!!season.entitlement)}</span>
             <span><b>forceDemo(url):</b> {String(!!forceDemoUrl)}</span>
             <span><b>forceDemo(session):</b> {String(!!forceDemoSession)}</span>
+            <span><b>campCount:</b> {String(asArray(camps).length)}</span>
           </div>
         </div>
 
