@@ -45,16 +45,35 @@ function getUrlParams(search) {
     const season = sp.get("season");
     return {
       mode: mode ? String(mode).toLowerCase() : null,
-      seasonYear: season && Number.isFinite(Number(season)) ? Number(season) : null
+      seasonYear: season && Number.isFinite(Number(season)) ? Number(season) : null,
+      src: sp.get("src") || sp.get("source") || null
     };
   } catch {
-    return { mode: null, seasonYear: null };
+    return { mode: null, seasonYear: null, src: null };
   }
 }
 
 function trackEvent(payload) {
   try {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+  } catch {}
+}
+
+// Best-effort: clear persisted demo flags (exact keys vary by your demoMode implementation)
+function clearDemoPersistence() {
+  try {
+    localStorage.removeItem("demo_mode");
+    localStorage.removeItem("demo_season_year");
+    localStorage.removeItem("demoYear");
+    localStorage.removeItem("demoSeasonYear");
+    localStorage.removeItem("demo");
+  } catch {}
+  try {
+    sessionStorage.removeItem("demo_mode");
+    sessionStorage.removeItem("demo_season_year");
+    sessionStorage.removeItem("demoYear");
+    sessionStorage.removeItem("demoSeasonYear");
+    sessionStorage.removeItem("demo");
   } catch {}
 }
 
@@ -78,42 +97,44 @@ export default function Discover() {
   const demoSession = useMemo(() => readDemoMode(), []);
   const forceDemoSession = String(demoSession?.mode || "").toLowerCase() === "demo";
 
-  // Effective mode
-  const effectiveMode = (forceDemoUrl || forceDemoSession)
-    ? "demo"
-    : (season.mode === "paid" ? "paid" : "demo");
-
+  // ✅ Rule you want:
+  // If logged in + entitled => ALWAYS PAID, regardless of demo overrides.
+  const isEntitled = !!season.accountId && !!season.hasAccess;
+  const effectiveMode = isEntitled ? "paid" : ((forceDemoUrl || forceDemoSession) ? "demo" : "demo");
   const isPaid = effectiveMode === "paid";
 
-  // Resolve seasonYear to show/query
+  // ✅ When entitled, strip demo params + clear persisted demo so you never “fall back” to demo
+  useEffect(() => {
+    if (season.isLoading) return;
+    if (!isEntitled) return;
+
+    const hasDemoSignal = forceDemoUrl || forceDemoSession;
+    if (!hasDemoSignal) return;
+
+    clearDemoPersistence();
+
+    // Replace URL with clean paid Discover (no mode=demo)
+    nav(createPageUrl("Discover"), { replace: true });
+  }, [season.isLoading, isEntitled, forceDemoUrl, forceDemoSession, nav]);
+
+  // Resolve seasonYear to query
   const seasonYear = useMemo(() => {
-    // If explicitly demo (url or session), allow a season override, else demo default
-    if (forceDemoUrl || forceDemoSession) {
-      return (
-        url.seasonYear ||
-        demoSession?.seasonYear ||
-        season.demoYear ||
-        season.seasonYear
-      );
-    }
+    // Paid: always use entitled season resolved by useSeasonAccess
+    if (isPaid) return season.seasonYear;
 
-    // Paid/non-demo: honor requested season if present
-    if (url.seasonYear) return url.seasonYear;
-
-    return season.seasonYear;
-  }, [
-    forceDemoUrl,
-    forceDemoSession,
-    url.seasonYear,
-    demoSession?.seasonYear,
-    season.demoYear,
-    season.seasonYear
-  ]);
+    // Demo: allow URL override if present, else session demo year, else hook demoYear
+    return (
+      url.seasonYear ||
+      demoSession?.seasonYear ||
+      season.demoYear ||
+      season.seasonYear
+    );
+  }, [isPaid, season.seasonYear, url.seasonYear, demoSession?.seasonYear, season.demoYear, season.seasonYear]);
 
   /**
-   * Season-aware gate:
-   * /Discover?season=2026 (no demo mode) should NOT show demo data.
-   * It should send you to Home signin, then Subscribe if not entitled.
+   * Season-aware gate (non-demo season requested):
+   * /Discover?season=2026 (without mode=demo) should not show demo.
+   * It should send to Home signin, then Subscribe if not entitled.
    */
   useEffect(() => {
     if (season.isLoading) return;
@@ -121,13 +142,12 @@ export default function Discover() {
     const requested = url.seasonYear;
     const demoYear = season.demoYear;
 
-    // URL demo wins
+    // If URL explicitly says demo, allow demo browsing
     if (forceDemoUrl) return;
 
-    // no season requested -> allow
     if (!requested) return;
 
-    // demo year is allowed without auth
+    // requesting demo year is allowed without auth
     if (demoYear && String(requested) === String(demoYear)) return;
 
     // non-demo season requested -> gate
@@ -156,36 +176,31 @@ export default function Discover() {
     nav
   ]);
 
-  // Filters + UI state
+  // Filters + UI
   const [filterOpen, setFilterOpen] = useState(false);
   const { nf, setNF, clearFilters } = useCampFilters();
   const writeGate = useWriteGate();
 
-  // Data state (no base44.useQuery)
+  // Data state
   const [camps, setCamps] = useState([]);
   const [schools, setSchools] = useState([]);
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
-
   const [dataLoading, setDataLoading] = useState(true);
   const [dataErr, setDataErr] = useState("");
 
-  // Load lookup tables once (schools/sports/positions)
+  // Load lookups
   useEffect(() => {
     let alive = true;
 
     async function loadLookups() {
       try {
-        setDataErr("");
-        // Keep this separate from camps load so camps can reload by season
         const [schoolRows, sportRows, positionRows] = await Promise.all([
           base44.entities.School.filter({}),
           base44.entities.Sport.filter({}),
           base44.entities.Position.filter({})
         ]);
-
         if (!alive) return;
-
         setSchools(asArray(schoolRows));
         setSports(asArray(sportRows));
         setPositions(asArray(positionRows));
@@ -195,15 +210,11 @@ export default function Discover() {
       }
     }
 
-    // Don’t block on season; lookup tables are global
     loadLookups();
-
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
 
-  // Load camps whenever seasonYear changes
+  // Load camps for seasonYear
   useEffect(() => {
     let alive = true;
 
@@ -215,10 +226,21 @@ export default function Discover() {
       setDataErr("");
 
       try {
-        // IMPORTANT: your current browse table is Camp, not CampExpanded
-        const rows = await base44.entities.Camp.filter({ season_year: seasonYear });
-        if (!alive) return;
+        let rows = [];
 
+        if (isPaid) {
+          // Paid reads from Camp
+          rows = await base44.entities.Camp.filter({ season_year: seasonYear });
+        } else {
+          // Demo reads from CampDemo (fallback to Camp if needed)
+          try {
+            rows = await base44.entities.CampDemo.filter({ season_year: seasonYear });
+          } catch {
+            rows = await base44.entities.Camp.filter({ season_year: seasonYear });
+          }
+        }
+
+        if (!alive) return;
         setCamps(asArray(rows));
 
         trackEvent({
@@ -240,11 +262,8 @@ export default function Discover() {
     }
 
     loadCamps();
-
-    return () => {
-      alive = false;
-    };
-  }, [season.isLoading, seasonYear, effectiveMode, season.accountId]);
+    return () => { alive = false; };
+  }, [season.isLoading, seasonYear, isPaid, effectiveMode, season.accountId]);
 
   const schoolMap = useMemo(() => {
     const m = {};
@@ -309,7 +328,7 @@ export default function Discover() {
         <Card className="p-5 border-slate-200">
           <div className="text-lg font-semibold text-deep-navy">No camps found</div>
           <div className="mt-1 text-sm text-slate-600">
-            Try clearing filters or verify that camps exist for season_year {String(seasonYear)}.
+            Try clearing filters or confirm camps exist for season_year {String(seasonYear)}.
           </div>
           <div className="mt-4 flex gap-2">
             <Button variant="outline" onClick={clearFilters}>
