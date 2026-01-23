@@ -58,6 +58,7 @@ function trackEvent(payload) {
   } catch {}
 }
 
+// Parse year out of either YYYY-MM-DD or M/D/YYYY
 function yearFromDate(x) {
   if (!x) return null;
   const s = String(x).trim();
@@ -73,6 +74,15 @@ function yearFromDate(x) {
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return null;
   return d.getFullYear();
+}
+
+// If your filter utils are strict when fields are missing, avoid “filter-to-zero”
+function safeMatches(fn, row, val) {
+  try {
+    return fn(row, val);
+  } catch {
+    return true;
+  }
 }
 
 export default function Discover() {
@@ -92,15 +102,20 @@ export default function Discover() {
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const forceDemoUrl = url.mode === "demo";
 
+  // Demo session state set by Home "Access Demo"
   const demoSession = useMemo(() => readDemoMode(), []);
   const forceDemoSession = String(demoSession?.mode || "").toLowerCase() === "demo";
 
-  // ✅ Your rule: entitlement always wins. Entitled users never see demo.
+  // ✅ Your rule: entitlement wins. Entitled users should not see demo.
   const isEntitled = !!season.accountId && !!season.hasAccess;
   const isPaid = isEntitled;
 
+  // Choose season year
   const seasonYear = useMemo(() => {
+    // Paid: use hook’s resolved season
     if (isPaid) return season.seasonYear;
+
+    // Demo: honor URL season, else demoSession, else hook demoYear
     return (
       url.seasonYear ||
       demoSession?.seasonYear ||
@@ -116,12 +131,16 @@ export default function Discover() {
     const requested = url.seasonYear;
     const demoYear = season.demoYear;
 
-    if (forceDemoUrl) return; // explicit demo allowed
+    // Explicit demo allowed (URL)
+    if (forceDemoUrl) return;
+
+    // No requested season → do nothing
     if (!requested) return;
 
-    // requesting demo year is allowed without auth
+    // Requesting the demo year is allowed without auth
     if (demoYear && String(requested) === String(demoYear)) return;
 
+    // Non-demo season requested → require auth, then entitlement
     if (!season.accountId) {
       nav(createPageUrl("Home") + `?signin=1&next=${nextParam}`, { replace: true });
       return;
@@ -154,37 +173,60 @@ export default function Discover() {
 
   // Data state
   const [camps, setCamps] = useState([]);
-  const [demoSource, setDemoSource] = useState(null); // "CampDemo" | "Camp"
+  const [demoSource, setDemoSource] = useState(null); // "CampDemo" | "Camp" | null
   const [schools, setSchools] = useState([]);
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
+
   const [dataLoading, setDataLoading] = useState(true);
-  const [dataErr, setDataErr] = useState("");
+  const [entityErr, setEntityErr] = useState({
+    CampDemo: "",
+    Camp: "",
+    School: "",
+    Sport: "",
+    Position: ""
+  });
+
+  const [fatalErr, setFatalErr] = useState("");
 
   // Load lookups
   useEffect(() => {
     let alive = true;
+
     async function loadLookups() {
       try {
         const [schoolRows, sportRows, positionRows] = await Promise.all([
-          base44.entities.School.filter({}),
-          base44.entities.Sport.filter({}),
-          base44.entities.Position.filter({})
+          base44.entities.School.filter({}).catch((e) => {
+            if (alive) setEntityErr((p) => ({ ...p, School: String(e?.message || e) }));
+            return [];
+          }),
+          base44.entities.Sport.filter({}).catch((e) => {
+            if (alive) setEntityErr((p) => ({ ...p, Sport: String(e?.message || e) }));
+            return [];
+          }),
+          base44.entities.Position.filter({}).catch((e) => {
+            if (alive) setEntityErr((p) => ({ ...p, Position: String(e?.message || e) }));
+            return [];
+          })
         ]);
+
         if (!alive) return;
         setSchools(asArray(schoolRows));
         setSports(asArray(sportRows));
         setPositions(asArray(positionRows));
       } catch (e) {
         if (!alive) return;
-        setDataErr(String(e?.message || e));
+        setFatalErr(String(e?.message || e));
       }
     }
+
     loadLookups();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  // Load camps
+  // Load camps (paid or demo)
   useEffect(() => {
     let alive = true;
 
@@ -192,59 +234,85 @@ export default function Discover() {
       if (season.isLoading) return;
 
       setDataLoading(true);
-      setDataErr("");
+      setFatalErr("");
+
+      // Reset per-run entity errors for Camp/CampDemo
+      setEntityErr((p) => ({ ...p, CampDemo: "", Camp: "" }));
 
       try {
         let rows = [];
+        let usedDemoSource = null;
 
         if (isPaid) {
-          // Paid path expects season_year
-          rows = await base44.entities.Camp.filter({ season_year: seasonYear });
-          if (!alive) return;
-          setDemoSource(null);
+          // Paid: use season_year
+          try {
+            rows = await base44.entities.Camp.filter({ season_year: seasonYear });
+          } catch (e) {
+            if (alive) setEntityErr((p) => ({ ...p, Camp: String(e?.message || e) }));
+            rows = [];
+          }
+          usedDemoSource = null;
         } else {
-          // ✅ Demo path: try CampDemo; if empty, fall back to Camp
+          // Demo: try CampDemo first; if empty OR errored, fall back to Camp
           let demoRows = [];
-          let used = "CampDemo";
+          let campDemoErr = "";
+          let campErr = "";
 
           try {
             demoRows = await base44.entities.CampDemo.filter({});
-          } catch {
+          } catch (e) {
+            campDemoErr = String(e?.message || e);
             demoRows = [];
           }
 
+          // If CampDemo has no rows OR failed, fall back to Camp
           if (!Array.isArray(demoRows) || demoRows.length === 0) {
-            used = "Camp";
-            demoRows = await base44.entities.Camp.filter({});
+            usedDemoSource = "Camp";
+            try {
+              demoRows = await base44.entities.Camp.filter({});
+            } catch (e) {
+              campErr = String(e?.message || e);
+              demoRows = [];
+            }
+          } else {
+            usedDemoSource = "CampDemo";
           }
 
-          // Filter to the requested demo year by start_date (works even before season_year exists)
+          // Persist the per-entity errors so we can see them
+          if (alive) {
+            setEntityErr((p) => ({
+              ...p,
+              CampDemo: campDemoErr || "",
+              Camp: campErr || p.Camp || ""
+            }));
+          }
+
+          // Filter to requested demo year by start_date year (works even if season_year isn't populated)
           const y = Number(seasonYear);
           if (Number.isFinite(y)) {
             demoRows = asArray(demoRows).filter((r) => yearFromDate(r?.start_date) === y);
           }
 
           rows = demoRows;
-
-          if (!alive) return;
-          setDemoSource(used);
         }
 
         if (!alive) return;
+
+        setDemoSource(usedDemoSource);
         setCamps(asArray(rows));
 
         trackEvent({
           event_name: "discover_camps_loaded",
           source: "discover",
-          effective_mode: isPaid ? "paid" : "demo",
+          mode: isPaid ? "paid" : "demo",
           season_year: seasonYear,
           count: asArray(rows).length,
-          demo_source: demoSource || null,
+          demo_source: usedDemoSource || null,
           account_id: season.accountId || null
         });
       } catch (e) {
         if (!alive) return;
-        setDataErr(String(e?.message || e));
+        setFatalErr(String(e?.message || e));
         setCamps([]);
       } finally {
         if (!alive) return;
@@ -253,7 +321,9 @@ export default function Discover() {
     }
 
     loadCamps();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season.isLoading, isPaid, seasonYear, season.accountId]);
 
@@ -277,15 +347,6 @@ export default function Discover() {
 
   const loading = season.isLoading || identityLoading || dataLoading;
 
-  // If your filter utils are strict when a field is missing, this prevents “filter-to-zero” in demo
-  const safeMatches = (fn, row, val) => {
-    try {
-      return fn(row, val);
-    } catch {
-      return true;
-    }
-  };
-
   const filteredRows = useMemo(() => {
     const src = asArray(camps);
 
@@ -298,14 +359,35 @@ export default function Discover() {
     });
   }, [camps, nf]);
 
+  const renderErrors = () => {
+    const msgs = [];
+    if (entityErr.CampDemo) msgs.push(`CampDemo: ${entityErr.CampDemo}`);
+    if (entityErr.Camp) msgs.push(`Camp: ${entityErr.Camp}`);
+    if (entityErr.School) msgs.push(`School: ${entityErr.School}`);
+    if (entityErr.Sport) msgs.push(`Sport: ${entityErr.Sport}`);
+    if (entityErr.Position) msgs.push(`Position: ${entityErr.Position}`);
+    if (!msgs.length) return null;
+
+    return (
+      <Card className="p-4 border-rose-200 bg-rose-50">
+        <div className="font-semibold text-rose-800">Data errors detected</div>
+        <div className="mt-2 text-sm text-rose-800 space-y-1">
+          {msgs.map((m, i) => (
+            <div key={i}>{m}</div>
+          ))}
+        </div>
+      </Card>
+    );
+  };
+
   const renderBody = () => {
     if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
 
-    if (dataErr) {
+    if (fatalErr) {
       return (
         <Card className="p-5 border-slate-200">
-          <div className="text-lg font-semibold text-rose-700">Error loading camps</div>
-          <div className="mt-2 text-sm text-slate-600">{dataErr}</div>
+          <div className="text-lg font-semibold text-rose-700">Discover crashed</div>
+          <div className="mt-2 text-sm text-slate-600">{fatalErr}</div>
         </Card>
       );
     }
@@ -330,7 +412,7 @@ export default function Discover() {
         <Card className="p-5 border-slate-200">
           <div className="text-lg font-semibold text-deep-navy">No camps found</div>
           <div className="mt-1 text-sm text-slate-600">
-            This means the demo source has 0 records for year {String(seasonYear)} (or filters are excluding them).
+            Demo source has 0 records for year {String(seasonYear)} (or filters excluded them).
           </div>
           <div className="mt-4 flex gap-2">
             <Button variant="outline" onClick={clearFilters}>
@@ -407,12 +489,14 @@ export default function Discover() {
     );
   };
 
+  const title = "Discover";
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-2xl font-bold text-deep-navy">Discover</div>
+            <div className="text-2xl font-bold text-deep-navy">{title}</div>
             <div className="text-xs text-slate-500">
               {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
             </div>
@@ -438,6 +522,8 @@ export default function Discover() {
             <span><b>forceDemo(session):</b> {String(!!forceDemoSession)}</span>
           </div>
         </div>
+
+        {renderErrors()}
 
         {renderBody()}
 
