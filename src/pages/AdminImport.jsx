@@ -17,7 +17,7 @@ import {
   buildEventKey,
   simpleHash,
   normalizePrice
-} from "../components/utils/ingestUtils.js";
+} from "../components/utils/ingestUtils.jsx";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
