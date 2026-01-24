@@ -58,7 +58,6 @@ function trackEvent(payload) {
   } catch {}
 }
 
-// Parse year out of either YYYY-MM-DD or M/D/YYYY
 function yearFromDate(x) {
   if (!x) return null;
   const s = String(x).trim();
@@ -76,10 +75,10 @@ function yearFromDate(x) {
   return d.getFullYear();
 }
 
-// If your filter utils are strict when fields are missing, avoid “filter-to-zero”
-function safeMatches(fn, row, val) {
+function safeMatches(fn, row, valA, valB) {
   try {
-    return fn(row, val);
+    // supports both (row, list) and (row, start, end)
+    return typeof valB === "undefined" ? fn(row, valA) : fn(row, valA, valB);
   } catch {
     return true;
   }
@@ -102,45 +101,48 @@ export default function Discover() {
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const forceDemoUrl = url.mode === "demo";
 
-  // Demo session state set by Home "Access Demo"
   const demoSession = useMemo(() => readDemoMode(), []);
   const forceDemoSession = String(demoSession?.mode || "").toLowerCase() === "demo";
 
-  // ✅ Your rule: entitlement wins. Entitled users should not see demo.
+  // ✅ Entitlement wins. If entitled, we behave as paid even if demo session exists.
   const isEntitled = !!season.accountId && !!season.hasAccess;
   const isPaid = isEntitled;
 
-  // Choose season year
   const seasonYear = useMemo(() => {
-    // Paid: use hook’s resolved season
     if (isPaid) return season.seasonYear;
 
-    // Demo: honor URL season, else demoSession, else hook demoYear
     return (
       url.seasonYear ||
       demoSession?.seasonYear ||
       season.demoYear ||
       season.seasonYear
     );
-  }, [isPaid, season.seasonYear, url.seasonYear, demoSession?.seasonYear, season.demoYear, season.seasonYear]);
+  }, [
+    isPaid,
+    season.seasonYear,
+    url.seasonYear,
+    demoSession?.seasonYear,
+    season.demoYear,
+    season.seasonYear
+  ]);
 
-  // Gate: /Discover?season=2026 without mode=demo should not silently show demo
+  // Gate: /Discover?season=2026 (without mode=demo) must require auth + entitlement
   useEffect(() => {
     if (season.isLoading) return;
 
     const requested = url.seasonYear;
     const demoYear = season.demoYear;
 
-    // Explicit demo allowed (URL)
+    // Explicit demo URL bypasses gating
     if (forceDemoUrl) return;
 
-    // No requested season → do nothing
+    // No requested season: no gate here
     if (!requested) return;
 
-    // Requesting the demo year is allowed without auth
+    // Demo year allowed without auth
     if (demoYear && String(requested) === String(demoYear)) return;
 
-    // Non-demo season requested → require auth, then entitlement
+    // Non-demo year: require auth then entitlement
     if (!season.accountId) {
       nav(createPageUrl("Home") + `?signin=1&next=${nextParam}`, { replace: true });
       return;
@@ -166,14 +168,21 @@ export default function Discover() {
     nav
   ]);
 
-  // Filters + UI state
+  // Filters
   const [filterOpen, setFilterOpen] = useState(false);
   const { nf, setNF, clearFilters } = useCampFilters();
   const writeGate = useWriteGate();
 
   // Data state
   const [camps, setCamps] = useState([]);
-  const [demoSource, setDemoSource] = useState(null); // "CampDemo" | "Camp" | null
+  const [demoSource, setDemoSource] = useState("-");
+  const [counts, setCounts] = useState({
+    campDemoAll: 0,
+    campDemoYear: 0,
+    campAll: 0,
+    campYear: 0
+  });
+
   const [schools, setSchools] = useState([]);
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
@@ -189,7 +198,7 @@ export default function Discover() {
 
   const [fatalErr, setFatalErr] = useState("");
 
-  // Load lookups
+  // Lookups
   useEffect(() => {
     let alive = true;
 
@@ -226,7 +235,7 @@ export default function Discover() {
     };
   }, []);
 
-  // Load camps (paid or demo)
+  // Camps
   useEffect(() => {
     let alive = true;
 
@@ -236,78 +245,105 @@ export default function Discover() {
       setDataLoading(true);
       setFatalErr("");
 
-      // Reset per-run entity errors for Camp/CampDemo
+      // reset entity errors for Camp/CampDemo each run
       setEntityErr((p) => ({ ...p, CampDemo: "", Camp: "" }));
 
       try {
-        let rows = [];
-        let usedDemoSource = null;
-
         if (isPaid) {
-          // Paid: use season_year
+          // Paid: Camp by season_year
+          let rows = [];
           try {
             rows = await base44.entities.Camp.filter({ season_year: seasonYear });
           } catch (e) {
             if (alive) setEntityErr((p) => ({ ...p, Camp: String(e?.message || e) }));
             rows = [];
           }
-          usedDemoSource = null;
-        } else {
-          // Demo: try CampDemo first; if empty OR errored, fall back to Camp
-          let demoRows = [];
-          let campDemoErr = "";
-          let campErr = "";
 
-          try {
-            demoRows = await base44.entities.CampDemo.filter({});
-          } catch (e) {
-            campDemoErr = String(e?.message || e);
-            demoRows = [];
-          }
+          if (!alive) return;
+          setDemoSource("-");
+          setCounts((c) => ({ ...c, campAll: asArray(rows).length, campYear: asArray(rows).length }));
+          setCamps(asArray(rows));
+          return;
+        }
 
-          // If CampDemo has no rows OR failed, fall back to Camp
-          if (!Array.isArray(demoRows) || demoRows.length === 0) {
-            usedDemoSource = "Camp";
-            try {
-              demoRows = await base44.entities.Camp.filter({});
-            } catch (e) {
-              campErr = String(e?.message || e);
-              demoRows = [];
-            }
-          } else {
-            usedDemoSource = "CampDemo";
-          }
+        // Demo: ALWAYS attempt both sources, choose best
+        let campDemoAll = [];
+        let campAll = [];
+        let campDemoErr = "";
+        let campErr = "";
 
-          // Persist the per-entity errors so we can see them
-          if (alive) {
-            setEntityErr((p) => ({
-              ...p,
-              CampDemo: campDemoErr || "",
-              Camp: campErr || p.Camp || ""
-            }));
-          }
+        try {
+          campDemoAll = await base44.entities.CampDemo.filter({});
+        } catch (e) {
+          campDemoErr = String(e?.message || e);
+          campDemoAll = [];
+        }
 
-          // Filter to requested demo year by start_date year (works even if season_year isn't populated)
-          const y = Number(seasonYear);
-          if (Number.isFinite(y)) {
-            demoRows = asArray(demoRows).filter((r) => yearFromDate(r?.start_date) === y);
-          }
+        try {
+          campAll = await base44.entities.Camp.filter({});
+        } catch (e) {
+          campErr = String(e?.message || e);
+          campAll = [];
+        }
 
-          rows = demoRows;
+        const y = Number(seasonYear);
+        const campDemoYear = Number.isFinite(y)
+          ? asArray(campDemoAll).filter((r) => yearFromDate(r?.start_date) === y)
+          : asArray(campDemoAll);
+
+        const campYear = Number.isFinite(y)
+          ? asArray(campAll).filter((r) => yearFromDate(r?.start_date) === y)
+          : asArray(campAll);
+
+        // Record counts + errors (per-entity)
+        if (alive) {
+          setEntityErr((p) => ({
+            ...p,
+            CampDemo: campDemoErr || "",
+            Camp: campErr || ""
+          }));
+
+          setCounts({
+            campDemoAll: asArray(campDemoAll).length,
+            campDemoYear: asArray(campDemoYear).length,
+            campAll: asArray(campAll).length,
+            campYear: asArray(campYear).length
+          });
+        }
+
+        // Choose dataset:
+        // 1) CampDemo rows for year
+        // 2) Camp rows for year
+        // 3) CampDemo all (if exists) – means date parse/year mismatch
+        // 4) Camp all (if exists)
+        let chosen = [];
+        let chosenLabel = "none";
+
+        if (campDemoYear.length > 0) {
+          chosen = campDemoYear;
+          chosenLabel = "CampDemo(year)";
+        } else if (campYear.length > 0) {
+          chosen = campYear;
+          chosenLabel = "Camp(year)";
+        } else if (campDemoAll.length > 0) {
+          chosen = campDemoAll;
+          chosenLabel = "CampDemo(all-no-year-match)";
+        } else if (campAll.length > 0) {
+          chosen = campAll;
+          chosenLabel = "Camp(all-no-year-match)";
         }
 
         if (!alive) return;
-
-        setDemoSource(usedDemoSource);
-        setCamps(asArray(rows));
+        setDemoSource(chosenLabel);
+        setCamps(asArray(chosen));
 
         trackEvent({
           event_name: "discover_camps_loaded",
           source: "discover",
-          mode: isPaid ? "paid" : "demo",
+          mode: "demo",
           season_year: seasonYear,
-          count: asArray(rows).length,
-          demo_source: usedDemoSource || null,
+          count: asArray(chosen).length,
+          demo_source: chosenLabel,
           account_id: season.accountId || null
         });
       } catch (e) {
@@ -324,7 +360,6 @@ export default function Discover() {
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season.isLoading, isPaid, seasonYear, season.accountId]);
 
   const schoolMap = useMemo(() => {
@@ -392,7 +427,6 @@ export default function Discover() {
       );
     }
 
-    // Paid requires athlete profile (your MVP rule)
     if (isPaid && !athleteId) {
       return (
         <Card className="p-5 border-slate-200">
@@ -412,7 +446,8 @@ export default function Discover() {
         <Card className="p-5 border-slate-200">
           <div className="text-lg font-semibold text-deep-navy">No camps found</div>
           <div className="mt-1 text-sm text-slate-600">
-            Demo source has 0 records for year {String(seasonYear)} (or filters excluded them).
+            CampDemo(year): {counts.campDemoYear} · Camp(year): {counts.campYear} ·
+            CampDemo(all): {counts.campDemoAll} · Camp(all): {counts.campAll}
           </div>
           <div className="mt-4 flex gap-2">
             <Button variant="outline" onClick={clearFilters}>
@@ -489,14 +524,12 @@ export default function Discover() {
     );
   };
 
-  const title = "Discover";
-
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-2xl font-bold text-deep-navy">{title}</div>
+            <div className="text-2xl font-bold text-deep-navy">Discover</div>
             <div className="text-xs text-slate-500">
               {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
             </div>
@@ -515,7 +548,9 @@ export default function Discover() {
             <span><b>seasonYear:</b> {String(seasonYear)}</span>
             <span><b>accountId:</b> {season.accountId ? String(season.accountId) : "null"}</span>
             <span><b>entitled:</b> {String(!!season.hasAccess)}</span>
-            <span><b>demoSource:</b> {demoSource || "-"}</span>
+            <span><b>demoSource:</b> {demoSource}</span>
+            <span><b>CampDemo(year/all):</b> {counts.campDemoYear}/{counts.campDemoAll}</span>
+            <span><b>Camp(year/all):</b> {counts.campYear}/{counts.campAll}</span>
             <span><b>rawCamps:</b> {String(asArray(camps).length)}</span>
             <span><b>afterFilters:</b> {String(asArray(filteredRows).length)}</span>
             <span><b>forceDemo(url):</b> {String(!!forceDemoUrl)}</span>
