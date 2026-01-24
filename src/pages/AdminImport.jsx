@@ -1,331 +1,238 @@
 // src/pages/AdminImport.jsx
 import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-
 import { base44 } from "../api/base44Client";
-import { createPageUrl } from "../utils";
-
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { createPageUrl } from "../utils";
+import { useNavigate } from "react-router-dom";
 
-// ✅ Use the file you already created
 import {
   toISODate,
   computeSeasonYearFootball,
   seedProgramId,
   buildEventKey,
-  simpleHash,
-  normalizePrice
+  simpleHash
 } from "../components/utils/ingestUtils.jsx";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
-function safeJsonParse(text) {
-  try {
-    return { ok: true, value: JSON.parse(text) };
-  } catch (e) {
-    return { ok: false, error: String(e?.message || e) };
-  }
-}
-
-/**
- * Map ingestion record -> Camp payload (treat Camp as "occurrence")
- *
- * NOTE: This assumes you already added these fields to Camp entity:
- * season_year, program_id, event_key, source_platform, source_url, last_seen_at, content_hash, etc.
- */
-function mapRawToCampPayload(raw) {
-  const camp_name = raw?.name || raw?.camp_name || "";
-  const school_id = raw?.school_id || null;
-  const sport_id = raw?.sport_id || null;
-
-  const start_date = toISODate(raw?.event_start_date || raw?.start_date);
-  const end_date = toISODate(raw?.event_end_date || raw?.end_date);
-
-  const position_ids = Array.isArray(raw?.position_ids) ? raw.position_ids : [];
-  const city = raw?.city || null;
-  const state = raw?.state || null;
-
-  const link_url = raw?.registration_url || raw?.link_url || null;
-  const source_platform = raw?.source_platform || "ryzer";
-  const source_url = raw?.source_url || link_url || null;
-
-  const program_id =
-    raw?.program_id && String(raw.program_id).trim()
-      ? String(raw.program_id).trim()
-      : seedProgramId({ school_id, camp_name });
-
-  // MVP rule (football): Feb 1 rollover
-  const season_year = computeSeasonYearFootball(start_date);
-
-  const event_key = buildEventKey({
-    source_platform,
-    program_id,
-    start_date,
-    link_url,
-    source_url
-  });
-
-  const { price_min, price_max, price } = normalizePrice({
-    price_min: raw?.price_min,
-    price_max: raw?.price_max,
-    price_raw: raw?.price_raw
-  });
-
-  const sections_json = raw?.sections_json || null;
-
-  const now = new Date().toISOString();
-
-  const hashInput = {
-    school_id,
-    sport_id,
-    program_id,
-    camp_name,
-    start_date,
-    end_date,
-    city,
-    state,
-    position_ids,
-    link_url,
-    source_platform,
-    source_url,
-    event_dates_raw: raw?.event_dates_raw || "",
-    grades_raw: raw?.grades_raw || "",
-    register_by_raw: raw?.register_by_raw || "",
-    price_raw: raw?.price_raw || "",
-    price_min,
-    price_max,
-    notes: raw?.notes || "",
-    sections_json
-  };
-
-  return {
-    // Existing Camp fields
-    school_id,
-    sport_id,
-    camp_name,
-    start_date,
-    end_date: end_date || null,
-    city,
-    state,
-    position_ids,
-    price: price ?? null,
-    link_url,
-    notes: raw?.notes || null,
-
-    // New MVP fields (must exist in Camp schema)
-    season_year,
-    program_id,
-    event_key,
-    source_platform,
-    source_url,
-    last_seen_at: now,
-    content_hash: simpleHash(hashInput),
-
-    // Nice-to-have (must exist in Camp schema if you added them)
-    event_dates_raw: raw?.event_dates_raw || null,
-    grades_raw: raw?.grades_raw || null,
-    register_by_raw: raw?.register_by_raw || null,
-    price_raw: raw?.price_raw || null,
-    price_min: price_min ?? null,
-    price_max: price_max ?? null,
-    sections_json
-  };
-}
-
-async function fetchExistingByEventKey(event_key) {
-  // Base44 filter signature varies; try both patterns.
-  try {
-    return await base44.entities.Camp.filter({ event_key }, "-start_date", 1);
-  } catch {
-    return await base44.entities.Camp.filter({ event_key });
-  }
-}
-
-async function upsertCampByEventKey(payload) {
-  const event_key = payload?.event_key;
-  if (!event_key) throw new Error("Missing event_key");
-
-  const existing = await fetchExistingByEventKey(event_key);
-  const row = Array.isArray(existing) ? existing[0] : null;
-
-  // Create
-  if (!row?.id) {
-    const created = await base44.entities.Camp.create(payload);
-    return { action: "created", id: created?.id || null };
-  }
-
-  // Update only if content changed; always touch last_seen_at
-  const patch = { last_seen_at: payload.last_seen_at };
-
-  const oldHash = String(row?.content_hash || "");
-  const newHash = String(payload?.content_hash || "");
-
-  if (oldHash !== newHash) Object.assign(patch, payload);
-
-  await base44.entities.Camp.update(row.id, patch);
-  return { action: oldHash !== newHash ? "updated" : "touched", id: row.id };
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 export default function AdminImport() {
   const nav = useNavigate();
-  const season = useSeasonAccess();
-  const signedIn = !!season?.accountId;
-
-  const [input, setInput] = useState(
-    `[
-  {
-    "program_id": "RYZER-PROGRAM-123",
-    "school_id": "69407156fe19c36159448662",
-    "sport_id": "69407156fe19c3615944865f",
-    "name": "Elite Prospect Camp",
-    "event_start_date": "6/14/2025",
-    "event_end_date": "6/15/2025",
-    "city": "Tuscaloosa",
-    "state": "AL",
-    "position_ids": ["69407162fe19c36159448680"],
-    "price_raw": "$75",
-    "registration_url": "https://rolltide.com/camps",
-    "source_platform": "ryzer",
-    "source_url": "https://ryzer.com/example/camp/123"
-  }
-]`
-  );
 
   const [working, setWorking] = useState(false);
-  const [log, setLog] = useState([]);
-  const [summary, setSummary] = useState({ created: 0, updated: 0, touched: 0, failed: 0 });
+  const [log, setLog] = useState("");
+  const [stats, setStats] = useState({
+    read: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    errors: 0
+  });
 
-  const parsed = useMemo(() => safeJsonParse(input), [input]);
-
-  const push = (m) => setLog((x) => [...x, m]);
-
-  const run = async () => {
-    setLog([]);
-    setSummary({ created: 0, updated: 0, touched: 0, failed: 0 });
-
-    if (!signedIn) {
-      push("❌ You must be signed in to write Camp records (owner policy).");
-      push("Go to Home → Log in → return to AdminImport.");
-      return;
-    }
-
-    if (!parsed.ok) {
-      push(`❌ Invalid JSON: ${parsed.error}`);
-      return;
-    }
-
-    const records = asArray(parsed.value);
-    if (!records.length) {
-      push("❌ Expected a JSON array of records.");
-      return;
-    }
-
-    setWorking(true);
-    push(`Starting ingestion for ${records.length} record(s)…`);
-
-    const counts = { created: 0, updated: 0, touched: 0, failed: 0 };
-
-    try {
-      for (let i = 0; i < records.length; i++) {
-        const raw = records[i];
-
-        try {
-          const payload = mapRawToCampPayload(raw);
-
-          // Guardrails for your current Camp required fields
-          if (!payload.school_id || !payload.sport_id || !payload.camp_name || !payload.start_date) {
-            counts.failed += 1;
-            push(`❌ [${i + 1}] missing required: school_id, sport_id, name/camp_name, event_start_date`);
-            continue;
-          }
-
-          if (!payload.season_year) {
-            counts.failed += 1;
-            push(`❌ [${i + 1}] season_year could not be computed (bad start_date)`);
-            continue;
-          }
-
-          const res = await upsertCampByEventKey(payload);
-          counts[res.action] += 1;
-
-          push(
-            `✅ [${i + 1}] ${res.action.toUpperCase()} | season_year=${payload.season_year} | start=${payload.start_date} | key=${payload.event_key}`
-          );
-        } catch (e) {
-          counts.failed += 1;
-          push(`❌ [${i + 1}] error: ${String(e?.message || e)}`);
-        }
-      }
-    } finally {
-      setWorking(false);
-      setSummary(counts);
-      push(
-        `Done. created=${counts.created}, updated=${counts.updated}, touched=${counts.touched}, failed=${counts.failed}`
-      );
-    }
+  const appendLog = (line) => {
+    setLog((prev) => (prev ? prev + "\n" + line : line));
   };
+
+  const nowIso = useMemo(() => new Date().toISOString(), []);
+
+  async function upsertCampByEventKey(payload) {
+    // Base44 pattern: filter then create/update
+    const key = payload?.event_key;
+    if (!key) throw new Error("Missing event_key for upsert");
+
+    let existing = [];
+    try {
+      existing = await base44.entities.Camp.filter({ event_key: key });
+    } catch {
+      existing = [];
+    }
+
+    const arr = asArray(existing);
+    if (arr.length > 0 && arr[0]?.id) {
+      await base44.entities.Camp.update(arr[0].id, payload);
+      return "updated";
+    } else {
+      await base44.entities.Camp.create(payload);
+      return "created";
+    }
+  }
+
+  async function promoteCampDemoToCamp() {
+    setWorking(true);
+    setLog("");
+    setStats({ read: 0, created: 0, updated: 0, skipped: 0, errors: 0 });
+
+    appendLog("Starting: Promote CampDemo → Camp");
+
+    // 1) Read all CampDemo
+    let demoRows = [];
+    try {
+      demoRows = asArray(await base44.entities.CampDemo.filter({}));
+    } catch (e) {
+      appendLog(`ERROR reading CampDemo: ${String(e?.message || e)}`);
+      setWorking(false);
+      return;
+    }
+
+    appendLog(`Found CampDemo rows: ${demoRows.length}`);
+    setStats((s) => ({ ...s, read: demoRows.length }));
+
+    // 2) Transform + upsert (small throttling to avoid rate limits)
+    for (let i = 0; i < demoRows.length; i++) {
+      const r = demoRows[i];
+
+      try {
+        const school_id = r?.school_id || null;
+        const sport_id = r?.sport_id || null;
+        const camp_name = r?.camp_name || r?.name || null;
+
+        const start_date = toISODate(r?.start_date);
+        const end_date = toISODate(r?.end_date);
+
+        // Required fields for Camp entity
+        if (!school_id || !sport_id || !camp_name || !start_date) {
+          setStats((s) => ({ ...s, skipped: s.skipped + 1 }));
+          appendLog(`SKIP #${i + 1}: missing required fields (school_id/sport_id/camp_name/start_date)`);
+          continue;
+        }
+
+        // Football season_year
+        const season_year = computeSeasonYearFootball(start_date);
+
+        // Deterministic program_id + event_key for seed data
+        const program_id = seedProgramId({ school_id, camp_name });
+        const source_platform = "seed";
+        const source_url = r?.link_url || r?.source_url || null;
+        const link_url = r?.link_url || null;
+
+        const event_key = buildEventKey({
+          source_platform,
+          program_id,
+          start_date,
+          link_url,
+          source_url
+        });
+
+        // Content hash for change detection (simple MVP)
+        const content_hash = simpleHash({
+          school_id,
+          sport_id,
+          camp_name,
+          start_date,
+          end_date,
+          city: r?.city || null,
+          state: r?.state || null,
+          position_ids: r?.position_ids || [],
+          price: r?.price ?? null,
+          link_url: link_url || null,
+          notes: r?.notes || null
+        });
+
+        // Payload aligns with your Camp schema + MVP fields
+        const payload = {
+          // existing Camp fields
+          school_id,
+          sport_id,
+          camp_name,
+          start_date,
+          end_date: end_date || null,
+          city: r?.city || null,
+          state: r?.state || null,
+          position_ids: asArray(r?.position_ids),
+          price: typeof r?.price === "number" ? r.price : null,
+          link_url: link_url || null,
+          notes: r?.notes || null,
+
+          // new MVP fields (must exist on Camp entity)
+          season_year,
+          program_id,
+          event_key,
+          source_platform,
+          source_url: source_url || null,
+          last_seen_at: nowIso,
+          content_hash
+        };
+
+        const result = await upsertCampByEventKey(payload);
+
+        if (result === "created") setStats((s) => ({ ...s, created: s.created + 1 }));
+        if (result === "updated") setStats((s) => ({ ...s, updated: s.updated + 1 }));
+
+        if ((i + 1) % 10 === 0) appendLog(`Progress: ${i + 1}/${demoRows.length}`);
+
+        // throttle a bit (Base44 can be sensitive)
+        await sleep(60);
+      } catch (e) {
+        setStats((s) => ({ ...s, errors: s.errors + 1 }));
+        appendLog(`ERROR #${i + 1}: ${String(e?.message || e)}`);
+      }
+    }
+
+    appendLog("Done.");
+    setWorking(false);
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
-      <div className="max-w-4xl mx-auto space-y-4">
+      <div className="max-w-3xl mx-auto space-y-4">
         <div className="flex items-center justify-between">
-          <div className="text-2xl font-bold text-deep-navy">Admin Import</div>
+          <div>
+            <div className="text-2xl font-bold text-deep-navy">Admin Import</div>
+            <div className="text-sm text-slate-600">
+              MVP tool: Promote CampDemo rows into Camp so Discover demo can read Camp by season.
+            </div>
+          </div>
+
           <Button variant="outline" onClick={() => nav(createPageUrl("Home"))}>
             Back to Home
           </Button>
         </div>
 
         <Card className="p-4">
-          <div className="text-sm text-slate-600">
-            Paste JSON (array) and run ingestion. This will normalize dates, compute <b>football</b> season_year
-            (Feb 1 rollover), generate program_id + event_key, and upsert into <b>Camp</b> by event_key.
+          <div className="font-semibold text-deep-navy">Promote CampDemo → Camp</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Copies all CampDemo rows into Camp, computes <b>season_year</b> via Feb 1 rule, and upserts by <b>event_key</b>.
           </div>
 
-          <div className="mt-2 text-xs text-slate-500">
-            Signed in: <b>{String(!!signedIn)}</b> · accountId:{" "}
-            <b>{season?.accountId ? String(season.accountId) : "null"}</b>
-          </div>
-
-          <textarea
-            className="mt-3 w-full h-72 font-mono text-xs p-3 border rounded-lg"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-          />
-
-          {!parsed.ok ? <div className="mt-2 text-sm text-rose-700">JSON error: {parsed.error}</div> : null}
-
-          <div className="mt-3 flex gap-2 items-center">
-            <Button onClick={run} disabled={working}>
-              {working ? "Running…" : "Run Ingestion"}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button onClick={promoteCampDemoToCamp} disabled={working}>
+              {working ? "Running…" : "Run Promotion"}
             </Button>
 
             <Button
               variant="outline"
-              disabled={working}
               onClick={() => {
-                setLog([]);
-                setSummary({ created: 0, updated: 0, touched: 0, failed: 0 });
+                setLog("");
+                setStats({ read: 0, created: 0, updated: 0, skipped: 0, errors: 0 });
               }}
+              disabled={working}
             >
-              Clear output
+              Clear
             </Button>
           </div>
-        </Card>
 
-        <Card className="p-4">
-          <div className="font-semibold text-deep-navy">Summary</div>
-          <div className="mt-2 text-sm text-slate-700">
-            created: <b>{summary.created}</b> · updated: <b>{summary.updated}</b> · touched: <b>{summary.touched}</b> ·
-            failed: <b>{summary.failed}</b>
+          <div className="mt-4 text-sm text-slate-700">
+            <div className="flex flex-wrap gap-4">
+              <span><b>Read:</b> {stats.read}</span>
+              <span><b>Created:</b> {stats.created}</span>
+              <span><b>Updated:</b> {stats.updated}</span>
+              <span><b>Skipped:</b> {stats.skipped}</span>
+              <span><b>Errors:</b> {stats.errors}</span>
+            </div>
           </div>
 
-          <pre className="mt-3 text-xs bg-white border rounded-lg p-3 overflow-auto whitespace-pre-wrap">
-            {log.join("\n")}
-          </pre>
+          <div className="mt-4">
+            <div className="text-xs text-slate-500 mb-1">Log</div>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
+{log || "—"}
+            </pre>
+          </div>
         </Card>
       </div>
     </div>
