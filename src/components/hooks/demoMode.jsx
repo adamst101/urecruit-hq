@@ -1,50 +1,79 @@
 // src/components/hooks/demoMode.jsx
-const RM_MODE_KEY = "rm_mode";
-const RM_DEMO_SEASON_KEY = "rm_demo_season";
+
+import { footballDemoSeasonYear } from "../utils/seasonEntitlements.jsx";
 
 /**
- * Defaults:
- * - Demo season is prior UTC year
+ * Demo Mode (session-persisted)
+ *
+ * Contract:
+ * - Demo defaults to "previous season" (football rule, Feb 1 rollover)
+ * - Home "Access Demo" sets demo mode + seasonYear into session storage
+ * - Discover can read this to keep user in demo until cleared
  */
+
+const KEY = "demoMode_v1";
+
+function safeParse(json) {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 export function getDemoDefaults() {
-  const y = new Date().getUTCFullYear();
-  return { demoSeasonYear: y - 1 };
+  const demoSeasonYear = footballDemoSeasonYear();
+  return { demoSeasonYear };
 }
 
 /**
- * Persist demo mode + selected season year
+ * Persist demo mode for the session.
+ * @param {number} seasonYear
  */
 export function setDemoMode(seasonYear) {
-  try {
-    localStorage.setItem(RM_MODE_KEY, "demo");
-    localStorage.setItem(RM_DEMO_SEASON_KEY, String(seasonYear));
-  } catch {}
-}
+  const y = Number(seasonYear);
+  const { demoSeasonYear } = getDemoDefaults();
 
-export function clearDemoMode() {
+  const payload = {
+    mode: "demo",
+    // if caller didn't pass a valid year, fall back to default previous season
+    seasonYear: Number.isFinite(y) ? y : demoSeasonYear,
+    setAt: new Date().toISOString(),
+  };
+
   try {
-    localStorage.removeItem(RM_MODE_KEY);
-    localStorage.removeItem(RM_DEMO_SEASON_KEY);
+    sessionStorage.setItem(KEY, JSON.stringify(payload));
   } catch {}
+  return payload;
 }
 
 /**
- * Read persisted demo mode (if any)
- * Returns: { mode: "demo" | null, seasonYear: number | null }
+ * Read demo mode from session storage.
+ * Returns null when not set.
  */
 export function readDemoMode() {
   try {
-    const mode = localStorage.getItem(RM_MODE_KEY);
-    const season = localStorage.getItem(RM_DEMO_SEASON_KEY);
+    const raw = sessionStorage.getItem(KEY);
+    if (!raw) return null;
+    const obj = safeParse(raw);
+    if (!obj || obj.mode !== "demo") return null;
 
-    if (mode !== "demo") return { mode: null, seasonYear: null };
-
-    const seasonYear = season ? Number(season) : null;
+    const y = Number(obj.seasonYear);
     return {
       mode: "demo",
-      seasonYear: Number.isFinite(seasonYear) ? seasonYear : null
+      seasonYear: Number.isFinite(y) ? y : null,
+      setAt: obj.setAt || null,
     };
   } catch {
-    return { mode: null, seasonYear: null };
+    return null;
   }
+}
+
+/**
+ * Clear demo mode (session)
+ */
+export function clearDemoMode() {
+  try {
+    sessionStorage.removeItem(KEY);
+  } catch {}
 }
