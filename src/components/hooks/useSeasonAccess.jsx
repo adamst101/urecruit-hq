@@ -1,193 +1,211 @@
-import { useEffect, useMemo, useState } from "react";
+// src/components/hooks/useSeasonAccess.jsx
+import { useEffect, useMemo, useRef, useState } from "react";
 import { base44 } from "../../api/base44Client";
 
+import { footballCurrentSeasonYear } from "../utils/seasonEntitlements.jsx";
+
 /**
- * Feb 1 rollover:
- * - On Jan (month 0): seasonYear = year-1
- * - On Feb..Dec: seasonYear = year
+ * useSeasonAccess()
+ *
+ * Purpose:
+ * - Single source of truth for "am I authenticated?" and "do I have paid access for the current season?"
+ * - Demo year is ALWAYS previous season (derived from current season)
+ *
+ * Contract (returned shape):
+ * {
+ *   loading, isLoading,
+ *   mode: "paid" | "demo",
+ *   hasAccess: boolean,
+ *   currentYear: number,
+ *   demoYear: number,
+ *   seasonYear: number,      // the year the UI should browse by default (paid -> current, demo -> previous)
+ *   season: number,          // alias for seasonYear (legacy compatibility)
+ *   accountId: string|null,
+ *   entitlement: object|null,
+ *   isAuthenticated: boolean
+ * }
  */
-function getSeasonYearForDate(date = new Date()) {
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = d.getMonth(); // 0=Jan, 1=Feb
-  return month >= 1 ? year : year - 1;
+
+function nowISO() {
+  return new Date().toISOString();
 }
 
-function safeNumber(x) {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : null;
-}
-
-function getSeasonFromUrl() {
+function isExpired(ent) {
   try {
-    const sp = new URLSearchParams(window.location.search || "");
-    return safeNumber(sp.get("season"));
+    const ends = ent?.ends_at;
+    if (!ends) return false;
+    const endMs = new Date(String(ends)).getTime();
+    if (Number.isNaN(endMs)) return false;
+    return Date.now() >= endMs; // ends_at treated as exclusive boundary
+  } catch {
+    return false;
+  }
+}
+
+async function safeMe() {
+  try {
+    // Base44 typically supports base44.auth.me()
+    const me = await base44.auth.me();
+    return me || null;
   } catch {
     return null;
   }
 }
 
-async function fetchActiveEntitlement(accountId, seasonYear) {
-  if (!accountId || !seasonYear) return null;
-
-  // Primary attempt: strict filter with number
+async function fetchEntitlement({ accountId, seasonYear }) {
   try {
     const rows = await base44.entities.Entitlement.filter({
       account_id: accountId,
       season_year: seasonYear,
-      status: "active",
+      status: "active"
     });
-    if (Array.isArray(rows) && rows.length) return rows[0];
-  } catch {}
 
-  // Fallback: strict filter with string season_year (defensive)
-  try {
-    const rows = await base44.entities.Entitlement.filter({
-      account_id: accountId,
-      season_year: String(seasonYear),
-      status: "active",
-    });
-    if (Array.isArray(rows) && rows.length) return rows[0];
-  } catch {}
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) return null;
 
-  // Fallback: pull all active for account then match in memory
-  try {
-    const rows = await base44.entities.Entitlement.filter({
-      account_id: accountId,
-      status: "active",
-    });
-    if (!Array.isArray(rows)) return null;
-
-    const hit = rows.find(
-      (r) =>
-        String(r?.status || "").toLowerCase() === "active" &&
-        String(r?.season_year) === String(seasonYear)
-    );
-    return hit || null;
-  } catch {}
-
-  return null;
+    // pick first active, non-expired if ends_at is present
+    const firstValid = list.find((x) => !isExpired(x)) || null;
+    return firstValid;
+  } catch {
+    return null;
+  }
 }
 
 export function useSeasonAccess() {
-  const [state, setState] = useState({
-    loading: true,
+  // ✅ Derived years (football rule, Feb 1 rollover)
+  const currentYear = useMemo(() => footballCurrentSeasonYear(), []);
+  const demoYear = useMemo(() => (typeof currentYear === "number" ? currentYear - 1 : null), [currentYear]);
+
+  const [state, setState] = useState(() => ({
     isLoading: true,
+    loading: true,
+
+    currentYear: currentYear || null,
+    demoYear: demoYear || null,
+
     mode: "demo",
     hasAccess: false,
 
-    // Year model
-    currentYear: null, // "year being sold" (calendar year)
-    demoYear: null, // free/demo year
-    seasonYear: null, // Feb 1 rollover season year
-    season: null,
+    seasonYear: demoYear || currentYear || null,
+    season: demoYear || currentYear || null,
 
-    // Auth
     accountId: null,
     entitlement: null,
     isAuthenticated: false,
-  });
 
-  // Compute your base year values once per mount
-  const computed = useMemo(() => {
-    const now = new Date();
+    lastCheckedAt: null
+  }));
 
-    const calendarYear = now.getFullYear(); // 2026
-    const rolloverSeason = getSeasonYearForDate(now); // Jan 2026 => 2025
-    const demoYear = calendarYear - 1; // 2025 (your current pattern)
+  const inflightRef = useRef(false);
 
-    return {
-      calendarYear,
-      rolloverSeason,
-      demoYear,
-    };
-  }, []);
+  const refresh = async () => {
+    if (inflightRef.current) return;
+    inflightRef.current = true;
 
-  useEffect(() => {
-    let cancelled = false;
+    setState((p) => ({
+      ...p,
+      isLoading: true,
+      loading: true,
+      currentYear: currentYear || p.currentYear,
+      demoYear: demoYear || p.demoYear
+    }));
 
-    async function run() {
-      // Determine which season we are checking entitlement for:
-      // - If a page passes ?season=YYYY, check that season
-      // - Else default to "currentYear" (the season you're selling)
-      const seasonFromUrl = getSeasonFromUrl();
-      const targetPaidYear = seasonFromUrl || computed.calendarYear;
-
-      // Start with a base state (demo by default)
-      const base = {
-        loading: true,
-        isLoading: true,
-        currentYear: computed.calendarYear,
-        demoYear: computed.demoYear,
-        seasonYear: computed.rolloverSeason,
-        season: computed.rolloverSeason,
-        mode: "demo",
-        hasAccess: false,
-        accountId: null,
-        entitlement: null,
-        isAuthenticated: false,
-      };
-
-      if (!cancelled) setState(base);
-
-      // 1) Who am I?
-      let me = null;
-      try {
-        me = await base44.auth.me();
-      } catch {
-        me = null;
-      }
-
+    try {
+      const me = await safeMe();
       const accountId = me?.id || null;
+      const isAuthenticated = !!accountId;
 
-      // If not authenticated, stay demo
+      // Not signed in -> demo
       if (!accountId) {
-        if (!cancelled) {
-          setState({
-            ...base,
-            loading: false,
-            isLoading: false,
-          });
-        }
+        setState((p) => ({
+          ...p,
+          isLoading: false,
+          loading: false,
+
+          currentYear: currentYear || p.currentYear,
+          demoYear: demoYear || p.demoYear,
+
+          mode: "demo",
+          hasAccess: false,
+
+          seasonYear: demoYear || p.demoYear || p.seasonYear,
+          season: demoYear || p.demoYear || p.season,
+
+          accountId: null,
+          entitlement: null,
+          isAuthenticated: false,
+
+          lastCheckedAt: nowISO()
+        }));
         return;
       }
 
-      // 2) Do I have entitlement for the targetPaidYear?
-      const entitlement = await fetchActiveEntitlement(accountId, targetPaidYear);
-      const hasAccess = !!entitlement;
+      // Signed in -> check entitlement for CURRENT season (sell year)
+      const ent = await fetchEntitlement({ accountId, seasonYear: currentYear });
 
-      // Mode and season selection:
-      // - If entitled: paid + use targetPaidYear
-      // - If not: demo + use demoYear
-      const mode = hasAccess ? "paid" : "demo";
-      const effectiveSeason = hasAccess ? targetPaidYear : computed.demoYear;
-
-      if (!cancelled) {
-        setState({
-          loading: false,
+      if (ent) {
+        setState((p) => ({
+          ...p,
           isLoading: false,
-          currentYear: computed.calendarYear,
-          demoYear: computed.demoYear,
+          loading: false,
 
-          // rollover season is still useful for UI labels/logic
-          seasonYear: effectiveSeason,
-          season: effectiveSeason,
+          currentYear: currentYear || p.currentYear,
+          demoYear: demoYear || p.demoYear,
 
-          mode,
-          hasAccess,
+          mode: "paid",
+          hasAccess: true,
+
+          // Paid workspace defaults to current season (or entitlement season_year)
+          seasonYear: Number(ent?.season_year) || currentYear || p.seasonYear,
+          season: Number(ent?.season_year) || currentYear || p.season,
 
           accountId,
-          entitlement,
+          entitlement: ent,
           isAuthenticated: true,
-        });
+
+          lastCheckedAt: nowISO()
+        }));
+      } else {
+        // Signed in but NOT entitled -> still demo (previous season)
+        setState((p) => ({
+          ...p,
+          isLoading: false,
+          loading: false,
+
+          currentYear: currentYear || p.currentYear,
+          demoYear: demoYear || p.demoYear,
+
+          mode: "demo",
+          hasAccess: false,
+
+          seasonYear: demoYear || p.demoYear || p.seasonYear,
+          season: demoYear || p.demoYear || p.season,
+
+          accountId,
+          entitlement: null,
+          isAuthenticated: true,
+
+          lastCheckedAt: nowISO()
+        }));
       }
+    } finally {
+      inflightRef.current = false;
     }
+  };
 
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [computed.calendarYear, computed.demoYear, computed.rolloverSeason]);
+  // Run once on mount, and also re-evaluate if currentYear/demoYear changes (rare)
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentYear, demoYear]);
 
-  return state;
+  return {
+    ...state,
+    // keep both flags for backward compatibility
+    isLoading: !!state.isLoading,
+    loading: !!state.isLoading,
+    refresh
+  };
 }
+
+export default useSeasonAccess;
