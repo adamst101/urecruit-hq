@@ -1,164 +1,71 @@
 // src/components/auth/RouteGuard.jsx
-import React, { useEffect, useMemo } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import React, { useMemo } from "react";
+import { useLocation } from "react-router-dom";
+import { LogIn } from "lucide-react";
 
-import { createPageUrl } from "../../utils";
+import { Button } from "../ui/button";
 import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
-import { useAthleteIdentity } from "../useAthleteIdentity.jsx";
+import { startMemberLogin } from "../utils/memberLogin.js";
 
 /**
- * RouteGuard (Base44-safe)
- *
- * Demo override sources:
- * - URL: ?mode=demo
- * - Session: sessionStorage.force_demo_session_v1 === "1"
- *
- * Either forces demo and bypasses paid/profile gating.
+ * RouteGuard
+ * - Provides the top header (logo + login)
+ * - Ensures the login button ALWAYS returns via AuthRedirect
+ * - Ensures login does NOT “return to demo URL”
  */
-
-function forceDemoSessionOn() {
-  try {
-    return sessionStorage.getItem("force_demo_session_v1") === "1";
-  } catch {
-    return false;
-  }
-}
-
-export default function RouteGuard({
-  requireAuth = false,
-  requirePaid = false,
-  requireProfile = false,
-  children,
-}) {
-  const nav = useNavigate();
+export default function RouteGuard({ children }) {
   const loc = useLocation();
+  const season = useSeasonAccess();
 
-  const {
-    isLoading: accessLoading,
-    mode,
-    accountId,
-    hasAccess,
-    seasonYear, // effective season per entitlement (paid) or demo year
-  } = useSeasonAccess();
-
-  const {
-    athleteProfile,
-    isLoading: identityLoading,
-    isError: identityError,
-  } = useAthleteIdentity();
-
-  const currentPath = useMemo(
-    () => (loc?.pathname || "") + (loc?.search || ""),
-    [loc?.pathname, loc?.search]
-  );
-
-  const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
-
-  // Demo override: URL OR session flag
-  const forceDemo = useMemo(() => {
-    let urlDemo = false;
+  // Remove demo-stickiness from the "next" path.
+  // Keep "season=YYYY" if present (so it can properly gate after login),
+  // but strip "mode=demo" and marketing params.
+  const loginNextClean = useMemo(() => {
     try {
-      const sp = new URLSearchParams(loc?.search || "");
-      urlDemo = sp.get("mode") === "demo";
-    } catch {}
-    const sessionDemo = forceDemoSessionOn();
-    return urlDemo || sessionDemo;
-  }, [loc?.search]);
+      const sp = new URLSearchParams(loc.search || "");
+      sp.delete("mode");
+      sp.delete("src");
+      sp.delete("source");
 
-  // Requested season from URL (if a paid route is season-specific)
-  const requestedSeason = useMemo(() => {
-    try {
-      const sp = new URLSearchParams(loc?.search || "");
-      const s = sp.get("season");
-      const y = Number(s);
-      return Number.isFinite(y) ? y : null;
+      const qs = sp.toString();
+      return `${loc.pathname}${qs ? `?${qs}` : ""}`;
     } catch {
-      return null;
+      return loc.pathname || "/Discover";
     }
-  }, [loc?.search]);
+  }, [loc.pathname, loc.search]);
 
-  // Paid means: not demo override AND hook says paid AND entitlement present
-  const isPaid = !forceDemo && mode === "paid" && !!hasAccess;
+  const showLogin = !season?.isAuthenticated;
 
-  // Profile gating only in paid mode
-  const needsIdentity = requireProfile && isPaid;
+  return (
+    <div className="min-h-screen bg-slate-50">
+      {/* Top header */}
+      <div className="w-full bg-white border-b border-slate-200">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Your existing logo/header area may already be elsewhere;
+                keep this minimal to avoid breaking styling. */}
+            <div className="font-bold text-deep-navy">URecruit HQ</div>
+          </div>
 
-  const loading = accessLoading || (needsIdentity && identityLoading);
-
-  const safeReplace = (to) => {
-    if (!to) return;
-    if (to === currentPath) return;
-    nav(to, { replace: true });
-  };
-
-  const subscribeUrl = useMemo(() => {
-    const y = requestedSeason || seasonYear || null;
-    const base = createPageUrl("Subscribe");
-    const seasonPart = y ? `season=${encodeURIComponent(y)}` : "";
-    const join = seasonPart ? "&" : "";
-    return (
-      base +
-      `?${seasonPart}${join}source=${encodeURIComponent("route_guard")}` +
-      `&next=${nextParam}`
-    );
-  }, [requestedSeason, seasonYear, nextParam]);
-
-  useEffect(() => {
-    if (loading) return;
-
-    // If we need identity and it errored, route to Profile (recoverable)
-    if (needsIdentity && identityError) {
-      safeReplace(
-        createPageUrl("Profile") + `?next=${nextParam}&err=profile_load_failed`
-      );
-      return;
-    }
-
-    // 1) Auth required
-    if (requireAuth && !accountId) {
-      safeReplace(createPageUrl("Home") + `?signin=1&next=${nextParam}`);
-      return;
-    }
-
-    // 2) Paid required (ignored in demo override)
-    if (requirePaid && !isPaid) {
-      safeReplace(subscribeUrl);
-      return;
-    }
-
-    // 3) Profile required (paid-only enforcement)
-    if (requireProfile && isPaid && !athleteProfile) {
-      const profileUrl = createPageUrl("Profile");
-      if ((loc?.pathname || "") !== profileUrl) {
-        safeReplace(profileUrl + `?next=${nextParam}`);
-      }
-      return;
-    }
-  }, [
-    loading,
-    requireAuth,
-    requirePaid,
-    requireProfile,
-    needsIdentity,
-    identityError,
-    accountId,
-    isPaid,
-    athleteProfile,
-    nextParam,
-    currentPath,
-    nav,
-    loc?.pathname,
-    subscribeUrl,
-  ]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+          {showLogin ? (
+            <Button
+              variant="outline"
+              onClick={() =>
+                startMemberLogin({
+                  nextPath: loginNextClean,
+                  source: "top_nav_login"
+                })
+              }
+            >
+              <LogIn className="w-4 h-4 mr-2" />
+              Log in
+            </Button>
+          ) : null}
+        </div>
       </div>
-    );
-  }
 
-  return <>{children}</>;
+      {/* Page content */}
+      {children}
+    </div>
+  );
 }
