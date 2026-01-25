@@ -34,10 +34,21 @@ function getNext(search) {
   }
 }
 
+function isDebug(search) {
+  try {
+    const sp = new URLSearchParams(search || "");
+    return sp.get("debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function AuthRedirect() {
   const nav = useNavigate();
   const loc = useLocation();
   const season = useSeasonAccess();
+
+  const debug = useMemo(() => isDebug(loc.search), [loc.search]);
 
   const nextPath = useMemo(() => getNext(loc.search), [loc.search]);
 
@@ -47,10 +58,6 @@ export default function AuthRedirect() {
     nextRef.current = nextPath;
   }, [nextPath]);
 
-  // Core gate:
-  // 1) If not authenticated -> send to Base44 built-in /login, returning here after login
-  // 2) If authenticated + entitled -> go to next (paid workspace)
-  // 3) If authenticated + NOT entitled -> FORCE LOGOUT (no entitlement = no session) -> go to Subscribe
   useEffect(() => {
     if (season?.isLoading) return;
 
@@ -62,7 +69,8 @@ export default function AuthRedirect() {
       event_name: "auth_redirect_eval",
       source: "AuthRedirect",
       auth_state: accountId ? "authed" : "anon",
-      mode
+      mode,
+      next
     });
 
     // 1) Not authed -> go to built-in /login and come back to this exact URL
@@ -77,7 +85,7 @@ export default function AuthRedirect() {
       return;
     }
 
-    // 2) Authed + entitled -> paid
+    // 2) Authed + entitled -> go to next
     if (mode === "paid") {
       trackEvent({
         event_name: "auth_redirect_success_paid",
@@ -88,40 +96,33 @@ export default function AuthRedirect() {
       return;
     }
 
-    // 3) Authed but NOT entitled -> force logout + send to Subscribe
-    (async () => {
-      trackEvent({
-        event_name: "auth_redirect_block_no_entitlement",
-        source: "AuthRedirect",
-        next
-      });
+    // 3) Authed but NOT entitled -> FORCE "member login" to behave like paid-only:
+    // logout the session, then HARD redirect to Subscribe (prevents SPA race back to Home)
+    trackEvent({
+      event_name: "auth_redirect_block_no_entitlement",
+      source: "AuthRedirect",
+      next
+    });
 
-      // Enforce your desired UX: if they are not entitled, they cannot remain logged-in.
+    const subscribeUrl =
+      `${window.location.origin}${createPageUrl("Subscribe")}` +
+      `?source=auth_gate_no_entitlement` +
+      `&reason=no_entitlement` +
+      `&next=${encodeURIComponent(next)}`;
+
+    (async () => {
       try {
         if (base44?.auth?.logout) {
           await base44.auth.logout();
-          trackEvent({
-            event_name: "auth_redirect_forced_logout",
-            source: "AuthRedirect",
-            reason: "no_entitlement"
-          });
         }
-      } catch (e) {
-        trackEvent({
-          event_name: "auth_redirect_forced_logout_failed",
-          source: "AuthRedirect",
-          reason: "no_entitlement",
-          error: String(e?.message || e)
-        });
+      } catch {
+        // ignore
+      } finally {
+        // HARD redirect so we don't bounce Home due to auth state changes mid-route
+        window.location.assign(subscribeUrl);
       }
-
-      const subscribeUrl =
-        createPageUrl("Subscribe") +
-        `?source=auth_gate_no_entitlement&next=${encodeURIComponent(next)}`;
-
-      nav(subscribeUrl, { replace: true });
     })();
-  }, [season?.isLoading, season?.accountId, season?.mode, nav]);
+  }, [season?.isLoading, season?.accountId, season?.mode, nav, loc.search]);
 
   return (
     <div className="min-h-screen bg-surface flex items-center justify-center px-4">
@@ -130,6 +131,28 @@ export default function AuthRedirect() {
         <div className="mt-2 text-sm text-slate-600">
           Verifying your Season Pass and routing you to the correct workspace.
         </div>
+
+        {debug ? (
+          <pre className="mt-4 text-[11px] bg-slate-50 border border-slate-200 rounded-lg p-3 overflow-auto">
+{JSON.stringify(
+  {
+    url: (loc?.pathname || "") + (loc?.search || ""),
+    nextPath,
+    season: {
+      isLoading: !!season?.isLoading,
+      mode: season?.mode,
+      hasAccess: !!season?.hasAccess,
+      accountId: season?.accountId || null,
+      seasonYear: season?.seasonYear || null,
+      currentYear: season?.currentYear || null,
+      demoYear: season?.demoYear || null
+    }
+  },
+  null,
+  2
+)}
+          </pre>
+        ) : null}
 
         <div className="mt-5 flex gap-2">
           <Button
@@ -140,9 +163,7 @@ export default function AuthRedirect() {
           </Button>
           <Button
             onClick={() =>
-              nav(createPageUrl("Subscribe") + `?source=auth_redirect_cta`, {
-                replace: false
-              })
+              nav(createPageUrl("Subscribe") + `?source=auth_redirect_cta`, { replace: false })
             }
           >
             View pricing
@@ -150,7 +171,7 @@ export default function AuthRedirect() {
         </div>
 
         <div className="mt-3 text-xs text-slate-500">
-          If you don’t have a Season Pass, you’ll be signed out and sent to pricing.
+          If you’re not subscribed, you’ll be sent to pricing.
         </div>
       </Card>
     </div>
