@@ -1,6 +1,6 @@
 // src/pages/Home.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
@@ -21,21 +21,20 @@ function trackEvent(payload) {
   } catch {}
 }
 
-function parseHomeParams(search) {
+// Clear demo flags so login intent never returns to demo
+function clearDemoFlagsEverywhere() {
   try {
-    const sp = new URLSearchParams(search || "");
-    const debug = sp.get("debug") === "1";
-    const signin = sp.get("signin") === "1";
-    const next = sp.get("next") || "";
-    return { debug, signin, next };
-  } catch {
-    return { debug: false, signin: false, next: "" };
-  }
+    sessionStorage.removeItem("demo_mode_v1");
+    sessionStorage.removeItem("demo_year_v1");
+  } catch {}
+  try {
+    localStorage.removeItem("demo_mode_v1");
+    localStorage.removeItem("demo_year_v1");
+  } catch {}
 }
 
 export default function Home() {
   const nav = useNavigate();
-  const loc = useLocation();
 
   const season = useSeasonAccess();
   const seasonRef = useRef(season);
@@ -43,9 +42,6 @@ export default function Home() {
   useEffect(() => {
     seasonRef.current = season;
   }, [season]);
-
-  const params = useMemo(() => parseHomeParams(loc?.search), [loc?.search]);
-  const showDebug = !!params.debug;
 
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
@@ -61,7 +57,7 @@ export default function Home() {
       event_name: "home_view",
       source: "home",
       auth_state: season?.accountId ? "authed" : "anon",
-      mode: season?.mode === "paid" ? "paid" : "demo",
+      mode: season?.mode === "paid" ? "paid" : "demo"
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -70,7 +66,7 @@ export default function Home() {
     // Pick the demo year your hook is using (or fallback)
     const demoYear =
       season?.demoYear ||
-      demoSeasonYear || // your getDemoDefaults()
+      demoSeasonYear ||
       (season?.currentYear ? season.currentYear - 1 : null);
 
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoYear });
@@ -80,33 +76,33 @@ export default function Home() {
 
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
 
-    // ✅ Critical: force demo with URL, DO NOT pass season (prevents season gate mismatch)
+    // Force demo with URL, DO NOT pass season
     nav(`${createPageUrl("Discover")}?mode=demo&src=home_demo`);
   }
 
   /**
-   * Home "Log in" should behave like "Log in" (not "Subscribe").
-   * We bypass AuthRedirect and send the user to Base44's login route:
-   *   /login?from_url=<absolute Subscribe?source=auth_gate&next=/Discover>
+   * Option A (recommended):
+   * Home "Log in" returns to AuthRedirect, not Subscribe.
+   *
+   * Why:
+   * - AuthRedirect is the single place you already use to handle auth + routing
+   * - Avoids the "subscribe vs demo" confusion
+   * - Keeps the login intent clean: user chose to log in, so strip demo flags
+   *
+   * Expected:
+   * - If entitled => AuthRedirect should send them into paid workspace (Discover paid / default route)
+   * - If not entitled => AuthRedirect can decide whether to land them in demo or show upgrade CTA
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // ✅ If the user is choosing to log in, don’t keep them stuck in demo after auth
-    try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
-    try { sessionStorage.removeItem("demo_year_v1"); } catch {}
+    // User intent = paid flow; don't keep sticky demo state
+    clearDemoFlagsEverywhere();
 
-    const nextPath = createPageUrl("Discover"); // typically "/Discover"
-
-    // from_url must be an ABSOLUTE URL. We want to land users at Subscribe gate after login
-    // (and preserve next=/Discover).
-    const fromUrl =
-      `${window.location.origin}${createPageUrl("Subscribe")}` +
-      `?source=auth_gate&next=${encodeURIComponent(nextPath)}`;
-
-    const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
-
-    window.location.assign(loginUrl);
+    // Send to your app's AuthRedirect page (not Subscribe)
+    // If AuthRedirect supports next=, pass it; if not, it will still work as a simple entry point.
+    const nextPath = createPageUrl("Discover");
+    nav(`${createPageUrl("AuthRedirect")}?next=${encodeURIComponent(nextPath)}`);
   }
 
   function handlePricingSignup() {
@@ -122,7 +118,7 @@ export default function Home() {
     () => [
       { a: "Find dates fast.", b: "Camps and dates are scattered across school sites. We bring them together." },
       { a: "Plan the sequence.", b: "Overlay schools + position-specific sessions to avoid conflicts." },
-      { a: "Track what’s real.", b: "Planning vs registered vs completed—so the plan actually happens." },
+      { a: "Track what’s real.", b: "Planning vs registered vs completed—so the plan actually happens." }
     ],
     []
   );
@@ -131,67 +127,17 @@ export default function Home() {
     () => [
       { title: "Collect", body: "Bring camps + dates into one place." },
       { title: "Sequence", body: "Overlay targets + position sessions." },
-      { title: "Execute", body: "Track planning → registered → completed." },
+      { title: "Execute", body: "Track planning → registered → completed." }
     ],
     []
   );
-
-  const debugPayload = useMemo(() => {
-    return {
-      url: `${loc?.pathname || ""}${loc?.search || ""}`,
-      signin: params.signin,
-      next: params.next || null,
-      season: {
-        isLoading: !!season?.isLoading,
-        mode: season?.mode,
-        hasAccess: !!season?.hasAccess,
-        accountId: season?.accountId || null,
-        isAuthenticated: !!season?.isAuthenticated,
-        currentYear: season?.currentYear ?? null,
-        demoYear: season?.demoYear ?? null,
-        seasonYear: season?.seasonYear ?? null,
-        entitlementSeason: season?.entitlement?.season_year ?? null,
-      },
-      demoSession: {
-        demo_mode_v1: (() => { try { return sessionStorage.getItem("demo_mode_v1"); } catch { return null; } })(),
-        demo_year_v1: (() => { try { return sessionStorage.getItem("demo_year_v1"); } catch { return null; } })(),
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loc?.pathname, loc?.search, params.signin, params.next, season]);
 
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* DEBUG banner (only if ?debug=1) */}
-            {showDebug && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] text-slate-700">
-                <div className="font-semibold mb-2">DEBUG: Home</div>
-                <pre className="whitespace-pre-wrap break-words leading-snug">
-                  {JSON.stringify(debugPayload, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            {/* If user was redirected here for signin, give them context */}
-            {params.signin && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                <div className="font-semibold">Sign in required</div>
-                <div className="mt-1 text-amber-900/80">
-                  Please log in to continue{params.next ? ` to ${decodeURIComponent(params.next)}` : ""}.
-                </div>
-                <div className="mt-3">
-                  <Button onClick={handleLogin} className="btn-brand">
-                    <LogIn className="w-4 h-4 mr-2" />
-                    Log in
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Brand row: big logo + login (single login button) */}
+            {/* Brand row: big logo + login */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -203,7 +149,9 @@ export default function Home() {
                     className="h-24 md:h-40 w-auto block object-contain"
                   />
                 ) : (
-                  <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">URecruit HQ</div>
+                  <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">
+                    URecruit HQ
+                  </div>
                 )}
 
                 <div className="mt-2 text-base md:text-lg font-bold text-ink text-center md:text-left leading-tight">
@@ -230,7 +178,9 @@ export default function Home() {
 
             {/* Copy */}
             <div className="max-w-3xl space-y-3 text-center md:text-left">
-              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
+              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">
+                {heroHeadline}
+              </h1>
               <div className="h-1 w-14 rounded bg-accent mx-auto md:mx-0" />
               <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
