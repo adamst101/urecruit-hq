@@ -30,17 +30,20 @@ function SubscribePage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { isLoading, mode, hasAccess, currentYear, demoYear, accountId } = useSeasonAccess();
+  // ✅ Standard contract
+  const { isLoading, mode, hasAccess, seasonYear, currentYear, demoYear, accountId } =
+    useSeasonAccess();
 
   const params = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
-
   const force = params.get("force") === "1";
   const next = params.get("next"); // presence implies intentional navigation
   const source = params.get("source") || "subscribe_page";
 
-  // ✅ NEW: season being sold comes from URL (?season=YYYY), fallback to currentYear
+  // ✅ NEW: allow passing season in URL (?season=YYYY)
+  // This ensures Discover?season=2026 -> sign-in -> Subscribe sells 2026 (not whatever default)
   const soldYear = useMemo(() => {
-    return safeNumber(params.get("season")) || currentYear;
+    const fromUrl = safeNumber(params.get("season"));
+    return fromUrl || currentYear; // fallback to footballCurrentSeasonYear()
   }, [params, currentYear]);
 
   // ✅ Guardrail: paid users generally shouldn't see Subscribe (unless forced/intentional)
@@ -65,7 +68,7 @@ function SubscribePage() {
     trackEvent({
       event_name: "subscribe_viewed",
       mode: mode || "demo",
-      season_year: soldYear || null, // ✅ year being sold
+      season_year: soldYear || null, // ✅ use soldYear (not currentYear)
       source,
       account_id: accountId || null,
       force: force ? 1 : 0,
@@ -78,12 +81,6 @@ function SubscribePage() {
   if (isLoading) return null;
   if (mode === "paid" && !force && !next) return null;
 
-  // Badge display: demo shows demoYear; paid shows soldYear (or currentYear fallback)
-  const badgeLabel =
-    mode === "demo"
-      ? `Demo ${demoYear || ""}`
-      : `Paid ${soldYear || currentYear || ""}`;
-
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-md mx-auto space-y-4">
@@ -92,14 +89,14 @@ function SubscribePage() {
             <h1 className="text-2xl font-bold text-deep-navy">Subscribe</h1>
 
             {mode === "demo" ? (
-              <Badge className="bg-slate-900 text-white">{badgeLabel}</Badge>
+              <Badge className="bg-slate-900 text-white">Demo {demoYear || ""}</Badge>
             ) : (
-              <Badge className="bg-emerald-700 text-white">{badgeLabel}</Badge>
+              <Badge className="bg-emerald-700 text-white">Paid {soldYear || ""}</Badge>
             )}
           </div>
 
           <p className="text-slate-600 mt-1">
-            Unlock season ({soldYear}) and planning tools.
+            Unlock the current season ({soldYear}) and planning tools.
           </p>
         </div>
 
@@ -109,11 +106,11 @@ function SubscribePage() {
             <div className="flex-1">
               <div className="font-semibold text-amber-900">Season Pass</div>
               <div className="text-sm text-amber-900/80 mt-1">
-                Season-year camp data + full planning experience for families.
+                Current-year camp data + full planning experience for families.
               </div>
 
               <div className="mt-3 space-y-2 text-sm text-amber-900/90">
-                <Feature>Season {soldYear} camps & updates</Feature>
+                <Feature>Current-year camps & updates</Feature>
                 <Feature>Unlimited favorites + registrations tracking</Feature>
                 <Feature>Calendar planning overlays & conflict detection</Feature>
                 <Feature>Multi-athlete support (one email, multiple kids)</Feature>
@@ -136,7 +133,7 @@ function SubscribePage() {
                     trackEvent({
                       event_name: "checkout_cta_clicked",
                       mode: mode || "demo",
-                      season_year: soldYear || null,
+                      season_year: soldYear || null, // ✅ use soldYear
                       source,
                       account_id: accountId || null,
                       force: force ? 1 : 0,
@@ -147,12 +144,12 @@ function SubscribePage() {
                     // ✅ Always send them back somewhere sensible after Checkout
                     const targetNext = next || createPageUrl("Profile");
 
-                    // ✅ NEW: pass season + next + source to Checkout
+                    // ✅ NEW: pass season into checkout so it creates entitlement for the right year
                     const checkoutUrl =
                       createPageUrl("Checkout") +
-                      `?season=${encodeURIComponent(soldYear || "")}` +
-                      `&next=${encodeURIComponent(targetNext)}` +
-                      `&source=${encodeURIComponent(source)}`;
+                      `?season=${encodeURIComponent(soldYear)}` +
+                      `&source=${encodeURIComponent(source)}` +
+                      `&next=${encodeURIComponent(targetNext)}`;
 
                     navigate(checkoutUrl);
                   }}
