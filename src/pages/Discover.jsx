@@ -28,9 +28,6 @@ import {
 
 import CampCard from "../components/camps/CampCard.jsx";
 
-// ✅ Step 3: shared member login helper
-import { startMemberLogin } from "../components/utils/memberLogin.jsx";
-
 /* -------------------------
    Helpers (MVP-safe)
 ------------------------- */
@@ -46,7 +43,7 @@ function safeNumber(x) {
 function getUrlParams(search) {
   try {
     const sp = new URLSearchParams(search || "");
-    const mode = sp.get("mode"); // may be present from Home demo CTA
+    const mode = sp.get("mode"); // "demo" may be present from Home demo CTA
     const season = sp.get("season");
     const src = sp.get("src") || sp.get("source") || null;
 
@@ -88,19 +85,19 @@ function toISODate(dateInput) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function computeSeasonYearFootballFromStart(startDate) {
-  const iso = toISODate(startDate);
-  if (!iso) return null;
-
-  const d = new Date(`${iso}T00:00:00.000Z`);
-  if (Number.isNaN(d.getTime())) return null;
-
+// Football rollover: Feb 1 (UTC)
+function footballSeasonYearForDate(d = new Date()) {
   const y = d.getUTCFullYear();
-  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
+  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0)); // Feb 1
   return d >= feb1 ? y : y - 1;
 }
 
-function footballSeasonYearForDate(d = new Date()) {
+function computeSeasonYearFootballFromStart(startDate) {
+  const iso = toISODate(startDate);
+  if (!iso) return null;
+  const d = new Date(`${iso}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return null;
+
   const y = d.getUTCFullYear();
   const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
   return d >= feb1 ? y : y - 1;
@@ -120,6 +117,8 @@ function trackEvent(payload) {
 
 /* -------------------------
    Discover (MVP)
+   - Demo uses Camp table for previous season
+   - Paid uses Camp table for entitled season
 ------------------------- */
 export default function Discover() {
   const nav = useNavigate();
@@ -128,6 +127,7 @@ export default function Discover() {
   const season = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
+  // Filters + UI state
   const [filterOpen, setFilterOpen] = useState(false);
   const { nf, setNF, clearFilters } = useCampFilters();
   const writeGate = useWriteGate();
@@ -137,36 +137,30 @@ export default function Discover() {
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const requestedSeason = url.requestedSeason;
 
-  // IMPORTANT: we must never log in back to a demo URL
-  // So we compute a "clean" nextPath for member login CTAs.
-  const cleanDiscoverNextPath = useMemo(() => {
-    const base = createPageUrl("Discover"); // "/Discover"
-    // Preserve explicit season requests (they’re intentional), but do not preserve mode=demo/src
-    if (requestedSeason) return `${base}?season=${encodeURIComponent(requestedSeason)}`;
-    return base;
-  }, [requestedSeason]);
-
-  // Used for gating redirects (Home?signin=1&next=...)
   const currentPath = useMemo(
     () => (loc?.pathname || "") + (loc?.search || ""),
     [loc?.pathname, loc?.search]
   );
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // Demo flags exist, but PAID ALWAYS WINS once entitled.
+  // “Demo flag” may exist, but paid ALWAYS wins once authenticated + entitled.
   const demoSession = useMemo(() => readDemoMode(), []);
   const forceDemoUrl = url.mode === "demo";
   const forceDemoSession = String(demoSession?.mode || "").toLowerCase() === "demo";
 
+  // Compute the “current season” (football rule) and “previous season”
   const computedCurrentSeason = useMemo(() => footballSeasonYearForDate(new Date()), []);
   const computedDemoSeason = useMemo(() => computedCurrentSeason - 1, [computedCurrentSeason]);
 
+  // Paid signal (entitled)
   const entitledSeason = safeNumber(season?.entitlement?.season_year) || null;
   const isEntitled = !!season?.accountId && !!season?.hasAccess && !!entitledSeason;
 
+  // Effective mode: entitled => paid; else demo
   const effectiveMode = isEntitled ? "paid" : "demo";
   const isPaid = effectiveMode === "paid";
 
+  // Effective browse season
   const seasonYear = useMemo(() => {
     if (requestedSeason) {
       if (isEntitled && entitledSeason === requestedSeason) return requestedSeason;
@@ -176,7 +170,9 @@ export default function Discover() {
   }, [requestedSeason, isEntitled, entitledSeason, computedDemoSeason]);
 
   /* -------------------------------------------------------
-     Season-aware gate (hard gate)
+     Season-aware gate (only when a season is explicitly requested):
+     - Not logged in => go Home?signin=1&next=...
+     - Logged in but not entitled to requested => Subscribe?season=...
   ------------------------------------------------------- */
   useEffect(() => {
     if (season?.isLoading) return;
@@ -184,13 +180,11 @@ export default function Discover() {
 
     const entitled = safeNumber(season?.entitlement?.season_year) || null;
 
-    // Not authed -> go Home (keeps your existing “signin=1” UX)
     if (!season?.accountId) {
       nav(createPageUrl("Home") + `?signin=1&next=${nextParam}`, { replace: true });
       return;
     }
 
-    // Authed but not entitled to requested season -> Subscribe
     if (!entitled || entitled !== requestedSeason || !season?.hasAccess) {
       nav(
         createPageUrl("Subscribe") +
@@ -300,7 +294,6 @@ export default function Discover() {
 
   const loading = season?.isLoading || identityLoading || loadingCamps;
 
-  // Track view (dedupe per season)
   useEffect(() => {
     const key = `evt_discover_viewed_${seasonYear}`;
     try {
@@ -324,43 +317,6 @@ export default function Discover() {
   /* -------------------------------------------------------
      Render
   ------------------------------------------------------- */
-  const renderSignInCard = () => {
-    // ✅ This is the critical UX fix:
-    // Any “Sign in” CTA MUST use startMemberLogin with a clean nextPath.
-    return (
-      <Card className="p-5 border-slate-200">
-        <div className="text-lg font-semibold text-deep-navy">Member access</div>
-        <div className="mt-1 text-sm text-slate-600">
-          Sign in to unlock your season (and your saved planning items).
-        </div>
-
-        <div className="mt-4 flex flex-col sm:flex-row gap-2">
-          <Button
-            onClick={() => {
-              trackEvent({ event_name: "discover_member_login_clicked", source: "discover" });
-              startMemberLogin({
-                nextPath: cleanDiscoverNextPath, // ✅ IMPORTANT: no mode=demo here
-                source: "discover_member_login"
-              });
-            }}
-          >
-            Member Login
-          </Button>
-
-          <Button
-            variant="outline"
-            onClick={() => {
-              trackEvent({ event_name: "discover_view_pricing_clicked", source: "discover" });
-              nav(createPageUrl("Subscribe") + `?source=discover_pricing&next=${encodeURIComponent(cleanDiscoverNextPath)}`);
-            }}
-          >
-            View pricing
-          </Button>
-        </div>
-      </Card>
-    );
-  };
-
   const renderBody = () => {
     if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
 
@@ -373,92 +329,7 @@ export default function Discover() {
       );
     }
 
-    // If not entitled, we can still browse demo camps, but offer sign-in CTA.
-    // (You can remove this card later if you want a cleaner demo experience.)
-    if (!isPaid) {
-      return (
-        <div className="space-y-4">
-          {renderSignInCard()}
-
-          {!rows.length ? (
-            <Card className="p-5 border-slate-200">
-              <div className="text-lg font-semibold text-deep-navy">No camps found</div>
-              <div className="mt-1 text-sm text-slate-600">
-                No demo camps found for season {seasonYear} (or filters excluded them).
-              </div>
-              <div className="mt-4 flex gap-2">
-                <Button variant="outline" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-                <Button onClick={() => setFilterOpen(true)}>
-                  <SlidersHorizontal className="w-4 h-4 mr-2" />
-                  Edit filters
-                </Button>
-              </div>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {rows.map((r) => {
-                const campId = String(r?.id ?? "");
-                const schoolId = String(r?.school_id ?? "");
-                const sportId = String(r?.sport_id ?? "");
-
-                const camp = {
-                  id: campId,
-                  camp_name: r?.camp_name ?? r?.name ?? "Camp",
-                  name: r?.camp_name ?? r?.name ?? "Camp",
-                  start_date: r?.start_date ?? null,
-                  end_date: r?.end_date ?? null,
-                  cost: r?.price ?? null,
-                  price: r?.price ?? null,
-                  url: r?.link_url ?? r?.source_url ?? null,
-                  link_url: r?.link_url ?? null,
-                  notes: r?.notes ?? null
-                };
-
-                const school = {
-                  id: schoolId,
-                  name: r?.school_name ?? "Unknown School",
-                  city: r?.city ?? null,
-                  state: r?.state ?? null
-                };
-
-                const sport = {
-                  id: sportId,
-                  name: r?.sport_name ?? "Football"
-                };
-
-                const posObjs = asArray(r?.position_ids).map((pid) => ({
-                  id: String(pid),
-                  name: String(pid)
-                }));
-
-                return (
-                  <CampCard
-                    key={campId}
-                    camp={camp}
-                    school={school}
-                    sport={sport}
-                    positions={posObjs}
-                    isFavorite={false}
-                    isRegistered={false}
-                    mode="demo"
-                    onToggleFavorite={async () => {
-                      trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "favorite" });
-                    }}
-                    onToggleRegistered={async () => {
-                      trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "registered" });
-                    }}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // Paid: require athlete profile (your MVP rule)
+    // Paid workspace requires athlete profile
     if (isPaid && !athleteId) {
       return (
         <Card className="p-5 border-slate-200">
@@ -478,7 +349,9 @@ export default function Discover() {
         <Card className="p-5 border-slate-200">
           <div className="text-lg font-semibold text-deep-navy">No camps found</div>
           <div className="mt-1 text-sm text-slate-600">
-            No camps found for season {seasonYear} (or filters excluded them).
+            {effectiveMode === "demo"
+              ? `No demo camps found for season ${seasonYear} (or filters excluded them).`
+              : `No camps found for season ${seasonYear} (or filters excluded them).`}
           </div>
           <div className="mt-4 flex gap-2">
             <Button variant="outline" onClick={clearFilters}>
@@ -525,10 +398,7 @@ export default function Discover() {
             name: r?.sport_name ?? "Football"
           };
 
-          const posObjs = asArray(r?.position_ids).map((pid) => ({
-            id: String(pid),
-            name: String(pid)
-          }));
+          const posObjs = asArray(r?.position_ids).map((pid) => ({ id: String(pid), name: String(pid) }));
 
           return (
             <CampCard
@@ -539,13 +409,21 @@ export default function Discover() {
               positions={posObjs}
               isFavorite={false}
               isRegistered={false}
-              mode="paid"
+              mode={isPaid ? "paid" : "demo"}
               onToggleFavorite={async () => {
+                if (!isPaid) {
+                  trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "favorite" });
+                  return;
+                }
                 const ok = await (writeGate?.ensure ? writeGate.ensure("favorite") : true);
                 if (!ok) return;
                 trackEvent({ event_name: "favorite_toggle", source: "discover", camp_id: campId });
               }}
               onToggleRegistered={async () => {
+                if (!isPaid) {
+                  trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "registered" });
+                  return;
+                }
                 const ok = await (writeGate?.ensure ? writeGate.ensure("registered") : true);
                 if (!ok) return;
                 trackEvent({ event_name: "registered_toggle", source: "discover", camp_id: campId });
@@ -564,7 +442,7 @@ export default function Discover() {
           <div>
             <div className="text-2xl font-bold text-deep-navy">Discover</div>
             <div className="text-xs text-slate-500">
-              {isPaid ? `Paid season: ${seasonYear}` : `Demo season: ${seasonYear}`}
+              {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
             </div>
           </div>
 
@@ -577,36 +455,15 @@ export default function Discover() {
         {/* Truth banner (keep for MVP testing; remove later) */}
         <div className="mb-4 mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
           <div className="flex flex-wrap gap-x-3 gap-y-1">
-            <span>
-              <b>mode:</b> {effectiveMode}
-            </span>
-            <span>
-              <b>seasonYear:</b> {String(seasonYear)}
-            </span>
-            <span>
-              <b>accountId:</b> {season?.accountId ? String(season.accountId) : "null"}
-            </span>
-            <span>
-              <b>entitled:</b> {String(!!season?.entitlement && !!season?.hasAccess)}
-            </span>
-            <span>
-              <b>requestedSeason:</b> {requestedSeason ? String(requestedSeason) : "null"}
-            </span>
-            <span>
-              <b>forceDemo(url):</b> {String(!!forceDemoUrl)}
-            </span>
-            <span>
-              <b>forceDemo(session):</b> {String(!!forceDemoSession)}
-            </span>
-            <span>
-              <b>Camp(year/all):</b> {counts.camp_year}/{counts.camp_all}
-            </span>
-            <span>
-              <b>fallbackUsed:</b> {String(!!counts.fallback_used)}
-            </span>
-            <span>
-              <b>loginNext(clean):</b> {cleanDiscoverNextPath}
-            </span>
+            <span><b>mode:</b> {effectiveMode}</span>
+            <span><b>seasonYear:</b> {String(seasonYear)}</span>
+            <span><b>accountId:</b> {season?.accountId ? String(season.accountId) : "null"}</span>
+            <span><b>entitled:</b> {String(!!season?.entitlement && !!season?.hasAccess)}</span>
+            <span><b>requestedSeason:</b> {requestedSeason ? String(requestedSeason) : "null"}</span>
+            <span><b>forceDemo(url):</b> {String(!!forceDemoUrl)}</span>
+            <span><b>forceDemo(session):</b> {String(!!forceDemoSession)}</span>
+            <span><b>Camp(year/all):</b> {counts.camp_year}/{counts.camp_all}</span>
+            <span><b>fallbackUsed:</b> {String(!!counts.fallback_used)}</span>
           </div>
         </div>
 
@@ -625,4 +482,3 @@ export default function Discover() {
     </div>
   );
 }
-
