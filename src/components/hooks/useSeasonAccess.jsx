@@ -5,41 +5,33 @@ import { base44 } from "../../api/base44Client";
 import { footballCurrentSeasonYear } from "../utils/seasonEntitlements.jsx";
 
 /**
- * useSeasonAccess({ requestedSeasonYear })
+ * useSeasonAccess()
  *
  * Purpose:
- * - Single source of truth for auth + entitlement
- * - Demo year = previous season (derived from current season)
- * - Optional: validate entitlement for a requested season (ex: Discover?season=2026)
+ * - Single source of truth for "am I authenticated?" and "do I have paid access?"
+ * - Demo year defaults to previous season (derived from current season)
  *
- * Contract (returned shape):
- * {
- *   loading, isLoading,
- *   mode: "paid" | "demo",
- *   hasAccess: boolean,
- *   currentYear: number,
- *   demoYear: number,
- *   seasonYear: number,
- *   season: number,
- *   accountId: string|null,
- *   entitlement: object|null,
- *   isAuthenticated: boolean,
- *   refresh: fn
- * }
+ * Key rule (MVP):
+ * - If the user has ANY active, non-expired entitlement (even for a future season),
+ *   treat them as paid and set seasonYear to that entitlement season_year.
  */
 
 function nowISO() {
   return new Date().toISOString();
 }
 
+function safeNumber(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
 function isExpired(ent) {
   try {
     const ends = ent?.ends_at;
-    if (!ends) return false;
+    if (!ends) return false; // no end date => treat as not expired
     const endMs = new Date(String(ends)).getTime();
     if (Number.isNaN(endMs)) return false;
-    // ends_at treated as exclusive boundary
-    return Date.now() >= endMs;
+    return Date.now() >= endMs; // ends_at treated as exclusive boundary
   } catch {
     return false;
   }
@@ -47,6 +39,7 @@ function isExpired(ent) {
 
 async function safeMe() {
   try {
+    // Base44 typically supports base44.auth.me()
     const me = await base44.auth.me();
     return me || null;
   } catch {
@@ -54,7 +47,10 @@ async function safeMe() {
   }
 }
 
-async function fetchEntitlement({ accountId, seasonYear }) {
+/**
+ * Fetch an active entitlement for a specific season year.
+ */
+async function fetchEntitlementForSeason({ accountId, seasonYear }) {
   try {
     const rows = await base44.entities.Entitlement.filter({
       account_id: accountId,
@@ -65,34 +61,74 @@ async function fetchEntitlement({ accountId, seasonYear }) {
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length) return null;
 
-    return list.find((x) => !isExpired(x)) || null;
+    // pick first active, non-expired if ends_at is present
+    const firstValid = list.find((x) => !isExpired(x)) || null;
+    return firstValid;
   } catch {
     return null;
   }
 }
 
-export function useSeasonAccess(opts = {}) {
-  const requestedSeasonYear = useMemo(() => {
-    const n = Number(opts?.requestedSeasonYear);
-    return Number.isFinite(n) ? n : null;
-  }, [opts?.requestedSeasonYear]);
+/**
+ * MVP fallback: If user has ANY active entitlement (often future season pre-Feb1),
+ * treat them as paid. Prefer the highest season_year.
+ */
+async function fetchAnyActiveEntitlement({ accountId }) {
+  try {
+    const rows = await base44.entities.Entitlement.filter({
+      account_id: accountId,
+      status: "active"
+    });
+
+    const list = Array.isArray(rows) ? rows : [];
+    const valid = list.filter((x) => !isExpired(x));
+    if (!valid.length) return null;
+
+    // Prefer highest season_year; tie-breaker: later ends_at (if present)
+    valid.sort((a, b) => {
+      const ay = safeNumber(a?.season_year) || 0;
+      const by = safeNumber(b?.season_year) || 0;
+      if (by !== ay) return by - ay;
+
+      const aEnd = a?.ends_at ? new Date(String(a.ends_at)).getTime() : 0;
+      const bEnd = b?.ends_at ? new Date(String(b.ends_at)).getTime() : 0;
+      return (bEnd || 0) - (aEnd || 0);
+    });
+
+    return valid[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+export function useSeasonAccess() {
+  // Football-derived current season (Feb 1 rollover)
+  const currentYear = useMemo(() => footballCurrentSeasonYear(), []);
+  const demoYear = useMemo(
+    () => (typeof currentYear === "number" ? currentYear - 1 : null),
+    [currentYear]
+  );
 
   const [state, setState] = useState(() => ({
     isLoading: true,
     loading: true,
 
-    currentYear: null,
-    demoYear: null,
+    currentYear: currentYear || null,
+    demoYear: demoYear || null,
 
     mode: "demo",
     hasAccess: false,
 
-    seasonYear: null,
-    season: null,
+    // default browsing year
+    seasonYear: demoYear || currentYear || null,
+    season: demoYear || currentYear || null,
 
     accountId: null,
     entitlement: null,
     isAuthenticated: false,
+
+    // handy for debug banners
+    entitlementSeason: null,
 
     lastCheckedAt: null
   }));
@@ -103,17 +139,12 @@ export function useSeasonAccess(opts = {}) {
     if (inflightRef.current) return;
     inflightRef.current = true;
 
-    // ✅ Compute season years at refresh time (avoids freezing across Feb 1 rollover)
-    const computedCurrentYear = footballCurrentSeasonYear();
-    const computedDemoYear =
-      typeof computedCurrentYear === "number" ? computedCurrentYear - 1 : null;
-
     setState((p) => ({
       ...p,
       isLoading: true,
       loading: true,
-      currentYear: computedCurrentYear ?? p.currentYear,
-      demoYear: computedDemoYear ?? p.demoYear
+      currentYear: currentYear || p.currentYear,
+      demoYear: demoYear || p.demoYear
     }));
 
     try {
@@ -128,17 +159,18 @@ export function useSeasonAccess(opts = {}) {
           isLoading: false,
           loading: false,
 
-          currentYear: computedCurrentYear ?? p.currentYear,
-          demoYear: computedDemoYear ?? p.demoYear,
+          currentYear: currentYear || p.currentYear,
+          demoYear: demoYear || p.demoYear,
 
           mode: "demo",
           hasAccess: false,
 
-          seasonYear: computedDemoYear ?? p.demoYear ?? p.seasonYear,
-          season: computedDemoYear ?? p.demoYear ?? p.season,
+          seasonYear: demoYear || p.demoYear || p.seasonYear,
+          season: demoYear || p.demoYear || p.season,
 
           accountId: null,
           entitlement: null,
+          entitlementSeason: null,
           isAuthenticated: false,
 
           lastCheckedAt: nowISO()
@@ -146,34 +178,33 @@ export function useSeasonAccess(opts = {}) {
         return;
       }
 
-      // ✅ Decide which season to validate:
-      // - If caller requested a season (Discover?season=YYYY), validate that
-      // - Otherwise validate current season (sell year)
-      const validateYear = requestedSeasonYear || computedCurrentYear;
-
-      const ent = validateYear
-        ? await fetchEntitlement({ accountId, seasonYear: validateYear })
-        : null;
+      // Signed in -> check entitlement for CURRENT season, then fallback to ANY active entitlement
+      let ent = await fetchEntitlementForSeason({ accountId, seasonYear: currentYear });
+      if (!ent) {
+        ent = await fetchAnyActiveEntitlement({ accountId });
+      }
 
       if (ent) {
-        const entitledYear = Number(ent?.season_year) || validateYear || computedCurrentYear;
+        const entSeason = safeNumber(ent?.season_year) || currentYear || null;
 
         setState((p) => ({
           ...p,
           isLoading: false,
           loading: false,
 
-          currentYear: computedCurrentYear ?? p.currentYear,
-          demoYear: computedDemoYear ?? p.demoYear,
+          currentYear: currentYear || p.currentYear,
+          demoYear: demoYear || p.demoYear,
 
           mode: "paid",
           hasAccess: true,
 
-          seasonYear: entitledYear,
-          season: entitledYear,
+          // Paid workspace defaults to entitlement season_year (may be future season)
+          seasonYear: entSeason || p.seasonYear,
+          season: entSeason || p.season,
 
           accountId,
           entitlement: ent,
+          entitlementSeason: entSeason,
           isAuthenticated: true,
 
           lastCheckedAt: nowISO()
@@ -185,17 +216,18 @@ export function useSeasonAccess(opts = {}) {
           isLoading: false,
           loading: false,
 
-          currentYear: computedCurrentYear ?? p.currentYear,
-          demoYear: computedDemoYear ?? p.demoYear,
+          currentYear: currentYear || p.currentYear,
+          demoYear: demoYear || p.demoYear,
 
           mode: "demo",
           hasAccess: false,
 
-          seasonYear: computedDemoYear ?? p.demoYear ?? p.seasonYear,
-          season: computedDemoYear ?? p.demoYear ?? p.season,
+          seasonYear: demoYear || p.demoYear || p.seasonYear,
+          season: demoYear || p.demoYear || p.season,
 
           accountId,
           entitlement: null,
+          entitlementSeason: null,
           isAuthenticated: true,
 
           lastCheckedAt: nowISO()
@@ -206,15 +238,17 @@ export function useSeasonAccess(opts = {}) {
     }
   };
 
+  // Run once on mount, and also re-evaluate if currentYear/demoYear changes (rare)
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedSeasonYear]);
+  }, [currentYear, demoYear]);
 
   return {
     ...state,
+    // keep both flags for backward compatibility
     isLoading: !!state.isLoading,
-    loading: !!state.isLoading, // keep legacy alias
+    loading: !!state.isLoading,
     refresh
   };
 }
