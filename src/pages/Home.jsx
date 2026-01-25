@@ -1,6 +1,6 @@
 // src/pages/Home.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
@@ -21,8 +21,21 @@ function trackEvent(payload) {
   } catch {}
 }
 
+function parseHomeParams(search) {
+  try {
+    const sp = new URLSearchParams(search || "");
+    const debug = sp.get("debug") === "1";
+    const signin = sp.get("signin") === "1";
+    const next = sp.get("next") || "";
+    return { debug, signin, next };
+  } catch {
+    return { debug: false, signin: false, next: "" };
+  }
+}
+
 export default function Home() {
   const nav = useNavigate();
+  const loc = useLocation();
 
   const season = useSeasonAccess();
   const seasonRef = useRef(season);
@@ -30,6 +43,9 @@ export default function Home() {
   useEffect(() => {
     seasonRef.current = season;
   }, [season]);
+
+  const params = useMemo(() => parseHomeParams(loc?.search), [loc?.search]);
+  const showDebug = !!params.debug;
 
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
@@ -72,9 +88,6 @@ export default function Home() {
    * Home "Log in" should behave like "Log in" (not "Subscribe").
    * We bypass AuthRedirect and send the user to Base44's login route:
    *   /login?from_url=<absolute Subscribe?source=auth_gate&next=/Discover>
-   *
-   * This matches the URL pattern you pasted:
-   *   /login?from_url=https%3A%2F%2F...%2FSubscribe%3Fsource%3Dauth_gate%26next%3D%252FDiscover
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
@@ -123,11 +136,61 @@ export default function Home() {
     []
   );
 
+  const debugPayload = useMemo(() => {
+    return {
+      url: `${loc?.pathname || ""}${loc?.search || ""}`,
+      signin: params.signin,
+      next: params.next || null,
+      season: {
+        isLoading: !!season?.isLoading,
+        mode: season?.mode,
+        hasAccess: !!season?.hasAccess,
+        accountId: season?.accountId || null,
+        isAuthenticated: !!season?.isAuthenticated,
+        currentYear: season?.currentYear ?? null,
+        demoYear: season?.demoYear ?? null,
+        seasonYear: season?.seasonYear ?? null,
+        entitlementSeason: season?.entitlement?.season_year ?? null,
+      },
+      demoSession: {
+        demo_mode_v1: (() => { try { return sessionStorage.getItem("demo_mode_v1"); } catch { return null; } })(),
+        demo_year_v1: (() => { try { return sessionStorage.getItem("demo_year_v1"); } catch { return null; } })(),
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc?.pathname, loc?.search, params.signin, params.next, season]);
+
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
+            {/* DEBUG banner (only if ?debug=1) */}
+            {showDebug && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] text-slate-700">
+                <div className="font-semibold mb-2">DEBUG: Home</div>
+                <pre className="whitespace-pre-wrap break-words leading-snug">
+                  {JSON.stringify(debugPayload, null, 2)}
+                </pre>
+              </div>
+            )}
+
+            {/* If user was redirected here for signin, give them context */}
+            {params.signin && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <div className="font-semibold">Sign in required</div>
+                <div className="mt-1 text-amber-900/80">
+                  Please log in to continue{params.next ? ` to ${decodeURIComponent(params.next)}` : ""}.
+                </div>
+                <div className="mt-3">
+                  <Button onClick={handleLogin} className="btn-brand">
+                    <LogIn className="w-4 h-4 mr-2" />
+                    Log in
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Brand row: big logo + login (single login button) */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
