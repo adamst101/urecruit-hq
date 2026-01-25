@@ -8,30 +8,46 @@ import { footballCurrentSeasonYear } from "../utils/seasonEntitlements.jsx";
  * useSeasonAccess()
  *
  * Purpose:
- * - Single source of truth for "am I authenticated?" and "do I have paid access?"
- * - Demo year defaults to previous season (derived from current season)
+ * - Single source of truth for "am I authenticated?" and "do I have paid access for the current season?"
+ * - Demo year is ALWAYS previous season (derived from current season)
  *
- * Key rule (MVP):
- * - If the user has ANY active, non-expired entitlement (even for a future season),
- *   treat them as paid and set seasonYear to that entitlement season_year.
+ * Contract (returned shape):
+ * {
+ *   loading, isLoading,
+ *   mode: "paid" | "demo",
+ *   hasAccess: boolean,
+ *   currentYear: number,
+ *   demoYear: number,
+ *   seasonYear: number,      // the year the UI should browse by default (paid -> current, demo -> previous)
+ *   season: number,          // alias for seasonYear (legacy compatibility)
+ *   accountId: string|null,
+ *   entitlement: object|null,
+ *   isAuthenticated: boolean
+ * }
  */
 
 function nowISO() {
   return new Date().toISOString();
 }
 
-function safeNumber(x) {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : null;
-}
-
-function isExpired(ent) {
+/**
+ * ✅ Hardened validator:
+ * Only treat an entitlement as valid if it's active "right now" in its time window.
+ * - starts_at blank => OK
+ * - ends_at blank => OK
+ * - else enforce starts_at <= now < ends_at
+ */
+function isActiveInWindow(ent, now = new Date()) {
   try {
-    const ends = ent?.ends_at;
-    if (!ends) return false; // no end date => treat as not expired
-    const endMs = new Date(String(ends)).getTime();
-    if (Number.isNaN(endMs)) return false;
-    return Date.now() >= endMs; // ends_at treated as exclusive boundary
+    const nowMs = now.getTime();
+
+    const starts = ent?.starts_at ? new Date(String(ent.starts_at)).getTime() : null;
+    const ends = ent?.ends_at ? new Date(String(ent.ends_at)).getTime() : null;
+
+    if (starts != null && !Number.isNaN(starts) && nowMs < starts) return false;
+    if (ends != null && !Number.isNaN(ends) && nowMs >= ends) return false;
+
+    return true;
   } catch {
     return false;
   }
@@ -39,7 +55,6 @@ function isExpired(ent) {
 
 async function safeMe() {
   try {
-    // Base44 typically supports base44.auth.me()
     const me = await base44.auth.me();
     return me || null;
   } catch {
@@ -48,9 +63,11 @@ async function safeMe() {
 }
 
 /**
- * Fetch an active entitlement for a specific season year.
+ * ✅ Hardened fetch:
+ * - Query only active entitlements for (accountId, seasonYear)
+ * - Only accept the entitlement if it is active in its starts/ends window
  */
-async function fetchEntitlementForSeason({ accountId, seasonYear }) {
+async function fetchEntitlement({ accountId, seasonYear }) {
   try {
     const rows = await base44.entities.Entitlement.filter({
       account_id: accountId,
@@ -61,48 +78,16 @@ async function fetchEntitlementForSeason({ accountId, seasonYear }) {
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length) return null;
 
-    // pick first active, non-expired if ends_at is present
-    const firstValid = list.find((x) => !isExpired(x)) || null;
-    return firstValid;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * MVP fallback: If user has ANY active entitlement (often future season pre-Feb1),
- * treat them as paid. Prefer the highest season_year.
- */
-async function fetchAnyActiveEntitlement({ accountId }) {
-  try {
-    const rows = await base44.entities.Entitlement.filter({
-      account_id: accountId,
-      status: "active"
-    });
-
-    const list = Array.isArray(rows) ? rows : [];
-    const valid = list.filter((x) => !isExpired(x));
-    if (!valid.length) return null;
-
-    // Prefer highest season_year; tie-breaker: later ends_at (if present)
-    valid.sort((a, b) => {
-      const ay = safeNumber(a?.season_year) || 0;
-      const by = safeNumber(b?.season_year) || 0;
-      if (by !== ay) return by - ay;
-
-      const aEnd = a?.ends_at ? new Date(String(a.ends_at)).getTime() : 0;
-      const bEnd = b?.ends_at ? new Date(String(b.ends_at)).getTime() : 0;
-      return (bEnd || 0) - (aEnd || 0);
-    });
-
-    return valid[0] || null;
+    // Only accept entitlements currently in effect
+    const valid = list.find((x) => isActiveInWindow(x)) || null;
+    return valid;
   } catch {
     return null;
   }
 }
 
 export function useSeasonAccess() {
-  // Football-derived current season (Feb 1 rollover)
+  // ✅ Derived years (football rule, Feb 1 rollover)
   const currentYear = useMemo(() => footballCurrentSeasonYear(), []);
   const demoYear = useMemo(
     () => (typeof currentYear === "number" ? currentYear - 1 : null),
@@ -119,16 +104,12 @@ export function useSeasonAccess() {
     mode: "demo",
     hasAccess: false,
 
-    // default browsing year
     seasonYear: demoYear || currentYear || null,
     season: demoYear || currentYear || null,
 
     accountId: null,
     entitlement: null,
     isAuthenticated: false,
-
-    // handy for debug banners
-    entitlementSeason: null,
 
     lastCheckedAt: null
   }));
@@ -152,7 +133,7 @@ export function useSeasonAccess() {
       const accountId = me?.id || null;
       const isAuthenticated = !!accountId;
 
-      // Not signed in -> demo
+      // Not signed in -> demo (previous season)
       if (!accountId) {
         setState((p) => ({
           ...p,
@@ -170,7 +151,6 @@ export function useSeasonAccess() {
 
           accountId: null,
           entitlement: null,
-          entitlementSeason: null,
           isAuthenticated: false,
 
           lastCheckedAt: nowISO()
@@ -178,15 +158,13 @@ export function useSeasonAccess() {
         return;
       }
 
-      // Signed in -> check entitlement for CURRENT season, then fallback to ANY active entitlement
-      let ent = await fetchEntitlementForSeason({ accountId, seasonYear: currentYear });
-      if (!ent) {
-        ent = await fetchAnyActiveEntitlement({ accountId });
-      }
+      /**
+       * ✅ Guard: Only evaluate entitlement for the CURRENT football season year.
+       * This prevents "future season wins early" even if a row exists for future years.
+       */
+      const ent = await fetchEntitlement({ accountId, seasonYear: currentYear });
 
       if (ent) {
-        const entSeason = safeNumber(ent?.season_year) || currentYear || null;
-
         setState((p) => ({
           ...p,
           isLoading: false,
@@ -198,13 +176,12 @@ export function useSeasonAccess() {
           mode: "paid",
           hasAccess: true,
 
-          // Paid workspace defaults to entitlement season_year (may be future season)
-          seasonYear: entSeason || p.seasonYear,
-          season: entSeason || p.season,
+          // Paid workspace defaults to current season (or entitlement season_year if present)
+          seasonYear: Number(ent?.season_year) || currentYear || p.seasonYear,
+          season: Number(ent?.season_year) || currentYear || p.season,
 
           accountId,
           entitlement: ent,
-          entitlementSeason: entSeason,
           isAuthenticated: true,
 
           lastCheckedAt: nowISO()
@@ -227,7 +204,6 @@ export function useSeasonAccess() {
 
           accountId,
           entitlement: null,
-          entitlementSeason: null,
           isAuthenticated: true,
 
           lastCheckedAt: nowISO()
