@@ -1,63 +1,32 @@
-// src/layout/main.js  (Base44 uses this as the shared layout)
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+// src/Layout.js (Base44 required root layout)
+import React, { useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { LogIn, User } from "lucide-react";
 
-import { base44 } from "../api/base44Client";
-import { createPageUrl } from "../utils";
+import { createPageUrl } from "./utils";
+import { useSeasonAccess } from "./components/hooks/useSeasonAccess.jsx";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
-
-async function safeMe() {
-  try {
-    const me = await base44.auth.me();
-    return me || null;
-  } catch {
-    return null;
-  }
-}
-
-// Remove demo-only query params so “Member login” doesn’t send an entitled user back into demo mode.
-function cleanNextUrl(pathname, search) {
-  try {
-    const sp = new URLSearchParams(search || "");
-    // demo flags
-    sp.delete("mode");
-    sp.delete("src");
-    sp.delete("source");
-
-    const qs = sp.toString();
-    return `${pathname || "/"}${qs ? `?${qs}` : ""}`;
-  } catch {
-    return `${pathname || "/"}${search || ""}`;
-  }
-}
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const season = useSeasonAccess(); // ✅ single source of truth
   const [logoOk, setLogoOk] = useState(true);
-  const [isAuthed, setIsAuthed] = useState(false);
 
-  const isHomePage = useMemo(() => {
-    const p = String(location?.pathname || "").toLowerCase();
-    return p === "/" || p === "/home";
-  }, [location?.pathname]);
+  const isHomePage =
+    location.pathname === "/" ||
+    location.pathname === "/Home" ||
+    location.pathname === "/home";
 
-  // Keep auth state current (so we can show Member login vs Account)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const me = await safeMe();
-      if (cancelled) return;
-      setIsAuthed(!!me?.id);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [location?.pathname, location?.search]);
+  const isAuthed = !!season?.accountId;
+
+  const currentPath = useMemo(
+    () => (location?.pathname || "") + (location?.search || ""),
+    [location?.pathname, location?.search]
+  );
 
   function goHome() {
     navigate(createPageUrl("Home"));
@@ -67,24 +36,9 @@ export default function Layout({ children }) {
     navigate(createPageUrl("Profile"));
   }
 
-  // “Member login” should behave consistently across pages:
-  // - Clear any demo session flags
-  // - Send the user to Base44 /login with a from_url that returns to Subscribe gate + next
-  //   (Subscribe can then show paid vs demo state cleanly)
   function handleMemberLogin() {
-    try {
-      sessionStorage.removeItem("demo_mode_v1");
-      sessionStorage.removeItem("demo_year_v1");
-    } catch {}
-
-    const nextClean = cleanNextUrl(location.pathname, location.search);
-
-    // After login, land on Subscribe gate (works for both entitled and unentitled)
-    // Subscribe already knows how to label Paid vs Demo and can route forward if you want later.
-    const fromUrl =
-      `${window.location.origin}${createPageUrl("Subscribe")}` +
-      `?source=auth_gate&next=${encodeURIComponent(nextClean)}`;
-
+    // Always return to where the user was
+    const fromUrl = `${window.location.origin}${currentPath}`;
     const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
     window.location.assign(loginUrl);
   }
@@ -112,9 +66,10 @@ export default function Layout({ children }) {
               ) : (
                 <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
               )}
+              <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
             </button>
 
-            {/* Right button: Member login (anon) OR Account (authed) */}
+            {/* Right button */}
             {!isAuthed ? (
               <button
                 type="button"
@@ -142,7 +97,7 @@ export default function Layout({ children }) {
 
       {children}
 
-      {/* Theme + utility classes */}
+      {/* Theme + utility classes (keeps Home styling correct) */}
       <style>{`
         :root{
           --brand:#0B1F3B;         /* Navy */
