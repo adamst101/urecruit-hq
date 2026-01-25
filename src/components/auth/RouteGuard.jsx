@@ -5,7 +5,7 @@ import { LogIn } from "lucide-react";
 
 import { Button } from "../ui/button";
 import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
-import { startMemberLogin } from "../utils/memberLogin.js";
+import { startMemberLogin } from "../utils/memberLogin.jsx";
 
 /**
  * RouteGuard
