@@ -1,155 +1,110 @@
 // src/pages/AuthRedirect.jsx
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
-
-import { Card } from "../components/ui/card";
-import { Button } from "../components/ui/button";
-
+import { base44 } from "../api/base44Client";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 
-function trackEvent(payload) {
-  try {
-    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
-  } catch {}
+/**
+ * AuthRedirect.jsx (Base44)
+ *
+ * Purpose:
+ * - Landing page after Base44 login when using /login?from_url=...
+ * - Decide where to send the user next based on entitlement
+ *
+ * MVP Rules:
+ * - If authenticated + entitled -> route to `next` (default /Discover)
+ * - If authenticated + NOT entitled -> HARD redirect to Subscribe (and optionally logout first)
+ * - If not authenticated -> route to Home (signin prompt)
+ *
+ * Important:
+ * - Use hard redirects (window.location.assign) when moving between Base44 auth pages
+ *   to avoid SPA state/caching weirdness.
+ */
+
+function safeString(x) {
+  if (x == null) return "";
+  return String(x);
 }
 
-function safeDecode(x) {
-  try {
-    return decodeURIComponent(String(x || ""));
-  } catch {
-    return String(x || "");
-  }
-}
-
-function getNext(search) {
+function getNextFromSearch(search) {
   try {
     const sp = new URLSearchParams(search || "");
     const next = sp.get("next");
-    return next ? safeDecode(next) : createPageUrl("Discover");
+    return next ? safeString(next) : "";
   } catch {
-    return createPageUrl("Discover");
+    return "";
   }
+}
+
+async function safeLogout() {
+  try {
+    // Base44 may or may not have logout; try common patterns safely
+    if (base44?.auth?.logout) {
+      await base44.auth.logout();
+      return true;
+    }
+    if (base44?.auth?.signOut) {
+      await base44.auth.signOut();
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 export default function AuthRedirect() {
   const nav = useNavigate();
   const loc = useLocation();
+
   const season = useSeasonAccess();
 
-  const nextPath = useMemo(() => getNext(loc.search), [loc.search]);
+  // next can arrive as query param (some flows) or via sessionStorage fallback
+  const next = useMemo(() => {
+    const qNext = getNextFromSearch(loc?.search);
+    if (qNext) return qNext;
 
-  // Keep the original "next" stable during redirects
-  const nextRef = useRef(nextPath);
-  useEffect(() => {
-    nextRef.current = nextPath;
-  }, [nextPath]);
+    try {
+      const ss = sessionStorage.getItem("post_login_next");
+      if (ss) return ss;
+    } catch {}
 
-  /**
-   * Core gate:
-   * 1) If not authenticated -> send to Base44 built-in /login, returning here after login
-   * 2) If authenticated + entitled -> go to next (paid workspace)
-   * 3) If authenticated + NOT entitled ->
-   *      ✅ HARD redirect to Subscribe (full reload) so we DO NOT keep any demo session or stale state
-   */
+    // Default: Discover (IMPORTANT: do not include mode=demo here)
+    return createPageUrl("Discover");
+  }, [loc?.search]);
+
   useEffect(() => {
+    // Wait for season hook to resolve auth + entitlement
     if (season?.isLoading) return;
 
-    const accountId = season?.accountId || null;
-    const mode = season?.mode || "demo"; // "paid" | "demo"
-    const hasAccess = !!season?.hasAccess;
-    const next = nextRef.current || createPageUrl("Discover");
-
-    trackEvent({
-      event_name: "auth_redirect_eval",
-      source: "AuthRedirect",
-      auth_state: accountId ? "authed" : "anon",
-      mode,
-      has_access: hasAccess ? 1 : 0,
-      next
-    });
-
-    // 1) Not authed -> go to built-in /login and come back to this exact URL
-    if (!accountId) {
-      try {
-        const returnTo = window.location.pathname + window.location.search;
-        const url = `/login?next=${encodeURIComponent(returnTo)}`;
-        window.location.assign(url);
-      } catch {
-        nav(createPageUrl("Home"), { replace: true });
-      }
+    // Not authenticated -> go Home with signin prompt
+    if (!season?.accountId) {
+      nav(createPageUrl("Home") + `?signin=1&next=${encodeURIComponent(next)}`, { replace: true });
       return;
     }
 
-    // 2) Authed + entitled -> paid
-    if (mode === "paid" && hasAccess) {
-      trackEvent({
-        event_name: "auth_redirect_success_paid",
-        source: "AuthRedirect",
-        next
-      });
+    // Entitled -> go to next (SPA nav is fine here)
+    if (season?.hasAccess && season?.entitlement) {
       nav(next, { replace: true });
       return;
     }
 
-    // 3) Authed but NOT entitled -> HARD redirect to Subscribe (full reload)
-    // IMPORTANT: We do NOT want this to feel like "login == subscribe",
-    // but we DO want "member login" to only complete into paid.
-    // If not entitled, we hard-land them at Subscribe and the session should not continue.
-    trackEvent({
-      event_name: "auth_redirect_block_no_entitlement",
-      source: "AuthRedirect",
-      next
-    });
+    // ✅ Step 4: NOT entitled -> force Subscribe via HARD redirect (not back to demo)
+    (async () => {
+      // Optional: mimic "no login unless paid"
+      // We end the Base44 session so "member login" feels exclusive to paid users.
+      await safeLogout();
 
-    try {
-      // Build the same Subscribe URL your app expects
       const subscribeUrl =
         `${window.location.origin}${createPageUrl("Subscribe")}` +
-        `?source=auth_gate&next=${encodeURIComponent(next)}`;
+        `?source=auth_gate_no_entitlement&reason=no_entitlement` +
+        `&next=${encodeURIComponent(next)}`;
 
-      // ✅ Hard redirect (full reload)
       window.location.assign(subscribeUrl);
-    } catch {
-      // Fallback to SPA nav (should be rare)
-      nav(
-        createPageUrl("Subscribe") + `?source=auth_gate&next=${encodeURIComponent(next)}`,
-        { replace: true }
-      );
-    }
-  }, [season?.isLoading, season?.accountId, season?.mode, season?.hasAccess, nav]);
+      return;
+    })();
+  }, [season?.isLoading, season?.accountId, season?.hasAccess, season?.entitlement, next, nav]);
 
-  return (
-    <div className="min-h-screen bg-surface flex items-center justify-center px-4">
-      <Card className="w-full max-w-md p-6 rounded-2xl shadow-sm border border-default bg-white">
-        <div className="text-lg font-bold text-deep-navy">Checking access…</div>
-        <div className="mt-2 text-sm text-slate-600">
-          Verifying your subscription and routing you to the correct workspace.
-        </div>
-
-        <div className="mt-5 flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => nav(createPageUrl("Home"), { replace: true })}
-          >
-            Back to Home
-          </Button>
-
-          <Button
-            onClick={() =>
-              nav(createPageUrl("Subscribe") + `?source=auth_redirect_cta`, { replace: false })
-            }
-          >
-            View pricing
-          </Button>
-        </div>
-
-        <div className="mt-3 text-xs text-slate-500">
-          If you’re not subscribed, you’ll be sent to pricing.
-        </div>
-      </Card>
-    </div>
-  );
+  // Minimal blank screen (avoid flicker); you can swap for a spinner later.
+  return <div className="min-h-screen bg-slate-50" />;
 }
