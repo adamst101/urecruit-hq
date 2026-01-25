@@ -1,5 +1,5 @@
 // src/layout/main.jsx  (Base44 uses this as the shared layout)
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { LogIn, User } from "lucide-react";
 
@@ -18,6 +18,22 @@ async function safeMe() {
   }
 }
 
+// Remove demo-only query params so “Member login” doesn’t send an entitled user back into demo mode.
+function cleanNextUrl(pathname, search) {
+  try {
+    const sp = new URLSearchParams(search || "");
+    // demo flags
+    sp.delete("mode");
+    sp.delete("src");
+    sp.delete("source");
+
+    const qs = sp.toString();
+    return `${pathname || "/"}${qs ? `?${qs}` : ""}`;
+  } catch {
+    return `${pathname || "/"}${search || ""}`;
+  }
+}
+
 export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,12 +41,12 @@ export default function Layout({ children }) {
   const [logoOk, setLogoOk] = useState(true);
   const [isAuthed, setIsAuthed] = useState(false);
 
-  const isHomePage =
-    location.pathname === "/" ||
-    location.pathname === "/Home" ||
-    location.pathname === "/home";
+  const isHomePage = useMemo(() => {
+    const p = String(location?.pathname || "").toLowerCase();
+    return p === "/" || p === "/home";
+  }, [location?.pathname]);
 
-  // Keep auth state current (so we can hide Login when already signed in)
+  // Keep auth state current (so we can show Member login vs Account)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -41,13 +57,7 @@ export default function Layout({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [location.pathname]);
-
-  async function handleMemberLogin() {
-    try {
-      await base44.auth.redirectToLogin();
-    } catch {}
-  }
+  }, [location?.pathname, location?.search]);
 
   function goHome() {
     navigate(createPageUrl("Home"));
@@ -55,6 +65,28 @@ export default function Layout({ children }) {
 
   function goAccount() {
     navigate(createPageUrl("Profile"));
+  }
+
+  // “Member login” should behave consistently across pages:
+  // - Clear any demo session flags
+  // - Send the user to Base44 /login with a from_url that returns to Subscribe gate + next
+  //   (Subscribe can then show paid vs demo state cleanly)
+  function handleMemberLogin() {
+    try {
+      sessionStorage.removeItem("demo_mode_v1");
+      sessionStorage.removeItem("demo_year_v1");
+    } catch {}
+
+    const nextClean = cleanNextUrl(location.pathname, location.search);
+
+    // After login, land on Subscribe gate (works for both entitled and unentitled)
+    // Subscribe already knows how to label Paid vs Demo and can route forward if you want later.
+    const fromUrl =
+      `${window.location.origin}${createPageUrl("Subscribe")}` +
+      `?source=auth_gate&next=${encodeURIComponent(nextClean)}`;
+
+    const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
+    window.location.assign(loginUrl);
   }
 
   return (
@@ -80,7 +112,6 @@ export default function Layout({ children }) {
               ) : (
                 <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
               )}
-              <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
             </button>
 
             {/* Right button: Member login (anon) OR Account (authed) */}
@@ -111,7 +142,7 @@ export default function Layout({ children }) {
 
       {children}
 
-      {/* Theme + utility classes (this is what keeps Home styling correct) */}
+      {/* Theme + utility classes */}
       <style>{`
         :root{
           --brand:#0B1F3B;         /* Navy */
