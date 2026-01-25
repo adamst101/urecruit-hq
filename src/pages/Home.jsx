@@ -50,7 +50,6 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ UPDATED per your request
   function handleTryDemo() {
     // Pick the demo year your hook is using (or fallback)
     const demoYear =
@@ -79,6 +78,10 @@ export default function Home() {
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
+
+    // ✅ If the user is choosing to log in, don’t keep them stuck in demo after auth
+    try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
+    try { sessionStorage.removeItem("demo_year_v1"); } catch {}
 
     const nextPath = createPageUrl("Discover"); // typically "/Discover"
 
