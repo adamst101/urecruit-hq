@@ -1,10 +1,10 @@
-// layout/main
+// src/Layout.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { LogIn, User } from "lucide-react";
 
-import { base44 } from "../api/base44Client";
-import { createPageUrl } from "../utils";
+import { base44 } from "./api/base44Client";
+import { createPageUrl } from "./utils";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -48,7 +48,6 @@ export default function Layout({ children }) {
 
   async function handleMemberLogin() {
     try {
-      // Base44-managed login
       await base44.auth.redirectToLogin();
     } catch {}
   }
@@ -81,9 +80,13 @@ export default function Layout({ children }) {
                   className="h-8 md:h-10 w-auto object-contain"
                 />
               ) : (
-                <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
+                <div className="text-lg md:text-xl font-extrabold text-brand">
+                  URecruit HQ
+                </div>
               )}
-              <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
+              <div className="text-lg md:text-xl font-extrabold text-brand">
+                URecruit HQ
+              </div>
             </button>
 
             {/* Right side: show Account when signed in, otherwise Member login */}
@@ -112,7 +115,6 @@ export default function Layout({ children }) {
         </div>
       )}
 
-      {/* Page content */}
       {children}
     </div>
   );
