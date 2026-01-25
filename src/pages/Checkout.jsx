@@ -1,3 +1,4 @@
+// src/pages/Checkout.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2, CheckCircle2, CreditCard, ArrowLeft } from "lucide-react";
@@ -26,13 +27,13 @@ function safeNumber(x) {
 
 /**
  * Season model: "Season YYYY" runs Feb 1 YYYY -> Feb 1 YYYY+1.
- * We store ends_at as Feb 1 next year (UTC) so hooks can treat it as exclusive end boundary.
+ * Store ends_at as Feb 1 next year (UTC) so hooks can treat it as exclusive end boundary.
  */
 function seasonEndsAtUtc(seasonYear) {
   try {
     const y = Number(seasonYear);
     if (!Number.isFinite(y)) return null;
-    const d = new Date(Date.UTC(y + 1, 1, 1, 0, 0, 0)); // Feb(1) 1st, 00:00:00 UTC
+    const d = new Date(Date.UTC(y + 1, 1, 1, 0, 0, 0)); // Feb 1 next year 00:00:00 UTC
     return d.toISOString();
   } catch {
     return null;
@@ -43,7 +44,7 @@ export default function Checkout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // currentYear is still useful as a fallback
+  // ✅ Your hook
   const { isLoading, mode, accountId, currentYear } = useSeasonAccess();
 
   const [working, setWorking] = useState(false);
@@ -51,35 +52,23 @@ export default function Checkout() {
 
   const signedIn = !!accountId;
 
+  const backTarget = useMemo(() => createPageUrl("Subscribe"), []);
+  const discoverTarget = useMemo(() => createPageUrl("Discover"), []);
+
   // --- Read URL params: season + next + source ---
   const params = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
   const next = params.get("next");
   const source = params.get("source") || "checkout_page";
 
-  // ✅ sell *requested* season, not currentYear
+  // Sell requested season if present, otherwise fallback to currentYear
   const soldYear = useMemo(() => {
     const fromUrl = safeNumber(params.get("season"));
     return fromUrl || currentYear;
   }, [params, currentYear]);
 
-  // ✅ Always send them back somewhere sensible after purchase
   const nextTarget = useMemo(() => {
     return next || createPageUrl("Profile");
   }, [next]);
-
-  // ✅ Back should preserve season + next context
-  const backToSubscribeUrl = useMemo(() => {
-    const targetNext = next || createPageUrl("Profile");
-    return (
-      createPageUrl("Subscribe") +
-      `?season=${encodeURIComponent(soldYear || "")}` +
-      `&next=${encodeURIComponent(targetNext)}` +
-      `&source=${encodeURIComponent(source)}`
-    );
-  }, [soldYear, next, source]);
-
-  const homeTarget = useMemo(() => createPageUrl("Home"), []);
-  const discoverTarget = useMemo(() => createPageUrl("Discover"), []);
 
   /* -------------------------------------------------------
      Guardrail: paid users should NEVER see Checkout
@@ -92,11 +81,41 @@ export default function Checkout() {
   }, [isLoading, mode, discoverTarget, navigate]);
 
   /* -------------------------------------------------------
-     Track checkout_viewed (demo users only, deduped)
+     NEW: Checkout is the place login happens for new buyers
+     If not signed in, send to Base44 /login and return to this Checkout URL.
   ------------------------------------------------------- */
   useEffect(() => {
     if (isLoading) return;
     if (mode === "paid") return;
+
+    if (!signedIn) {
+      trackEvent({
+        event_name: "checkout_requires_login",
+        source,
+        season_year: soldYear || null,
+        next: next || null
+      });
+
+      try {
+        // Preserve exact checkout URL + params
+        const returnTo = `${window.location.origin}${createPageUrl("Checkout")}${location.search || ""}`;
+        const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(returnTo)}`;
+        window.location.assign(loginUrl);
+      } catch (e) {
+        // Fallback: send to Home with next
+        const currentPath = `${createPageUrl("Checkout")}${location.search || ""}`;
+        navigate(createPageUrl("Home") + `?signin=1&next=${encodeURIComponent(currentPath)}`, { replace: true });
+      }
+    }
+  }, [isLoading, mode, signedIn, source, soldYear, next, location.search, navigate]);
+
+  /* -------------------------------------------------------
+     Track checkout_viewed (only if signed in; otherwise we redirect to login)
+  ------------------------------------------------------- */
+  useEffect(() => {
+    if (isLoading) return;
+    if (mode === "paid") return;
+    if (!signedIn) return;
 
     const key = `evt_checkout_viewed_${soldYear}`;
     try {
@@ -112,23 +131,20 @@ export default function Checkout() {
       account_id: accountId || null,
       next: next || null,
     });
-  }, [isLoading, mode, soldYear, source, accountId, next]);
+  }, [isLoading, mode, signedIn, soldYear, source, accountId, next]);
 
   /* -------------------------------------------------------
      Purchase handler (test-mode entitlement)
-     ✅ Create Entitlement for soldYear from URL (?season=YYYY)
+     Creates Entitlement for soldYear
   ------------------------------------------------------- */
   const handleCompletePurchase = async () => {
-    if (!signedIn) {
-      navigate(homeTarget);
-      return;
-    }
+    if (!signedIn) return; // should not happen due to redirect
 
     setErr("");
     setWorking(true);
 
     try {
-      // 1) Check existing entitlement for THIS season (robust to number/string)
+      // 1) Check existing entitlement for THIS season
       let existing = [];
       try {
         existing = await base44.entities.Entitlement.filter({
@@ -140,23 +156,14 @@ export default function Checkout() {
         existing = [];
       }
 
-      const hasExisting =
-        Array.isArray(existing) &&
-        existing.some(
-          (e) =>
-            String(e?.account_id) === String(accountId) &&
-            String(e?.status || "").toLowerCase() === "active" &&
-            String(e?.season_year) === String(soldYear)
-        );
-
-      // 2) Create entitlement if missing (test-mode)
-      if (!hasExisting) {
+      // 2) Create entitlement if missing
+      if (!Array.isArray(existing) || existing.length === 0) {
         await base44.entities.Entitlement.create({
           account_id: accountId,
           season_year: soldYear,
           status: "active",
           starts_at: new Date().toISOString(),
-          ends_at: seasonEndsAtUtc(soldYear), // optional but recommended
+          ends_at: seasonEndsAtUtc(soldYear),
           product: "RecruitMeSeasonAccess",
         });
       }
@@ -171,8 +178,7 @@ export default function Checkout() {
         next: next || null,
       });
 
-      // 4) Activate → nextTarget
-      // NOTE: after entitlement create, useSeasonAccess should flip to paid.
+      // 4) Activate → nextTarget (default Profile)
       navigate(nextTarget, {
         state: { postPurchase: true, season_year: soldYear },
         replace: true,
@@ -195,9 +201,12 @@ export default function Checkout() {
     }
   };
 
-  // While redirecting paid users or loading, render nothing (prevents flicker)
+  // While redirecting paid users or loading, render nothing
   if (isLoading) return null;
   if (mode === "paid") return null;
+
+  // If not signed in, we immediately redirect to login; render nothing to avoid flicker
+  if (!signedIn) return null;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
@@ -213,7 +222,7 @@ export default function Checkout() {
               account_id: accountId || null,
               next: next || null,
             });
-            navigate(backToSubscribeUrl);
+            navigate(backTarget);
           }}
           type="button"
         >
@@ -228,86 +237,62 @@ export default function Checkout() {
           </p>
         </div>
 
-        {!signedIn && (
-          <Card className="p-4 border-rose-200 bg-rose-50 text-rose-700">
-            <div className="font-semibold">Sign in required</div>
-            <div className="text-sm mt-1">Please sign in to subscribe and unlock this season.</div>
+        <Card className="p-4">
+          <div className="flex items-start gap-3">
+            <CreditCard className="w-6 h-6 text-slate-700 mt-0.5" />
+            <div className="flex-1">
+              <div className="text-lg font-bold text-deep-navy">Season Pass</div>
+              <div className="text-sm text-slate-600 mt-1">
+                Full access to season {soldYear}: camps + planning tools.
+              </div>
 
-            <Button
-              className="w-full mt-4"
-              onClick={() => {
-                trackEvent({
-                  event_name: "checkout_signin_required_clicked",
-                  mode: "demo",
-                  season_year: soldYear,
-                  source,
-                });
-                navigate(homeTarget);
-              }}
-            >
-              Go to Home
-            </Button>
-          </Card>
-        )}
-
-        {signedIn && (
-          <Card className="p-4">
-            <div className="flex items-start gap-3">
-              <CreditCard className="w-6 h-6 text-slate-700 mt-0.5" />
-              <div className="flex-1">
-                <div className="text-lg font-bold text-deep-navy">Season Pass</div>
-                <div className="text-sm text-slate-600 mt-1">
-                  Full access to season {soldYear}: camps + planning tools.
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  <Button className="w-full" onClick={handleCompletePurchase} disabled={working}>
-                    {working ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        Processing…
-                      </>
-                    ) : (
-                      <>
-                        Complete Purchase (Test)
-                        <CheckCircle2 className="w-4 h-4 ml-2" />
-                      </>
-                    )}
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      trackEvent({
-                        event_name: "checkout_back_to_pricing_clicked",
-                        mode: "demo",
-                        season_year: soldYear,
-                        source,
-                        account_id: accountId || null,
-                        next: next || null,
-                      });
-                      navigate(backToSubscribeUrl);
-                    }}
-                    disabled={working}
-                  >
-                    Back to Pricing
-                  </Button>
-
-                  {err && (
-                    <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2">
-                      {err}
-                    </div>
+              <div className="mt-4 space-y-2">
+                <Button className="w-full" onClick={handleCompletePurchase} disabled={working}>
+                  {working ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      Processing…
+                    </>
+                  ) : (
+                    <>
+                      Complete Purchase (Test)
+                      <CheckCircle2 className="w-4 h-4 ml-2" />
+                    </>
                   )}
-                </div>
+                </Button>
 
-                <div className="mt-3 text-xs text-slate-500">
-                  Replace test purchase with Stripe later. The flow remains the same.
-                </div>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    trackEvent({
+                      event_name: "checkout_back_to_pricing_clicked",
+                      mode: "demo",
+                      season_year: soldYear,
+                      source,
+                      account_id: accountId || null,
+                      next: next || null,
+                    });
+                    navigate(backTarget);
+                  }}
+                  disabled={working}
+                >
+                  Back to Pricing
+                </Button>
+
+                {err && (
+                  <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2">
+                    {err}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 text-xs text-slate-500">
+                Replace test purchase with Stripe later. The flow remains the same.
               </div>
             </div>
-          </Card>
-        )}
+          </div>
+        </Card>
       </div>
     </div>
   );
