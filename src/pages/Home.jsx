@@ -12,9 +12,6 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 
-// ✅ NEW: shared member login helper
-import { startMemberLogin } from "../components/utils/memberLogin.jsx";
-
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
@@ -22,23 +19,6 @@ function trackEvent(payload) {
   try {
     base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
   } catch {}
-}
-
-function safeBool(v) {
-  return String(v || "").toLowerCase() === "1" || String(v || "").toLowerCase() === "true";
-}
-
-function getDebugParams() {
-  try {
-    const sp = new URLSearchParams(window.location.search || "");
-    return {
-      debug: safeBool(sp.get("debug")),
-      signin: safeBool(sp.get("signin")),
-      next: sp.get("next") ? String(sp.get("next")) : null
-    };
-  } catch {
-    return { debug: false, signin: false, next: null };
-  }
 }
 
 export default function Home() {
@@ -54,9 +34,6 @@ export default function Home() {
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
 
-  // Debug params for optional banner
-  const debugParams = useMemo(() => getDebugParams(), []);
-
   useEffect(() => {
     const key = "evt_home_viewed_v23";
     try {
@@ -68,7 +45,7 @@ export default function Home() {
       event_name: "home_view",
       source: "home",
       auth_state: season?.accountId ? "authed" : "anon",
-      mode: season?.mode === "paid" ? "paid" : "demo"
+      mode: season?.mode === "paid" ? "paid" : "demo",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -77,32 +54,46 @@ export default function Home() {
     // Pick the demo year your hook is using (or fallback)
     const demoYear =
       season?.demoYear ||
-      demoSeasonYear ||
+      demoSeasonYear || // your getDemoDefaults()
       (season?.currentYear ? season.currentYear - 1 : null);
 
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoYear });
 
-    // Persist demo mode for the session
+    // Persist demo mode for the session (optional but helpful)
     if (demoYear) setDemoMode(demoYear);
 
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
 
-    // Force demo with URL (prevents season gate mismatch)
+    // ✅ Critical: force demo with URL, DO NOT pass season (prevents season gate mismatch)
     nav(`${createPageUrl("Discover")}?mode=demo&src=home_demo`);
   }
 
   /**
-   * ✅ Step 2 — Update Home.jsx to use the shared login helper
-   * Home "Log in" should feel like member login, not subscribe.
-   * startMemberLogin handles the correct redirect pattern.
+   * Home "Log in" should behave like "Log in" (not "Subscribe").
+   * We bypass AuthRedirect and send the user to Base44's login route:
+   *   /login?from_url=<absolute Subscribe?source=auth_gate&next=/Discover>
+   *
+   * This matches the URL pattern you pasted:
+   *   /login?from_url=https%3A%2F%2F...%2FSubscribe%3Fsource%3Dauth_gate%26next%3D%252FDiscover
    */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    startMemberLogin({
-      nextPath: createPageUrl("Discover"),
-      source: "home_member_login"
-    });
+    // ✅ If the user is choosing to log in, don’t keep them stuck in demo after auth
+    try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
+    try { sessionStorage.removeItem("demo_year_v1"); } catch {}
+
+    const nextPath = createPageUrl("Discover"); // typically "/Discover"
+
+    // from_url must be an ABSOLUTE URL. We want to land users at Subscribe gate after login
+    // (and preserve next=/Discover).
+    const fromUrl =
+      `${window.location.origin}${createPageUrl("Subscribe")}` +
+      `?source=auth_gate&next=${encodeURIComponent(nextPath)}`;
+
+    const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
+
+    window.location.assign(loginUrl);
   }
 
   function handlePricingSignup() {
@@ -118,7 +109,7 @@ export default function Home() {
     () => [
       { a: "Find dates fast.", b: "Camps and dates are scattered across school sites. We bring them together." },
       { a: "Plan the sequence.", b: "Overlay schools + position-specific sessions to avoid conflicts." },
-      { a: "Track what’s real.", b: "Planning vs registered vs completed—so the plan actually happens." }
+      { a: "Track what’s real.", b: "Planning vs registered vs completed—so the plan actually happens." },
     ],
     []
   );
@@ -127,7 +118,7 @@ export default function Home() {
     () => [
       { title: "Collect", body: "Bring camps + dates into one place." },
       { title: "Sequence", body: "Overlay targets + position sessions." },
-      { title: "Execute", body: "Track planning → registered → completed." }
+      { title: "Execute", body: "Track planning → registered → completed." },
     ],
     []
   );
@@ -137,47 +128,7 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-
-            {/* Optional debug banner */}
-            {debugParams.debug ? (
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-700">
-                <div className="font-semibold mb-1">DEBUG: Home</div>
-                <pre className="whitespace-pre-wrap break-words">
-{JSON.stringify(
-  {
-    url: window.location.pathname + window.location.search,
-    signin: debugParams.signin,
-    next: debugParams.next,
-    season: {
-      isLoading: !!season?.isLoading,
-      mode: season?.mode,
-      hasAccess: !!season?.hasAccess,
-      accountId: season?.accountId || null,
-      isAuthenticated: !!season?.isAuthenticated,
-      currentYear: season?.currentYear || null,
-      demoYear: season?.demoYear || null,
-      seasonYear: season?.seasonYear || null,
-      entitlementSeason: season?.entitlement?.season_year || null
-    },
-    demoSession: {
-      demo_mode_v1:
-        (() => {
-          try { return sessionStorage.getItem("demo_mode_v1"); } catch { return null; }
-        })(),
-      demo_year_v1:
-        (() => {
-          try { return sessionStorage.getItem("demo_year_v1"); } catch { return null; }
-        })()
-    }
-  },
-  null,
-  2
-)}
-                </pre>
-              </div>
-            ) : null}
-
-            {/* Brand row: big logo + login */}
+            {/* Brand row: big logo + login (single login button) */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -189,9 +140,7 @@ export default function Home() {
                     className="h-24 md:h-40 w-auto block object-contain"
                   />
                 ) : (
-                  <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">
-                    URecruit HQ
-                  </div>
+                  <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">URecruit HQ</div>
                 )}
 
                 <div className="mt-2 text-base md:text-lg font-bold text-ink text-center md:text-left leading-tight">
@@ -202,25 +151,25 @@ export default function Home() {
                 <div className="mt-3 w-full md:hidden">
                   <Button onClick={handleLogin} className="btn-brand w-full">
                     <LogIn className="w-4 h-4 mr-2" />
-                    Log in
+                    <span className="hidden sm:inline">Member login</span>
+                    <span className="sm:hidden">Login</span>
                   </Button>
                 </div>
               </div>
 
-              {/* Desktop: login right */}
+              {/* Desktop: login to the right */}
               <div className="hidden md:flex">
                 <Button variant="outline" onClick={handleLogin} className="text-ink">
                   <LogIn className="w-4 h-4 mr-2" />
-                  Log in
+                  <span className="hidden sm:inline">Member login</span>
+                  <span className="sm:hidden">Login</span>
                 </Button>
               </div>
             </div>
 
             {/* Copy */}
             <div className="max-w-3xl space-y-3 text-center md:text-left">
-              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">
-                {heroHeadline}
-              </h1>
+              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
               <div className="h-1 w-14 rounded bg-accent mx-auto md:mx-0" />
               <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
