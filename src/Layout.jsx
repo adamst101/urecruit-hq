@@ -1,4 +1,4 @@
-// src/layout/main.jsx  (Base44 uses this as the shared layout)
+// src/layout/main.js  (Base44 uses this as the shared layout)
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { LogIn, User } from "lucide-react";
