@@ -1,146 +1,199 @@
-// src/Layout.jsx  (Base44 shared layout must be named Layout.jsx in /src root)
+// src/pages/Workspace.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { LogIn, User } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Calendar, Search, User, ShieldCheck, ArrowRight } from "lucide-react";
 
-import { base44 } from "./api/base44Client";
-import { createPageUrl } from "./utils";
-import { startMemberLogin } from "./components/utils/memberLogin.jsx";
+import { createPageUrl } from "../utils";
+import { base44 } from "../api/base44Client";
 
-const LOGO_URL =
-  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
+import { Card } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
 
-async function safeMe() {
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+
+function trackEvent(payload) {
   try {
-    const me = await base44.auth.me();
-    return me || null;
-  } catch {
-    return null;
-  }
+    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+  } catch {}
 }
 
-export default function Layout({ children }) {
-  const navigate = useNavigate();
-  const location = useLocation();
+export default function Workspace() {
+  const nav = useNavigate();
 
-  const [logoOk, setLogoOk] = useState(true);
-  const [isAuthed, setIsAuthed] = useState(false);
+  const season = useSeasonAccess();
+  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  const isHomePage = useMemo(() => {
-    const p = location.pathname || "";
-    return p === "/" || p === "/Home" || p === "/home";
-  }, [location.pathname]);
+  const loading = !!season?.isLoading || !!identityLoading;
+
+  const isEntitled = !!season?.accountId && !!season?.hasAccess && !!season?.entitlement?.season_year;
+  const entitledSeason = season?.entitlement?.season_year || null;
+
+  const athleteId = useMemo(() => {
+    const x = athleteProfile;
+    if (!x) return null;
+    if (typeof x === "string") return x;
+    return x.id || x._id || x.uuid || null;
+  }, [athleteProfile]);
+
+  const showMemberPanel = isEntitled;
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const me = await safeMe();
-      if (cancelled) return;
-      setIsAuthed(!!me?.id);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [location.pathname]);
+    const key = "evt_workspace_viewed_v1";
+    try {
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
 
-  function goHome() {
-    navigate(createPageUrl("Home"));
-  }
+    trackEvent({
+      event_name: "workspace_viewed",
+      account_id: season?.accountId || null,
+      entitled: isEntitled ? 1 : 0,
+      entitlement_season: entitledSeason || null,
+      has_athlete_profile: athleteId ? 1 : 0
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [season?.accountId, isEntitled, entitledSeason, athleteId]);
 
-  function goAccount() {
-    navigate(createPageUrl("Profile"));
-  }
+  // Optional: if you want Workspace to be “members only”, you can gate here.
+  // For now, keep it accessible and simply show the right CTAs.
 
-  function handleMemberLogin() {
-    // ✅ Single post-login destination: Workspace
-    startMemberLogin({ nextPath: createPageUrl("Workspace"), source: "layout_member_login" });
-  }
+  const subtitle = showMemberPanel
+    ? "Your home base after login — jump into Discover, Calendar, and your profile."
+    : "Start with the demo or subscribe to unlock your season.";
+
+  const profileCtaLabel = athleteId ? "View Profile" : "Add Athlete Profile";
 
   return (
-    <div className="min-h-screen bg-surface">
-      {!isHomePage && (
-        <div className="bg-white border-b border-default sticky top-0 z-50">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-            <button
-              type="button"
-              onClick={goHome}
-              className="flex items-center gap-3 hover:opacity-90 transition-opacity"
-            >
-              {logoOk ? (
-                <img
-                  src={LOGO_URL}
-                  alt="URecruit HQ"
-                  loading="eager"
-                  onError={() => setLogoOk(false)}
-                  className="h-9 md:h-10 w-auto object-contain"
-                />
-              ) : null}
-              <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
-            </button>
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-3xl font-extrabold text-deep-navy">Workspace</div>
+            <div className="mt-1 text-sm text-slate-600">{subtitle}</div>
 
-            {!isAuthed ? (
-              <button
-                type="button"
-                onClick={handleMemberLogin}
-                className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
-              >
-                <LogIn className="w-4 h-4" />
-                <span className="hidden sm:inline">Member login</span>
-                <span className="sm:hidden">Login</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={goAccount}
-                className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
-              >
-                <User className="w-4 h-4" />
-                <span className="hidden sm:inline">Account</span>
-                <span className="sm:hidden">Acct</span>
-              </button>
-            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {showMemberPanel ? (
+                <>
+                  <Badge className="bg-emerald-700 text-white">Member</Badge>
+                  {entitledSeason ? (
+                    <Badge className="bg-slate-900 text-white">Season {String(entitledSeason)}</Badge>
+                  ) : null}
+                </>
+              ) : (
+                <Badge className="bg-slate-900 text-white">Demo</Badge>
+              )}
+            </div>
           </div>
+
+          {/* ✅ Removed duplicate Account button from Workspace page.
+              The only Account button should come from Layout.jsx header. */}
         </div>
-      )}
 
-      {children}
+        <div className="mt-6 grid md:grid-cols-3 gap-4">
+          {/* Discover */}
+          <Card className="p-5 border-slate-200">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5">
+                <Search className="w-5 h-5 text-slate-700" />
+              </div>
+              <div className="flex-1">
+                <div className="text-base font-bold text-deep-navy">Discover</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Browse camps for your season. Filter by position and school.
+                </div>
 
-      <style>{`
-        :root{
-          --brand:#0B1F3B;
-          --accent:#D4AF37;
-          --ink:#111827;
-          --muted:#6B7280;
-          --surface:#F3F4F6;
-          --border:#E5E7EB;
-        }
+                <div className="mt-4">
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      trackEvent({ event_name: "workspace_click", target: "discover" });
+                      nav(createPageUrl("Discover"));
+                    }}
+                    disabled={loading}
+                  >
+                    Go to Discover
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
 
-        .bg-surface{ background: var(--surface); }
-        .bg-accent{ background: var(--accent); }
+          {/* Calendar */}
+          <Card className="p-5 border-slate-200">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5">
+                <Calendar className="w-5 h-5 text-slate-700" />
+              </div>
+              <div className="flex-1">
+                <div className="text-base font-bold text-deep-navy">Calendar</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  See your plan and avoid date conflicts.
+                </div>
 
-        .text-brand{ color: var(--brand); }
-        .text-ink{ color: var(--ink); }
-        .text-muted{ color: var(--muted); }
+                <div className="mt-4">
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      trackEvent({ event_name: "workspace_click", target: "calendar" });
+                      nav(createPageUrl("Calendar"));
+                    }}
+                    disabled={loading}
+                  >
+                    Go to Calendar
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
 
-        .border-default{ border-color: var(--border); }
+          {/* ✅ Setup -> Profile */}
+          <Card className="p-5 border-slate-200">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5">
+                <User className="w-5 h-5 text-slate-700" />
+              </div>
+              <div className="flex-1">
+                <div className="text-base font-bold text-deep-navy">Profile</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Add athletes and set your profile.
+                </div>
 
-        .btn-brand{
-          background: var(--brand);
-          color: white;
-          border: 1px solid var(--brand);
-        }
-        .btn-brand:hover{ filter: brightness(0.95); }
+                <div className="mt-4">
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      trackEvent({ event_name: "workspace_click", target: "profile" });
+                      nav(createPageUrl("Profile"));
+                    }}
+                    disabled={loading}
+                  >
+                    {profileCtaLabel}
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
 
-        .btn-outline-brand{
-          background: white;
-          color: var(--ink);
-          border: 1px solid var(--border);
-        }
-        .btn-outline-brand:hover{
-          border-color: var(--brand);
-          color: var(--brand);
-        }
-      `}</style>
+        {showMemberPanel ? (
+          <Card className="mt-5 p-5 border-slate-200">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-emerald-700 mt-0.5" />
+              <div>
+                <div className="font-semibold text-deep-navy">Member access is active</div>
+                <div className="text-sm text-slate-600 mt-1">
+                  You’re seeing current-season data based on your entitlement. Demo flags are ignored for members.
+                </div>
+              </div>
+            </div>
+          </Card>
+        ) : null}
+      </div>
     </div>
   );
 }
