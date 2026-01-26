@@ -1,7 +1,7 @@
 // src/Layout.jsx  (Base44 shared layout must be named Layout.jsx in /src root)
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { LogIn, User } from "lucide-react";
+import { LogIn, LayoutGrid } from "lucide-react";
 
 import { base44 } from "./api/base44Client";
 import { createPageUrl } from "./utils";
@@ -48,8 +48,8 @@ export default function Layout({ children }) {
     navigate(createPageUrl("Home"));
   }
 
-  function goAccount() {
-    navigate(createPageUrl("Profile"));
+  function goWorkspace() {
+    navigate(createPageUrl("Workspace"));
   }
 
   function handleMemberLogin() {
@@ -81,7 +81,7 @@ export default function Layout({ children }) {
               <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
             </button>
 
-            {/* Right button: Member login (anon) OR Account (authed) */}
+            {/* Right button: Member login (anon) OR Workspace (authed) */}
             {!isAuthed ? (
               <button
                 type="button"
@@ -95,12 +95,12 @@ export default function Layout({ children }) {
             ) : (
               <button
                 type="button"
-                onClick={goAccount}
+                onClick={goWorkspace}
                 className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
               >
-                <User className="w-4 h-4" />
-                <span className="hidden sm:inline">Account</span>
-                <span className="sm:hidden">Acct</span>
+                <LayoutGrid className="w-4 h-4" />
+                <span className="hidden sm:inline">Workspace</span>
+                <span className="sm:hidden">Work</span>
               </button>
             )}
           </div>
