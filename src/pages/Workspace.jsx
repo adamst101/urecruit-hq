@@ -1,10 +1,10 @@
 // src/pages/Workspace.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calendar, Search, User, ShieldCheck, ArrowRight } from "lucide-react";
+import { CalendarDays, Search, User, Shield } from "lucide-react";
 
-import { createPageUrl } from "../utils";
 import { base44 } from "../api/base44Client";
+import { createPageUrl } from "../utils";
 
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -13,10 +13,20 @@ import { Badge } from "../components/ui/badge";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 
-function trackEvent(payload) {
+// --- tiny helpers ---
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
+}
+
+async function safeMe() {
   try {
-    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
-  } catch {}
+    const me = await base44.auth.me();
+    return me || null;
+  } catch {
+    return null;
+  }
 }
 
 export default function Workspace() {
@@ -25,173 +35,149 @@ export default function Workspace() {
   const season = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  const loading = !!season?.isLoading || !!identityLoading;
+  const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
 
-  const isEntitled = !!season?.accountId && !!season?.hasAccess && !!season?.entitlement?.season_year;
-  const entitledSeason = season?.entitlement?.season_year || null;
-
-  const athleteId = useMemo(() => {
-    const x = athleteProfile;
-    if (!x) return null;
-    if (typeof x === "string") return x;
-    return x.id || x._id || x.uuid || null;
-  }, [athleteProfile]);
-
-  const showMemberPanel = isEntitled;
+  const [meEmail, setMeEmail] = useState("");
 
   useEffect(() => {
-    const key = "evt_workspace_viewed_v1";
-    try {
-      if (sessionStorage.getItem(key) === "1") return;
-      sessionStorage.setItem(key, "1");
-    } catch {}
+    let cancelled = false;
+    (async () => {
+      const me = await safeMe();
+      if (cancelled) return;
+      setMeEmail(String(me?.email || me?.user_metadata?.email || "").toLowerCase());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-    trackEvent({
-      event_name: "workspace_viewed",
-      account_id: season?.accountId || null,
-      entitled: isEntitled ? 1 : 0,
-      entitlement_season: entitledSeason || null,
-      has_athlete_profile: athleteId ? 1 : 0
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [season?.accountId, isEntitled, entitledSeason, athleteId]);
+  // MVP admin allowlist (edit as needed)
+  const isAdmin = useMemo(() => {
+    const allow = [
+      "tom_adams_tx@live.com",
+      "tom.adams101@gmail.com"
+    ];
+    return !!meEmail && allow.includes(meEmail);
+  }, [meEmail]);
 
-  // Optional: if you want Workspace to be “members only”, you can gate here.
-  // For now, keep it accessible and simply show the right CTAs.
+  const loading = !!season?.isLoading || !!identityLoading;
 
-  const subtitle = showMemberPanel
-    ? "Your home base after login — jump into Discover, Calendar, and your profile."
-    : "Start with the demo or subscribe to unlock your season.";
+  const isMember = !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
+  const memberSeason = Number(season?.entitlement?.season_year) || season?.seasonYear || null;
 
-  const profileCtaLabel = athleteId ? "View Profile" : "Add Athlete Profile";
+  if (loading) {
+    return <div className="min-h-screen bg-slate-50" />;
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-3xl font-extrabold text-deep-navy">Workspace</div>
-            <div className="mt-1 text-sm text-slate-600">{subtitle}</div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              {showMemberPanel ? (
-                <>
-                  <Badge className="bg-emerald-700 text-white">Member</Badge>
-                  {entitledSeason ? (
-                    <Badge className="bg-slate-900 text-white">Season {String(entitledSeason)}</Badge>
-                  ) : null}
-                </>
-              ) : (
-                <Badge className="bg-slate-900 text-white">Demo</Badge>
-              )}
-            </div>
+    <div className="min-h-screen bg-slate-50 pb-10">
+      <div className="max-w-5xl mx-auto px-4 pt-8">
+        <div className="mb-4">
+          <div className="text-3xl font-extrabold text-brand">Workspace</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Your home base after login — jump into Discover, Calendar, and Profile.
           </div>
 
-          {/* ✅ Removed duplicate Account button from Workspace page.
-              The only Account button should come from Layout.jsx header. */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {isMember ? (
+              <Badge className="bg-emerald-700 text-white">Member</Badge>
+            ) : (
+              <Badge className="bg-slate-900 text-white">Demo</Badge>
+            )}
+
+            {memberSeason ? (
+              <Badge className="bg-white text-slate-700 border border-slate-200">
+                Season {memberSeason}
+              </Badge>
+            ) : null}
+          </div>
         </div>
 
-        <div className="mt-6 grid md:grid-cols-3 gap-4">
-          {/* Discover */}
-          <Card className="p-5 border-slate-200">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5">
-                <Search className="w-5 h-5 text-slate-700" />
-              </div>
-              <div className="flex-1">
-                <div className="text-base font-bold text-deep-navy">Discover</div>
-                <div className="mt-1 text-sm text-slate-600">
-                  Browse camps for your season. Filter by position and school.
-                </div>
-
-                <div className="mt-4">
-                  <Button
-                    className="w-full"
-                    onClick={() => {
-                      trackEvent({ event_name: "workspace_click", target: "discover" });
-                      nav(createPageUrl("Discover"));
-                    }}
-                    disabled={loading}
-                  >
-                    Go to Discover
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
-              </div>
+        {/* Primary tiles */}
+        <div className="grid md:grid-cols-3 gap-4">
+          <Card className="p-5">
+            <div className="flex items-center gap-2 font-semibold text-deep-navy">
+              <Search className="w-4 h-4" />
+              Discover
+            </div>
+            <div className="mt-1 text-sm text-slate-600">
+              Browse camps for your season. Filter by position and school.
+            </div>
+            <div className="mt-4">
+              <Button className="w-full btn-brand" onClick={() => nav(createPageUrl("Discover"))}>
+                Go to Discover
+              </Button>
             </div>
           </Card>
 
-          {/* Calendar */}
-          <Card className="p-5 border-slate-200">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5">
-                <Calendar className="w-5 h-5 text-slate-700" />
-              </div>
-              <div className="flex-1">
-                <div className="text-base font-bold text-deep-navy">Calendar</div>
-                <div className="mt-1 text-sm text-slate-600">
-                  See your plan and avoid date conflicts.
-                </div>
-
-                <div className="mt-4">
-                  <Button
-                    className="w-full"
-                    onClick={() => {
-                      trackEvent({ event_name: "workspace_click", target: "calendar" });
-                      nav(createPageUrl("Calendar"));
-                    }}
-                    disabled={loading}
-                  >
-                    Go to Calendar
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
-              </div>
+          <Card className="p-5">
+            <div className="flex items-center gap-2 font-semibold text-deep-navy">
+              <CalendarDays className="w-4 h-4" />
+              Calendar
+            </div>
+            <div className="mt-1 text-sm text-slate-600">
+              See your plan and avoid date conflicts.
+            </div>
+            <div className="mt-4">
+              <Button className="w-full btn-brand" onClick={() => nav(createPageUrl("Calendar"))}>
+                Go to Calendar
+              </Button>
             </div>
           </Card>
 
-          {/* ✅ Setup -> Profile */}
-          <Card className="p-5 border-slate-200">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5">
-                <User className="w-5 h-5 text-slate-700" />
-              </div>
-              <div className="flex-1">
-                <div className="text-base font-bold text-deep-navy">Profile</div>
-                <div className="mt-1 text-sm text-slate-600">
-                  Add athletes and set your profile.
-                </div>
-
-                <div className="mt-4">
-                  <Button
-                    className="w-full"
-                    onClick={() => {
-                      trackEvent({ event_name: "workspace_click", target: "profile" });
-                      nav(createPageUrl("Profile"));
-                    }}
-                    disabled={loading}
-                  >
-                    {profileCtaLabel}
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
-              </div>
+          <Card className="p-5">
+            <div className="flex items-center gap-2 font-semibold text-deep-navy">
+              <User className="w-4 h-4" />
+              Profile
+            </div>
+            <div className="mt-1 text-sm text-slate-600">
+              Add athletes and manage your athlete profile setup.
+            </div>
+            <div className="mt-4">
+              <Button className="w-full btn-brand" onClick={() => nav(createPageUrl("Profile"))}>
+                {athleteId ? "View Profile" : "Create Athlete Profile"}
+              </Button>
             </div>
           </Card>
         </div>
 
-        {showMemberPanel ? (
-          <Card className="mt-5 p-5 border-slate-200">
-            <div className="flex items-start gap-3">
-              <ShieldCheck className="w-5 h-5 text-emerald-700 mt-0.5" />
-              <div>
-                <div className="font-semibold text-deep-navy">Member access is active</div>
-                <div className="text-sm text-slate-600 mt-1">
-                  You’re seeing current-season data based on your entitlement. Demo flags are ignored for members.
-                </div>
-              </div>
+        {/* Status callout */}
+        <Card className="mt-4 p-4 border-slate-200 bg-white">
+          {isMember ? (
+            <div className="text-sm text-slate-700">
+              <b>Member access is active.</b>{" "}
+              You’re seeing current-season data based on your entitlement. Demo flags are ignored for members.
             </div>
-          </Card>
+          ) : (
+            <div className="text-sm text-slate-700">
+              <b>You’re in demo mode.</b>{" "}
+              You can browse prior-season camps. To unlock the current season and save planning items, subscribe.
+            </div>
+          )}
+        </Card>
+
+        {/* Admin tools (only for allowlisted accounts) */}
+        {isAdmin ? (
+          <div className="mt-6">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-2">
+              <Shield className="w-4 h-4" />
+              Admin tools
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-4">
+              <Card className="p-5">
+                <div className="font-semibold text-deep-navy">Admin Import</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Promote CampDemo → Camp, validate seed fields, and run ingestion utilities.
+                </div>
+                <div className="mt-4">
+                  <Button variant="outline" className="w-full" onClick={() => nav(createPageUrl("AdminImport"))}>
+                    Go to Admin Import
+                  </Button>
+                </div>
+              </Card>
+            </div>
+          </div>
         ) : null}
       </div>
     </div>
