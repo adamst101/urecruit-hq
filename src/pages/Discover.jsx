@@ -3,7 +3,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SlidersHorizontal } from "lucide-react";
 
-import { createPageUrl } from "../utils";
 import { base44 } from "../api/base44Client";
 
 import { Button } from "../components/ui/button";
@@ -43,7 +42,7 @@ function safeNumber(x) {
 function getUrlParams(search) {
   try {
     const sp = new URLSearchParams(search || "");
-    const mode = sp.get("mode"); // "demo" may be present from Home demo CTA
+    const mode = sp.get("mode");
     const season = sp.get("season");
     const src = sp.get("src") || sp.get("source") || null;
 
@@ -57,7 +56,6 @@ function getUrlParams(search) {
   }
 }
 
-// Return YYYY-MM-DD (UTC) or null
 function toISODate(dateInput) {
   if (!dateInput) return null;
 
@@ -85,10 +83,9 @@ function toISODate(dateInput) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// Football rollover: Feb 1 (UTC)
 function footballSeasonYearForDate(d = new Date()) {
   const y = d.getUTCFullYear();
-  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0)); // Feb 1
+  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
   return d >= feb1 ? y : y - 1;
 }
 
@@ -115,11 +112,6 @@ function trackEvent(payload) {
   } catch {}
 }
 
-/* -------------------------
-   Discover (MVP)
-   - Demo uses Camp table for previous season
-   - Paid uses Camp table for entitled season
-------------------------- */
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
@@ -127,7 +119,6 @@ export default function Discover() {
   const season = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // Filters + UI state
   const [filterOpen, setFilterOpen] = useState(false);
   const { nf, setNF, clearFilters } = useCampFilters();
   const writeGate = useWriteGate();
@@ -143,42 +134,27 @@ export default function Discover() {
   );
   const nextParam = useMemo(() => encodeURIComponent(currentPath), [currentPath]);
 
-  // “Demo flag” may exist, but paid ALWAYS wins once authenticated + entitled.
   const demoSession = useMemo(() => readDemoMode(), []);
   const forceDemoUrl = url.mode === "demo";
   const forceDemoSession = String(demoSession?.mode || "").toLowerCase() === "demo";
 
-  // Compute the “current season” (football rule) and “previous season”
   const computedCurrentSeason = useMemo(() => footballSeasonYearForDate(new Date()), []);
   const computedDemoSeason = useMemo(() => computedCurrentSeason - 1, [computedCurrentSeason]);
 
-  // Paid signal (entitled)
   const entitledSeason = safeNumber(season?.entitlement?.season_year) || null;
   const isEntitled = !!season?.accountId && !!season?.hasAccess && !!entitledSeason;
 
-  // Effective mode: entitled => paid; else demo
   const effectiveMode = isEntitled ? "paid" : "demo";
   const isPaid = effectiveMode === "paid";
 
-  /* -------------------------------------------------------
-     INTENTIONAL UX: Signed-in users land at Workspace
-     - If authed and not explicitly deep-linking to a season,
-       send them to Workspace as the post-login "home base".
-     - Do NOT interfere with:
-         - anonymous demo browsing
-         - deep links that specify ?season=YYYY
-  ------------------------------------------------------- */
+  // ✅ Intentional UX: if signed in, send them to Workspace (unless deep-linking a specific season)
   useEffect(() => {
     if (season?.isLoading) return;
-
-    // only redirect when authenticated and NOT using season deep-link
     if (season?.accountId && !requestedSeason) {
-      // If you're already on /Discover, this makes the experience feel intentional.
       nav("/Workspace", { replace: true });
     }
   }, [season?.isLoading, season?.accountId, requestedSeason, nav]);
 
-  // Effective browse season
   const seasonYear = useMemo(() => {
     if (requestedSeason) {
       if (isEntitled && entitledSeason === requestedSeason) return requestedSeason;
@@ -187,11 +163,7 @@ export default function Discover() {
     return isEntitled ? entitledSeason : computedDemoSeason;
   }, [requestedSeason, isEntitled, entitledSeason, computedDemoSeason]);
 
-  /* -------------------------------------------------------
-     Season-aware gate (only when a season is explicitly requested):
-     - Not logged in => go Home?signin=1&next=...
-     - Logged in but not entitled to requested => Subscribe?season=...
-  ------------------------------------------------------- */
+  // Season-aware gate only if a season is explicitly requested
   useEffect(() => {
     if (season?.isLoading) return;
     if (!requestedSeason) return;
@@ -199,14 +171,13 @@ export default function Discover() {
     const entitled = safeNumber(season?.entitlement?.season_year) || null;
 
     if (!season?.accountId) {
-      nav(createPageUrl("Home") + `?signin=1&next=${nextParam}`, { replace: true });
+      nav(`/Home?signin=1&next=${nextParam}`, { replace: true });
       return;
     }
 
     if (!entitled || entitled !== requestedSeason || !season?.hasAccess) {
       nav(
-        createPageUrl("Subscribe") +
-          `?season=${encodeURIComponent(requestedSeason)}` +
+        `/Subscribe?season=${encodeURIComponent(requestedSeason)}` +
           `&source=${encodeURIComponent("discover_season_gate")}` +
           `&next=${nextParam}`,
         { replace: true }
@@ -222,9 +193,6 @@ export default function Discover() {
     nav
   ]);
 
-  /* -------------------------------------------------------
-     Load camps from Camp table with fallback
-  ------------------------------------------------------- */
   const [rawCamps, setRawCamps] = useState([]);
   const [loadingCamps, setLoadingCamps] = useState(true);
   const [campErr, setCampErr] = useState("");
@@ -296,9 +264,6 @@ export default function Discover() {
     };
   }, [season?.isLoading, seasonYear]);
 
-  /* -------------------------------------------------------
-     Apply filters
-  ------------------------------------------------------- */
   const rows = useMemo(() => {
     const src = asArray(rawCamps);
     return src.filter((r) => {
@@ -332,9 +297,6 @@ export default function Discover() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seasonYear]);
 
-  /* -------------------------------------------------------
-     Render
-  ------------------------------------------------------- */
   const renderBody = () => {
     if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
 
@@ -347,7 +309,6 @@ export default function Discover() {
       );
     }
 
-    // Paid workspace requires athlete profile
     if (isPaid && !athleteId) {
       return (
         <Card className="p-5 border-slate-200">
@@ -356,7 +317,7 @@ export default function Discover() {
             Your paid workspace needs an athlete profile to personalize results.
           </div>
           <div className="mt-4">
-            <Button onClick={() => nav(createPageUrl("Profile"))}>Go to Profile</Button>
+            <Button onClick={() => nav("/Profile")}>Go to Profile</Button>
           </div>
         </Card>
       );
@@ -470,7 +431,6 @@ export default function Discover() {
           </Button>
         </div>
 
-        {/* Truth banner (keep for MVP testing; remove later) */}
         <div className="mb-4 mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
           <div className="flex flex-wrap gap-x-3 gap-y-1">
             <span><b>mode:</b> {effectiveMode}</span>
