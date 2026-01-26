@@ -10,7 +10,7 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 
 function trackEvent(payload) {
   try {
@@ -21,12 +21,33 @@ function trackEvent(payload) {
   } catch {}
 }
 
-function safeNumber(x) {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : null;
+function safeDecode(x) {
+  try {
+    return decodeURIComponent(String(x || ""));
+  } catch {
+    return String(x || "");
+  }
 }
 
-function SubscribePage() {
+function safeNext(n) {
+  const s = safeDecode(n || "");
+  // Only allow internal relative paths
+  if (!s) return null;
+  if (s.startsWith("http://") || s.startsWith("https://")) return null;
+  if (!s.startsWith("/")) return null;
+  return s;
+}
+
+function Feature({ children }) {
+  return (
+    <div className="flex items-start gap-2">
+      <CheckCircle2 className="w-4 h-4 mt-0.5" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+export default function Subscribe() {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -36,28 +57,48 @@ function SubscribePage() {
 
   const params = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
   const force = params.get("force") === "1";
-  const next = params.get("next"); // presence implies intentional navigation
   const source = params.get("source") || "subscribe_page";
 
-  // ✅ NEW: allow passing season in URL (?season=YYYY)
-  // This ensures Discover?season=2026 -> sign-in -> Subscribe sells 2026 (not whatever default)
-  const soldYear = useMemo(() => {
-    const fromUrl = safeNumber(params.get("season"));
-    return fromUrl || currentYear; // fallback to footballCurrentSeasonYear()
-  }, [params, currentYear]);
+  // preserve "next" but sanitize + strip demo flags if present
+  const rawNext = params.get("next");
+  const next = useMemo(() => {
+    const candidate = safeNext(rawNext);
+    if (!candidate) return null;
 
-  // ✅ Guardrail: paid users generally shouldn't see Subscribe (unless forced/intentional)
-  useEffect(() => {
-    if (isLoading) return;
-    if (mode === "paid" && !force && !next) {
-      navigate(createPageUrl("Discover"), { replace: true });
+    try {
+      const u = new URL(candidate, window.location.origin);
+      u.searchParams.delete("mode");
+      u.searchParams.delete("src");
+      u.searchParams.delete("source");
+      return `${u.pathname}${u.search ? u.search : ""}`;
+    } catch {
+      return candidate;
     }
-  }, [isLoading, mode, force, next, navigate]);
+  }, [rawNext]);
 
-  // ✅ Subscribe viewed (dedupe) — only for demo users
+  // derive which season we're selling
+  const requestedSeason = useMemo(() => {
+    const s = params.get("season");
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }, [params]);
+
+  const soldYear = requestedSeason || currentYear || seasonYear || null;
+
+  // ✅ REQUIRED GUARD: entitled users never see Subscribe
   useEffect(() => {
     if (isLoading) return;
-    if (mode === "paid") return;
+
+    // If they're entitled, never show Subscribe
+    if (mode === "paid" && hasAccess) {
+      navigate(next || createPageUrl("Discover"), { replace: true });
+    }
+  }, [isLoading, mode, hasAccess, next, navigate]);
+
+  // ✅ Subscribe viewed (dedupe) — only for non-entitled experiences
+  useEffect(() => {
+    if (isLoading) return;
+    if (mode === "paid" && hasAccess) return;
 
     const key = `evt_subscribe_viewed_${soldYear || "na"}`;
     try {
@@ -68,18 +109,19 @@ function SubscribePage() {
     trackEvent({
       event_name: "subscribe_viewed",
       mode: mode || "demo",
-      season_year: soldYear || null, // ✅ use soldYear (not currentYear)
+      season_year: soldYear || null,
       source,
       account_id: accountId || null,
       force: force ? 1 : 0,
       next: next || null,
       has_access: !!hasAccess,
+      demo_year: demoYear || null
     });
-  }, [isLoading, mode, soldYear, source, accountId, force, next, hasAccess]);
+  }, [isLoading, mode, hasAccess, soldYear, source, accountId, force, next, demoYear]);
 
   // While redirecting paid users, render nothing (prevents flicker)
   if (isLoading) return null;
-  if (mode === "paid" && !force && !next) return null;
+  if (mode === "paid" && hasAccess) return null;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
@@ -91,12 +133,12 @@ function SubscribePage() {
             {mode === "demo" ? (
               <Badge className="bg-slate-900 text-white">Demo {demoYear || ""}</Badge>
             ) : (
-              <Badge className="bg-emerald-700 text-white">Paid {soldYear || ""}</Badge>
+              <Badge className="bg-emerald-700 text-white">Member</Badge>
             )}
           </div>
 
           <p className="text-slate-600 mt-1">
-            Unlock the current season ({soldYear}) and planning tools.
+            Unlock the current season ({soldYear || "—"}) and planning tools.
           </p>
         </div>
 
@@ -133,7 +175,7 @@ function SubscribePage() {
                     trackEvent({
                       event_name: "checkout_cta_clicked",
                       mode: mode || "demo",
-                      season_year: soldYear || null, // ✅ use soldYear
+                      season_year: soldYear || null,
                       source,
                       account_id: accountId || null,
                       force: force ? 1 : 0,
@@ -141,13 +183,11 @@ function SubscribePage() {
                       has_access: !!hasAccess,
                     });
 
-                    // ✅ Always send them back somewhere sensible after Checkout
+                    // ✅ Pass season to Checkout so it creates Entitlement for that season
                     const targetNext = next || createPageUrl("Profile");
-
-                    // ✅ NEW: pass season into checkout so it creates entitlement for the right year
                     const checkoutUrl =
                       createPageUrl("Checkout") +
-                      `?season=${encodeURIComponent(soldYear)}` +
+                      `?season=${encodeURIComponent(soldYear || "")}` +
                       `&source=${encodeURIComponent(source)}` +
                       `&next=${encodeURIComponent(targetNext)}`;
 
@@ -173,7 +213,7 @@ function SubscribePage() {
                       has_access: !!hasAccess,
                     });
 
-                    // If a "next" exists, honor it; otherwise go discover
+                    // If a next exists, honor it; otherwise go discover (demo)
                     if (next) navigate(next);
                     else navigate(createPageUrl("Discover"));
                   }}
@@ -206,22 +246,13 @@ function SubscribePage() {
               <span className="font-medium text-slate-700">Do I need to create a profile first?</span>{" "}
               No — you create athletes after purchase.
             </div>
+            <div>
+              <span className="font-medium text-slate-700">What does “Demo” mean?</span>{" "}
+              Demo shows last season’s data and blocks write actions.
+            </div>
           </div>
         </Card>
       </div>
     </div>
   );
-}
-
-function Feature({ children }) {
-  return (
-    <div className="flex items-start gap-2">
-      <CheckCircle2 className="w-4 h-4 mt-0.5" />
-      <span>{children}</span>
-    </div>
-  );
-}
-
-export default function Subscribe() {
-  return <SubscribePage />;
 }
