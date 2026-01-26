@@ -1,22 +1,11 @@
-// src/pages/Layout.jsx
+// src/layout.js
 import React, { useMemo } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { createPageUrl } from "../utils";
-import { Button } from "../components/ui/button";
+import { createPageUrl } from "./utils";
 
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
-
-/**
- * Layout.jsx
- *
- * Goal:
- * - Provide a consistent shell
- * - Provide a single, correct “Member Login” handler that:
- *   1) clears demo session
- *   2) preserves current page as `next` (but strips demo flags)
- *   3) routes through Subscribe gate after login (same as Home)
- */
+import { Button } from "./components/ui/button";
+import { useSeasonAccess } from "./components/hooks/useSeasonAccess.jsx";
 
 export default function Layout() {
   const location = useLocation();
@@ -32,16 +21,12 @@ export default function Layout() {
     }
   }, [location.search]);
 
-  // ✅ DROP-IN REPLACEMENT (as requested)
+  // ✅ Updated: Member Login routes through Subscribe gate and strips demo flags
   async function handleMemberLogin() {
     try {
       // Clear any persisted demo session so auth doesn't get "stuck" in demo
-      try {
-        sessionStorage.removeItem("demo_mode_v1");
-      } catch {}
-      try {
-        sessionStorage.removeItem("demo_year_v1");
-      } catch {}
+      try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
+      try { sessionStorage.removeItem("demo_year_v1"); } catch {}
 
       // Preserve where they came from, but DO NOT keep mode=demo in next
       const sp = new URLSearchParams(location.search || "");
@@ -51,10 +36,12 @@ export default function Layout() {
 
       const cleanNext = `${location.pathname}${sp.toString() ? `?${sp.toString()}` : ""}`;
 
+      // Route through Subscribe gate after login (same pattern as Home)
       const fromUrl =
         `${window.location.origin}${createPageUrl("Subscribe")}` +
         `?source=auth_gate&next=${encodeURIComponent(cleanNext)}`;
 
+      // Base44 login expects from_url as an ABSOLUTE URL
       const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
       window.location.assign(loginUrl);
     } catch {}
@@ -66,7 +53,7 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Simple top bar (optional, safe) */}
+      {/* Top bar */}
       <div className="border-b border-slate-200 bg-white">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <button
@@ -77,9 +64,8 @@ export default function Layout() {
             URecruit HQ
           </button>
 
-          {/* Right-side actions */}
           <div className="flex items-center gap-2">
-            {/* If not authenticated or not entitled, show Member Login */}
+            {/* Show Member Login when user isn't entitled */}
             {(!season?.accountId || !season?.hasAccess) ? (
               <Button variant="outline" onClick={handleMemberLogin}>
                 Member Login
