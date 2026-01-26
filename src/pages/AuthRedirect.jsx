@@ -13,10 +13,14 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
  * - Landing page after Base44 login when using /login?from_url=...
  * - Decide where to send the user next based on entitlement
  *
- * Rules:
+ * MVP Rules:
  * - If authenticated + entitled -> route to `next` (default /Workspace)
- * - If authenticated + NOT entitled -> HARD redirect to Subscribe (and logout first)
+ * - If authenticated + NOT entitled -> HARD redirect to Subscribe (and optionally logout first)
  * - If not authenticated -> route to Home (signin prompt)
+ *
+ * Key fix:
+ * - Avoid nested query encoding issues by reading `post_login_next` from sessionStorage.
+ * - Sanitize `next` to internal paths only and strip demo params (mode/src/source).
  */
 
 function safeString(x) {
@@ -36,7 +40,7 @@ function getNextFromSearch(search) {
 
 /**
  * Only allow internal paths.
- * Strips demo-related params so paid users don't get bounced into demo.
+ * Also strips demo-related params so paid users don't get bounced back into demo.
  */
 function sanitizeNext(nextRaw) {
   const fallback = createPageUrl("Workspace");
@@ -49,12 +53,14 @@ function sanitizeNext(nextRaw) {
   // Normalize to leading slash
   const pathish = s.startsWith("/") ? s : `/${s}`;
 
-  // Strip demo flags from next URL
+  // Strip demo flags from next URL (prevents "paid user returns to demo")
   try {
     const u = new URL(pathish, window.location.origin);
+
     u.searchParams.delete("mode");
     u.searchParams.delete("src");
     u.searchParams.delete("source");
+
     const cleaned = `${u.pathname}${u.search ? u.search : ""}`;
     return cleaned || fallback;
   } catch {
@@ -82,41 +88,54 @@ export default function AuthRedirect() {
 
   const season = useSeasonAccess();
 
-  // next can arrive as query param or via sessionStorage fallback
+  // Next can arrive as query param OR (preferred) via sessionStorage fallback
   const next = useMemo(() => {
     const qNext = getNextFromSearch(loc?.search);
     if (qNext) return sanitizeNext(qNext);
 
+    // ✅ Preferred: next stored by startMemberLogin() to avoid nested encoding issues
     try {
       const ss = sessionStorage.getItem("post_login_next");
-      if (ss) return sanitizeNext(ss);
+      if (ss) {
+        // one-shot
+        try {
+          sessionStorage.removeItem("post_login_next");
+        } catch {}
+        return sanitizeNext(ss);
+      }
     } catch {}
 
-    // ✅ Default is Workspace now
+    // Default: Workspace (IMPORTANT: no mode=demo here)
     return createPageUrl("Workspace");
   }, [loc?.search]);
 
   useEffect(() => {
+    // Wait for season hook to resolve auth + entitlement
     if (season?.isLoading) return;
 
-    // Not authenticated -> Home with signin prompt + next
+    // Not authenticated -> go Home with signin prompt
     if (!season?.accountId) {
       nav(createPageUrl("Home") + `?signin=1&next=${encodeURIComponent(next)}`, { replace: true });
       return;
     }
 
-    // Authenticated: clear demo stickiness
-    try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
-    try { sessionStorage.removeItem("demo_year_v1"); } catch {}
+    // Authenticated: clear demo stickiness (user chose to log in)
+    try {
+      sessionStorage.removeItem("demo_mode_v1");
+    } catch {}
+    try {
+      sessionStorage.removeItem("demo_year_v1");
+    } catch {}
 
-    // Entitled -> go to next (Workspace by default)
+    // Entitled -> go to sanitized next (SPA nav is fine here)
     if (season?.hasAccess && season?.entitlement) {
       nav(next, { replace: true });
       return;
     }
 
-    // Not entitled -> force Subscribe via HARD redirect
+    // NOT entitled -> force Subscribe via HARD redirect (not back to demo)
     (async () => {
+      // Optional: mimic "no login unless paid"
       await safeLogout();
 
       const subscribeUrl =
@@ -128,5 +147,6 @@ export default function AuthRedirect() {
     })();
   }, [season?.isLoading, season?.accountId, season?.hasAccess, season?.entitlement, next, nav]);
 
+  // Minimal blank screen (avoid flicker); swap for spinner later if you want.
   return <div className="min-h-screen bg-slate-50" />;
 }
