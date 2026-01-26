@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { CalendarDays, Search, User, Shield } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
-import { createPageUrl } from "../utils";
 
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -12,6 +11,17 @@ import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+
+// ---- routes (no createPageUrl dependency) ----
+const ROUTES = {
+  Home: "/Home",
+  Workspace: "/Workspace",
+  Discover: "/Discover",
+  Calendar: "/Calendar",
+  Profile: "/Profile",
+  Subscribe: "/Subscribe",
+  AdminImport: "/AdminImport",
+};
 
 // --- tiny helpers ---
 function normId(x) {
@@ -34,7 +44,6 @@ export default function Workspace() {
 
   const season = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
-
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
 
   const [meEmail, setMeEmail] = useState("");
@@ -53,10 +62,7 @@ export default function Workspace() {
 
   // MVP admin allowlist (edit as needed)
   const isAdmin = useMemo(() => {
-    const allow = [
-      "tom_adams_tx@live.com",
-      "tom.adams101@gmail.com"
-    ];
+    const allow = ["tom_adams_tx@live.com", "tom.adams101@gmail.com"];
     return !!meEmail && allow.includes(meEmail);
   }, [meEmail]);
 
@@ -65,9 +71,7 @@ export default function Workspace() {
   const isMember = !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
   const memberSeason = Number(season?.entitlement?.season_year) || season?.seasonYear || null;
 
-  if (loading) {
-    return <div className="min-h-screen bg-slate-50" />;
-  }
+  if (loading) return <div className="min-h-screen bg-slate-50" />;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-10">
@@ -104,7 +108,7 @@ export default function Workspace() {
               Browse camps for your season. Filter by position and school.
             </div>
             <div className="mt-4">
-              <Button className="w-full btn-brand" onClick={() => nav(createPageUrl("Discover"))}>
+              <Button className="w-full btn-brand" onClick={() => nav(ROUTES.Discover)}>
                 Go to Discover
               </Button>
             </div>
@@ -115,11 +119,9 @@ export default function Workspace() {
               <CalendarDays className="w-4 h-4" />
               Calendar
             </div>
-            <div className="mt-1 text-sm text-slate-600">
-              See your plan and avoid date conflicts.
-            </div>
+            <div className="mt-1 text-sm text-slate-600">See your plan and avoid date conflicts.</div>
             <div className="mt-4">
-              <Button className="w-full btn-brand" onClick={() => nav(createPageUrl("Calendar"))}>
+              <Button className="w-full btn-brand" onClick={() => nav(ROUTES.Calendar)}>
                 Go to Calendar
               </Button>
             </div>
@@ -134,7 +136,7 @@ export default function Workspace() {
               Add athletes and manage your athlete profile setup.
             </div>
             <div className="mt-4">
-              <Button className="w-full btn-brand" onClick={() => nav(createPageUrl("Profile"))}>
+              <Button className="w-full btn-brand" onClick={() => nav(ROUTES.Profile)}>
                 {athleteId ? "View Profile" : "Create Athlete Profile"}
               </Button>
             </div>
@@ -145,13 +147,19 @@ export default function Workspace() {
         <Card className="mt-4 p-4 border-slate-200 bg-white">
           {isMember ? (
             <div className="text-sm text-slate-700">
-              <b>Member access is active.</b>{" "}
-              You’re seeing current-season data based on your entitlement. Demo flags are ignored for members.
+              <b>Member access is active.</b> You’re seeing current-season data based on your entitlement.
             </div>
           ) : (
             <div className="text-sm text-slate-700">
-              <b>You’re in demo mode.</b>{" "}
-              You can browse prior-season camps. To unlock the current season and save planning items, subscribe.
+              <b>You’re in demo mode.</b> To unlock the current season and save planning items, subscribe.
+              <div className="mt-3">
+                <Button
+                  className="btn-brand"
+                  onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_cta`)}
+                >
+                  View pricing / Subscribe
+                </Button>
+              </div>
             </div>
           )}
         </Card>
@@ -168,10 +176,10 @@ export default function Workspace() {
               <Card className="p-5">
                 <div className="font-semibold text-deep-navy">Admin Import</div>
                 <div className="mt-1 text-sm text-slate-600">
-                  Promote CampDemo → Camp, validate seed fields, and run ingestion utilities.
+                  Promote CampDemo → Camp and run ingestion utilities.
                 </div>
                 <div className="mt-4">
-                  <Button variant="outline" className="w-full" onClick={() => nav(createPageUrl("AdminImport"))}>
+                  <Button variant="outline" className="w-full" onClick={() => nav(ROUTES.AdminImport)}>
                     Go to Admin Import
                   </Button>
                 </div>
