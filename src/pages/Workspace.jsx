@@ -100,7 +100,7 @@ export default function Workspace() {
     return !!(idOk || emailOk);
   }, [season?.accountId, meEmail]);
 
-  // If not authed, this page shouldn't be reachable — send Home
+  // If not authed, this page shouldn’t be reachable — send Home
   useEffect(() => {
     if (season?.isLoading) return;
     if (!isAuthed) {
@@ -136,7 +136,7 @@ export default function Workspace() {
             <div className="flex items-start gap-3">
               <Lock className="w-5 h-5 text-amber-700 mt-0.5" />
               <div className="flex-1">
-                <div className="font-semibold text-amber-900">You're signed in, but not subscribed.</div>
+                <div className="font-semibold text-amber-900">You’re signed in, but not subscribed.</div>
                 <div className="text-sm text-amber-900/80 mt-1">
                   Subscribe to unlock the current season and planning tools.
                 </div>
