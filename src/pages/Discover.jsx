@@ -160,6 +160,24 @@ export default function Discover() {
   const effectiveMode = isEntitled ? "paid" : "demo";
   const isPaid = effectiveMode === "paid";
 
+  /* -------------------------------------------------------
+     INTENTIONAL UX: Signed-in users land at Workspace
+     - If authed and not explicitly deep-linking to a season,
+       send them to Workspace as the post-login "home base".
+     - Do NOT interfere with:
+         - anonymous demo browsing
+         - deep links that specify ?season=YYYY
+  ------------------------------------------------------- */
+  useEffect(() => {
+    if (season?.isLoading) return;
+
+    // only redirect when authenticated and NOT using season deep-link
+    if (season?.accountId && !requestedSeason) {
+      // If you're already on /Discover, this makes the experience feel intentional.
+      nav("/Workspace", { replace: true });
+    }
+  }, [season?.isLoading, season?.accountId, requestedSeason, nav]);
+
   // Effective browse season
   const seasonYear = useMemo(() => {
     if (requestedSeason) {
