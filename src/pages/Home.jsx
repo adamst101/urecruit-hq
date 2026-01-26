@@ -11,6 +11,7 @@ import { Button } from "../components/ui/button";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
+
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 
 const LOGO_URL =
@@ -46,7 +47,7 @@ export default function Home() {
       event_name: "home_view",
       source: "home",
       auth_state: season?.accountId ? "authed" : "anon",
-      mode: season?.mode === "paid" ? "paid" : "demo",
+      mode: season?.mode === "paid" ? "paid" : "demo"
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -63,15 +64,18 @@ export default function Home() {
 
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
 
+    // Force demo via URL; do NOT pass season
     nav(`${createPageUrl("Discover")}?mode=demo&src=home_demo`);
   }
 
-  function handleLogin() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
+  function handleMemberLogin() {
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_member_login" });
 
-    // Always return through AuthRedirect.
-    // AuthRedirect will route: entitled -> next, unentitled -> Subscribe.
-    startMemberLogin({ nextPath: createPageUrl("Discover"), source: "home_member_login" });
+    // Always return through AuthRedirect; entitled -> Discover, not entitled -> Subscribe
+    startMemberLogin({
+      nextPath: createPageUrl("Discover"),
+      source: "home_member_login"
+    });
   }
 
   function handlePricingSignup() {
@@ -87,7 +91,7 @@ export default function Home() {
     () => [
       { a: "Find dates fast.", b: "Camps and dates are scattered across school sites. We bring them together." },
       { a: "Plan the sequence.", b: "Overlay schools + position-specific sessions to avoid conflicts." },
-      { a: "Track what’s real.", b: "Planning vs registered vs completed—so the plan actually happens." },
+      { a: "Track what’s real.", b: "Planning vs registered vs completed—so the plan actually happens." }
     ],
     []
   );
@@ -96,7 +100,7 @@ export default function Home() {
     () => [
       { title: "Collect", body: "Bring camps + dates into one place." },
       { title: "Sequence", body: "Overlay targets + position sessions." },
-      { title: "Execute", body: "Track planning → registered → completed." },
+      { title: "Execute", body: "Track planning → registered → completed." }
     ],
     []
   );
@@ -106,7 +110,7 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* Brand row: big logo + login (single login button) */}
+            {/* Brand row: big logo + login */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -125,20 +129,20 @@ export default function Home() {
                   Your college recruiting camp planning HQ
                 </div>
 
-                {/* Mobile: login under tagline */}
+                {/* Mobile: member login under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button onClick={handleLogin} className="btn-brand w-full">
+                  <Button onClick={handleMemberLogin} className="btn-brand w-full">
                     <LogIn className="w-4 h-4 mr-2" />
-                    Member login
+                    Member Log In
                   </Button>
                 </div>
               </div>
 
-              {/* Desktop: login to the right */}
+              {/* Desktop: member login to the right */}
               <div className="hidden md:flex">
-                <Button variant="outline" onClick={handleLogin} className="text-ink">
+                <Button variant="outline" onClick={handleMemberLogin} className="text-ink">
                   <LogIn className="w-4 h-4 mr-2" />
-                  Member login
+                  Member Log In
                 </Button>
               </div>
             </div>
