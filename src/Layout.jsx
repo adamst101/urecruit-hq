@@ -1,11 +1,10 @@
-// src/Layout.jsx
-import React, { useEffect, useState, useMemo } from "react";
+// src/Layout.jsx  (Base44 shared layout must be named Layout.jsx in /src root)
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { LogIn, User } from "lucide-react";
 
 import { base44 } from "./api/base44Client";
 import { createPageUrl } from "./utils";
-
 import { startMemberLogin } from "./components/utils/memberLogin.jsx";
 
 const LOGO_URL =
@@ -27,10 +26,10 @@ export default function Layout({ children }) {
   const [logoOk, setLogoOk] = useState(true);
   const [isAuthed, setIsAuthed] = useState(false);
 
-  const isHomePage =
-    location.pathname === "/" ||
-    location.pathname === "/Home" ||
-    location.pathname === "/home";
+  const isHomePage = useMemo(() => {
+    const p = location.pathname || "";
+    return p === "/" || p === "/Home" || p === "/home";
+  }, [location.pathname]);
 
   // Keep auth state current (so we can hide Login when already signed in)
   useEffect(() => {
@@ -45,31 +44,17 @@ export default function Layout({ children }) {
     };
   }, [location.pathname]);
 
-  const nextPathForLogin = useMemo(() => {
-    // Build a "clean" nextPath from current location, removing demo-related params
-    try {
-      const sp = new URLSearchParams(location.search || "");
-      sp.delete("mode");
-      sp.delete("src");
-      sp.delete("source");
-
-      const qs = sp.toString();
-      return `${location.pathname}${qs ? `?${qs}` : ""}`;
-    } catch {
-      return createPageUrl("Discover");
-    }
-  }, [location.pathname, location.search]);
-
-  function handleMemberLogin() {
-    startMemberLogin({ nextPath: nextPathForLogin, source: "header_member_login" });
-  }
-
   function goHome() {
     navigate(createPageUrl("Home"));
   }
 
   function goAccount() {
     navigate(createPageUrl("Profile"));
+  }
+
+  function handleMemberLogin() {
+    // Always return through AuthRedirect; default next is Discover
+    startMemberLogin({ nextPath: createPageUrl("Discover"), source: "layout_member_login" });
   }
 
   return (
@@ -92,9 +77,7 @@ export default function Layout({ children }) {
                   onError={() => setLogoOk(false)}
                   className="h-9 md:h-10 w-auto object-contain"
                 />
-              ) : (
-                <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
-              )}
+              ) : null}
               <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
             </button>
 
@@ -126,15 +109,15 @@ export default function Layout({ children }) {
 
       {children}
 
-      {/* Theme + utility classes (keeps Home styling correct) */}
+      {/* Theme + utility classes */}
       <style>{`
         :root{
-          --brand:#0B1F3B;         /* Navy */
-          --accent:#D4AF37;        /* Gold */
-          --ink:#111827;           /* Charcoal */
-          --muted:#6B7280;         /* Gray */
-          --surface:#F3F4F6;       /* Light gray surface */
-          --border:#E5E7EB;        /* Border */
+          --brand:#0B1F3B;
+          --accent:#D4AF37;
+          --ink:#111827;
+          --muted:#6B7280;
+          --surface:#F3F4F6;
+          --border:#E5E7EB;
         }
 
         .bg-surface{ background: var(--surface); }
