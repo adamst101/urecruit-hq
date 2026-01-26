@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
-import { createPageUrl } from "../utils";
 
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -64,19 +63,19 @@ export default function Home() {
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
 
     // Force demo
-    nav(`${createPageUrl("Discover")}?mode=demo&src=home_demo`);
+    nav(`/Discover?mode=demo&src=home_demo`);
   }
 
   function handleMemberLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
     // ✅ Single post-login destination
-    startMemberLogin({ nextPath: createPageUrl("Workspace"), source: "home_member_login" });
+    startMemberLogin({ nextPath: "/Workspace", source: "home_member_login" });
   }
 
   function handlePricingSignup() {
     trackEvent({ event_name: "cta_pricing_signup_click", source: "home" });
-    nav(createPageUrl("Subscribe") + `?source=home_pricing`);
+    nav(`/Subscribe?source=home_pricing`);
   }
 
   const heroHeadline = "Stop guessing which recruiting camps matter this season.";
