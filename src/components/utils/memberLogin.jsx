@@ -1,12 +1,16 @@
 // src/components/utils/memberLogin.jsx
 import { createPageUrl } from "../../utils";
 
+/**
+ * Only allow internal paths for "next".
+ * If caller accidentally passes absolute URL or junk, we fall back to Discover.
+ */
 function sanitizeNext(next) {
-  const fallback = createPageUrl("Workspace");
+  const fallback = createPageUrl("Discover");
   const s = String(next || "").trim();
   if (!s) return fallback;
 
-  // Only allow internal paths
+  // Block absolute URLs / open redirects
   if (s.startsWith("http://") || s.startsWith("https://")) return fallback;
 
   // Normalize to leading slash
@@ -24,7 +28,7 @@ export function startMemberLogin({ nextPath = null, source = "member_login" } = 
   try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
   try { sessionStorage.removeItem("demo_year_v1"); } catch {}
 
-  const next = sanitizeNext(nextPath || createPageUrl("Workspace"));
+  const next = sanitizeNext(nextPath || createPageUrl("Discover"));
 
   const returnTo =
     `${window.location.origin}${createPageUrl("AuthRedirect")}` +
