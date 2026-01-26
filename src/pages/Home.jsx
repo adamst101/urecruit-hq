@@ -1,5 +1,5 @@
 // src/pages/Home.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
@@ -25,17 +25,14 @@ export default function Home() {
   const nav = useNavigate();
 
   const season = useSeasonAccess();
-  const seasonRef = useRef(season);
-
-  useEffect(() => {
-    seasonRef.current = season;
-  }, [season]);
-
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
 
+  const isAuthed = !!season?.accountId;
+  const isMember = !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
+
   useEffect(() => {
-    const key = "evt_home_viewed_v23";
+    const key = "evt_home_viewed_v24";
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
@@ -44,8 +41,8 @@ export default function Home() {
     trackEvent({
       event_name: "home_view",
       source: "home",
-      auth_state: season?.accountId ? "authed" : "anon",
-      mode: season?.mode === "paid" ? "paid" : "demo",
+      auth_state: isAuthed ? "authed" : "anon",
+      mode: isMember ? "paid" : "demo",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -62,15 +59,19 @@ export default function Home() {
 
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
 
-    // Force demo
     nav(`/Discover?mode=demo&src=home_demo`);
   }
 
   function handleMemberLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // ✅ Single post-login destination
+    // Single post-login destination
     startMemberLogin({ nextPath: "/Workspace", source: "home_member_login" });
+  }
+
+  function handleContinue() {
+    trackEvent({ event_name: "cta_continue_click", source: "home", dest: "workspace" });
+    nav("/Workspace");
   }
 
   function handlePricingSignup() {
@@ -100,6 +101,10 @@ export default function Home() {
     []
   );
 
+  // Decide what the hero “auth” CTA should do
+  const heroAuthLabel = isAuthed ? (isMember ? "Continue to Workspace" : "Subscribe to Unlock") : "Member login";
+  const heroAuthAction = isAuthed ? (isMember ? handleContinue : handlePricingSignup) : handleMemberLogin;
+
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
@@ -124,20 +129,20 @@ export default function Home() {
                   Your college recruiting camp planning HQ
                 </div>
 
-                {/* Mobile: member login under tagline */}
+                {/* Mobile: auth CTA under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button onClick={handleMemberLogin} className="btn-brand w-full">
+                  <Button onClick={heroAuthAction} className="btn-brand w-full">
                     <LogIn className="w-4 h-4 mr-2" />
-                    Member login
+                    {heroAuthLabel}
                   </Button>
                 </div>
               </div>
 
-              {/* Desktop: member login to the right */}
+              {/* Desktop: auth CTA to the right */}
               <div className="hidden md:flex">
-                <Button variant="outline" onClick={handleMemberLogin} className="text-ink">
+                <Button variant="outline" onClick={heroAuthAction} className="text-ink">
                   <LogIn className="w-4 h-4 mr-2" />
-                  Member login
+                  {heroAuthLabel}
                 </Button>
               </div>
             </div>
