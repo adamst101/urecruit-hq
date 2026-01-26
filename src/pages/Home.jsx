@@ -12,6 +12,8 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 
+import { startMemberLogin } from "../components/utils/memberLogin.jsx";
+
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
@@ -51,49 +53,26 @@ export default function Home() {
   }, []);
 
   function handleTryDemo() {
-    // Pick the demo year your hook is using (or fallback)
     const demoYear =
       season?.demoYear ||
-      demoSeasonYear || // your getDemoDefaults()
+      demoSeasonYear ||
       (season?.currentYear ? season.currentYear - 1 : null);
 
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoYear });
 
-    // Persist demo mode for the session (optional but helpful)
     if (demoYear) setDemoMode(demoYear);
 
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
 
-    // ✅ Critical: force demo with URL, DO NOT pass season (prevents season gate mismatch)
+    // Force demo with URL (do not pass season to avoid gating)
     nav(`${createPageUrl("Discover")}?mode=demo&src=home_demo`);
   }
 
-  /**
-   * Home "Log in" should behave like "Log in" (not "Subscribe").
-   * We bypass AuthRedirect and send the user to Base44's login route:
-   *   /login?from_url=<absolute Subscribe?source=auth_gate&next=/Discover>
-   *
-   * This matches the URL pattern you pasted:
-   *   /login?from_url=https%3A%2F%2F...%2FSubscribe%3Fsource%3Dauth_gate%26next%3D%252FDiscover
-   */
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // ✅ If the user is choosing to log in, don’t keep them stuck in demo after auth
-    try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
-    try { sessionStorage.removeItem("demo_year_v1"); } catch {}
-
-    const nextPath = createPageUrl("Discover"); // typically "/Discover"
-
-    // from_url must be an ABSOLUTE URL. We want to land users at Subscribe gate after login
-    // (and preserve next=/Discover).
-    const fromUrl =
-      `${window.location.origin}${createPageUrl("Subscribe")}` +
-      `?source=auth_gate&next=${encodeURIComponent(nextPath)}`;
-
-    const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
-
-    window.location.assign(loginUrl);
+    // Always return through AuthRedirect so entitlement is evaluated consistently
+    startMemberLogin({ nextPath: createPageUrl("Discover"), source: "home_login" });
   }
 
   function handlePricingSignup() {
@@ -151,8 +130,7 @@ export default function Home() {
                 <div className="mt-3 w-full md:hidden">
                   <Button onClick={handleLogin} className="btn-brand w-full">
                     <LogIn className="w-4 h-4 mr-2" />
-                    <span className="hidden sm:inline">Member login</span>
-                    <span className="sm:hidden">Login</span>
+                    Log in
                   </Button>
                 </div>
               </div>
@@ -161,8 +139,7 @@ export default function Home() {
               <div className="hidden md:flex">
                 <Button variant="outline" onClick={handleLogin} className="text-ink">
                   <LogIn className="w-4 h-4 mr-2" />
-                  <span className="hidden sm:inline">Member login</span>
-                  <span className="sm:hidden">Login</span>
+                  Log in
                 </Button>
               </div>
             </div>
