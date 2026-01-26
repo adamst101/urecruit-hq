@@ -1,31 +1,31 @@
 // src/pages/Profile.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Lock, LogIn, Loader2, CheckCircle2, UserCircle2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { User } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
-import { createPageUrl } from "../utils";
 
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
-
-import BottomNav from "../components/navigation/BottomNav.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 
-function trackEvent(payload) {
-  try {
-    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
-  } catch {}
-}
+// ---- routes (no createPageUrl dependency) ----
+const ROUTES = {
+  Workspace: "/Workspace",
+  Discover: "/Discover",
+};
 
-function loginUrl(nextPath) {
-  const next = encodeURIComponent(nextPath || "/");
-  return `/login?next=${next}&source=profile`;
-}
+// Positions list (as requested)
+const POSITION_OPTIONS = ["QB", "WR", "TE", "OL", "DL", "DB", "LB", "K", "P", "LS"];
+
+// Height options
+const FEET_OPTIONS = [4, 5, 6, 7]; // adjust if you want
+const INCH_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
+
+// Weight options (pick list)
+const WEIGHT_OPTIONS = Array.from({ length: 61 }, (_, i) => 100 + i * 5); // 100..400 step 5
 
 function normId(x) {
   if (!x) return null;
@@ -33,260 +33,417 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
+function safeStr(x) {
+  return x == null ? "" : String(x);
+}
+
+function parseNameParts(athleteProfile) {
+  // Prefer split fields if present; else attempt to split athlete_name
+  const first = safeStr(athleteProfile?.first_name || athleteProfile?.firstName).trim();
+  const last = safeStr(athleteProfile?.last_name || athleteProfile?.lastName).trim();
+  if (first || last) return { first, last };
+
+  const full =
+    safeStr(athleteProfile?.athlete_name || athleteProfile?.athleteName || athleteProfile?.name).trim();
+  if (!full) return { first: "", last: "" };
+
+  const parts = full.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return { first: parts[0], last: "" };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+}
+
+function parseHeightParts(athleteProfile) {
+  // Prefer split fields if present
+  const ft =
+    athleteProfile?.height_ft ??
+    athleteProfile?.heightFeet ??
+    athleteProfile?.height_feet ??
+    null;
+  const inch =
+    athleteProfile?.height_in ??
+    athleteProfile?.heightInches ??
+    athleteProfile?.height_inches ??
+    null;
+
+  const ftNum = Number(ft);
+  const inNum = Number(inch);
+  if (Number.isFinite(ftNum) && Number.isFinite(inNum)) {
+    return { heightFt: ftNum, heightIn: inNum };
+  }
+
+  // Fallback: parse "6'2\"" or "6'2" or "6-2"
+  const raw = safeStr(athleteProfile?.height).trim();
+  if (!raw) return { heightFt: "", heightIn: "" };
+
+  const m = raw.match(/(\d)\s*['-]\s*(\d{1,2})/);
+  if (!m) return { heightFt: "", heightIn: "" };
+
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  return {
+    heightFt: Number.isFinite(a) ? a : "",
+    heightIn: Number.isFinite(b) ? b : "",
+  };
+}
+
+function parseWeight(athleteProfile) {
+  const w =
+    athleteProfile?.weight_lbs ??
+    athleteProfile?.weightLbs ??
+    athleteProfile?.weight ??
+    null;
+  const n = Number(w);
+  return Number.isFinite(n) ? n : "";
+}
+
+function parseGradYear(athleteProfile) {
+  const y = athleteProfile?.grad_year ?? athleteProfile?.gradYear ?? null;
+  const n = Number(y);
+  return Number.isFinite(n) ? n : "";
+}
+
+function parsePrimaryPosition(athleteProfile) {
+  const p = safeStr(athleteProfile?.primary_position || athleteProfile?.primaryPosition).trim().toUpperCase();
+  return POSITION_OPTIONS.includes(p) ? p : "";
+}
+
+function getAthleteEntity() {
+  // Try common entity names; adjust if your Base44 entity uses a different name.
+  return (
+    base44?.entities?.AthleteProfile ||
+    base44?.entities?.Athlete ||
+    base44?.entities?.AthleteIdentity ||
+    null
+  );
+}
+
+async function upsertAthleteProfile({ athleteId, accountId, payloadFull, payloadFallback }) {
+  const Entity = getAthleteEntity();
+  if (!Entity) throw new Error("No athlete entity found (expected AthleteProfile/Athlete/AthleteIdentity).");
+
+  // If we have an id, update. Else create.
+  if (athleteId) {
+    // Attempt full payload (new fields). If schema doesn't support, fallback.
+    try {
+      await Entity.update(athleteId, payloadFull);
+      return { mode: "updated_full" };
+    } catch (e1) {
+      await Entity.update(athleteId, payloadFallback);
+      return { mode: "updated_fallback", error: e1 };
+    }
+  }
+
+  // If no id, create. Include account_id if your schema supports it.
+  // Try full payload; if it fails, fallback.
+  try {
+    await Entity.create(payloadFull);
+    return { mode: "created_full" };
+  } catch (e1) {
+    await Entity.create(payloadFallback);
+    return { mode: "created_fallback", error: e1 };
+  }
+}
+
 export default function Profile() {
   const nav = useNavigate();
-  const loc = useLocation();
-
   const season = useSeasonAccess();
+
+  // This hook is already in your app; we’ll use it to pre-fill when available.
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  const isAuthed = !!season.accountId;
-  const isPaid = season.mode === "paid";
+  const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
+  const accountId = season?.accountId || null;
 
-  // Hard rule:
-  // - Profile is part of paid workspace context (requiredProfile for paid pages).
-  // - If authed but not entitled => redirect to Subscribe.
-  useEffect(() => {
-    if (!isAuthed) return;
-    if (!season.isLoading && !isPaid) {
-      const next = encodeURIComponent(createPageUrl("Profile"));
-      nav(`${createPageUrl("Subscribe")}?next=${next}&reason=entitlement_required`, { replace: true });
-    }
-  }, [isAuthed, isPaid, season.isLoading, nav]);
-
-  useEffect(() => {
-    trackEvent({
-      event_name: "profile_view",
-      source: "profile",
-      auth_state: isAuthed ? "authed" : "anon",
-      mode: isPaid ? "paid" : "demo"
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Pick list: Grad years (current year → +10)
+  const GRAD_YEAR_OPTIONS = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    return Array.from({ length: 11 }, (_, i) => y + i);
   }, []);
 
-  const athleteId = athleteProfile?.id ? String(athleteProfile.id) : null;
+  // Form state
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [gradYear, setGradYear] = useState("");
+  const [primaryPosition, setPrimaryPosition] = useState("");
+  const [heightFt, setHeightFt] = useState("");
+  const [heightIn, setHeightIn] = useState("");
+  const [weight, setWeight] = useState("");
 
-  // ---- editable fields (simple + tolerant of schema variance) ----
-  const initial = useMemo(() => {
-    const p = athleteProfile || {};
-    return {
-      athlete_name: p.athlete_name || p.name || "",
-      grad_year: p.grad_year ? String(p.grad_year) : "",
-      position_primary: p.position_primary || p.primary_position || "",
-      state: p.state || "",
-      height: p.height || "",
-      weight: p.weight || ""
-    };
-  }, [athleteProfile]);
-
-  const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
 
+  const loading = !!season?.isLoading || !!identityLoading;
+
+  // Prefill once
   useEffect(() => {
-    setForm(initial);
-  }, [initial]);
+    if (!athleteProfile) return;
 
-  const setField = (k, v) => {
-    setSaved(false);
+    const n = parseNameParts(athleteProfile);
+    const h = parseHeightParts(athleteProfile);
+
+    setFirstName(n.first || "");
+    setLastName(n.last || "");
+    setGradYear(parseGradYear(athleteProfile) || "");
+    setPrimaryPosition(parsePrimaryPosition(athleteProfile) || "");
+    setHeightFt(h.heightFt === "" ? "" : h.heightFt);
+    setHeightIn(h.heightIn === "" ? "" : h.heightIn);
+    setWeight(parseWeight(athleteProfile) || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [athleteId]); // key on athleteId to avoid overwriting while typing
+
+  const fullName = useMemo(() => {
+    return `${safeStr(firstName).trim()} ${safeStr(lastName).trim()}`.trim();
+  }, [firstName, lastName]);
+
+  const heightString = useMemo(() => {
+    const f = Number(heightFt);
+    const i = Number(heightIn);
+    if (!Number.isFinite(f) || !Number.isFinite(i)) return "";
+    return `${f}'${i}"`;
+  }, [heightFt, heightIn]);
+
+  async function handleSave() {
     setErr("");
-    setForm((prev) => ({ ...prev, [k]: v }));
-  };
 
-  async function saveProfile() {
-    if (!isPaid) return;
-    if (!isAuthed) return;
+    // Basic validation
+    if (!safeStr(firstName).trim()) return setErr("First name is required.");
+    if (!safeStr(lastName).trim()) return setErr("Last name is required.");
+    if (!Number.isFinite(Number(gradYear))) return setErr("Grad year is required.");
+    if (!primaryPosition) return setErr("Primary position is required.");
+
+    // Height validation (if one is filled, require both)
+    const anyHeight = safeStr(heightFt).trim() || safeStr(heightIn).trim();
+    if (anyHeight) {
+      const f = Number(heightFt);
+      const i = Number(heightIn);
+      if (!Number.isFinite(f) || !Number.isFinite(i)) return setErr("Height must include feet and inches.");
+      if (!FEET_OPTIONS.includes(f)) return setErr("Height (feet) is out of range.");
+      if (!(i >= 0 && i <= 11)) return setErr("Height (inches) must be 0–11.");
+    }
+
+    // Weight validation (optional)
+    const wNum = safeStr(weight).trim() ? Number(weight) : null;
+    if (wNum != null && !Number.isFinite(wNum)) return setErr("Weight is invalid.");
 
     setSaving(true);
-    setErr("");
-    setSaved(false);
 
     try {
-      const payload = {
-        account_id: season.accountId,
-        active: true,
-        athlete_name: String(form.athlete_name || "").trim(),
-        grad_year: form.grad_year ? Number(form.grad_year) : null,
-        position_primary: String(form.position_primary || "").trim(),
-        state: String(form.state || "").trim(),
-        height: String(form.height || "").trim(),
-        weight: String(form.weight || "").trim()
+      // Payload with new fields (recommended)
+      const payloadFull = {
+        account_id: accountId || undefined,
+
+        // new / structured fields (if your entity supports them)
+        first_name: safeStr(firstName).trim(),
+        last_name: safeStr(lastName).trim(),
+        grad_year: Number(gradYear),
+        primary_position: primaryPosition,
+        height_ft: anyHeight ? Number(heightFt) : null,
+        height_in: anyHeight ? Number(heightIn) : null,
+        weight_lbs: wNum,
+
+        // legacy/back-compat fields (so existing reads don’t break)
+        athlete_name: fullName,
+        height: anyHeight ? heightString : null,
+        weight: wNum,
       };
 
-      // Create or update
-      if (athleteId) {
-        await base44.entities.AthleteProfile.update(athleteId, payload);
-      } else {
-        await base44.entities.AthleteProfile.create(payload);
-      }
+      // Legacy-only payload (works even if entity schema is old)
+      const payloadFallback = {
+        account_id: accountId || undefined,
+        athlete_name: fullName,
+        grad_year: Number(gradYear),
+        primary_position: primaryPosition,
+        height: anyHeight ? heightString : null,
+        weight: wNum,
+      };
 
-      trackEvent({
-        event_name: "profile_saved",
-        source: "profile",
-        mode: "paid"
+      await upsertAthleteProfile({
+        athleteId,
+        accountId,
+        payloadFull,
+        payloadFallback,
       });
 
-      setSaved(true);
-
-      // Best practice: refresh identity by hard reload of page state
-      // (react-query cache will update on next visit; Base44 can be finicky).
-      setTimeout(() => {
-        try {
-          nav(createPageUrl("Discover"));
-        } catch {}
-      }, 300);
+      // After save, send them back to Workspace (feels intentional)
+      nav(ROUTES.Workspace);
     } catch (e) {
-      setErr("Couldn’t save profile. Please try again.");
+      setErr(String(e?.message || e));
     } finally {
       setSaving(false);
     }
   }
 
-  const renderBody = () => {
-    // Not logged in => block
-    if (!isAuthed) {
-      return (
-        <Card className="p-5 border-slate-200">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5">
-              <Lock className="w-5 h-5 text-slate-500" />
-            </div>
-            <div>
-              <div className="text-lg font-semibold text-deep-navy">Log in to access Profile</div>
-              <div className="mt-1 text-sm text-slate-600">
-                Profile is part of the paid workspace. Log in with your subscriber account.
-              </div>
-
-              <div className="mt-4 flex gap-2">
-                <Button
-                  onClick={() => window.location.assign(loginUrl(createPageUrl("Profile")))}
-                  className="btn-brand"
-                >
-                  <LogIn className="w-4 h-4 mr-2" />
-                  Log in
-                </Button>
-                <Button variant="outline" onClick={() => nav(createPageUrl("Home"))}>
-                  Back to Home
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Card>
-      );
-    }
-
-    // Authed but not paid => we redirect; show stable card if delayed
-    if (!season.isLoading && !isPaid) {
-      return (
-        <Card className="p-5 border-slate-200">
-          <div className="text-lg font-semibold text-deep-navy">Subscription required</div>
-          <div className="mt-1 text-sm text-slate-600">
-            Your login is active, but you don’t have an entitlement for the current season.
-          </div>
-          <div className="mt-4">
-            <Button onClick={() => nav(createPageUrl("Subscribe"))} className="btn-brand">
-              Go to Sign-Up
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          </div>
-        </Card>
-      );
-    }
-
-    if (season.isLoading || identityLoading) {
-      return (
-        <div className="py-10 text-center text-slate-500">
-          <Loader2 className="w-5 h-5 inline animate-spin mr-2" />
-          Loading…
-        </div>
-      );
-    }
-
-    return (
-      <Card className="p-5 border-slate-200">
-        <div className="flex items-center gap-2">
-          <UserCircle2 className="w-6 h-6 text-slate-600" />
-          <div className="text-lg font-semibold text-deep-navy">Athlete Profile</div>
-        </div>
-
-        <div className="mt-1 text-sm text-slate-600">
-          This profile powers paid features (My Camps, Calendar overlays, and future planning tools).
-        </div>
-
-        <div className="mt-6 space-y-4">
-          <div>
-            <Label>athlete name</Label>
-            <Input value={form.athlete_name} onChange={(e) => setField("athlete_name", e.target.value)} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>grad year</Label>
-              <Input value={form.grad_year} onChange={(e) => setField("grad_year", e.target.value)} />
-            </div>
-            <div>
-              <Label>state</Label>
-              <Input value={form.state} onChange={(e) => setField("state", e.target.value)} />
-            </div>
-          </div>
-
-          <div>
-            <Label>primary position</Label>
-            <Input
-              value={form.position_primary}
-              onChange={(e) => setField("position_primary", e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>height</Label>
-              <Input value={form.height} onChange={(e) => setField("height", e.target.value)} />
-            </div>
-            <div>
-              <Label>weight</Label>
-              <Input value={form.weight} onChange={(e) => setField("weight", e.target.value)} />
-            </div>
-          </div>
-
-          {err && <div className="text-sm text-rose-600">{err}</div>}
-
-          {saved && (
-            <div className="text-sm text-emerald-700 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              Saved
-            </div>
-          )}
-
-          <div className="pt-2 flex gap-2">
-            <Button onClick={saveProfile} className="btn-brand" disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                <>
-                  Save
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </>
-              )}
-            </Button>
-
-            <Button variant="outline" onClick={() => nav(createPageUrl("Discover"))}>
-              Back to Discover
-            </Button>
-          </div>
-        </div>
-      </Card>
-    );
-  };
+  if (loading) return <div className="min-h-screen bg-slate-50" />;
 
   return (
-    <div className="min-h-screen bg-surface">
-      <div className="max-w-md mx-auto px-4 pt-5 pb-24">{renderBody()}</div>
-      <BottomNav />
+    <div className="min-h-screen bg-slate-50 p-4">
+      <div className="max-w-lg mx-auto">
+        <Card className="p-6">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5">
+              <User className="w-5 h-5 text-slate-700" />
+            </div>
+            <div>
+              <div className="text-lg font-semibold text-deep-navy">Athlete Profile</div>
+              <div className="text-sm text-slate-600 mt-1">
+                This profile powers paid features (My Camps, Calendar overlays, and planning tools).
+              </div>
+            </div>
+          </div>
+
+          {err ? (
+            <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+              {err}
+            </div>
+          ) : null}
+
+          <div className="mt-5 space-y-4">
+            {/* First/Last */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">First name</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="First"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Last name</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Last"
+                />
+              </div>
+            </div>
+
+            {/* Grad year / Position */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Grad year</label>
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                  value={gradYear}
+                  onChange={(e) => setGradYear(e.target.value)}
+                >
+                  <option value="">Select…</option>
+                  {GRAD_YEAR_OPTIONS.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Primary position</label>
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                  value={primaryPosition}
+                  onChange={(e) => setPrimaryPosition(e.target.value)}
+                >
+                  <option value="">Select…</option>
+                  {POSITION_OPTIONS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Height (feet/inches) */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Height</label>
+              <div className="grid grid-cols-2 gap-3">
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                  value={heightFt}
+                  onChange={(e) => setHeightFt(e.target.value)}
+                >
+                  <option value="">Feet</option>
+                  {FEET_OPTIONS.map((f) => (
+                    <option key={f} value={f}>
+                      {f} ft
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                  value={heightIn}
+                  onChange={(e) => setHeightIn(e.target.value)}
+                >
+                  <option value="">Inches</option>
+                  {INCH_OPTIONS.map((i) => (
+                    <option key={i} value={i}>
+                      {i} in
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                {heightString ? `Selected: ${heightString}` : "Optional"}
+              </div>
+            </div>
+
+            {/* Weight */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Weight</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                value={weight}
+                onChange={(e) => setWeight(e.target.value)}
+              >
+                <option value="">Select…</option>
+                {WEIGHT_OPTIONS.map((w) => (
+                  <option key={w} value={w}>
+                    {w} lbs
+                  </option>
+                ))}
+              </select>
+              <div className="mt-1 text-xs text-slate-500">Optional</div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="mt-6 flex flex-col sm:flex-row gap-2">
+            <Button className="btn-brand sm:flex-1" onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+
+            <Button
+              variant="outline"
+              className="sm:flex-1"
+              onClick={() => nav(ROUTES.Workspace)}
+              disabled={saving}
+            >
+              Back to Workspace
+            </Button>
+          </div>
+
+          <div className="mt-3 text-xs text-slate-500">
+            Tip: If your athlete entity doesn’t yet have <code>first_name</code>, <code>last_name</code>,
+            <code>height_ft</code>, <code>height_in</code>, <code>weight_lbs</code>, this page will still save using
+            legacy fields.
+          </div>
+        </Card>
+
+        {/* Quick escape for demo users */}
+        <div className="mt-3 text-center">
+          <button
+            type="button"
+            className="text-xs text-slate-500 hover:text-slate-700 underline"
+            onClick={() => nav(ROUTES.Discover)}
+          >
+            Go to Discover
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
