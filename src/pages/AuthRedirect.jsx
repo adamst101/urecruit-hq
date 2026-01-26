@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { createPageUrl } from "../utils";
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 
@@ -15,13 +14,20 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
  *
  * MVP Rules:
  * - If authenticated + entitled -> route to `next` (default /Workspace)
- * - If authenticated + NOT entitled -> HARD redirect to Subscribe (and optionally logout first)
- * - If not authenticated -> route to Home (signin prompt)
+ * - If authenticated + NOT entitled -> HARD redirect to /Subscribe
+ * - If not authenticated -> route to /Home (signin prompt)
  *
  * Key fix:
- * - Avoid nested query encoding issues by reading `post_login_next` from sessionStorage.
  * - Sanitize `next` to internal paths only and strip demo params (mode/src/source).
+ * - Prefer `post_login_next` from sessionStorage to avoid nested encoding issues.
  */
+
+const PATHS = {
+  HOME: "/Home",
+  WORKSPACE: "/Workspace",
+  SUBSCRIBE: "/Subscribe",
+  DISCOVER: "/Discover",
+};
 
 function safeString(x) {
   if (x == null) return "";
@@ -43,7 +49,7 @@ function getNextFromSearch(search) {
  * Also strips demo-related params so paid users don't get bounced back into demo.
  */
 function sanitizeNext(nextRaw) {
-  const fallback = createPageUrl("Workspace");
+  const fallback = PATHS.WORKSPACE;
   const s = safeString(nextRaw).trim();
   if (!s) return fallback;
 
@@ -93,41 +99,35 @@ export default function AuthRedirect() {
     const qNext = getNextFromSearch(loc?.search);
     if (qNext) return sanitizeNext(qNext);
 
-    // ✅ Preferred: next stored by startMemberLogin() to avoid nested encoding issues
+    // Preferred: next stored by startMemberLogin() to avoid nested encoding issues
     try {
       const ss = sessionStorage.getItem("post_login_next");
       if (ss) {
-        // one-shot
         try {
-          sessionStorage.removeItem("post_login_next");
+          sessionStorage.removeItem("post_login_next"); // one-shot
         } catch {}
         return sanitizeNext(ss);
       }
     } catch {}
 
     // Default: Workspace (IMPORTANT: no mode=demo here)
-    return createPageUrl("Workspace");
+    return PATHS.WORKSPACE;
   }, [loc?.search]);
 
   useEffect(() => {
-    // Wait for season hook to resolve auth + entitlement
     if (season?.isLoading) return;
 
     // Not authenticated -> go Home with signin prompt
     if (!season?.accountId) {
-      nav(createPageUrl("Home") + `?signin=1&next=${encodeURIComponent(next)}`, { replace: true });
+      nav(`${PATHS.HOME}?signin=1&next=${encodeURIComponent(next)}`, { replace: true });
       return;
     }
 
     // Authenticated: clear demo stickiness (user chose to log in)
-    try {
-      sessionStorage.removeItem("demo_mode_v1");
-    } catch {}
-    try {
-      sessionStorage.removeItem("demo_year_v1");
-    } catch {}
+    try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
+    try { sessionStorage.removeItem("demo_year_v1"); } catch {}
 
-    // Entitled -> go to sanitized next (SPA nav is fine here)
+    // Entitled -> go to sanitized next
     if (season?.hasAccess && season?.entitlement) {
       nav(next, { replace: true });
       return;
@@ -139,14 +139,13 @@ export default function AuthRedirect() {
       await safeLogout();
 
       const subscribeUrl =
-        `${window.location.origin}${createPageUrl("Subscribe")}` +
+        `${window.location.origin}${PATHS.SUBSCRIBE}` +
         `?source=auth_gate_no_entitlement&reason=no_entitlement` +
-        `&next=${encodeURIComponent(next)}`;
+        `&next=${encodeURIComponent(next || PATHS.DISCOVER)}`;
 
       window.location.assign(subscribeUrl);
     })();
   }, [season?.isLoading, season?.accountId, season?.hasAccess, season?.entitlement, next, nav]);
 
-  // Minimal blank screen (avoid flicker); swap for spinner later if you want.
   return <div className="min-h-screen bg-slate-50" />;
 }
