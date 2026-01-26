@@ -1,18 +1,21 @@
 // src/components/utils/memberLogin.jsx
-import { createPageUrl } from "../../utils";
 
 /**
  * Always route Base44 login return through AuthRedirect.
- * Store `next` in sessionStorage to avoid nested query encoding issues.
+ * Prevents "login returns to demo" behavior.
+ *
+ * IMPORTANT:
+ * - nextPath must always be an INTERNAL PATH (not absolute).
  */
 
+const FALLBACK_NEXT = "/Discover";
+
 function sanitizeNext(next) {
-  const fallback = createPageUrl("Workspace");
   const s = String(next || "").trim();
-  if (!s) return fallback;
+  if (!s) return FALLBACK_NEXT;
 
   // Only allow internal paths
-  if (s.startsWith("http://") || s.startsWith("https://")) return fallback;
+  if (s.startsWith("http://") || s.startsWith("https://")) return FALLBACK_NEXT;
 
   // Normalize leading slash
   if (!s.startsWith("/")) return `/${s}`;
@@ -22,18 +25,22 @@ function sanitizeNext(next) {
 
 export function startMemberLogin({ nextPath = null, source = "member_login" } = {}) {
   // Clear demo stickiness if user is intentionally logging in
-  try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
-  try { sessionStorage.removeItem("demo_year_v1"); } catch {}
+  try {
+    sessionStorage.removeItem("demo_mode_v1");
+  } catch {}
+  try {
+    sessionStorage.removeItem("demo_year_v1");
+  } catch {}
 
-  // ✅ Single, safe next destination
-  const next = sanitizeNext(nextPath || createPageUrl("Workspace"));
+  const next = sanitizeNext(nextPath || FALLBACK_NEXT);
 
-  // ✅ Store next in sessionStorage (prevents nested query encoding bugs)
-  try { sessionStorage.setItem("post_login_next", next); } catch {}
+  // Prefer sessionStorage for next (avoids double-encoding issues)
+  try {
+    sessionStorage.setItem("post_login_next", next);
+  } catch {}
 
-  // ✅ Keep from_url simple (no nested next param)
   const returnTo =
-    `${window.location.origin}${createPageUrl("AuthRedirect")}` +
+    `${window.location.origin}/AuthRedirect` +
     `?source=${encodeURIComponent(source)}`;
 
   const loginUrl =
