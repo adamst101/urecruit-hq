@@ -8,9 +8,53 @@ import { createPageUrl } from "../utils";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
-// ---------- Inline helpers (no external imports) ----------
+/* ----------------------------
+   Inline helpers (type safe)
+----------------------------- */
 function asArray(x) {
   return Array.isArray(x) ? x : [];
+}
+
+function safeString(x) {
+  if (x == null) return null;
+  const s = String(x).trim();
+  return s ? s : null;
+}
+
+function safeNumber(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
+function safeObject(x) {
+  if (!x || typeof x !== "object" || Array.isArray(x)) return null;
+  return x;
+}
+
+function tryParseJson(value) {
+  if (typeof value !== "string") return value;
+  const s = value.trim();
+  if (!s) return value;
+  if (!(s.startsWith("{") || s.startsWith("["))) return value;
+  try {
+    return JSON.parse(s);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeStringArray(value) {
+  const v = tryParseJson(value);
+
+  if (Array.isArray(v)) {
+    return v
+      .map((x) => (x == null ? null : String(x).trim()))
+      .filter((x) => !!x);
+  }
+
+  // Single value -> array
+  const one = safeString(v);
+  return one ? [one] : [];
 }
 
 function slugify(s) {
@@ -25,10 +69,12 @@ function slugify(s) {
 function toISODate(dateInput) {
   if (!dateInput) return null;
 
+  // Already ISO date?
   if (typeof dateInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
     return dateInput.trim();
   }
 
+  // Try parsing M/D/YYYY
   if (typeof dateInput === "string") {
     const s = dateInput.trim();
     const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -40,6 +86,7 @@ function toISODate(dateInput) {
     }
   }
 
+  // Fallback: Date parse
   const d = new Date(dateInput);
   if (Number.isNaN(d.getTime())) return null;
 
@@ -56,10 +103,11 @@ function computeSeasonYearFootball(startDateISO) {
   if (Number.isNaN(d.getTime())) return null;
 
   const y = d.getUTCFullYear();
-  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
+  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0)); // Feb 1
   return d >= feb1 ? y : y - 1;
 }
 
+// Simple stable hash (MVP-safe; not cryptographic)
 function simpleHash(obj) {
   const str = typeof obj === "string" ? obj : JSON.stringify(obj ?? {});
   let h = 0;
@@ -83,7 +131,7 @@ function buildEventKey({ source_platform, program_id, start_date, link_url, sour
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
-// --------------------------------------------------------
+/* ---------------------------- */
 
 export default function AdminImport() {
   const nav = useNavigate();
@@ -115,10 +163,117 @@ export default function AdminImport() {
     if (arr.length > 0 && arr[0]?.id) {
       await base44.entities.Camp.update(arr[0].id, payload);
       return "updated";
-    } else {
-      await base44.entities.Camp.create(payload);
-      return "created";
     }
+
+    await base44.entities.Camp.create(payload);
+    return "created";
+  }
+
+  function buildSafeCampPayloadFromDemoRow(r, runIso) {
+    // --- Required base fields ---
+    const school_id = safeString(r?.school_id);
+    const sport_id = safeString(r?.sport_id);
+    const camp_name = safeString(r?.camp_name || r?.name);
+
+    const start_date = toISODate(r?.start_date);
+    const end_date = toISODate(r?.end_date);
+
+    if (!school_id || !sport_id || !camp_name || !start_date) {
+      return { error: "Missing required fields (school_id, sport_id, camp_name, start_date)" };
+    }
+
+    // --- Safe typed fields from CampDemo ---
+    const city = safeString(r?.city);
+    const state = safeString(r?.state);
+    const position_ids = normalizeStringArray(r?.position_ids);
+
+    // Camp.price is number
+    const price = safeNumber(r?.price);
+
+    const link_url = safeString(r?.link_url || r?.url);
+    const source_url = safeString(r?.source_url) || link_url;
+
+    // Prefer CampDemo.season_year if present; else compute from date
+    const season_year =
+      safeNumber(r?.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
+
+    // --- Ingestion fields ---
+    const source_platform = safeString(r?.source_platform) || "seed";
+    const program_id = safeString(r?.program_id) || seedProgramId({ school_id, camp_name });
+
+    const event_key =
+      safeString(r?.event_key) ||
+      buildEventKey({
+        source_platform,
+        program_id,
+        start_date,
+        link_url,
+        source_url
+      });
+
+    // content_hash should reflect the normalized Camp record
+    const content_hash =
+      safeString(r?.content_hash) ||
+      simpleHash({
+        school_id,
+        sport_id,
+        camp_name,
+        start_date,
+        end_date,
+        city,
+        state,
+        position_ids,
+        price,
+        link_url,
+        notes: safeString(r?.notes)
+      });
+
+    // Optional ingestion alignment fields (ensure correct types)
+    const event_dates_raw = safeString(r?.event_dates_raw);
+    const grades_raw = safeString(r?.grades_raw);
+    const register_by_raw = safeString(r?.register_by_raw);
+    const price_raw = safeString(r?.price_raw);
+
+    const price_min = safeNumber(r?.price_min);
+    const price_max = safeNumber(r?.price_max);
+
+    const sections_json = safeObject(tryParseJson(r?.sections_json));
+
+    // Notes is string
+    const notes = safeString(r?.notes);
+
+    // --- Final payload (matches your Camp schema) ---
+    const payload = {
+      school_id,
+      sport_id,
+      camp_name,
+      start_date,
+      end_date: end_date || null,
+      city: city || null,
+      state: state || null,
+      position_ids, // always array of strings
+      price: price != null ? price : null,
+      link_url: link_url || null,
+      notes: notes || null,
+
+      season_year: season_year != null ? season_year : null,
+      program_id,
+      event_key,
+      source_platform,
+      source_url: source_url || null,
+      last_seen_at: runIso,
+      content_hash,
+
+      event_dates_raw: event_dates_raw || null,
+      grades_raw: grades_raw || null,
+      register_by_raw: register_by_raw || null,
+      price_raw: price_raw || null,
+      price_min: price_min != null ? price_min : null,
+      price_max: price_max != null ? price_max : null,
+      sections_json: sections_json || null
+    };
+
+    return { payload };
   }
 
   async function promoteCampDemoToCamp() {
@@ -148,77 +303,21 @@ export default function AdminImport() {
       const r = demoRows[i];
 
       try {
-        const school_id = r?.school_id || null;
-        const sport_id = r?.sport_id || null;
-        const camp_name = r?.camp_name || r?.name || null;
-
-        const start_date = toISODate(r?.start_date);
-        const end_date = toISODate(r?.end_date);
-
-        if (!school_id || !sport_id || !camp_name || !start_date) {
+        const built = buildSafeCampPayloadFromDemoRow(r, runIso);
+        if (built.error) {
           setStats((s) => ({ ...s, skipped: s.skipped + 1 }));
-          appendLog(`SKIP #${i + 1}: missing required fields`);
+          appendLog(`SKIP #${i + 1}: ${built.error}`);
           continue;
         }
 
-        const season_year = computeSeasonYearFootball(start_date);
-
-        const program_id = seedProgramId({ school_id, camp_name });
-        const source_platform = "seed";
-        const link_url = r?.link_url || r?.url || null;
-        const source_url = r?.source_url || link_url || null;
-
-        const event_key = buildEventKey({
-          source_platform,
-          program_id,
-          start_date,
-          link_url,
-          source_url
-        });
-
-        const content_hash = simpleHash({
-          school_id,
-          sport_id,
-          camp_name,
-          start_date,
-          end_date,
-          city: r?.city || null,
-          state: r?.state || null,
-          position_ids: r?.position_ids || [],
-          price: r?.price ?? null,
-          link_url: link_url || null,
-          notes: r?.notes || null
-        });
-
-        const payload = {
-          school_id,
-          sport_id,
-          camp_name,
-          start_date,
-          end_date: end_date || null,
-          city: r?.city || null,
-          state: r?.state || null,
-          position_ids: asArray(r?.position_ids),
-          price: typeof r?.price === "number" ? r.price : null,
-          link_url: link_url || null,
-          notes: r?.notes || null,
-
-          season_year,
-          program_id,
-          event_key,
-          source_platform,
-          source_url: source_url || null,
-          last_seen_at: runIso,
-          content_hash
-        };
-
-        const result = await upsertCampByEventKey(payload);
+        const result = await upsertCampByEventKey(built.payload);
 
         if (result === "created") setStats((s) => ({ ...s, created: s.created + 1 }));
         if (result === "updated") setStats((s) => ({ ...s, updated: s.updated + 1 }));
 
         if ((i + 1) % 10 === 0) appendLog(`Progress: ${i + 1}/${demoRows.length}`);
 
+        // tiny throttle to avoid rate limits
         await sleep(60);
       } catch (e) {
         setStats((s) => ({ ...s, errors: s.errors + 1 }));
@@ -237,7 +336,7 @@ export default function AdminImport() {
           <div>
             <div className="text-2xl font-bold text-deep-navy">Admin Import</div>
             <div className="text-sm text-slate-600">
-              Promote CampDemo rows into Camp (one-time) so Discover demo can read Camp by season.
+              Promote CampDemo rows into Camp so Discover demo reads Camp by season.
             </div>
           </div>
 
@@ -249,7 +348,7 @@ export default function AdminImport() {
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Promote CampDemo → Camp</div>
           <div className="text-sm text-slate-600 mt-1">
-            Upserts by <b>event_key</b>.
+            Upserts by <b>event_key</b>. Payload is fully type-safe for Camp schema.
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
