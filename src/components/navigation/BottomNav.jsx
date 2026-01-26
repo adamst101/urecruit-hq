@@ -10,7 +10,6 @@ const ROUTES = {
 };
 
 function isActivePath(pathname, target) {
-  // basic exact/startsWith match
   if (!pathname) return false;
   if (pathname === target) return true;
   return pathname.startsWith(target + "/");
@@ -29,6 +28,12 @@ export default function BottomNav() {
     []
   );
 
+  function handleNav(to) {
+    // Don't re-navigate if already on the target route
+    if (isActivePath(loc.pathname, to)) return;
+    nav(to);
+  }
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200">
       <div className="max-w-5xl mx-auto px-4">
@@ -39,10 +44,11 @@ export default function BottomNav() {
               <button
                 key={label}
                 type="button"
-                onClick={() => nav(to)}
+                onClick={() => handleNav(to)}
                 className={`flex flex-col items-center justify-center gap-1 text-xs px-3 py-2 rounded-lg ${
                   active ? "text-brand" : "text-slate-500"
                 }`}
+                aria-current={active ? "page" : undefined}
               >
                 <Icon className="w-5 h-5" />
                 <span>{label}</span>
