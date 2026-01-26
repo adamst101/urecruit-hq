@@ -1,13 +1,8 @@
 // src/components/utils/memberLogin.jsx
 import { createPageUrl } from "../../utils";
 
-/**
- * Always route Base44 login return through AuthRedirect.
- * This prevents "login returns to demo" behavior and centralizes post-login logic.
- */
-
 function sanitizeNext(next) {
-  const fallback = createPageUrl("Discover");
+  const fallback = createPageUrl("Workspace");
   const s = String(next || "").trim();
   if (!s) return fallback;
 
@@ -20,20 +15,22 @@ function sanitizeNext(next) {
   return s;
 }
 
+/**
+ * Always route Base44 login return through AuthRedirect.
+ * This prevents "login returns to demo" behavior.
+ */
 export function startMemberLogin({ nextPath = null, source = "member_login" } = {}) {
   // Clear demo stickiness if user is intentionally logging in
   try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
   try { sessionStorage.removeItem("demo_year_v1"); } catch {}
 
-  const next = sanitizeNext(nextPath || createPageUrl("Discover")); // <-- REQUIRED
+  const next = sanitizeNext(nextPath || createPageUrl("Workspace"));
 
-  // Always return to AuthRedirect (absolute URL)
   const returnTo =
     `${window.location.origin}${createPageUrl("AuthRedirect")}` +
     `?next=${encodeURIComponent(next)}` +
     `&source=${encodeURIComponent(source)}`;
 
-  // Base44 login route expects from_url (absolute)
   const loginUrl =
     `${window.location.origin}/login?from_url=${encodeURIComponent(returnTo)}`;
 
