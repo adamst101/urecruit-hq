@@ -29,6 +29,10 @@ export function startMemberLogin({ nextPath = null, source = "member_login" } = 
 
   const next = sanitizeNext(nextPath || "/Discover");
 
+  // ✅ Preferred: store next in sessionStorage to avoid nested encoding issues
+  // AuthRedirect will consume (and remove) this key.
+  try { sessionStorage.setItem("post_login_next", next); } catch {}
+
   const returnTo =
     `${window.location.origin}/AuthRedirect` +
     `?next=${encodeURIComponent(next)}` +
