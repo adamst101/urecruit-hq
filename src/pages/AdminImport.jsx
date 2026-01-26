@@ -1,5 +1,5 @@
 // src/pages/AdminImport.jsx
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { base44 } from "../api/base44Client";
@@ -25,12 +25,10 @@ function slugify(s) {
 function toISODate(dateInput) {
   if (!dateInput) return null;
 
-  // Already ISO date?
   if (typeof dateInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
     return dateInput.trim();
   }
 
-  // Try parsing M/D/YYYY
   if (typeof dateInput === "string") {
     const s = dateInput.trim();
     const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -42,7 +40,6 @@ function toISODate(dateInput) {
     }
   }
 
-  // Fallback: Date parse
   const d = new Date(dateInput);
   if (Number.isNaN(d.getTime())) return null;
 
@@ -59,11 +56,10 @@ function computeSeasonYearFootball(startDateISO) {
   if (Number.isNaN(d.getTime())) return null;
 
   const y = d.getUTCFullYear();
-  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0)); // Feb 1
+  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
   return d >= feb1 ? y : y - 1;
 }
 
-// Simple stable hash (MVP-safe; not cryptographic)
 function simpleHash(obj) {
   const str = typeof obj === "string" ? obj : JSON.stringify(obj ?? {});
   let h = 0;
@@ -103,7 +99,6 @@ export default function AdminImport() {
   });
 
   const appendLog = (line) => setLog((prev) => (prev ? prev + "\n" + line : line));
-  const nowIso = useMemo(() => new Date().toISOString(), []);
 
   async function upsertCampByEventKey(payload) {
     const key = payload?.event_key;
@@ -127,11 +122,13 @@ export default function AdminImport() {
   }
 
   async function promoteCampDemoToCamp() {
+    const runIso = new Date().toISOString();
+
     setWorking(true);
     setLog("");
     setStats({ read: 0, created: 0, updated: 0, skipped: 0, errors: 0 });
 
-    appendLog("Starting: Promote CampDemo → Camp");
+    appendLog(`Starting: Promote CampDemo → Camp @ ${runIso}`);
 
     // 1) Read all CampDemo
     let demoRows = [];
@@ -151,7 +148,6 @@ export default function AdminImport() {
       const r = demoRows[i];
 
       try {
-        // CampDemo fields you have today (safe access)
         const school_id = r?.school_id || null;
         const sport_id = r?.sport_id || null;
         const camp_name = r?.camp_name || r?.name || null;
@@ -159,7 +155,6 @@ export default function AdminImport() {
         const start_date = toISODate(r?.start_date);
         const end_date = toISODate(r?.end_date);
 
-        // Required by Camp schema
         if (!school_id || !sport_id || !camp_name || !start_date) {
           setStats((s) => ({ ...s, skipped: s.skipped + 1 }));
           appendLog(`SKIP #${i + 1}: missing required fields`);
@@ -195,8 +190,6 @@ export default function AdminImport() {
           notes: r?.notes || null
         });
 
-        // IMPORTANT: only include fields that actually exist on Camp entity.
-        // If you haven't added these MVP fields yet, remove them to avoid validation errors.
         const payload = {
           school_id,
           sport_id,
@@ -215,7 +208,7 @@ export default function AdminImport() {
           event_key,
           source_platform,
           source_url: source_url || null,
-          last_seen_at: nowIso,
+          last_seen_at: runIso,
           content_hash
         };
 
@@ -256,7 +249,7 @@ export default function AdminImport() {
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Promote CampDemo → Camp</div>
           <div className="text-sm text-slate-600 mt-1">
-            This does nothing until you click Run. It will upsert by <b>event_key</b>.
+            Upserts by <b>event_key</b>.
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
