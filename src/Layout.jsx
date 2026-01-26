@@ -1,139 +1,127 @@
-// src/Layout.js (Base44 required root layout)
-import React, { useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { LogIn, User } from "lucide-react";
+// src/pages/Layout.jsx
+import React, { useMemo } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { createPageUrl } from "./utils";
-import { useSeasonAccess } from "./components/hooks/useSeasonAccess.jsx";
+import { createPageUrl } from "../utils";
+import { Button } from "../components/ui/button";
 
-const LOGO_URL =
-  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
+import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 
-export default function Layout({ children }) {
-  const navigate = useNavigate();
+/**
+ * Layout.jsx
+ *
+ * Goal:
+ * - Provide a consistent shell
+ * - Provide a single, correct “Member Login” handler that:
+ *   1) clears demo session
+ *   2) preserves current page as `next` (but strips demo flags)
+ *   3) routes through Subscribe gate after login (same as Home)
+ */
+
+export default function Layout() {
   const location = useLocation();
+  const nav = useNavigate();
+  const season = useSeasonAccess();
 
-  const season = useSeasonAccess(); // ✅ single source of truth
-  const [logoOk, setLogoOk] = useState(true);
+  const showDebug = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(location.search || "");
+      return sp.get("debug") === "1";
+    } catch {
+      return false;
+    }
+  }, [location.search]);
 
-  const isHomePage =
-    location.pathname === "/" ||
-    location.pathname === "/Home" ||
-    location.pathname === "/home";
+  // ✅ DROP-IN REPLACEMENT (as requested)
+  async function handleMemberLogin() {
+    try {
+      // Clear any persisted demo session so auth doesn't get "stuck" in demo
+      try {
+        sessionStorage.removeItem("demo_mode_v1");
+      } catch {}
+      try {
+        sessionStorage.removeItem("demo_year_v1");
+      } catch {}
 
-  const isAuthed = !!season?.accountId;
+      // Preserve where they came from, but DO NOT keep mode=demo in next
+      const sp = new URLSearchParams(location.search || "");
+      sp.delete("mode");
+      sp.delete("src");
+      sp.delete("source");
 
-  const currentPath = useMemo(
-    () => (location?.pathname || "") + (location?.search || ""),
-    [location?.pathname, location?.search]
-  );
+      const cleanNext = `${location.pathname}${sp.toString() ? `?${sp.toString()}` : ""}`;
 
-  function goHome() {
-    navigate(createPageUrl("Home"));
+      const fromUrl =
+        `${window.location.origin}${createPageUrl("Subscribe")}` +
+        `?source=auth_gate&next=${encodeURIComponent(cleanNext)}`;
+
+      const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
+      window.location.assign(loginUrl);
+    } catch {}
   }
 
-  function goAccount() {
-    navigate(createPageUrl("Profile"));
-  }
-
-  function handleMemberLogin() {
-    // Always return to where the user was
-    const fromUrl = `${window.location.origin}${currentPath}`;
-    const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(fromUrl)}`;
-    window.location.assign(loginUrl);
+  function handleGoHome() {
+    nav(createPageUrl("Home"));
   }
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Shared header (hide on Home because Home has its own hero header) */}
-      {!isHomePage && (
-        <div className="bg-white border-b border-default sticky top-0 z-50">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-            {/* Brand */}
-            <button
-              type="button"
-              onClick={goHome}
-              className="flex items-center gap-3 hover:opacity-90 transition-opacity"
-            >
-              {logoOk ? (
-                <img
-                  src={LOGO_URL}
-                  alt="URecruit HQ"
-                  loading="eager"
-                  onError={() => setLogoOk(false)}
-                  className="h-9 md:h-10 w-auto object-contain"
-                />
-              ) : (
-                <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
-              )}
-              <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
-            </button>
+      {/* Simple top bar (optional, safe) */}
+      <div className="border-b border-slate-200 bg-white">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={handleGoHome}
+            className="font-bold text-deep-navy"
+          >
+            URecruit HQ
+          </button>
 
-            {/* Right button */}
-            {!isAuthed ? (
-              <button
-                type="button"
-                onClick={handleMemberLogin}
-                className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
-              >
-                <LogIn className="w-4 h-4" />
-                <span className="hidden sm:inline">Member login</span>
-                <span className="sm:hidden">Login</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={goAccount}
-                className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
-              >
-                <User className="w-4 h-4" />
-                <span className="hidden sm:inline">Account</span>
-                <span className="sm:hidden">Acct</span>
-              </button>
-            )}
+          {/* Right-side actions */}
+          <div className="flex items-center gap-2">
+            {/* If not authenticated or not entitled, show Member Login */}
+            {(!season?.accountId || !season?.hasAccess) ? (
+              <Button variant="outline" onClick={handleMemberLogin}>
+                Member Login
+              </Button>
+            ) : null}
           </div>
         </div>
-      )}
+      </div>
 
-      {children}
+      {/* Debug banner (only when ?debug=1) */}
+      {showDebug ? (
+        <div className="max-w-5xl mx-auto px-4 pt-3">
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-700">
+            <div className="font-semibold mb-1">DEBUG: Layout</div>
+            <pre className="whitespace-pre-wrap break-words">
+              {JSON.stringify(
+                {
+                  url: `${location.pathname}${location.search || ""}`,
+                  season: {
+                    isLoading: !!season?.isLoading,
+                    mode: season?.mode,
+                    hasAccess: !!season?.hasAccess,
+                    accountId: season?.accountId || null,
+                    isAuthenticated: !!season?.isAuthenticated,
+                    currentYear: season?.currentYear ?? null,
+                    demoYear: season?.demoYear ?? null,
+                    seasonYear: season?.seasonYear ?? null,
+                    entitlementSeason: season?.entitlement?.season_year ?? null,
+                  },
+                },
+                null,
+                2
+              )}
+            </pre>
+          </div>
+        </div>
+      ) : null}
 
-      {/* Theme + utility classes (keeps Home styling correct) */}
-      <style>{`
-        :root{
-          --brand:#0B1F3B;         /* Navy */
-          --accent:#D4AF37;        /* Gold */
-          --ink:#111827;           /* Charcoal */
-          --muted:#6B7280;         /* Gray */
-          --surface:#F3F4F6;       /* Light gray surface */
-          --border:#E5E7EB;        /* Border */
-        }
-
-        .bg-surface{ background: var(--surface); }
-        .bg-accent{ background: var(--accent); }
-
-        .text-brand{ color: var(--brand); }
-        .text-ink{ color: var(--ink); }
-        .text-muted{ color: var(--muted); }
-
-        .border-default{ border-color: var(--border); }
-
-        .btn-brand{
-          background: var(--brand);
-          color: white;
-          border: 1px solid var(--brand);
-        }
-        .btn-brand:hover{ filter: brightness(0.95); }
-
-        .btn-outline-brand{
-          background: white;
-          color: var(--ink);
-          border: 1px solid var(--border);
-        }
-        .btn-outline-brand:hover{
-          border-color: var(--brand);
-          color: var(--brand);
-        }
-      `}</style>
+      {/* Routed pages */}
+      <main className="max-w-5xl mx-auto px-4 py-4">
+        <Outlet />
+      </main>
     </div>
   );
 }
