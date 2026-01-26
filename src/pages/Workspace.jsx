@@ -1,7 +1,7 @@
 // src/pages/Workspace.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarDays, Search, User, Shield } from "lucide-react";
+import { CalendarDays, Search, User, Shield, LogOut } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 
@@ -39,6 +39,31 @@ async function safeMe() {
   }
 }
 
+async function safeLogout() {
+  try {
+    if (base44?.auth?.logout) {
+      await base44.auth.logout();
+      return true;
+    }
+  } catch {}
+
+  try {
+    if (base44?.auth?.signOut) {
+      await base44.auth.signOut();
+      return true;
+    }
+  } catch {}
+
+  try {
+    if (base44?.auth?.redirectToLogout) {
+      await base44.auth.redirectToLogout();
+      return true;
+    }
+  } catch {}
+
+  return false;
+}
+
 export default function Workspace() {
   const nav = useNavigate();
 
@@ -47,6 +72,7 @@ export default function Workspace() {
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
 
   const [meEmail, setMeEmail] = useState("");
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,30 +97,64 @@ export default function Workspace() {
   const isMember = !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
   const memberSeason = Number(season?.entitlement?.season_year) || season?.seasonYear || null;
 
+  async function handleLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+
+    // Clear any demo stickiness just so future tests are clean
+    try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
+    try { sessionStorage.removeItem("demo_year_v1"); } catch {}
+    try { sessionStorage.removeItem("post_login_next"); } catch {}
+
+    await safeLogout();
+
+    // Hard redirect to avoid stale in-memory state after auth changes
+    window.location.assign(`${window.location.origin}${ROUTES.Home}?signin=1&src=logout`);
+  }
+
   if (loading) return <div className="min-h-screen bg-slate-50" />;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-10">
       <div className="max-w-5xl mx-auto px-4 pt-8">
-        <div className="mb-4">
-          <div className="text-3xl font-extrabold text-brand">Workspace</div>
-          <div className="text-sm text-slate-600 mt-1">
-            Your home base after login — jump into Discover, Calendar, and Profile.
-          </div>
+        {/* Header row with logout */}
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <div className="text-3xl font-extrabold text-brand">Workspace</div>
+            <div className="text-sm text-slate-600 mt-1">
+              Your home base after login — jump into Discover, Calendar, and Profile.
+            </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            {isMember ? (
-              <Badge className="bg-emerald-700 text-white">Member</Badge>
-            ) : (
-              <Badge className="bg-slate-900 text-white">Demo</Badge>
-            )}
-
-            {memberSeason ? (
-              <Badge className="bg-white text-slate-700 border border-slate-200">
-                Season {memberSeason}
-              </Badge>
+            {meEmail ? (
+              <div className="mt-1 text-xs text-slate-500">
+                Signed in as <span className="font-medium">{meEmail}</span>
+              </div>
             ) : null}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {isMember ? (
+                <Badge className="bg-emerald-700 text-white">Member</Badge>
+              ) : (
+                <Badge className="bg-slate-900 text-white">Demo</Badge>
+              )}
+
+              {memberSeason ? (
+                <Badge className="bg-white text-slate-700 border border-slate-200">
+                  Season {memberSeason}
+                </Badge>
+              ) : null}
+            </div>
           </div>
+
+          <Button
+            variant="outline"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="whitespace-nowrap"
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            {loggingOut ? "Logging out…" : "Log out"}
+          </Button>
         </div>
 
         {/* Primary tiles */}
@@ -153,10 +213,7 @@ export default function Workspace() {
             <div className="text-sm text-slate-700">
               <b>You’re in demo mode.</b> To unlock the current season and save planning items, subscribe.
               <div className="mt-3">
-                <Button
-                  className="btn-brand"
-                  onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_cta`)}
-                >
+                <Button className="btn-brand" onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_cta`)}>
                   View pricing / Subscribe
                 </Button>
               </div>
