@@ -6,6 +6,19 @@ import { createPageUrl } from "../utils";
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 
+/**
+ * AuthRedirect.jsx (Base44)
+ *
+ * Purpose:
+ * - Landing page after Base44 login when using /login?from_url=...
+ * - Decide where to send the user next based on entitlement
+ *
+ * Rules:
+ * - If authenticated + entitled -> route to `next` (default /Workspace)
+ * - If authenticated + NOT entitled -> HARD redirect to Subscribe (and logout first)
+ * - If not authenticated -> route to Home (signin prompt)
+ */
+
 function safeString(x) {
   if (x == null) return "";
   return String(x);
@@ -21,15 +34,22 @@ function getNextFromSearch(search) {
   }
 }
 
+/**
+ * Only allow internal paths.
+ * Strips demo-related params so paid users don't get bounced into demo.
+ */
 function sanitizeNext(nextRaw) {
-  const fallback = createPageUrl("Workspace"); // ✅ default post-login destination
+  const fallback = createPageUrl("Workspace");
   const s = safeString(nextRaw).trim();
   if (!s) return fallback;
 
+  // Block absolute URLs / open redirects
   if (s.startsWith("http://") || s.startsWith("https://")) return fallback;
 
+  // Normalize to leading slash
   const pathish = s.startsWith("/") ? s : `/${s}`;
 
+  // Strip demo flags from next URL
   try {
     const u = new URL(pathish, window.location.origin);
     u.searchParams.delete("mode");
@@ -62,6 +82,7 @@ export default function AuthRedirect() {
 
   const season = useSeasonAccess();
 
+  // next can arrive as query param or via sessionStorage fallback
   const next = useMemo(() => {
     const qNext = getNextFromSearch(loc?.search);
     if (qNext) return sanitizeNext(qNext);
@@ -71,25 +92,30 @@ export default function AuthRedirect() {
       if (ss) return sanitizeNext(ss);
     } catch {}
 
-    return createPageUrl("Workspace"); // ✅ default post-login destination
+    // ✅ Default is Workspace now
+    return createPageUrl("Workspace");
   }, [loc?.search]);
 
   useEffect(() => {
     if (season?.isLoading) return;
 
+    // Not authenticated -> Home with signin prompt + next
     if (!season?.accountId) {
       nav(createPageUrl("Home") + `?signin=1&next=${encodeURIComponent(next)}`, { replace: true });
       return;
     }
 
+    // Authenticated: clear demo stickiness
     try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
     try { sessionStorage.removeItem("demo_year_v1"); } catch {}
 
+    // Entitled -> go to next (Workspace by default)
     if (season?.hasAccess && season?.entitlement) {
       nav(next, { replace: true });
       return;
     }
 
+    // Not entitled -> force Subscribe via HARD redirect
     (async () => {
       await safeLogout();
 
