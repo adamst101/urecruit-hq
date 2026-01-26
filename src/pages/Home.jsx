@@ -11,7 +11,6 @@ import { Button } from "../components/ui/button";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
-
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 
 const LOGO_URL =
@@ -64,15 +63,18 @@ export default function Home() {
 
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
 
-    // Force demo with URL (do not pass season to avoid gating)
+    // Force demo with URL, do NOT pass season
     nav(`${createPageUrl("Discover")}?mode=demo&src=home_demo`);
   }
 
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // Always return through AuthRedirect so entitlement is evaluated consistently
-    startMemberLogin({ nextPath: createPageUrl("Discover"), source: "home_login" });
+    // Standard login path through AuthRedirect
+    startMemberLogin({
+      nextPath: createPageUrl("Discover"),
+      source: "home_login"
+    });
   }
 
   function handlePricingSignup() {
@@ -107,7 +109,7 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* Brand row: big logo + login (single login button) */}
+            {/* Brand row: big logo + login */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
