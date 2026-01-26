@@ -12,6 +12,7 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 
+// ✅ NEW: unified member login entry point
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 
 const LOGO_URL =
@@ -53,6 +54,7 @@ export default function Home() {
   }, []);
 
   function handleTryDemo() {
+    // Pick the demo year your hook is using (or fallback)
     const demoYear =
       season?.demoYear ||
       demoSeasonYear ||
@@ -60,20 +62,26 @@ export default function Home() {
 
     trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoYear });
 
+    // Persist demo mode for the session (optional but helpful)
     if (demoYear) setDemoMode(demoYear);
 
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
 
-    // Force demo via URL; do NOT pass season
+    // ✅ Force demo with URL; do NOT pass season
     nav(`${createPageUrl("Discover")}?mode=demo&src=home_demo`);
   }
 
-  function handleMemberLogin() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_member_login" });
+  /**
+   * ✅ Home "Member login" should land at Workspace after auth (not Discover).
+   * We route through AuthRedirect to enforce:
+   * - entitled -> Workspace (or next)
+   * - unentitled -> Subscribe
+   */
+  function handleLogin() {
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // Always return through AuthRedirect; entitled -> Discover, not entitled -> Subscribe
     startMemberLogin({
-      nextPath: createPageUrl("Discover"),
+      nextPath: createPageUrl("Workspace"), // ✅ key change
       source: "home_member_login"
     });
   }
@@ -110,7 +118,7 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* Brand row: big logo + login */}
+            {/* Brand row: big logo + login (single login button) */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -129,20 +137,20 @@ export default function Home() {
                   Your college recruiting camp planning HQ
                 </div>
 
-                {/* Mobile: member login under tagline */}
+                {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
-                  <Button onClick={handleMemberLogin} className="btn-brand w-full">
+                  <Button onClick={handleLogin} className="btn-brand w-full">
                     <LogIn className="w-4 h-4 mr-2" />
-                    Member Log In
+                    Member login
                   </Button>
                 </div>
               </div>
 
-              {/* Desktop: member login to the right */}
+              {/* Desktop: login to the right */}
               <div className="hidden md:flex">
-                <Button variant="outline" onClick={handleMemberLogin} className="text-ink">
+                <Button variant="outline" onClick={handleLogin} className="text-ink">
                   <LogIn className="w-4 h-4 mr-2" />
-                  Member Log In
+                  Member login
                 </Button>
               </div>
             </div>
