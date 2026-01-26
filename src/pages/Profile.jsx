@@ -13,6 +13,7 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 
 // ---- routes (no createPageUrl dependency) ----
 const ROUTES = {
+  Home: "/Home",
   Workspace: "/Workspace",
   Discover: "/Discover",
 };
@@ -21,7 +22,7 @@ const ROUTES = {
 const POSITION_OPTIONS = ["QB", "WR", "TE", "OL", "DL", "DB", "LB", "K", "P", "LS"];
 
 // Height options
-const FEET_OPTIONS = [4, 5, 6, 7]; // adjust if you want
+const FEET_OPTIONS = [4, 5, 6, 7];
 const INCH_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
 
 // Weight options (pick list)
@@ -38,13 +39,13 @@ function safeStr(x) {
 }
 
 function parseNameParts(athleteProfile) {
-  // Prefer split fields if present; else attempt to split athlete_name
   const first = safeStr(athleteProfile?.first_name || athleteProfile?.firstName).trim();
   const last = safeStr(athleteProfile?.last_name || athleteProfile?.lastName).trim();
   if (first || last) return { first, last };
 
-  const full =
-    safeStr(athleteProfile?.athlete_name || athleteProfile?.athleteName || athleteProfile?.name).trim();
+  const full = safeStr(
+    athleteProfile?.athlete_name || athleteProfile?.athleteName || athleteProfile?.name
+  ).trim();
   if (!full) return { first: "", last: "" };
 
   const parts = full.split(/\s+/).filter(Boolean);
@@ -53,7 +54,6 @@ function parseNameParts(athleteProfile) {
 }
 
 function parseHeightParts(athleteProfile) {
-  // Prefer split fields if present
   const ft =
     athleteProfile?.height_ft ??
     athleteProfile?.heightFeet ??
@@ -71,44 +71,40 @@ function parseHeightParts(athleteProfile) {
     return { heightFt: ftNum, heightIn: inNum };
   }
 
-  // Fallback: parse "6'2\"" or "6'2" or "6-2"
   const raw = safeStr(athleteProfile?.height).trim();
-  if (!raw) return { heightFt: "", heightIn: "" };
+  if (!raw) return { heightFt: null, heightIn: null };
 
   const m = raw.match(/(\d)\s*['-]\s*(\d{1,2})/);
-  if (!m) return { heightFt: "", heightIn: "" };
+  if (!m) return { heightFt: null, heightIn: null };
 
   const a = Number(m[1]);
   const b = Number(m[2]);
   return {
-    heightFt: Number.isFinite(a) ? a : "",
-    heightIn: Number.isFinite(b) ? b : "",
+    heightFt: Number.isFinite(a) ? a : null,
+    heightIn: Number.isFinite(b) ? b : null,
   };
 }
 
 function parseWeight(athleteProfile) {
-  const w =
-    athleteProfile?.weight_lbs ??
-    athleteProfile?.weightLbs ??
-    athleteProfile?.weight ??
-    null;
+  const w = athleteProfile?.weight_lbs ?? athleteProfile?.weightLbs ?? athleteProfile?.weight ?? null;
   const n = Number(w);
-  return Number.isFinite(n) ? n : "";
+  return Number.isFinite(n) ? n : null;
 }
 
 function parseGradYear(athleteProfile) {
   const y = athleteProfile?.grad_year ?? athleteProfile?.gradYear ?? null;
   const n = Number(y);
-  return Number.isFinite(n) ? n : "";
+  return Number.isFinite(n) ? n : null;
 }
 
 function parsePrimaryPosition(athleteProfile) {
-  const p = safeStr(athleteProfile?.primary_position || athleteProfile?.primaryPosition).trim().toUpperCase();
+  const p = safeStr(athleteProfile?.primary_position || athleteProfile?.primaryPosition)
+    .trim()
+    .toUpperCase();
   return POSITION_OPTIONS.includes(p) ? p : "";
 }
 
 function getAthleteEntity() {
-  // Try common entity names; adjust if your Base44 entity uses a different name.
   return (
     base44?.entities?.AthleteProfile ||
     base44?.entities?.Athlete ||
@@ -117,13 +113,11 @@ function getAthleteEntity() {
   );
 }
 
-async function upsertAthleteProfile({ athleteId, accountId, payloadFull, payloadFallback }) {
+async function upsertAthleteProfile({ athleteId, payloadFull, payloadFallback }) {
   const Entity = getAthleteEntity();
   if (!Entity) throw new Error("No athlete entity found (expected AthleteProfile/Athlete/AthleteIdentity).");
 
-  // If we have an id, update. Else create.
   if (athleteId) {
-    // Attempt full payload (new fields). If schema doesn't support, fallback.
     try {
       await Entity.update(athleteId, payloadFull);
       return { mode: "updated_full" };
@@ -133,8 +127,6 @@ async function upsertAthleteProfile({ athleteId, accountId, payloadFull, payload
     }
   }
 
-  // If no id, create. Include account_id if your schema supports it.
-  // Try full payload; if it fails, fallback.
   try {
     await Entity.create(payloadFull);
     return { mode: "created_full" };
@@ -147,50 +139,60 @@ async function upsertAthleteProfile({ athleteId, accountId, payloadFull, payload
 export default function Profile() {
   const nav = useNavigate();
   const season = useSeasonAccess();
-
-  // This hook is already in your app; we’ll use it to pre-fill when available.
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
   const accountId = season?.accountId || null;
 
-  // Pick list: Grad years (current year → +10)
+  // Grad years: current year → +10
   const GRAD_YEAR_OPTIONS = useMemo(() => {
-    const now = new Date();
-    const y = now.getFullYear();
+    const y = new Date().getFullYear();
     return Array.from({ length: 11 }, (_, i) => y + i);
   }, []);
 
-  // Form state
+  // ✅ Keep state as STRINGS for inputs/selects
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [gradYear, setGradYear] = useState("");
+  const [gradYear, setGradYear] = useState(""); // string
   const [primaryPosition, setPrimaryPosition] = useState("");
-  const [heightFt, setHeightFt] = useState("");
-  const [heightIn, setHeightIn] = useState("");
-  const [weight, setWeight] = useState("");
+  const [heightFt, setHeightFt] = useState(""); // string
+  const [heightIn, setHeightIn] = useState(""); // string
+  const [weight, setWeight] = useState(""); // string
 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
   const loading = !!season?.isLoading || !!identityLoading;
 
-  // Prefill once
+  // ✅ Auth guard: if they hit /Profile while not signed in
+  useEffect(() => {
+    if (season?.isLoading) return;
+    if (!season?.accountId) {
+      nav(`${ROUTES.Home}?signin=1&next=${encodeURIComponent("/Profile")}`, { replace: true });
+    }
+  }, [season?.isLoading, season?.accountId, nav]);
+
+  // Prefill when profile loads/changes
   useEffect(() => {
     if (!athleteProfile) return;
 
     const n = parseNameParts(athleteProfile);
     const h = parseHeightParts(athleteProfile);
+    const g = parseGradYear(athleteProfile);
+    const w = parseWeight(athleteProfile);
 
     setFirstName(n.first || "");
     setLastName(n.last || "");
-    setGradYear(parseGradYear(athleteProfile) || "");
+
+    setGradYear(g != null ? String(g) : "");
     setPrimaryPosition(parsePrimaryPosition(athleteProfile) || "");
-    setHeightFt(h.heightFt === "" ? "" : h.heightFt);
-    setHeightIn(h.heightIn === "" ? "" : h.heightIn);
-    setWeight(parseWeight(athleteProfile) || "");
+
+    setHeightFt(h.heightFt != null ? String(h.heightFt) : "");
+    setHeightIn(h.heightIn != null ? String(h.heightIn) : "");
+
+    setWeight(w != null ? String(w) : "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [athleteId]); // key on athleteId to avoid overwriting while typing
+  }, [athleteId]);
 
   const fullName = useMemo(() => {
     return `${safeStr(firstName).trim()} ${safeStr(lastName).trim()}`.trim();
@@ -206,66 +208,62 @@ export default function Profile() {
   async function handleSave() {
     setErr("");
 
-    // Basic validation
     if (!safeStr(firstName).trim()) return setErr("First name is required.");
     if (!safeStr(lastName).trim()) return setErr("Last name is required.");
-    if (!Number.isFinite(Number(gradYear))) return setErr("Grad year is required.");
+
+    const gradNum = Number(gradYear);
+    if (!Number.isFinite(gradNum)) return setErr("Grad year is required.");
     if (!primaryPosition) return setErr("Primary position is required.");
 
-    // Height validation (if one is filled, require both)
     const anyHeight = safeStr(heightFt).trim() || safeStr(heightIn).trim();
+    let ftNum = null;
+    let inNum = null;
+
     if (anyHeight) {
-      const f = Number(heightFt);
-      const i = Number(heightIn);
-      if (!Number.isFinite(f) || !Number.isFinite(i)) return setErr("Height must include feet and inches.");
-      if (!FEET_OPTIONS.includes(f)) return setErr("Height (feet) is out of range.");
-      if (!(i >= 0 && i <= 11)) return setErr("Height (inches) must be 0–11.");
+      ftNum = Number(heightFt);
+      inNum = Number(heightIn);
+      if (!Number.isFinite(ftNum) || !Number.isFinite(inNum)) return setErr("Height must include feet and inches.");
+      if (!FEET_OPTIONS.includes(ftNum)) return setErr("Height (feet) is out of range.");
+      if (!(inNum >= 0 && inNum <= 11)) return setErr("Height (inches) must be 0–11.");
     }
 
-    // Weight validation (optional)
     const wNum = safeStr(weight).trim() ? Number(weight) : null;
     if (wNum != null && !Number.isFinite(wNum)) return setErr("Weight is invalid.");
 
     setSaving(true);
 
     try {
-      // Payload with new fields (recommended)
+      // Full payload (new fields + legacy)
       const payloadFull = {
         account_id: accountId || undefined,
 
-        // new / structured fields (if your entity supports them)
         first_name: safeStr(firstName).trim(),
         last_name: safeStr(lastName).trim(),
-        grad_year: Number(gradYear),
+        grad_year: gradNum,
         primary_position: primaryPosition,
-        height_ft: anyHeight ? Number(heightFt) : null,
-        height_in: anyHeight ? Number(heightIn) : null,
+
+        height_ft: anyHeight ? ftNum : null,
+        height_in: anyHeight ? inNum : null,
         weight_lbs: wNum,
 
-        // legacy/back-compat fields (so existing reads don’t break)
+        // legacy
         athlete_name: fullName,
         height: anyHeight ? heightString : null,
         weight: wNum,
       };
 
-      // Legacy-only payload (works even if entity schema is old)
+      // Fallback (legacy-only)
       const payloadFallback = {
         account_id: accountId || undefined,
         athlete_name: fullName,
-        grad_year: Number(gradYear),
+        grad_year: gradNum,
         primary_position: primaryPosition,
         height: anyHeight ? heightString : null,
         weight: wNum,
       };
 
-      await upsertAthleteProfile({
-        athleteId,
-        accountId,
-        payloadFull,
-        payloadFallback,
-      });
+      await upsertAthleteProfile({ athleteId, payloadFull, payloadFallback });
 
-      // After save, send them back to Workspace (feels intentional)
       nav(ROUTES.Workspace);
     } catch (e) {
       setErr(String(e?.message || e));
@@ -332,7 +330,7 @@ export default function Profile() {
                 >
                   <option value="">Select…</option>
                   {GRAD_YEAR_OPTIONS.map((y) => (
-                    <option key={y} value={y}>
+                    <option key={y} value={String(y)}>
                       {y}
                     </option>
                   ))}
@@ -356,7 +354,7 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Height (feet/inches) */}
+            {/* Height */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Height</label>
               <div className="grid grid-cols-2 gap-3">
@@ -367,7 +365,7 @@ export default function Profile() {
                 >
                   <option value="">Feet</option>
                   {FEET_OPTIONS.map((f) => (
-                    <option key={f} value={f}>
+                    <option key={f} value={String(f)}>
                       {f} ft
                     </option>
                   ))}
@@ -380,7 +378,7 @@ export default function Profile() {
                 >
                   <option value="">Inches</option>
                   {INCH_OPTIONS.map((i) => (
-                    <option key={i} value={i}>
+                    <option key={i} value={String(i)}>
                       {i} in
                     </option>
                   ))}
@@ -401,7 +399,7 @@ export default function Profile() {
               >
                 <option value="">Select…</option>
                 {WEIGHT_OPTIONS.map((w) => (
-                  <option key={w} value={w}>
+                  <option key={w} value={String(w)}>
                     {w} lbs
                   </option>
                 ))}
@@ -425,15 +423,8 @@ export default function Profile() {
               Back to Workspace
             </Button>
           </div>
-
-          <div className="mt-3 text-xs text-slate-500">
-            Tip: If your athlete entity doesn’t yet have <code>first_name</code>, <code>last_name</code>,
-            <code>height_ft</code>, <code>height_in</code>, <code>weight_lbs</code>, this page will still save using
-            legacy fields.
-          </div>
         </Card>
 
-        {/* Quick escape for demo users */}
         <div className="mt-3 text-center">
           <button
             type="button"
