@@ -31,13 +31,6 @@ export default function Layout({ children }) {
     return p === "/" || p === "/Home" || p === "/home";
   }, [location.pathname]);
 
-  const currentPath = useMemo(() => {
-    const p = location.pathname || "";
-    const s = location.search || "";
-    return `${p}${s}`;
-  }, [location.pathname, location.search]);
-
-  // Keep auth state current (so we can hide Login when already signed in)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -59,17 +52,15 @@ export default function Layout({ children }) {
   }
 
   function handleMemberLogin() {
-    // Return through AuthRedirect, and come back to whatever page the user was on
-    startMemberLogin({ nextPath: currentPath, source: "layout_member_login" });
+    // ✅ Single post-login destination: Workspace
+    startMemberLogin({ nextPath: createPageUrl("Workspace"), source: "layout_member_login" });
   }
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Shared header (hide on Home because Home has its own hero header) */}
       {!isHomePage && (
         <div className="bg-white border-b border-default sticky top-0 z-50">
           <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-            {/* Brand */}
             <button
               type="button"
               onClick={goHome}
@@ -87,7 +78,6 @@ export default function Layout({ children }) {
               <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
             </button>
 
-            {/* Right button: Member login (anon) OR Account (authed) */}
             {!isAuthed ? (
               <button
                 type="button"
@@ -115,7 +105,6 @@ export default function Layout({ children }) {
 
       {children}
 
-      {/* Theme + utility classes */}
       <style>{`
         :root{
           --brand:#0B1F3B;
