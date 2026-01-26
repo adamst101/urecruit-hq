@@ -19,8 +19,9 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
  * - If not authenticated -> route to Home (signin prompt)
  *
  * Important:
- * - Use hard redirects (window.location.assign) when moving between Base44 auth pages
- *   to avoid SPA state/caching weirdness.
+ * - Avoid "login returns to demo" by sanitizing `next`:
+ *   - internal paths only
+ *   - strip demo params (mode/src/source) from next URL
  */
 
 function safeString(x) {
@@ -38,9 +39,41 @@ function getNextFromSearch(search) {
   }
 }
 
+/**
+ * Only allow internal paths.
+ * Also strips demo-related params so paid users don't get bounced back into demo.
+ */
+function sanitizeNext(nextRaw) {
+  const fallback = createPageUrl("Discover");
+  const s = safeString(nextRaw).trim();
+  if (!s) return fallback;
+
+  // Block absolute URLs / open redirects
+  if (s.startsWith("http://") || s.startsWith("https://")) return fallback;
+
+  // Normalize to leading slash
+  const pathish = s.startsWith("/") ? s : `/${s}`;
+
+  // Strip demo flags from next URL (prevents "paid user returns to demo")
+  try {
+    const u = new URL(pathish, window.location.origin);
+
+    // Always remove demo stickiness params
+    u.searchParams.delete("mode");
+    u.searchParams.delete("src");
+    u.searchParams.delete("source");
+
+    // If they were headed to Discover, keep it clean
+    // (You can expand this rule to other pages later if needed.)
+    const cleaned = `${u.pathname}${u.search ? u.search : ""}`;
+    return cleaned || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 async function safeLogout() {
   try {
-    // Base44 may or may not have logout; try common patterns safely
     if (base44?.auth?.logout) {
       await base44.auth.logout();
       return true;
@@ -62,19 +95,18 @@ export default function AuthRedirect() {
   // next can arrive as query param (some flows) or via sessionStorage fallback
   const next = useMemo(() => {
     const qNext = getNextFromSearch(loc?.search);
-    if (qNext) return qNext;
+    if (qNext) return sanitizeNext(qNext);
 
     try {
       const ss = sessionStorage.getItem("post_login_next");
-      if (ss) return ss;
+      if (ss) return sanitizeNext(ss);
     } catch {}
 
-    // Default: Discover (IMPORTANT: do not include mode=demo here)
+    // Default: Discover (IMPORTANT: no mode=demo)
     return createPageUrl("Discover");
   }, [loc?.search]);
 
   useEffect(() => {
-    // Wait for season hook to resolve auth + entitlement
     if (season?.isLoading) return;
 
     // Not authenticated -> go Home with signin prompt
@@ -83,16 +115,19 @@ export default function AuthRedirect() {
       return;
     }
 
-    // Entitled -> go to next (SPA nav is fine here)
+    // Authenticated: clear demo stickiness (user chose to log in)
+    try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
+    try { sessionStorage.removeItem("demo_year_v1"); } catch {}
+
+    // Entitled -> go to sanitized next
     if (season?.hasAccess && season?.entitlement) {
       nav(next, { replace: true });
       return;
     }
 
-    // ✅ Step 4: NOT entitled -> force Subscribe via HARD redirect (not back to demo)
+    // NOT entitled -> force Subscribe via HARD redirect (not back to demo)
     (async () => {
       // Optional: mimic "no login unless paid"
-      // We end the Base44 session so "member login" feels exclusive to paid users.
       await safeLogout();
 
       const subscribeUrl =
@@ -101,10 +136,8 @@ export default function AuthRedirect() {
         `&next=${encodeURIComponent(next)}`;
 
       window.location.assign(subscribeUrl);
-      return;
     })();
   }, [season?.isLoading, season?.accountId, season?.hasAccess, season?.entitlement, next, nav]);
 
-  // Minimal blank screen (avoid flicker); you can swap for a spinner later.
   return <div className="min-h-screen bg-slate-50" />;
 }
