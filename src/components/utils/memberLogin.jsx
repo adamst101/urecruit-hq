@@ -5,7 +5,6 @@ import { createPageUrl } from "../../utils";
  * Always route Base44 login return through AuthRedirect.
  * This prevents "login returns to demo" behavior.
  */
-
 function sanitizeNext(next) {
   const fallback = createPageUrl("Discover");
   const s = String(next || "").trim();
@@ -16,17 +15,7 @@ function sanitizeNext(next) {
 
   // Normalize to leading slash
   if (!s.startsWith("/")) return `/${s}`;
-
-  // Strip demo-stickiness params if present
-  try {
-    const u = new URL(s, window.location.origin);
-    u.searchParams.delete("mode");
-    u.searchParams.delete("src");
-    u.searchParams.delete("source");
-    return `${u.pathname}${u.search ? u.search : ""}` || fallback;
-  } catch {
-    return fallback;
-  }
+  return s;
 }
 
 export function startMemberLogin({ nextPath = null, source = "member_login" } = {}) {
