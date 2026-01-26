@@ -31,6 +31,12 @@ export default function Layout({ children }) {
     return p === "/" || p === "/Home" || p === "/home";
   }, [location.pathname]);
 
+  const currentPath = useMemo(() => {
+    const p = location.pathname || "";
+    const s = location.search || "";
+    return `${p}${s}`;
+  }, [location.pathname, location.search]);
+
   // Keep auth state current (so we can hide Login when already signed in)
   useEffect(() => {
     let cancelled = false;
@@ -53,8 +59,8 @@ export default function Layout({ children }) {
   }
 
   function handleMemberLogin() {
-    // Always return through AuthRedirect; default next is Discover
-    startMemberLogin({ nextPath: createPageUrl("Discover"), source: "layout_member_login" });
+    // Return through AuthRedirect, and come back to whatever page the user was on
+    startMemberLogin({ nextPath: currentPath, source: "layout_member_login" });
   }
 
   return (
