@@ -63,18 +63,15 @@ export default function Home() {
 
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
 
-    // Force demo with URL, do NOT pass season
     nav(`${createPageUrl("Discover")}?mode=demo&src=home_demo`);
   }
 
   function handleLogin() {
     trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
 
-    // Standard login path through AuthRedirect
-    startMemberLogin({
-      nextPath: createPageUrl("Discover"),
-      source: "home_login"
-    });
+    // Always return through AuthRedirect.
+    // For Home, send them to Discover afterwards (AuthRedirect will gate to Subscribe if unentitled).
+    startMemberLogin({ nextPath: createPageUrl("Discover"), source: "home_member_login" });
   }
 
   function handlePricingSignup() {
@@ -109,7 +106,6 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 py-6 md:py-10">
         <Card className="bg-white border-0 shadow-md rounded-2xl">
           <div className="p-6 md:p-10 space-y-6">
-            {/* Brand row: big logo + login */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex flex-col items-center md:items-start">
                 {logoOk ? (
@@ -128,7 +124,6 @@ export default function Home() {
                   Your college recruiting camp planning HQ
                 </div>
 
-                {/* Mobile: login under tagline */}
                 <div className="mt-3 w-full md:hidden">
                   <Button onClick={handleLogin} className="btn-brand w-full">
                     <LogIn className="w-4 h-4 mr-2" />
@@ -137,7 +132,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Desktop: login to the right */}
               <div className="hidden md:flex">
                 <Button variant="outline" onClick={handleLogin} className="text-ink">
                   <LogIn className="w-4 h-4 mr-2" />
@@ -146,14 +140,12 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Copy */}
             <div className="max-w-3xl space-y-3 text-center md:text-left">
               <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
               <div className="h-1 w-14 rounded bg-accent mx-auto md:mx-0" />
               <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
 
-            {/* Outcome cards */}
             <div className="grid md:grid-cols-3 gap-4">
               {bullets.map((x) => (
                 <div key={x.a} className="rounded-xl bg-surface border border-default p-4">
@@ -168,7 +160,6 @@ export default function Home() {
               ))}
             </div>
 
-            {/* How it works strip */}
             <div className="rounded-xl border border-default bg-white p-4">
               <div className="grid md:grid-cols-3 gap-4">
                 {howStrip.map((x) => (
@@ -180,7 +171,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-2 items-stretch">
               <Button className="sm:flex-1 btn-brand" onClick={handlePricingSignup}>
                 View pricing / Sign-Up
