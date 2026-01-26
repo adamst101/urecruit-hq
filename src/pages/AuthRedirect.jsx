@@ -21,12 +21,8 @@ function getNextFromSearch(search) {
   }
 }
 
-/**
- * Only allow internal paths.
- * Also strips demo-related params so paid users don't get bounced back into demo.
- */
 function sanitizeNext(nextRaw) {
-  const fallback = createPageUrl("Workspace");
+  const fallback = createPageUrl("Workspace"); // ✅ default post-login destination
   const s = safeString(nextRaw).trim();
   if (!s) return fallback;
 
@@ -63,6 +59,7 @@ async function safeLogout() {
 export default function AuthRedirect() {
   const nav = useNavigate();
   const loc = useLocation();
+
   const season = useSeasonAccess();
 
   const next = useMemo(() => {
@@ -74,8 +71,7 @@ export default function AuthRedirect() {
       if (ss) return sanitizeNext(ss);
     } catch {}
 
-    // Default: Workspace (clean, no demo params)
-    return createPageUrl("Workspace");
+    return createPageUrl("Workspace"); // ✅ default post-login destination
   }, [loc?.search]);
 
   useEffect(() => {
