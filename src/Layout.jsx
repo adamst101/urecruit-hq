@@ -31,7 +31,7 @@ export default function Layout({ children }) {
     return p === "/" || p === "/Home" || p === "/home";
   }, [location.pathname]);
 
-  // Keep auth state current (so we can hide Login when already signed in)
+  // Keep auth state current
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -48,13 +48,12 @@ export default function Layout({ children }) {
     navigate(createPageUrl("Home"));
   }
 
-  // ✅ Change: Account button now routes to Workspace (not Profile)
   function goAccount() {
-    navigate(createPageUrl("Workspace"));
+    navigate(createPageUrl("Profile"));
   }
 
   function handleMemberLogin() {
-    // Always return through AuthRedirect; default next is Workspace
+    // ✅ Always land at Workspace after login (single destination)
     startMemberLogin({ nextPath: createPageUrl("Workspace"), source: "layout_member_login" });
   }
 
