@@ -1,3 +1,4 @@
+// src/components/filters/FilterSheet.jsx
 import React, { useEffect, useMemo } from "react";
 import {
   Sheet,
@@ -53,27 +54,15 @@ function readActiveFlag(row) {
   return true;
 }
 
-// --- Normalize FilterSheet input/output to match Discover's nf shape ---
-// Canonical: { sports: string[], state: string, divisions: string[], positions: string[], startDate, endDate }
-// Backward compat read: filters.sport (string) -> sports[0]
-function readSelectedSportId(filters) {
-  const sportsArr = asArray(filters?.sports).map((x) => String(x || "").trim()).filter(Boolean);
-  if (sportsArr.length) return sportsArr[0];
+// Best-effort position->sport resolver
+function readPositionSportId(p) {
+  const direct = p?.sport_id ?? p?.sportId ?? null;
+  if (direct != null) return String(direct);
 
-  const legacy = String(filters?.sport || "").trim();
-  return legacy || "";
-}
+  const nested = p?.sport?.id ?? p?.sport?._id ?? p?.sport?.uuid ?? null;
+  if (nested != null) return String(nested);
 
-function writeSelectedSportId(filters, sportId) {
-  const next = { ...(filters || {}) };
-
-  // canonical
-  next.sports = sportId ? [String(sportId)] : [];
-
-  // optional: clean up legacy field to avoid drift
-  if ("sport" in next) delete next.sport;
-
-  return next;
+  return "";
 }
 
 export default function FilterSheet({
@@ -88,9 +77,21 @@ export default function FilterSheet({
 }) {
   const safeFilters = filters || {};
 
+  // ✅ Support BOTH models:
+  // - Calendar: filters.sport (string)
+  // - Discover: filters.sports (array)
+  const selectedSportId = useMemo(() => {
+    const legacy = String(safeFilters.sport ?? "").trim();
+    if (legacy) return legacy;
+
+    const arr = asArray(safeFilters.sports);
+    const first = arr[0] != null ? String(arr[0]).trim() : "";
+    return first || "";
+  }, [safeFilters.sport, safeFilters.sports]);
+
   const sportsList = useMemo(() => {
     const list = asArray(sports)
-      .filter((s) => readActiveFlag(s) === true) // ✅ hide inactive completely
+      .filter((s) => readActiveFlag(s) === true) // hide inactive
       .map((s) => ({
         id: normId(s),
         sport_name: s?.sport_name || s?.name || s?.sportName || "Sport",
@@ -101,24 +102,24 @@ export default function FilterSheet({
     return list;
   }, [sports]);
 
+  // ✅ Only show positions for the selected sport
   const positionsList = useMemo(() => {
+    if (!selectedSportId) return [];
+
     const list = asArray(positions)
       .map((p) => ({
         id: normId(p),
         position_code: p?.position_code || p?.code || p?.position_name || "POS",
+        sportId: readPositionSportId(p),
       }))
-      .filter((p) => p.id);
+      .filter((p) => p.id && p.sportId && String(p.sportId) === String(selectedSportId));
 
     list.sort((a, b) => String(a.position_code).localeCompare(String(b.position_code)));
     return list;
-  }, [positions]);
+  }, [positions, selectedSportId]);
 
   const selectedDivisions = asArray(safeFilters.divisions);
   const selectedPositions = asArray(safeFilters.positions);
-
-  // ✅ canonical read (sports[0]) with backward-compat (sport)
-  const selectedSportId = readSelectedSportId(safeFilters);
-  const selectedSportValue = selectedSportId ? String(selectedSportId) : "all";
 
   const selectedState = safeFilters.state ? String(safeFilters.state) : "all";
 
@@ -132,7 +133,7 @@ export default function FilterSheet({
     if (!selectedSportId) return;
     const exists = sportsList.some((s) => String(s.id) === String(selectedSportId));
     if (!exists) {
-      setFilters(writeSelectedSportId(safeFilters, ""));
+      setFilters({ ...safeFilters, sport: "", sports: [] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sportsList]);
@@ -152,9 +153,16 @@ export default function FilterSheet({
     setFilters({ ...safeFilters, positions: next });
   };
 
+  // ✅ When sport changes, update BOTH keys:
+  // - sport (legacy string)
+  // - sports (Discover array)
+  // Also clear positions because they’re sport-specific.
   const onSportChange = (value) => {
-    const id = value === "all" ? "" : value;
-    setFilters(writeSelectedSportId(safeFilters, id));
+    if (value === "all") {
+      setFilters({ ...safeFilters, sport: "", sports: [], positions: [] });
+      return;
+    }
+    setFilters({ ...safeFilters, sport: value, sports: [value], positions: [] });
   };
 
   const onStateChange = (value) => {
@@ -177,7 +185,7 @@ export default function FilterSheet({
   };
 
   const hasActive =
-    (asArray(safeFilters.sports).length > 0 || !!safeFilters.sport) ||
+    !!selectedSportId ||
     !!safeFilters.state ||
     selectedDivisions.length > 0 ||
     selectedPositions.length > 0 ||
@@ -210,10 +218,10 @@ export default function FilterSheet({
         {/* Body */}
         <div className="px-5 py-5 space-y-6">
           {/* Sport */}
-          {sportsList.length > 1 && (
+          {sportsList.length > 0 && (
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Sport</Label>
-              <Select value={selectedSportValue} onValueChange={onSportChange}>
+              <Select value={selectedSportId || "all"} onValueChange={onSportChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Sports" />
                 </SelectTrigger>
@@ -226,6 +234,9 @@ export default function FilterSheet({
                   ))}
                 </SelectContent>
               </Select>
+              <div className="text-xs text-slate-500">
+                Positions will only show after you pick a sport.
+              </div>
             </div>
           )}
 
@@ -269,29 +280,40 @@ export default function FilterSheet({
             <div className="text-xs text-slate-500">Tip: Select one or more divisions.</div>
           </div>
 
-          {/* Positions */}
-          {positionsList.length > 0 && (
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Position</Label>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="grid grid-cols-2 gap-2">
-                  {positionsList.map((pos) => (
-                    <label
-                      key={pos.id}
-                      className="flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2"
-                    >
-                      <Checkbox
-                        checked={selectedPositions.includes(String(pos.id))}
-                        onCheckedChange={() => togglePosition(pos.id)}
-                      />
-                      <span className="text-sm text-slate-800">{pos.position_code}</span>
-                    </label>
-                  ))}
-                </div>
+          {/* Positions (scoped to sport) */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Position</Label>
+
+            {!selectedSportId ? (
+              <div className="text-sm text-slate-500 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                Select a sport to see positions.
               </div>
-              <div className="text-xs text-slate-500">Tip: Choose multiple if needed.</div>
-            </div>
-          )}
+            ) : positionsList.length === 0 ? (
+              <div className="text-sm text-slate-500 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                No positions found for this sport.
+              </div>
+            ) : (
+              <>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    {positionsList.map((pos) => (
+                      <label
+                        key={pos.id}
+                        className="flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2"
+                      >
+                        <Checkbox
+                          checked={selectedPositions.includes(String(pos.id))}
+                          onCheckedChange={() => togglePosition(pos.id)}
+                        />
+                        <span className="text-sm text-slate-800">{pos.position_code}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500">Tip: Choose multiple if needed.</div>
+              </>
+            )}
+          </div>
 
           {/* Date Range */}
           <div className="space-y-3">
@@ -300,11 +322,7 @@ export default function FilterSheet({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs text-slate-500">Start</Label>
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => onStartDateChange(e.target.value)}
-                />
+                <Input type="date" value={startDate} onChange={(e) => onStartDateChange(e.target.value)} />
               </div>
 
               <div className="space-y-1">
@@ -319,9 +337,7 @@ export default function FilterSheet({
             </div>
 
             {startDate && endDate && endDate < startDate && (
-              <div className="text-xs text-rose-600">
-                End date can’t be earlier than start date.
-              </div>
+              <div className="text-xs text-rose-600">End date can’t be earlier than start date.</div>
             )}
           </div>
         </div>
