@@ -156,16 +156,13 @@ export default function Discover() {
     return isEntitled ? entitledSeason : computedDemoSeason;
   }, [requestedSeason, isEntitled, entitledSeason, computedDemoSeason]);
 
-  // Paid Discover: lock sport to athlete profile sport_id
+  // ✅ Paid Discover: lock sport to athlete profile sport_id
   const athleteSportId = useMemo(() => {
     const sid = athleteProfile?.sport_id ?? athleteProfile?.sportId ?? null;
     return sid != null ? String(sid) : "";
   }, [athleteProfile]);
 
-  // ✅ Tweak #2: disable filter button when paid user has athlete profile but sport is missing
-  const paidMissingSport = isPaid && !!athleteId && !athleteSportId;
-
-  // HARD ENFORCE in paid mode (reliable even with localStorage leftovers)
+  // ✅ HARD ENFORCE in paid mode (reliable even with localStorage leftovers)
   useEffect(() => {
     if (!isPaid) return;
     if (!athleteSportId) return;
@@ -178,6 +175,13 @@ export default function Discover() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPaid, athleteSportId]);
+
+  // ✅ UX polish flag:
+  // In paid mode, if athlete exists but sport isn't set, show "Complete Profile"
+  // and route to /Profile on click (instead of opening filters).
+  const paidMissingSport = useMemo(() => {
+    return isPaid && !!athleteId && !athleteSportId;
+  }, [isPaid, athleteId, athleteSportId]);
 
   // Season-aware gate only if a season is explicitly requested
   useEffect(() => {
@@ -209,7 +213,7 @@ export default function Discover() {
     nav,
   ]);
 
-  // Load picklists for filter UI (sports + positions)
+  // ✅ Load picklists for filter UI (sports + positions)
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
@@ -309,14 +313,14 @@ export default function Discover() {
   const rows = useMemo(() => {
     const src = asArray(rawCamps);
 
-    // Paid: always force athlete sport.
-    // Demo: use nf.sports from dropdown.
+    // ✅ Paid: always force athlete sport.
+    // ✅ Demo: use nf.sports from dropdown.
     const effectiveSports =
       isPaid && athleteSportId
         ? [athleteSportId]
         : Array.isArray(nf?.sports)
-          ? nf.sports
-          : [];
+        ? nf.sports
+        : [];
 
     return src.filter((r) => {
       if (!matchesDivision(r, nf.divisions)) return false;
@@ -349,6 +353,14 @@ export default function Discover() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seasonYear]);
+
+  const openFiltersOrProfile = () => {
+    if (paidMissingSport) {
+      nav("/Profile");
+      return;
+    }
+    setFilterOpen(true);
+  };
 
   const renderBody = () => {
     if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
@@ -387,14 +399,10 @@ export default function Discover() {
             <Button variant="outline" onClick={clearFilters}>
               Clear filters
             </Button>
-            <Button
-              onClick={() => {
-                if (paidMissingSport) return;
-                setFilterOpen(true);
-              }}
-              disabled={paidMissingSport}
-            >
-              Edit filters
+
+            {/* ✅ UX polish: if paid + missing sport, show Complete Profile and route */}
+            <Button onClick={openFiltersOrProfile}>
+              {paidMissingSport ? "Complete Profile" : "Edit filters"}
             </Button>
           </div>
         </Card>
@@ -478,16 +486,10 @@ export default function Discover() {
             </div>
           </div>
 
-          <Button
-            variant="outline"
-            disabled={paidMissingSport}
-            onClick={() => {
-              if (paidMissingSport) return;
-              setFilterOpen(true);
-            }}
-          >
+          {/* ✅ UX polish: label changes + routes to /Profile when needed */}
+          <Button variant="outline" onClick={openFiltersOrProfile}>
             <SlidersHorizontal className="w-4 h-4 mr-2" />
-            Filter
+            {paidMissingSport ? "Complete Profile" : "Filter"}
           </Button>
         </div>
 
@@ -505,7 +507,7 @@ export default function Discover() {
             clearFilters();
             setFilterOpen(false);
           }}
-          // Paid: hide sport dropdown + force sport from athlete profile
+          // ✅ Paid: hide sport dropdown + force sport from athlete profile
           lockSportId={isPaid && athleteSportId ? athleteSportId : ""}
         />
       </div>
