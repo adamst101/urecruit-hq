@@ -22,6 +22,7 @@ import {
   matchesDivision,
   matchesSport,
   matchesPositions,
+  matchesState,
   matchesDateRange
 } from "../components/filters/filterUtils.jsx";
 
@@ -112,27 +113,6 @@ function trackEvent(payload) {
   } catch {}
 }
 
-/* -------------------------
-   Sport helpers (Active/Inactive)
-   NOTE: Sport schema may vary; we best-effort read a flag.
-------------------------- */
-function readActiveFlag(row) {
-  if (typeof row?.active === "boolean") return row.active;
-  if (typeof row?.is_active === "boolean") return row.is_active;
-  if (typeof row?.isActive === "boolean") return row.isActive;
-
-  const st = String(row?.status || "").toLowerCase().trim();
-  if (st === "active") return true;
-  if (st === "inactive" || st === "in_active" || st === "in active") return false;
-
-  // if no flag exists, treat as active (backward compatible)
-  return true;
-}
-
-function sportNameFromRow(r) {
-  return String(r?.sport_name || r?.name || r?.sportName || "").trim();
-}
-
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
@@ -176,7 +156,6 @@ export default function Discover() {
     return isEntitled ? entitledSeason : computedDemoSeason;
   }, [requestedSeason, isEntitled, entitledSeason, computedDemoSeason]);
 
-  // Season-aware gate only if a season is explicitly requested
   useEffect(() => {
     if (season?.isLoading) return;
     if (!requestedSeason) return;
@@ -205,55 +184,6 @@ export default function Discover() {
     nextParam,
     nav
   ]);
-
-  /* -------------------------
-     Sports index (active-only visibility + name lookup)
-     - hides inactive sports completely from Discover results
-     - also provides consistent sport name for CampCard
-  ------------------------- */
-  const [sportIndex, setSportIndex] = useState({
-    loaded: false,
-    activeIds: new Set(),
-    nameById: new Map()
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
-      if (!SportEntity?.filter) {
-        setSportIndex((prev) => ({ ...prev, loaded: true }));
-        return;
-      }
-
-      try {
-        const rows = asArray(await SportEntity.filter({}));
-        if (cancelled) return;
-
-        const activeIds = new Set();
-        const nameById = new Map();
-
-        for (const r of rows) {
-          const id = r?.id ? String(r.id) : "";
-          if (!id) continue;
-
-          const name = sportNameFromRow(r);
-          if (name) nameById.set(id, name);
-
-          if (readActiveFlag(r) === true) activeIds.add(id);
-        }
-
-        setSportIndex({ loaded: true, activeIds, nameById });
-      } catch {
-        setSportIndex((prev) => ({ ...prev, loaded: true }));
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const [rawCamps, setRawCamps] = useState([]);
   const [loadingCamps, setLoadingCamps] = useState(true);
@@ -326,28 +256,17 @@ export default function Discover() {
     };
   }, [season?.isLoading, seasonYear]);
 
-  // Apply filters + ALSO hide inactive sports completely (if we have the index)
   const rows = useMemo(() => {
     const src = asArray(rawCamps);
-
-    // If we haven’t loaded the sport index yet, don’t block camps (avoid “flash empty”).
-    // Once loaded, we will hide camps tied to inactive sports.
-    const hasSportIndex = !!sportIndex?.loaded && sportIndex?.activeIds instanceof Set;
-
     return src.filter((r) => {
-      if (hasSportIndex) {
-        const sid = r?.sport_id != null ? String(r.sport_id) : "";
-        // If a camp has a sport_id and that sport is inactive, hide it completely.
-        if (sid && !sportIndex.activeIds.has(sid)) return false;
-      }
-
       if (!matchesDivision(r, nf.divisions)) return false;
       if (!matchesSport(r, nf.sports)) return false;
       if (!matchesPositions(r, nf.positions)) return false;
+      if (!matchesState(r, nf.state)) return false; // ✅ state filter now works
       if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
       return true;
     });
-  }, [rawCamps, nf, sportIndex]);
+  }, [rawCamps, nf]);
 
   const loading = season?.isLoading || identityLoading || loadingCamps;
 
@@ -402,18 +321,13 @@ export default function Discover() {
         <Card className="p-5 border-slate-200">
           <div className="text-lg font-semibold text-deep-navy">No camps found</div>
           <div className="mt-1 text-sm text-slate-600">
-            {effectiveMode === "demo"
-              ? `No demo camps found for season ${seasonYear} (or filters excluded them).`
-              : `No camps found for season ${seasonYear} (or filters excluded them).`}
+            No camps found for season {seasonYear} (or filters excluded them).
           </div>
           <div className="mt-4 flex gap-2">
             <Button variant="outline" onClick={clearFilters}>
               Clear filters
             </Button>
-            <Button onClick={() => setFilterOpen(true)}>
-              <SlidersHorizontal className="w-4 h-4 mr-2" />
-              Edit filters
-            </Button>
+            <Button onClick={() => setFilterOpen(true)}>Edit filters</Button>
           </div>
         </Card>
       );
@@ -446,20 +360,12 @@ export default function Discover() {
             state: r?.state ?? null
           };
 
-          const resolvedSportName =
-            (sportId && sportIndex?.nameById?.get?.(sportId)) ||
-            r?.sport_name ||
-            "Sport";
-
           const sport = {
             id: sportId,
-            name: resolvedSportName
+            name: r?.sport_name ?? "Sport"
           };
 
-          const posObjs = asArray(r?.position_ids).map((pid) => ({
-            id: String(pid),
-            name: String(pid)
-          }));
+          const posObjs = asArray(r?.position_ids).map((pid) => ({ id: String(pid), name: String(pid) }));
 
           return (
             <CampCard
@@ -472,19 +378,13 @@ export default function Discover() {
               isRegistered={false}
               mode={isPaid ? "paid" : "demo"}
               onToggleFavorite={async () => {
-                if (!isPaid) {
-                  trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "favorite" });
-                  return;
-                }
+                if (!isPaid) return;
                 const ok = await (writeGate?.ensure ? writeGate.ensure("favorite") : true);
                 if (!ok) return;
                 trackEvent({ event_name: "favorite_toggle", source: "discover", camp_id: campId });
               }}
               onToggleRegistered={async () => {
-                if (!isPaid) {
-                  trackEvent({ event_name: "demo_write_blocked", source: "discover", action: "registered" });
-                  return;
-                }
+                if (!isPaid) return;
                 const ok = await (writeGate?.ensure ? writeGate.ensure("registered") : true);
                 if (!ok) return;
                 trackEvent({ event_name: "registered_toggle", source: "discover", camp_id: campId });
@@ -501,21 +401,7 @@ export default function Discover() {
       <div className="max-w-5xl mx-auto px-4 pt-6">
         <div className="flex items-center justify-between">
           <div>
-            <div className="flex items-baseline gap-2">
-              <div className="text-2xl font-bold text-deep-navy">Discover</div>
-
-              {/* ✅ tiny "Go to Workspace" link for paid users */}
-              {isPaid ? (
-                <button
-                  type="button"
-                  onClick={() => nav("/Workspace")}
-                  className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2"
-                >
-                  Go to Workspace
-                </button>
-              ) : null}
-            </div>
-
+            <div className="text-2xl font-bold text-deep-navy">Discover</div>
             <div className="text-xs text-slate-500">
               {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
             </div>
@@ -525,22 +411,6 @@ export default function Discover() {
             <SlidersHorizontal className="w-4 h-4 mr-2" />
             Filter
           </Button>
-        </div>
-
-        <div className="mb-4 mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
-          <div className="flex flex-wrap gap-x-3 gap-y-1">
-            <span><b>mode:</b> {effectiveMode}</span>
-            <span><b>seasonYear:</b> {String(seasonYear)}</span>
-            <span><b>accountId:</b> {season?.accountId ? String(season.accountId) : "null"}</span>
-            <span><b>entitled:</b> {String(!!season?.entitlement && !!season?.hasAccess)}</span>
-            <span><b>requestedSeason:</b> {requestedSeason ? String(requestedSeason) : "null"}</span>
-            <span><b>forceDemo(url):</b> {String(!!forceDemoUrl)}</span>
-            <span><b>forceDemo(session):</b> {String(!!forceDemoSession)}</span>
-            <span><b>Camp(year/all):</b> {counts.camp_year}/{counts.camp_all}</span>
-            <span><b>fallbackUsed:</b> {String(!!counts.fallback_used)}</span>
-            <span><b>sportIndexLoaded:</b> {String(!!sportIndex?.loaded)}</span>
-            <span><b>activeSports:</b> {String(sportIndex?.activeIds?.size ?? 0)}</span>
-          </div>
         </div>
 
         {renderBody()}
@@ -558,3 +428,4 @@ export default function Discover() {
     </div>
   );
 }
+
