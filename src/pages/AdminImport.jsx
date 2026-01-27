@@ -141,6 +141,7 @@ const ROUTES = {
 
 /* ----------------------------
    Positions seeding defaults
+   (Keyed by sport display name)
 ----------------------------- */
 const DEFAULT_POSITION_SEEDS = {
   Football: [
@@ -175,12 +176,6 @@ const DEFAULT_POSITION_SEEDS = {
     { position_code: "PF", position_name: "Power Forward" },
     { position_code: "C", position_name: "Center" },
   ],
-  Soccer: [
-    { position_code: "GK", position_name: "Goalkeeper" },
-    { position_code: "DEF", position_name: "Defender" },
-    { position_code: "MID", position_name: "Midfielder" },
-    { position_code: "FWD", position_name: "Forward" },
-  ],
   Softball: [
     { position_code: "P", position_name: "Pitcher" },
     { position_code: "C", position_name: "Catcher" },
@@ -193,6 +188,16 @@ const DEFAULT_POSITION_SEEDS = {
     { position_code: "RF", position_name: "Right Field" },
     { position_code: "UTIL", position_name: "Utility" },
   ],
+
+  // Handle both spellings (your table currently has "Vollyball")
+  Vollyball: [
+    { position_code: "S", position_name: "Setter" },
+    { position_code: "OH", position_name: "Outside Hitter" },
+    { position_code: "MB", position_name: "Middle Blocker" },
+    { position_code: "OPP", position_name: "Opposite" },
+    { position_code: "L", position_name: "Libero" },
+    { position_code: "DS", position_name: "Defensive Specialist" },
+  ],
   Volleyball: [
     { position_code: "S", position_name: "Setter" },
     { position_code: "OH", position_name: "Outside Hitter" },
@@ -200,6 +205,28 @@ const DEFAULT_POSITION_SEEDS = {
     { position_code: "OPP", position_name: "Opposite" },
     { position_code: "L", position_name: "Libero" },
     { position_code: "DS", position_name: "Defensive Specialist" },
+  ],
+
+  // Soccer variants (post-split)
+  "Men's Soccer": [
+    { position_code: "GK", position_name: "Goalkeeper" },
+    { position_code: "DEF", position_name: "Defender" },
+    { position_code: "MID", position_name: "Midfielder" },
+    { position_code: "FWD", position_name: "Forward" },
+  ],
+  "Women's Soccer": [
+    { position_code: "GK", position_name: "Goalkeeper" },
+    { position_code: "DEF", position_name: "Defender" },
+    { position_code: "MID", position_name: "Midfielder" },
+    { position_code: "FWD", position_name: "Forward" },
+  ],
+
+  // Legacy fallback if "Soccer" still exists
+  Soccer: [
+    { position_code: "GK", position_name: "Goalkeeper" },
+    { position_code: "DEF", position_name: "Defender" },
+    { position_code: "MID", position_name: "Midfielder" },
+    { position_code: "FWD", position_name: "Forward" },
   ],
 };
 /* ---------------------------- */
@@ -217,7 +244,7 @@ export default function AdminImport() {
     errors: 0,
   });
 
-  // Positions seeding UI state
+  // Sports + positions seeding UI state
   const [sports, setSports] = useState([]);
   const [selectedSportId, setSelectedSportId] = useState("");
   const [selectedSportName, setSelectedSportName] = useState("");
@@ -230,6 +257,10 @@ export default function AdminImport() {
     errors: 0,
   });
 
+  // Sport admin (soccer split)
+  const [sportAdminWorking, setSportAdminWorking] = useState(false);
+  const [sportAdminResult, setSportAdminResult] = useState("");
+
   const appendLog = (line) => setLog((prev) => (prev ? prev + "\n" + line : line));
 
   const seedListForSelectedSport = useMemo(() => {
@@ -238,40 +269,50 @@ export default function AdminImport() {
     return DEFAULT_POSITION_SEEDS[name] || [];
   }, [selectedSportName]);
 
+  function normalizeSportNameFromRow(r) {
+    return String(r?.name || r?.sport_name || r?.sportName || "").trim();
+  }
+
+  async function loadSports() {
+    const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
+    if (!SportEntity?.filter) return;
+
+    try {
+      const rows = await SportEntity.filter({});
+      const arr = asArray(rows);
+
+      const normalized = arr
+        .map((r) => ({
+          id: r?.id ? String(r.id) : "",
+          name: normalizeSportNameFromRow(r),
+        }))
+        .filter((r) => r.id && r.name);
+
+      normalized.sort((a, b) => a.name.localeCompare(b.name));
+      setSports(normalized);
+
+      // Keep current selection if possible; else default to first
+      if (!selectedSportId && normalized.length) {
+        const football = normalized.find((s) => s.name.toLowerCase() === "football");
+        const pick = football || normalized[0];
+        setSelectedSportId(pick.id);
+        setSelectedSportName(pick.name);
+      } else if (selectedSportId) {
+        const hit = normalized.find((s) => s.id === selectedSportId);
+        if (hit) setSelectedSportName(hit.name);
+      }
+    } catch {
+      // no-op
+    }
+  }
+
   // Load sports for dropdown
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
-      const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
-      if (!SportEntity?.filter) return;
-
-      try {
-        const rows = await SportEntity.filter({});
-        if (cancelled) return;
-
-        const arr = asArray(rows);
-        const normalized = arr
-          .map((r) => ({
-            id: r?.id ? String(r.id) : "",
-            name: String(r?.name || r?.sport_name || r?.sportName || "").trim(),
-          }))
-          .filter((r) => r.id && r.name);
-
-        normalized.sort((a, b) => a.name.localeCompare(b.name));
-        setSports(normalized);
-
-        // Default to Football if present
-        const football = normalized.find((s) => s.name.toLowerCase() === "football");
-        if (football && !selectedSportId) {
-          setSelectedSportId(football.id);
-          setSelectedSportName(football.name);
-        }
-      } catch {
-        // no-op
-      }
+      await loadSports();
+      if (cancelled) return;
     })();
-
     return () => {
       cancelled = true;
     };
@@ -476,21 +517,14 @@ export default function AdminImport() {
 
     let existing = [];
     try {
-      // Filter by sport_id first, then match code in-memory (safe across Base44 filter limitations)
       existing = asArray(await PositionEntity.filter({ sport_id: sportId }));
     } catch {
       existing = [];
     }
 
-    const hit = existing.find(
-      (r) => String(r?.position_code || "").trim().toUpperCase() === position_code
-    );
+    const hit = existing.find((r) => String(r?.position_code || "").trim().toUpperCase() === position_code);
 
-    const payload = {
-      sport_id: sportId,
-      position_code,
-      position_name,
-    };
+    const payload = { sport_id: sportId, position_code, position_name };
 
     if (hit?.id) {
       await PositionEntity.update(String(hit.id), payload);
@@ -552,6 +586,108 @@ export default function AdminImport() {
     setSeedWorking(false);
   }
 
+  /* ----------------------------
+     Sport Admin: Ensure Soccer Variants
+     - Rename "Soccer" -> "Men's Soccer" (keeps same id)
+     - Create "Women's Soccer" if missing
+  ----------------------------- */
+  function lc(x) {
+    return String(x || "").toLowerCase().trim();
+  }
+
+  async function tryUpdateSportName(SportEntity, sportId, newName) {
+    const payloads = [
+      { sport_name: newName },
+      { name: newName },
+      { sportName: newName },
+      // last resort: send multiple (some schema validators allow extras, some don't)
+      { sport_name: newName, name: newName, sportName: newName },
+    ];
+
+    for (const p of payloads) {
+      try {
+        await SportEntity.update(String(sportId), p);
+        return true;
+      } catch {
+        // try next
+      }
+    }
+    return false;
+  }
+
+  async function tryCreateSport(SportEntity, newName) {
+    const payloads = [
+      { sport_name: newName },
+      { name: newName },
+      { sportName: newName },
+      { sport_name: newName, name: newName, sportName: newName },
+    ];
+
+    for (const p of payloads) {
+      try {
+        const created = await SportEntity.create(p);
+        return created || true;
+      } catch {
+        // try next
+      }
+    }
+    return null;
+  }
+
+  async function ensureSoccerVariants() {
+    setSportAdminWorking(true);
+    setSportAdminResult("");
+
+    const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
+    if (!SportEntity?.filter || !SportEntity?.update || !SportEntity?.create) {
+      setSportAdminResult("ERROR: Sport entity not available (expected entities.Sport).");
+      setSportAdminWorking(false);
+      return;
+    }
+
+    try {
+      const rows = asArray(await SportEntity.filter({}));
+      const byName = new Map(rows.map((r) => [lc(normalizeSportNameFromRow(r)), r]));
+
+      const soccer = byName.get("soccer");
+      const mens = byName.get("men's soccer");
+      const womens = byName.get("women's soccer");
+
+      let actions = [];
+
+      // If "Soccer" exists, rename it to "Men's Soccer" (keep same id)
+      if (soccer?.id) {
+        const ok = await tryUpdateSportName(SportEntity, soccer.id, "Men's Soccer");
+        actions.push(ok ? "Renamed: Soccer → Men's Soccer" : "FAILED rename: Soccer → Men's Soccer");
+      } else if (mens?.id) {
+        actions.push("Men's Soccer already exists");
+      } else {
+        // No Soccer at all; create Men's Soccer
+        const created = await tryCreateSport(SportEntity, "Men's Soccer");
+        actions.push(created ? "Created: Men's Soccer" : "FAILED create: Men's Soccer");
+      }
+
+      // Ensure Women's Soccer exists
+      if (womens?.id) {
+        actions.push("Women's Soccer already exists");
+      } else {
+        const created = await tryCreateSport(SportEntity, "Women's Soccer");
+        actions.push(created ? "Created: Women's Soccer" : "FAILED create: Women's Soccer");
+      }
+
+      setSportAdminResult(actions.join(" | "));
+      appendLog(`Sport Admin: ${actions.join(" | ")}`);
+
+      // refresh dropdown list
+      await loadSports();
+    } catch (e) {
+      setSportAdminResult(`ERROR: ${String(e?.message || e)}`);
+      appendLog(`Sport Admin ERROR: ${String(e?.message || e)}`);
+    } finally {
+      setSportAdminWorking(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-3xl mx-auto space-y-4">
@@ -567,6 +703,33 @@ export default function AdminImport() {
             Back to Workspace
           </Button>
         </div>
+
+        {/* Sport Admin */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">Sport Admin</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Manage Sport rows used by Profile and seeding tools.
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button onClick={ensureSoccerVariants} disabled={sportAdminWorking || working || seedWorking}>
+              {sportAdminWorking ? "Updating…" : "Ensure Men's/Women's Soccer"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => loadSports()}
+              disabled={sportAdminWorking || working || seedWorking}
+            >
+              Refresh Sports
+            </Button>
+          </div>
+
+          {sportAdminResult ? (
+            <div className="mt-3 text-xs text-slate-700">
+              <b>Result:</b> {sportAdminResult}
+            </div>
+          ) : null}
+        </Card>
 
         {/* Seed Positions */}
         <Card className="p-4">
@@ -587,7 +750,7 @@ export default function AdminImport() {
                   setSelectedSportId(id);
                   setSelectedSportName(hit?.name || "");
                 }}
-                disabled={seedWorking || working}
+                disabled={seedWorking || working || sportAdminWorking}
               >
                 <option value="">Select…</option>
                 {sports.map((s) => (
@@ -607,7 +770,10 @@ export default function AdminImport() {
             </div>
 
             <div className="flex items-end">
-              <Button onClick={seedPositionsForSport} disabled={seedWorking || working || !selectedSportId}>
+              <Button
+                onClick={seedPositionsForSport}
+                disabled={seedWorking || working || sportAdminWorking || !selectedSportId}
+              >
                 {seedWorking ? "Seeding…" : "Seed Positions"}
               </Button>
             </div>
@@ -648,7 +814,7 @@ export default function AdminImport() {
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button onClick={promoteCampDemoToCamp} disabled={working || seedWorking}>
+            <Button onClick={promoteCampDemoToCamp} disabled={working || seedWorking || sportAdminWorking}>
               {working ? "Running…" : "Run Promotion"}
             </Button>
 
@@ -658,8 +824,9 @@ export default function AdminImport() {
                 setLog("");
                 setStats({ read: 0, created: 0, updated: 0, skipped: 0, errors: 0 });
                 setSeedStats({ attempted: 0, created: 0, updated: 0, errors: 0 });
+                setSportAdminResult("");
               }}
-              disabled={working || seedWorking}
+              disabled={working || seedWorking || sportAdminWorking}
             >
               Clear
             </Button>
@@ -694,7 +861,7 @@ export default function AdminImport() {
         </Card>
 
         <div className="text-center">
-          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={working || seedWorking}>
+          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={working || seedWorking || sportAdminWorking}>
             Go to Home
           </Button>
         </div>
