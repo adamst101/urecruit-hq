@@ -3,13 +3,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { base44 } from "../../api/base44Client";
 
 import { footballCurrentSeasonYear } from "../utils/seasonEntitlements.jsx";
+import { readDemoMode } from "./demoMode.jsx";
 
 /**
  * useSeasonAccess()
  *
  * Purpose:
  * - Single source of truth for "am I authenticated?" and "do I have paid access for the current season?"
- * - Demo year is ALWAYS previous season (derived from current season)
+ * - Demo year defaults to previous season (football rule, Feb 1 rollover)
+ * - If demo mode is set in sessionStorage (demoMode_v1), use that seasonYear while in demo
  *
  * Contract (returned shape):
  * {
@@ -18,7 +20,7 @@ import { footballCurrentSeasonYear } from "../utils/seasonEntitlements.jsx";
  *   hasAccess: boolean,
  *   currentYear: number,
  *   demoYear: number,
- *   seasonYear: number,      // the year the UI should browse by default (paid -> current, demo -> previous)
+ *   seasonYear: number,
  *   season: number,          // alias for seasonYear (legacy compatibility)
  *   accountId: string|null,
  *   entitlement: object|null,
@@ -31,7 +33,6 @@ function nowISO() {
 }
 
 /**
- * ✅ Hardened validator:
  * Only treat an entitlement as valid if it's active "right now" in its time window.
  * - starts_at blank => OK
  * - ends_at blank => OK
@@ -63,7 +64,7 @@ async function safeMe() {
 }
 
 /**
- * ✅ Hardened fetch:
+ * Hardened fetch:
  * - Query only active entitlements for (accountId, seasonYear)
  * - Only accept the entitlement if it is active in its starts/ends window
  */
@@ -72,13 +73,12 @@ async function fetchEntitlement({ accountId, seasonYear }) {
     const rows = await base44.entities.Entitlement.filter({
       account_id: accountId,
       season_year: seasonYear,
-      status: "active"
+      status: "active",
     });
 
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length) return null;
 
-    // Only accept entitlements currently in effect
     const valid = list.find((x) => isActiveInWindow(x)) || null;
     return valid;
   } catch {
@@ -86,12 +86,28 @@ async function fetchEntitlement({ accountId, seasonYear }) {
   }
 }
 
+function readDemoSeasonOverride({ fallbackDemoYear }) {
+  try {
+    const dm = readDemoMode(); // reads KEY "demoMode_v1"
+    const y = Number(dm?.seasonYear);
+    if (dm?.mode === "demo" && Number.isFinite(y)) return y;
+  } catch {}
+  return typeof fallbackDemoYear === "number" ? fallbackDemoYear : null;
+}
+
 export function useSeasonAccess() {
-  // ✅ Derived years (football rule, Feb 1 rollover)
+  // Derived years (football rule, Feb 1 rollover)
   const currentYear = useMemo(() => footballCurrentSeasonYear(), []);
   const demoYear = useMemo(
     () => (typeof currentYear === "number" ? currentYear - 1 : null),
     [currentYear]
+  );
+
+  // Demo override from session (set by Home "Access Demo")
+  const initialDemoSeason = useMemo(
+    () => readDemoSeasonOverride({ fallbackDemoYear: demoYear }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [demoYear]
   );
 
   const [state, setState] = useState(() => ({
@@ -104,14 +120,15 @@ export function useSeasonAccess() {
     mode: "demo",
     hasAccess: false,
 
-    seasonYear: demoYear || currentYear || null,
-    season: demoYear || currentYear || null,
+    // default browse year for demo uses session override if present
+    seasonYear: initialDemoSeason || demoYear || currentYear || null,
+    season: initialDemoSeason || demoYear || currentYear || null,
 
     accountId: null,
     entitlement: null,
     isAuthenticated: false,
 
-    lastCheckedAt: null
+    lastCheckedAt: null,
   }));
 
   const inflightRef = useRef(false);
@@ -120,12 +137,17 @@ export function useSeasonAccess() {
     if (inflightRef.current) return;
     inflightRef.current = true;
 
+    const demoSeason = readDemoSeasonOverride({ fallbackDemoYear: demoYear });
+
     setState((p) => ({
       ...p,
       isLoading: true,
       loading: true,
       currentYear: currentYear || p.currentYear,
-      demoYear: demoYear || p.demoYear
+      demoYear: demoYear || p.demoYear,
+      // keep demo selection sticky while loading (only matters for demo users)
+      seasonYear: demoSeason || p.seasonYear,
+      season: demoSeason || p.season,
     }));
 
     try {
@@ -133,7 +155,7 @@ export function useSeasonAccess() {
       const accountId = me?.id || null;
       const isAuthenticated = !!accountId;
 
-      // Not signed in -> demo (previous season)
+      // Not signed in -> demo (use demo mode seasonYear if set)
       if (!accountId) {
         setState((p) => ({
           ...p,
@@ -146,21 +168,21 @@ export function useSeasonAccess() {
           mode: "demo",
           hasAccess: false,
 
-          seasonYear: demoYear || p.demoYear || p.seasonYear,
-          season: demoYear || p.demoYear || p.season,
+          seasonYear: demoSeason || demoYear || p.demoYear || p.seasonYear,
+          season: demoSeason || demoYear || p.demoYear || p.season,
 
           accountId: null,
           entitlement: null,
           isAuthenticated: false,
 
-          lastCheckedAt: nowISO()
+          lastCheckedAt: nowISO(),
         }));
         return;
       }
 
       /**
-       * ✅ Guard: Only evaluate entitlement for the CURRENT football season year.
-       * This prevents "future season wins early" even if a row exists for future years.
+       * Guard: Only evaluate entitlement for the CURRENT football season year.
+       * Prevents "future season wins early" even if a row exists for future years.
        */
       const ent = await fetchEntitlement({ accountId, seasonYear: currentYear });
 
@@ -184,10 +206,10 @@ export function useSeasonAccess() {
           entitlement: ent,
           isAuthenticated: true,
 
-          lastCheckedAt: nowISO()
+          lastCheckedAt: nowISO(),
         }));
       } else {
-        // Signed in but NOT entitled -> demo (previous season)
+        // Signed in but NOT entitled -> demo (use demo mode seasonYear if set)
         setState((p) => ({
           ...p,
           isLoading: false,
@@ -199,14 +221,14 @@ export function useSeasonAccess() {
           mode: "demo",
           hasAccess: false,
 
-          seasonYear: demoYear || p.demoYear || p.seasonYear,
-          season: demoYear || p.demoYear || p.season,
+          seasonYear: demoSeason || demoYear || p.demoYear || p.seasonYear,
+          season: demoSeason || demoYear || p.demoYear || p.season,
 
           accountId,
           entitlement: null,
           isAuthenticated: true,
 
-          lastCheckedAt: nowISO()
+          lastCheckedAt: nowISO(),
         }));
       }
     } finally {
@@ -225,7 +247,7 @@ export function useSeasonAccess() {
     // keep both flags for backward compatibility
     isLoading: !!state.isLoading,
     loading: !!state.isLoading,
-    refresh
+    refresh,
   };
 }
 
