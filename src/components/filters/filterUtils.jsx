@@ -83,6 +83,65 @@ function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
+function uniqStrings(arr) {
+  const out = [];
+  const seen = new Set();
+  for (const v of asArray(arr)) {
+    const s = String(v || "").trim();
+    if (!s) continue;
+    if (seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+/**
+ * ✅ COMPAT EXPORT
+ * Some older code is importing normalizeFilters from here.
+ * We return BOTH shapes:
+ * - Discover shape: { divisions, sports, positions, state, startDate, endDate }
+ * - Backward helpers: sportId, positionIds, division
+ */
+export function normalizeFilters(raw) {
+  const f = raw && typeof raw === "object" ? raw : {};
+
+  // Accept either "sport" (single) or "sports" (array) inputs
+  const sportIdSingle = f.sport ? String(f.sport).trim() : "";
+  const sportsArr = Array.isArray(f.sports) ? f.sports.map((x) => String(x).trim()).filter(Boolean) : [];
+  const sports = uniqStrings(sportsArr.length ? sportsArr : (sportIdSingle ? [sportIdSingle] : []));
+
+  // Accept either "positions" (array) or "positionIds" (array) inputs
+  const positionsRaw = Array.isArray(f.positions)
+    ? f.positions
+    : Array.isArray(f.positionIds)
+      ? f.positionIds
+      : [];
+  const positions = uniqStrings(positionsRaw.map((x) => String(x)));
+
+  const divisions = uniqStrings(f.divisions);
+
+  const state = normalizeState(f.state);
+
+  const startDate = sanitizeDateStr(f.startDate);
+  const endDate = sanitizeDateStr(f.endDate);
+
+  return {
+    // ✅ Discover canonical
+    divisions,
+    sports,
+    positions,
+    state: state || "",
+    startDate,
+    endDate,
+
+    // ✅ Backward compat helpers
+    sportId: sports[0] ? String(sports[0]) : null,
+    positionIds: positions,
+    division: divisions[0] ? String(divisions[0]) : null,
+  };
+}
+
 /**
  * Overlap logic (handles multi-day camps):
  * A camp matches if it overlaps the filter window.
@@ -114,21 +173,18 @@ export function matchesDivision(camp, divisions) {
 }
 
 export function matchesSport(camp, sports) {
-  // sports = array of sport IDs
   if (!Array.isArray(sports) || sports.length === 0) return true;
   const campSport = String(camp?.sport_id || "").trim();
   return sports.some((s) => String(s).trim() === campSport);
 }
 
 export function matchesPositions(camp, positions) {
-  // positions = array of position IDs
   if (!Array.isArray(positions) || positions.length === 0) return true;
   const campPositions = asArray(camp?.position_ids).map((x) => String(x));
   return positions.some((p) => campPositions.includes(String(p)));
 }
 
 export function matchesState(camp, state) {
-  // state = "TX" or "" (all)
   const wanted = normalizeState(state);
   if (!wanted) return true;
 
