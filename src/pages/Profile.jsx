@@ -13,24 +13,19 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 
 // ---- routes (no createPageUrl dependency) ----
 const ROUTES = {
-  Home: "/Home",
   Workspace: "/Workspace",
   Discover: "/Discover",
 };
 
-// Requested football position labels (for fallback UI)
-const POSITION_LABELS = ["QB", "WR", "TE", "OL", "DL", "DB", "LB", "K", "P", "LS"];
+// Positions list (as requested)
+const POSITION_CODES = ["QB", "WR", "TE", "OL", "DL", "DB", "LB", "K", "P", "LS"];
+
+// Height options
+const FEET_OPTIONS = [4, 5, 6, 7];
+const INCH_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
 
 // Weight options (pick list)
 const WEIGHT_OPTIONS = Array.from({ length: 61 }, (_, i) => 100 + i * 5); // 100..400 step 5
-
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
-}
-
-function safeStr(x) {
-  return x == null ? "" : String(x);
-}
 
 function normId(x) {
   if (!x) return null;
@@ -38,95 +33,99 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
+function safeStr(x) {
+  return x == null ? "" : String(x);
+}
+
 function parseNameParts(athleteProfile) {
-  const full = safeStr(athleteProfile?.athlete_name).trim();
+  const first = safeStr(athleteProfile?.first_name || athleteProfile?.firstName).trim();
+  const last = safeStr(athleteProfile?.last_name || athleteProfile?.lastName).trim();
+  if (first || last) return { first, last };
+
+  const full = safeStr(athleteProfile?.athlete_name || athleteProfile?.athleteName || athleteProfile?.name).trim();
   if (!full) return { first: "", last: "" };
+
   const parts = full.split(/\s+/).filter(Boolean);
   if (parts.length === 1) return { first: parts[0], last: "" };
   return { first: parts[0], last: parts.slice(1).join(" ") };
 }
 
 function parseGradYear(athleteProfile) {
-  const n = Number(athleteProfile?.grad_year);
-  return Number.isFinite(n) ? n : null;
-}
-
-function parseWeight(athleteProfile) {
-  // If you later add weight_lbs to schema, this will prefill
-  const n = Number(athleteProfile?.weight_lbs ?? athleteProfile?.weight);
-  return Number.isFinite(n) ? n : null;
+  const y = athleteProfile?.grad_year ?? athleteProfile?.gradYear ?? null;
+  const n = Number(y);
+  return Number.isFinite(n) ? n : "";
 }
 
 function parseHeightParts(athleteProfile) {
-  // If you later add height_ft/height_in to schema, this will prefill
-  const ft = Number(athleteProfile?.height_ft);
-  const inch = Number(athleteProfile?.height_in);
-  if (Number.isFinite(ft) && Number.isFinite(inch)) return { ft, inch };
+  // Prefer split fields if present
+  const ft = athleteProfile?.height_ft ?? athleteProfile?.heightFeet ?? athleteProfile?.height_feet ?? null;
+  const inch = athleteProfile?.height_in ?? athleteProfile?.heightInches ?? athleteProfile?.height_inches ?? null;
 
-  // Optional: parse legacy text like 6'2"
+  const ftNum = Number(ft);
+  const inNum = Number(inch);
+  if (Number.isFinite(ftNum) && Number.isFinite(inNum)) {
+    return { heightFt: ftNum, heightIn: inNum };
+  }
+
+  // Fallback: parse "6'2\"" or "6'2" or "6-2"
   const raw = safeStr(athleteProfile?.height).trim();
+  if (!raw) return { heightFt: "", heightIn: "" };
+
   const m = raw.match(/(\d)\s*['-]\s*(\d{1,2})/);
-  if (!m) return { ft: null, inch: null };
+  if (!m) return { heightFt: "", heightIn: "" };
+
   const a = Number(m[1]);
   const b = Number(m[2]);
-  return { ft: Number.isFinite(a) ? a : null, inch: Number.isFinite(b) ? b : null };
+  return { heightFt: Number.isFinite(a) ? a : "", heightIn: Number.isFinite(b) ? b : "" };
+}
+
+function parseWeight(athleteProfile) {
+  const w = athleteProfile?.weight_lbs ?? athleteProfile?.weightLbs ?? athleteProfile?.weight ?? null;
+  const n = Number(w);
+  return Number.isFinite(n) ? n : "";
+}
+
+/** Resolve a position_id by code for a given sport_id (Football) */
+async function resolvePositionIdByCode({ sportId, code }) {
+  const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
+  if (!PositionEntity?.filter) return null;
+
+  try {
+    const rows = await PositionEntity.filter({ sport_id: sportId });
+    const arr = Array.isArray(rows) ? rows : [];
+    const hit = arr.find((r) => String(r?.position_code || "").toUpperCase().trim() === String(code).toUpperCase().trim());
+    return hit?.id ? String(hit.id) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Try to resolve the Sport ID for Football when athleteProfile doesn't have sport_id yet.
- * - Looks for entities.Sport or entities.Sports
- * - Picks the first sport where name contains "football"
+ * ✅ UPDATED: Resolve Football sport_id robustly (supports name / sport_name / sportName)
  */
 async function resolveFootballSportId() {
   const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
   if (!SportEntity?.filter) return null;
 
   try {
-    const rows = asArray(await SportEntity.filter({}));
-    const football = rows.find((r) => safeStr(r?.name).toLowerCase().includes("football"));
+    const rows = Array.isArray(await SportEntity.filter({})) ? await SportEntity.filter({}) : [];
+    const football = rows.find((r) => {
+      const n = String(r?.name || r?.sport_name || r?.sportName || "").toLowerCase().trim();
+      return n === "football" || n.includes("football");
+    });
     return football?.id ? String(football.id) : null;
   } catch {
     return null;
   }
 }
 
-/**
- * Load Position options as [{ id, label }]
- * - Prefer entities.Position or entities.Positions
- * - Filter by sport_id if supported
- * - Label picks from common fields: code/abbrev/name/label
- */
-async function loadPositionOptions(sportId) {
-  const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
-  if (!PositionEntity?.filter) return null;
-
-  try {
-    let rows = [];
-    try {
-      // Some Base44 schemas support filtering
-      rows = asArray(await PositionEntity.filter(sportId ? { sport_id: sportId } : {}));
-    } catch {
-      rows = asArray(await PositionEntity.filter({}));
-    }
-
-    const opts = rows
-      .map((r) => {
-        const id = r?.id ? String(r.id) : null;
-        const label =
-          safeStr(r?.code || r?.abbrev || r?.short_name || r?.name || r?.label).trim() || "";
-        return id && label ? { id, label: label.toUpperCase() } : null;
-      })
-      .filter(Boolean);
-
-    return opts.length ? opts : null;
-  } catch {
-    return null;
-  }
+function getAthleteEntity() {
+  return base44?.entities?.AthleteProfile || base44?.entities?.Athlete || base44?.entities?.AthleteIdentity || null;
 }
 
 async function upsertAthleteProfile({ athleteId, payloadFull, payloadFallback }) {
-  const Entity = base44?.entities?.AthleteProfile || null;
-  if (!Entity) throw new Error("Missing base44.entities.AthleteProfile");
+  const Entity = getAthleteEntity();
+  if (!Entity) throw new Error("No athlete entity found (expected AthleteProfile/Athlete/AthleteIdentity).");
 
   if (athleteId) {
     try {
@@ -153,168 +152,160 @@ export default function Profile() {
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
-  const accountId = season?.accountId ? String(season.accountId) : "";
+  const accountId = season?.accountId || null;
 
-  // Grad years: current year → +10
+  // Grad years (current year → +10)
   const GRAD_YEAR_OPTIONS = useMemo(() => {
     const y = new Date().getFullYear();
     return Array.from({ length: 11 }, (_, i) => y + i);
   }, []);
 
-  // ---- Form state (strings for inputs/selects) ----
+  // Form state
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [gradYear, setGradYear] = useState(""); // string
-  const [sportId, setSportId] = useState(""); // required in schema
-  const [primaryPositionId, setPrimaryPositionId] = useState(""); // required in schema
+  const [gradYear, setGradYear] = useState("");
+  const [primaryPositionCode, setPrimaryPositionCode] = useState("");
+  const [heightFt, setHeightFt] = useState("");
+  const [heightIn, setHeightIn] = useState("");
+  const [weight, setWeight] = useState("");
 
-  // Requested UI fields (schema not yet has these)
-  const [heightFt, setHeightFt] = useState(""); // string (input box)
-  const [heightIn, setHeightIn] = useState(""); // string (input box)
-  const [weight, setWeight] = useState(""); // string (select)
+  // Resolved IDs required by schema
+  const [footballSportId, setFootballSportId] = useState("");
+  const [primaryPositionId, setPrimaryPositionId] = useState("");
 
-  const [positionOptions, setPositionOptions] = useState(null); // [{id,label}]
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
   const loading = !!season?.isLoading || !!identityLoading;
 
-  // Auth guard
-  useEffect(() => {
-    if (season?.isLoading) return;
-    if (!season?.accountId) {
-      nav(`${ROUTES.Home}?signin=1&next=${encodeURIComponent("/Profile")}`, { replace: true });
-    }
-  }, [season?.isLoading, season?.accountId, nav]);
-
-  // Prefill from existing profile
+  // Prefill once
   useEffect(() => {
     if (!athleteProfile) return;
 
     const n = parseNameParts(athleteProfile);
-    const g = parseGradYear(athleteProfile);
     const h = parseHeightParts(athleteProfile);
-    const w = parseWeight(athleteProfile);
 
     setFirstName(n.first || "");
     setLastName(n.last || "");
-    setGradYear(g != null ? String(g) : "");
+    setGradYear(parseGradYear(athleteProfile) || "");
+    setHeightFt(h.heightFt === "" ? "" : String(h.heightFt));
+    setHeightIn(h.heightIn === "" ? "" : String(h.heightIn));
+    setWeight(parseWeight(athleteProfile) === "" ? "" : String(parseWeight(athleteProfile)));
 
-    setSportId(athleteProfile?.sport_id ? String(athleteProfile.sport_id) : "");
-    setPrimaryPositionId(
-      athleteProfile?.primary_position_id ? String(athleteProfile.primary_position_id) : ""
-    );
+    // If an existing profile already has primary_position_id, keep it (best effort)
+    const existingPosId = athleteProfile?.primary_position_id ? String(athleteProfile.primary_position_id) : "";
+    if (existingPosId) setPrimaryPositionId(existingPosId);
 
-    setHeightFt(h.ft != null ? String(h.ft) : "");
-    setHeightIn(h.inch != null ? String(h.inch) : "");
-    setWeight(w != null ? String(w) : "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId]);
 
-  // Ensure sport_id exists (Football default) + load positions
+  // Resolve Football sport_id on load (needed because AthleteProfile requires sport_id)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const sid = await resolveFootballSportId();
+      if (cancelled) return;
+      setFootballSportId(sid || "");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Whenever footballSportId + primaryPositionCode changes, resolve primary_position_id
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      // Resolve sportId if empty
-      let effectiveSportId = sportId;
-      if (!effectiveSportId) {
-        const fb = await resolveFootballSportId();
-        if (!cancelled && fb) {
-          effectiveSportId = fb;
-          setSportId(fb);
-        }
-      }
+      if (!footballSportId || !primaryPositionCode) return;
 
-      // Load positions for this sport
-      const opts = await loadPositionOptions(effectiveSportId || null);
+      const pid = await resolvePositionIdByCode({
+        sportId: footballSportId,
+        code: primaryPositionCode,
+      });
+
       if (cancelled) return;
-
-      if (opts && opts.length) {
-        setPositionOptions(opts);
-
-        // If current primary_position_id isn't in options, clear it
-        if (primaryPositionId) {
-          const ok = opts.some((o) => o.id === primaryPositionId);
-          if (!ok) setPrimaryPositionId("");
-        }
-      } else {
-        setPositionOptions(null);
-      }
+      setPrimaryPositionId(pid || "");
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [sportId, primaryPositionId]);
+  }, [footballSportId, primaryPositionCode]);
 
   const fullName = useMemo(() => {
     return `${safeStr(firstName).trim()} ${safeStr(lastName).trim()}`.trim();
   }, [firstName, lastName]);
 
+  const heightString = useMemo(() => {
+    const f = Number(heightFt);
+    const i = Number(heightIn);
+    if (!Number.isFinite(f) || !Number.isFinite(i)) return "";
+    return `${f}'${i}"`;
+  }, [heightFt, heightIn]);
+
   async function handleSave() {
     setErr("");
 
-    // Required schema fields
-    if (!accountId) return setErr("You must be signed in to save a profile.");
+    // Required validation
     if (!safeStr(firstName).trim()) return setErr("First name is required.");
     if (!safeStr(lastName).trim()) return setErr("Last name is required.");
-    if (!fullName) return setErr("Athlete name is required.");
+    if (!Number.isFinite(Number(gradYear))) return setErr("Grad year is required.");
+    if (!primaryPositionCode) return setErr("Primary position is required.");
+    if (!footballSportId) return setErr("Could not resolve Football sport_id. Check your Sport rows.");
 
-    const gradNum = Number(gradYear);
-    if (!Number.isFinite(gradNum)) return setErr("Grad year is required.");
-
-    if (!sportId) return setErr("Sport is required, but Football sport_id could not be resolved.");
-    if (!primaryPositionId) return setErr("Primary position is required.");
-
-    // Height inputs: optional, but if either is filled require both valid
-    const anyHeight = safeStr(heightFt).trim() || safeStr(heightIn).trim();
-    let ftNum = null;
-    let inNum = null;
-
-    if (anyHeight) {
-      ftNum = Number(heightFt);
-      inNum = Number(heightIn);
-      if (!Number.isFinite(ftNum) || !Number.isFinite(inNum)) return setErr("Height must include feet and inches.");
-      if (!(ftNum >= 4 && ftNum <= 7)) return setErr("Height (feet) must be 4–7.");
-      if (!(inNum >= 0 && inNum <= 11)) return setErr("Height (inches) must be 0–11.");
+    // primary_position_id required by schema
+    if (!primaryPositionId) {
+      return setErr("Could not resolve primary_position_id. Seed Position rows for Football (QB/WR/TE/OL/DL/DB/LB/K/P/LS).");
     }
 
-    // Weight: optional
+    // Height validation (optional but must be complete if started)
+    const anyHeight = safeStr(heightFt).trim() || safeStr(heightIn).trim();
+    if (anyHeight) {
+      const f = Number(heightFt);
+      const i = Number(heightIn);
+      if (!Number.isFinite(f) || !Number.isFinite(i)) return setErr("Height must include feet and inches.");
+      if (!FEET_OPTIONS.includes(f)) return setErr("Height (feet) is out of range.");
+      if (!(i >= 0 && i <= 11)) return setErr("Height (inches) must be 0–11.");
+    }
+
+    // Weight optional
     const wNum = safeStr(weight).trim() ? Number(weight) : null;
     if (wNum != null && !Number.isFinite(wNum)) return setErr("Weight is invalid.");
 
     setSaving(true);
 
     try {
-      // Full payload: schema fields + attempted new fields (if you add them later)
+      // NOTE: AthleteProfile schema expects:
+      // account_id, athlete_name, sport_id, grad_year, primary_position_id
+      // We store extra values into best-effort optional fields; if schema rejects, fallback keeps it safe.
       const payloadFull = {
-        account_id: accountId,
+        account_id: accountId || undefined,
         athlete_name: fullName,
-        sport_id: sportId,
-        grad_year: gradNum,
+        sport_id: footballSportId,
+        grad_year: Number(gradYear),
         primary_position_id: primaryPositionId,
 
-        // Optional existing schema fields (safe)
-        active: true,
-
-        // 🔜 If you add these fields to schema later, they will start saving immediately:
-        height_ft: anyHeight ? ftNum : null,
-        height_in: anyHeight ? inNum : null,
-        weight_lbs: wNum,
+        // Optional extras (will save only if your schema allows extra fields)
+        primary_position_code: primaryPositionCode,
+        height: anyHeight ? heightString : null,
+        weight: wNum,
       };
 
-      // Fallback payload: ONLY what your schema definitely accepts
       const payloadFallback = {
-        account_id: accountId,
+        account_id: accountId || undefined,
         athlete_name: fullName,
-        sport_id: sportId,
-        grad_year: gradNum,
+        sport_id: footballSportId,
+        grad_year: Number(gradYear),
         primary_position_id: primaryPositionId,
-        active: true,
       };
 
-      await upsertAthleteProfile({ athleteId, payloadFull, payloadFallback });
+      await upsertAthleteProfile({
+        athleteId,
+        payloadFull,
+        payloadFallback,
+      });
+
       nav(ROUTES.Workspace);
     } catch (e) {
       setErr(String(e?.message || e));
@@ -381,7 +372,7 @@ export default function Profile() {
                 >
                   <option value="">Select…</option>
                   {GRAD_YEAR_OPTIONS.map((y) => (
-                    <option key={y} value={String(y)}>
+                    <option key={y} value={y}>
                       {y}
                     </option>
                   ))}
@@ -390,71 +381,64 @@ export default function Profile() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Primary position</label>
-
-                {/* If we can load Position entities, use them */}
-                {positionOptions && positionOptions.length ? (
-                  <select
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                    value={primaryPositionId}
-                    onChange={(e) => setPrimaryPositionId(e.target.value)}
-                  >
-                    <option value="">Select…</option>
-                    {positionOptions
-                      .filter((o) => POSITION_LABELS.includes(o.label)) // football positions only
-                      .map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.label}
-                        </option>
-                      ))}
-                  </select>
-                ) : (
-                  // Fallback: shows labels but cannot guarantee they match your Position IDs
-                  <select
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                    value={primaryPositionId}
-                    onChange={(e) => setPrimaryPositionId(e.target.value)}
-                  >
-                    <option value="">Select…</option>
-                    {POSITION_LABELS.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                {!positionOptions ? (
-                  <div className="mt-1 text-xs text-slate-500">
-                    Note: Position IDs couldn’t be loaded from Base44. If saves fail, we need a Position entity (QB/WR/etc)
-                    and must store its <b>id</b> in <code>primary_position_id</code>.
-                  </div>
-                ) : null}
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                  value={primaryPositionCode}
+                  onChange={(e) => setPrimaryPositionCode(e.target.value)}
+                >
+                  <option value="">Select…</option>
+                  {POSITION_CODES.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-1 text-[11px] text-slate-500">
+                  {footballSportId
+                    ? primaryPositionCode
+                      ? primaryPositionId
+                        ? "Position mapped ✔"
+                        : "Position code selected — waiting on Position rows for Football"
+                      : "Select a position"
+                    : "Resolving Football sport…"}
+                </div>
               </div>
             </div>
 
-            {/* Height: boxes (feet + inches) */}
+            {/* Height (feet/inches) */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Height</label>
               <div className="grid grid-cols-2 gap-3">
-                <input
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
                   value={heightFt}
-                  onChange={(e) => setHeightFt(e.target.value.replace(/[^\d]/g, ""))}
-                  placeholder="Feet"
-                  inputMode="numeric"
-                />
-                <input
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  onChange={(e) => setHeightFt(e.target.value)}
+                >
+                  <option value="">Feet</option>
+                  {FEET_OPTIONS.map((f) => (
+                    <option key={f} value={String(f)}>
+                      {f} ft
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
                   value={heightIn}
-                  onChange={(e) => setHeightIn(e.target.value.replace(/[^\d]/g, ""))}
-                  placeholder="Inches"
-                  inputMode="numeric"
-                />
+                  onChange={(e) => setHeightIn(e.target.value)}
+                >
+                  <option value="">Inches</option>
+                  {INCH_OPTIONS.map((i) => (
+                    <option key={i} value={String(i)}>
+                      {i} in
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="mt-1 text-xs text-slate-500">Optional (will only persist after you add fields to schema)</div>
+              <div className="mt-1 text-xs text-slate-500">{heightString ? `Selected: ${heightString}` : "Optional"}</div>
             </div>
 
-            {/* Weight: pick list */}
+            {/* Weight */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Weight</label>
               <select
@@ -469,7 +453,13 @@ export default function Profile() {
                   </option>
                 ))}
               </select>
-              <div className="mt-1 text-xs text-slate-500">Optional (will only persist after you add fields to schema)</div>
+              <div className="mt-1 text-xs text-slate-500">Optional</div>
+            </div>
+
+            {/* Hidden / FYI */}
+            <div className="text-[11px] text-slate-500">
+              <div><b>sport_id (Football):</b> {footballSportId || "—"}</div>
+              <div><b>primary_position_id:</b> {primaryPositionId || "—"}</div>
             </div>
           </div>
 
@@ -479,12 +469,7 @@ export default function Profile() {
               {saving ? "Saving…" : "Save"}
             </Button>
 
-            <Button
-              variant="outline"
-              className="sm:flex-1"
-              onClick={() => nav(ROUTES.Workspace)}
-              disabled={saving}
-            >
+            <Button variant="outline" className="sm:flex-1" onClick={() => nav(ROUTES.Workspace)} disabled={saving}>
               Back to Workspace
             </Button>
           </div>
