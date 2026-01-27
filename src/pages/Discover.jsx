@@ -171,7 +171,6 @@ export default function Discover() {
     const already = current.length === 1 && current[0] === athleteSportId;
 
     if (!already) {
-      // lock sport + clear positions (positions are sport-specific)
       setNF({ sports: [athleteSportId], positions: [] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,6 +205,46 @@ export default function Discover() {
     nextParam,
     nav,
   ]);
+
+  // ✅ Load picklists for filter UI (sports + positions)
+  const [sports, setSports] = useState([]);
+  const [positions, setPositions] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      // Sports
+      try {
+        const rows = await base44.entities.Sport?.list?.();
+        if (mounted) setSports(Array.isArray(rows) ? rows : []);
+      } catch {
+        try {
+          const rows2 = await base44.entities.Sport?.filter?.({});
+          if (mounted) setSports(Array.isArray(rows2) ? rows2 : []);
+        } catch {
+          if (mounted) setSports([]);
+        }
+      }
+
+      // Positions
+      try {
+        const rows = await base44.entities.Position?.list?.();
+        if (mounted) setPositions(Array.isArray(rows) ? rows : []);
+      } catch {
+        try {
+          const rows2 = await base44.entities.Position?.filter?.({});
+          if (mounted) setPositions(Array.isArray(rows2) ? rows2 : []);
+        } catch {
+          if (mounted) setPositions([]);
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const [rawCamps, setRawCamps] = useState([]);
   const [loadingCamps, setLoadingCamps] = useState(true);
@@ -267,9 +306,13 @@ export default function Discover() {
   const rows = useMemo(() => {
     const src = asArray(rawCamps);
 
-    // ✅ In paid mode, enforce athlete sport regardless of what’s in storage
+    // ✅ In paid mode, enforce athlete sport regardless of storage
     const effectiveSports =
-      isPaid && athleteSportId ? [athleteSportId] : (Array.isArray(nf?.sports) ? nf.sports : []);
+      isPaid && athleteSportId
+        ? [athleteSportId]
+        : Array.isArray(nf?.sports)
+          ? nf.sports
+          : [];
 
     return src.filter((r) => {
       if (!matchesDivision(r, nf.divisions)) return false;
@@ -432,12 +475,18 @@ export default function Discover() {
         {renderBody()}
 
         <FilterSheet
-          open={filterOpen}
-          setOpen={setFilterOpen}
-          nf={nf}
-          setNF={setNF}
-          onClear={clearFilters}
-          // ✅ lock sport in paid mode, so there is no sport dropdown in Discover
+          isOpen={filterOpen}
+          onClose={() => setFilterOpen(false)}
+          filters={nf}
+          onFilterChange={setNF}
+          sports={sports}
+          positions={positions}
+          onApply={() => setFilterOpen(false)}
+          onClear={() => {
+            clearFilters();
+            setFilterOpen(false);
+          }}
+          // ✅ Paid mode: lock sport to athlete profile sport, hides dropdown in FilterSheet
           lockSportId={isPaid && athleteSportId ? athleteSportId : ""}
         />
       </div>
