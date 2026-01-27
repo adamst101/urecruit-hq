@@ -106,6 +106,13 @@ export default function FilterSheet({
     return list;
   }, [sports]);
 
+  // ✅ Human-friendly sport name (used in locked mode)
+  const selectedSportName = useMemo(() => {
+    if (!selectedSportId) return "";
+    const found = sportsList.find((s) => String(s.id) === String(selectedSportId));
+    return found?.sport_name || "";
+  }, [sportsList, selectedSportId]);
+
   // Only show positions for the selected sport
   const positionsList = useMemo(() => {
     if (!selectedSportId) return [];
@@ -254,17 +261,15 @@ export default function FilterSheet({
                   ))}
                 </SelectContent>
               </Select>
-              <div className="text-xs text-slate-500">
-                Pick a sport to unlock positions.
-              </div>
+              <div className="text-xs text-slate-500">Pick a sport to unlock positions.</div>
             </div>
           )}
 
-          {/* If locked, show a small info row */}
+          {/* Locked sport info row (paid mode) */}
           {isSportLocked ? (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
               <span className="font-semibold">Sport:</span>{" "}
-              <span>{selectedSportId || "—"}</span>
+              <span>{selectedSportName || "—"}</span>
               <div className="text-xs text-slate-500 mt-1">
                 Paid workspace uses your athlete profile sport.
               </div>
@@ -311,7 +316,7 @@ export default function FilterSheet({
             <div className="text-xs text-slate-500">Tip: Select one or more divisions.</div>
           </div>
 
-          {/* ✅ Positions: HIDDEN UNTIL SPORT PICKED */}
+          {/* Positions: hidden until sport picked */}
           {selectedSportId ? (
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Position</Label>
