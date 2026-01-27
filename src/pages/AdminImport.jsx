@@ -228,17 +228,19 @@ const DEFAULT_POSITION_SEEDS = {
    Entity field helpers (best-effort)
 ----------------------------- */
 function normalizeSportNameFromRow(r) {
-  return String(r?.name || r?.sport_name || r?.sportName || "").trim();
+  return String(r?.sport_name || r?.name || r?.sportName || "").trim();
 }
 
 function readActiveFlag(row) {
+  // supports: active, is_active, isActive, status
   if (typeof row?.active === "boolean") return row.active;
   if (typeof row?.is_active === "boolean") return row.is_active;
   if (typeof row?.isActive === "boolean") return row.isActive;
   const st = String(row?.status || "").toLowerCase().trim();
   if (st === "active") return true;
   if (st === "inactive" || st === "in_active" || st === "in active") return false;
-  return true; // default safe
+  // default to true if missing (safer UX)
+  return true;
 }
 
 async function tryUpdateWithPayloads(Entity, id, payloads) {
@@ -267,6 +269,8 @@ async function tryCreateWithPayloads(Entity, payloads) {
 
 async function tryDelete(Entity, id) {
   if (!Entity || !id) return false;
+
+  // common patterns across SDKs
   const fns = ["delete", "remove", "destroy"];
   for (const fn of fns) {
     try {
@@ -294,7 +298,6 @@ export default function AdminImport() {
   const [sports, setSports] = useState([]);
   const [sportsLoading, setSportsLoading] = useState(false);
 
-  // IMPORTANT: default should be "Select" (blank) — do NOT auto-pick on load
   const [selectedSportId, setSelectedSportId] = useState("");
   const [selectedSportName, setSelectedSportName] = useState("");
 
@@ -302,7 +305,7 @@ export default function AdminImport() {
   const [seedWorking, setSeedWorking] = useState(false);
   const [seedStats, setSeedStats] = useState({ attempted: 0, created: 0, updated: 0, errors: 0 });
 
-  // Sport admin actions
+  // Sport admin actions (soccer split, volleyball normalize)
   const [sportAdminWorking, setSportAdminWorking] = useState(false);
   const [sportAdminResult, setSportAdminResult] = useState("");
 
@@ -334,9 +337,6 @@ export default function AdminImport() {
   const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
   const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
 
-  // Hide inactive completely (for selectors / end-user-facing pickers)
-  const activeSports = useMemo(() => sports.filter((s) => !!s.active), [sports]);
-
   async function loadSports() {
     if (!SportEntity?.filter) return;
 
@@ -355,22 +355,20 @@ export default function AdminImport() {
       normalized.sort((a, b) => a.name.localeCompare(b.name));
       setSports(normalized);
 
-      // init edit state
+      // initialize edit state
       const nextEdit = {};
-      for (const s of normalized) nextEdit[s.id] = { name: s.name, active: !!s.active };
+      for (const s of normalized) {
+        nextEdit[s.id] = { name: s.name, active: !!s.active };
+      }
       setSportsEdit(nextEdit);
 
-      // If a sport is selected, keep it only if it is ACTIVE; otherwise clear selection (default Select…)
-      if (selectedSportId) {
-        const hit = normalized.find((s) => s.id === selectedSportId) || null;
-        if (hit && hit.active) {
-          setSelectedSportName(hit.name);
-        } else {
-          setSelectedSportId("");
-          setSelectedSportName("");
-          setPositions([]);
-          setPositionsEdit({});
-        }
+      // preserve selection if possible; else pick first
+      if (!selectedSportId && normalized.length) {
+        setSelectedSportId(normalized[0].id);
+        setSelectedSportName(normalized[0].name);
+      } else if (selectedSportId) {
+        const hit = normalized.find((s) => s.id === selectedSportId);
+        if (hit) setSelectedSportName(hit.name);
       }
     } catch {
       // no-op
@@ -399,12 +397,15 @@ export default function AdminImport() {
         .filter((p) => p.id);
 
       normalized.sort(
-        (a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || "")
+        (a, b) =>
+          (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || "")
       );
       setPositions(normalized);
 
       const nextEdit = {};
-      for (const p of normalized) nextEdit[p.id] = { code: p.code, name: p.name };
+      for (const p of normalized) {
+        nextEdit[p.id] = { code: p.code, name: p.name };
+      }
       setPositionsEdit(nextEdit);
     } catch {
       setPositions([]);
@@ -637,6 +638,7 @@ export default function AdminImport() {
     }
 
     const hit = existing.find((r) => String(r?.position_code || "").trim().toUpperCase() === position_code);
+
     const payload = { sport_id: sportId, position_code, position_name };
 
     if (hit?.id) {
@@ -721,24 +723,22 @@ export default function AdminImport() {
       const mens = byName.get("men's soccer");
       const womens = byName.get("women's soccer");
 
-      const actions = [];
+      let actions = [];
 
       if (soccer?.id) {
         const ok = await tryUpdateWithPayloads(SportEntity, soccer.id, [
           { sport_name: "Men's Soccer" },
           { name: "Men's Soccer" },
           { sportName: "Men's Soccer" },
-          { sport_name: "Men's Soccer", name: "Men's Soccer", sportName: "Men's Soccer" },
         ]);
         actions.push(ok ? "Renamed: Soccer → Men's Soccer" : "FAILED rename: Soccer → Men's Soccer");
       } else if (mens?.id) {
         actions.push("Men's Soccer already exists");
       } else {
         const created = await tryCreateWithPayloads(SportEntity, [
-          { sport_name: "Men's Soccer" },
-          { name: "Men's Soccer" },
-          { sportName: "Men's Soccer" },
-          { sport_name: "Men's Soccer", name: "Men's Soccer", sportName: "Men's Soccer" },
+          { sport_name: "Men's Soccer", active: true },
+          { name: "Men's Soccer", active: true },
+          { sportName: "Men's Soccer", active: true },
         ]);
         actions.push(created ? "Created: Men's Soccer" : "FAILED create: Men's Soccer");
       }
@@ -747,10 +747,9 @@ export default function AdminImport() {
         actions.push("Women's Soccer already exists");
       } else {
         const created = await tryCreateWithPayloads(SportEntity, [
-          { sport_name: "Women's Soccer" },
-          { name: "Women's Soccer" },
-          { sportName: "Women's Soccer" },
-          { sport_name: "Women's Soccer", name: "Women's Soccer", sportName: "Women's Soccer" },
+          { sport_name: "Women's Soccer", active: true },
+          { name: "Women's Soccer", active: true },
+          { sportName: "Women's Soccer", active: true },
         ]);
         actions.push(created ? "Created: Women's Soccer" : "FAILED create: Women's Soccer");
       }
@@ -785,7 +784,7 @@ export default function AdminImport() {
       const volly = byName.get("vollyball");
       const volley = byName.get("volleyball");
 
-      const actions = [];
+      let actions = [];
 
       if (volley?.id) {
         actions.push("Volleyball already exists");
@@ -794,7 +793,6 @@ export default function AdminImport() {
           { sport_name: "Volleyball" },
           { name: "Volleyball" },
           { sportName: "Volleyball" },
-          { sport_name: "Volleyball", name: "Volleyball", sportName: "Volleyball" },
         ]);
         actions.push(ok ? "Renamed: Vollyball → Volleyball" : "FAILED rename: Vollyball → Volleyball");
       } else {
@@ -816,9 +814,13 @@ export default function AdminImport() {
 
   /* ----------------------------
      Manual Sport Manager (CRUD + Active/Inactive)
+     IMPORTANT: your Sport model must include a boolean field "active" for this to persist.
   ----------------------------- */
   async function saveSportRow(sportId) {
-    if (!SportEntity?.update) return appendLog("ERROR: Sport entity not available for update.");
+    if (!SportEntity?.update) {
+      appendLog("ERROR: Sport entity not available for update.");
+      return;
+    }
 
     const row = sportsEdit?.[sportId];
     if (!row) return;
@@ -826,25 +828,32 @@ export default function AdminImport() {
     const name = safeString(row.name);
     const active = !!row.active;
 
-    if (!name) return appendLog("ERROR: Sport name is required.");
+    if (!name) {
+      appendLog("ERROR: Sport name is required.");
+      return;
+    }
 
     setSportSaveWorking(true);
     try {
-      const ok = await tryUpdateWithPayloads(SportEntity, sportId, [
-        { sport_name: name, active },
-        { name, active },
-        { sportName: name, active },
-        { sport_name: name, is_active: active },
-        { name, is_active: active },
-        { sportName: name, is_active: active },
-        { sport_name: name, isActive: active },
-        { name, isActive: active },
-        { sportName: name, isActive: active },
-        { sport_name: name, status: active ? "Active" : "Inactive" },
-        { name, status: active ? "Active" : "Inactive" },
+      // Step 1: update name
+      const okName = await tryUpdateWithPayloads(SportEntity, sportId, [
+        { sport_name: name },
+        { name },
+        { sportName: name },
       ]);
 
-      appendLog(ok ? `Saved Sport: ${name}` : `FAILED to save Sport: ${name}`);
+      // Step 2: update active flag (separate update increases compatibility)
+      const okActive = await tryUpdateWithPayloads(SportEntity, sportId, [
+        { active },
+        { is_active: active },
+        { isActive: active },
+        { status: active ? "Active" : "Inactive" },
+      ]);
+
+      appendLog(
+        `Saved Sport: ${name} | name=${okName ? "OK" : "FAIL"} | active=${okActive ? "OK" : "FAIL"}`
+      );
+
       await loadSports();
     } finally {
       setSportSaveWorking(false);
@@ -852,7 +861,10 @@ export default function AdminImport() {
   }
 
   async function createSport() {
-    if (!SportEntity?.create) return appendLog("ERROR: Sport entity not available for create.");
+    if (!SportEntity?.create) {
+      appendLog("ERROR: Sport entity not available for create.");
+      return;
+    }
 
     const name = safeString(newSportName);
     if (!name) return appendLog("ERROR: New sport name is required.");
@@ -863,9 +875,6 @@ export default function AdminImport() {
         { sport_name: name, active: true },
         { name, active: true },
         { sportName: name, active: true },
-        { sport_name: name, is_active: true },
-        { name, is_active: true },
-        { sportName: name, is_active: true },
         { sport_name: name, status: "Active" },
         { name, status: "Active" },
       ]);
@@ -880,12 +889,15 @@ export default function AdminImport() {
 
   async function deleteSport(sportId) {
     if (!sportId) return;
-    if (!SportEntity) return appendLog("ERROR: Sport entity missing.");
+    if (!SportEntity) {
+      appendLog("ERROR: Sport entity missing.");
+      return;
+    }
 
     const hit = sports.find((s) => s.id === sportId);
     const label = hit?.name || sportId;
 
-    // safety: block delete if positions exist
+    // safety: if positions exist, block delete and tell admin to deactivate instead
     let hasPositions = false;
     try {
       if (PositionEntity?.filter) {
@@ -896,7 +908,10 @@ export default function AdminImport() {
       // ignore
     }
 
-    if (hasPositions) return appendLog(`BLOCKED delete Sport "${label}": positions exist. Mark Inactive instead.`);
+    if (hasPositions) {
+      appendLog(`BLOCKED delete Sport "${label}": positions exist. Mark Inactive instead.`);
+      return;
+    }
 
     setSportDeleteWorking(sportId);
     try {
@@ -908,11 +923,54 @@ export default function AdminImport() {
     }
   }
 
+  // Backfill (after you add Sport.active)
+  async function backfillSportActiveTrue() {
+    if (!SportEntity?.filter || !SportEntity?.update) {
+      appendLog("ERROR: Sport entity not available for backfill.");
+      return;
+    }
+
+    appendLog("Backfill: setting active=true on all sports...");
+    const rows = asArray(await SportEntity.filter({}));
+
+    let ok = 0;
+    let fail = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const id = r?.id ? String(r.id) : "";
+      if (!id) continue;
+
+      try {
+        // set explicit boolean true so filters behave predictably
+        const did = await tryUpdateWithPayloads(SportEntity, id, [
+          { active: true },
+          { is_active: true },
+          { isActive: true },
+          { status: "Active" },
+        ]);
+        if (did) ok += 1;
+        else fail += 1;
+      } catch {
+        fail += 1;
+      }
+
+      if ((i + 1) % 10 === 0) appendLog(`Backfill progress: ${i + 1}/${rows.length}`);
+      await sleep(25);
+    }
+
+    appendLog(`Backfill done. OK=${ok} FAIL=${fail}`);
+    await loadSports();
+  }
+
   /* ----------------------------
      Manual Position Manager (CRUD)
   ----------------------------- */
   async function addPosition() {
-    if (!PositionEntity?.create) return appendLog("ERROR: Position entity not available for create.");
+    if (!PositionEntity?.create) {
+      appendLog("ERROR: Position entity not available for create.");
+      return;
+    }
     if (!selectedSportId) return appendLog("ERROR: Select a sport first.");
 
     const code = safeString(positionAddCode)?.toUpperCase();
@@ -936,8 +994,10 @@ export default function AdminImport() {
   }
 
   async function savePositionRow(positionId) {
-    if (!PositionEntity?.update) return appendLog("ERROR: Position entity not available for update.");
-
+    if (!PositionEntity?.update) {
+      appendLog("ERROR: Position entity not available for update.");
+      return;
+    }
     const row = positionsEdit?.[positionId];
     if (!row) return;
 
@@ -966,7 +1026,10 @@ export default function AdminImport() {
 
   async function deletePosition(positionId) {
     if (!positionId) return;
-    if (!PositionEntity) return appendLog("ERROR: Position entity missing.");
+    if (!PositionEntity) {
+      appendLog("ERROR: Position entity missing.");
+      return;
+    }
 
     const hit = positions.find((p) => p.id === positionId);
     const label = hit?.code ? `${hit.code} — ${hit.name || ""}` : positionId;
@@ -995,7 +1058,7 @@ export default function AdminImport() {
           </Button>
         </div>
 
-        {/* Sport Admin (normalize / split) */}
+        {/* Sport Admin (quick fixes) */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Sport Admin (quick fixes)</div>
           <div className="text-sm text-slate-600 mt-1">One-click utilities for known corrections.</div>
@@ -1018,6 +1081,14 @@ export default function AdminImport() {
             <Button variant="outline" onClick={() => loadSports()} disabled={sportAdminWorking || sportsLoading}>
               {sportsLoading ? "Refreshing…" : "Refresh Sports"}
             </Button>
+
+            <Button
+              variant="outline"
+              onClick={backfillSportActiveTrue}
+              disabled={sportAdminWorking || sportsLoading || sportSaveWorking || sportCreateWorking}
+            >
+              Backfill Active=True
+            </Button>
           </div>
 
           {sportAdminResult ? (
@@ -1025,6 +1096,10 @@ export default function AdminImport() {
               <b>Result:</b> {sportAdminResult}
             </div>
           ) : null}
+
+          <div className="mt-3 text-[11px] text-slate-500">
+            Note: Active/Inactive only persists once the <b>Sport.active</b> boolean field exists in your data model.
+          </div>
         </Card>
 
         {/* Sports Manager */}
@@ -1144,7 +1219,7 @@ export default function AdminImport() {
 
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Sport (active only)</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Sport</label>
               <select
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
                 value={selectedSportId}
@@ -1157,9 +1232,9 @@ export default function AdminImport() {
                 disabled={seedWorking || working || sportAdminWorking || sportsLoading}
               >
                 <option value="">Select…</option>
-                {activeSports.map((s) => (
+                {sports.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name}
+                    {s.name} {s.active ? "" : "(Inactive)"}
                   </option>
                 ))}
               </select>
@@ -1188,7 +1263,6 @@ export default function AdminImport() {
             </div>
           </div>
 
-          {/* manual add */}
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Code</label>
@@ -1217,7 +1291,6 @@ export default function AdminImport() {
             </div>
           </div>
 
-          {/* manual edit list */}
           <div className="mt-4">
             <div className="text-xs text-slate-500 mb-2">Positions</div>
 
@@ -1280,7 +1353,11 @@ export default function AdminImport() {
                   ) : (
                     <tr>
                       <td colSpan={3} className="p-3 text-slate-500">
-                        {selectedSportId ? (positionsLoading ? "Loading…" : "No positions found for this sport.") : "Select a sport first."}
+                        {selectedSportId
+                          ? positionsLoading
+                            ? "Loading…"
+                            : "No positions found for this sport."
+                          : "Select a sport first."}
                       </td>
                     </tr>
                   )}
@@ -1293,21 +1370,12 @@ export default function AdminImport() {
             </div>
           </div>
 
-          {/* seed stats */}
           <div className="mt-4 text-sm text-slate-700">
             <div className="flex flex-wrap gap-4">
-              <span>
-                <b>Seed Attempted:</b> {seedStats.attempted}
-              </span>
-              <span>
-                <b>Seed Created:</b> {seedStats.created}
-              </span>
-              <span>
-                <b>Seed Updated:</b> {seedStats.updated}
-              </span>
-              <span>
-                <b>Seed Errors:</b> {seedStats.errors}
-              </span>
+              <span><b>Seed Attempted:</b> {seedStats.attempted}</span>
+              <span><b>Seed Created:</b> {seedStats.created}</span>
+              <span><b>Seed Updated:</b> {seedStats.updated}</span>
+              <span><b>Seed Errors:</b> {seedStats.errors}</span>
             </div>
           </div>
         </Card>
@@ -1340,32 +1408,28 @@ export default function AdminImport() {
 
           <div className="mt-4 text-sm text-slate-700">
             <div className="flex flex-wrap gap-4">
-              <span>
-                <b>Read:</b> {stats.read}
-              </span>
-              <span>
-                <b>Created:</b> {stats.created}
-              </span>
-              <span>
-                <b>Updated:</b> {stats.updated}
-              </span>
-              <span>
-                <b>Skipped:</b> {stats.skipped}
-              </span>
-              <span>
-                <b>Errors:</b> {stats.errors}
-              </span>
+              <span><b>Read:</b> {stats.read}</span>
+              <span><b>Created:</b> {stats.created}</span>
+              <span><b>Updated:</b> {stats.updated}</span>
+              <span><b>Skipped:</b> {stats.skipped}</span>
+              <span><b>Errors:</b> {stats.errors}</span>
             </div>
           </div>
 
           <div className="mt-4">
             <div className="text-xs text-slate-500 mb-1">Log</div>
-            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{log || "—"}</pre>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
+              {log || "—"}
+            </pre>
           </div>
         </Card>
 
         <div className="text-center">
-          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={working || seedWorking || sportAdminWorking}>
+          <Button
+            variant="outline"
+            onClick={() => nav(ROUTES.Home)}
+            disabled={working || seedWorking || sportAdminWorking}
+          >
             Go to Home
           </Button>
         </div>
