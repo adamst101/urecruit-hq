@@ -162,6 +162,7 @@ export default function Discover() {
     return sid != null ? String(sid) : "";
   }, [athleteProfile]);
 
+  // ✅ Tweak #2: disable filter button when paid user has athlete profile but sport is missing
   const paidMissingSport = isPaid && !!athleteId && !athleteSportId;
 
   // HARD ENFORCE in paid mode (reliable even with localStorage leftovers)
@@ -306,11 +307,10 @@ export default function Discover() {
   }, [season?.isLoading, seasonYear]);
 
   const rows = useMemo(() => {
-    if (isPaid && !athleteSportId) return []; // ✅ safety: never show cross-sport in paid
-
     const src = asArray(rawCamps);
 
-    // Paid: force athlete sport. Demo: use nf.sports (dropdown)
+    // Paid: always force athlete sport.
+    // Demo: use nf.sports from dropdown.
     const effectiveSports =
       isPaid && athleteSportId
         ? [athleteSportId]
@@ -376,20 +376,6 @@ export default function Discover() {
       );
     }
 
-    if (paidMissingSport) {
-      return (
-        <Card className="p-5 border-slate-200">
-          <div className="text-lg font-semibold text-deep-navy">Add your sport to your profile</div>
-          <div className="mt-1 text-sm text-slate-600">
-            Your paid workspace is scoped by your athlete sport. Add it once and Discover will auto-filter.
-          </div>
-          <div className="mt-4">
-            <Button onClick={() => nav("/Profile")}>Update Profile</Button>
-          </div>
-        </Card>
-      );
-    }
-
     if (!rows.length) {
       return (
         <Card className="p-5 border-slate-200">
@@ -401,7 +387,15 @@ export default function Discover() {
             <Button variant="outline" onClick={clearFilters}>
               Clear filters
             </Button>
-            <Button onClick={() => setFilterOpen(true)}>Edit filters</Button>
+            <Button
+              onClick={() => {
+                if (paidMissingSport) return;
+                setFilterOpen(true);
+              }}
+              disabled={paidMissingSport}
+            >
+              Edit filters
+            </Button>
           </div>
         </Card>
       );
@@ -484,7 +478,14 @@ export default function Discover() {
             </div>
           </div>
 
-          <Button variant="outline" onClick={() => setFilterOpen(true)}>
+          <Button
+            variant="outline"
+            disabled={paidMissingSport}
+            onClick={() => {
+              if (paidMissingSport) return;
+              setFilterOpen(true);
+            }}
+          >
             <SlidersHorizontal className="w-4 h-4 mr-2" />
             Filter
           </Button>
@@ -504,7 +505,7 @@ export default function Discover() {
             clearFilters();
             setFilterOpen(false);
           }}
-          // Paid: hide sport dropdown + force sport from athlete profile (only if present)
+          // Paid: hide sport dropdown + force sport from athlete profile
           lockSportId={isPaid && athleteSportId ? athleteSportId : ""}
         />
       </div>
