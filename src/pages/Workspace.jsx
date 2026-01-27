@@ -102,15 +102,26 @@ export default function Workspace() {
     setLoggingOut(true);
 
     // Clear any demo stickiness just so future tests are clean
-    try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
-    try { sessionStorage.removeItem("demo_year_v1"); } catch {}
-    try { sessionStorage.removeItem("post_login_next"); } catch {}
+    try {
+      sessionStorage.removeItem("demo_mode_v1");
+    } catch {}
+    try {
+      sessionStorage.removeItem("demo_year_v1");
+    } catch {}
+    try {
+      sessionStorage.removeItem("post_login_next");
+    } catch {}
 
     await safeLogout();
 
     // Hard redirect to avoid stale in-memory state after auth changes
     window.location.assign(`${window.location.origin}${ROUTES.Home}?signin=1&src=logout`);
   }
+
+  // ✅ Demo-safe Discover destination (deterministic even if session storage clears)
+  const discoverPath = useMemo(() => {
+    return isMember ? ROUTES.Discover : `${ROUTES.Discover}?mode=demo&src=workspace_demo`;
+  }, [isMember]);
 
   if (loading) return <div className="min-h-screen bg-slate-50" />;
 
@@ -168,7 +179,7 @@ export default function Workspace() {
               Browse camps for your season. Filter by position and school.
             </div>
             <div className="mt-4">
-              <Button className="w-full btn-brand" onClick={() => nav(ROUTES.Discover)}>
+              <Button className="w-full btn-brand" onClick={() => nav(discoverPath)}>
                 Go to Discover
               </Button>
             </div>
@@ -207,13 +218,18 @@ export default function Workspace() {
         <Card className="mt-4 p-4 border-slate-200 bg-white">
           {isMember ? (
             <div className="text-sm text-slate-700">
-              <b>Member access is active.</b> You’re seeing current-season data based on your entitlement.
+              <b>Member access is active.</b> You’re seeing current-season data based on your
+              entitlement.
             </div>
           ) : (
             <div className="text-sm text-slate-700">
-              <b>You’re in demo mode.</b> To unlock the current season and save planning items, subscribe.
+              <b>You’re in demo mode.</b> To unlock the current season and save planning items,
+              subscribe.
               <div className="mt-3">
-                <Button className="btn-brand" onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_cta`)}>
+                <Button
+                  className="btn-brand"
+                  onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_cta`)}
+                >
                   View pricing / Subscribe
                 </Button>
               </div>
