@@ -1,9 +1,8 @@
 // src/pages/AdminImport.jsx
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { base44 } from "../api/base44Client";
-import { createPageUrl } from "../utils";
 
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -131,6 +130,78 @@ function buildEventKey({ source_platform, program_id, start_date, link_url, sour
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+/* ----------------------------
+   Routes (hardcoded; no createPageUrl)
+----------------------------- */
+const ROUTES = {
+  Workspace: "/Workspace",
+  Home: "/Home",
+};
+
+/* ----------------------------
+   Positions seeding defaults
+----------------------------- */
+const DEFAULT_POSITION_SEEDS = {
+  Football: [
+    { position_code: "QB", position_name: "Quarterback" },
+    { position_code: "RB", position_name: "Running Back" },
+    { position_code: "WR", position_name: "Wide Receiver" },
+    { position_code: "TE", position_name: "Tight End" },
+    { position_code: "OL", position_name: "Offensive Line" },
+    { position_code: "DL", position_name: "Defensive Line" },
+    { position_code: "LB", position_name: "Linebacker" },
+    { position_code: "DB", position_name: "Defensive Back" },
+    { position_code: "K", position_name: "Kicker" },
+    { position_code: "P", position_name: "Punter" },
+    { position_code: "LS", position_name: "Long Snapper" },
+  ],
+  Baseball: [
+    { position_code: "P", position_name: "Pitcher" },
+    { position_code: "C", position_name: "Catcher" },
+    { position_code: "1B", position_name: "First Base" },
+    { position_code: "2B", position_name: "Second Base" },
+    { position_code: "3B", position_name: "Third Base" },
+    { position_code: "SS", position_name: "Shortstop" },
+    { position_code: "LF", position_name: "Left Field" },
+    { position_code: "CF", position_name: "Center Field" },
+    { position_code: "RF", position_name: "Right Field" },
+    { position_code: "UTIL", position_name: "Utility" },
+  ],
+  Basketball: [
+    { position_code: "PG", position_name: "Point Guard" },
+    { position_code: "SG", position_name: "Shooting Guard" },
+    { position_code: "SF", position_name: "Small Forward" },
+    { position_code: "PF", position_name: "Power Forward" },
+    { position_code: "C", position_name: "Center" },
+  ],
+  Soccer: [
+    { position_code: "GK", position_name: "Goalkeeper" },
+    { position_code: "DEF", position_name: "Defender" },
+    { position_code: "MID", position_name: "Midfielder" },
+    { position_code: "FWD", position_name: "Forward" },
+  ],
+  Softball: [
+    { position_code: "P", position_name: "Pitcher" },
+    { position_code: "C", position_name: "Catcher" },
+    { position_code: "1B", position_name: "First Base" },
+    { position_code: "2B", position_name: "Second Base" },
+    { position_code: "3B", position_name: "Third Base" },
+    { position_code: "SS", position_name: "Shortstop" },
+    { position_code: "LF", position_name: "Left Field" },
+    { position_code: "CF", position_name: "Center Field" },
+    { position_code: "RF", position_name: "Right Field" },
+    { position_code: "UTIL", position_name: "Utility" },
+  ],
+  Volleyball: [
+    { position_code: "S", position_name: "Setter" },
+    { position_code: "OH", position_name: "Outside Hitter" },
+    { position_code: "MB", position_name: "Middle Blocker" },
+    { position_code: "OPP", position_name: "Opposite" },
+    { position_code: "L", position_name: "Libero" },
+    { position_code: "DS", position_name: "Defensive Specialist" },
+  ],
+};
 /* ---------------------------- */
 
 export default function AdminImport() {
@@ -143,10 +214,69 @@ export default function AdminImport() {
     created: 0,
     updated: 0,
     skipped: 0,
-    errors: 0
+    errors: 0,
+  });
+
+  // Positions seeding UI state
+  const [sports, setSports] = useState([]);
+  const [selectedSportId, setSelectedSportId] = useState("");
+  const [selectedSportName, setSelectedSportName] = useState("");
+
+  const [seedWorking, setSeedWorking] = useState(false);
+  const [seedStats, setSeedStats] = useState({
+    attempted: 0,
+    created: 0,
+    updated: 0,
+    errors: 0,
   });
 
   const appendLog = (line) => setLog((prev) => (prev ? prev + "\n" + line : line));
+
+  const seedListForSelectedSport = useMemo(() => {
+    const name = String(selectedSportName || "").trim();
+    if (!name) return [];
+    return DEFAULT_POSITION_SEEDS[name] || [];
+  }, [selectedSportName]);
+
+  // Load sports for dropdown
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
+      if (!SportEntity?.filter) return;
+
+      try {
+        const rows = await SportEntity.filter({});
+        if (cancelled) return;
+
+        const arr = asArray(rows);
+        const normalized = arr
+          .map((r) => ({
+            id: r?.id ? String(r.id) : "",
+            name: String(r?.name || r?.sport_name || r?.sportName || "").trim(),
+          }))
+          .filter((r) => r.id && r.name);
+
+        normalized.sort((a, b) => a.name.localeCompare(b.name));
+        setSports(normalized);
+
+        // Default to Football if present
+        const football = normalized.find((s) => s.name.toLowerCase() === "football");
+        if (football && !selectedSportId) {
+          setSelectedSportId(football.id);
+          setSelectedSportName(football.name);
+        }
+      } catch {
+        // no-op
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function upsertCampByEventKey(payload) {
     const key = payload?.event_key;
@@ -194,8 +324,7 @@ export default function AdminImport() {
     const source_url = safeString(r?.source_url) || link_url;
 
     // Prefer CampDemo.season_year if present; else compute from date
-    const season_year =
-      safeNumber(r?.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
+    const season_year = safeNumber(r?.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
 
     // --- Ingestion fields ---
     const source_platform = safeString(r?.source_platform) || "seed";
@@ -208,7 +337,7 @@ export default function AdminImport() {
         program_id,
         start_date,
         link_url,
-        source_url
+        source_url,
       });
 
     // content_hash should reflect the normalized Camp record
@@ -225,7 +354,7 @@ export default function AdminImport() {
         position_ids,
         price,
         link_url,
-        notes: safeString(r?.notes)
+        notes: safeString(r?.notes),
       });
 
     // Optional ingestion alignment fields (ensure correct types)
@@ -270,7 +399,7 @@ export default function AdminImport() {
       price_raw: price_raw || null,
       price_min: price_min != null ? price_min : null,
       price_max: price_max != null ? price_max : null,
-      sections_json: sections_json || null
+      sections_json: sections_json || null,
     };
 
     return { payload };
@@ -329,6 +458,100 @@ export default function AdminImport() {
     setWorking(false);
   }
 
+  /* ----------------------------
+     Seed Positions (upsert by sport_id + position_code)
+  ----------------------------- */
+  async function upsertPositionBySportAndCode({ sportId, code, name }) {
+    const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
+    if (!PositionEntity?.filter || !PositionEntity?.create || !PositionEntity?.update) {
+      throw new Error("Position entity not available (expected entities.Position).");
+    }
+
+    const position_code = String(code || "").trim().toUpperCase();
+    const position_name = String(name || "").trim();
+
+    if (!sportId) throw new Error("Missing sport_id for Position upsert.");
+    if (!position_code) throw new Error("Missing position_code for Position upsert.");
+    if (!position_name) throw new Error("Missing position_name for Position upsert.");
+
+    let existing = [];
+    try {
+      // Filter by sport_id first, then match code in-memory (safe across Base44 filter limitations)
+      existing = asArray(await PositionEntity.filter({ sport_id: sportId }));
+    } catch {
+      existing = [];
+    }
+
+    const hit = existing.find(
+      (r) => String(r?.position_code || "").trim().toUpperCase() === position_code
+    );
+
+    const payload = {
+      sport_id: sportId,
+      position_code,
+      position_name,
+    };
+
+    if (hit?.id) {
+      await PositionEntity.update(String(hit.id), payload);
+      return "updated";
+    }
+
+    await PositionEntity.create(payload);
+    return "created";
+  }
+
+  async function seedPositionsForSport() {
+    const runIso = new Date().toISOString();
+
+    setSeedWorking(true);
+    setSeedStats({ attempted: 0, created: 0, updated: 0, errors: 0 });
+
+    appendLog(`Starting: Seed Positions @ ${runIso}`);
+
+    if (!selectedSportId) {
+      appendLog("ERROR: Select a sport first.");
+      setSeedWorking(false);
+      return;
+    }
+
+    const list = seedListForSelectedSport;
+    if (!list.length) {
+      appendLog(`ERROR: No default seed list found for sport "${selectedSportName || "?"}".`);
+      setSeedWorking(false);
+      return;
+    }
+
+    appendLog(`Sport: ${selectedSportName} (${selectedSportId})`);
+    appendLog(`Seed rows: ${list.length}`);
+
+    for (let i = 0; i < list.length; i++) {
+      const row = list[i];
+      setSeedStats((s) => ({ ...s, attempted: s.attempted + 1 }));
+
+      try {
+        const result = await upsertPositionBySportAndCode({
+          sportId: selectedSportId,
+          code: row.position_code,
+          name: row.position_name,
+        });
+
+        if (result === "created") setSeedStats((s) => ({ ...s, created: s.created + 1 }));
+        if (result === "updated") setSeedStats((s) => ({ ...s, updated: s.updated + 1 }));
+
+        if ((i + 1) % 10 === 0) appendLog(`Seed progress: ${i + 1}/${list.length}`);
+
+        await sleep(40);
+      } catch (e) {
+        setSeedStats((s) => ({ ...s, errors: s.errors + 1 }));
+        appendLog(`SEED ERROR #${i + 1}: ${String(e?.message || e)}`);
+      }
+    }
+
+    appendLog("Seed Positions done.");
+    setSeedWorking(false);
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-3xl mx-auto space-y-4">
@@ -340,11 +563,84 @@ export default function AdminImport() {
             </div>
           </div>
 
-          <Button variant="outline" onClick={() => nav(createPageUrl("Home"))}>
-            Back to Home
+          <Button variant="outline" onClick={() => nav(ROUTES.Workspace)}>
+            Back to Workspace
           </Button>
         </div>
 
+        {/* Seed Positions */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">Seed Positions</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Bulk upsert into <b>Position</b> by <b>(sport_id + position_code)</b>.
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Sport</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                value={selectedSportId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const hit = sports.find((s) => s.id === id) || null;
+                  setSelectedSportId(id);
+                  setSelectedSportName(hit?.name || "");
+                }}
+                disabled={seedWorking || working}
+              >
+                <option value="">Select…</option>
+                {sports.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+
+              <div className="mt-1 text-[11px] text-slate-500">
+                {selectedSportName
+                  ? seedListForSelectedSport.length
+                    ? `Default seeds: ${seedListForSelectedSport.length}`
+                    : "No default seeds for this sport (add to DEFAULT_POSITION_SEEDS)"
+                  : "Choose a sport"}
+              </div>
+            </div>
+
+            <div className="flex items-end">
+              <Button onClick={seedPositionsForSport} disabled={seedWorking || working || !selectedSportId}>
+                {seedWorking ? "Seeding…" : "Seed Positions"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 text-sm text-slate-700">
+            <div className="flex flex-wrap gap-4">
+              <span>
+                <b>Attempted:</b> {seedStats.attempted}
+              </span>
+              <span>
+                <b>Created:</b> {seedStats.created}
+              </span>
+              <span>
+                <b>Updated:</b> {seedStats.updated}
+              </span>
+              <span>
+                <b>Errors:</b> {seedStats.errors}
+              </span>
+            </div>
+          </div>
+
+          {selectedSportName && seedListForSelectedSport.length ? (
+            <div className="mt-3">
+              <div className="text-xs text-slate-500 mb-1">Default seed preview</div>
+              <div className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-48">
+                {seedListForSelectedSport.map((p) => `${p.position_code} — ${p.position_name}`).join("\n")}
+              </div>
+            </div>
+          ) : null}
+        </Card>
+
+        {/* Promote CampDemo -> Camp */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Promote CampDemo → Camp</div>
           <div className="text-sm text-slate-600 mt-1">
@@ -352,7 +648,7 @@ export default function AdminImport() {
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button onClick={promoteCampDemoToCamp} disabled={working}>
+            <Button onClick={promoteCampDemoToCamp} disabled={working || seedWorking}>
               {working ? "Running…" : "Run Promotion"}
             </Button>
 
@@ -361,8 +657,9 @@ export default function AdminImport() {
               onClick={() => {
                 setLog("");
                 setStats({ read: 0, created: 0, updated: 0, skipped: 0, errors: 0 });
+                setSeedStats({ attempted: 0, created: 0, updated: 0, errors: 0 });
               }}
-              disabled={working}
+              disabled={working || seedWorking}
             >
               Clear
             </Button>
@@ -370,21 +667,37 @@ export default function AdminImport() {
 
           <div className="mt-4 text-sm text-slate-700">
             <div className="flex flex-wrap gap-4">
-              <span><b>Read:</b> {stats.read}</span>
-              <span><b>Created:</b> {stats.created}</span>
-              <span><b>Updated:</b> {stats.updated}</span>
-              <span><b>Skipped:</b> {stats.skipped}</span>
-              <span><b>Errors:</b> {stats.errors}</span>
+              <span>
+                <b>Read:</b> {stats.read}
+              </span>
+              <span>
+                <b>Created:</b> {stats.created}
+              </span>
+              <span>
+                <b>Updated:</b> {stats.updated}
+              </span>
+              <span>
+                <b>Skipped:</b> {stats.skipped}
+              </span>
+              <span>
+                <b>Errors:</b> {stats.errors}
+              </span>
             </div>
           </div>
 
           <div className="mt-4">
             <div className="text-xs text-slate-500 mb-1">Log</div>
             <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
-{log || "—"}
+              {log || "—"}
             </pre>
           </div>
         </Card>
+
+        <div className="text-center">
+          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={working || seedWorking}>
+            Go to Home
+          </Button>
+        </div>
       </div>
     </div>
   );
