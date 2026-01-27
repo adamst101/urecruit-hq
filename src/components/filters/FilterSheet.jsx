@@ -53,6 +53,29 @@ function readActiveFlag(row) {
   return true;
 }
 
+// --- Normalize FilterSheet input/output to match Discover's nf shape ---
+// Canonical: { sports: string[], state: string, divisions: string[], positions: string[], startDate, endDate }
+// Backward compat read: filters.sport (string) -> sports[0]
+function readSelectedSportId(filters) {
+  const sportsArr = asArray(filters?.sports).map((x) => String(x || "").trim()).filter(Boolean);
+  if (sportsArr.length) return sportsArr[0];
+
+  const legacy = String(filters?.sport || "").trim();
+  return legacy || "";
+}
+
+function writeSelectedSportId(filters, sportId) {
+  const next = { ...(filters || {}) };
+
+  // canonical
+  next.sports = sportId ? [String(sportId)] : [];
+
+  // optional: clean up legacy field to avoid drift
+  if ("sport" in next) delete next.sport;
+
+  return next;
+}
+
 export default function FilterSheet({
   isOpen,
   onClose,
@@ -93,7 +116,10 @@ export default function FilterSheet({
   const selectedDivisions = asArray(safeFilters.divisions);
   const selectedPositions = asArray(safeFilters.positions);
 
-  const selectedSport = safeFilters.sport ? String(safeFilters.sport) : "all";
+  // ✅ canonical read (sports[0]) with backward-compat (sport)
+  const selectedSportId = readSelectedSportId(safeFilters);
+  const selectedSportValue = selectedSportId ? String(selectedSportId) : "all";
+
   const selectedState = safeFilters.state ? String(safeFilters.state) : "all";
 
   const startDate = sanitizeDateStr(safeFilters.startDate);
@@ -103,10 +129,10 @@ export default function FilterSheet({
 
   // ✅ If a previously-selected sport becomes inactive/missing, clear it.
   useEffect(() => {
-    if (!selectedSport || selectedSport === "all") return;
-    const exists = sportsList.some((s) => String(s.id) === String(selectedSport));
+    if (!selectedSportId) return;
+    const exists = sportsList.some((s) => String(s.id) === String(selectedSportId));
     if (!exists) {
-      setFilters({ ...safeFilters, sport: "" });
+      setFilters(writeSelectedSportId(safeFilters, ""));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sportsList]);
@@ -127,7 +153,8 @@ export default function FilterSheet({
   };
 
   const onSportChange = (value) => {
-    setFilters({ ...safeFilters, sport: value === "all" ? "" : value });
+    const id = value === "all" ? "" : value;
+    setFilters(writeSelectedSportId(safeFilters, id));
   };
 
   const onStateChange = (value) => {
@@ -150,7 +177,7 @@ export default function FilterSheet({
   };
 
   const hasActive =
-    !!safeFilters.sport ||
+    (asArray(safeFilters.sports).length > 0 || !!safeFilters.sport) ||
     !!safeFilters.state ||
     selectedDivisions.length > 0 ||
     selectedPositions.length > 0 ||
@@ -186,7 +213,7 @@ export default function FilterSheet({
           {sportsList.length > 1 && (
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Sport</Label>
-              <Select value={selectedSport || "all"} onValueChange={onSportChange}>
+              <Select value={selectedSportValue} onValueChange={onSportChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Sports" />
                 </SelectTrigger>
