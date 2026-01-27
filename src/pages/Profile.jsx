@@ -167,7 +167,7 @@ export default function Profile() {
   const [weight, setWeight] = useState("");
 
   const [footballSportId, setFootballSportId] = useState("");
-  const [selectedSportId, setSelectedSportId] = useState(""); // ✅ default blank -> user must choose
+  const [selectedSportId, setSelectedSportId] = useState(""); // default blank -> user must choose
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
@@ -288,6 +288,13 @@ export default function Profile() {
       cancelled = true;
     };
   }, [selectedSportId]);
+
+  // ✅ Guard: if current primaryPositionId isn't in the loaded list (sport changed), clear it
+  useEffect(() => {
+    if (!primaryPositionId) return;
+    const stillValid = positions.some((p) => p.id === primaryPositionId);
+    if (!stillValid) setPrimaryPositionId("");
+  }, [positions, primaryPositionId]);
 
   const fullName = useMemo(
     () => `${safeStr(firstName).trim()} ${safeStr(lastName).trim()}`.trim(),
@@ -429,6 +436,7 @@ export default function Profile() {
                   onChange={(e) => {
                     setSelectedSportId(e.target.value);
                     setPrimaryPositionId("");
+                    setPositions([]); // ✅ prevent stale positions while loading new sport
                   }}
                 >
                   <option value="">Select Sport</option>
