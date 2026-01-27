@@ -341,6 +341,14 @@ export default function AdminImport() {
   const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
   const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
 
+  // NOTE: "Hide inactive completely" means:
+  // - Admin screens still show all sports (so you can toggle/repair)
+  // - But any selector used for end-user flow should use only ACTIVE sports.
+  // This Admin page contains both admin selectors and "seed/manage positions" selector.
+  // We will filter the sport selector used for positions management to ACTIVE only,
+  // while the sports table lists all.
+  const activeSports = useMemo(() => sports.filter((s) => !!s.active), [sports]);
+
   async function loadSports() {
     if (!SportEntity?.filter) return;
 
@@ -366,10 +374,11 @@ export default function AdminImport() {
       }
       setSportsEdit(nextEdit);
 
-      // preserve selection if possible; else pick first
-      if (!selectedSportId && normalized.length) {
-        setSelectedSportId(normalized[0].id);
-        setSelectedSportName(normalized[0].name);
+      // preserve selection if possible; else select first ACTIVE sport
+      const pickList = normalized.filter((s) => !!s.active);
+      if (!selectedSportId && pickList.length) {
+        setSelectedSportId(pickList[0].id);
+        setSelectedSportName(pickList[0].name);
       } else if (selectedSportId) {
         const hit = normalized.find((s) => s.id === selectedSportId);
         if (hit) setSelectedSportName(hit.name);
@@ -400,7 +409,9 @@ export default function AdminImport() {
         }))
         .filter((p) => p.id);
 
-      normalized.sort((a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || ""));
+      normalized.sort(
+        (a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || "")
+      );
       setPositions(normalized);
 
       const nextEdit = {};
@@ -700,7 +711,6 @@ export default function AdminImport() {
     appendLog("Seed Positions done.");
     setSeedWorking(false);
 
-    // refresh positions list for the selected sport
     await loadPositionsForSport(selectedSportId);
   }
 
@@ -727,7 +737,6 @@ export default function AdminImport() {
 
       let actions = [];
 
-      // Rename Soccer -> Men's Soccer (keep id), or create Men's Soccer
       if (soccer?.id) {
         const ok = await tryUpdateWithPayloads(SportEntity, soccer.id, [
           { sport_name: "Men's Soccer" },
@@ -748,7 +757,6 @@ export default function AdminImport() {
         actions.push(created ? "Created: Men's Soccer" : "FAILED create: Men's Soccer");
       }
 
-      // Ensure Women's Soccer exists
       if (womens?.id) {
         actions.push("Women's Soccer already exists");
       } else {
@@ -842,7 +850,6 @@ export default function AdminImport() {
 
     setSportSaveWorking(true);
     try {
-      // Update name + active (best-effort field compatibility)
       const ok = await tryUpdateWithPayloads(SportEntity, sportId, [
         { sport_name: name, active },
         { name, active },
@@ -853,13 +860,48 @@ export default function AdminImport() {
         { sport_name: name, isActive: active },
         { name, isActive: active },
         { sportName: name, isActive: active },
-        // if status is used instead of boolean
         { sport_name: name, status: active ? "Active" : "Inactive" },
         { name, status: active ? "Active" : "Inactive" },
       ]);
 
       appendLog(ok ? `Saved Sport: ${name}` : `FAILED to save Sport: ${name}`);
       await loadSports();
+
+      // If we just made the selected sport inactive, automatically switch selection to an active sport
+      const updatedSelected = sportsEdit?.[selectedSportId];
+      const selectedNowActive = selectedSportId
+        ? (sportId === selectedSportId ? active : !!readActiveFlag(sports.find((s) => s.id === selectedSportId)?.raw))
+        : false;
+
+      if (selectedSportId && sportId === selectedSportId && !active) {
+        const next = (await (async () => {
+          try {
+            const rows = asArray(await SportEntity.filter({}));
+            const normalized = rows
+              .map((r) => ({
+                id: r?.id ? String(r.id) : "",
+                name: normalizeSportNameFromRow(r),
+                active: readActiveFlag(r),
+              }))
+              .filter((r) => r.id && r.name && r.active);
+            normalized.sort((a, b) => a.name.localeCompare(b.name));
+            return normalized[0] || null;
+          } catch {
+            return null;
+          }
+        })());
+        if (next?.id) {
+          setSelectedSportId(next.id);
+          setSelectedSportName(next.name);
+        } else {
+          setSelectedSportId("");
+          setSelectedSportName("");
+          setPositions([]);
+          setPositionsEdit({});
+        }
+      } else if (!selectedNowActive && updatedSelected) {
+        // noop; above covers the main case
+      }
     } finally {
       setSportSaveWorking(false);
     }
@@ -949,7 +991,6 @@ export default function AdminImport() {
 
     setPositionAddWorking(true);
     try {
-      // Upsert by (sport_id + position_code) to prevent duplicates
       const result = await upsertPositionBySportAndCode({ sportId: selectedSportId, code, name });
       appendLog(result === "created" ? `Created Position ${code}` : `Updated Position ${code}`);
       setPositionAddCode("");
@@ -1019,9 +1060,7 @@ export default function AdminImport() {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-2xl font-bold text-deep-navy">Admin Import</div>
-            <div className="text-sm text-slate-600">
-              Admin tools for sports/positions + demo promotion.
-            </div>
+            <div className="text-sm text-slate-600">Admin tools for sports/positions + demo promotion.</div>
           </div>
 
           <Button variant="outline" onClick={() => nav(ROUTES.Workspace)}>
@@ -1032,16 +1071,20 @@ export default function AdminImport() {
         {/* Sport Admin (normalize / split) */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Sport Admin (quick fixes)</div>
-          <div className="text-sm text-slate-600 mt-1">
-            One-click utilities for known corrections.
-          </div>
+          <div className="text-sm text-slate-600 mt-1">One-click utilities for known corrections.</div>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button onClick={ensureSoccerVariants} disabled={sportAdminWorking || working || seedWorking || sportCreateWorking || sportSaveWorking}>
+            <Button
+              onClick={ensureSoccerVariants}
+              disabled={sportAdminWorking || working || seedWorking || sportCreateWorking || sportSaveWorking}
+            >
               {sportAdminWorking ? "Updating…" : "Ensure Men's/Women's Soccer"}
             </Button>
 
-            <Button onClick={normalizeVolleyballSpelling} disabled={sportAdminWorking || working || seedWorking || sportCreateWorking || sportSaveWorking}>
+            <Button
+              onClick={normalizeVolleyballSpelling}
+              disabled={sportAdminWorking || working || seedWorking || sportCreateWorking || sportSaveWorking}
+            >
               {sportAdminWorking ? "Updating…" : "Normalize Volleyball spelling"}
             </Button>
 
@@ -1106,7 +1149,11 @@ export default function AdminImport() {
                               onChange={(e) =>
                                 setSportsEdit((prev) => ({
                                   ...prev,
-                                  [s.id]: { ...(prev[s.id] || {}), active: e.target.checked, name: (prev[s.id]?.name ?? s.name) },
+                                  [s.id]: {
+                                    ...(prev[s.id] || {}),
+                                    active: e.target.checked,
+                                    name: prev[s.id]?.name ?? s.name,
+                                  },
                                 }))
                               }
                             />
@@ -1118,18 +1165,18 @@ export default function AdminImport() {
                               onChange={(e) =>
                                 setSportsEdit((prev) => ({
                                   ...prev,
-                                  [s.id]: { ...(prev[s.id] || {}), name: e.target.value, active: prev[s.id]?.active ?? s.active },
+                                  [s.id]: {
+                                    ...(prev[s.id] || {}),
+                                    name: e.target.value,
+                                    active: prev[s.id]?.active ?? s.active,
+                                  },
                                 }))
                               }
                             />
                           </td>
                           <td className="p-2">
                             <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                onClick={() => saveSportRow(s.id)}
-                                disabled={sportSaveWorking}
-                              >
+                              <Button variant="outline" onClick={() => saveSportRow(s.id)} disabled={sportSaveWorking}>
                                 Save
                               </Button>
                               <Button
@@ -1170,7 +1217,7 @@ export default function AdminImport() {
 
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Sport</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Sport (active only)</label>
               <select
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
                 value={selectedSportId}
@@ -1183,9 +1230,9 @@ export default function AdminImport() {
                 disabled={seedWorking || working || sportAdminWorking || sportsLoading}
               >
                 <option value="">Select…</option>
-                {sports.map((s) => (
+                {activeSports.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name} {s.active ? "" : "(Inactive)"}
+                    {s.name}
                   </option>
                 ))}
               </select>
@@ -1200,10 +1247,7 @@ export default function AdminImport() {
             </div>
 
             <div className="flex items-end gap-2">
-              <Button
-                onClick={seedPositionsForSport}
-                disabled={seedWorking || working || sportAdminWorking || !selectedSportId}
-              >
+              <Button onClick={seedPositionsForSport} disabled={seedWorking || working || sportAdminWorking || !selectedSportId}>
                 {seedWorking ? "Seeding…" : "Auto-seed positions"}
               </Button>
 
@@ -1272,7 +1316,11 @@ export default function AdminImport() {
                               onChange={(e) =>
                                 setPositionsEdit((prev) => ({
                                   ...prev,
-                                  [p.id]: { ...(prev[p.id] || {}), code: e.target.value, name: (prev[p.id]?.name ?? p.name) },
+                                  [p.id]: {
+                                    ...(prev[p.id] || {}),
+                                    code: e.target.value,
+                                    name: prev[p.id]?.name ?? p.name,
+                                  },
                                 }))
                               }
                             />
@@ -1284,18 +1332,18 @@ export default function AdminImport() {
                               onChange={(e) =>
                                 setPositionsEdit((prev) => ({
                                   ...prev,
-                                  [p.id]: { ...(prev[p.id] || {}), name: e.target.value, code: (prev[p.id]?.code ?? p.code) },
+                                  [p.id]: {
+                                    ...(prev[p.id] || {}),
+                                    name: e.target.value,
+                                    code: prev[p.id]?.code ?? p.code,
+                                  },
                                 }))
                               }
                             />
                           </td>
                           <td className="p-2">
                             <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                onClick={() => savePositionRow(p.id)}
-                                disabled={positionSaveWorking}
-                              >
+                              <Button variant="outline" onClick={() => savePositionRow(p.id)} disabled={positionSaveWorking}>
                                 Save
                               </Button>
                               <Button
@@ -1313,7 +1361,11 @@ export default function AdminImport() {
                   ) : (
                     <tr>
                       <td colSpan={3} className="p-3 text-slate-500">
-                        {selectedSportId ? (positionsLoading ? "Loading…" : "No positions found for this sport.") : "Select a sport first."}
+                        {selectedSportId
+                          ? positionsLoading
+                            ? "Loading…"
+                            : "No positions found for this sport."
+                          : "Select a sport first."}
                       </td>
                     </tr>
                   )}
@@ -1322,7 +1374,8 @@ export default function AdminImport() {
             </div>
 
             <div className="mt-3 text-[11px] text-slate-500">
-              Positions are referenced by <b>AthleteProfile.primary_position_id</b>. If a position is in use, prefer renaming over deleting.
+              Positions are referenced by <b>AthleteProfile.primary_position_id</b>. If a position is in use, prefer renaming
+              over deleting.
             </div>
           </div>
 
