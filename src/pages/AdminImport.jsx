@@ -257,7 +257,7 @@ export default function AdminImport() {
     errors: 0,
   });
 
-  // Sport admin (soccer split)
+  // Sport admin (soccer split, volleyball normalize)
   const [sportAdminWorking, setSportAdminWorking] = useState(false);
   const [sportAdminResult, setSportAdminResult] = useState("");
 
@@ -291,7 +291,7 @@ export default function AdminImport() {
       normalized.sort((a, b) => a.name.localeCompare(b.name));
       setSports(normalized);
 
-      // Keep current selection if possible; else default to first
+      // Keep current selection if possible; else default to Football if present, else first
       if (!selectedSportId && normalized.length) {
         const football = normalized.find((s) => s.name.toLowerCase() === "football");
         const pick = football || normalized[0];
@@ -587,9 +587,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Sport Admin: Ensure Soccer Variants
-     - Rename "Soccer" -> "Men's Soccer" (keeps same id)
-     - Create "Women's Soccer" if missing
+     Sport Admin helpers
   ----------------------------- */
   function lc(x) {
     return String(x || "").toLowerCase().trim();
@@ -600,7 +598,6 @@ export default function AdminImport() {
       { sport_name: newName },
       { name: newName },
       { sportName: newName },
-      // last resort: send multiple (some schema validators allow extras, some don't)
       { sport_name: newName, name: newName, sportName: newName },
     ];
 
@@ -634,6 +631,11 @@ export default function AdminImport() {
     return null;
   }
 
+  /* ----------------------------
+     Sport Admin: Ensure Soccer Variants
+     - Rename "Soccer" -> "Men's Soccer" (keeps same id)
+     - Create "Women's Soccer" if missing
+  ----------------------------- */
   async function ensureSoccerVariants() {
     setSportAdminWorking(true);
     setSportAdminResult("");
@@ -662,7 +664,6 @@ export default function AdminImport() {
       } else if (mens?.id) {
         actions.push("Men's Soccer already exists");
       } else {
-        // No Soccer at all; create Men's Soccer
         const created = await tryCreateSport(SportEntity, "Men's Soccer");
         actions.push(created ? "Created: Men's Soccer" : "FAILED create: Men's Soccer");
       }
@@ -678,11 +679,57 @@ export default function AdminImport() {
       setSportAdminResult(actions.join(" | "));
       appendLog(`Sport Admin: ${actions.join(" | ")}`);
 
-      // refresh dropdown list
       await loadSports();
     } catch (e) {
-      setSportAdminResult(`ERROR: ${String(e?.message || e)}`);
-      appendLog(`Sport Admin ERROR: ${String(e?.message || e)}`);
+      const msg = `ERROR: ${String(e?.message || e)}`;
+      setSportAdminResult(msg);
+      appendLog(`Sport Admin ERROR: ${msg}`);
+    } finally {
+      setSportAdminWorking(false);
+    }
+  }
+
+  /* ----------------------------
+     Sport Admin: Normalize Volleyball spelling
+     - Rename "Vollyball" -> "Volleyball" (keeps same id)
+  ----------------------------- */
+  async function normalizeVolleyballSpelling() {
+    setSportAdminWorking(true);
+    setSportAdminResult("");
+
+    const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
+    if (!SportEntity?.filter || !SportEntity?.update) {
+      setSportAdminResult("ERROR: Sport entity not available (expected entities.Sport).");
+      setSportAdminWorking(false);
+      return;
+    }
+
+    try {
+      const rows = asArray(await SportEntity.filter({}));
+      const byName = new Map(rows.map((r) => [lc(normalizeSportNameFromRow(r)), r]));
+
+      const volly = byName.get("vollyball");
+      const volley = byName.get("volleyball");
+
+      let actions = [];
+
+      if (volley?.id) {
+        actions.push("Volleyball already exists");
+      } else if (volly?.id) {
+        const ok = await tryUpdateSportName(SportEntity, volly.id, "Volleyball");
+        actions.push(ok ? "Renamed: Vollyball → Volleyball" : "FAILED rename: Vollyball → Volleyball");
+      } else {
+        actions.push('No "Vollyball" or "Volleyball" sport found');
+      }
+
+      setSportAdminResult(actions.join(" | "));
+      appendLog(`Sport Admin: ${actions.join(" | ")}`);
+
+      await loadSports();
+    } catch (e) {
+      const msg = `ERROR: ${String(e?.message || e)}`;
+      setSportAdminResult(msg);
+      appendLog(`Sport Admin ERROR: ${msg}`);
     } finally {
       setSportAdminWorking(false);
     }
@@ -715,11 +762,12 @@ export default function AdminImport() {
             <Button onClick={ensureSoccerVariants} disabled={sportAdminWorking || working || seedWorking}>
               {sportAdminWorking ? "Updating…" : "Ensure Men's/Women's Soccer"}
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => loadSports()}
-              disabled={sportAdminWorking || working || seedWorking}
-            >
+
+            <Button onClick={normalizeVolleyballSpelling} disabled={sportAdminWorking || working || seedWorking}>
+              {sportAdminWorking ? "Updating…" : "Normalize Volleyball spelling"}
+            </Button>
+
+            <Button variant="outline" onClick={() => loadSports()} disabled={sportAdminWorking || working || seedWorking}>
               Refresh Sports
             </Button>
           </div>
@@ -770,10 +818,7 @@ export default function AdminImport() {
             </div>
 
             <div className="flex items-end">
-              <Button
-                onClick={seedPositionsForSport}
-                disabled={seedWorking || working || sportAdminWorking || !selectedSportId}
-              >
+              <Button onClick={seedPositionsForSport} disabled={seedWorking || working || sportAdminWorking || !selectedSportId}>
                 {seedWorking ? "Seeding…" : "Seed Positions"}
               </Button>
             </div>
