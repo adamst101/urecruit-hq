@@ -162,15 +162,15 @@ export default function Discover() {
     return sid != null ? String(sid) : "";
   }, [athleteProfile]);
 
-  // ✅ Ensure nf.sports is always aligned to athlete sport in paid mode
+  // ✅ HARD ENFORCE in paid mode (reliable even with localStorage leftovers)
   useEffect(() => {
     if (!isPaid) return;
     if (!athleteSportId) return;
 
-    const current = Array.isArray(nf?.sports) ? nf.sports.map(String) : [];
-    const already = current.length === 1 && current[0] === athleteSportId;
+    const cur = Array.isArray(nf?.sports) ? nf.sports.map(String) : [];
+    const ok = cur.length === 1 && cur[0] === athleteSportId;
 
-    if (!already) {
+    if (!ok) {
       setNF({ sports: [athleteSportId], positions: [] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -306,7 +306,8 @@ export default function Discover() {
   const rows = useMemo(() => {
     const src = asArray(rawCamps);
 
-    // ✅ In paid mode, enforce athlete sport regardless of storage
+    // ✅ Paid: always force athlete sport.
+    // ✅ Demo: use nf.sports from dropdown.
     const effectiveSports =
       isPaid && athleteSportId
         ? [athleteSportId]
@@ -486,7 +487,7 @@ export default function Discover() {
             clearFilters();
             setFilterOpen(false);
           }}
-          // ✅ Paid mode: lock sport to athlete profile sport, hides dropdown in FilterSheet
+          // ✅ Paid: hide sport dropdown + force sport from athlete profile
           lockSportId={isPaid && athleteSportId ? athleteSportId : ""}
         />
       </div>
