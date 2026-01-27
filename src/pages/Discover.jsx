@@ -93,7 +93,6 @@ function footballSeasonYearForDate(d = new Date()) {
 function computeSeasonYearFootballFromStart(startDate) {
   const iso = toISODate(startDate);
   if (!iso) return null;
-
   const d = new Date(`${iso}T00:00:00.000Z`);
   if (Number.isNaN(d.getTime())) return null;
 
@@ -157,6 +156,27 @@ export default function Discover() {
     return isEntitled ? entitledSeason : computedDemoSeason;
   }, [requestedSeason, isEntitled, entitledSeason, computedDemoSeason]);
 
+  // ✅ Paid Discover: lock sport to athlete profile sport_id
+  const athleteSportId = useMemo(() => {
+    const sid = athleteProfile?.sport_id ?? athleteProfile?.sportId ?? null;
+    return sid != null ? String(sid) : "";
+  }, [athleteProfile]);
+
+  // ✅ Ensure nf.sports is always aligned to athlete sport in paid mode
+  useEffect(() => {
+    if (!isPaid) return;
+    if (!athleteSportId) return;
+
+    const current = Array.isArray(nf?.sports) ? nf.sports.map(String) : [];
+    const already = current.length === 1 && current[0] === athleteSportId;
+
+    if (!already) {
+      // lock sport + clear positions (positions are sport-specific)
+      setNF({ sports: [athleteSportId], positions: [] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPaid, athleteSportId]);
+
   // Season-aware gate only if a season is explicitly requested
   useEffect(() => {
     if (season?.isLoading) return;
@@ -191,53 +211,6 @@ export default function Discover() {
   const [loadingCamps, setLoadingCamps] = useState(true);
   const [campErr, setCampErr] = useState("");
 
-  const [counts, setCounts] = useState({
-    camp_year: 0,
-    camp_all: 0,
-    fallback_used: false,
-  });
-
-  // ---- filter picklists (sports + positions) ----
-  const [sports, setSports] = useState([]);
-  const [positions, setPositions] = useState([]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      // Sports
-      try {
-        const rows = await base44.entities.Sport?.list?.();
-        if (mounted) setSports(Array.isArray(rows) ? rows : []);
-      } catch {
-        try {
-          const rows2 = await base44.entities.Sport?.filter?.({});
-          if (mounted) setSports(Array.isArray(rows2) ? rows2 : []);
-        } catch {
-          if (mounted) setSports([]);
-        }
-      }
-
-      // Positions
-      try {
-        const rows = await base44.entities.Position?.list?.();
-        if (mounted) setPositions(Array.isArray(rows) ? rows : []);
-      } catch {
-        try {
-          const rows2 = await base44.entities.Position?.filter?.({});
-          if (mounted) setPositions(Array.isArray(rows2) ? rows2 : []);
-        } catch {
-          if (mounted) setPositions([]);
-        }
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // ---- load camps (season-safe with fallback) ----
   useEffect(() => {
     let cancelled = false;
 
@@ -245,7 +218,6 @@ export default function Discover() {
       setLoadingCamps(true);
       setCampErr("");
       setRawCamps([]);
-      setCounts({ camp_year: 0, camp_all: 0, fallback_used: false });
 
       try {
         let byYear = [];
@@ -258,10 +230,7 @@ export default function Discover() {
         }
 
         if (byYear.length > 0) {
-          if (!cancelled) {
-            setRawCamps(byYear);
-            setCounts({ camp_year: byYear.length, camp_all: byYear.length, fallback_used: false });
-          }
+          if (!cancelled) setRawCamps(byYear);
           return;
         }
 
@@ -275,16 +244,12 @@ export default function Discover() {
           return derived === seasonYear;
         });
 
-        if (!cancelled) {
-          setRawCamps(filtered);
-          setCounts({ camp_year: filtered.length, camp_all: allRows.length, fallback_used: true });
-        }
+        if (!cancelled) setRawCamps(filtered);
       } catch (e) {
         const msg = String(e?.message || e);
         if (!cancelled) {
           setCampErr(msg);
           setRawCamps([]);
-          setCounts({ camp_year: 0, camp_all: 0, fallback_used: false });
         }
       } finally {
         if (!cancelled) setLoadingCamps(false);
@@ -299,18 +264,22 @@ export default function Discover() {
     };
   }, [season?.isLoading, seasonYear]);
 
-  // ---- apply filters (source-agnostic) ----
   const rows = useMemo(() => {
     const src = asArray(rawCamps);
+
+    // ✅ In paid mode, enforce athlete sport regardless of what’s in storage
+    const effectiveSports =
+      isPaid && athleteSportId ? [athleteSportId] : (Array.isArray(nf?.sports) ? nf.sports : []);
+
     return src.filter((r) => {
       if (!matchesDivision(r, nf.divisions)) return false;
-      if (!matchesSport(r, nf.sports)) return false;
+      if (!matchesSport(r, effectiveSports)) return false;
       if (!matchesPositions(r, nf.positions)) return false;
       if (!matchesState(r, nf.state)) return false;
       if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
       return true;
     });
-  }, [rawCamps, nf]);
+  }, [rawCamps, nf, isPaid, athleteSportId]);
 
   const loading = season?.isLoading || identityLoading || loadingCamps;
 
@@ -460,48 +429,16 @@ export default function Discover() {
           </Button>
         </div>
 
-        {/* Optional debug strip (keep or remove) */}
-        <div className="mb-4 mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
-          <div className="flex flex-wrap gap-x-3 gap-y-1">
-            <span>
-              <b>mode:</b> {effectiveMode}
-            </span>
-            <span>
-              <b>seasonYear:</b> {String(seasonYear)}
-            </span>
-            <span>
-              <b>accountId:</b> {season?.accountId ? String(season.accountId) : "null"}
-            </span>
-            <span>
-              <b>entitled:</b> {String(!!season?.entitlement && !!season?.hasAccess)}
-            </span>
-            <span>
-              <b>requestedSeason:</b> {requestedSeason ? String(requestedSeason) : "null"}
-            </span>
-            <span>
-              <b>Camp(year/all):</b> {counts.camp_year}/{counts.camp_all}
-            </span>
-            <span>
-              <b>fallbackUsed:</b> {String(!!counts.fallback_used)}
-            </span>
-          </div>
-        </div>
-
         {renderBody()}
 
-        {/* ✅ Correct FilterSheet contract */}
         <FilterSheet
-          isOpen={filterOpen}
-          onClose={() => setFilterOpen(false)}
-          filters={nf}
-          onFilterChange={setNF}
-          sports={sports}
-          positions={positions}
-          onApply={() => setFilterOpen(false)}
-          onClear={() => {
-            clearFilters();
-            setFilterOpen(false);
-          }}
+          open={filterOpen}
+          setOpen={setFilterOpen}
+          nf={nf}
+          setNF={setNF}
+          onClear={clearFilters}
+          // ✅ lock sport in paid mode, so there is no sport dropdown in Discover
+          lockSportId={isPaid && athleteSportId ? athleteSportId : ""}
         />
       </div>
 
