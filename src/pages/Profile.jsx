@@ -40,7 +40,9 @@ function parseNameParts(athleteProfile) {
   const last = safeStr(athleteProfile?.last_name || athleteProfile?.lastName).trim();
   if (first || last) return { first, last };
 
-  const full = safeStr(athleteProfile?.athlete_name || athleteProfile?.athleteName || athleteProfile?.name).trim();
+  const full = safeStr(
+    athleteProfile?.athlete_name || athleteProfile?.athleteName || athleteProfile?.name
+  ).trim();
   if (!full) return { first: "", last: "" };
 
   const parts = full.split(/\s+/).filter(Boolean);
@@ -55,8 +57,10 @@ function parseGradYear(athleteProfile) {
 }
 
 function parseHeightParts(athleteProfile) {
-  const ft = athleteProfile?.height_ft ?? athleteProfile?.heightFeet ?? athleteProfile?.height_feet ?? null;
-  const inch = athleteProfile?.height_in ?? athleteProfile?.heightInches ?? athleteProfile?.height_inches ?? null;
+  const ft =
+    athleteProfile?.height_ft ?? athleteProfile?.heightFeet ?? athleteProfile?.height_feet ?? null;
+  const inch =
+    athleteProfile?.height_in ?? athleteProfile?.heightInches ?? athleteProfile?.height_inches ?? null;
 
   const ftNum = Number(ft);
   const inNum = Number(inch);
@@ -82,6 +86,20 @@ function parseWeight(athleteProfile) {
   return Number.isFinite(n) ? n : "";
 }
 
+function readActiveFlag(row) {
+  // supports: active, is_active, isActive, status
+  if (typeof row?.active === "boolean") return row.active;
+  if (typeof row?.is_active === "boolean") return row.is_active;
+  if (typeof row?.isActive === "boolean") return row.isActive;
+
+  const st = String(row?.status || "").toLowerCase().trim();
+  if (st === "active") return true;
+  if (st === "inactive" || st === "in_active" || st === "in active") return false;
+
+  // default to active when missing
+  return true;
+}
+
 async function resolveFootballSportId() {
   const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
   if (!SportEntity?.filter) return null;
@@ -89,10 +107,14 @@ async function resolveFootballSportId() {
   try {
     const rows = await SportEntity.filter({});
     const arr = Array.isArray(rows) ? rows : [];
+
+    // Only consider active sports when picking default football id
     const football = arr.find((r) => {
+      if (!readActiveFlag(r)) return false;
       const n = String(r?.name || r?.sport_name || r?.sportName || "").toLowerCase().trim();
       return n === "football" || n.includes("football");
     });
+
     return football?.id ? String(football.id) : null;
   } catch {
     return null;
@@ -100,7 +122,12 @@ async function resolveFootballSportId() {
 }
 
 function getAthleteEntity() {
-  return base44?.entities?.AthleteProfile || base44?.entities?.Athlete || base44?.entities?.AthleteIdentity || null;
+  return (
+    base44?.entities?.AthleteProfile ||
+    base44?.entities?.Athlete ||
+    base44?.entities?.AthleteIdentity ||
+    null
+  );
 }
 
 async function upsertAthleteProfile({ athleteId, payloadFull, payloadFallback }) {
@@ -127,7 +154,6 @@ async function upsertAthleteProfile({ athleteId, payloadFull, payloadFallback })
 }
 
 function resolveAccountId({ season, athleteProfile }) {
-  // Best-effort across likely shapes
   const candidates = [
     season?.accountId,
     season?.account_id,
@@ -152,7 +178,10 @@ export default function Profile() {
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
-  const accountId = useMemo(() => resolveAccountId({ season, athleteProfile }), [season, athleteProfile]);
+  const accountId = useMemo(
+    () => resolveAccountId({ season, athleteProfile }),
+    [season, athleteProfile]
+  );
 
   const GRAD_YEAR_OPTIONS = useMemo(() => {
     const y = new Date().getFullYear();
@@ -167,10 +196,9 @@ export default function Profile() {
   const [weight, setWeight] = useState("");
 
   const [footballSportId, setFootballSportId] = useState("");
-  const [selectedSportId, setSelectedSportId] = useState(""); // default blank -> user must choose
+  const [selectedSportId, setSelectedSportId] = useState("");
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
-
   const [primaryPositionId, setPrimaryPositionId] = useState("");
 
   const [saving, setSaving] = useState(false);
@@ -191,30 +219,36 @@ export default function Profile() {
     setHeightIn(h.heightIn === "" ? "" : String(h.heightIn));
     setWeight(parseWeight(athleteProfile) === "" ? "" : String(parseWeight(athleteProfile)));
 
-    // If profile exists, respect saved selections
+    // NOTE: We still accept an existing sport_id even if sport becomes inactive later.
+    // If the sport is inactive, it simply won't appear in the dropdown list.
     const existingSportId = athleteProfile?.sport_id ? String(athleteProfile.sport_id) : "";
     if (existingSportId) setSelectedSportId(existingSportId);
 
-    const existingPosId = athleteProfile?.primary_position_id ? String(athleteProfile.primary_position_id) : "";
+    const existingPosId = athleteProfile?.primary_position_id
+      ? String(athleteProfile.primary_position_id)
+      : "";
     if (existingPosId) setPrimaryPositionId(existingPosId);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId]);
 
-  // Resolve Football sport_id (for fallback option only; DO NOT auto-select)
+  // Resolve Football sport_id and default selection (only if nothing selected yet)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const sid = await resolveFootballSportId();
       if (cancelled) return;
       setFootballSportId(sid || "");
+      // Do NOT auto-select if you want user to explicitly pick sport:
+      // leave selectedSportId as-is unless there's an existing profile value.
+      // (This aligns with "Sport default should be Select".)
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Load sports list
+  // Load sports list (HIDE inactive completely)
   useEffect(() => {
     let cancelled = false;
 
@@ -228,6 +262,7 @@ export default function Profile() {
 
         const arr = Array.isArray(rows) ? rows : [];
         const normalized = arr
+          .filter((r) => readActiveFlag(r) === true) // ✅ hide inactive completely
           .map((r) => ({
             id: r?.id ? String(r.id) : "",
             name: String(r?.name || r?.sport_name || r?.sportName || "").trim(),
@@ -236,6 +271,13 @@ export default function Profile() {
 
         normalized.sort((a, b) => a.name.localeCompare(b.name));
         setSports(normalized);
+
+        // If selected sport is now inactive/missing, force back to "Select"
+        if (selectedSportId && !normalized.some((s) => s.id === selectedSportId)) {
+          setSelectedSportId("");
+          setPrimaryPositionId("");
+          setPositions([]);
+        }
       } catch {
         // no-op
       }
@@ -244,6 +286,7 @@ export default function Profile() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load positions for selected sport
@@ -276,9 +319,15 @@ export default function Profile() {
 
         normalized.sort(
           (a, b) =>
-            (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || "")
+            (a.code || "").localeCompare(b.code || "") ||
+            (a.name || "").localeCompare(b.name || "")
         );
         setPositions(normalized);
+
+        // If existing selected primary position isn't in list, clear it
+        if (primaryPositionId && !normalized.some((p) => p.id === primaryPositionId)) {
+          setPrimaryPositionId("");
+        }
       } catch {
         setPositions([]);
       }
@@ -287,14 +336,7 @@ export default function Profile() {
     return () => {
       cancelled = true;
     };
-  }, [selectedSportId]);
-
-  // ✅ Guard: if current primaryPositionId isn't in the loaded list (sport changed), clear it
-  useEffect(() => {
-    if (!primaryPositionId) return;
-    const stillValid = positions.some((p) => p.id === primaryPositionId);
-    if (!stillValid) setPrimaryPositionId("");
-  }, [positions, primaryPositionId]);
+  }, [selectedSportId, primaryPositionId]);
 
   const fullName = useMemo(
     () => `${safeStr(firstName).trim()} ${safeStr(lastName).trim()}`.trim(),
@@ -311,7 +353,6 @@ export default function Profile() {
   async function handleSave() {
     setErr("");
 
-    // Hard stop: schema requires account_id
     if (!accountId) {
       return setErr("Your account was not resolved. Please re-login (Home → Sign in) and try again.");
     }
@@ -337,12 +378,11 @@ export default function Profile() {
     setSaving(true);
 
     try {
-      // Canonical fields only (no legacy writes)
       const payloadFull = {
         account_id: accountId,
-        athlete_name: fullName,
         first_name: safeStr(firstName).trim(),
         last_name: safeStr(lastName).trim(),
+        athlete_name: fullName,
 
         sport_id: selectedSportId,
         grad_year: Number(gradYear),
@@ -436,15 +476,18 @@ export default function Profile() {
                   onChange={(e) => {
                     setSelectedSportId(e.target.value);
                     setPrimaryPositionId("");
-                    setPositions([]); // ✅ prevent stale positions while loading new sport
                   }}
                 >
-                  <option value="">Select Sport</option>
+                  {/* ✅ default is always Select */}
+                  <option value="">Select</option>
+
                   {sports.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                     </option>
                   ))}
+
+                  {/* If there are no sports yet but football is known+active, show it */}
                   {!sports.length && footballSportId ? <option value={footballSportId}>Football</option> : null}
                 </select>
               </div>
@@ -491,7 +534,7 @@ export default function Profile() {
                     ? primaryPositionId
                       ? "Position selected ✔"
                       : "Select a position"
-                    : "No positions found for this sport (use AdminImport → Seed Positions)."
+                    : "No positions found for this sport (use Admin → Manage Positions → Auto-seed)."
                   : "Select a sport"}
               </div>
             </div>
@@ -526,7 +569,9 @@ export default function Profile() {
                   ))}
                 </select>
               </div>
-              <div className="mt-1 text-xs text-slate-500">{heightString ? `Selected: ${heightString}` : "Optional"}</div>
+              <div className="mt-1 text-xs text-slate-500">
+                {heightString ? `Selected: ${heightString}` : "Optional"}
+              </div>
             </div>
 
             {/* Weight */}
@@ -547,7 +592,7 @@ export default function Profile() {
               <div className="mt-1 text-xs text-slate-500">Optional</div>
             </div>
 
-            {/* Debug (keep lightweight) */}
+            {/* Debug */}
             <div className="text-[11px] text-slate-500">
               <div>
                 <b>account_id:</b> {accountId || "—"}
@@ -577,7 +622,12 @@ export default function Profile() {
                 Re-login
               </Button>
             ) : (
-              <Button variant="outline" className="sm:flex-1" onClick={() => nav(ROUTES.Workspace)} disabled={saving}>
+              <Button
+                variant="outline"
+                className="sm:flex-1"
+                onClick={() => nav(ROUTES.Workspace)}
+                disabled={saving}
+              >
                 Back to Workspace
               </Button>
             )}
