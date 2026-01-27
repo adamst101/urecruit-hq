@@ -64,6 +64,7 @@ function parseHeightParts(athleteProfile) {
     return { heightFt: ftNum, heightIn: inNum };
   }
 
+  // Legacy read-only fallback (do NOT write legacy fields)
   const raw = safeStr(athleteProfile?.height).trim();
   if (!raw) return { heightFt: "", heightIn: "" };
 
@@ -273,7 +274,10 @@ export default function Profile() {
           }))
           .filter((p) => p.id);
 
-        normalized.sort((a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || ""));
+        normalized.sort(
+          (a, b) =>
+            (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || "")
+        );
         setPositions(normalized);
       } catch {
         setPositions([]);
@@ -285,7 +289,10 @@ export default function Profile() {
     };
   }, [selectedSportId]);
 
-  const fullName = useMemo(() => `${safeStr(firstName).trim()} ${safeStr(lastName).trim()}`.trim(), [firstName, lastName]);
+  const fullName = useMemo(
+    () => `${safeStr(firstName).trim()} ${safeStr(lastName).trim()}`.trim(),
+    [firstName, lastName]
+  );
 
   const heightString = useMemo(() => {
     const f = Number(heightFt);
@@ -336,10 +343,6 @@ export default function Profile() {
         height_ft: anyHeight ? Number(heightFt) : null,
         height_in: anyHeight ? Number(heightIn) : null,
         weight_lbs: wNum,
-
-        // Optional legacy helpers (safe if schema ignores)
-        height: anyHeight ? heightString : null,
-        weight: wNum,
       };
 
       const payloadFallback = {
@@ -433,7 +436,9 @@ export default function Profile() {
                       {s.name}
                     </option>
                   ))}
-                  {!sports.length && footballSportId ? <option value={footballSportId}>Football</option> : null}
+                  {!sports.length && footballSportId ? (
+                    <option value={footballSportId}>Football</option>
+                  ) : null}
                 </select>
               </div>
 
