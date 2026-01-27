@@ -330,11 +330,12 @@ export default function Profile() {
     setSaving(true);
 
     try {
+      // Canonical fields only (no legacy writes)
       const payloadFull = {
         account_id: accountId,
+        athlete_name: fullName,
         first_name: safeStr(firstName).trim(),
         last_name: safeStr(lastName).trim(),
-        athlete_name: fullName,
 
         sport_id: selectedSportId,
         grad_year: Number(gradYear),
@@ -430,15 +431,13 @@ export default function Profile() {
                     setPrimaryPositionId("");
                   }}
                 >
-                  <option value="">{footballSportId ? "Select…" : "Loading…"}</option>
+                  <option value="">Select Sport</option>
                   {sports.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                     </option>
                   ))}
-                  {!sports.length && footballSportId ? (
-                    <option value={footballSportId}>Football</option>
-                  ) : null}
+                  {!sports.length && footballSportId ? <option value={footballSportId}>Football</option> : null}
                 </select>
               </div>
 
