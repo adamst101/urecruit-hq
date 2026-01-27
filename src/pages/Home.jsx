@@ -59,7 +59,9 @@ export default function Home() {
 
     trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
 
-    nav(`/Discover?mode=demo&src=home_demo`);
+    // ✅ Demo should land in Workspace first (conversion-friendly), not Discover.
+    // Workspace can then guide them into Discover with context + a clear CTA.
+    nav(`/Workspace?mode=demo&src=home_demo`);
   }
 
   function handleMemberLogin() {
