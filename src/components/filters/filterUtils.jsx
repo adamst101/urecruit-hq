@@ -4,6 +4,24 @@ function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
+function uniqStrings(arr) {
+  const out = [];
+  const seen = new Set();
+  for (const v of asArray(arr)) {
+    const s = String(v || "").trim();
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+export function sanitizeDateStr(v) {
+  if (!v) return "";
+  const s = String(v).trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
 export function normalizeState(value) {
   if (!value) return null;
 
@@ -77,17 +95,41 @@ export function normalizeState(value) {
   return map[key] || null;
 }
 
-export function sanitizeDateStr(v) {
-  if (!v) return "";
-  const s = String(v).trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+/**
+ * ✅ normalizeFilters (exported)
+ * Keeps your app stable even if different pages use different filter shapes.
+ * Canonical nf shape for Discover:
+ *   { divisions[], sports[], positions[], state, startDate, endDate }
+ */
+export function normalizeFilters(raw) {
+  const r = raw && typeof raw === "object" ? raw : {};
+
+  // support legacy keys if they exist
+  const divisions = uniqStrings(r.divisions);
+  const sports = uniqStrings(asArray(r.sports).map(String));
+  const positions = uniqStrings(asArray(r.positions).map(String));
+
+  const state = typeof r.state === "string" ? r.state : "";
+  const startDate = sanitizeDateStr(r.startDate);
+  const endDate = sanitizeDateStr(r.endDate);
+
+  return {
+    divisions,
+    sports,
+    positions,
+    state,
+    startDate,
+    endDate,
+  };
 }
 
 /**
- * Date overlap logic (multi-day camps supported).
- * Dates must be "YYYY-MM-DD" (string compare works).
+ * ✅ withinDateRange (exported)
+ * Calendar imports this directly.
+ * Logic = overlap (supports multi-day camps).
+ * Dates must be "YYYY-MM-DD".
  */
-function withinDateRange(campStartStr, filterStart, filterEnd, campEndStr) {
+export function withinDateRange(campStartStr, filterStart, filterEnd, campEndStr) {
   const fs = sanitizeDateStr(filterStart);
   const fe = sanitizeDateStr(filterEnd);
 
@@ -97,11 +139,18 @@ function withinDateRange(campStartStr, filterStart, filterEnd, campEndStr) {
   const cs = String(campStartStr).slice(0, 10);
   const ce = String(campEndStr || campStartStr).slice(0, 10);
 
-  if (fs && ce < fs) return false; // camp ends before start
-  if (fe && cs > fe) return false; // camp starts after end
+  // camp must end on/after filterStart
+  if (fs && ce < fs) return false;
+
+  // camp must start on/before filterEnd
+  if (fe && cs > fe) return false;
+
   return true;
 }
 
+/* ---------------------------
+   Discover filter matchers
+---------------------------- */
 export function matchesDivision(camp, divisions) {
   const ds = asArray(divisions);
   if (ds.length === 0) return true;
