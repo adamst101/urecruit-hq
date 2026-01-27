@@ -81,9 +81,7 @@ export default function FilterSheet({
   const lockedSportId = String(lockSportId || "").trim();
   const isSportLocked = !!lockedSportId;
 
-  // Resolve selected sport id:
-  // - If locked: ALWAYS use lockSportId
-  // - Else: support Calendar (filters.sport) and Discover (filters.sports array)
+  // Resolve selected sport id
   const selectedSportId = useMemo(() => {
     if (isSportLocked) return lockedSportId;
 
@@ -107,13 +105,6 @@ export default function FilterSheet({
     list.sort((a, b) => String(a.sport_name).localeCompare(String(b.sport_name)));
     return list;
   }, [sports]);
-
-  // Friendly display name for locked info row
-  const selectedSportName = useMemo(() => {
-    if (!selectedSportId) return "";
-    const found = sportsList.find((s) => String(s.id) === String(selectedSportId));
-    return found?.sport_name || "";
-  }, [sportsList, selectedSportId]);
 
   // Only show positions for the selected sport
   const positionsList = useMemo(() => {
@@ -141,7 +132,7 @@ export default function FilterSheet({
 
   const setFilters = (next) => onFilterChange?.(next);
 
-  // If sport is locked, force filters to match it (and clear positions if mismatch)
+  // If sport is locked, force filters to match it (and clear positions)
   useEffect(() => {
     if (!isSportLocked) return;
 
@@ -158,7 +149,7 @@ export default function FilterSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSportLocked, lockedSportId]);
 
-  // If selected sport becomes inactive/missing (only in non-locked mode), clear it
+  // If selected sport becomes inactive/missing (non-locked), clear it
   useEffect(() => {
     if (isSportLocked) return;
     if (!selectedSportId) return;
@@ -169,14 +160,6 @@ export default function FilterSheet({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sportsList]);
-
-  // If sport is cleared (All Sports), clear any selected positions (sport-scoped)
-  useEffect(() => {
-    if (selectedSportId) return;
-    if (selectedPositions.length === 0) return;
-    setFilters({ ...safeFilters, positions: [] });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSportId]);
 
   const toggleDivision = (div) => {
     const next = selectedDivisions.includes(div)
@@ -193,7 +176,7 @@ export default function FilterSheet({
     setFilters({ ...safeFilters, positions: next });
   };
 
-  // Demo (non-locked): when sport changes, update BOTH keys and clear positions.
+  // Demo (non-locked). When sport changes, update BOTH keys and clear positions.
   const onSportChange = (value) => {
     if (value === "all") {
       setFilters({ ...safeFilters, sport: "", sports: [], positions: [] });
@@ -272,16 +255,16 @@ export default function FilterSheet({
                 </SelectContent>
               </Select>
               <div className="text-xs text-slate-500">
-                Positions will only show after you pick a sport.
+                Pick a sport to unlock positions.
               </div>
             </div>
           )}
 
-          {/* Locked sport info (paid) */}
+          {/* If locked, show a small info row */}
           {isSportLocked ? (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
               <span className="font-semibold">Sport:</span>{" "}
-              <span>{selectedSportName || "—"}</span>
+              <span>{selectedSportId || "—"}</span>
               <div className="text-xs text-slate-500 mt-1">
                 Paid workspace uses your athlete profile sport.
               </div>
@@ -328,40 +311,38 @@ export default function FilterSheet({
             <div className="text-xs text-slate-500">Tip: Select one or more divisions.</div>
           </div>
 
-          {/* Positions (scoped to selected sport) */}
-          <div className="space-y-2">
-            <Label className="text-sm font-semibold">Position</Label>
+          {/* ✅ Positions: HIDDEN UNTIL SPORT PICKED */}
+          {selectedSportId ? (
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Position</Label>
 
-            {!selectedSportId ? (
-              <div className="text-sm text-slate-500 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                Select a sport to see positions.
-              </div>
-            ) : positionsList.length === 0 ? (
-              <div className="text-sm text-slate-500 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                No positions found for this sport.
-              </div>
-            ) : (
-              <>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    {positionsList.map((pos) => (
-                      <label
-                        key={pos.id}
-                        className="flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2"
-                      >
-                        <Checkbox
-                          checked={selectedPositions.includes(String(pos.id))}
-                          onCheckedChange={() => togglePosition(pos.id)}
-                        />
-                        <span className="text-sm text-slate-800">{pos.position_code}</span>
-                      </label>
-                    ))}
-                  </div>
+              {positionsList.length === 0 ? (
+                <div className="text-sm text-slate-500 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  No positions found for this sport.
                 </div>
-                <div className="text-xs text-slate-500">Tip: Choose multiple if needed.</div>
-              </>
-            )}
-          </div>
+              ) : (
+                <>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      {positionsList.map((pos) => (
+                        <label
+                          key={pos.id}
+                          className="flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2"
+                        >
+                          <Checkbox
+                            checked={selectedPositions.includes(String(pos.id))}
+                            onCheckedChange={() => togglePosition(pos.id)}
+                          />
+                          <span className="text-sm text-slate-800">{pos.position_code}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-500">Tip: Choose multiple if needed.</div>
+                </>
+              )}
+            </div>
+          ) : null}
 
           {/* Date Range */}
           <div className="space-y-3">
