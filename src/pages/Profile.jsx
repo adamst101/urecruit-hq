@@ -167,7 +167,7 @@ export default function Profile() {
   const [weight, setWeight] = useState("");
 
   const [footballSportId, setFootballSportId] = useState("");
-  const [selectedSportId, setSelectedSportId] = useState("");
+  const [selectedSportId, setSelectedSportId] = useState(""); // ✅ default blank -> user must choose
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
@@ -191,6 +191,7 @@ export default function Profile() {
     setHeightIn(h.heightIn === "" ? "" : String(h.heightIn));
     setWeight(parseWeight(athleteProfile) === "" ? "" : String(parseWeight(athleteProfile)));
 
+    // If profile exists, respect saved selections
     const existingSportId = athleteProfile?.sport_id ? String(athleteProfile.sport_id) : "";
     if (existingSportId) setSelectedSportId(existingSportId);
 
@@ -200,14 +201,13 @@ export default function Profile() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId]);
 
-  // Resolve Football sport_id and default selection
+  // Resolve Football sport_id (for fallback option only; DO NOT auto-select)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const sid = await resolveFootballSportId();
       if (cancelled) return;
       setFootballSportId(sid || "");
-      setSelectedSportId((prev) => prev || sid || "");
     })();
     return () => {
       cancelled = true;
