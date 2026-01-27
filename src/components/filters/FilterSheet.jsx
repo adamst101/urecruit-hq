@@ -1,23 +1,11 @@
 // src/components/filters/FilterSheet.jsx
 import React, { useEffect, useMemo } from "react";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetFooter,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const DIVISIONS = ["D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"];
 const STATES = [
@@ -74,20 +62,13 @@ export default function FilterSheet({
   sports = [],
   onApply,
   onClear,
+
+  // ✅ Optional: lock sport (used by Paid Discover)
+  // When provided, sport dropdown is hidden and positions are scoped to this sport.
+  lockSportId = "",
 }) {
   const safeFilters = filters || {};
-
-  // ✅ Support BOTH models:
-  // - Calendar: filters.sport (string)
-  // - Discover: filters.sports (array)
-  const selectedSportId = useMemo(() => {
-    const legacy = String(safeFilters.sport ?? "").trim();
-    if (legacy) return legacy;
-
-    const arr = asArray(safeFilters.sports);
-    const first = arr[0] != null ? String(arr[0]).trim() : "";
-    return first || "";
-  }, [safeFilters.sport, safeFilters.sports]);
+  const lockedSport = String(lockSportId || "").trim();
 
   const sportsList = useMemo(() => {
     const list = asArray(sports)
@@ -102,21 +83,20 @@ export default function FilterSheet({
     return list;
   }, [sports]);
 
-  // ✅ Only show positions for the selected sport
-  const positionsList = useMemo(() => {
-    if (!selectedSportId) return [];
+  // ✅ Support BOTH models:
+  // - Calendar: filters.sport (string)
+  // - Discover: filters.sports (array)
+  // - Locked: lockSportId wins
+  const selectedSportId = useMemo(() => {
+    if (lockedSport) return lockedSport;
 
-    const list = asArray(positions)
-      .map((p) => ({
-        id: normId(p),
-        position_code: p?.position_code || p?.code || p?.position_name || "POS",
-        sportId: readPositionSportId(p),
-      }))
-      .filter((p) => p.id && p.sportId && String(p.sportId) === String(selectedSportId));
+    const legacy = String(safeFilters.sport ?? "").trim();
+    if (legacy) return legacy;
 
-    list.sort((a, b) => String(a.position_code).localeCompare(String(b.position_code)));
-    return list;
-  }, [positions, selectedSportId]);
+    const arr = asArray(safeFilters.sports);
+    const first = arr[0] != null ? String(arr[0]).trim() : "";
+    return first || "";
+  }, [lockedSport, safeFilters.sport, safeFilters.sports]);
 
   const selectedDivisions = asArray(safeFilters.divisions);
   const selectedPositions = asArray(safeFilters.positions);
@@ -128,15 +108,38 @@ export default function FilterSheet({
 
   const setFilters = (next) => onFilterChange?.(next);
 
-  // ✅ If a previously-selected sport becomes inactive/missing, clear it.
+  // ✅ Locked sport: enforce sport value into BOTH keys and clear positions if mismatch
   useEffect(() => {
-    if (!selectedSportId) return;
-    const exists = sportsList.some((s) => String(s.id) === String(selectedSportId));
-    if (!exists) {
-      setFilters({ ...safeFilters, sport: "", sports: [] });
+    if (!lockedSport) return;
+
+    const curSport = String(safeFilters.sport ?? "").trim();
+    const curSportsArr = asArray(safeFilters.sports).map((x) => String(x).trim()).filter(Boolean);
+
+    const okLegacy = curSport === lockedSport;
+    const okArr = curSportsArr.length === 1 && curSportsArr[0] === lockedSport;
+
+    if (!okLegacy || !okArr) {
+      setFilters({
+        ...safeFilters,
+        sport: lockedSport,
+        sports: [lockedSport],
+        positions: [], // positions are sport-specific
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sportsList]);
+  }, [lockedSport]);
+
+  // ✅ If a previously-selected sport becomes inactive/missing, clear it (unless locked)
+  useEffect(() => {
+    if (lockedSport) return; // locked wins, don’t auto-clear
+    if (!selectedSportId) return;
+
+    const exists = sportsList.some((s) => String(s.id) === String(selectedSportId));
+    if (!exists) {
+      setFilters({ ...safeFilters, sport: "", sports: [], positions: [] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sportsList, lockedSport]);
 
   const toggleDivision = (div) => {
     const next = selectedDivisions.includes(div)
@@ -153,11 +156,10 @@ export default function FilterSheet({
     setFilters({ ...safeFilters, positions: next });
   };
 
-  // ✅ When sport changes, update BOTH keys:
-  // - sport (legacy string)
-  // - sports (Discover array)
-  // Also clear positions because they’re sport-specific.
+  // ✅ When sport changes, update BOTH keys + clear positions
   const onSportChange = (value) => {
+    if (lockedSport) return; // cannot change when locked
+
     if (value === "all") {
       setFilters({ ...safeFilters, sport: "", sports: [], positions: [] });
       return;
@@ -184,6 +186,22 @@ export default function FilterSheet({
     setFilters({ ...safeFilters, endDate: v });
   };
 
+  // ✅ Only show positions for the effective sport (selectedSportId)
+  const positionsList = useMemo(() => {
+    if (!selectedSportId) return [];
+
+    const list = asArray(positions)
+      .map((p) => ({
+        id: normId(p),
+        position_code: p?.position_code || p?.code || p?.position_name || "POS",
+        sportId: readPositionSportId(p),
+      }))
+      .filter((p) => p.id && p.sportId && String(p.sportId) === String(selectedSportId));
+
+    list.sort((a, b) => String(a.position_code).localeCompare(String(b.position_code)));
+    return list;
+  }, [positions, selectedSportId]);
+
   const hasActive =
     !!selectedSportId ||
     !!safeFilters.state ||
@@ -191,6 +209,8 @@ export default function FilterSheet({
     selectedPositions.length > 0 ||
     !!startDate ||
     !!endDate;
+
+  const showSportDropdown = !lockedSport && sportsList.length > 0;
 
   return (
     <Sheet open={!!isOpen} onOpenChange={(open) => (!open ? onClose?.() : null)}>
@@ -218,7 +238,7 @@ export default function FilterSheet({
         {/* Body */}
         <div className="px-5 py-5 space-y-6">
           {/* Sport */}
-          {sportsList.length > 0 && (
+          {showSportDropdown ? (
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Sport</Label>
               <Select value={selectedSportId || "all"} onValueChange={onSportChange}>
@@ -238,7 +258,14 @@ export default function FilterSheet({
                 Positions will only show after you pick a sport.
               </div>
             </div>
-          )}
+          ) : lockedSport ? (
+            <div className="space-y-1">
+              <Label className="text-sm font-semibold">Sport</Label>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                Locked to your athlete profile.
+              </div>
+            </div>
+          ) : null}
 
           {/* State */}
           <div className="space-y-2">
