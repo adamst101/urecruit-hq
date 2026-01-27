@@ -15,6 +15,7 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 const ROUTES = {
   Workspace: "/Workspace",
   Discover: "/Discover",
+  Home: "/Home",
 };
 
 // Height options
@@ -54,7 +55,6 @@ function parseGradYear(athleteProfile) {
 }
 
 function parseHeightParts(athleteProfile) {
-  // Prefer split fields if present
   const ft = athleteProfile?.height_ft ?? athleteProfile?.heightFeet ?? athleteProfile?.height_feet ?? null;
   const inch = athleteProfile?.height_in ?? athleteProfile?.heightInches ?? athleteProfile?.height_inches ?? null;
 
@@ -64,7 +64,6 @@ function parseHeightParts(athleteProfile) {
     return { heightFt: ftNum, heightIn: inNum };
   }
 
-  // Fallback: parse "6'2\"" or "6'2" or "6-2"
   const raw = safeStr(athleteProfile?.height).trim();
   if (!raw) return { heightFt: "", heightIn: "" };
 
@@ -82,9 +81,6 @@ function parseWeight(athleteProfile) {
   return Number.isFinite(n) ? n : "";
 }
 
-/**
- * ✅ Resolve Football sport_id robustly (supports name / sport_name / sportName)
- */
 async function resolveFootballSportId() {
   const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
   if (!SportEntity?.filter) return null;
@@ -129,21 +125,39 @@ async function upsertAthleteProfile({ athleteId, payloadFull, payloadFallback })
   }
 }
 
+function resolveAccountId({ season, athleteProfile }) {
+  // Best-effort across likely shapes
+  const candidates = [
+    season?.accountId,
+    season?.account_id,
+    season?.account?.id,
+    season?.account?.account_id,
+
+    athleteProfile?.account_id,
+    athleteProfile?.accountId,
+    athleteProfile?.account?.id,
+  ];
+
+  for (const c of candidates) {
+    const v = c == null ? "" : String(c).trim();
+    if (v) return v;
+  }
+  return "";
+}
+
 export default function Profile() {
   const nav = useNavigate();
   const season = useSeasonAccess();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
-  const accountId = season?.accountId || null;
+  const accountId = useMemo(() => resolveAccountId({ season, athleteProfile }), [season, athleteProfile]);
 
-  // Grad years (current year → +10)
   const GRAD_YEAR_OPTIONS = useMemo(() => {
     const y = new Date().getFullYear();
     return Array.from({ length: 11 }, (_, i) => y + i);
   }, []);
 
-  // Form state
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [gradYear, setGradYear] = useState("");
@@ -151,24 +165,18 @@ export default function Profile() {
   const [heightIn, setHeightIn] = useState("");
   const [weight, setWeight] = useState("");
 
-  // Sports / Positions (pulled from entities)
   const [footballSportId, setFootballSportId] = useState("");
   const [selectedSportId, setSelectedSportId] = useState("");
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
-  // Required by schema
   const [primaryPositionId, setPrimaryPositionId] = useState("");
-
-  // Optional compatibility (helpful for legacy and admin seeding)
-  const [primaryPositionCode, setPrimaryPositionCode] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
   const loading = !!season?.isLoading || !!identityLoading;
 
-  // Prefill once
   useEffect(() => {
     if (!athleteProfile) return;
 
@@ -182,30 +190,22 @@ export default function Profile() {
     setHeightIn(h.heightIn === "" ? "" : String(h.heightIn));
     setWeight(parseWeight(athleteProfile) === "" ? "" : String(parseWeight(athleteProfile)));
 
-    // If an existing profile already has sport_id, prefer it
     const existingSportId = athleteProfile?.sport_id ? String(athleteProfile.sport_id) : "";
     if (existingSportId) setSelectedSportId(existingSportId);
 
-    // If an existing profile already has primary_position_id, keep it
     const existingPosId = athleteProfile?.primary_position_id ? String(athleteProfile.primary_position_id) : "";
     if (existingPosId) setPrimaryPositionId(existingPosId);
-
-    // Best-effort code (legacy / compatibility)
-    const existingPosCode = safeStr(athleteProfile?.primary_position_code || athleteProfile?.primaryPositionCode).trim();
-    if (existingPosCode) setPrimaryPositionCode(existingPosCode);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId]);
 
-  // Resolve Football sport_id on load (schema requires sport_id)
+  // Resolve Football sport_id and default selection
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const sid = await resolveFootballSportId();
       if (cancelled) return;
       setFootballSportId(sid || "");
-
-      // If nothing selected yet, default to Football as requested
       setSelectedSportId((prev) => prev || sid || "");
     })();
     return () => {
@@ -213,9 +213,10 @@ export default function Profile() {
     };
   }, []);
 
-  // Load sports list (for future-proofing / admin-friendly UX)
+  // Load sports list
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
       if (!SportEntity?.filter) return;
@@ -232,19 +233,19 @@ export default function Profile() {
           }))
           .filter((r) => r.id && r.name);
 
-        // Stable alpha sort for UX
         normalized.sort((a, b) => a.name.localeCompare(b.name));
         setSports(normalized);
       } catch {
         // no-op
       }
     })();
+
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Load positions whenever selectedSportId changes
+  // Load positions for selected sport
   useEffect(() => {
     let cancelled = false;
 
@@ -272,21 +273,8 @@ export default function Profile() {
           }))
           .filter((p) => p.id);
 
-        // Sort by code then name
         normalized.sort((a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || ""));
         setPositions(normalized);
-
-        // If we have a position_id but no code yet, derive it
-        if (primaryPositionId && !primaryPositionCode) {
-          const hit = normalized.find((p) => p.id === primaryPositionId);
-          if (hit?.code) setPrimaryPositionCode(hit.code);
-        }
-
-        // If we have a code but no id (legacy), try to map it
-        if (!primaryPositionId && primaryPositionCode) {
-          const hit = normalized.find((p) => String(p.code).toUpperCase() === String(primaryPositionCode).toUpperCase());
-          if (hit?.id) setPrimaryPositionId(hit.id);
-        }
       } catch {
         setPositions([]);
       }
@@ -295,11 +283,9 @@ export default function Profile() {
     return () => {
       cancelled = true;
     };
-  }, [selectedSportId, primaryPositionId, primaryPositionCode]);
+  }, [selectedSportId]);
 
-  const fullName = useMemo(() => {
-    return `${safeStr(firstName).trim()} ${safeStr(lastName).trim()}`.trim();
-  }, [firstName, lastName]);
+  const fullName = useMemo(() => `${safeStr(firstName).trim()} ${safeStr(lastName).trim()}`.trim(), [firstName, lastName]);
 
   const heightString = useMemo(() => {
     const f = Number(heightFt);
@@ -311,15 +297,17 @@ export default function Profile() {
   async function handleSave() {
     setErr("");
 
-    // Required validation
+    // Hard stop: schema requires account_id
+    if (!accountId) {
+      return setErr("Your account was not resolved. Please re-login (Home → Sign in) and try again.");
+    }
+
     if (!safeStr(firstName).trim()) return setErr("First name is required.");
     if (!safeStr(lastName).trim()) return setErr("Last name is required.");
     if (!Number.isFinite(Number(gradYear))) return setErr("Grad year is required.");
-
     if (!selectedSportId) return setErr("Sport is required.");
     if (!primaryPositionId) return setErr("Primary position is required.");
 
-    // Height validation (optional but must be complete if started)
     const anyHeight = safeStr(heightFt).trim() || safeStr(heightIn).trim();
     if (anyHeight) {
       const f = Number(heightFt);
@@ -329,53 +317,40 @@ export default function Profile() {
       if (!(i >= 0 && i <= 11)) return setErr("Height (inches) must be 0–11.");
     }
 
-    // Weight optional
     const wNum = safeStr(weight).trim() ? Number(weight) : null;
     if (wNum != null && !Number.isFinite(wNum)) return setErr("Weight is invalid.");
-
-    // Derive position code for compatibility (if available)
-    const posHit = positions.find((p) => p.id === primaryPositionId) || null;
-    const derivedCode = (posHit?.code || primaryPositionCode || "").trim();
 
     setSaving(true);
 
     try {
-      // NOTE: AthleteProfile schema expects required:
-      // account_id, athlete_name, sport_id, grad_year, primary_position_id
-      // We store extra values into best-effort optional fields; if schema rejects, fallback keeps it safe.
       const payloadFull = {
-        account_id: accountId || undefined,
+        account_id: accountId,
+        first_name: safeStr(firstName).trim(),
+        last_name: safeStr(lastName).trim(),
         athlete_name: fullName,
+
         sport_id: selectedSportId,
         grad_year: Number(gradYear),
         primary_position_id: primaryPositionId,
 
-        // ✅ Requested schema extensions (backward compatible)
-        first_name: safeStr(firstName).trim(),
-        last_name: safeStr(lastName).trim(),
         height_ft: anyHeight ? Number(heightFt) : null,
         height_in: anyHeight ? Number(heightIn) : null,
         weight_lbs: wNum,
 
-        // Compatibility / legacy helpers (safe to ignore if schema disallows)
-        primary_position_code: derivedCode || null,
+        // Optional legacy helpers (safe if schema ignores)
         height: anyHeight ? heightString : null,
         weight: wNum,
       };
 
       const payloadFallback = {
-        account_id: accountId || undefined,
+        account_id: accountId,
         athlete_name: fullName,
         sport_id: selectedSportId,
         grad_year: Number(gradYear),
         primary_position_id: primaryPositionId,
       };
 
-      await upsertAthleteProfile({
-        athleteId,
-        payloadFull,
-        payloadFallback,
-      });
+      await upsertAthleteProfile({ athleteId, payloadFull, payloadFallback });
 
       nav(ROUTES.Workspace);
     } catch (e) {
@@ -386,6 +361,8 @@ export default function Profile() {
   }
 
   if (loading) return <div className="min-h-screen bg-slate-50" />;
+
+  const saveDisabled = saving || !accountId;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
@@ -402,6 +379,12 @@ export default function Profile() {
               </div>
             </div>
           </div>
+
+          {!accountId ? (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              We can’t detect your account yet. Use “Re-login” below, then come back and save your profile.
+            </div>
+          ) : null}
 
           {err ? (
             <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
@@ -441,26 +424,17 @@ export default function Profile() {
                   value={selectedSportId}
                   onChange={(e) => {
                     setSelectedSportId(e.target.value);
-                    // reset position selection when sport changes
                     setPrimaryPositionId("");
-                    setPrimaryPositionCode("");
                   }}
                 >
-                  <option value="">{footballSportId ? "Select…" : "Resolving Football sport…"}</option>
-                  {/* Prefer showing Football first if present */}
+                  <option value="">{footballSportId ? "Select…" : "Loading…"}</option>
                   {sports.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                     </option>
                   ))}
-                  {/* If sports list failed to load, at least let Football be selectable */}
-                  {!sports.length && footballSportId ? (
-                    <option value={footballSportId}>Football</option>
-                  ) : null}
+                  {!sports.length && footballSportId ? <option value={footballSportId}>Football</option> : null}
                 </select>
-                <div className="mt-1 text-[11px] text-slate-500">
-                  {selectedSportId ? "Selected ✔" : footballSportId ? "Default is Football (select if needed)" : "Loading…"}
-                </div>
               </div>
 
               <div>
@@ -480,19 +454,13 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Primary position (from Position entity, filtered by sport) */}
+            {/* Primary position */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Primary position</label>
               <select
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
                 value={primaryPositionId}
-                onChange={(e) => {
-                  const newId = e.target.value;
-                  setPrimaryPositionId(newId);
-
-                  const hit = positions.find((p) => p.id === newId) || null;
-                  setPrimaryPositionCode(hit?.code ? String(hit.code) : "");
-                }}
+                onChange={(e) => setPrimaryPositionId(e.target.value)}
                 disabled={!selectedSportId}
               >
                 <option value="">{selectedSportId ? "Select…" : "Select sport first…"}</option>
@@ -505,25 +473,18 @@ export default function Profile() {
                   );
                 })}
               </select>
-
               <div className="mt-1 text-[11px] text-slate-500">
-                {selectedSportId ? (
-                  positions.length ? (
-                    primaryPositionId ? (
-                      "Position selected ✔"
-                    ) : (
-                      "Select a position"
-                    )
-                  ) : (
-                    "No positions found for this sport (seed Position rows)."
-                  )
-                ) : (
-                  "Select a sport"
-                )}
+                {selectedSportId
+                  ? positions.length
+                    ? primaryPositionId
+                      ? "Position selected ✔"
+                      : "Select a position"
+                    : "No positions found for this sport (use AdminImport → Seed Positions)."
+                  : "Select a sport"}
               </div>
             </div>
 
-            {/* Height (feet/inches) */}
+            {/* Height */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Height</label>
               <div className="grid grid-cols-2 gap-3">
@@ -574,30 +535,40 @@ export default function Profile() {
               <div className="mt-1 text-xs text-slate-500">Optional</div>
             </div>
 
-            {/* Hidden / FYI */}
+            {/* Debug (keep lightweight) */}
             <div className="text-[11px] text-slate-500">
               <div>
-                <b>sport_id:</b> {selectedSportId || "—"}{" "}
-                {footballSportId && selectedSportId === footballSportId ? "(Football)" : ""}
+                <b>account_id:</b> {accountId || "—"}
+              </div>
+              <div>
+                <b>sport_id:</b> {selectedSportId || "—"}
               </div>
               <div>
                 <b>primary_position_id:</b> {primaryPositionId || "—"}
-              </div>
-              <div>
-                <b>primary_position_code:</b> {primaryPositionCode || "—"}
               </div>
             </div>
           </div>
 
           {/* Actions */}
           <div className="mt-6 flex flex-col sm:flex-row gap-2">
-            <Button className="btn-brand sm:flex-1" onClick={handleSave} disabled={saving}>
+            <Button className="btn-brand sm:flex-1" onClick={handleSave} disabled={saveDisabled}>
               {saving ? "Saving…" : "Save"}
             </Button>
 
-            <Button variant="outline" className="sm:flex-1" onClick={() => nav(ROUTES.Workspace)} disabled={saving}>
-              Back to Workspace
-            </Button>
+            {!accountId ? (
+              <Button
+                variant="outline"
+                className="sm:flex-1"
+                onClick={() => nav(`${ROUTES.Home}?signin=1&next=/Profile`)}
+                disabled={saving}
+              >
+                Re-login
+              </Button>
+            ) : (
+              <Button variant="outline" className="sm:flex-1" onClick={() => nav(ROUTES.Workspace)} disabled={saving}>
+                Back to Workspace
+              </Button>
+            )}
           </div>
         </Card>
 
