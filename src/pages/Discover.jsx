@@ -112,6 +112,27 @@ function trackEvent(payload) {
   } catch {}
 }
 
+/* -------------------------
+   Sport helpers (Active/Inactive)
+   NOTE: Sport schema may vary; we best-effort read a flag.
+------------------------- */
+function readActiveFlag(row) {
+  if (typeof row?.active === "boolean") return row.active;
+  if (typeof row?.is_active === "boolean") return row.is_active;
+  if (typeof row?.isActive === "boolean") return row.isActive;
+
+  const st = String(row?.status || "").toLowerCase().trim();
+  if (st === "active") return true;
+  if (st === "inactive" || st === "in_active" || st === "in active") return false;
+
+  // if no flag exists, treat as active (backward compatible)
+  return true;
+}
+
+function sportNameFromRow(r) {
+  return String(r?.sport_name || r?.name || r?.sportName || "").trim();
+}
+
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
@@ -185,6 +206,55 @@ export default function Discover() {
     nav
   ]);
 
+  /* -------------------------
+     Sports index (active-only visibility + name lookup)
+     - hides inactive sports completely from Discover results
+     - also provides consistent sport name for CampCard
+  ------------------------- */
+  const [sportIndex, setSportIndex] = useState({
+    loaded: false,
+    activeIds: new Set(),
+    nameById: new Map()
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
+      if (!SportEntity?.filter) {
+        setSportIndex((prev) => ({ ...prev, loaded: true }));
+        return;
+      }
+
+      try {
+        const rows = asArray(await SportEntity.filter({}));
+        if (cancelled) return;
+
+        const activeIds = new Set();
+        const nameById = new Map();
+
+        for (const r of rows) {
+          const id = r?.id ? String(r.id) : "";
+          if (!id) continue;
+
+          const name = sportNameFromRow(r);
+          if (name) nameById.set(id, name);
+
+          if (readActiveFlag(r) === true) activeIds.add(id);
+        }
+
+        setSportIndex({ loaded: true, activeIds, nameById });
+      } catch {
+        setSportIndex((prev) => ({ ...prev, loaded: true }));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [rawCamps, setRawCamps] = useState([]);
   const [loadingCamps, setLoadingCamps] = useState(true);
   const [campErr, setCampErr] = useState("");
@@ -256,16 +326,28 @@ export default function Discover() {
     };
   }, [season?.isLoading, seasonYear]);
 
+  // Apply filters + ALSO hide inactive sports completely (if we have the index)
   const rows = useMemo(() => {
     const src = asArray(rawCamps);
+
+    // If we haven’t loaded the sport index yet, don’t block camps (avoid “flash empty”).
+    // Once loaded, we will hide camps tied to inactive sports.
+    const hasSportIndex = !!sportIndex?.loaded && sportIndex?.activeIds instanceof Set;
+
     return src.filter((r) => {
+      if (hasSportIndex) {
+        const sid = r?.sport_id != null ? String(r.sport_id) : "";
+        // If a camp has a sport_id and that sport is inactive, hide it completely.
+        if (sid && !sportIndex.activeIds.has(sid)) return false;
+      }
+
       if (!matchesDivision(r, nf.divisions)) return false;
       if (!matchesSport(r, nf.sports)) return false;
       if (!matchesPositions(r, nf.positions)) return false;
       if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
       return true;
     });
-  }, [rawCamps, nf]);
+  }, [rawCamps, nf, sportIndex]);
 
   const loading = season?.isLoading || identityLoading || loadingCamps;
 
@@ -364,12 +446,20 @@ export default function Discover() {
             state: r?.state ?? null
           };
 
+          const resolvedSportName =
+            (sportId && sportIndex?.nameById?.get?.(sportId)) ||
+            r?.sport_name ||
+            "Sport";
+
           const sport = {
             id: sportId,
-            name: r?.sport_name ?? "Football"
+            name: resolvedSportName
           };
 
-          const posObjs = asArray(r?.position_ids).map((pid) => ({ id: String(pid), name: String(pid) }));
+          const posObjs = asArray(r?.position_ids).map((pid) => ({
+            id: String(pid),
+            name: String(pid)
+          }));
 
           return (
             <CampCard
@@ -448,6 +538,8 @@ export default function Discover() {
             <span><b>forceDemo(session):</b> {String(!!forceDemoSession)}</span>
             <span><b>Camp(year/all):</b> {counts.camp_year}/{counts.camp_all}</span>
             <span><b>fallbackUsed:</b> {String(!!counts.fallback_used)}</span>
+            <span><b>sportIndexLoaded:</b> {String(!!sportIndex?.loaded)}</span>
+            <span><b>activeSports:</b> {String(sportIndex?.activeIds?.size ?? 0)}</span>
           </div>
         </div>
 
