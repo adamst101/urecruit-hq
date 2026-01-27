@@ -50,11 +50,10 @@ function readActiveFlag(row) {
   if (st === "active") return true;
   if (st === "inactive" || st === "in_active" || st === "in active") return false;
 
-  // If no field exists on the entity, treat as active for backwards compatibility
   return true;
 }
 
-// ✅ Your schema: Position.sport_id
+// Best-effort position->sport resolver
 function readPositionSportId(p) {
   const direct = p?.sport_id ?? p?.sportId ?? null;
   if (direct != null) return String(direct);
@@ -75,19 +74,18 @@ export default function FilterSheet({
   onApply,
   onClear,
 
-  // ✅ NEW: when provided, we lock the sport selection to this id
+  // ✅ NEW: if set, sport is forced and dropdown is hidden (paid mode)
   lockSportId = "",
 }) {
   const safeFilters = filters || {};
-  const setFilters = (next) => onFilterChange?.(next);
+  const lockedSportId = String(lockSportId || "").trim();
+  const isSportLocked = !!lockedSportId;
 
-  // ✅ Sport ID resolution:
-  // - lockSportId wins
-  // - Calendar uses filters.sport (string)
-  // - Discover uses filters.sports (array)
+  // ✅ Resolve selected sport id
+  // - If locked: ALWAYS use lockSportId
+  // - Else: support Calendar (filters.sport) and Discover (filters.sports array)
   const selectedSportId = useMemo(() => {
-    const locked = String(lockSportId || "").trim();
-    if (locked) return locked;
+    if (isSportLocked) return lockedSportId;
 
     const legacy = String(safeFilters.sport ?? "").trim();
     if (legacy) return legacy;
@@ -95,7 +93,7 @@ export default function FilterSheet({
     const arr = asArray(safeFilters.sports);
     const first = arr[0] != null ? String(arr[0]).trim() : "";
     return first || "";
-  }, [lockSportId, safeFilters.sport, safeFilters.sports]);
+  }, [isSportLocked, lockedSportId, safeFilters.sport, safeFilters.sports]);
 
   const sportsList = useMemo(() => {
     const list = asArray(sports)
@@ -110,13 +108,7 @@ export default function FilterSheet({
     return list;
   }, [sports]);
 
-  const selectedSportName = useMemo(() => {
-    if (!selectedSportId) return "";
-    const hit = sportsList.find((s) => String(s.id) === String(selectedSportId));
-    return hit?.sport_name || "";
-  }, [sportsList, selectedSportId]);
-
-  // ✅ Positions list scoped to selected sport id
+  // ✅ Only show positions for the selected sport
   const positionsList = useMemo(() => {
     if (!selectedSportId) return [];
 
@@ -133,32 +125,35 @@ export default function FilterSheet({
   }, [positions, selectedSportId]);
 
   const selectedDivisions = asArray(safeFilters.divisions);
-  const selectedPositions = asArray(safeFilters.positions).map(String);
+  const selectedPositions = asArray(safeFilters.positions);
 
   const selectedState = safeFilters.state ? String(safeFilters.state) : "all";
 
   const startDate = sanitizeDateStr(safeFilters.startDate);
   const endDate = sanitizeDateStr(safeFilters.endDate);
 
-  // ✅ Enforce locked sport into BOTH keys (sport + sports[]) and clear positions if mismatch
+  const setFilters = (next) => onFilterChange?.(next);
+
+  // ✅ If sport is locked, force filters to match it (and clear positions if mismatch)
   useEffect(() => {
-    const locked = String(lockSportId || "").trim();
-    if (!locked) return;
+    if (!isSportLocked) return;
 
-    const legacy = String(safeFilters.sport ?? "").trim();
-    const arr = asArray(safeFilters.sports).map(String);
-    const okLegacy = legacy === locked;
-    const okArr = arr.length === 1 && arr[0] === locked;
+    const currentSport = String(safeFilters.sport ?? "").trim();
+    const currentSportsArr = asArray(safeFilters.sports).map(String);
+    const already =
+      currentSport === lockedSportId &&
+      currentSportsArr.length === 1 &&
+      currentSportsArr[0] === lockedSportId;
 
-    if (!okLegacy || !okArr) {
-      setFilters({ ...safeFilters, sport: locked, sports: [locked], positions: [] });
+    if (!already) {
+      setFilters({ ...safeFilters, sport: lockedSportId, sports: [lockedSportId], positions: [] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lockSportId]);
+  }, [isSportLocked, lockedSportId]);
 
-  // ✅ If a previously-selected sport becomes inactive/missing, clear it (when not locked)
+  // ✅ If selected sport becomes inactive/missing (only in non-locked mode), clear it
   useEffect(() => {
-    if (lockSportId) return;
+    if (isSportLocked) return;
     if (!selectedSportId) return;
 
     const exists = sportsList.some((s) => String(s.id) === String(selectedSportId));
@@ -167,20 +162,6 @@ export default function FilterSheet({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sportsList]);
-
-  // ✅ If selected positions don’t belong to this sport anymore, drop them
-  useEffect(() => {
-    if (!selectedSportId) return;
-    if (!selectedPositions.length) return;
-
-    const allowed = new Set(positionsList.map((p) => String(p.id)));
-    const cleaned = selectedPositions.filter((pid) => allowed.has(String(pid)));
-
-    if (cleaned.length !== selectedPositions.length) {
-      setFilters({ ...safeFilters, positions: cleaned });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSportId, positionsList]);
 
   const toggleDivision = (div) => {
     const next = selectedDivisions.includes(div)
@@ -197,15 +178,12 @@ export default function FilterSheet({
     setFilters({ ...safeFilters, positions: next });
   };
 
-  // ✅ When sport changes, update BOTH keys and clear positions (sport-specific)
+  // ✅ Only used in demo (non-locked). When sport changes, update BOTH keys and clear positions.
   const onSportChange = (value) => {
-    if (lockSportId) return; // locked: ignore
-
     if (value === "all") {
       setFilters({ ...safeFilters, sport: "", sports: [], positions: [] });
       return;
     }
-
     setFilters({ ...safeFilters, sport: value, sports: [value], positions: [] });
   };
 
@@ -246,7 +224,7 @@ export default function FilterSheet({
               <div>
                 <SheetTitle className="text-left">Filters</SheetTitle>
                 <div className="text-xs text-slate-500 mt-1">
-                  Narrow camps by sport, division, state, position, and dates.
+                  Narrow camps by division, state, position, and dates.
                 </div>
               </div>
 
@@ -261,36 +239,39 @@ export default function FilterSheet({
 
         {/* Body */}
         <div className="px-5 py-5 space-y-6">
-          {/* Sport */}
-          {sportsList.length > 0 && (
+          {/* Sport (demo only) */}
+          {!isSportLocked && sportsList.length > 0 && (
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Sport</Label>
-
-              {lockSportId ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                  {selectedSportName || "Sport locked"}
-                </div>
-              ) : (
-                <Select value={selectedSportId || "all"} onValueChange={onSportChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Sports" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Sports</SelectItem>
-                    {sportsList.map((s) => (
-                      <SelectItem key={s.id} value={String(s.id)}>
-                        {s.sport_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-
+              <Select value={selectedSportId || "all"} onValueChange={onSportChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Sports" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sports</SelectItem>
+                  {sportsList.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.sport_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <div className="text-xs text-slate-500">
-                Positions are scoped to the selected sport.
+                Positions will only show after you pick a sport.
               </div>
             </div>
           )}
+
+          {/* If locked, show a tiny info row */}
+          {isSportLocked ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+              <span className="font-semibold">Sport:</span>{" "}
+              <span>{selectedSportId || "—"}</span>
+              <div className="text-xs text-slate-500 mt-1">
+                Paid workspace uses your athlete profile sport.
+              </div>
+            </div>
+          ) : null}
 
           {/* State */}
           <div className="space-y-2">
@@ -332,7 +313,7 @@ export default function FilterSheet({
             <div className="text-xs text-slate-500">Tip: Select one or more divisions.</div>
           </div>
 
-          {/* Positions */}
+          {/* Positions (scoped to selected sport) */}
           <div className="space-y-2">
             <Label className="text-sm font-semibold">Position</Label>
 
@@ -374,11 +355,7 @@ export default function FilterSheet({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs text-slate-500">Start</Label>
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => onStartDateChange(e.target.value)}
-                />
+                <Input type="date" value={startDate} onChange={(e) => onStartDateChange(e.target.value)} />
               </div>
 
               <div className="space-y-1">
@@ -393,9 +370,7 @@ export default function FilterSheet({
             </div>
 
             {startDate && endDate && endDate < startDate && (
-              <div className="text-xs text-rose-600">
-                End date can’t be earlier than start date.
-              </div>
+              <div className="text-xs text-rose-600">End date can’t be earlier than start date.</div>
             )}
           </div>
         </div>
