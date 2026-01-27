@@ -156,13 +156,15 @@ export default function Discover() {
     return isEntitled ? entitledSeason : computedDemoSeason;
   }, [requestedSeason, isEntitled, entitledSeason, computedDemoSeason]);
 
-  // ✅ Paid Discover: lock sport to athlete profile sport_id
+  // Paid Discover: lock sport to athlete profile sport_id
   const athleteSportId = useMemo(() => {
     const sid = athleteProfile?.sport_id ?? athleteProfile?.sportId ?? null;
     return sid != null ? String(sid) : "";
   }, [athleteProfile]);
 
-  // ✅ HARD ENFORCE in paid mode (reliable even with localStorage leftovers)
+  const paidMissingSport = isPaid && !!athleteId && !athleteSportId;
+
+  // HARD ENFORCE in paid mode (reliable even with localStorage leftovers)
   useEffect(() => {
     if (!isPaid) return;
     if (!athleteSportId) return;
@@ -206,7 +208,7 @@ export default function Discover() {
     nav,
   ]);
 
-  // ✅ Load picklists for filter UI (sports + positions)
+  // Load picklists for filter UI (sports + positions)
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
@@ -304,10 +306,11 @@ export default function Discover() {
   }, [season?.isLoading, seasonYear]);
 
   const rows = useMemo(() => {
+    if (isPaid && !athleteSportId) return []; // ✅ safety: never show cross-sport in paid
+
     const src = asArray(rawCamps);
 
-    // ✅ Paid: always force athlete sport.
-    // ✅ Demo: use nf.sports from dropdown.
+    // Paid: force athlete sport. Demo: use nf.sports (dropdown)
     const effectiveSports =
       isPaid && athleteSportId
         ? [athleteSportId]
@@ -368,6 +371,20 @@ export default function Discover() {
           </div>
           <div className="mt-4">
             <Button onClick={() => nav("/Profile")}>Go to Profile</Button>
+          </div>
+        </Card>
+      );
+    }
+
+    if (paidMissingSport) {
+      return (
+        <Card className="p-5 border-slate-200">
+          <div className="text-lg font-semibold text-deep-navy">Add your sport to your profile</div>
+          <div className="mt-1 text-sm text-slate-600">
+            Your paid workspace is scoped by your athlete sport. Add it once and Discover will auto-filter.
+          </div>
+          <div className="mt-4">
+            <Button onClick={() => nav("/Profile")}>Update Profile</Button>
           </div>
         </Card>
       );
@@ -487,7 +504,7 @@ export default function Discover() {
             clearFilters();
             setFilterOpen(false);
           }}
-          // ✅ Paid: hide sport dropdown + force sport from athlete profile
+          // Paid: hide sport dropdown + force sport from athlete profile (only if present)
           lockSportId={isPaid && athleteSportId ? athleteSportId : ""}
         />
       </div>
