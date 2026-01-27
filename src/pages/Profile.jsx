@@ -17,9 +17,6 @@ const ROUTES = {
   Discover: "/Discover",
 };
 
-// Positions list (as requested)
-const POSITION_CODES = ["QB", "WR", "TE", "OL", "DL", "DB", "LB", "K", "P", "LS"];
-
 // Height options
 const FEET_OPTIONS = [4, 5, 6, 7];
 const INCH_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
@@ -85,31 +82,17 @@ function parseWeight(athleteProfile) {
   return Number.isFinite(n) ? n : "";
 }
 
-/** Resolve a position_id by code for a given sport_id (Football) */
-async function resolvePositionIdByCode({ sportId, code }) {
-  const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
-  if (!PositionEntity?.filter) return null;
-
-  try {
-    const rows = await PositionEntity.filter({ sport_id: sportId });
-    const arr = Array.isArray(rows) ? rows : [];
-    const hit = arr.find((r) => String(r?.position_code || "").toUpperCase().trim() === String(code).toUpperCase().trim());
-    return hit?.id ? String(hit.id) : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * ✅ UPDATED: Resolve Football sport_id robustly (supports name / sport_name / sportName)
+ * ✅ Resolve Football sport_id robustly (supports name / sport_name / sportName)
  */
 async function resolveFootballSportId() {
   const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
   if (!SportEntity?.filter) return null;
 
   try {
-    const rows = Array.isArray(await SportEntity.filter({})) ? await SportEntity.filter({}) : [];
-    const football = rows.find((r) => {
+    const rows = await SportEntity.filter({});
+    const arr = Array.isArray(rows) ? rows : [];
+    const football = arr.find((r) => {
       const n = String(r?.name || r?.sport_name || r?.sportName || "").toLowerCase().trim();
       return n === "football" || n.includes("football");
     });
@@ -164,14 +147,21 @@ export default function Profile() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [gradYear, setGradYear] = useState("");
-  const [primaryPositionCode, setPrimaryPositionCode] = useState("");
   const [heightFt, setHeightFt] = useState("");
   const [heightIn, setHeightIn] = useState("");
   const [weight, setWeight] = useState("");
 
-  // Resolved IDs required by schema
+  // Sports / Positions (pulled from entities)
   const [footballSportId, setFootballSportId] = useState("");
+  const [selectedSportId, setSelectedSportId] = useState("");
+  const [sports, setSports] = useState([]);
+  const [positions, setPositions] = useState([]);
+
+  // Required by schema
   const [primaryPositionId, setPrimaryPositionId] = useState("");
+
+  // Optional compatibility (helpful for legacy and admin seeding)
+  const [primaryPositionCode, setPrimaryPositionCode] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -192,46 +182,120 @@ export default function Profile() {
     setHeightIn(h.heightIn === "" ? "" : String(h.heightIn));
     setWeight(parseWeight(athleteProfile) === "" ? "" : String(parseWeight(athleteProfile)));
 
-    // If an existing profile already has primary_position_id, keep it (best effort)
+    // If an existing profile already has sport_id, prefer it
+    const existingSportId = athleteProfile?.sport_id ? String(athleteProfile.sport_id) : "";
+    if (existingSportId) setSelectedSportId(existingSportId);
+
+    // If an existing profile already has primary_position_id, keep it
     const existingPosId = athleteProfile?.primary_position_id ? String(athleteProfile.primary_position_id) : "";
     if (existingPosId) setPrimaryPositionId(existingPosId);
+
+    // Best-effort code (legacy / compatibility)
+    const existingPosCode = safeStr(athleteProfile?.primary_position_code || athleteProfile?.primaryPositionCode).trim();
+    if (existingPosCode) setPrimaryPositionCode(existingPosCode);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId]);
 
-  // Resolve Football sport_id on load (needed because AthleteProfile requires sport_id)
+  // Resolve Football sport_id on load (schema requires sport_id)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const sid = await resolveFootballSportId();
       if (cancelled) return;
       setFootballSportId(sid || "");
+
+      // If nothing selected yet, default to Football as requested
+      setSelectedSportId((prev) => prev || sid || "");
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Whenever footballSportId + primaryPositionCode changes, resolve primary_position_id
+  // Load sports list (for future-proofing / admin-friendly UX)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
+      if (!SportEntity?.filter) return;
+
+      try {
+        const rows = await SportEntity.filter({});
+        if (cancelled) return;
+
+        const arr = Array.isArray(rows) ? rows : [];
+        const normalized = arr
+          .map((r) => ({
+            id: r?.id ? String(r.id) : "",
+            name: String(r?.name || r?.sport_name || r?.sportName || "").trim(),
+          }))
+          .filter((r) => r.id && r.name);
+
+        // Stable alpha sort for UX
+        normalized.sort((a, b) => a.name.localeCompare(b.name));
+        setSports(normalized);
+      } catch {
+        // no-op
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load positions whenever selectedSportId changes
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      if (!footballSportId || !primaryPositionCode) return;
+      const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
+      if (!PositionEntity?.filter) {
+        setPositions([]);
+        return;
+      }
+      if (!selectedSportId) {
+        setPositions([]);
+        return;
+      }
 
-      const pid = await resolvePositionIdByCode({
-        sportId: footballSportId,
-        code: primaryPositionCode,
-      });
+      try {
+        const rows = await PositionEntity.filter({ sport_id: selectedSportId });
+        if (cancelled) return;
 
-      if (cancelled) return;
-      setPrimaryPositionId(pid || "");
+        const arr = Array.isArray(rows) ? rows : [];
+        const normalized = arr
+          .map((r) => ({
+            id: r?.id ? String(r.id) : "",
+            code: String(r?.position_code || "").trim(),
+            name: String(r?.position_name || "").trim(),
+          }))
+          .filter((p) => p.id);
+
+        // Sort by code then name
+        normalized.sort((a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || ""));
+        setPositions(normalized);
+
+        // If we have a position_id but no code yet, derive it
+        if (primaryPositionId && !primaryPositionCode) {
+          const hit = normalized.find((p) => p.id === primaryPositionId);
+          if (hit?.code) setPrimaryPositionCode(hit.code);
+        }
+
+        // If we have a code but no id (legacy), try to map it
+        if (!primaryPositionId && primaryPositionCode) {
+          const hit = normalized.find((p) => String(p.code).toUpperCase() === String(primaryPositionCode).toUpperCase());
+          if (hit?.id) setPrimaryPositionId(hit.id);
+        }
+      } catch {
+        setPositions([]);
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [footballSportId, primaryPositionCode]);
+  }, [selectedSportId, primaryPositionId, primaryPositionCode]);
 
   const fullName = useMemo(() => {
     return `${safeStr(firstName).trim()} ${safeStr(lastName).trim()}`.trim();
@@ -251,13 +315,9 @@ export default function Profile() {
     if (!safeStr(firstName).trim()) return setErr("First name is required.");
     if (!safeStr(lastName).trim()) return setErr("Last name is required.");
     if (!Number.isFinite(Number(gradYear))) return setErr("Grad year is required.");
-    if (!primaryPositionCode) return setErr("Primary position is required.");
-    if (!footballSportId) return setErr("Could not resolve Football sport_id. Check your Sport rows.");
 
-    // primary_position_id required by schema
-    if (!primaryPositionId) {
-      return setErr("Could not resolve primary_position_id. Seed Position rows for Football (QB/WR/TE/OL/DL/DB/LB/K/P/LS).");
-    }
+    if (!selectedSportId) return setErr("Sport is required.");
+    if (!primaryPositionId) return setErr("Primary position is required.");
 
     // Height validation (optional but must be complete if started)
     const anyHeight = safeStr(heightFt).trim() || safeStr(heightIn).trim();
@@ -273,21 +333,32 @@ export default function Profile() {
     const wNum = safeStr(weight).trim() ? Number(weight) : null;
     if (wNum != null && !Number.isFinite(wNum)) return setErr("Weight is invalid.");
 
+    // Derive position code for compatibility (if available)
+    const posHit = positions.find((p) => p.id === primaryPositionId) || null;
+    const derivedCode = (posHit?.code || primaryPositionCode || "").trim();
+
     setSaving(true);
 
     try {
-      // NOTE: AthleteProfile schema expects:
+      // NOTE: AthleteProfile schema expects required:
       // account_id, athlete_name, sport_id, grad_year, primary_position_id
       // We store extra values into best-effort optional fields; if schema rejects, fallback keeps it safe.
       const payloadFull = {
         account_id: accountId || undefined,
         athlete_name: fullName,
-        sport_id: footballSportId,
+        sport_id: selectedSportId,
         grad_year: Number(gradYear),
         primary_position_id: primaryPositionId,
 
-        // Optional extras (will save only if your schema allows extra fields)
-        primary_position_code: primaryPositionCode,
+        // ✅ Requested schema extensions (backward compatible)
+        first_name: safeStr(firstName).trim(),
+        last_name: safeStr(lastName).trim(),
+        height_ft: anyHeight ? Number(heightFt) : null,
+        height_in: anyHeight ? Number(heightIn) : null,
+        weight_lbs: wNum,
+
+        // Compatibility / legacy helpers (safe to ignore if schema disallows)
+        primary_position_code: derivedCode || null,
         height: anyHeight ? heightString : null,
         weight: wNum,
       };
@@ -295,7 +366,7 @@ export default function Profile() {
       const payloadFallback = {
         account_id: accountId || undefined,
         athlete_name: fullName,
-        sport_id: footballSportId,
+        sport_id: selectedSportId,
         grad_year: Number(gradYear),
         primary_position_id: primaryPositionId,
       };
@@ -361,8 +432,37 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Grad year / Position */}
+            {/* Sport / Grad year */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Sport</label>
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                  value={selectedSportId}
+                  onChange={(e) => {
+                    setSelectedSportId(e.target.value);
+                    // reset position selection when sport changes
+                    setPrimaryPositionId("");
+                    setPrimaryPositionCode("");
+                  }}
+                >
+                  <option value="">{footballSportId ? "Select…" : "Resolving Football sport…"}</option>
+                  {/* Prefer showing Football first if present */}
+                  {sports.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                  {/* If sports list failed to load, at least let Football be selectable */}
+                  {!sports.length && footballSportId ? (
+                    <option value={footballSportId}>Football</option>
+                  ) : null}
+                </select>
+                <div className="mt-1 text-[11px] text-slate-500">
+                  {selectedSportId ? "Selected ✔" : footballSportId ? "Default is Football (select if needed)" : "Loading…"}
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Grad year</label>
                 <select
@@ -378,30 +478,48 @@ export default function Profile() {
                   ))}
                 </select>
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Primary position</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                  value={primaryPositionCode}
-                  onChange={(e) => setPrimaryPositionCode(e.target.value)}
-                >
-                  <option value="">Select…</option>
-                  {POSITION_CODES.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
+            {/* Primary position (from Position entity, filtered by sport) */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Primary position</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                value={primaryPositionId}
+                onChange={(e) => {
+                  const newId = e.target.value;
+                  setPrimaryPositionId(newId);
+
+                  const hit = positions.find((p) => p.id === newId) || null;
+                  setPrimaryPositionCode(hit?.code ? String(hit.code) : "");
+                }}
+                disabled={!selectedSportId}
+              >
+                <option value="">{selectedSportId ? "Select…" : "Select sport first…"}</option>
+                {positions.map((p) => {
+                  const label = p.code && p.name ? `${p.code} — ${p.name}` : p.code || p.name || p.id;
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {label}
                     </option>
-                  ))}
-                </select>
-                <div className="mt-1 text-[11px] text-slate-500">
-                  {footballSportId
-                    ? primaryPositionCode
-                      ? primaryPositionId
-                        ? "Position mapped ✔"
-                        : "Position code selected — waiting on Position rows for Football"
-                      : "Select a position"
-                    : "Resolving Football sport…"}
-                </div>
+                  );
+                })}
+              </select>
+
+              <div className="mt-1 text-[11px] text-slate-500">
+                {selectedSportId ? (
+                  positions.length ? (
+                    primaryPositionId ? (
+                      "Position selected ✔"
+                    ) : (
+                      "Select a position"
+                    )
+                  ) : (
+                    "No positions found for this sport (seed Position rows)."
+                  )
+                ) : (
+                  "Select a sport"
+                )}
               </div>
             </div>
 
@@ -458,8 +576,16 @@ export default function Profile() {
 
             {/* Hidden / FYI */}
             <div className="text-[11px] text-slate-500">
-              <div><b>sport_id (Football):</b> {footballSportId || "—"}</div>
-              <div><b>primary_position_id:</b> {primaryPositionId || "—"}</div>
+              <div>
+                <b>sport_id:</b> {selectedSportId || "—"}{" "}
+                {footballSportId && selectedSportId === footballSportId ? "(Football)" : ""}
+              </div>
+              <div>
+                <b>primary_position_id:</b> {primaryPositionId || "—"}
+              </div>
+              <div>
+                <b>primary_position_code:</b> {primaryPositionCode || "—"}
+              </div>
             </div>
           </div>
 
