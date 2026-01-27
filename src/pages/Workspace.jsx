@@ -11,6 +11,7 @@ import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { clearDemoMode } from "../components/hooks/demoMode.jsx";
 
 // ---- routes (no createPageUrl dependency) ----
 const ROUTES = {
@@ -101,11 +102,21 @@ export default function Workspace() {
     if (loggingOut) return;
     setLoggingOut(true);
 
-    // ✅ Clear demo stickiness (current + legacy keys) so future tests are clean
-    try { sessionStorage.removeItem("demoMode_v1"); } catch {}
-    try { sessionStorage.removeItem("demo_mode_v1"); } catch {} // legacy
-    try { sessionStorage.removeItem("demo_year_v1"); } catch {} // legacy
-    try { sessionStorage.removeItem("post_login_next"); } catch {}
+    // ✅ Clear demo stickiness (preferred: shared helper) + legacy keys
+    try {
+      clearDemoMode(); // clears demoMode_v1 (current)
+    } catch {}
+
+    // Legacy cleanup (safe to keep for backward compatibility)
+    try {
+      sessionStorage.removeItem("demo_mode_v1");
+    } catch {}
+    try {
+      sessionStorage.removeItem("demo_year_v1");
+    } catch {}
+    try {
+      sessionStorage.removeItem("post_login_next");
+    } catch {}
 
     await safeLogout();
 
@@ -240,7 +251,11 @@ export default function Workspace() {
                   Promote CampDemo → Camp and run ingestion utilities.
                 </div>
                 <div className="mt-4">
-                  <Button variant="outline" className="w-full" onClick={() => nav(ROUTES.AdminImport)}>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => nav(ROUTES.AdminImport)}
+                  >
                     Go to Admin Import
                   </Button>
                 </div>
