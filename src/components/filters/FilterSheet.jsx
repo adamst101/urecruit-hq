@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import {
   Sheet,
   SheetContent,
@@ -39,6 +39,20 @@ function sanitizeDateStr(v) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
 }
 
+// Best-effort active flag reader (schema-safe)
+function readActiveFlag(row) {
+  if (typeof row?.active === "boolean") return row.active;
+  if (typeof row?.is_active === "boolean") return row.is_active;
+  if (typeof row?.isActive === "boolean") return row.isActive;
+
+  const st = String(row?.status || "").toLowerCase().trim();
+  if (st === "active") return true;
+  if (st === "inactive" || st === "in_active" || st === "in active") return false;
+
+  // If no field exists on the entity, treat as active for backwards compatibility
+  return true;
+}
+
 export default function FilterSheet({
   isOpen,
   onClose,
@@ -53,9 +67,10 @@ export default function FilterSheet({
 
   const sportsList = useMemo(() => {
     const list = asArray(sports)
+      .filter((s) => readActiveFlag(s) === true) // ✅ hide inactive completely
       .map((s) => ({
         id: normId(s),
-        sport_name: s?.sport_name || s?.name || "Sport",
+        sport_name: s?.sport_name || s?.name || s?.sportName || "Sport",
       }))
       .filter((s) => s.id);
 
@@ -85,6 +100,16 @@ export default function FilterSheet({
   const endDate = sanitizeDateStr(safeFilters.endDate);
 
   const setFilters = (next) => onFilterChange?.(next);
+
+  // ✅ If a previously-selected sport becomes inactive/missing, clear it.
+  useEffect(() => {
+    if (!selectedSport || selectedSport === "all") return;
+    const exists = sportsList.some((s) => String(s.id) === String(selectedSport));
+    if (!exists) {
+      setFilters({ ...safeFilters, sport: "" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sportsList]);
 
   const toggleDivision = (div) => {
     const next = selectedDivisions.includes(div)
@@ -147,11 +172,7 @@ export default function FilterSheet({
               </div>
 
               {hasActive ? (
-                <Button
-                  variant="outline"
-                  onClick={onClear}
-                  className="shrink-0"
-                >
+                <Button variant="outline" onClick={onClear} className="shrink-0">
                   Clear
                 </Button>
               ) : null}
@@ -165,14 +186,14 @@ export default function FilterSheet({
           {sportsList.length > 1 && (
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Sport</Label>
-              <Select value={selectedSport} onValueChange={onSportChange}>
+              <Select value={selectedSport || "all"} onValueChange={onSportChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Sports" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Sports</SelectItem>
                   {sportsList.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
+                    <SelectItem key={s.id} value={String(s.id)}>
                       {s.sport_name}
                     </SelectItem>
                   ))}
@@ -218,9 +239,7 @@ export default function FilterSheet({
                 ))}
               </div>
             </div>
-            <div className="text-xs text-slate-500">
-              Tip: Select one or more divisions.
-            </div>
+            <div className="text-xs text-slate-500">Tip: Select one or more divisions.</div>
           </div>
 
           {/* Positions */}
@@ -243,9 +262,7 @@ export default function FilterSheet({
                   ))}
                 </div>
               </div>
-              <div className="text-xs text-slate-500">
-                Tip: Choose multiple if needed.
-              </div>
+              <div className="text-xs text-slate-500">Tip: Choose multiple if needed.</div>
             </div>
           )}
 
@@ -288,7 +305,6 @@ export default function FilterSheet({
             Cancel
           </Button>
 
-          {/* IMPORTANT: no custom class that could hide text */}
           <Button onClick={onApply} className="flex-1">
             Apply Filters
           </Button>
