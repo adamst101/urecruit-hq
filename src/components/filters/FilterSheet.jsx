@@ -74,14 +74,14 @@ export default function FilterSheet({
   onApply,
   onClear,
 
-  // ✅ NEW: if set, sport is forced and dropdown is hidden (paid mode)
+  // If set, sport is forced and dropdown is hidden (paid mode)
   lockSportId = "",
 }) {
   const safeFilters = filters || {};
   const lockedSportId = String(lockSportId || "").trim();
   const isSportLocked = !!lockedSportId;
 
-  // ✅ Resolve selected sport id
+  // Resolve selected sport id:
   // - If locked: ALWAYS use lockSportId
   // - Else: support Calendar (filters.sport) and Discover (filters.sports array)
   const selectedSportId = useMemo(() => {
@@ -108,7 +108,14 @@ export default function FilterSheet({
     return list;
   }, [sports]);
 
-  // ✅ Only show positions for the selected sport
+  // Friendly display name for locked info row
+  const selectedSportName = useMemo(() => {
+    if (!selectedSportId) return "";
+    const found = sportsList.find((s) => String(s.id) === String(selectedSportId));
+    return found?.sport_name || "";
+  }, [sportsList, selectedSportId]);
+
+  // Only show positions for the selected sport
   const positionsList = useMemo(() => {
     if (!selectedSportId) return [];
 
@@ -134,7 +141,7 @@ export default function FilterSheet({
 
   const setFilters = (next) => onFilterChange?.(next);
 
-  // ✅ If sport is locked, force filters to match it (and clear positions if mismatch)
+  // If sport is locked, force filters to match it (and clear positions if mismatch)
   useEffect(() => {
     if (!isSportLocked) return;
 
@@ -151,7 +158,7 @@ export default function FilterSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSportLocked, lockedSportId]);
 
-  // ✅ If selected sport becomes inactive/missing (only in non-locked mode), clear it
+  // If selected sport becomes inactive/missing (only in non-locked mode), clear it
   useEffect(() => {
     if (isSportLocked) return;
     if (!selectedSportId) return;
@@ -162,6 +169,14 @@ export default function FilterSheet({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sportsList]);
+
+  // If sport is cleared (All Sports), clear any selected positions (sport-scoped)
+  useEffect(() => {
+    if (selectedSportId) return;
+    if (selectedPositions.length === 0) return;
+    setFilters({ ...safeFilters, positions: [] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSportId]);
 
   const toggleDivision = (div) => {
     const next = selectedDivisions.includes(div)
@@ -178,7 +193,7 @@ export default function FilterSheet({
     setFilters({ ...safeFilters, positions: next });
   };
 
-  // ✅ Only used in demo (non-locked). When sport changes, update BOTH keys and clear positions.
+  // Demo (non-locked): when sport changes, update BOTH keys and clear positions.
   const onSportChange = (value) => {
     if (value === "all") {
       setFilters({ ...safeFilters, sport: "", sports: [], positions: [] });
@@ -262,11 +277,11 @@ export default function FilterSheet({
             </div>
           )}
 
-          {/* If locked, show a tiny info row */}
+          {/* Locked sport info (paid) */}
           {isSportLocked ? (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
               <span className="font-semibold">Sport:</span>{" "}
-              <span>{selectedSportId || "—"}</span>
+              <span>{selectedSportName || "—"}</span>
               <div className="text-xs text-slate-500 mt-1">
                 Paid workspace uses your athlete profile sport.
               </div>
@@ -355,7 +370,11 @@ export default function FilterSheet({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs text-slate-500">Start</Label>
-                <Input type="date" value={startDate} onChange={(e) => onStartDateChange(e.target.value)} />
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => onStartDateChange(e.target.value)}
+                />
               </div>
 
               <div className="space-y-1">
