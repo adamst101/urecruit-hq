@@ -23,7 +23,7 @@ import {
   matchesSport,
   matchesPositions,
   matchesState,
-  matchesDateRange
+  matchesDateRange,
 } from "../components/filters/filterUtils.jsx";
 
 import CampCard from "../components/camps/CampCard.jsx";
@@ -50,7 +50,7 @@ function getUrlParams(search) {
     return {
       mode: mode ? String(mode).toLowerCase() : null,
       requestedSeason: safeNumber(season),
-      src: src ? String(src) : null
+      src: src ? String(src) : null,
     };
   } catch {
     return { mode: null, requestedSeason: null, src: null };
@@ -93,6 +93,7 @@ function footballSeasonYearForDate(d = new Date()) {
 function computeSeasonYearFootballFromStart(startDate) {
   const iso = toISODate(startDate);
   if (!iso) return null;
+
   const d = new Date(`${iso}T00:00:00.000Z`);
   if (Number.isNaN(d.getTime())) return null;
 
@@ -156,6 +157,7 @@ export default function Discover() {
     return isEntitled ? entitledSeason : computedDemoSeason;
   }, [requestedSeason, isEntitled, entitledSeason, computedDemoSeason]);
 
+  // Season-aware gate only if a season is explicitly requested
   useEffect(() => {
     if (season?.isLoading) return;
     if (!requestedSeason) return;
@@ -182,7 +184,7 @@ export default function Discover() {
     season?.entitlement,
     requestedSeason,
     nextParam,
-    nav
+    nav,
   ]);
 
   const [rawCamps, setRawCamps] = useState([]);
@@ -192,9 +194,50 @@ export default function Discover() {
   const [counts, setCounts] = useState({
     camp_year: 0,
     camp_all: 0,
-    fallback_used: false
+    fallback_used: false,
   });
 
+  // ---- filter picklists (sports + positions) ----
+  const [sports, setSports] = useState([]);
+  const [positions, setPositions] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      // Sports
+      try {
+        const rows = await base44.entities.Sport?.list?.();
+        if (mounted) setSports(Array.isArray(rows) ? rows : []);
+      } catch {
+        try {
+          const rows2 = await base44.entities.Sport?.filter?.({});
+          if (mounted) setSports(Array.isArray(rows2) ? rows2 : []);
+        } catch {
+          if (mounted) setSports([]);
+        }
+      }
+
+      // Positions
+      try {
+        const rows = await base44.entities.Position?.list?.();
+        if (mounted) setPositions(Array.isArray(rows) ? rows : []);
+      } catch {
+        try {
+          const rows2 = await base44.entities.Position?.filter?.({});
+          if (mounted) setPositions(Array.isArray(rows2) ? rows2 : []);
+        } catch {
+          if (mounted) setPositions([]);
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // ---- load camps (season-safe with fallback) ----
   useEffect(() => {
     let cancelled = false;
 
@@ -256,13 +299,14 @@ export default function Discover() {
     };
   }, [season?.isLoading, seasonYear]);
 
+  // ---- apply filters (source-agnostic) ----
   const rows = useMemo(() => {
     const src = asArray(rawCamps);
     return src.filter((r) => {
       if (!matchesDivision(r, nf.divisions)) return false;
       if (!matchesSport(r, nf.sports)) return false;
       if (!matchesPositions(r, nf.positions)) return false;
-      if (!matchesState(r, nf.state)) return false; // ✅ state filter now works
+      if (!matchesState(r, nf.state)) return false;
       if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
       return true;
     });
@@ -285,7 +329,7 @@ export default function Discover() {
       entitled: isEntitled ? 1 : 0,
       requested_season: requestedSeason || null,
       force_demo_url: forceDemoUrl ? 1 : 0,
-      force_demo_session: forceDemoSession ? 1 : 0
+      force_demo_session: forceDemoSession ? 1 : 0,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seasonYear]);
@@ -350,22 +394,25 @@ export default function Discover() {
             price: r?.price ?? null,
             url: r?.link_url ?? r?.source_url ?? null,
             link_url: r?.link_url ?? null,
-            notes: r?.notes ?? null
+            notes: r?.notes ?? null,
           };
 
           const school = {
             id: schoolId,
             name: r?.school_name ?? "Unknown School",
             city: r?.city ?? null,
-            state: r?.state ?? null
+            state: r?.state ?? null,
           };
 
           const sport = {
             id: sportId,
-            name: r?.sport_name ?? "Sport"
+            name: r?.sport_name ?? "Sport",
           };
 
-          const posObjs = asArray(r?.position_ids).map((pid) => ({ id: String(pid), name: String(pid) }));
+          const posObjs = asArray(r?.position_ids).map((pid) => ({
+            id: String(pid),
+            name: String(pid),
+          }));
 
           return (
             <CampCard
@@ -413,14 +460,48 @@ export default function Discover() {
           </Button>
         </div>
 
+        {/* Optional debug strip (keep or remove) */}
+        <div className="mb-4 mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <span>
+              <b>mode:</b> {effectiveMode}
+            </span>
+            <span>
+              <b>seasonYear:</b> {String(seasonYear)}
+            </span>
+            <span>
+              <b>accountId:</b> {season?.accountId ? String(season.accountId) : "null"}
+            </span>
+            <span>
+              <b>entitled:</b> {String(!!season?.entitlement && !!season?.hasAccess)}
+            </span>
+            <span>
+              <b>requestedSeason:</b> {requestedSeason ? String(requestedSeason) : "null"}
+            </span>
+            <span>
+              <b>Camp(year/all):</b> {counts.camp_year}/{counts.camp_all}
+            </span>
+            <span>
+              <b>fallbackUsed:</b> {String(!!counts.fallback_used)}
+            </span>
+          </div>
+        </div>
+
         {renderBody()}
 
+        {/* ✅ Correct FilterSheet contract */}
         <FilterSheet
-          open={filterOpen}
-          setOpen={setFilterOpen}
-          nf={nf}
-          setNF={setNF}
-          onClear={clearFilters}
+          isOpen={filterOpen}
+          onClose={() => setFilterOpen(false)}
+          filters={nf}
+          onFilterChange={setNF}
+          sports={sports}
+          positions={positions}
+          onApply={() => setFilterOpen(false)}
+          onClear={() => {
+            clearFilters();
+            setFilterOpen(false);
+          }}
         />
       </div>
 
@@ -428,4 +509,3 @@ export default function Discover() {
     </div>
   );
 }
-
