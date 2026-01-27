@@ -104,8 +104,12 @@ export default function Home() {
   );
 
   // Decide what the hero “auth” CTA should do
-  const heroAuthLabel = isAuthed ? (isMember ? "Continue to Workspace" : "Subscribe to Unlock") : "Member login";
-  const heroAuthAction = isAuthed ? (isMember ? handleContinue : handlePricingSignup) : handleMemberLogin;
+  const heroAuthLabel = isAuthed
+    ? (isMember ? "Continue to Workspace" : "Subscribe to Unlock")
+    : "Member login";
+  const heroAuthAction = isAuthed
+    ? (isMember ? handleContinue : handlePricingSignup)
+    : handleMemberLogin;
 
   return (
     <div className="min-h-screen bg-surface">
@@ -124,7 +128,9 @@ export default function Home() {
                     className="h-24 md:h-40 w-auto block object-contain"
                   />
                 ) : (
-                  <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">URecruit HQ</div>
+                  <div className="text-4xl md:text-5xl font-extrabold text-brand leading-none">
+                    URecruit HQ
+                  </div>
                 )}
 
                 <div className="mt-2 text-base md:text-lg font-bold text-ink text-center md:text-left leading-tight">
@@ -151,7 +157,9 @@ export default function Home() {
 
             {/* Copy */}
             <div className="max-w-3xl space-y-3 text-center md:text-left">
-              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">{heroHeadline}</h1>
+              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight text-brand">
+                {heroHeadline}
+              </h1>
               <div className="h-1 w-14 rounded bg-accent mx-auto md:mx-0" />
               <p className="text-muted md:text-lg leading-relaxed">{heroParagraph}</p>
             </div>
