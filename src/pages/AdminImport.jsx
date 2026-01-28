@@ -245,9 +245,7 @@ async function tryUpdateWithPayloads(Entity, id, payloads) {
     try {
       await Entity.update(String(id), p);
       return true;
-    } catch {
-      // try next
-    }
+    } catch {}
   }
   return false;
 }
@@ -257,9 +255,7 @@ async function tryCreateWithPayloads(Entity, payloads) {
     try {
       const created = await Entity.create(p);
       return created || true;
-    } catch {
-      // try next
-    }
+    } catch {}
   }
   return null;
 }
@@ -273,12 +269,23 @@ async function tryDelete(Entity, id) {
         await Entity[fn](String(id));
         return true;
       }
-    } catch {
-      // try next
-    }
+    } catch {}
   }
   return false;
 }
+
+/* ----------------------------
+   NEW: Ryzer ActivityTypeId mapping (MVP)
+   You already captured Football.
+   For other sports, capture once via DevTools and paste here later.
+----------------------------- */
+const RYZER_ACTIVITY_TYPE_BY_SPORTNAME = {
+  Football: "A8ADF526-3822-4261-ADCF-1592CF4BB7FF",
+  // Baseball: "PUT-GUID-HERE",
+  // Soccer: "PUT-GUID-HERE",
+  // "Men's Soccer": "PUT-GUID-HERE",
+  // "Women's Soccer": "PUT-GUID-HERE",
+};
 
 /* ---------------------------- */
 
@@ -300,7 +307,7 @@ export default function AdminImport() {
   const [seedWorking, setSeedWorking] = useState(false);
   const [seedStats, setSeedStats] = useState({ attempted: 0, created: 0, updated: 0, errors: 0 });
 
-  // Sport admin actions
+  // Sport admin actions (soccer split, volleyball normalize)
   const [sportAdminWorking, setSportAdminWorking] = useState(false);
   const [sportAdminResult, setSportAdminResult] = useState("");
 
@@ -324,8 +331,10 @@ export default function AdminImport() {
   // ✅ NEW: Ryzer ingestion controls
   const [ryzerWorking, setRyzerWorking] = useState(false);
   const [ryzerDryRun, setRyzerDryRun] = useState(true);
-  const [ryzerMaxPrograms, setRyzerMaxPrograms] = useState(120);
-  const [ryzerMaxCampUrls, setRyzerMaxCampUrls] = useState(600);
+  const [ryzerRecordsPerPage, setRyzerRecordsPerPage] = useState(25);
+  const [ryzerMaxPages, setRyzerMaxPages] = useState(10);
+  const [ryzerMaxEvents, setRyzerMaxEvents] = useState(200);
+  const [ryzerActivityTypeId, setRyzerActivityTypeId] = useState("");
 
   const appendLog = (line) => setLog((prev) => (prev ? prev + "\n" + line : line));
 
@@ -337,6 +346,16 @@ export default function AdminImport() {
 
   const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
   const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
+
+  // Entities used for ingestion
+  const SchoolEntity = base44?.entities?.School || base44?.entities?.Schools || null;
+  const CampDemoEntity = base44?.entities?.CampDemo || null;
+
+  // When sport changes, auto-fill Ryzer ActivityTypeId if known
+  useEffect(() => {
+    const guess = RYZER_ACTIVITY_TYPE_BY_SPORTNAME[String(selectedSportName || "").trim()];
+    if (guess) setRyzerActivityTypeId(guess);
+  }, [selectedSportName]);
 
   async function loadSports() {
     if (!SportEntity?.filter) return;
@@ -414,6 +433,7 @@ export default function AdminImport() {
     }
   }
 
+  // initial load
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -426,6 +446,7 @@ export default function AdminImport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // positions refresh when sport changes
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -613,7 +634,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Seed Positions (unchanged)
+     Seed Positions (upsert by sport_id + position_code)
   ----------------------------- */
   async function upsertPositionBySportAndCode({ sportId, code, name }) {
     if (!PositionEntity?.filter || !PositionEntity?.create || !PositionEntity?.update) {
@@ -663,7 +684,7 @@ export default function AdminImport() {
 
     const list = seedListForSelectedSport;
     if (!list.length) {
-      appendLog(`ERROR: No default seed list found for sport "${selectedSportName || "?" }".`);
+      appendLog(`ERROR: No default seed list found for sport "${selectedSportName || "?"}".`);
       setSeedWorking(false);
       return;
     }
@@ -700,7 +721,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Sport Admin actions (unchanged)
+     Sport Admin actions (normalize + split)
   ----------------------------- */
   async function ensureSoccerVariants() {
     setSportAdminWorking(true);
@@ -810,7 +831,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Manual Sport Manager (unchanged)
+     Manual Sport Manager (CRUD + Active/Inactive)
   ----------------------------- */
   async function saveSportRow(sportId) {
     if (!SportEntity?.update) {
@@ -953,7 +974,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Manual Position Manager (unchanged)
+     Manual Position Manager (CRUD)
   ----------------------------- */
   async function addPosition() {
     if (!PositionEntity?.create) {
@@ -1034,60 +1055,195 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     ✅ NEW: Ryzer ingest runner (by sport)
+     ✅ NEW: Ryzer ingestion runner
+     Writes accepted results into CampDemo (so your existing Promote flow works)
   ----------------------------- */
-  async function runRyzerIngest() {
-    if (ryzerWorking) return;
-    if (!selectedSportId || !selectedSportName) {
-      appendLog("ERROR: Select a sport first (for Ryzer ingestion).");
-      return;
+  async function upsertCampDemoByEventKey(payload) {
+    if (!CampDemoEntity?.filter || !CampDemoEntity?.create || !CampDemoEntity?.update) {
+      throw new Error("CampDemo entity not available (expected entities.CampDemo).");
+    }
+    const key = payload?.event_key;
+    if (!key) throw new Error("Missing event_key for CampDemo upsert");
+
+    let existing = [];
+    try {
+      existing = await CampDemoEntity.filter({ event_key: key });
+    } catch {
+      existing = [];
     }
 
-    // ⚠️ Set this to your deployed function URL:
-    // Example: https://<PROJECT_REF>.supabase.co/functions/v1/ryzer-ingest
-    const FUNCTION_URL = safeString(import.meta?.env?.VITE_RYZER_INGEST_URL) || "";
-
-    if (!FUNCTION_URL) {
-      appendLog("ERROR: Missing VITE_RYZER_INGEST_URL (set it to your Supabase Edge Function endpoint).");
-      return;
+    const arr = asArray(existing);
+    if (arr.length > 0 && arr[0]?.id) {
+      await CampDemoEntity.update(arr[0].id, payload);
+      return "updated";
     }
+
+    await CampDemoEntity.create(payload);
+    return "created";
+  }
+
+  function parsePriceRange(priceOptions) {
+    const prices = asArray(priceOptions)
+      .map((o) => String(o?.price || "").replace(/[^0-9.]/g, ""))
+      .map((x) => Number(x))
+      .filter((n) => Number.isFinite(n));
+
+    if (!prices.length) return { price_min: null, price_max: null, price_best: null };
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    return { price_min: min, price_max: max, price_best: min };
+  }
+
+  async function runRyzerIngestion() {
+    if (!selectedSportId) return appendLog("ERROR: Select a sport first.");
+    if (!safeString(ryzerActivityTypeId)) return appendLog("ERROR: Provide Ryzer ActivityTypeId GUID.");
+
+    if (!SchoolEntity?.filter) return appendLog("ERROR: School entity not available.");
+    if (!CampDemoEntity) return appendLog("ERROR: CampDemo entity not available.");
+
+    const runIso = new Date().toISOString();
 
     setRyzerWorking(true);
-    appendLog(`Starting Ryzer ingest for ${selectedSportName}... dryRun=${ryzerDryRun}`);
+    appendLog(`Starting: Ryzer ingestion (${selectedSportName}) @ ${runIso}`);
+    appendLog(`DryRun=${ryzerDryRun ? "true" : "false"} | RPP=${ryzerRecordsPerPage} | Pages=${ryzerMaxPages} | MaxEvents=${ryzerMaxEvents}`);
 
     try {
-      // If your Edge Function is protected with a JWT, pass an auth token here.
-      // Base44 auth token retrieval may differ; leaving simple for now.
-      const res = await fetch(FUNCTION_URL, {
+      // Pull Schools once and pass to function (fail-closed gate happens server-side)
+      const schoolRows = asArray(await SchoolEntity.filter({}));
+      const schools = schoolRows
+        .map((s) => ({
+          id: String(s?.id || ""),
+          school_name: String(s?.school_name || "").trim(),
+          state: String(s?.state || "").trim(),
+          // OPTIONAL: if you later add aliases_json to School schema, we’ll pass it
+          aliases: asArray(tryParseJson(s?.aliases_json)).filter(Boolean),
+        }))
+        .filter((s) => s.id && s.school_name);
+
+      appendLog(`Loaded Schools: ${schools.length}`);
+
+      const res = await fetch("/functions/ryzerIngest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sportId: selectedSportId,
           sportName: selectedSportName,
-          dryRun: !!ryzerDryRun,
-          maxPrograms: Number(ryzerMaxPrograms) || 120,
-          maxCampUrls: Number(ryzerMaxCampUrls) || 600,
+          activityTypeId: ryzerActivityTypeId,
+          recordsPerPage: ryzerRecordsPerPage,
+          maxPages: ryzerMaxPages,
+          maxEvents: ryzerMaxEvents,
+          dryRun: ryzerDryRun,
+          schools,
         }),
       });
 
-      const txt = await res.text();
-      let obj = null;
-      try {
-        obj = JSON.parse(txt);
-      } catch {
-        obj = { raw: txt };
-      }
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        appendLog(`Ryzer ingest FAILED: HTTP ${res.status}`);
-        appendLog(typeof obj === "string" ? obj : JSON.stringify(obj, null, 2));
+        appendLog(`Ryzer function ERROR (HTTP ${res.status})`);
+        appendLog(JSON.stringify(data || {}, null, 2));
         return;
       }
 
-      appendLog("Ryzer ingest result:");
-      appendLog(JSON.stringify(obj, null, 2));
+      appendLog(`Ryzer results: accepted=${data?.stats?.accepted ?? 0}, rejected=${data?.stats?.rejected ?? 0}, errors=${data?.stats?.errors ?? 0}`);
+
+      // Dry run => just show summary
+      if (ryzerDryRun) {
+        appendLog("DryRun=true: no DB writes performed.");
+        return;
+      }
+
+      const accepted = asArray(data?.accepted);
+      if (!accepted.length) {
+        appendLog("No accepted results to write.");
+        return;
+      }
+
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+
+      for (let i = 0; i < accepted.length; i++) {
+        const item = accepted[i];
+        const school_id = safeString(item?.school?.school_id);
+        const state = safeString(item?.school?.state) || null;
+
+        const ev = item?.event || {};
+        const camp_name = safeString(ev?.eventTitle || ev?.event_title || ev?.eventTitle) || safeString(ev?.searchRowTitle) || "Camp";
+        const locationText = safeString(ev?.locationText || "");
+
+        // Start date: we only have raw strings from Ryzer; store start_date best-effort
+        // If you later want multi-date parsing, we can add it. For now: try to extract first YYYY-MM-DD from eventDates or fall back null.
+        let start_date = null;
+        const rawDates = safeString(ev?.eventDates);
+        const m = rawDates.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/);
+        if (m) start_date = toISODate(m[1]);
+
+        // If still missing, skip (Camp schema requires start_date)
+        if (!school_id || !start_date) {
+          skipped += 1;
+          appendLog(`SKIP write: missing school_id or start_date | ${camp_name}`);
+          continue;
+        }
+
+        const { price_min, price_max, price_best } = parsePriceRange(ev?.priceOptions);
+        const link_url = safeString(ev?.registrationUrl) || null;
+
+        const season_year = safeNumber(computeSeasonYearFootball(start_date));
+        const source_platform = "ryzer";
+        const program_id = safeString(ev?.programLabel) ? `ryzer:${slugify(ev.programLabel)}` : `ryzer:${slugify(camp_name)}`;
+
+        const event_key = buildEventKey({
+          source_platform,
+          program_id,
+          start_date,
+          link_url,
+          source_url: link_url,
+        });
+
+        const sections_json = safeObject(ev?.sections) || null;
+
+        const payload = {
+          school_id,
+          sport_id: selectedSportId,
+          camp_name,
+          start_date,
+          end_date: null,
+          city: null,
+          state: state || null,
+          position_ids: [],
+          price: price_best != null ? price_best : null,
+          link_url,
+          notes: null,
+
+          season_year: season_year != null ? season_year : null,
+          program_id,
+          event_key,
+          source_platform,
+          source_url: link_url,
+          last_seen_at: runIso,
+          content_hash: simpleHash({ school_id, camp_name, start_date, link_url, rawDates }),
+
+          event_dates_raw: rawDates || null,
+          grades_raw: safeString(ev?.grades) || null,
+          register_by_raw: safeString(ev?.registerBy) || null,
+          price_raw: null,
+          price_min,
+          price_max,
+          sections_json,
+        };
+
+        const r = await upsertCampDemoByEventKey(payload);
+        if (r === "created") created += 1;
+        if (r === "updated") updated += 1;
+
+        if ((i + 1) % 10 === 0) appendLog(`Write progress: ${i + 1}/${accepted.length}`);
+        await sleep(50);
+      }
+
+      appendLog(`CampDemo writes done. created=${created} updated=${updated} skipped=${skipped}`);
     } catch (e) {
-      appendLog(`Ryzer ingest ERROR: ${String(e?.message || e)}`);
+      appendLog(`Ryzer ingestion ERROR: ${String(e?.message || e)}`);
     } finally {
       setRyzerWorking(false);
     }
@@ -1109,85 +1265,87 @@ export default function AdminImport() {
 
         {/* ✅ NEW: Ryzer ingestion */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">Ryzer Ingestion (by Sport)</div>
+          <div className="font-semibold text-deep-navy">Ryzer Ingestion (by sport)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Server-side crawl + parse registration pages → upsert into <b>CampDemo</b> (fail-closed on School verification).
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Sport</label>
-              <select
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                value={selectedSportId}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  const hit = sports.find((x) => x.id === id) || null;
-                  setSelectedSportId(id);
-                  setSelectedSportName(hit?.name || "");
-                }}
-                disabled={ryzerWorking || sportsLoading}
-              >
-                <option value="">Select…</option>
-                {sports.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} {s.active ? "" : "(Inactive)"}
-                  </option>
-                ))}
-              </select>
-
-              <div className="mt-1 text-[11px] text-slate-500">
-                Requires VITE_RYZER_INGEST_URL env var (Edge Function endpoint).
-              </div>
-            </div>
-
-            <div className="flex items-end gap-2">
-              <Button onClick={runRyzerIngest} disabled={ryzerWorking || !selectedSportId}>
-                {ryzerWorking ? "Running…" : "Run Ryzer Ingest"}
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setRyzerDryRun((v) => !v);
-                }}
-                disabled={ryzerWorking}
-              >
-                DryRun: {ryzerDryRun ? "ON" : "OFF"}
-              </Button>
-            </div>
+            Pulls events from Ryzer search API and fetches each registration page server-side.
+            Writes accepted results into <b>CampDemo</b> (then use Promote).
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Max programs to scan</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Ryzer ActivityTypeId (GUID)</label>
               <input
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={ryzerMaxPrograms}
-                onChange={(e) => setRyzerMaxPrograms(Number(e.target.value || 0))}
+                value={ryzerActivityTypeId}
+                onChange={(e) => setRyzerActivityTypeId(e.target.value)}
+                placeholder='e.g., A8ADF526-3822-4261-ADCF-1592CF4BB7FF'
+                disabled={ryzerWorking}
+              />
+              <div className="mt-1 text-[11px] text-slate-500">
+                Capture from DevTools → eventSearch payload field <b>ActivityTypes[0]</b>.
+              </div>
+            </div>
+
+            <div className="flex items-end gap-3">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={ryzerDryRun}
+                  onChange={(e) => setRyzerDryRun(e.target.checked)}
+                  disabled={ryzerWorking}
+                />
+                Dry Run
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Records per page</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 type="number"
-                min={10}
-                max={2000}
+                value={ryzerRecordsPerPage}
+                onChange={(e) => setRyzerRecordsPerPage(Number(e.target.value || 0))}
+                min={5}
+                max={100}
                 disabled={ryzerWorking}
               />
             </div>
-
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Max camp URLs to parse</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Max pages</label>
               <input
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={ryzerMaxCampUrls}
-                onChange={(e) => setRyzerMaxCampUrls(Number(e.target.value || 0))}
                 type="number"
-                min={50}
-                max={10000}
+                value={ryzerMaxPages}
+                onChange={(e) => setRyzerMaxPages(Number(e.target.value || 0))}
+                min={1}
+                max={200}
+                disabled={ryzerWorking}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Max events</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={ryzerMaxEvents}
+                onChange={(e) => setRyzerMaxEvents(Number(e.target.value || 0))}
+                min={10}
+                max={5000}
                 disabled={ryzerWorking}
               />
             </div>
           </div>
 
-          <div className="mt-3 text-[11px] text-slate-500">
-            Recommended flow: run with DryRun ON first → verify samples → then run with DryRun OFF.
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button onClick={runRyzerIngestion} disabled={ryzerWorking || working || seedWorking || sportAdminWorking}>
+              {ryzerWorking ? "Running…" : ryzerDryRun ? "Run Ryzer (Dry Run)" : "Run Ryzer → Write CampDemo"}
+            </Button>
+          </div>
+
+          <div className="mt-2 text-[11px] text-slate-500">
+            If you see auth errors (401/403), add Base44 secret <b>RYZER_AUTH</b> = the authorization JWT captured from DevTools.
           </div>
         </Card>
 
@@ -1235,15 +1393,283 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* (rest of your file unchanged: Manage Sports, Manage Positions, Promote CampDemo -> Camp, Log, Home button) */}
-        {/* For brevity here, keep your existing sections below exactly as-is. */}
-        {/* --- START: existing sections below --- */}
+        {/* Sports Manager */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">Manage Sports</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Add/rename sports and control visibility with <b>Active/Inactive</b>.
+          </div>
 
-        {/* Manage Sports */}
-        {/* ... KEEP YOUR CURRENT Manage Sports CARD EXACTLY ... */}
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">New sport name</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={newSportName}
+                onChange={(e) => setNewSportName(e.target.value)}
+                placeholder="e.g., Lacrosse"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button onClick={createSport} disabled={sportCreateWorking || !safeString(newSportName)}>
+                {sportCreateWorking ? "Creating…" : "Create Sport"}
+              </Button>
+            </div>
+          </div>
 
-        {/* Manage Positions */}
-        {/* ... KEEP YOUR CURRENT Manage Positions CARD EXACTLY ... */}
+          <div className="mt-4">
+            <div className="text-xs text-slate-500 mb-2">Sports</div>
+
+            <div className="rounded-lg border border-slate-200 bg-white overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr className="text-left">
+                    <th className="p-2 border-b border-slate-200 w-20">Active</th>
+                    <th className="p-2 border-b border-slate-200">Sport name</th>
+                    <th className="p-2 border-b border-slate-200 w-44">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sports.length ? (
+                    sports.map((s) => {
+                      const edit = sportsEdit[s.id] || { name: s.name, active: s.active };
+                      return (
+                        <tr key={s.id} className="border-b border-slate-100">
+                          <td className="p-2">
+                            <input
+                              type="checkbox"
+                              checked={!!edit.active}
+                              onChange={(e) =>
+                                setSportsEdit((prev) => ({
+                                  ...prev,
+                                  [s.id]: {
+                                    ...(prev[s.id] || {}),
+                                    active: e.target.checked,
+                                    name: prev[s.id]?.name ?? s.name,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.name ?? ""}
+                              onChange={(e) =>
+                                setSportsEdit((prev) => ({
+                                  ...prev,
+                                  [s.id]: {
+                                    ...(prev[s.id] || {}),
+                                    name: e.target.value,
+                                    active: prev[s.id]?.active ?? s.active,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td className="p-2">
+                            <div className="flex gap-2">
+                              <Button variant="outline" onClick={() => saveSportRow(s.id)} disabled={sportSaveWorking}>
+                                Save
+                              </Button>
+                              <Button
+                                variant="outline"
+                                onClick={() => deleteSport(s.id)}
+                                disabled={sportDeleteWorking === s.id}
+                              >
+                                {sportDeleteWorking === s.id ? "Deleting…" : "Delete"}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={3} className="p-3 text-slate-500">
+                        {sportsLoading ? "Loading…" : "No sports found."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-3 text-[11px] text-slate-500">
+              Best practice: use <b>Inactive</b> instead of delete once the sport is in use.
+            </div>
+          </div>
+        </Card>
+
+        {/* Positions Manager */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">Manage Positions</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Auto-seed a default set, or manually add/edit/delete positions per sport.
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Sport</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                value={selectedSportId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const hit = sports.find((x) => x.id === id) || null;
+                  setSelectedSportId(id);
+                  setSelectedSportName(hit?.name || "");
+                }}
+                disabled={seedWorking || working || sportAdminWorking || sportsLoading}
+              >
+                <option value="">Select…</option>
+                {sports.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} {s.active ? "" : "(Inactive)"}
+                  </option>
+                ))}
+              </select>
+
+              <div className="mt-1 text-[11px] text-slate-500">
+                {selectedSportName
+                  ? seedListForSelectedSport.length
+                    ? `Default seeds available: ${seedListForSelectedSport.length}`
+                    : "No default seeds for this sport (add to DEFAULT_POSITION_SEEDS)"
+                  : "Choose a sport"}
+              </div>
+            </div>
+
+            <div className="flex items-end gap-2">
+              <Button onClick={seedPositionsForSport} disabled={seedWorking || working || sportAdminWorking || !selectedSportId}>
+                {seedWorking ? "Seeding…" : "Auto-seed positions"}
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => loadPositionsForSport(selectedSportId)}
+                disabled={!selectedSportId || positionsLoading}
+              >
+                {positionsLoading ? "Refreshing…" : "Refresh"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Code</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={positionAddCode}
+                onChange={(e) => setPositionAddCode(e.target.value)}
+                placeholder="e.g., QB"
+                disabled={!selectedSportId}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Name</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={positionAddName}
+                onChange={(e) => setPositionAddName(e.target.value)}
+                placeholder="e.g., Quarterback"
+                disabled={!selectedSportId}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button onClick={addPosition} disabled={!selectedSportId || positionAddWorking}>
+                {positionAddWorking ? "Saving…" : "Add / Upsert"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-xs text-slate-500 mb-2">Positions</div>
+
+            <div className="rounded-lg border border-slate-200 bg-white overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr className="text-left">
+                    <th className="p-2 border-b border-slate-200 w-28">Code</th>
+                    <th className="p-2 border-b border-slate-200">Name</th>
+                    <th className="p-2 border-b border-slate-200 w-44">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {positions.length ? (
+                    positions.map((p) => {
+                      const edit = positionsEdit[p.id] || { code: p.code, name: p.name };
+                      return (
+                        <tr key={p.id} className="border-b border-slate-100">
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.code ?? ""}
+                              onChange={(e) =>
+                                setPositionsEdit((prev) => ({
+                                  ...prev,
+                                  [p.id]: { ...(prev[p.id] || {}), code: e.target.value, name: prev[p.id]?.name ?? p.name },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.name ?? ""}
+                              onChange={(e) =>
+                                setPositionsEdit((prev) => ({
+                                  ...prev,
+                                  [p.id]: { ...(prev[p.id] || {}), name: e.target.value, code: prev[p.id]?.code ?? p.code },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td className="p-2">
+                            <div className="flex gap-2">
+                              <Button variant="outline" onClick={() => savePositionRow(p.id)} disabled={positionSaveWorking}>
+                                Save
+                              </Button>
+                              <Button
+                                variant="outline"
+                                onClick={() => deletePosition(p.id)}
+                                disabled={positionDeleteWorking === p.id}
+                              >
+                                {positionDeleteWorking === p.id ? "Deleting…" : "Delete"}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={3} className="p-3 text-slate-500">
+                        {selectedSportId
+                          ? positionsLoading
+                            ? "Loading…"
+                            : "No positions found for this sport."
+                          : "Select a sport first."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-3 text-[11px] text-slate-500">
+              Positions are referenced by <b>AthleteProfile.primary_position_id</b>. If a position is in use, prefer renaming over deleting.
+            </div>
+          </div>
+
+          <div className="mt-4 text-sm text-slate-700">
+            <div className="flex flex-wrap gap-4">
+              <span><b>Seed Attempted:</b> {seedStats.attempted}</span>
+              <span><b>Seed Created:</b> {seedStats.created}</span>
+              <span><b>Seed Updated:</b> {seedStats.updated}</span>
+              <span><b>Seed Errors:</b> {seedStats.errors}</span>
+            </div>
+          </div>
+        </Card>
 
         {/* Promote CampDemo -> Camp */}
         <Card className="p-4">
