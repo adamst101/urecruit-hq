@@ -655,7 +655,9 @@ export default function AdminImport() {
       existing = [];
     }
 
-    const hit = existing.find((r) => String(r?.position_code || "").trim().toUpperCase() === position_code);
+    const hit = existing.find(
+      (r) => String(r?.position_code || "").trim().toUpperCase() === position_code
+    );
 
     const payload = { sport_id: sportId, position_code, position_name };
 
@@ -1105,7 +1107,9 @@ export default function AdminImport() {
 
     setRyzerWorking(true);
     appendLog(`Starting: Ryzer ingestion (${selectedSportName}) @ ${runIso}`);
-    appendLog(`DryRun=${ryzerDryRun ? "true" : "false"} | RPP=${ryzerRecordsPerPage} | Pages=${ryzerMaxPages} | MaxEvents=${ryzerMaxEvents}`);
+    appendLog(
+      `DryRun=${ryzerDryRun ? "true" : "false"} | RPP=${ryzerRecordsPerPage} | Pages=${ryzerMaxPages} | MaxEvents=${ryzerMaxEvents}`
+    );
 
     try {
       // Pull Schools once and pass to function (fail-closed gate happens server-side)
@@ -1139,13 +1143,50 @@ export default function AdminImport() {
 
       const data = await res.json().catch(() => null);
 
+      // ✅ NEW: print function debug into AdminImport log
+      try {
+        appendLog(`Ryzer debug present? ${data?.debug?.pages?.length ? "YES" : "NO"}`);
+
+        if (data?.debug?.pages?.length) {
+          const p0 = data.debug.pages[0];
+          appendLog(
+            `Ryzer debug p0: http=${p0.httpStatus} rowCount=${p0.rowCount} total=${p0.total ?? "n/a"}`
+          );
+
+          if (p0.sampleRowKeys?.length) {
+            appendLog(`Ryzer sampleRowKeys: ${p0.sampleRowKeys.join(", ")}`);
+          }
+
+          if (p0.nonJsonPreview) {
+            appendLog(`Ryzer nonJsonPreview: ${String(p0.nonJsonPreview).slice(0, 900)}`);
+          }
+
+          if (p0.sampleRow) {
+            const snippet = JSON.stringify(p0.sampleRow, null, 2);
+            appendLog(`Ryzer sampleRow (snippet): ${snippet.slice(0, 900)}`);
+          }
+        } else {
+          appendLog("Ryzer debug: (no pages in response)");
+        }
+
+        if (data?.errors?.length) {
+          appendLog(`Ryzer function errors: ${JSON.stringify(data.errors, null, 2).slice(0, 1400)}`);
+        }
+      } catch (e) {
+        appendLog(`Debug print error: ${String(e?.message || e)}`);
+      }
+
       if (!res.ok) {
         appendLog(`Ryzer function ERROR (HTTP ${res.status})`);
         appendLog(JSON.stringify(data || {}, null, 2));
         return;
       }
 
-      appendLog(`Ryzer results: accepted=${data?.stats?.accepted ?? 0}, rejected=${data?.stats?.rejected ?? 0}, errors=${data?.stats?.errors ?? 0}`);
+      appendLog(
+        `Ryzer results: accepted=${data?.stats?.accepted ?? 0}, rejected=${data?.stats?.rejected ?? 0}, errors=${
+          data?.stats?.errors ?? 0
+        }`
+      );
 
       // Dry run => just show summary
       if (ryzerDryRun) {
@@ -1169,14 +1210,16 @@ export default function AdminImport() {
         const state = safeString(item?.school?.state) || null;
 
         const ev = item?.event || {};
-        const camp_name = safeString(ev?.eventTitle || ev?.event_title || ev?.eventTitle) || safeString(ev?.searchRowTitle) || "Camp";
+        const camp_name =
+          safeString(ev?.eventTitle || ev?.event_title || ev?.eventTitle) ||
+          safeString(ev?.searchRowTitle) ||
+          "Camp";
         const locationText = safeString(ev?.locationText || "");
 
         // Start date: we only have raw strings from Ryzer; store start_date best-effort
-        // If you later want multi-date parsing, we can add it. For now: try to extract first YYYY-MM-DD from eventDates or fall back null.
         let start_date = null;
         const rawDates = safeString(ev?.eventDates);
-        const m = rawDates.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/);
+        const m = rawDates ? rawDates.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/) : null;
         if (m) start_date = toISODate(m[1]);
 
         // If still missing, skip (Camp schema requires start_date)
@@ -1191,7 +1234,9 @@ export default function AdminImport() {
 
         const season_year = safeNumber(computeSeasonYearFootball(start_date));
         const source_platform = "ryzer";
-        const program_id = safeString(ev?.programLabel) ? `ryzer:${slugify(ev.programLabel)}` : `ryzer:${slugify(camp_name)}`;
+        const program_id = safeString(ev?.programLabel)
+          ? `ryzer:${slugify(ev.programLabel)}`
+          : `ryzer:${slugify(camp_name)}`;
 
         const event_key = buildEventKey({
           source_platform,
@@ -1267,8 +1312,8 @@ export default function AdminImport() {
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Ryzer Ingestion (by sport)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Pulls events from Ryzer search API and fetches each registration page server-side.
-            Writes accepted results into <b>CampDemo</b> (then use Promote).
+            Pulls events from Ryzer search API and fetches each registration page server-side. Writes accepted results into{" "}
+            <b>CampDemo</b> (then use Promote).
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1278,7 +1323,7 @@ export default function AdminImport() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 value={ryzerActivityTypeId}
                 onChange={(e) => setRyzerActivityTypeId(e.target.value)}
-                placeholder='e.g., A8ADF526-3822-4261-ADCF-1592CF4BB7FF'
+                placeholder="e.g., A8ADF526-3822-4261-ADCF-1592CF4BB7FF"
                 disabled={ryzerWorking}
               />
               <div className="mt-1 text-[11px] text-slate-500">
@@ -1345,7 +1390,8 @@ export default function AdminImport() {
           </div>
 
           <div className="mt-2 text-[11px] text-slate-500">
-            If you see auth errors (401/403), add Base44 secret <b>RYZER_AUTH</b> = the authorization JWT captured from DevTools.
+            If you see auth errors (401/403), add Base44 secret <b>RYZER_AUTH</b> = the authorization JWT captured from
+            DevTools.
           </div>
         </Card>
 
@@ -1540,7 +1586,10 @@ export default function AdminImport() {
             </div>
 
             <div className="flex items-end gap-2">
-              <Button onClick={seedPositionsForSport} disabled={seedWorking || working || sportAdminWorking || !selectedSportId}>
+              <Button
+                onClick={seedPositionsForSport}
+                disabled={seedWorking || working || sportAdminWorking || !selectedSportId}
+              >
                 {seedWorking ? "Seeding…" : "Auto-seed positions"}
               </Button>
 
@@ -1644,11 +1693,7 @@ export default function AdminImport() {
                   ) : (
                     <tr>
                       <td colSpan={3} className="p-3 text-slate-500">
-                        {selectedSportId
-                          ? positionsLoading
-                            ? "Loading…"
-                            : "No positions found for this sport."
-                          : "Select a sport first."}
+                        {selectedSportId ? (positionsLoading ? "Loading…" : "No positions found for this sport.") : "Select a sport first."}
                       </td>
                     </tr>
                   )}
@@ -1716,11 +1761,7 @@ export default function AdminImport() {
         </Card>
 
         <div className="text-center">
-          <Button
-            variant="outline"
-            onClick={() => nav(ROUTES.Home)}
-            disabled={working || seedWorking || sportAdminWorking || ryzerWorking}
-          >
+          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={working || seedWorking || sportAdminWorking || ryzerWorking}>
             Go to Home
           </Button>
         </div>
