@@ -1,5 +1,9 @@
 // functions/ryzerIngest.js
-// Base44 Backend Function (Deno runtime)
+// Base44 Backend Function (Deno)
+// Purpose: call Ryzer eventSearch endpoint server-side, apply "college program" gate by matching host → School list,
+// return accepted/rejected + rich debug for AdminImport log.
+
+const VERSION = "ryzerIngest_2026-01-29_v3";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -11,285 +15,362 @@ function safeString(x) {
   return s ? s : null;
 }
 
-function jsonSnippet(obj, max = 1200) {
-  try {
-    const s = typeof obj === "string" ? obj : JSON.stringify(obj);
-    if (!s) return "";
-    return s.length > max ? s.slice(0, max) + "…(truncated)" : s;
-  } catch {
-    return "";
-  }
+function lc(x) {
+  return String(x || "").toLowerCase().trim();
 }
 
-// Find an array of “rows” somewhere inside a nested response
-function findFirstArrayWithObjects(root) {
-  const visited = new Set();
-  const queue = [{ node: root, path: "$" }];
+function slugify(s) {
+  return String(s || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
-  while (queue.length) {
-    const { node, path } = queue.shift();
+function stripNonAscii(s) {
+  return String(s || "").replace(/[^\x20-\x7E]/g, " ").replace(/\s+/g, " ").trim();
+}
 
-    if (!node || typeof node !== "object") continue;
-    if (visited.has(node)) continue;
-    visited.add(node);
+function truncate(s, n = 1000) {
+  const str = String(s || "");
+  return str.length > n ? str.slice(0, n) + "…(truncated)" : str;
+}
 
-    if (Array.isArray(node)) {
-      // If it looks like an array of objects, return it
-      if (node.length === 0) return { path, arr: node };
-      const firstObj = node.find((x) => x && typeof x === "object" && !Array.isArray(x));
-      if (firstObj) return { path, arr: node };
-      continue;
+// Build normalized match keys for schools
+function buildSchoolIndex(schools) {
+  const list = asArray(schools)
+    .map((s) => ({
+      id: safeString(s?.id) || "",
+      name: safeString(s?.school_name) || "",
+      state: safeString(s?.state) || "",
+      aliases: asArray(s?.aliases).map((a) => safeString(a)).filter(Boolean),
+    }))
+    .filter((s) => s.id && s.name);
+
+  const index = [];
+  for (const s of list) {
+    const keys = new Set();
+    keys.add(lc(s.name));
+    keys.add(lc(stripNonAscii(s.name)));
+    for (const a of s.aliases) {
+      keys.add(lc(a));
+      keys.add(lc(stripNonAscii(a)));
     }
+    index.push({ ...s, keys: Array.from(keys).filter(Boolean) });
+  }
+  return index;
+}
 
-    // object -> search keys
-    for (const k of Object.keys(node)) {
-      const v = node[k];
-      const nextPath = `${path}.${k}`;
-      if (v && typeof v === "object") {
-        queue.push({ node: v, path: nextPath });
+function hostToMatchText(row) {
+  // Try common field names Ryzer may use
+  const candidates = [
+    row?.accountName,
+    row?.AccountName,
+    row?.hostName,
+    row?.HostName,
+    row?.organizationName,
+    row?.OrganizationName,
+    row?.eventHostName,
+    row?.EventHostName,
+    row?.hostedBy,
+    row?.HostedBy,
+    row?.schoolName,
+    row?.SchoolName,
+    row?.accountDisplayName,
+    row?.AccountDisplayName,
+  ]
+    .map(safeString)
+    .filter(Boolean);
+
+  // fallback: sometimes title contains host
+  if (!candidates.length) candidates.push(safeString(row?.eventTitle || row?.EventTitle || row?.title || row?.Title) || "");
+
+  const best = candidates.find(Boolean) || "";
+  return stripNonAscii(best);
+}
+
+function titleText(row) {
+  return stripNonAscii(
+    safeString(row?.eventTitle || row?.EventTitle || row?.title || row?.Title || row?.name || row?.Name) || ""
+  );
+}
+
+function pickUrl(row) {
+  return (
+    safeString(row?.registrationUrl) ||
+    safeString(row?.RegistrationUrl) ||
+    safeString(row?.eventUrl) ||
+    safeString(row?.EventUrl) ||
+    safeString(row?.url) ||
+    safeString(row?.Url) ||
+    null
+  );
+}
+
+// Return {match, reason}
+function matchSchool(hostText, schoolIndex) {
+  const host = lc(hostText);
+  if (!host) return { match: null, reason: "missing_host" };
+
+  // Exact or contains match against known school keys
+  for (const s of schoolIndex) {
+    for (const key of s.keys) {
+      if (!key) continue;
+      if (host === key) return { match: s, reason: "exact" };
+      if (host.includes(key) || key.includes(host)) {
+        // avoid ridiculous tiny tokens
+        if (Math.min(host.length, key.length) >= 6) return { match: s, reason: "contains" };
       }
     }
   }
 
-  return { path: null, arr: [] };
+  // Fuzzy-ish: compare slug tokens
+  const hostSlug = slugify(host).replace(/-/g, " ");
+  for (const s of schoolIndex) {
+    const nameSlug = slugify(s.name).replace(/-/g, " ");
+    if (hostSlug && nameSlug && (hostSlug.includes(nameSlug) || nameSlug.includes(hostSlug))) {
+      if (Math.min(hostSlug.length, nameSlug.length) >= 8) return { match: s, reason: "slug_contains" };
+    }
+  }
+
+  return { match: null, reason: "no_school_match" };
 }
 
-// Normalize header: Ryzer curl uses `authorization: <jwt>` (no "Bearer ")
-function buildAuthHeader(raw) {
-  const t = safeString(raw);
-  if (!t) return null;
-  // If user pasted "Bearer xxx" keep it; otherwise pass token raw.
-  return t;
+// Try to locate the "rows array" in a variety of response shapes
+function extractRowsAndMeta(respJson) {
+  const candidates = [
+    { path: "Records", rows: respJson?.Records, total: respJson?.TotalRecords || respJson?.total || respJson?.Total },
+    { path: "records", rows: respJson?.records, total: respJson?.totalRecords || respJson?.total || respJson?.Total },
+    { path: "data.Records", rows: respJson?.data?.Records, total: respJson?.data?.TotalRecords || respJson?.data?.total },
+    { path: "data.records", rows: respJson?.data?.records, total: respJson?.data?.totalRecords || respJson?.data?.total },
+    { path: "Result.Records", rows: respJson?.Result?.Records, total: respJson?.Result?.TotalRecords || respJson?.Result?.total },
+    { path: "result.records", rows: respJson?.result?.records, total: respJson?.result?.totalRecords || respJson?.result?.total },
+    { path: "items", rows: respJson?.items, total: respJson?.total || respJson?.count },
+    { path: "Events", rows: respJson?.Events, total: respJson?.Total || respJson?.total },
+    { path: "events", rows: respJson?.events, total: respJson?.total || respJson?.count },
+  ];
+
+  for (const c of candidates) {
+    if (Array.isArray(c.rows)) {
+      return { rows: c.rows, total: c.total ?? null, rowsArrayPath: c.path };
+    }
+  }
+
+  // Sometimes API returns an object with a single array value
+  const keys = respJson && typeof respJson === "object" ? Object.keys(respJson) : [];
+  for (const k of keys) {
+    if (Array.isArray(respJson[k])) {
+      return { rows: respJson[k], total: null, rowsArrayPath: k };
+    }
+  }
+
+  return { rows: [], total: null, rowsArrayPath: "not_found" };
 }
 
 Deno.serve(async (req) => {
-  const startedAt = new Date().toISOString();
-  const debug = { startedAt, pages: [] };
+  const debug = {
+    version: VERSION,
+    startedAt: new Date().toISOString(),
+    pages: [],
+    notes: [],
+  };
 
   try {
-    const body = await req.json().catch(() => ({}));
+    if (req.method !== "POST") {
+      return new Response(JSON.stringify({ error: "Method not allowed", debug }), {
+        status: 405,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
+    const body = await req.json().catch(() => null);
     const sportId = safeString(body?.sportId);
-    const sportName = safeString(body?.sportName);
+    const sportName = safeString(body?.sportName) || "";
     const activityTypeId = safeString(body?.activityTypeId);
-
     const recordsPerPage = Number(body?.recordsPerPage ?? 25);
     const maxPages = Number(body?.maxPages ?? 1);
-    const maxEvents = Number(body?.maxEvents ?? 200);
+    const maxEvents = Number(body?.maxEvents ?? 100);
     const dryRun = !!body?.dryRun;
-
-    // This is the key filter you used in DevTools
-    // “Hosted By” = College/University
-    const defaultCollegeAccountType = "A7FA36E0-87BE-4750-9DE3-CB60DE133648";
-    const accountTypeList = asArray(body?.accountTypeList).filter(Boolean);
-    const finalAccountTypeList = accountTypeList.length ? accountTypeList : [defaultCollegeAccountType];
-
-    // Proximity: your curl sent "10000"
-    const proximity = body?.proximity != null ? String(body.proximity) : "10000";
-
     const schools = asArray(body?.schools);
 
-    if (!sportId || !sportName) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "Missing sportId or sportName",
-          debug,
-          stats: { accepted: 0, rejected: 0, errors: 1 },
-          accepted: [],
-          rejected: [],
-          errors: [{ message: "Missing sportId or sportName" }],
-        }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+    if (!sportId || !activityTypeId) {
+      return new Response(JSON.stringify({ error: "Missing required: sportId/activityTypeId", debug }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    if (!activityTypeId) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "Missing activityTypeId",
-          debug,
-          stats: { accepted: 0, rejected: 0, errors: 1 },
-          accepted: [],
-          rejected: [],
-          errors: [{ message: "Missing activityTypeId" }],
-        }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+    const schoolIndex = buildSchoolIndex(schools);
+    debug.notes.push(`schools_in=${schools.length} schools_indexed=${schoolIndex.length}`);
+
+    const auth = Deno.env.get("RYZER_AUTH");
+    if (!auth) {
+      debug.notes.push("Missing env secret RYZER_AUTH (set in Base44 Secrets).");
+      return new Response(JSON.stringify({ error: "Missing secret RYZER_AUTH", debug }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    const authFromEnv = buildAuthHeader(Deno.env.get("RYZER_AUTH"));
-    if (!authFromEnv) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "Missing RYZER_AUTH secret",
-          debug,
-          stats: { accepted: 0, rejected: 0, errors: 1 },
-          accepted: [],
-          rejected: [],
-          errors: [{ message: "Missing RYZER_AUTH secret" }],
-        }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
-    }
+    // Endpoint from your DevTools capture
+    const endpoint = "https://ryzer.com/rest/controller/connect/event/eventSearch/";
 
-    const url = "https://ryzer.com/rest/controller/connect/event/eventSearch/";
+    const accepted = [];
+    const rejected = [];
+    const errors = [];
 
-    // We will request pages until we hit maxPages/maxEvents or get no rows.
-    let allRows = [];
-    let totalErrors = 0;
+    let processed = 0;
 
     for (let page = 0; page < maxPages; page++) {
-      const payload = {
+      if (processed >= maxEvents) break;
+
+      const reqPayload = {
         Page: page,
         RecordsPerPage: recordsPerPage,
         SoldOut: 0,
         ActivityTypes: [activityTypeId],
-        Proximity: proximity,
-        accountTypeList: finalAccountTypeList,
+        Proximity: "10000",
+        // Your curl used this accountTypeList (College/University). Keep it.
+        accountTypeList: ["A7FA36E0-87BE-4750-9DE3-CB60DE133648"],
       };
 
-      let httpStatus = null;
+      let http = 0;
       let respText = "";
       let respJson = null;
-      let rowCount = 0;
-      let arrayPath = null;
 
       try {
-        const r = await fetch(url, {
+        const r = await fetch(endpoint, {
           method: "POST",
           headers: {
-            Accept: "*/*",
             "Content-Type": "application/json; charset=UTF-8",
+            Accept: "*/*",
+            // IMPORTANT: the captured value is a JWT string; send as-is
+            authorization: auth,
             Origin: "https://ryzer.com",
             Referer: "https://ryzer.com/Events/?tab=eventSearch",
-            // IMPORTANT: Ryzer expects the header key "authorization"
-            authorization: authFromEnv,
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(reqPayload),
         });
 
-        httpStatus = r.status;
-        respText = await r.text();
-        // try parse json
-        try {
-          respJson = JSON.parse(respText);
-        } catch {
-          respJson = null;
+        http = r.status;
+        respText = await r.text().catch(() => "");
+        // Try JSON parse (some 200 responses still contain error objects)
+        respJson = (() => {
+          try {
+            return JSON.parse(respText);
+          } catch {
+            return null;
+          }
+        })();
+
+        const respKeys =
+          respJson && typeof respJson === "object" && !Array.isArray(respJson) ? Object.keys(respJson) : [];
+
+        const { rows, total, rowsArrayPath } = extractRowsAndMeta(respJson);
+
+        debug.pages.push({
+          version: VERSION,
+          page,
+          http,
+          reqPayload,
+          respKeys,
+          rowsArrayPath,
+          rowCount: Array.isArray(rows) ? rows.length : 0,
+          total: total ?? null,
+          respSnippet: truncate(respText, 1400),
+        });
+
+        // Stop early on auth issues even if HTTP=200 but content says unauthorized
+        if (http === 401 || http === 403) {
+          errors.push({ page, error: `Auth failed (HTTP ${http})` });
+          break;
+        }
+        if (!rows || !rows.length) {
+          // no more results; break so we don't keep paging empty sets
+          break;
         }
 
-        if (respJson && typeof respJson === "object") {
-          // find rows (we don't assume a fixed shape)
-          const found = findFirstArrayWithObjects(respJson);
-          arrayPath = found.path;
-          const arr = asArray(found.arr);
+        for (const row of rows) {
+          if (processed >= maxEvents) break;
 
-          // best-effort: array may include wrapper objects, but rowCount is enough for now
-          rowCount = arr.length;
+          const host = hostToMatchText(row);
+          const title = titleText(row);
+          const url = pickUrl(row);
 
-          // Accumulate rows (cap at maxEvents)
-          for (const item of arr) {
-            allRows.push(item);
-            if (allRows.length >= maxEvents) break;
+          const m = matchSchool(host, schoolIndex);
+
+          if (m.match) {
+            accepted.push({
+              school: {
+                school_id: m.match.id,
+                school_name: m.match.name,
+                state: m.match.state || null,
+                match_reason: m.reason,
+                host_text: host,
+              },
+              event: {
+                sportId,
+                sportName,
+                activityTypeId,
+                searchRowTitle: title,
+                eventTitle: title,
+                registrationUrl: url,
+                raw: row,
+              },
+            });
+          } else {
+            rejected.push({
+              reason: m.reason,
+              host,
+              title,
+              registrationUrl: url,
+            });
           }
-        } else {
-          // not JSON
-          rowCount = 0;
+
+          processed += 1;
         }
       } catch (e) {
-        totalErrors += 1;
+        const msg = String(e?.message || e);
+        errors.push({ page, error: msg });
         debug.pages.push({
+          version: VERSION,
           page,
-          httpStatus,
+          http: http || 0,
+          reqPayload,
+          respKeys: [],
+          rowsArrayPath: "exception",
           rowCount: 0,
-          reqPayload: payload,
-          error: String(e?.message || e),
-          respSnippet: jsonSnippet(respText || "", 900),
+          total: null,
+          respSnippet: truncate(respText || msg, 1400),
         });
         break;
       }
-
-      // Always push rich debug (this is what your AdminImport prints now)
-      debug.pages.push({
-        page,
-        httpStatus,
-        rowCount,
-        reqPayload: payload,
-        respKeys: respJson && typeof respJson === "object" ? Object.keys(respJson).slice(0, 40) : [],
-        rowsArrayPath: arrayPath,
-        respSnippet: respJson ? jsonSnippet(respJson, 1200) : jsonSnippet(respText, 1200),
-      });
-
-      // Stop early if zero rows returned
-      if (rowCount === 0) break;
-      if (allRows.length >= maxEvents) break;
     }
 
-    // If we got rows but they aren’t the “right” shape, we still return them in debug for inspection.
-    // For your current flow, we’ll build accepted/rejected as empty unless we can confidently map.
-    // BUT: we’ll expose sample row for quick diagnosis.
-    const sampleRow = allRows[0] || null;
-
-    // Minimal mapping attempt: Ryzer typically returns a list of event-ish rows.
-    // For now, we return them in `rawRows` and let your next step map correctly once we see keys.
-    // (This avoids “accepted=0” while flying blind.)
-    // If you prefer fail-closed, set `returnRowsAsAccepted=false` below.
-    const returnRowsAsAccepted = true;
-
-    let accepted = [];
-    let rejected = [];
-
-    if (returnRowsAsAccepted) {
-      // We wrap each row in the structure AdminImport expects (school gate happens later).
-      // Your AdminImport currently expects accepted items shaped like:
-      // { school: { school_id, state }, event: {...} }
-      // We can’t derive school from row without seeing its fields, so we set school=null and keep event=row.
-      accepted = allRows.map((r) => ({
-        school: null,
-        event: r,
-      }));
-    }
-
-    const out = {
-      ok: true,
+    // If you want “dry run” to still show some rejected samples (debug), keep them but cap size
+    const response = {
       stats: {
         accepted: accepted.length,
         rejected: rejected.length,
-        errors: totalErrors,
-        rows: allRows.length,
+        errors: errors.length,
+        processed,
       },
-      accepted,
-      rejected,
-      errors: [],
-      debug: {
-        ...debug,
-        sampleRowKeys: sampleRow ? Object.keys(sampleRow).slice(0, 60) : [],
-        sampleRow: sampleRow ? sampleRow : null,
-        note:
-          allRows.length === 0
-            ? "Zero rows returned. Compare debug.pages[0].reqPayload to the DevTools request payload (ActivityTypes, accountTypeList, Proximity)."
-            : "Rows returned. Next: confirm the field names for title/dates/registration URL so we can map into CampDemo correctly.",
-      },
+      debug,
+      errors: errors.slice(0, 10),
+      // Return small payloads; AdminImport only needs counts + small samples
+      accepted: dryRun ? accepted.slice(0, 25) : accepted,
+      rejected: rejected.slice(0, 25),
     };
 
-    return new Response(JSON.stringify(out), {
+    return new Response(JSON.stringify(response), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   } catch (e) {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: String(e?.message || e),
-        debug,
-        stats: { accepted: 0, rejected: 0, errors: 1 },
-        accepted: [],
-        rejected: [],
-        errors: [{ message: String(e?.message || e) }],
-      }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    debug.notes.push(`top-level error: ${String(e?.message || e)}`);
+    return new Response(JSON.stringify({ error: "Unhandled error", debug }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 });
