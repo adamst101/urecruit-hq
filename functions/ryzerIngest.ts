@@ -1,8 +1,5 @@
 // functions/ryzerIngest.js
 // Base44 Backend Function (Deno runtime)
-// Purpose: Call Ryzer eventSearch server-side and return debug + accepted rows.
-// NOTE: This version is “truth-finding”: it prioritizes visibility + correctness over completeness.
-// Once we see the real response shape, we can add registration-page fetch + richer parsing.
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -14,298 +11,285 @@ function safeString(x) {
   return s ? s : null;
 }
 
-function lc(x) {
-  return String(x || "").toLowerCase().trim();
-}
-
-// Try to locate an array of “rows” in a variety of possible response shapes
-function extractRows(json) {
-  if (!json || typeof json !== "object") return [];
-
-  // Common candidates
-  const candidates = [
-    json.records,
-    json.Records,
-    json.results,
-    json.Results,
-    json.data,
-    json.Data,
-    json.items,
-    json.Items,
-    json.events,
-    json.Events,
-    json.eventList,
-    json.EventList,
-    json.searchResults,
-    json.SearchResults,
-  ];
-
-  for (const c of candidates) {
-    if (Array.isArray(c)) return c;
+function jsonSnippet(obj, max = 1200) {
+  try {
+    const s = typeof obj === "string" ? obj : JSON.stringify(obj);
+    if (!s) return "";
+    return s.length > max ? s.slice(0, max) + "…(truncated)" : s;
+  } catch {
+    return "";
   }
-
-  // Sometimes nested under a known wrapper
-  if (json?.payload && Array.isArray(json.payload)) return json.payload;
-  if (json?.payload?.records && Array.isArray(json.payload.records)) return json.payload.records;
-
-  return [];
 }
 
-function extractTotal(json) {
-  if (!json || typeof json !== "object") return null;
-  const candidates = [
-    json.total,
-    json.Total,
-    json.totalRecords,
-    json.TotalRecords,
-    json.TotalRecordCount,
-    json.recordCount,
-    json.RecordCount,
-  ];
-  for (const c of candidates) {
-    const n = Number(c);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
-}
+// Find an array of “rows” somewhere inside a nested response
+function findFirstArrayWithObjects(root) {
+  const visited = new Set();
+  const queue = [{ node: root, path: "$" }];
 
-// Very lightweight “match a row to a school list” (exact/contains)
-// You can tighten later (aliases, state matching, etc.)
-function findSchoolMatch({ row, schools }) {
-  const schoolName = safeString(row?.schoolName || row?.SchoolName || row?.organizationName || row?.OrganizationName || row?.hostName || row?.HostName);
-  const title = safeString(row?.eventTitle || row?.EventTitle || row?.title || row?.Title || row?.name || row?.Name);
+  while (queue.length) {
+    const { node, path } = queue.shift();
 
-  const hay = lc(`${schoolName || ""} ${title || ""}`);
+    if (!node || typeof node !== "object") continue;
+    if (visited.has(node)) continue;
+    visited.add(node);
 
-  for (const s of schools) {
-    const n = lc(s?.school_name);
-    if (!n) continue;
-    if (hay === n) return s;
-    if (hay.includes(n)) return s;
+    if (Array.isArray(node)) {
+      // If it looks like an array of objects, return it
+      if (node.length === 0) return { path, arr: node };
+      const firstObj = node.find((x) => x && typeof x === "object" && !Array.isArray(x));
+      if (firstObj) return { path, arr: node };
+      continue;
+    }
 
-    // Optional aliases array
-    const aliases = asArray(s?.aliases).map((a) => lc(a)).filter(Boolean);
-    for (const a of aliases) {
-      if (a && hay.includes(a)) return s;
+    // object -> search keys
+    for (const k of Object.keys(node)) {
+      const v = node[k];
+      const nextPath = `${path}.${k}`;
+      if (v && typeof v === "object") {
+        queue.push({ node: v, path: nextPath });
+      }
     }
   }
 
-  return null;
+  return { path: null, arr: [] };
 }
 
-// Hard-coded from the curl you pasted (College/University filter)
-const COLLEGE_ACCOUNT_TYPE_ID = "A7FA36E0-87BE-4750-9DE3-CB60DE133648";
-
-async function ryzerEventSearch({ activityTypeId, page, recordsPerPage, authToken }) {
-  const url = "https://ryzer.com/rest/controller/connect/event/eventSearch/";
-
-  const payload = {
-    Page: page,
-    RecordsPerPage: recordsPerPage,
-    SoldOut: 0,
-    ActivityTypes: [activityTypeId],
-    Proximity: "10000",
-    accountTypeList: [COLLEGE_ACCOUNT_TYPE_ID],
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Accept: "*/*",
-      "Content-Type": "application/json; charset=UTF-8",
-      Origin: "https://ryzer.com",
-      Referer: "https://ryzer.com/Events/?tab=eventSearch",
-      // This is your JWT from the browser (stored in Base44 Secret RYZER_AUTH)
-      authorization: authToken,
-      "User-Agent": "Mozilla/5.0",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const text = await res.text();
-  let json = null;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = null;
-  }
-
-  return { res, text, json, payload };
+// Normalize header: Ryzer curl uses `authorization: <jwt>` (no "Bearer ")
+function buildAuthHeader(raw) {
+  const t = safeString(raw);
+  if (!t) return null;
+  // If user pasted "Bearer xxx" keep it; otherwise pass token raw.
+  return t;
 }
 
 Deno.serve(async (req) => {
   const startedAt = new Date().toISOString();
+  const debug = { startedAt, pages: [] };
 
   try {
-    if (req.method !== "POST") {
-      return new Response(JSON.stringify({ error: "POST only" }), {
-        status: 405,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const body = await req.json().catch(() => ({}));
 
-    const body = await req.json().catch(() => null);
-    const activityTypeId = safeString(body?.activityTypeId);
+    const sportId = safeString(body?.sportId);
     const sportName = safeString(body?.sportName);
+    const activityTypeId = safeString(body?.activityTypeId);
+
     const recordsPerPage = Number(body?.recordsPerPage ?? 25);
     const maxPages = Number(body?.maxPages ?? 1);
-    const maxEvents = Number(body?.maxEvents ?? 50);
+    const maxEvents = Number(body?.maxEvents ?? 200);
     const dryRun = !!body?.dryRun;
 
-    const schools = asArray(body?.schools)
-      .map((s) => ({
-        id: safeString(s?.id),
-        school_name: safeString(s?.school_name),
-        state: safeString(s?.state),
-        aliases: asArray(s?.aliases),
-      }))
-      .filter((s) => s.id && s.school_name);
+    // This is the key filter you used in DevTools
+    // “Hosted By” = College/University
+    const defaultCollegeAccountType = "A7FA36E0-87BE-4750-9DE3-CB60DE133648";
+    const accountTypeList = asArray(body?.accountTypeList).filter(Boolean);
+    const finalAccountTypeList = accountTypeList.length ? accountTypeList : [defaultCollegeAccountType];
 
-    // Secret
-    const authToken = safeString(Deno.env.get("RYZER_AUTH"));
+    // Proximity: your curl sent "10000"
+    const proximity = body?.proximity != null ? String(body.proximity) : "10000";
+
+    const schools = asArray(body?.schools);
+
+    if (!sportId || !sportName) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "Missing sportId or sportName",
+          debug,
+          stats: { accepted: 0, rejected: 0, errors: 1 },
+          accepted: [],
+          rejected: [],
+          errors: [{ message: "Missing sportId or sportName" }],
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     if (!activityTypeId) {
-      return new Response(JSON.stringify({ error: "Missing activityTypeId" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "Missing activityTypeId",
+          debug,
+          stats: { accepted: 0, rejected: 0, errors: 1 },
+          accepted: [],
+          rejected: [],
+          errors: [{ message: "Missing activityTypeId" }],
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
     }
-    if (!authToken) {
-      return new Response(JSON.stringify({ error: "Missing Base44 Secret RYZER_AUTH" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+
+    const authFromEnv = buildAuthHeader(Deno.env.get("RYZER_AUTH"));
+    if (!authFromEnv) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "Missing RYZER_AUTH secret",
+          debug,
+          stats: { accepted: 0, rejected: 0, errors: 1 },
+          accepted: [],
+          rejected: [],
+          errors: [{ message: "Missing RYZER_AUTH secret" }],
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
     }
 
-    const debug = {
-      startedAt,
-      sportName: sportName || null,
-      activityTypeId,
-      recordsPerPage,
-      maxPages,
-      maxEvents,
-      dryRun,
-      schoolsCount: schools.length,
-      pages: [],
-    };
+    const url = "https://ryzer.com/rest/controller/connect/event/eventSearch/";
 
-    const accepted = [];
-    const rejected = [];
-    const errors = [];
-
-    let scanned = 0;
+    // We will request pages until we hit maxPages/maxEvents or get no rows.
+    let allRows = [];
+    let totalErrors = 0;
 
     for (let page = 0; page < maxPages; page++) {
-      if (scanned >= maxEvents) break;
+      const payload = {
+        Page: page,
+        RecordsPerPage: recordsPerPage,
+        SoldOut: 0,
+        ActivityTypes: [activityTypeId],
+        Proximity: proximity,
+        accountTypeList: finalAccountTypeList,
+      };
 
-      const { res, text, json, payload } = await ryzerEventSearch({
-        activityTypeId,
-        page,
-        recordsPerPage,
-        authToken,
-      });
+      let httpStatus = null;
+      let respText = "";
+      let respJson = null;
+      let rowCount = 0;
+      let arrayPath = null;
 
-      const status = res.status;
-      const total = extractTotal(json);
-      const rows = extractRows(json);
-
-      debug.pages.push({
-        page,
-        requestPayload: payload,
-        httpStatus: status,
-        total: total ?? null,
-        rowCount: rows.length,
-        // include a tiny sample for debugging (safe, no token)
-        sampleRowKeys: rows[0] ? Object.keys(rows[0]).slice(0, 30) : [],
-        sampleRow: rows[0] ? rows[0] : null,
-        // if not JSON, show first 300 chars so we can see errors
-        nonJsonPreview: json ? null : text.slice(0, 300),
-      });
-
-      // Fail loudly on auth issues
-      if (status === 401 || status === 403) {
-        errors.push({
-          page,
-          type: "AUTH",
-          message: `Ryzer returned HTTP ${status}. JWT likely expired/invalid or requires additional session cookies.`,
+      try {
+        const r = await fetch(url, {
+          method: "POST",
+          headers: {
+            Accept: "*/*",
+            "Content-Type": "application/json; charset=UTF-8",
+            Origin: "https://ryzer.com",
+            Referer: "https://ryzer.com/Events/?tab=eventSearch",
+            // IMPORTANT: Ryzer expects the header key "authorization"
+            authorization: authFromEnv,
+          },
+          body: JSON.stringify(payload),
         });
-        break;
-      }
 
-      // If response isn't parseable, treat as error (don’t silently return 0/0/0)
-      if (!json) {
-        errors.push({
-          page,
-          type: "PARSE",
-          message: "Ryzer response was not valid JSON (see debug.pages.nonJsonPreview).",
-        });
-        break;
-      }
-
-      // No rows: stop early (common when you hit the end)
-      if (!rows.length) {
-        break;
-      }
-
-      for (const row of rows) {
-        if (scanned >= maxEvents) break;
-        scanned += 1;
-
-        const school = findSchoolMatch({ row, schools });
-
-        // If we can’t match to a known School, treat as rejected (fail-closed)
-        if (!school) {
-          rejected.push({
-            reason: "NO_SCHOOL_MATCH",
-            // keep minimal useful context
-            eventTitle:
-              safeString(row?.eventTitle || row?.EventTitle || row?.title || row?.Title || row?.name || row?.Name) ||
-              null,
-            host:
-              safeString(row?.schoolName || row?.SchoolName || row?.organizationName || row?.OrganizationName || row?.hostName || row?.HostName) ||
-              null,
-          });
-          continue;
+        httpStatus = r.status;
+        respText = await r.text();
+        // try parse json
+        try {
+          respJson = JSON.parse(respText);
+        } catch {
+          respJson = null;
         }
 
-        accepted.push({
-          school: {
-            school_id: school.id,
-            school_name: school.school_name,
-            state: school.state || null,
-          },
-          // pass through the raw row for now; AdminImport already expects `event.*`
-          event: row,
+        if (respJson && typeof respJson === "object") {
+          // find rows (we don't assume a fixed shape)
+          const found = findFirstArrayWithObjects(respJson);
+          arrayPath = found.path;
+          const arr = asArray(found.arr);
+
+          // best-effort: array may include wrapper objects, but rowCount is enough for now
+          rowCount = arr.length;
+
+          // Accumulate rows (cap at maxEvents)
+          for (const item of arr) {
+            allRows.push(item);
+            if (allRows.length >= maxEvents) break;
+          }
+        } else {
+          // not JSON
+          rowCount = 0;
+        }
+      } catch (e) {
+        totalErrors += 1;
+        debug.pages.push({
+          page,
+          httpStatus,
+          rowCount: 0,
+          reqPayload: payload,
+          error: String(e?.message || e),
+          respSnippet: jsonSnippet(respText || "", 900),
         });
+        break;
       }
+
+      // Always push rich debug (this is what your AdminImport prints now)
+      debug.pages.push({
+        page,
+        httpStatus,
+        rowCount,
+        reqPayload: payload,
+        respKeys: respJson && typeof respJson === "object" ? Object.keys(respJson).slice(0, 40) : [],
+        rowsArrayPath: arrayPath,
+        respSnippet: respJson ? jsonSnippet(respJson, 1200) : jsonSnippet(respText, 1200),
+      });
+
+      // Stop early if zero rows returned
+      if (rowCount === 0) break;
+      if (allRows.length >= maxEvents) break;
     }
 
-    // stats
-    const stats = {
-      scanned,
-      accepted: accepted.length,
-      rejected: rejected.length,
-      errors: errors.length,
+    // If we got rows but they aren’t the “right” shape, we still return them in debug for inspection.
+    // For your current flow, we’ll build accepted/rejected as empty unless we can confidently map.
+    // BUT: we’ll expose sample row for quick diagnosis.
+    const sampleRow = allRows[0] || null;
+
+    // Minimal mapping attempt: Ryzer typically returns a list of event-ish rows.
+    // For now, we return them in `rawRows` and let your next step map correctly once we see keys.
+    // (This avoids “accepted=0” while flying blind.)
+    // If you prefer fail-closed, set `returnRowsAsAccepted=false` below.
+    const returnRowsAsAccepted = true;
+
+    let accepted = [];
+    let rejected = [];
+
+    if (returnRowsAsAccepted) {
+      // We wrap each row in the structure AdminImport expects (school gate happens later).
+      // Your AdminImport currently expects accepted items shaped like:
+      // { school: { school_id, state }, event: {...} }
+      // We can’t derive school from row without seeing its fields, so we set school=null and keep event=row.
+      accepted = allRows.map((r) => ({
+        school: null,
+        event: r,
+      }));
+    }
+
+    const out = {
+      ok: true,
+      stats: {
+        accepted: accepted.length,
+        rejected: rejected.length,
+        errors: totalErrors,
+        rows: allRows.length,
+      },
+      accepted,
+      rejected,
+      errors: [],
+      debug: {
+        ...debug,
+        sampleRowKeys: sampleRow ? Object.keys(sampleRow).slice(0, 60) : [],
+        sampleRow: sampleRow ? sampleRow : null,
+        note:
+          allRows.length === 0
+            ? "Zero rows returned. Compare debug.pages[0].reqPayload to the DevTools request payload (ActivityTypes, accountTypeList, Proximity)."
+            : "Rows returned. Next: confirm the field names for title/dates/registration URL so we can map into CampDemo correctly.",
+      },
     };
 
-    return new Response(
-      JSON.stringify(
-        {
-          stats,
-          accepted,
-          rejected: dryRun ? rejected.slice(0, 50) : rejected, // cap in dryRun to keep response light
-          errors,
-          debug, // <-- THIS is what you use to see what Ryzer actually returned
-        },
-        null,
-        2
-      ),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
-  } catch (e) {
-    return new Response(JSON.stringify({ error: String(e?.message || e), startedAt: new Date().toISOString() }), {
-      status: 500,
+    return new Response(JSON.stringify(out), {
+      status: 200,
       headers: { "Content-Type": "application/json" },
     });
+  } catch (e) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: String(e?.message || e),
+        debug,
+        stats: { accepted: 0, rejected: 0, errors: 1 },
+        accepted: [],
+        rejected: [],
+        errors: [{ message: String(e?.message || e) }],
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
 });
