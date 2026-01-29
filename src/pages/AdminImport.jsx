@@ -132,6 +132,39 @@ function lc(x) {
 }
 
 /* ----------------------------
+   NEW: School normalization + index helpers (Ryzer upsert)
+----------------------------- */
+function normalizeSchoolName(name) {
+  let s = String(name || "").toLowerCase().trim();
+  if (!s) return "";
+
+  s = s.replace(/&/g, " and ");
+  s = s.replace(/[(){}\[\].,;:'"!?/\\|*_+=~`]/g, " ");
+  s = s.replace(/[-–—]/g, " ");
+  s = s.replace(/\s+/g, " ").trim();
+
+  // strip common trailing program words that show up in organizer strings
+  s = s.replace(
+    /\b(football|baseball|softball|soccer|basketball|volleyball|lacrosse|cheer|dance|field hockey|hockey|camps?|clinic|showcase|prospect)\b/g,
+    " "
+  );
+
+  // strip " - " style separators already converted to spaces
+  s = s.replace(/\s+/g, " ").trim();
+
+  // normalize common institution words (light touch)
+  s = s.replace(/\buniversity\b/g, "univ");
+  s = s.replace(/\bcollege\b/g, "col");
+  s = s.replace(/\bstate\b/g, "st");
+
+  return s.replace(/\s+/g, " ").trim();
+}
+
+function buildSchoolKey(normName, state) {
+  return `${normName || ""}|${String(state || "").toUpperCase().trim()}`;
+}
+
+/* ----------------------------
    Routes (hardcoded; no createPageUrl)
 ----------------------------- */
 const ROUTES = {
@@ -1052,8 +1085,118 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
+     NEW: School upsert for Ryzer
+  ----------------------------- */
+  async function buildSchoolIndexOnce() {
+    const rows = asArray(await SchoolEntity.filter({}));
+    const index = new Map();
+
+    for (const s of rows) {
+      const id = safeString(s?.id);
+      const name = safeString(s?.school_name || s?.name);
+      const state = safeString(s?.state) || "";
+      if (!id || !name) continue;
+
+      const norm = normalizeSchoolName(name);
+      if (!norm) continue;
+
+      const key = buildSchoolKey(norm, state);
+      if (!index.has(key)) {
+        index.set(key, {
+          id: String(id),
+          school_name: name,
+          state: state || null,
+        });
+      }
+    }
+
+    return { index, count: rows.length };
+  }
+
+  async function createSchoolBestEffort({ school_name, city, state }) {
+    // 1) create with minimal fields
+    let created = null;
+    try {
+      created = await SchoolEntity.create({
+        school_name,
+        city: city || null,
+        state: state || null,
+      });
+    } catch {
+      created = null;
+    }
+
+    // 2) if schema differs, try alternate payloads
+    if (!created || !created?.id) {
+      const alt = await tryCreateWithPayloads(SchoolEntity, [
+        { name: school_name, city: city || null, state: state || null },
+        { school_name, state: state || null },
+        { name: school_name, state: state || null },
+      ]);
+
+      if (alt && typeof alt === "object" && alt?.id) created = alt;
+    }
+
+    // 3) if create returns truthy but not an object, re-query by filter (best effort)
+    if (!created || !created?.id) {
+      try {
+        const hit = asArray(await SchoolEntity.filter({ school_name })).find((r) => {
+          const rs = safeString(r?.state) || "";
+          return String(rs || "").toUpperCase().trim() === String(state || "").toUpperCase().trim();
+        });
+        if (hit?.id) created = hit;
+      } catch {}
+    }
+
+    // 4) post-create: set flags if supported
+    if (created?.id) {
+      const id = String(created.id);
+      await tryUpdateWithPayloads(SchoolEntity, id, [
+        { active: true, needs_review: true, source_platform: "ryzer" },
+        { active: true, source_platform: "ryzer" },
+        { active: true },
+        { is_active: true },
+        { status: "Active" },
+      ]);
+    }
+
+    return created;
+  }
+
+  async function upsertSchoolFromHost({ host_name_guess, city, state, schoolIndex }) {
+    const host = safeString(host_name_guess);
+    if (!host) return { school_id: null, action: "skipped_missing_host" };
+
+    const st = safeString(state) || "";
+    const norm = normalizeSchoolName(host);
+    if (!norm) return { school_id: null, action: "skipped_bad_host" };
+
+    const key = buildSchoolKey(norm, st);
+    const hit = schoolIndex.get(key);
+
+    if (hit?.id) {
+      return { school_id: String(hit.id), action: "matched" };
+    }
+
+    const created = await createSchoolBestEffort({
+      school_name: host,
+      city: safeString(city),
+      state: safeString(state),
+    });
+
+    if (created?.id) {
+      schoolIndex.set(key, { id: String(created.id), school_name: host, state: st || null });
+      return { school_id: String(created.id), action: "created" };
+    }
+
+    return { school_id: null, action: "create_failed" };
+  }
+
+  /* ----------------------------
      Ryzer ingestion runner
-     Writes accepted results into CampDemo (so your Promote flow works)
+     New behavior:
+     - call ryzerIngest (v5) which returns accepted[] with derived.host_name_guess
+     - upsert School client-side (auto-create) then write CampDemo referencing school_id
   ----------------------------- */
   async function upsertCampDemoByEventKey(payload) {
     if (!CampDemoEntity?.filter || !CampDemoEntity?.create || !CampDemoEntity?.update) {
@@ -1079,16 +1222,31 @@ export default function AdminImport() {
     return "created";
   }
 
-  function parsePriceRange(priceOptions) {
-    const prices = asArray(priceOptions)
-      .map((o) => String(o?.price || "").replace(/[^0-9.]/g, ""))
+  function parsePriceFromString(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return { price_min: null, price_max: null, price_best: null };
+
+    // extract all numeric values
+    const nums = asArray(s.match(/\d+(\.\d+)?/g))
       .map((x) => Number(x))
       .filter((n) => Number.isFinite(n));
 
-    if (!prices.length) return { price_min: null, price_max: null, price_best: null };
-    const min = Math.min(...prices);
-    const max = Math.max(...prices);
+    if (!nums.length) return { price_min: null, price_max: null, price_best: null };
+
+    const min = Math.min(...nums);
+    const max = Math.max(...nums);
     return { price_min: min, price_max: max, price_best: min };
+  }
+
+  function bestStartDateFromEventDates(rawDates) {
+    const s = safeString(rawDates);
+    if (!s) return null;
+
+    // supports "02/01/2026" and "02/01/2026 - 02/15/2026"
+    const m = s.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/);
+    if (m?.[1]) return toISODate(m[1]);
+
+    return null;
   }
 
   async function runRyzerIngestion() {
@@ -1107,17 +1265,9 @@ export default function AdminImport() {
     );
 
     try {
-      const schoolRows = asArray(await SchoolEntity.filter({}));
-      const schools = schoolRows
-        .map((s) => ({
-          id: String(s?.id || ""),
-          school_name: String(s?.school_name || "").trim(),
-          state: String(s?.state || "").trim(),
-          aliases: asArray(tryParseJson(s?.aliases_json)).filter(Boolean),
-        }))
-        .filter((s) => s.id && s.school_name);
-
-      appendLog(`Loaded Schools: ${schools.length}`);
+      // Build school index once (for fast match + de-dupe within run)
+      const { index: schoolIndex, count: schoolCount } = await buildSchoolIndexOnce();
+      appendLog(`Loaded Schools: ${schoolCount} (indexed=${schoolIndex.size})`);
 
       const res = await fetch("/functions/ryzerIngest", {
         method: "POST",
@@ -1130,7 +1280,7 @@ export default function AdminImport() {
           maxPages: ryzerMaxPages,
           maxEvents: ryzerMaxEvents,
           dryRun: ryzerDryRun,
-          schools,
+          // no schools passed anymore (v5 doesn’t use it)
         }),
       });
 
@@ -1146,9 +1296,12 @@ export default function AdminImport() {
         `Ryzer results: accepted=${data?.stats?.accepted ?? 0}, rejected=${data?.stats?.rejected ?? 0}, errors=${data?.stats?.errors ?? 0}`
       );
       appendLog(`Ryzer processed: ${data?.stats?.processed ?? 0}`);
+      appendLog(
+        `Ryzer stats detail: missingHost=${data?.stats?.rejectedMissingHost ?? 0}, junkHost=${data?.stats?.rejectedJunkHost ?? 0}, wrongSport=${data?.stats?.rejectedWrongSport ?? 0}`
+      );
       appendLog(`Ryzer debug version: ${data?.debug?.version || "MISSING"}`);
 
-      // Print page 0 debug (so we can SEE parsing path + rowCount)
+      // Print page 0 debug
       const p0 = asArray(data?.debug?.pages)[0] || null;
       if (p0) {
         appendLog(`Ryzer debug p0 http=${p0.http ?? "n/a"} rowCount=${p0.rowCount ?? "n/a"} total=${p0.total ?? "n/a"}`);
@@ -1156,24 +1309,34 @@ export default function AdminImport() {
         appendLog(`Ryzer debug p0 dataWasString: ${p0.dataWasString ? "true" : "false"}`);
         appendLog(`Ryzer debug p0 innerKeys: ${(p0.innerKeys || []).join(", ") || "n/a"}`);
         appendLog(`Ryzer debug p0 rowsArrayPath: ${p0.rowsArrayPath || "n/a"}`);
+        appendLog(`Ryzer debug p0 uniqueActivityNames: ${JSON.stringify(p0.uniqueActivityNames || [])}`);
         appendLog(`Ryzer debug p0 reqPayload: ${JSON.stringify(p0.reqPayload || {})}`);
       } else {
         appendLog("Ryzer debug: pages[0] missing");
       }
 
-      // Print rejected samples so you see WHY it’s not matching your school list
-      const rej = asArray(data?.rejected).slice(0, 10);
+      // Print rejected samples (v5 returns rejected_samples)
+      const rej = asArray(data?.rejected_samples).slice(0, 10);
       if (rej.length) {
         appendLog(`Ryzer rejected samples (first ${rej.length}):`);
         for (const r of rej) {
           appendLog(
-            `- reason=${r?.reason || "n/a"} host="${r?.host || ""}" title="${r?.title || ""}" url="${r?.registrationUrl || ""}"`
+            `- reason=${r?.reason || "n/a"} host_guess="${r?.host_guess || ""}" title="${r?.title || ""}" url="${r?.registrationUrl || ""}"`
           );
         }
       }
 
-      // Dry run => just show summary
+      // Dry run => show sample accepted rows and stop
       if (ryzerDryRun) {
+        const acc = asArray(data?.accepted).slice(0, 5);
+        if (acc.length) {
+          appendLog(`Ryzer accepted samples (first ${acc.length}):`);
+          for (const a of acc) {
+            appendLog(
+              `- host="${a?.derived?.host_name_guess || ""}" | title="${a?.event?.eventTitle || ""}" | url="${a?.event?.registrationUrl || ""}"`
+            );
+          }
+        }
         appendLog("DryRun=true: no DB writes performed.");
         return;
       }
@@ -1184,40 +1347,70 @@ export default function AdminImport() {
         return;
       }
 
-      let created = 0;
-      let updated = 0;
+      // Counters
+      let schoolsCreated = 0;
+      let schoolsMatched = 0;
+      let campDemoCreated = 0;
+      let campDemoUpdated = 0;
       let skipped = 0;
 
       for (let i = 0; i < accepted.length; i++) {
         const item = accepted[i];
-        const school_id = safeString(item?.school?.school_id);
-        const state = safeString(item?.school?.state) || null;
 
+        const derived = item?.derived || {};
         const ev = item?.event || {};
-        const camp_name =
-          safeString(ev?.eventTitle || ev?.event_title || ev?.eventTitle) ||
-          safeString(ev?.searchRowTitle) ||
-          "Camp";
 
-        let start_date = null;
-        const rawDates = safeString(ev?.eventDates);
-        const m = rawDates ? rawDates.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/) : null;
-        if (m) start_date = toISODate(m[1]);
+        const hostGuess = safeString(derived?.host_name_guess);
+        const city = safeString(ev?.city) || safeString(derived?.city) || null;
+        const state = safeString(ev?.state) || safeString(derived?.state) || null;
 
-        if (!school_id || !start_date) {
+        // Upsert School (match or create)
+        const schoolResult = await upsertSchoolFromHost({
+          host_name_guess: hostGuess,
+          city,
+          state,
+          schoolIndex,
+        });
+
+        if (schoolResult.action === "created") schoolsCreated += 1;
+        if (schoolResult.action === "matched") schoolsMatched += 1;
+
+        const school_id = safeString(schoolResult.school_id);
+        if (!school_id) {
           skipped += 1;
-          appendLog(`SKIP write: missing school_id or start_date | ${camp_name}`);
+          appendLog(`SKIP: school upsert failed | host="${hostGuess || ""}" title="${ev?.eventTitle || ""}"`);
           continue;
         }
 
-        const { price_min, price_max, price_best } = parsePriceRange(ev?.priceOptions);
+        const camp_name = safeString(ev?.eventTitle) || "Camp";
         const link_url = safeString(ev?.registrationUrl) || null;
 
-        const season_year = safeNumber(computeSeasonYearFootball(start_date));
+        const rawDates = safeString(ev?.eventDates) || safeString(ev?.event_dates_raw) || null;
+        const start_date = bestStartDateFromEventDates(rawDates);
+
+        if (!start_date) {
+          skipped += 1;
+          appendLog(`SKIP: missing start_date | ${camp_name} | dates="${rawDates || ""}"`);
+          continue;
+        }
+
+        // Price
+        const priceRaw = safeString(ev?.price) || null;
+        const { price_min, price_max, price_best } = parsePriceFromString(priceRaw);
+
+        // Season year: football rule, else year(start_date)
+        let season_year = null;
+        if (String(selectedSportName || "").trim().toLowerCase() === "football") {
+          season_year = safeNumber(computeSeasonYearFootball(start_date));
+        } else {
+          const y = Number(String(start_date).slice(0, 4));
+          season_year = Number.isFinite(y) ? y : null;
+        }
+
+        // Stable program_id: prefer Ryzer event id
+        const source_event_id = safeString(ev?.source_event_id);
         const source_platform = "ryzer";
-        const program_id = safeString(ev?.programLabel)
-          ? `ryzer:${slugify(ev.programLabel)}`
-          : `ryzer:${slugify(camp_name)}`;
+        const program_id = source_event_id ? `ryzer:${source_event_id}` : `ryzer:${slugify(camp_name)}`;
 
         const event_key = buildEventKey({
           source_platform,
@@ -1227,15 +1420,13 @@ export default function AdminImport() {
           source_url: link_url,
         });
 
-        const sections_json = safeObject(ev?.sections) || null;
-
         const payload = {
           school_id,
           sport_id: selectedSportId,
           camp_name,
           start_date,
           end_date: null,
-          city: null,
+          city: city || null,
           state: state || null,
           position_ids: [],
           price: price_best != null ? price_best : null,
@@ -1248,26 +1439,41 @@ export default function AdminImport() {
           source_platform,
           source_url: link_url,
           last_seen_at: runIso,
-          content_hash: simpleHash({ school_id, camp_name, start_date, link_url, rawDates }),
+          content_hash: simpleHash({
+            school_id,
+            camp_name,
+            start_date,
+            link_url,
+            rawDates,
+            hostGuess,
+            priceRaw,
+          }),
 
           event_dates_raw: rawDates || null,
           grades_raw: safeString(ev?.grades) || null,
           register_by_raw: safeString(ev?.registerBy) || null,
-          price_raw: null,
+          price_raw: priceRaw || null,
           price_min,
           price_max,
-          sections_json,
+          sections_json: safeObject(ev?.sections_json) || null,
         };
 
         const r = await upsertCampDemoByEventKey(payload);
-        if (r === "created") created += 1;
-        if (r === "updated") updated += 1;
+        if (r === "created") campDemoCreated += 1;
+        if (r === "updated") campDemoUpdated += 1;
 
-        if ((i + 1) % 10 === 0) appendLog(`Write progress: ${i + 1}/${accepted.length}`);
+        if ((i + 1) % 10 === 0) {
+          appendLog(
+            `Write progress: ${i + 1}/${accepted.length} | schoolsCreated=${schoolsCreated} schoolsMatched=${schoolsMatched} campDemoCreated=${campDemoCreated} campDemoUpdated=${campDemoUpdated} skipped=${skipped}`
+          );
+        }
+
         await sleep(50);
       }
 
-      appendLog(`CampDemo writes done. created=${created} updated=${updated} skipped=${skipped}`);
+      appendLog(
+        `Done. schoolsCreated=${schoolsCreated} schoolsMatched=${schoolsMatched} campDemoCreated=${campDemoCreated} campDemoUpdated=${campDemoUpdated} skipped=${skipped}`
+      );
     } catch (e) {
       appendLog(`Ryzer ingestion ERROR: ${String(e?.message || e)}`);
     } finally {
@@ -1293,8 +1499,8 @@ export default function AdminImport() {
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Ryzer Ingestion (by sport)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Pulls events from Ryzer search API and fetches each registration page server-side.
-            Writes accepted results into <b>CampDemo</b> (then use Promote).
+            Calls Ryzer event search API and returns normalized events with a <b>host_name_guess</b>. When not Dry Run,
+            this page auto-creates/matches <b>School</b> and writes rows into <b>CampDemo</b> (then use Promote).
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1369,7 +1575,7 @@ export default function AdminImport() {
               onClick={runRyzerIngestion}
               disabled={ryzerWorking || working || seedWorking || sportAdminWorking}
             >
-              {ryzerWorking ? "Running…" : ryzerDryRun ? "Run Ryzer (Dry Run)" : "Run Ryzer → Write CampDemo"}
+              {ryzerWorking ? "Running…" : ryzerDryRun ? "Run Ryzer (Dry Run)" : "Run Ryzer → Create Schools + Write CampDemo"}
             </Button>
           </div>
 
