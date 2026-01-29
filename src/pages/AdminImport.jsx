@@ -275,9 +275,7 @@ async function tryDelete(Entity, id) {
 }
 
 /* ----------------------------
-   NEW: Ryzer ActivityTypeId mapping (MVP)
-   You already captured Football.
-   For other sports, capture once via DevTools and paste here later.
+   Ryzer ActivityTypeId mapping (MVP)
 ----------------------------- */
 const RYZER_ACTIVITY_TYPE_BY_SPORTNAME = {
   Football: "A8ADF526-3822-4261-ADCF-1592CF4BB7FF",
@@ -307,7 +305,7 @@ export default function AdminImport() {
   const [seedWorking, setSeedWorking] = useState(false);
   const [seedStats, setSeedStats] = useState({ attempted: 0, created: 0, updated: 0, errors: 0 });
 
-  // Sport admin actions (soccer split, volleyball normalize)
+  // Sport admin actions
   const [sportAdminWorking, setSportAdminWorking] = useState(false);
   const [sportAdminResult, setSportAdminResult] = useState("");
 
@@ -328,7 +326,7 @@ export default function AdminImport() {
   const [positionSaveWorking, setPositionSaveWorking] = useState(false);
   const [positionDeleteWorking, setPositionDeleteWorking] = useState("");
 
-  // ✅ NEW: Ryzer ingestion controls
+  // Ryzer ingestion controls
   const [ryzerWorking, setRyzerWorking] = useState(false);
   const [ryzerDryRun, setRyzerDryRun] = useState(true);
   const [ryzerRecordsPerPage, setRyzerRecordsPerPage] = useState(25);
@@ -381,6 +379,7 @@ export default function AdminImport() {
       }
       setSportsEdit(nextEdit);
 
+      // preserve selection if possible; else pick first
       if (!selectedSportId && normalized.length) {
         setSelectedSportId(normalized[0].id);
         setSelectedSportName(normalized[0].name);
@@ -834,7 +833,7 @@ export default function AdminImport() {
 
   /* ----------------------------
      Manual Sport Manager (CRUD + Active/Inactive)
-  ----------------------------- */
+----------------------------- */
   async function saveSportRow(sportId) {
     if (!SportEntity?.update) {
       appendLog("ERROR: Sport entity not available for update.");
@@ -914,6 +913,7 @@ export default function AdminImport() {
     const hit = sports.find((s) => s.id === sportId);
     const label = hit?.name || sportId;
 
+    // safety: if positions exist, block delete
     let hasPositions = false;
     try {
       if (PositionEntity?.filter) {
@@ -1057,8 +1057,8 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     ✅ NEW: Ryzer ingestion runner
-     Writes accepted results into CampDemo (so your existing Promote flow works)
+     ✅ Ryzer ingestion runner
+     Writes accepted results into CampDemo (so Promote flow works)
   ----------------------------- */
   async function upsertCampDemoByEventKey(payload) {
     if (!CampDemoEntity?.filter || !CampDemoEntity?.create || !CampDemoEntity?.update) {
@@ -1086,7 +1086,7 @@ export default function AdminImport() {
 
   function parsePriceRange(priceOptions) {
     const prices = asArray(priceOptions)
-      .map((o) => String(o?.price || "").replace(/[^0-9.]/g, ""))
+      .map((o) => String(o?.price || o?.Price || "").replace(/[^0-9.]/g, ""))
       .map((x) => Number(x))
       .filter((n) => Number.isFinite(n));
 
@@ -1097,29 +1097,34 @@ export default function AdminImport() {
   }
 
   async function runRyzerIngestion() {
-    if (!selectedSportId) return appendLog("ERROR: Select a sport first.");
-    if (!safeString(ryzerActivityTypeId)) return appendLog("ERROR: Provide Ryzer ActivityTypeId GUID.");
+    // Snapshot state at click-time (prevents confusion in logs)
+    const sportId = selectedSportId;
+    const sportName = selectedSportName;
+    const activityTypeId = safeString(ryzerActivityTypeId);
+    const dryRun = !!ryzerDryRun;
+    const rpp = Number(ryzerRecordsPerPage || 0);
+    const maxPages = Number(ryzerMaxPages || 0);
+    const maxEvents = Number(ryzerMaxEvents || 0);
 
+    if (!sportId) return appendLog("ERROR: Select a sport first.");
+    if (!activityTypeId) return appendLog("ERROR: Provide Ryzer ActivityTypeId GUID.");
     if (!SchoolEntity?.filter) return appendLog("ERROR: School entity not available.");
     if (!CampDemoEntity) return appendLog("ERROR: CampDemo entity not available.");
 
     const runIso = new Date().toISOString();
 
     setRyzerWorking(true);
-    appendLog(`Starting: Ryzer ingestion (${selectedSportName}) @ ${runIso}`);
-    appendLog(
-      `DryRun=${ryzerDryRun ? "true" : "false"} | RPP=${ryzerRecordsPerPage} | Pages=${ryzerMaxPages} | MaxEvents=${ryzerMaxEvents}`
-    );
+    appendLog(`Starting: Ryzer ingestion (${sportName}) @ ${runIso}`);
+    appendLog(`DryRun=${dryRun ? "true" : "false"} | RPP=${rpp} | Pages=${maxPages} | MaxEvents=${maxEvents}`);
 
     try {
-      // Pull Schools once and pass to function (fail-closed gate happens server-side)
+      // Pull Schools once and pass to function
       const schoolRows = asArray(await SchoolEntity.filter({}));
       const schools = schoolRows
         .map((s) => ({
           id: String(s?.id || ""),
           school_name: String(s?.school_name || "").trim(),
           state: String(s?.state || "").trim(),
-          // OPTIONAL: if you later add aliases_json to School schema, we’ll pass it
           aliases: asArray(tryParseJson(s?.aliases_json)).filter(Boolean),
         }))
         .filter((s) => s.id && s.school_name);
@@ -1130,51 +1135,18 @@ export default function AdminImport() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sportId: selectedSportId,
-          sportName: selectedSportName,
-          activityTypeId: ryzerActivityTypeId,
-          recordsPerPage: ryzerRecordsPerPage,
-          maxPages: ryzerMaxPages,
-          maxEvents: ryzerMaxEvents,
-          dryRun: ryzerDryRun,
+          sportId,
+          sportName,
+          activityTypeId,
+          recordsPerPage: rpp,
+          maxPages,
+          maxEvents,
+          dryRun,
           schools,
         }),
       });
 
       const data = await res.json().catch(() => null);
-
-      // ✅ NEW: print function debug into AdminImport log
-      try {
-        appendLog(`Ryzer debug present? ${data?.debug?.pages?.length ? "YES" : "NO"}`);
-
-        if (data?.debug?.pages?.length) {
-          const p0 = data.debug.pages[0];
-          appendLog(
-            `Ryzer debug p0: http=${p0.httpStatus} rowCount=${p0.rowCount} total=${p0.total ?? "n/a"}`
-          );
-
-          if (p0.sampleRowKeys?.length) {
-            appendLog(`Ryzer sampleRowKeys: ${p0.sampleRowKeys.join(", ")}`);
-          }
-
-          if (p0.nonJsonPreview) {
-            appendLog(`Ryzer nonJsonPreview: ${String(p0.nonJsonPreview).slice(0, 900)}`);
-          }
-
-          if (p0.sampleRow) {
-            const snippet = JSON.stringify(p0.sampleRow, null, 2);
-            appendLog(`Ryzer sampleRow (snippet): ${snippet.slice(0, 900)}`);
-          }
-        } else {
-          appendLog("Ryzer debug: (no pages in response)");
-        }
-
-        if (data?.errors?.length) {
-          appendLog(`Ryzer function errors: ${JSON.stringify(data.errors, null, 2).slice(0, 1400)}`);
-        }
-      } catch (e) {
-        appendLog(`Debug print error: ${String(e?.message || e)}`);
-      }
 
       if (!res.ok) {
         appendLog(`Ryzer function ERROR (HTTP ${res.status})`);
@@ -1182,14 +1154,46 @@ export default function AdminImport() {
         return;
       }
 
-      appendLog(
-        `Ryzer results: accepted=${data?.stats?.accepted ?? 0}, rejected=${data?.stats?.rejected ?? 0}, errors=${
-          data?.stats?.errors ?? 0
-        }`
-      );
+      appendLog(`Ryzer results: accepted=${data?.stats?.accepted ?? 0}, rejected=${data?.stats?.rejected ?? 0}, errors=${data?.stats?.errors ?? 0}`);
+
+      // ✅ Fix: Print function debug into AdminImport log (expanded)
+      try {
+        const dbg = data?.debug || null;
+        appendLog(`Ryzer debug version: ${dbg?.version || "MISSING"}`);
+
+        const p0 = Array.isArray(dbg?.pages) ? dbg.pages[0] : null;
+        if (p0) {
+          appendLog(`Ryzer debug p0 http=${p0.http ?? "n/a"} rowCount=${p0.rowCount ?? "n/a"} total=${p0.total ?? "n/a"}`);
+          appendLog(`Ryzer debug p0 keys: ${(p0.respKeys || []).join(", ") || "n/a"}`);
+          appendLog(`Ryzer debug p0 rowsArrayPath: ${p0.rowsArrayPath || "n/a"}`);
+
+          if (p0.reqPayload) appendLog(`Ryzer debug p0 reqPayload: ${JSON.stringify(p0.reqPayload)}`);
+          else appendLog("Ryzer debug p0 reqPayload: MISSING");
+
+          if (p0.respSnippet) {
+            const snip = String(p0.respSnippet);
+            appendLog(`Ryzer debug p0 respSnippet: ${snip.slice(0, 800)}${snip.length > 800 ? "…(truncated)" : ""}`);
+          } else {
+            appendLog("Ryzer debug p0 respSnippet: MISSING");
+          }
+        } else {
+          appendLog("Ryzer debug: pages[0] missing");
+        }
+
+        // If function returned a couple rejected examples, print them (helps diagnose match rules)
+        const rej = asArray(data?.rejected).slice(0, 5);
+        if (rej.length) {
+          appendLog(`Ryzer rejected samples (first ${rej.length}):`);
+          for (const r of rej) {
+            appendLog(`- reason=${r?.reason || "n/a"} host="${r?.host || ""}" title="${r?.title || ""}"`);
+          }
+        }
+      } catch (e) {
+        appendLog(`Ryzer debug print ERROR: ${String(e?.message || e)}`);
+      }
 
       // Dry run => just show summary
-      if (ryzerDryRun) {
+      if (dryRun) {
         appendLog("DryRun=true: no DB writes performed.");
         return;
       }
@@ -1211,15 +1215,15 @@ export default function AdminImport() {
 
         const ev = item?.event || {};
         const camp_name =
-          safeString(ev?.eventTitle || ev?.event_title || ev?.eventTitle) ||
+          safeString(ev?.eventTitle || ev?.event_title || ev?.title) ||
           safeString(ev?.searchRowTitle) ||
+          safeString(ev?.name) ||
           "Camp";
-        const locationText = safeString(ev?.locationText || "");
 
-        // Start date: we only have raw strings from Ryzer; store start_date best-effort
+        // best-effort start_date from eventDates
         let start_date = null;
-        const rawDates = safeString(ev?.eventDates);
-        const m = rawDates ? rawDates.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/) : null;
+        const rawDates = safeString(ev?.eventDates || ev?.dates || "");
+        const m = rawDates.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/);
         if (m) start_date = toISODate(m[1]);
 
         // If still missing, skip (Camp schema requires start_date)
@@ -1229,13 +1233,14 @@ export default function AdminImport() {
           continue;
         }
 
-        const { price_min, price_max, price_best } = parsePriceRange(ev?.priceOptions);
-        const link_url = safeString(ev?.registrationUrl) || null;
+        const { price_min, price_max, price_best } = parsePriceRange(ev?.priceOptions || ev?.prices);
+        const link_url = safeString(ev?.registrationUrl || ev?.registration_url || ev?.url) || null;
 
+        // (MVP) football rollover; extend per sport later
         const season_year = safeNumber(computeSeasonYearFootball(start_date));
         const source_platform = "ryzer";
-        const program_id = safeString(ev?.programLabel)
-          ? `ryzer:${slugify(ev.programLabel)}`
+        const program_id = safeString(ev?.programLabel || ev?.program_name || ev?.programId)
+          ? `ryzer:${slugify(ev.programLabel || ev.program_name || ev.programId)}`
           : `ryzer:${slugify(camp_name)}`;
 
         const event_key = buildEventKey({
@@ -1250,7 +1255,7 @@ export default function AdminImport() {
 
         const payload = {
           school_id,
-          sport_id: selectedSportId,
+          sport_id: sportId,
           camp_name,
           start_date,
           end_date: null,
@@ -1271,8 +1276,8 @@ export default function AdminImport() {
 
           event_dates_raw: rawDates || null,
           grades_raw: safeString(ev?.grades) || null,
-          register_by_raw: safeString(ev?.registerBy) || null,
-          price_raw: null,
+          register_by_raw: safeString(ev?.registerBy || ev?.register_by) || null,
+          price_raw: safeString(ev?.priceRaw || ev?.price_raw) || null,
           price_min,
           price_max,
           sections_json,
@@ -1308,17 +1313,18 @@ export default function AdminImport() {
           </Button>
         </div>
 
-        {/* ✅ NEW: Ryzer ingestion */}
+        {/* ✅ Ryzer ingestion */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Ryzer Ingestion (by sport)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Pulls events from Ryzer search API and fetches each registration page server-side. Writes accepted results into{" "}
-            <b>CampDemo</b> (then use Promote).
+            Pulls events from Ryzer search API server-side. Writes accepted results into <b>CampDemo</b> (then use Promote).
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Ryzer ActivityTypeId (GUID)</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Ryzer ActivityTypeId (GUID)
+              </label>
               <input
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 value={ryzerActivityTypeId}
@@ -1384,14 +1390,16 @@ export default function AdminImport() {
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button onClick={runRyzerIngestion} disabled={ryzerWorking || working || seedWorking || sportAdminWorking}>
+            <Button
+              onClick={runRyzerIngestion}
+              disabled={ryzerWorking || working || seedWorking || sportAdminWorking}
+            >
               {ryzerWorking ? "Running…" : ryzerDryRun ? "Run Ryzer (Dry Run)" : "Run Ryzer → Write CampDemo"}
             </Button>
           </div>
 
           <div className="mt-2 text-[11px] text-slate-500">
-            If you see auth errors (401/403), add Base44 secret <b>RYZER_AUTH</b> = the authorization JWT captured from
-            DevTools.
+            If you see auth errors (401/403), add Base44 secret <b>RYZER_AUTH</b> = the authorization JWT captured from DevTools.
           </div>
         </Card>
 
@@ -1656,7 +1664,11 @@ export default function AdminImport() {
                               onChange={(e) =>
                                 setPositionsEdit((prev) => ({
                                   ...prev,
-                                  [p.id]: { ...(prev[p.id] || {}), code: e.target.value, name: prev[p.id]?.name ?? p.name },
+                                  [p.id]: {
+                                    ...(prev[p.id] || {}),
+                                    code: e.target.value,
+                                    name: prev[p.id]?.name ?? p.name,
+                                  },
                                 }))
                               }
                             />
@@ -1668,7 +1680,11 @@ export default function AdminImport() {
                               onChange={(e) =>
                                 setPositionsEdit((prev) => ({
                                   ...prev,
-                                  [p.id]: { ...(prev[p.id] || {}), name: e.target.value, code: prev[p.id]?.code ?? p.code },
+                                  [p.id]: {
+                                    ...(prev[p.id] || {}),
+                                    name: e.target.value,
+                                    code: prev[p.id]?.code ?? p.code,
+                                  },
                                 }))
                               }
                             />
@@ -1761,7 +1777,11 @@ export default function AdminImport() {
         </Card>
 
         <div className="text-center">
-          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={working || seedWorking || sportAdminWorking || ryzerWorking}>
+          <Button
+            variant="outline"
+            onClick={() => nav(ROUTES.Home)}
+            disabled={working || seedWorking || sportAdminWorking || ryzerWorking}
+          >
             Go to Home
           </Button>
         </div>
