@@ -1,9 +1,18 @@
 // functions/ryzerIngest.js
 // Base44 Backend Function (Deno)
-// Purpose: call Ryzer eventSearch endpoint server-side, apply "college program" gate by matching host → School list,
-// return accepted/rejected + rich debug for AdminImport log.
+// Purpose: Call Ryzer eventSearch endpoint server-side, return normalized events with host_name_guess
+// (best-effort) and strong reject reasons (fail-closed) WITHOUT requiring a pre-populated Schools table.
+//
+// v5 changes vs your v4:
+// - Removes Schools matching/gate entirely (no schools required)
+// - Derives host_name_guess primarily from row.organizer (present in your Ryzer data)
+// - Adds fail-closed host filters to prevent junk auto-created schools
+// - Adds optional sport gate based on row.activitytype (and logs unique activity types per page)
+// - Keeps your nested data:"{...json...}" normalization + robust row extraction
+//
+// NOTE: This function ONLY returns data. AdminImport does DB writes (School upsert + CampDemo write).
 
-const VERSION = "ryzerIngest_2026-01-29_v4";
+const VERSION = "ryzerIngest_2026-01-29_v5_host_guess_no_schools";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -17,14 +26,6 @@ function safeString(x) {
 
 function lc(x) {
   return String(x || "").toLowerCase().trim();
-}
-
-function slugify(s) {
-  return String(s || "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 function stripNonAscii(s) {
@@ -48,124 +49,10 @@ function tryParseJsonString(s) {
   }
 }
 
-// Build normalized match keys for schools
-function buildSchoolIndex(schools) {
-  const list = asArray(schools)
-    .map((s) => ({
-      id: safeString(s?.id) || "",
-      name: safeString(s?.school_name) || "",
-      state: safeString(s?.state) || "",
-      aliases: asArray(s?.aliases).map((a) => safeString(a)).filter(Boolean),
-    }))
-    .filter((s) => s.id && s.name);
-
-  const index = [];
-  for (const s of list) {
-    const keys = new Set();
-    keys.add(lc(s.name));
-    keys.add(lc(stripNonAscii(s.name)));
-    for (const a of s.aliases) {
-      keys.add(lc(a));
-      keys.add(lc(stripNonAscii(a)));
-    }
-    index.push({ ...s, keys: Array.from(keys).filter(Boolean) });
-  }
-  return index;
-}
-
-// Prefer a host field; else infer from title "X @ Y"
-function hostToMatchText(row) {
-  const candidates = [
-    row?.accountName,
-    row?.AccountName,
-    row?.accountname,
-    row?.Accountname,
-    row?.hostName,
-    row?.HostName,
-    row?.hostname,
-    row?.organizationName,
-    row?.OrganizationName,
-    row?.organizationname,
-    row?.eventHostName,
-    row?.EventHostName,
-    row?.hostedBy,
-    row?.HostedBy,
-    row?.schoolName,
-    row?.SchoolName,
-    row?.accountDisplayName,
-    row?.AccountDisplayName,
-  ]
-    .map(safeString)
-    .filter(Boolean);
-
-  let best = candidates.find(Boolean) || "";
-
-  // Fallback: infer from title pattern "Something @ Some Place"
-  if (!best) {
-    const t = titleText(row);
-    const parts = t.split(" @ ");
-    if (parts.length >= 2) best = parts[parts.length - 1];
-  }
-
-  return stripNonAscii(best);
-}
-
-function titleText(row) {
-  // Ryzer often uses `name`
-  return stripNonAscii(
-    safeString(row?.eventTitle || row?.EventTitle || row?.title || row?.Title || row?.name || row?.Name) || ""
-  );
-}
-
-// Ryzer commonly returns `rlink` to register. Include all variants.
-function pickUrl(row) {
-  return (
-    safeString(row?.registrationUrl) ||
-    safeString(row?.RegistrationUrl) ||
-    safeString(row?.registration_url) ||
-    safeString(row?.eventUrl) ||
-    safeString(row?.EventUrl) ||
-    safeString(row?.url) ||
-    safeString(row?.Url) ||
-    safeString(row?.rlink) ||
-    safeString(row?.RLink) ||
-    null
-  );
-}
-
-// Return {match, reason}
-function matchSchool(hostText, schoolIndex) {
-  const host = lc(hostText);
-  if (!host) return { match: null, reason: "missing_host" };
-
-  // Exact or contains match against known school keys
-  for (const s of schoolIndex) {
-    for (const key of s.keys) {
-      if (!key) continue;
-      if (host === key) return { match: s, reason: "exact" };
-      if (host.includes(key) || key.includes(host)) {
-        if (Math.min(host.length, key.length) >= 6) return { match: s, reason: "contains" };
-      }
-    }
-  }
-
-  // Fuzzy-ish: compare slug tokens
-  const hostSlug = slugify(host).replace(/-/g, " ");
-  for (const s of schoolIndex) {
-    const nameSlug = slugify(s.name).replace(/-/g, " ");
-    if (hostSlug && nameSlug && (hostSlug.includes(nameSlug) || nameSlug.includes(hostSlug))) {
-      if (Math.min(hostSlug.length, nameSlug.length) >= 8) return { match: s, reason: "slug_contains" };
-    }
-  }
-
-  return { match: null, reason: "no_school_match" };
-}
-
-// ✅ Updated: handle nested response shapes including { success:true, data:"{...json...}" }
+// ✅ Handles nested response shapes including { success:true, data:"{...json...}" }
 function normalizeRyzerResponse(respJson) {
   if (!respJson || typeof respJson !== "object") return { normalized: respJson, dataWasString: false, innerKeys: [] };
 
-  // If data is a JSON string, parse it
   if (typeof respJson.data === "string") {
     const inner = tryParseJsonString(respJson.data);
     if (inner && typeof inner === "object") {
@@ -177,7 +64,7 @@ function normalizeRyzerResponse(respJson) {
   return { normalized: respJson, dataWasString: false, innerKeys: [] };
 }
 
-// ✅ Updated: find rows in MANY places (including data.events)
+// ✅ Find rows in MANY places (including data.events)
 function extractRowsAndMeta(respJson) {
   const candidates = [
     { path: "events", rows: respJson?.events, total: respJson?.total || respJson?.count || respJson?.Total },
@@ -186,7 +73,7 @@ function extractRowsAndMeta(respJson) {
     { path: "records", rows: respJson?.records, total: respJson?.totalRecords || respJson?.total || respJson?.Total },
     { path: "items", rows: respJson?.items, total: respJson?.total || respJson?.count },
 
-    { path: "data.events", rows: respJson?.data?.events, total: respJson?.data?.total || respJson?.data?.count },
+    { path: "data.events", rows: respJson?.data?.events, total: respJson?.data?.totalresults || respJson?.data?.total || respJson?.data?.count },
     { path: "data.Events", rows: respJson?.data?.Events, total: respJson?.data?.Total || respJson?.data?.total },
     { path: "data.Records", rows: respJson?.data?.Records, total: respJson?.data?.TotalRecords || respJson?.data?.total },
     { path: "data.records", rows: respJson?.data?.records, total: respJson?.data?.totalRecords || respJson?.data?.total },
@@ -221,6 +108,167 @@ function extractRowsAndMeta(respJson) {
   return { rows: [], total: null, rowsArrayPath: "not_found" };
 }
 
+// Title (Ryzer often uses `name`)
+function titleText(row) {
+  return stripNonAscii(
+    safeString(row?.eventTitle || row?.EventTitle || row?.title || row?.Title || row?.name || row?.Name) || ""
+  );
+}
+
+// Ryzer commonly returns `rlink` to register. Include all variants.
+function pickUrl(row) {
+  return (
+    safeString(row?.registrationUrl) ||
+    safeString(row?.RegistrationUrl) ||
+    safeString(row?.registration_url) ||
+    safeString(row?.eventUrl) ||
+    safeString(row?.EventUrl) ||
+    safeString(row?.url) ||
+    safeString(row?.Url) ||
+    safeString(row?.rlink) ||
+    safeString(row?.RLink) ||
+    null
+  );
+}
+
+// City/state best-effort
+function pickCity(row) {
+  return safeString(row?.city || row?.City || row?.locationCity || row?.LocationCity) || null;
+}
+function pickState(row) {
+  return safeString(row?.state || row?.State || row?.locationState || row?.LocationState) || null;
+}
+
+// Activity type name/id (for sport gating + debug)
+function rowActivityTypeName(row) {
+  return safeString(row?.activitytype || row?.activityType || row?.ActivityType || row?.ActivityTypeName || row?.activityTypeName) || null;
+}
+function rowActivityTypeId(row) {
+  return safeString(row?.activityTypeId || row?.ActivityTypeId || row?.activitytypeid || row?.ActivityTypeID) || null;
+}
+
+// ---------------------------
+// Host derivation + guardrails
+// ---------------------------
+
+// Reject if host looks non-college / junk (fail-closed)
+function rejectHostReason(hostGuess) {
+  const h = lc(stripNonAscii(hostGuess || ""));
+  if (!h) return "missing_host";
+  if (h.length < 4) return "host_too_short";
+
+  // Strong reject terms you specified (+ a few obvious business suffixes)
+  const rejectContains = [
+    "middle school",
+    "high school",
+    "elementary",
+    "academy",
+    "club",
+    "training",
+    " llc",
+    " llc.",
+    " inc",
+    " inc.",
+    " company",
+    " performance",
+    " facility",
+    " complex",
+  ];
+
+  for (const term of rejectContains) {
+    if (h.includes(term.trim())) return `host_reject_term:${term.trim()}`;
+  }
+
+  // Person-ish hints (light heuristic)
+  const personHints = ["coach ", "trainer", "director", "private", "personal"];
+  for (const term of personHints) {
+    if (h.includes(term)) return `host_person_hint:${term.trim()}`;
+  }
+
+  // If it’s basically generic
+  const genericOnly = ["prospect camp", "elite camp", "skills camp", "clinic", "camp", "showcase"];
+  if (genericOnly.includes(h)) return "host_generic";
+
+  return null;
+}
+
+// Prefer organizer; else fall back to other fields; else parse title patterns.
+function deriveHostGuess(row) {
+  const candidates = [
+    // ✅ Critical: your Ryzer data includes organizer
+    row?.organizer,
+    row?.Organizer,
+    row?.organiser,
+    row?.Organiser,
+
+    // Other possible host/org fields
+    row?.accountName,
+    row?.AccountName,
+    row?.accountname,
+    row?.Accountname,
+    row?.hostName,
+    row?.HostName,
+    row?.hostname,
+    row?.organizationName,
+    row?.OrganizationName,
+    row?.organizationname,
+    row?.eventHostName,
+    row?.EventHostName,
+    row?.hostedBy,
+    row?.HostedBy,
+    row?.schoolName,
+    row?.SchoolName,
+    row?.accountDisplayName,
+    row?.AccountDisplayName,
+  ]
+    .map(safeString)
+    .filter(Boolean)
+    .map(stripNonAscii);
+
+  // 1) pick first viable candidate
+  for (const c of candidates) {
+    const reason = rejectHostReason(c);
+    if (!reason) {
+      return { host_name_guess: c, host_source: "row_field" };
+    }
+  }
+
+  // 2) fallback: title parsing patterns
+  const t = titleText(row);
+
+  // "Something @ Host"
+  if (t.includes(" @ ")) {
+    const parts = t.split(" @ ");
+    const last = stripNonAscii(parts[parts.length - 1] || "");
+    const reason = rejectHostReason(last);
+    if (!reason) {
+      return { host_name_guess: last, host_source: "title_at_pattern" };
+    }
+  }
+
+  // "{Host} - Prospect Camp"
+  const dashMatch = t.match(/^(.+?)\s*[-–]\s*(prospect|elite|camp|clinic)/i);
+  if (dashMatch?.[1]) {
+    const host = stripNonAscii(dashMatch[1]);
+    const reason = rejectHostReason(host);
+    if (!reason) {
+      return { host_name_guess: host, host_source: "title_dash_pattern" };
+    }
+  }
+
+  // If all candidates rejected, return best effort + reason
+  const best = candidates.find(Boolean) || null;
+  return {
+    host_name_guess: best,
+    host_source: best ? "row_field_rejected" : "unknown",
+    rejectedReason: rejectHostReason(best) || "missing_host",
+  };
+}
+
+// ---------------------------
+// Deno handler
+// ---------------------------
+
 Deno.serve(async (req) => {
   const debug = {
     version: VERSION,
@@ -238,24 +286,26 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => null);
-    const sportId = safeString(body?.sportId);
-    const sportName = safeString(body?.sportName) || "";
-    const activityTypeId = safeString(body?.activityTypeId);
+
+    // Inputs (kept close to your v4)
+    const sportId = safeString(body?.sportId);               // your internal sport id
+    const sportName = safeString(body?.sportName) || "";     // display name (e.g., "Football")
+    const activityTypeId = safeString(body?.activityTypeId); // Ryzer ActivityTypes GUID (required)
     const recordsPerPage = Number(body?.recordsPerPage ?? 25);
     const maxPages = Number(body?.maxPages ?? 1);
     const maxEvents = Number(body?.maxEvents ?? 100);
     const dryRun = !!body?.dryRun;
-    const schools = asArray(body?.schools);
 
+    // Optional: enforce returned activity type name matches sportName when available
+    const enforceSportNameGate = body?.enforceSportNameGate !== false; // default true
+
+    // NOTE: Schools no longer required / accepted
     if (!sportId || !activityTypeId) {
       return new Response(JSON.stringify({ error: "Missing required: sportId/activityTypeId", debug }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
     }
-
-    const schoolIndex = buildSchoolIndex(schools);
-    debug.notes.push(`schools_in=${schools.length} schools_indexed=${schoolIndex.length}`);
 
     const auth = Deno.env.get("RYZER_AUTH");
     if (!auth) {
@@ -274,6 +324,11 @@ Deno.serve(async (req) => {
 
     let processed = 0;
 
+    // Stats for insight
+    let rejectedMissingHost = 0;
+    let rejectedJunkHost = 0;
+    let rejectedWrongSport = 0;
+
     for (let page = 0; page < maxPages; page++) {
       if (processed >= maxEvents) break;
 
@@ -281,8 +336,9 @@ Deno.serve(async (req) => {
         Page: page,
         RecordsPerPage: recordsPerPage,
         SoldOut: 0,
-        ActivityTypes: [activityTypeId],
+        ActivityTypes: [activityTypeId], // enforce single sport request
         Proximity: "10000",
+        // College/University filter (your lever)
         accountTypeList: ["A7FA36E0-87BE-4750-9DE3-CB60DE133648"],
       };
 
@@ -310,13 +366,18 @@ Deno.serve(async (req) => {
         const topKeys =
           rawJson && typeof rawJson === "object" && !Array.isArray(rawJson) ? Object.keys(rawJson) : [];
 
-        // ✅ NEW: normalize nested data:"{...}"
+        // normalize nested data:"{...}"
         const { normalized, dataWasString, innerKeys } = normalizeRyzerResponse(rawJson);
 
         const respKeys =
           normalized && typeof normalized === "object" && !Array.isArray(normalized) ? Object.keys(normalized) : [];
 
         const { rows, total, rowsArrayPath } = extractRowsAndMeta(normalized);
+
+        // Unique activity types observed (helps diagnose “multiple sports”)
+        const uniqueActivityNames = Array.from(
+          new Set(asArray(rows).map((rr) => rowActivityTypeName(rr)).filter(Boolean))
+        );
 
         debug.pages.push({
           version: VERSION,
@@ -329,6 +390,7 @@ Deno.serve(async (req) => {
           rowsArrayPath,
           rowCount: Array.isArray(rows) ? rows.length : 0,
           total: total ?? null,
+          uniqueActivityNames,
           respSnippet: truncate(respText, 1400),
         });
 
@@ -338,52 +400,91 @@ Deno.serve(async (req) => {
         }
 
         if (!rows || !rows.length) {
-          // no more results; stop paging
-          break;
+          break; // no more rows
         }
 
         for (const row of rows) {
           if (processed >= maxEvents) break;
 
-          const host = hostToMatchText(row);
           const title = titleText(row);
           const url = pickUrl(row);
+          const city = pickCity(row);
+          const state = pickState(row);
 
-          const m = matchSchool(host, schoolIndex);
-
-          if (m.match) {
-            accepted.push({
-              school: {
-                school_id: m.match.id,
-                school_name: m.match.name,
-                state: m.match.state || null,
-                match_reason: m.reason,
-                host_text: host,
-              },
-              event: {
-                sportId,
-                sportName,
-                activityTypeId,
-                searchRowTitle: title,
-                eventTitle: title,
+          // -------- Sport gate (safety) --------
+          // If Ryzer returns activitytype, enforce it matches sportName (when enabled).
+          // This prevents “multi-sport” leakage even if the API filter is flaky.
+          if (enforceSportNameGate && sportName) {
+            const rowTypeName = rowActivityTypeName(row);
+            if (rowTypeName && lc(rowTypeName) !== lc(sportName)) {
+              rejectedWrongSport += 1;
+              rejected.push({
+                reason: "wrong_sport",
+                expected: { sportName, activityTypeId },
+                got: { rowTypeName, rowTypeId: rowActivityTypeId(row) },
+                title,
                 registrationUrl: url,
-                raw: row,
-              },
-            });
-          } else {
+              });
+              processed += 1;
+              continue;
+            }
+          }
+
+          // -------- Host derivation (best effort) --------
+          const derived = deriveHostGuess(row);
+          const hostGuess = derived.host_name_guess;
+
+          const hostReject = rejectHostReason(hostGuess);
+          if (hostReject) {
+            if (hostReject === "missing_host") rejectedMissingHost += 1;
+            else rejectedJunkHost += 1;
+
             rejected.push({
-              reason: m.reason,
-              host,
+              reason: hostReject,
               title,
               registrationUrl: url,
+              host_guess: hostGuess,
             });
+
+            processed += 1;
+            continue;
           }
+
+          // Accepted (no DB writes here)
+          accepted.push({
+            event: {
+              sportId,
+              sportName,
+              activityTypeId,
+              eventTitle: title,
+              eventDates: safeString(row?.daterange) || safeString(row?.startdate) || null,
+              grades: safeString(row?.graderange) || null,
+              registerBy: safeString(row?.regEndDate) || null,
+              price: safeString(row?.cost) || null,
+              registrationUrl: url,
+              city,
+              state,
+              source_event_id: safeString(row?.id) || null,
+              raw: row, // keep raw for AdminImport mapping/debug
+            },
+            derived: {
+              host_name_guess: hostGuess,
+              host_source: derived.host_source,
+              city,
+              state,
+              activitytype_returned: rowActivityTypeName(row),
+            },
+            debug: {
+              host_rejected_reason: derived.rejectedReason || null,
+            },
+          });
 
           processed += 1;
         }
       } catch (e) {
         const msg = String(e?.message || e);
         errors.push({ page, error: msg });
+
         debug.pages.push({
           version: VERSION,
           page,
@@ -395,24 +496,31 @@ Deno.serve(async (req) => {
           rowsArrayPath: "exception",
           rowCount: 0,
           total: null,
+          uniqueActivityNames: [],
           respSnippet: truncate(respText || msg, 1400),
         });
+
         break;
       }
     }
 
+    // Keep rejected payload bounded for logging
+    const rejected_samples = rejected.slice(0, 25);
+
     const response = {
       stats: {
+        processed,
         accepted: accepted.length,
         rejected: rejected.length,
         errors: errors.length,
-        processed,
+        rejectedMissingHost,
+        rejectedJunkHost,
+        rejectedWrongSport,
       },
       debug,
       errors: errors.slice(0, 10),
-      // keep payloads bounded on dryRun so logs stay readable
       accepted: dryRun ? accepted.slice(0, 25) : accepted,
-      rejected: rejected.slice(0, 25),
+      rejected_samples,
     };
 
     return new Response(JSON.stringify(response), {
