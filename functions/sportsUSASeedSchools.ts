@@ -3,18 +3,17 @@
 //
 // Purpose:
 // - Fetch a SportsUSA sport directory site (e.g., https://www.footballcampsusa.com)
-// - Parse school "tiles" / blocks and extract:
+// - Parse school tiles and extract:
 //   - school_name (from image alt)
 //   - logo_url (from image src)
 //   - view_site_url (from "View Site" anchor href)
-// - Return normalized list to AdminImport
+// - Return normalized list to AdminImport for DB writes.
 //
-// Notes:
+// Constraints:
 // - No optional chaining (Base44 editor-safe).
-// - No external imports (regex-based parsing).
-// - This is a "seed schools" collector, not camps ingestion.
+// - No external imports.
 
-const VERSION = "sportsUSASeedSchools_2026-02-02_v3_editor_safe_regex_parser";
+const VERSION = "sportsUSASeedSchools_2026-02-02_v4_editor_safe_regex_parser";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -36,10 +35,11 @@ function lc(s) {
 function absUrl(baseUrl, maybeRelative) {
   var u = safeString(maybeRelative);
   if (!u) return null;
+
   if (u.indexOf("http://") === 0 || u.indexOf("https://") === 0) return u;
   if (u.indexOf("//") === 0) return "https:" + u;
+
   if (u.indexOf("/") === 0) {
-    // join to origin
     try {
       var b = new URL(baseUrl);
       return b.origin + u;
@@ -47,7 +47,7 @@ function absUrl(baseUrl, maybeRelative) {
       return u;
     }
   }
-  // relative path
+
   try {
     return new URL(u, baseUrl).toString();
   } catch (e2) {
@@ -55,15 +55,21 @@ function absUrl(baseUrl, maybeRelative) {
   }
 }
 
-function normalizeSchoolName(raw, sportName) {
-  var name = stripNonAscii(raw || "");
+function escapeRegex(s) {
+  return String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeSchoolName(rawAlt, sportName) {
+  var name = stripNonAscii(rawAlt || "");
   if (!name) return null;
 
-  // Remove trailing sport qualifier like " - Football" when sportName provided.
+  // Some SportsUSA sites put "School Name - Football"
   if (sportName) {
     var sn = stripNonAscii(sportName);
-    var re = new RegExp("\\s*-\\s*" + sn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "i");
-    name = name.replace(re, "").trim();
+    if (sn) {
+      var re = new RegExp("\\s*-\\s*" + escapeRegex(sn) + "\\s*$", "i");
+      name = name.replace(re, "").trim();
+    }
   }
 
   return name || null;
@@ -71,9 +77,11 @@ function normalizeSchoolName(raw, sportName) {
 
 function makeSourceKey(viewSiteUrl, schoolName) {
   var v = safeString(viewSiteUrl);
-  if (v) return "view:" + lc(v);
+  if (v) return "sportsusa:view:" + lc(v);
+
   var n = safeString(schoolName);
-  if (n) return "name:" + lc(n);
+  if (n) return "sportsusa:name:" + lc(n);
+
   return null;
 }
 
@@ -81,12 +89,7 @@ function parseSchoolsFromHtml(html, siteUrl, sportName, limit) {
   var out = [];
   if (!html) return out;
 
-  // Strategy:
-  // - Find each "View Site" anchor
-  // - Walk backward within a window to find the closest preceding <img ... alt="X" ... src="Y">
-  //
-  // This matches the structure visible on footballcampsusa.com pages.
-
+  // Find each "View Site" anchor, then look backward for nearest preceding <img>
   var viewRe = /<a[^>]*href="([^"]+)"[^>]*>\s*View Site\s*<\/a>/gi;
 
   var match;
@@ -96,13 +99,12 @@ function parseSchoolsFromHtml(html, siteUrl, sportName, limit) {
     var href = match[1];
     var viewSiteUrl = absUrl(siteUrl, href);
 
-    // Look back up to ~6000 chars for the nearest preceding <img ...>
     var idx = match.index;
-    var start = idx - 6000;
+    var start = idx - 7000;
     if (start < 0) start = 0;
     var windowText = html.slice(start, idx);
 
-    // Find last <img ...> in the window
+    // last <img ...> in the window
     var imgRe = /<img[^>]*>/gi;
     var imgTag = null;
     var m2;
@@ -121,13 +123,10 @@ function parseSchoolsFromHtml(html, siteUrl, sportName, limit) {
       if (srcM && srcM[1] !== undefined) src = stripNonAscii(srcM[1]);
     }
 
-    var logoUrl = absUrl(siteUrl, src);
-
-    // Some images on these sites can be generic placeholders; we still keep them,
-    // but AdminImport can later mark needs_review=true if logo looks generic.
     var schoolName = normalizeSchoolName(alt, sportName);
-
     if (!schoolName) continue;
+
+    var logoUrl = absUrl(siteUrl, src);
 
     out.push({
       school_name: schoolName,
@@ -135,7 +134,7 @@ function parseSchoolsFromHtml(html, siteUrl, sportName, limit) {
       view_site_url: viewSiteUrl,
       source_key: makeSourceKey(viewSiteUrl, schoolName),
       source_platform: "sportsusa",
-      source_school_url: viewSiteUrl || siteUrl,
+      source_school_url: viewSiteUrl || siteUrl
     });
   }
 
@@ -149,14 +148,14 @@ Deno.serve(async (req) => {
     siteUrl: null,
     http: null,
     notes: [],
-    sample: [],
+    sample: []
   };
 
   try {
     if (req.method !== "POST") {
       return new Response(JSON.stringify({ error: "Method not allowed", debug: debug }), {
         status: 405,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
 
@@ -175,14 +174,14 @@ Deno.serve(async (req) => {
     if (!sportId) {
       return new Response(JSON.stringify({ error: "Missing required: sportId", debug: debug }), {
         status: 400,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
 
     if (!siteUrl) {
       return new Response(JSON.stringify({ error: "Missing required: siteUrl", debug: debug }), {
         status: 400,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
 
@@ -190,8 +189,8 @@ Deno.serve(async (req) => {
       method: "GET",
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-        Accept: "text/html,*/*",
-      },
+        "Accept": "text/html,*/*"
+      }
     });
 
     debug.http = r.status;
@@ -200,38 +199,33 @@ Deno.serve(async (req) => {
 
     if (!r.ok) {
       debug.notes.push("Non-200 response from site");
-      return new Response(
-        JSON.stringify({
-          error: "Failed to fetch site",
-          stats: { schools_found: 0, http: r.status },
-          debug: debug,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({
+        error: "Failed to fetch site",
+        stats: { schools_found: 0, http: r.status, dryRun: dryRun, limit: limit },
+        debug: debug,
+        schools: []
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
     var schools = parseSchoolsFromHtml(html, siteUrl, sportName, limit);
-
     debug.sample = schools.slice(0, 3);
 
-    return new Response(
-      JSON.stringify({
-        stats: {
-          http: r.status,
-          schools_found: schools.length,
-          dryRun: dryRun,
-          limit: limit,
-        },
-        debug: debug,
-        schools: schools,
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({
+      stats: {
+        http: r.status,
+        schools_found: schools.length,
+        dryRun: dryRun,
+        limit: limit
+      },
+      debug: debug,
+      schools: schools
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+
   } catch (e) {
     debug.notes.push("top-level error: " + String((e && e.message) || e));
     return new Response(JSON.stringify({ error: "Unhandled error", debug: debug }), {
       status: 500,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" }
     });
   }
 });
