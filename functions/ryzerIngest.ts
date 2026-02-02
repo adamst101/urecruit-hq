@@ -1,19 +1,19 @@
 // functions/ryzerIngest.js
 // Base44 Backend Function (Deno)
 //
-// Purpose:
-// Call Ryzer eventSearch endpoint server-side and return normalized events with host_name_guess
-// (best-effort) + strict reject reasons (fail-closed) WITHOUT requiring a Schools table.
+// Goal:
+// - Call Ryzer eventSearch
+// - Return normalized events WITH host_name_guess (best effort)
+// - Fail-closed: reject junk/non-college hosts
+// - Enforce sport gate client-safe (reject wrong sport rows)
+// - Add a single fallback payload attempt if Ryzer ignores ActivityTypes
 //
-// Key fixes in this version:
-// 1) Adds activityPairs (activity name -> activityTypeId observed) to debug so you can identify the REAL Football guid.
-// 2) Adds "activity_filter_not_applied" fail-fast when Ryzer returns no rows for the selected sportName.
-// 3) Avoids OPTIONAL CHAINING (?.) to prevent Base44 editor validation errors.
-// 4) Keeps nested { success:true, data:"{...json...}" parsing and robust row extraction.
-//
-// NOTE: This function returns data only. AdminImport does DB writes (School upsert + CampDemo write).
+// Base44 editor-safe:
+// - No optional chaining
+// - No external imports
+// - Uses Deno.serve(async (req) => ...)
 
-const VERSION = "ryzerIngest_2026-02-02_v11_activity_pairs_editor_safe";
+const VERSION = "ryzerIngest_2026-02-02_v11_payload_fallback_editor_safe";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -37,9 +37,9 @@ function stripNonAscii(s) {
 }
 
 function truncate(s, n) {
-  var limit = typeof n === "number" ? n : 1200;
+  var lim = typeof n === "number" ? n : 1200;
   var str = String(s || "");
-  return str.length > limit ? str.slice(0, limit) + "…(truncated)" : str;
+  return str.length > lim ? str.slice(0, lim) + "…(truncated)" : str;
 }
 
 function tryParseJsonString(s) {
@@ -54,97 +54,47 @@ function tryParseJsonString(s) {
   }
 }
 
-// Handles nested response shapes including { success:true, data:"{...json...}" }
 function normalizeRyzerResponse(respJson) {
   if (!respJson || typeof respJson !== "object") {
     return { normalized: respJson, dataWasString: false, innerKeys: [] };
   }
 
+  // If { success:true, data:"{...json...}" }, parse inner JSON string
   if (typeof respJson.data === "string") {
     var inner = tryParseJsonString(respJson.data);
     if (inner && typeof inner === "object") {
-      var innerKeys = Object.keys(inner);
-      var normalized = {};
-      // shallow copy
-      Object.keys(respJson).forEach(function (k) {
-        normalized[k] = respJson[k];
-      });
-      normalized.data = inner;
-      return { normalized: normalized, dataWasString: true, innerKeys: innerKeys };
+      return {
+        normalized: { success: respJson.success, data: inner },
+        dataWasString: true,
+        innerKeys: Object.keys(inner || {})
+      };
     }
   }
 
-  return { normalized: respJson, dataWasString: false, innerKeys: [] };
+  return { normalized: respJson, dataWasString: false, innerKeys: Object.keys(respJson || {}) };
 }
 
-// Find rows in MANY places (including data.events)
 function extractRowsAndMeta(respJson) {
-  function pickTotal(obj) {
-    if (!obj || typeof obj !== "object") return null;
-    return (
-      obj.totalresults ||
-      obj.total ||
-      obj.count ||
-      obj.Total ||
-      obj.TotalRecords ||
-      obj.totalRecords ||
-      null
-    );
-  }
-
   var candidates = [
-    { path: "events", rows: respJson && respJson.events, total: pickTotal(respJson) },
-    { path: "Events", rows: respJson && respJson.Events, total: pickTotal(respJson) },
-    { path: "Records", rows: respJson && respJson.Records, total: pickTotal(respJson) },
-    { path: "records", rows: respJson && respJson.records, total: pickTotal(respJson) },
-    { path: "items", rows: respJson && respJson.items, total: pickTotal(respJson) },
+    { path: "events", rows: respJson && respJson.events, total: respJson && (respJson.total || respJson.count || respJson.Total) },
+    { path: "Events", rows: respJson && respJson.Events, total: respJson && (respJson.total || respJson.Total) },
+    { path: "Records", rows: respJson && respJson.Records, total: respJson && (respJson.TotalRecords || respJson.total || respJson.Total) },
+    { path: "records", rows: respJson && respJson.records, total: respJson && (respJson.totalRecords || respJson.total || respJson.Total) },
 
-    {
-      path: "data.events",
-      rows: respJson && respJson.data && respJson.data.events,
-      total: respJson && respJson.data ? pickTotal(respJson.data) : null,
-    },
-    {
-      path: "data.Events",
-      rows: respJson && respJson.data && respJson.data.Events,
-      total: respJson && respJson.data ? pickTotal(respJson.data) : null,
-    },
-    {
-      path: "data.Records",
-      rows: respJson && respJson.data && respJson.data.Records,
-      total: respJson && respJson.data ? pickTotal(respJson.data) : null,
-    },
-    {
-      path: "data.records",
-      rows: respJson && respJson.data && respJson.data.records,
-      total: respJson && respJson.data ? pickTotal(respJson.data) : null,
-    },
-    {
-      path: "data.items",
-      rows: respJson && respJson.data && respJson.data.items,
-      total: respJson && respJson.data ? pickTotal(respJson.data) : null,
-    },
-
-    {
-      path: "Result.Records",
-      rows: respJson && respJson.Result && respJson.Result.Records,
-      total: respJson && respJson.Result ? pickTotal(respJson.Result) : null,
-    },
-    {
-      path: "result.records",
-      rows: respJson && respJson.result && respJson.result.records,
-      total: respJson && respJson.result ? pickTotal(respJson.result) : null,
-    },
+    // nested data
+    { path: "data.events", rows: respJson && respJson.data && respJson.data.events, total: respJson && respJson.data && (respJson.data.totalresults || respJson.data.total || respJson.data.count) },
+    { path: "data.Records", rows: respJson && respJson.data && respJson.data.Records, total: respJson && respJson.data && (respJson.data.TotalRecords || respJson.data.total) },
+    { path: "data.records", rows: respJson && respJson.data && respJson.data.records, total: respJson && respJson.data && (respJson.data.totalRecords || respJson.data.total) }
   ];
 
   for (var i = 0; i < candidates.length; i++) {
     var c = candidates[i];
     if (Array.isArray(c.rows)) {
-      return { rows: c.rows, total: c.total, rowsArrayPath: c.path };
+      return { rows: c.rows, total: c.total !== undefined ? c.total : null, rowsArrayPath: c.path };
     }
   }
 
-  // Sometimes API returns an object with a single array value
+  // Sometimes API returns an object with a single array
   if (respJson && typeof respJson === "object") {
     var keys = Object.keys(respJson);
     for (var k = 0; k < keys.length; k++) {
@@ -155,8 +105,8 @@ function extractRowsAndMeta(respJson) {
     }
   }
 
-  // Also check inside respJson.data (object) for a single array
-  if (respJson && respJson.data && typeof respJson.data === "object" && !Array.isArray(respJson.data)) {
+  // Also check respJson.data for single array
+  if (respJson && respJson.data && typeof respJson.data === "object") {
     var dkeys = Object.keys(respJson.data);
     for (var dk = 0; dk < dkeys.length; dk++) {
       var dkey = dkeys[dk];
@@ -169,66 +119,41 @@ function extractRowsAndMeta(respJson) {
   return { rows: [], total: null, rowsArrayPath: "not_found" };
 }
 
-// Title (Ryzer often uses `name`)
+// Row helpers
 function titleText(row) {
-  if (!row) return "";
-  return stripNonAscii(
-    safeString(row.eventTitle) ||
-      safeString(row.EventTitle) ||
-      safeString(row.title) ||
-      safeString(row.Title) ||
-      safeString(row.name) ||
-      safeString(row.Name) ||
-      ""
-  );
+  var t =
+    safeString(row && (row.eventTitle || row.EventTitle || row.title || row.Title || row.name || row.Name)) ||
+    "";
+  return stripNonAscii(t);
 }
 
-// Ryzer commonly returns `rlink` to register. Include all variants.
 function pickUrl(row) {
-  if (!row) return null;
   return (
-    safeString(row.registrationUrl) ||
-    safeString(row.RegistrationUrl) ||
-    safeString(row.registration_url) ||
-    safeString(row.eventUrl) ||
-    safeString(row.EventUrl) ||
-    safeString(row.url) ||
-    safeString(row.Url) ||
-    safeString(row.rlink) ||
-    safeString(row.RLink) ||
+    safeString(row && (row.registrationUrl || row.RegistrationUrl || row.registration_url)) ||
+    safeString(row && (row.eventUrl || row.EventUrl || row.url || row.Url)) ||
+    safeString(row && (row.rlink || row.RLink)) ||
     null
   );
 }
 
 function pickCity(row) {
-  if (!row) return null;
-  return safeString(row.city) || safeString(row.City) || safeString(row.locationCity) || safeString(row.LocationCity) || null;
+  return safeString(row && (row.city || row.City || row.locationCity || row.LocationCity)) || null;
 }
 
 function pickState(row) {
-  if (!row) return null;
-  return safeString(row.state) || safeString(row.State) || safeString(row.locationState) || safeString(row.LocationState) || null;
+  return safeString(row && (row.state || row.State || row.locationState || row.LocationState)) || null;
 }
 
 function rowActivityTypeName(row) {
-  if (!row) return null;
   return (
-    safeString(row.activitytype) ||
-    safeString(row.activityType) ||
-    safeString(row.ActivityType) ||
-    safeString(row.ActivityTypeName) ||
-    safeString(row.activityTypeName) ||
+    safeString(row && (row.activitytype || row.activityType || row.ActivityType || row.ActivityTypeName || row.activityTypeName)) ||
     null
   );
 }
 
 function rowActivityTypeId(row) {
-  if (!row) return null;
   return (
-    safeString(row.activityTypeId) ||
-    safeString(row.ActivityTypeId) ||
-    safeString(row.activitytypeid) ||
-    safeString(row.ActivityTypeID) ||
+    safeString(row && (row.activityTypeId || row.ActivityTypeId || row.activitytypeid || row.ActivityTypeID)) ||
     null
   );
 }
@@ -256,18 +181,18 @@ function rejectHostReason(hostGuess) {
     " company",
     " performance",
     " facility",
-    " complex",
+    " complex"
   ];
 
   for (var i = 0; i < rejectContains.length; i++) {
     var term = rejectContains[i];
-    if (h.indexOf(term) !== -1) return "host_reject_term:" + term.trim();
+    if (h.indexOf(term) >= 0) return "host_reject_term:" + term.trim();
   }
 
   var personHints = ["coach ", "trainer", "director", "private", "personal"];
   for (var j = 0; j < personHints.length; j++) {
     var p = personHints[j];
-    if (h.indexOf(p) !== -1) return "host_person_hint:" + p.trim();
+    if (h.indexOf(p) >= 0) return "host_person_hint:" + p.trim();
   }
 
   var genericOnly = ["prospect camp", "elite camp", "skills camp", "clinic", "camp", "showcase"];
@@ -279,154 +204,185 @@ function rejectHostReason(hostGuess) {
 }
 
 function deriveHostGuess(row) {
-  var candidates = [];
-  function pushIf(v) {
-    var s = safeString(v);
-    if (s) candidates.push(stripNonAscii(s));
-  }
+  var candidates = [
+    row && row.organizer,
+    row && row.Organizer,
+    row && row.organiser,
+    row && row.Organiser,
 
-  if (row) {
-    // Critical: your Ryzer data includes organizer
-    pushIf(row.organizer);
-    pushIf(row.Organizer);
-    pushIf(row.organiser);
-    pushIf(row.Organiser);
-
-    // Other possible host/org fields
-    pushIf(row.accountName);
-    pushIf(row.AccountName);
-    pushIf(row.accountname);
-    pushIf(row.Accountname);
-    pushIf(row.hostName);
-    pushIf(row.HostName);
-    pushIf(row.hostname);
-    pushIf(row.organizationName);
-    pushIf(row.OrganizationName);
-    pushIf(row.organizationname);
-    pushIf(row.eventHostName);
-    pushIf(row.EventHostName);
-    pushIf(row.hostedBy);
-    pushIf(row.HostedBy);
-    pushIf(row.schoolName);
-    pushIf(row.SchoolName);
-    pushIf(row.accountDisplayName);
-    pushIf(row.AccountDisplayName);
-  }
+    row && row.accountName,
+    row && row.AccountName,
+    row && row.hostName,
+    row && row.HostName,
+    row && row.organizationName,
+    row && row.OrganizationName,
+    row && row.eventHostName,
+    row && row.EventHostName,
+    row && row.hostedBy,
+    row && row.HostedBy,
+    row && row.schoolName,
+    row && row.SchoolName,
+    row && row.accountDisplayName,
+    row && row.AccountDisplayName
+  ];
 
   // 1) pick first viable candidate
   for (var i = 0; i < candidates.length; i++) {
-    var c = candidates[i];
-    var reason = rejectHostReason(c);
+    var c = safeString(candidates[i]);
+    if (!c) continue;
+    var cleaned = stripNonAscii(c);
+    var reason = rejectHostReason(cleaned);
     if (!reason) {
-      return { host_name_guess: c, host_source: "row_field", rejectedReason: null };
+      return { host_name_guess: cleaned, host_source: "row_field", rejectedReason: null };
     }
   }
 
-  // 2) fallback: title parsing patterns
+  // 2) fallback: title patterns
   var t = titleText(row);
 
-  // "Something @ Host"
-  if (t.indexOf(" @ ") !== -1) {
+  if (t.indexOf(" @ ") >= 0) {
     var parts = t.split(" @ ");
     var last = stripNonAscii(parts[parts.length - 1] || "");
     var r1 = rejectHostReason(last);
-    if (!r1) {
-      return { host_name_guess: last, host_source: "title_at_pattern", rejectedReason: null };
-    }
+    if (!r1) return { host_name_guess: last, host_source: "title_at_pattern", rejectedReason: null };
   }
 
-  // "{Host} - Prospect Camp"
   var dashMatch = t.match(/^(.+?)\s*[-–]\s*(prospect|elite|camp|clinic)/i);
   if (dashMatch && dashMatch[1]) {
     var host = stripNonAscii(dashMatch[1]);
     var r2 = rejectHostReason(host);
-    if (!r2) {
-      return { host_name_guess: host, host_source: "title_dash_pattern", rejectedReason: null };
+    if (!r2) return { host_name_guess: host, host_source: "title_dash_pattern", rejectedReason: null };
+  }
+
+  // Return best-effort rejected
+  var best = null;
+  for (var k = 0; k < candidates.length; k++) {
+    var b = safeString(candidates[k]);
+    if (b) {
+      best = stripNonAscii(b);
+      break;
     }
   }
 
-  // If all candidates rejected, return best effort + reason
-  var best = candidates.length ? candidates[0] : null;
   return {
     host_name_guess: best,
     host_source: best ? "row_field_rejected" : "unknown",
-    rejectedReason: rejectHostReason(best) || "missing_host",
+    rejectedReason: rejectHostReason(best) || "missing_host"
   };
 }
 
-// Build activityPairs for debugging: [{ name, ids:[], count }]
-function buildActivityPairs(rows) {
-  var map = {}; // name -> { idsMap, count }
-  for (var i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    var name = rowActivityTypeName(row);
-    if (!name) continue;
-    var key = String(name);
-    if (!map[key]) map[key] = { idsMap: {}, count: 0 };
+// ---------------------------
+// Ryzer fetch helpers
+// ---------------------------
 
-    map[key].count += 1;
+async function fetchRyzerPage(endpoint, auth, reqPayload) {
+  var r = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json; charset=UTF-8",
+      "Accept": "*/*",
+      "authorization": auth,
+      "Origin": "https://ryzer.com",
+      "Referer": "https://ryzer.com/Events/?tab=eventSearch"
+    },
+    body: JSON.stringify(reqPayload)
+  });
 
-    var id = rowActivityTypeId(row);
-    if (id) map[key].idsMap[String(id)] = true;
+  var http = r.status;
+  var respText = await r.text().catch(function () { return ""; });
+
+  var rawJson = tryParseJsonString(respText);
+  var norm = normalizeRyzerResponse(rawJson);
+  var normalized = norm.normalized;
+
+  var extracted = extractRowsAndMeta(normalized);
+  var rows = extracted.rows;
+  var total = extracted.total;
+  var rowsArrayPath = extracted.rowsArrayPath;
+
+  // activity summary (names + ids)
+  var pairs = {}; // name -> { ids: Set-like object }
+  var uniqueNames = [];
+
+  for (var i = 0; i < asArray(rows).length; i++) {
+    var rr = rows[i];
+    var nm = rowActivityTypeName(rr);
+    var id = rowActivityTypeId(rr);
+    if (!nm) continue;
+
+    if (!pairs[nm]) pairs[nm] = { ids: {} };
+    if (id) pairs[nm].ids[id] = true;
   }
 
-  var out = [];
-  Object.keys(map).forEach(function (nameKey) {
-    var ids = Object.keys(map[nameKey].idsMap);
-    out.push({ name: nameKey, ids: ids, count: map[nameKey].count });
-  });
+  var nameKeys = Object.keys(pairs);
+  for (var k = 0; k < nameKeys.length; k++) {
+    uniqueNames.push(nameKeys[k]);
+  }
+  uniqueNames.sort();
 
-  out.sort(function (a, b) {
-    return String(a.name).localeCompare(String(b.name));
-  });
+  // convert ids map -> array
+  var activityPairs = [];
+  for (var n = 0; n < nameKeys.length; n++) {
+    var name = nameKeys[n];
+    var idsMap = pairs[name].ids || {};
+    activityPairs.push({ name: name, ids: Object.keys(idsMap).sort() });
+  }
+  activityPairs.sort(function (a, b) { return a.name.localeCompare(b.name); });
 
-  return out;
+  return {
+    http: http,
+    respText: respText,
+    normalizedKeys: (normalized && typeof normalized === "object" && !Array.isArray(normalized)) ? Object.keys(normalized) : [],
+    dataWasString: !!norm.dataWasString,
+    innerKeys: asArray(norm.innerKeys),
+    rowsArrayPath: rowsArrayPath,
+    rowCount: Array.isArray(rows) ? rows.length : 0,
+    total: total !== undefined ? total : null,
+    rows: rows,
+    uniqueActivityNames: uniqueNames,
+    activityPairs: activityPairs
+  };
 }
 
 // ---------------------------
 // Deno handler
 // ---------------------------
 
-Deno.serve(async function (req) {
+Deno.serve(async (req) => {
   var debug = {
     version: VERSION,
     startedAt: new Date().toISOString(),
     pages: [],
-    notes: [],
+    notes: []
   };
 
   try {
     if (req.method !== "POST") {
       return new Response(JSON.stringify({ error: "Method not allowed", debug: debug }), {
         status: 405,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
 
-    var body = null;
-    try {
-      body = await req.json();
-    } catch (e) {
-      body = null;
-    }
+    var body = await req.json().catch(function () { return null; });
 
-    // Inputs
     var sportId = safeString(body && body.sportId);
     var sportName = safeString(body && body.sportName) || "";
     var activityTypeId = safeString(body && body.activityTypeId);
-    var recordsPerPage = Number((body && body.recordsPerPage) || 25);
-    var maxPages = Number((body && body.maxPages) || 1);
-    var maxEvents = Number((body && body.maxEvents) || 100);
+
+    var recordsPerPage = Number(body && body.recordsPerPage !== undefined ? body.recordsPerPage : 25);
+    var maxPages = Number(body && body.maxPages !== undefined ? body.maxPages : 1);
+    var maxEvents = Number(body && body.maxEvents !== undefined ? body.maxEvents : 100);
     var dryRun = !!(body && body.dryRun);
 
-    // default true unless explicitly false
+    // default true
     var enforceSportNameGate = true;
     if (body && body.enforceSportNameGate === false) enforceSportNameGate = false;
 
     if (!sportId || !activityTypeId) {
       return new Response(JSON.stringify({ error: "Missing required: sportId/activityTypeId", debug: debug }), {
         status: 400,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
 
@@ -435,7 +391,7 @@ Deno.serve(async function (req) {
       debug.notes.push("Missing env secret RYZER_AUTH (set in Base44 Secrets).");
       return new Response(JSON.stringify({ error: "Missing secret RYZER_AUTH", debug: debug }), {
         status: 500,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
 
@@ -447,161 +403,165 @@ Deno.serve(async function (req) {
 
     var processed = 0;
 
-    // stats
     var rejectedMissingHost = 0;
     var rejectedJunkHost = 0;
     var rejectedWrongSport = 0;
-
-    // fail-fast info (if we detect filter mismatch)
-    var failFastError = null;
-    var failFastDetected = null;
+    var usedFallbackPages = 0;
 
     for (var page = 0; page < maxPages; page++) {
       if (processed >= maxEvents) break;
 
+      // Primary payload (matches your screenshot)
       var reqPayload = {
         Page: page,
         RecordsPerPage: recordsPerPage,
         SoldOut: 0,
-        ActivityTypes: [activityTypeId], // attempt single-sport filter
+        ActivityTypes: [activityTypeId],
         Proximity: "10000",
-        accountTypeList: ["A7FA36E0-87BE-4750-9DE3-CB60DE133648"], // College/University
+        accountTypeList: ["A7FA36E0-87BE-4750-9DE3-CB60DE133648"]
       };
 
       var http = 0;
       var respText = "";
-      var rawJson = null;
 
       try {
-        var r = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json; charset=UTF-8",
-            Accept: "*/*",
-            authorization: auth,
-            Origin: "https://ryzer.com",
-            Referer: "https://ryzer.com/Events/?tab=eventSearch",
-          },
-          body: JSON.stringify(reqPayload),
-        });
+        // Primary attempt
+        var p = await fetchRyzerPage(endpoint, auth, reqPayload);
 
-        http = r.status;
-        try {
-          respText = await r.text();
-        } catch (e1) {
-          respText = "";
-        }
-        rawJson = tryParseJsonString(respText);
+        http = p.http;
+        respText = p.respText;
 
-        var topKeys = [];
-        if (rawJson && typeof rawJson === "object" && !Array.isArray(rawJson)) {
-          topKeys = Object.keys(rawJson);
-        }
-
-        var norm = normalizeRyzerResponse(rawJson);
-        var normalized = norm.normalized;
-        var dataWasString = norm.dataWasString;
-        var innerKeys = norm.innerKeys;
-
-        var respKeys = [];
-        if (normalized && typeof normalized === "object" && !Array.isArray(normalized)) {
-          respKeys = Object.keys(normalized);
+        // If auth failure, stop
+        if (http === 401 || http === 403) {
+          errors.push({ page: page, error: "Auth failed (HTTP " + http + ")" });
+          debug.pages.push({
+            version: VERSION,
+            page: page,
+            http: http,
+            attempt: "primary",
+            reqPayload: reqPayload,
+            respKeys: p.normalizedKeys,
+            dataWasString: p.dataWasString,
+            innerKeys: p.innerKeys,
+            rowsArrayPath: p.rowsArrayPath,
+            rowCount: p.rowCount,
+            total: p.total,
+            uniqueActivityNames: p.uniqueActivityNames,
+            activityPairs: p.activityPairs,
+            respSnippet: truncate(respText, 1400)
+          });
+          break;
         }
 
-        var meta = extractRowsAndMeta(normalized);
-        var rows = meta.rows;
-        var total = meta.total;
-        var rowsArrayPath = meta.rowsArrayPath;
+        // Decide whether to fallback:
+        // If user expects Football and page 0 comes back with no Football in activity names,
+        // try a single fallback payload with alternate keys (some APIs require these).
+        var shouldFallback = false;
+        if (page === 0 && sportName) {
+          var want = lc(sportName);
+          var found = false;
+          for (var ui = 0; ui < asArray(p.uniqueActivityNames).length; ui++) {
+            if (lc(p.uniqueActivityNames[ui]) === want) { found = true; break; }
+          }
+          if (!found && p.rowCount > 0) shouldFallback = true;
+        }
 
-        var uniqueActivityNames = [];
-        var seen = {};
-        for (var ua = 0; ua < asArray(rows).length; ua++) {
-          var nm = rowActivityTypeName(rows[ua]);
-          if (nm && !seen[nm]) {
-            seen[nm] = true;
-            uniqueActivityNames.push(nm);
+        var used = p;
+        var attemptLabel = "primary";
+
+        if (shouldFallback) {
+          // Fallback payload: keep ActivityTypes but also add common alternate parameter names.
+          var reqPayload2 = {
+            Page: page,
+            RecordsPerPage: recordsPerPage,
+            SoldOut: 0,
+            ActivityTypes: [activityTypeId],
+
+            // Alternate keys (harmless if ignored)
+            ActivityTypeId: activityTypeId,
+            ActivityTypeIds: [activityTypeId],
+            activityTypeId: activityTypeId,
+            activityTypes: [activityTypeId],
+
+            Proximity: "10000",
+            accountTypeList: ["A7FA36E0-87BE-4750-9DE3-CB60DE133648"]
+          };
+
+          var f = await fetchRyzerPage(endpoint, auth, reqPayload2);
+
+          // If fallback includes the expected sport name, prefer it.
+          var want2 = lc(sportName);
+          var found2 = false;
+          for (var uf = 0; uf < asArray(f.uniqueActivityNames).length; uf++) {
+            if (lc(f.uniqueActivityNames[uf]) === want2) { found2 = true; break; }
+          }
+
+          if (found2) {
+            used = f;
+            attemptLabel = "fallback";
+            usedFallbackPages += 1;
           }
         }
-        uniqueActivityNames.sort(function (a, b) {
-          return String(a).localeCompare(String(b));
-        });
-
-        var activityPairs = buildActivityPairs(asArray(rows));
 
         debug.pages.push({
           version: VERSION,
           page: page,
-          http: http,
-          reqPayload: reqPayload,
-          respKeys: respKeys.length ? respKeys : topKeys,
-          dataWasString: dataWasString,
-          innerKeys: innerKeys,
-          rowsArrayPath: rowsArrayPath,
-          rowCount: Array.isArray(rows) ? rows.length : 0,
-          total: total,
-          uniqueActivityNames: uniqueActivityNames,
-          activityPairs: activityPairs,
-          respSnippet: truncate(respText, 1400),
+          http: used.http,
+          attempt: attemptLabel,
+          reqPayload: attemptLabel === "fallback" ? {
+            Page: page,
+            RecordsPerPage: recordsPerPage,
+            SoldOut: 0,
+            ActivityTypes: [activityTypeId],
+            ActivityTypeId: activityTypeId,
+            ActivityTypeIds: [activityTypeId],
+            activityTypeId: activityTypeId,
+            activityTypes: [activityTypeId],
+            Proximity: "10000",
+            accountTypeList: ["A7FA36E0-87BE-4750-9DE3-CB60DE133648"]
+          } : reqPayload,
+          respKeys: used.normalizedKeys,
+          dataWasString: used.dataWasString,
+          innerKeys: used.innerKeys,
+          rowsArrayPath: used.rowsArrayPath,
+          rowCount: used.rowCount,
+          total: used.total,
+          uniqueActivityNames: used.uniqueActivityNames,
+          activityPairs: used.activityPairs,
+          respSnippet: truncate(used.respText, 1400)
         });
 
-        if (http === 401 || http === 403) {
-          errors.push({ page: page, error: "Auth failed (HTTP " + http + ")" });
-          break;
-        }
+        var rows = asArray(used.rows);
+        if (!rows.length) break;
 
-        if (!rows || !rows.length) {
-          break;
-        }
-
-        // ✅ Fail-fast (page 0 only): if requested sportName is not present in returned activity names,
-        // your ActivityTypes guid is wrong or Ryzer is ignoring it.
-        if (page === 0 && enforceSportNameGate && sportName) {
-          var wanted = lc(sportName);
-          var foundWanted = false;
-          for (var f = 0; f < uniqueActivityNames.length; f++) {
-            if (lc(uniqueActivityNames[f]) === wanted) {
-              foundWanted = true;
-              break;
-            }
-          }
-          if (!foundWanted) {
-            failFastError = "activity_filter_not_applied";
-            failFastDetected = {
-              uniqueActivityNames: uniqueActivityNames,
-              activityPairs: activityPairs,
-            };
-            break;
-          }
-        }
-
-        for (var ri = 0; ri < rows.length; ri++) {
+        for (var i = 0; i < rows.length; i++) {
           if (processed >= maxEvents) break;
 
-          var row = rows[ri];
+          var row = rows[i];
 
           var title = titleText(row);
           var url = pickUrl(row);
           var city = pickCity(row);
           var state = pickState(row);
 
-          // Sport gate (reject non-matching activity type names)
+          // Sport gate
           if (enforceSportNameGate && sportName) {
-            var rowTypeName = rowActivityTypeName(row);
-            if (rowTypeName && lc(rowTypeName) !== lc(sportName)) {
+            var rowType = rowActivityTypeName(row);
+            if (rowType && lc(rowType) !== lc(sportName)) {
               rejectedWrongSport += 1;
               rejected.push({
                 reason: "wrong_sport",
                 expected: { sportName: sportName, activityTypeId: activityTypeId },
-                got: { rowTypeName: rowTypeName, rowTypeId: rowActivityTypeId(row) },
+                got: { rowTypeName: rowType, rowTypeId: rowActivityTypeId(row) },
                 title: title,
-                registrationUrl: url,
+                registrationUrl: url
               });
               processed += 1;
               continue;
             }
           }
 
-          // Host derivation + fail-closed filters
+          // Host derivation + host guardrails
           var derived = deriveHostGuess(row);
           var hostGuess = derived.host_name_guess;
 
@@ -612,11 +572,10 @@ Deno.serve(async function (req) {
 
             rejected.push({
               reason: hostReject,
-              title: title,
-              registrationUrl: url,
               host_guess: hostGuess,
+              title: title,
+              registrationUrl: url
             });
-
             processed += 1;
             continue;
           }
@@ -626,39 +585,43 @@ Deno.serve(async function (req) {
               sportId: sportId,
               sportName: sportName,
               activityTypeId: activityTypeId,
+
               eventTitle: title,
-              eventDates: safeString(row.daterange) || safeString(row.startdate) || null,
-              grades: safeString(row.graderange) || null,
-              registerBy: safeString(row.regEndDate) || null,
-              price: safeString(row.cost) || null,
+              eventDates: safeString(row && (row.daterange || row.startdate)) || null,
+              grades: safeString(row && row.graderange) || null,
+              registerBy: safeString(row && row.regEndDate) || null,
+              price: safeString(row && row.cost) || null,
+
               registrationUrl: url,
               city: city,
               state: state,
-              source_event_id: safeString(row.id) || null,
-              raw: row,
+              source_event_id: safeString(row && row.id) || null,
+
+              raw: row
             },
             derived: {
               host_name_guess: hostGuess,
               host_source: derived.host_source,
               city: city,
               state: state,
-              activitytype_returned: rowActivityTypeName(row),
+              activitytype_returned: rowActivityTypeName(row)
             },
             debug: {
-              host_rejected_reason: derived.rejectedReason || null,
-            },
+              host_rejected_reason: derived.rejectedReason || null
+            }
           });
 
           processed += 1;
         }
-      } catch (e2) {
-        var msg = String((e2 && e2.message) || e2);
+      } catch (e) {
+        var msg = String((e && e.message) || e);
         errors.push({ page: page, error: msg });
 
         debug.pages.push({
           version: VERSION,
           page: page,
           http: http || 0,
+          attempt: "exception",
           reqPayload: reqPayload,
           respKeys: [],
           dataWasString: false,
@@ -668,49 +631,16 @@ Deno.serve(async function (req) {
           total: null,
           uniqueActivityNames: [],
           activityPairs: [],
-          respSnippet: truncate(respText || msg, 1400),
+          respSnippet: truncate(respText || msg, 1400)
         });
 
         break;
       }
     }
 
-    // If we fail-fast, return a response that still includes debug + stats (so your UI shows something),
-    // and includes detected activityPairs so you can pick the correct Football guid.
-    if (failFastError) {
-      debug.notes.push(
-        "FAIL_FAST: " + failFastError + " (requested sportName='" + sportName + "', activityTypeId='" + activityTypeId + "')"
-      );
-
-      var failFastResponse = {
-        success: true,
-        error: failFastError,
-        request: {
-          sportId: sportId,
-          sportName: sportName,
-          activityTypeId: activityTypeId,
-        },
-        detected: failFastDetected,
-        stats: {
-          processed: 0,
-          accepted: 0,
-          rejected: 0,
-          errors: errors.length,
-          rejectedMissingHost: 0,
-          rejectedJunkHost: 0,
-          rejectedWrongSport: 0,
-        },
-        debug: debug,
-        errors: errors.slice(0, 10),
-        accepted: [],
-        rejected_samples: [],
-      };
-
-      return new Response(JSON.stringify(failFastResponse), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    // Keep payloads bounded for logging
+    var acceptedOut = dryRun ? accepted.slice(0, 25) : accepted;
+    var rejectedOut = rejected.slice(0, 25);
 
     var response = {
       stats: {
@@ -721,22 +651,27 @@ Deno.serve(async function (req) {
         rejectedMissingHost: rejectedMissingHost,
         rejectedJunkHost: rejectedJunkHost,
         rejectedWrongSport: rejectedWrongSport,
+        usedFallbackPages: usedFallbackPages
       },
       debug: debug,
       errors: errors.slice(0, 10),
-      accepted: dryRun ? accepted.slice(0, 25) : accepted,
-      rejected_samples: rejected.slice(0, 25),
+
+      accepted: acceptedOut,
+
+      // IMPORTANT: keep BOTH keys so your AdminImport doesn’t show zeros
+      rejected: rejectedOut,
+      rejected_samples: rejectedOut
     };
 
     return new Response(JSON.stringify(response), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" }
     });
-  } catch (eTop) {
-    debug.notes.push("top-level error: " + String((eTop && eTop.message) || eTop));
+  } catch (e) {
+    debug.notes.push("top-level error: " + String((e && e.message) || e));
     return new Response(JSON.stringify({ error: "Unhandled error", debug: debug }), {
       status: 500,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" }
     });
   }
 });
