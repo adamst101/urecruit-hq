@@ -1,14 +1,20 @@
 // functions/sportsUSASeedSchools.js
 // Base44 Backend Function (Deno)
-// Purpose: Fetch SportUSA "school list" pages (footballcampsusa, soccercampsusa, etc.)
-// and return parsed schools: {school_name, logo_url, source_school_url, source_key}
 //
-// IMPORTANT:
-// - This function does NOT write to your DB.
-// - AdminImport receives results and upserts into School.
-// - "Editor-safe": no optional chaining.
+// Purpose:
+// - Fetch a SportsUSA sport directory site (e.g., https://www.footballcampsusa.com)
+// - Parse school "tiles" / blocks and extract:
+//   - school_name (from image alt)
+//   - logo_url (from image src)
+//   - view_site_url (from "View Site" anchor href)
+// - Return normalized list to AdminImport
+//
+// Notes:
+// - No optional chaining (Base44 editor-safe).
+// - No external imports (regex-based parsing).
+// - This is a "seed schools" collector, not camps ingestion.
 
-const VERSION = "sportsUSASeedSchools_2026-02-02_v1_editor_safe";
+const VERSION = "sportsUSASeedSchools_2026-02-02_v3_editor_safe_regex_parser";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -16,313 +22,217 @@ function safeString(x) {
   return s ? s : null;
 }
 
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
+function stripNonAscii(s) {
+  return String(s || "")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function lc(x) {
-  return String(x || "").toLowerCase().trim();
+function lc(s) {
+  return String(s || "").toLowerCase().trim();
 }
 
-function truncate(s, n) {
-  var str = String(s || "");
-  var max = typeof n === "number" ? n : 1200;
-  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
-}
-
-function uniqBy(arr, keyFn) {
-  var seen = {};
-  var out = [];
-  for (var i = 0; i < arr.length; i++) {
-    var k = keyFn(arr[i]);
-    if (!k) continue;
-    if (seen[k]) continue;
-    seen[k] = true;
-    out.push(arr[i]);
+function absUrl(baseUrl, maybeRelative) {
+  var u = safeString(maybeRelative);
+  if (!u) return null;
+  if (u.indexOf("http://") === 0 || u.indexOf("https://") === 0) return u;
+  if (u.indexOf("//") === 0) return "https:" + u;
+  if (u.indexOf("/") === 0) {
+    // join to origin
+    try {
+      var b = new URL(baseUrl);
+      return b.origin + u;
+    } catch (e) {
+      return u;
+    }
   }
-  return out;
-}
-
-function normalizeName(name) {
-  var s = String(name || "").toLowerCase();
-  s = s.replace(/&amp;/g, "&");
-  s = s.replace(/[^a-z0-9]+/g, " ");
-  s = s.replace(/\s+/g, " ").trim();
-  return s;
-}
-
-// Heuristic HTML parsing. We try multiple patterns and log counts.
-// This is intentionally "best effort" because SportsUSA markup can vary.
-function parseSchoolsFromHtml(html, baseUrl) {
-  var results = [];
-  var h = String(html || "");
-
-  // Pattern A: cards with "View Site" links (external camp site)
-  // We capture external URLs and try to grab a nearby title-ish string.
-  //
-  // This is robust-ish: find any external link not on the base domain.
-  var baseHost = "";
+  // relative path
   try {
-    baseHost = new URL(baseUrl).host;
-  } catch {}
+    return new URL(u, baseUrl).toString();
+  } catch (e2) {
+    return u;
+  }
+}
 
-  var linkRegex = /href\s*=\s*"([^"]+)"/gi;
-  var m;
-  var links = [];
-  while ((m = linkRegex.exec(h)) !== null) {
-    var href = m[1];
-    if (!href) continue;
-    if (href.indexOf("mailto:") === 0) continue;
-    if (href.indexOf("tel:") === 0) continue;
-    if (href.indexOf("#") === 0) continue;
+function normalizeSchoolName(raw, sportName) {
+  var name = stripNonAscii(raw || "");
+  if (!name) return null;
 
-    // Make absolute
-    var abs = href;
-    if (href.indexOf("http://") !== 0 && href.indexOf("https://") !== 0) {
-      try {
-        abs = new URL(href, baseUrl).toString();
-      } catch {
-        abs = href;
-      }
+  // Remove trailing sport qualifier like " - Football" when sportName provided.
+  if (sportName) {
+    var sn = stripNonAscii(sportName);
+    var re = new RegExp("\\s*-\\s*" + sn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "i");
+    name = name.replace(re, "").trim();
+  }
+
+  return name || null;
+}
+
+function makeSourceKey(viewSiteUrl, schoolName) {
+  var v = safeString(viewSiteUrl);
+  if (v) return "view:" + lc(v);
+  var n = safeString(schoolName);
+  if (n) return "name:" + lc(n);
+  return null;
+}
+
+function parseSchoolsFromHtml(html, siteUrl, sportName, limit) {
+  var out = [];
+  if (!html) return out;
+
+  // Strategy:
+  // - Find each "View Site" anchor
+  // - Walk backward within a window to find the closest preceding <img ... alt="X" ... src="Y">
+  //
+  // This matches the structure visible on footballcampsusa.com pages.
+
+  var viewRe = /<a[^>]*href="([^"]+)"[^>]*>\s*View Site\s*<\/a>/gi;
+
+  var match;
+  while ((match = viewRe.exec(html)) !== null) {
+    if (limit && out.length >= limit) break;
+
+    var href = match[1];
+    var viewSiteUrl = absUrl(siteUrl, href);
+
+    // Look back up to ~6000 chars for the nearest preceding <img ...>
+    var idx = match.index;
+    var start = idx - 6000;
+    if (start < 0) start = 0;
+    var windowText = html.slice(start, idx);
+
+    // Find last <img ...> in the window
+    var imgRe = /<img[^>]*>/gi;
+    var imgTag = null;
+    var m2;
+    while ((m2 = imgRe.exec(windowText)) !== null) {
+      imgTag = m2[0];
     }
 
-    // Filter to external sites (not the SportsUSA domain itself)
-    var isExternal = true;
-    try {
-      var host = new URL(abs).host;
-      if (host === baseHost) isExternal = false;
-    } catch {}
+    var alt = null;
+    var src = null;
 
-    if (isExternal) links.push(abs);
-  }
+    if (imgTag) {
+      var altM = /alt="([^"]*)"/i.exec(imgTag);
+      if (altM && altM[1] !== undefined) alt = stripNonAscii(altM[1]);
 
-  // Reduce noise (social links, etc.)
-  var cleaned = [];
-  for (var i = 0; i < links.length; i++) {
-    var u = links[i];
-    var low = lc(u);
-    if (low.indexOf("facebook.com") > -1) continue;
-    if (low.indexOf("instagram.com") > -1) continue;
-    if (low.indexOf("twitter.com") > -1) continue;
-    if (low.indexOf("x.com") > -1) continue;
-    if (low.indexOf("youtube.com") > -1) continue;
-    if (low.indexOf("tiktok.com") > -1) continue;
-    cleaned.push(u);
-  }
-
-  cleaned = uniqBy(cleaned, function (x) { return x; });
-
-  // Pattern B: try to collect logos near cards
-  // Collect all img src + alt and later map by proximity (best effort)
-  var imgRegex = /<img[^>]*src\s*=\s*"([^"]+)"[^>]*>/gi;
-  var img;
-  var imgs = [];
-  while ((img = imgRegex.exec(h)) !== null) {
-    var src = img[1] || "";
-    var tag = img[0] || "";
-    var altMatch = /alt\s*=\s*"([^"]*)"/i.exec(tag);
-    var alt = altMatch ? altMatch[1] : "";
-    imgs.push({ src: src, alt: alt });
-  }
-
-  // Build “school” objects from external links (most reliable anchor we have)
-  for (var j = 0; j < cleaned.length; j++) {
-    var viewUrl = cleaned[j];
-
-    // Use hostname as a fallback source_key
-    var key = null;
-    try {
-      key = "sportsusa:" + new URL(viewUrl).host;
-    } catch {
-      key = "sportsusa:" + viewUrl;
+      var srcM = /src="([^"]*)"/i.exec(imgTag);
+      if (srcM && srcM[1] !== undefined) src = stripNonAscii(srcM[1]);
     }
 
-    // Attempt to infer a human name (weak fallback)
-    var inferredName = null;
-    try {
-      var host2 = new URL(viewUrl).host.replace(/^www\./i, "");
-      inferredName = host2
-        .replace(/\.(com|net|org|edu)$/i, "")
-        .replace(/[-_]+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (inferredName) inferredName = inferredName.toUpperCase().slice(0, 1) + inferredName.slice(1);
-    } catch {}
+    var logoUrl = absUrl(siteUrl, src);
 
-    results.push({
-      school_name: inferredName || "Unknown School",
-      normalized_name: normalizeName(inferredName || ""),
-      logo_url: null,
-      source_school_url: viewUrl,
-      source_key: key
+    // Some images on these sites can be generic placeholders; we still keep them,
+    // but AdminImport can later mark needs_review=true if logo looks generic.
+    var schoolName = normalizeSchoolName(alt, sportName);
+
+    if (!schoolName) continue;
+
+    out.push({
+      school_name: schoolName,
+      logo_url: logoUrl,
+      view_site_url: viewSiteUrl,
+      source_key: makeSourceKey(viewSiteUrl, schoolName),
+      source_platform: "sportsusa",
+      source_school_url: viewSiteUrl || siteUrl,
     });
   }
 
-  // Attach a “best guess” logo: pick first non-empty logo on the page (fallback)
-  // NOTE: Real mapping requires tighter selectors; we’ll improve once we see real HTML patterns.
-  var firstLogo = null;
-  for (var k = 0; k < imgs.length; k++) {
-    var src2 = safeString(imgs[k].src);
-    if (!src2) continue;
-    if (src2.indexOf("data:") === 0) continue;
-    firstLogo = src2;
-    break;
-  }
-  if (firstLogo) {
-    for (var t = 0; t < results.length; t++) {
-      results[t].logo_url = firstLogo;
-    }
-  }
-
-  // Deduplicate by source_key
-  results = uniqBy(results, function (r) { return r.source_key; });
-
-  return {
-    schools: results,
-    debug: {
-      externalLinksFound: cleaned.length,
-      imagesFound: imgs.length,
-      baseHost: baseHost || null
-    }
-  };
+  return out;
 }
 
 Deno.serve(async (req) => {
   var debug = {
     version: VERSION,
     startedAt: new Date().toISOString(),
+    siteUrl: null,
+    http: null,
     notes: [],
-    pages: []
+    sample: [],
   };
 
   try {
     if (req.method !== "POST") {
       return new Response(JSON.stringify({ error: "Method not allowed", debug: debug }), {
         status: 405,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
-    var body = null;
-    try {
-      body = await req.json();
-    } catch {
-      body = null;
-    }
-
-    var sportName = safeString(body && body.sportName) || "";
-    var limit = Number(body && body.limit);
-    if (!isFinite(limit) || limit <= 0) limit = 300;
-
-    // AdminImport will pass sites[] from your SchoolSportSite table.
-    var sites = asArray(body && body.sites);
-
-    if (!sites.length) {
-      return new Response(JSON.stringify({
-        error: "Missing sites[]. AdminImport must pass SchoolSportSite rows (with list_url/base_url).",
-        debug: debug
-      }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    var allSchools = [];
-    var httpAny = 200;
-
-    for (var i = 0; i < sites.length; i++) {
-      if (allSchools.length >= limit) break;
-
-      var site = sites[i] || {};
-      var listUrl =
-        safeString(site.list_url) ||
-        safeString(site.schools_url) ||
-        safeString(site.seed_url) ||
-        safeString(site.base_url) ||
-        safeString(site.url) ||
-        null;
-
-      if (!listUrl) {
-        debug.pages.push({ siteIndex: i, error: "missing list_url/base_url", site: site });
-        continue;
-      }
-
-      var res = null;
-      var text = "";
-      var status = 0;
-
-      try {
-        res = await fetch(listUrl, {
-          method: "GET",
-          headers: {
-            "User-Agent": "Base44Bot/1.0 (School Seeder)",
-            "Accept": "text/html,application/xhtml+xml"
-          }
-        });
-
-        status = res.status;
-        httpAny = status;
-        text = await res.text();
-
-        var parsed = parseSchoolsFromHtml(text, listUrl);
-        var schools = asArray(parsed && parsed.schools);
-
-        debug.pages.push({
-          siteIndex: i,
-          listUrl: listUrl,
-          http: status,
-          found: schools.length,
-          parseDebug: parsed && parsed.debug ? parsed.debug : {},
-          snippet: truncate(text, 800)
-        });
-
-        // Add, but cap
-        for (var j = 0; j < schools.length; j++) {
-          if (allSchools.length >= limit) break;
-          // tag it
-          schools[j].sport_name = sportName || null;
-          schools[j].source_platform = "sportsusa";
-          allSchools.push(schools[j]);
-        }
-      } catch (e) {
-        debug.pages.push({
-          siteIndex: i,
-          listUrl: listUrl,
-          http: status || 0,
-          error: String(e && e.message ? e.message : e)
-        });
-      }
-    }
-
-    // De-dupe again
-    allSchools = uniqBy(allSchools, function (r) { return r.source_key; });
-
-    // Final cap
-    if (allSchools.length > limit) allSchools = allSchools.slice(0, limit);
-
-    var response = {
-      stats: {
-        http: httpAny,
-        sportName: sportName || null,
-        sites_in: sites.length,
-        schools_found: allSchools.length,
-        limit: limit
-      },
-      sample: allSchools.slice(0, Math.min(8, allSchools.length)),
-      schools: allSchools,
-      debug: debug
-    };
-
-    return new Response(JSON.stringify(response), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
+    var body = await req.json().catch(function () {
+      return null;
     });
+
+    var sportId = safeString(body && body.sportId);
+    var sportName = safeString(body && body.sportName) || "";
+    var siteUrl = safeString(body && body.siteUrl); // required
+    var limit = Number(body && body.limit !== undefined ? body.limit : 300);
+    var dryRun = !!(body && body.dryRun);
+
+    debug.siteUrl = siteUrl;
+
+    if (!sportId) {
+      return new Response(JSON.stringify({ error: "Missing required: sportId", debug: debug }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!siteUrl) {
+      return new Response(JSON.stringify({ error: "Missing required: siteUrl", debug: debug }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    var r = await fetch(siteUrl, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
+        Accept: "text/html,*/*",
+      },
+    });
+
+    debug.http = r.status;
+
+    var html = await r.text();
+
+    if (!r.ok) {
+      debug.notes.push("Non-200 response from site");
+      return new Response(
+        JSON.stringify({
+          error: "Failed to fetch site",
+          stats: { schools_found: 0, http: r.status },
+          debug: debug,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    var schools = parseSchoolsFromHtml(html, siteUrl, sportName, limit);
+
+    debug.sample = schools.slice(0, 3);
+
+    return new Response(
+      JSON.stringify({
+        stats: {
+          http: r.status,
+          schools_found: schools.length,
+          dryRun: dryRun,
+          limit: limit,
+        },
+        debug: debug,
+        schools: schools,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
   } catch (e) {
-    debug.notes.push("top-level error: " + String(e && e.message ? e.message : e));
+    debug.notes.push("top-level error: " + String((e && e.message) || e));
     return new Response(JSON.stringify({ error: "Unhandled error", debug: debug }), {
       status: 500,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   }
 });
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
