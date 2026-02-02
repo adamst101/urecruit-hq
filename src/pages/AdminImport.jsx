@@ -1,12 +1,14 @@
 // src/pages/AdminImport.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import { base44 } from "../api/base44Client";
+
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
 /* ----------------------------
-   Helpers
+   Inline helpers (safe)
 ----------------------------- */
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -23,6 +25,11 @@ function safeNumber(x) {
   return Number.isFinite(n) ? n : null;
 }
 
+function safeObject(x) {
+  if (!x || typeof x !== "object" || Array.isArray(x)) return null;
+  return x;
+}
+
 function tryParseJson(value) {
   if (typeof value !== "string") return value;
   const s = value.trim();
@@ -37,30 +44,19 @@ function tryParseJson(value) {
 
 function normalizeStringArray(value) {
   const v = tryParseJson(value);
+
   if (Array.isArray(v)) {
     return v
       .map((x) => (x == null ? null : String(x).trim()))
       .filter((x) => !!x);
   }
+
   const one = safeString(v);
   return one ? [one] : [];
 }
 
 function lc(x) {
   return String(x || "").toLowerCase().trim();
-}
-
-function normalizeSchoolNameForMatch(name) {
-  const s = String(name || "").toLowerCase();
-  return s
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 function slugify(s) {
@@ -71,14 +67,12 @@ function slugify(s) {
     .replace(/^-+|-+$/g, "");
 }
 
-function simpleHash(obj) {
-  const str = typeof obj === "string" ? obj : JSON.stringify(obj ?? {});
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = (h << 5) - h + str.charCodeAt(i);
-    h |= 0;
-  }
-  return `h${Math.abs(h)}`;
+function normalizeSchoolNameKey(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // Return YYYY-MM-DD (UTC) or null
@@ -120,6 +114,45 @@ function computeSeasonYearFootball(startDateISO) {
   return d >= feb1 ? y : y - 1;
 }
 
+// Simple stable hash (MVP-safe; not cryptographic)
+function simpleHash(obj) {
+  const str = typeof obj === "string" ? obj : JSON.stringify(obj ?? {});
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (h << 5) - h + str.charCodeAt(i);
+    h |= 0;
+  }
+  return `h${Math.abs(h)}`;
+}
+
+function seedProgramId({ school_id, camp_name }) {
+  return `seed:${String(school_id || "na")}:${slugify(camp_name || "camp")}`;
+}
+
+function buildEventKey({ source_platform, program_id, start_date, link_url, source_url }) {
+  const platform = source_platform || "seed";
+  const disc = link_url || source_url || "na";
+  return `${platform}:${program_id}:${start_date || "na"}:${disc}`;
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function normalizeSportNameFromRow(r) {
+  return String(r?.sport_name || r?.name || r?.sportName || "").trim();
+}
+
+function readActiveFlag(row) {
+  if (typeof row?.active === "boolean") return row.active;
+  if (typeof row?.is_active === "boolean") return row.is_active;
+  if (typeof row?.isActive === "boolean") return row.isActive;
+  const st = String(row?.status || "").toLowerCase().trim();
+  if (st === "active") return true;
+  if (st === "inactive" || st === "in_active" || st === "in active") return false;
+  return true;
+}
+
 async function tryUpdateWithPayloads(Entity, id, payloads) {
   for (const p of payloads) {
     try {
@@ -140,8 +173,22 @@ async function tryCreateWithPayloads(Entity, payloads) {
   return null;
 }
 
+async function tryDelete(Entity, id) {
+  if (!Entity || !id) return false;
+  const fns = ["delete", "remove", "destroy"];
+  for (const fn of fns) {
+    try {
+      if (typeof Entity[fn] === "function") {
+        await Entity[fn](String(id));
+        return true;
+      }
+    } catch {}
+  }
+  return false;
+}
+
 /* ----------------------------
-   Routes
+   Routes (hardcoded)
 ----------------------------- */
 const ROUTES = {
   Workspace: "/Workspace",
@@ -149,7 +196,7 @@ const ROUTES = {
 };
 
 /* ----------------------------
-   Position default seeds
+   Positions seeding defaults
 ----------------------------- */
 const DEFAULT_POSITION_SEEDS = {
   Football: [
@@ -168,22 +215,59 @@ const DEFAULT_POSITION_SEEDS = {
 };
 
 /* ----------------------------
-   Main Page
+   Ryzer ActivityTypeId mapping (MVP)
 ----------------------------- */
+const RYZER_ACTIVITY_TYPE_BY_SPORTNAME = {
+  Football: "A8ADF526-3822-4261-ADCF-1592CF4BB7FF",
+};
+
+/* ----------------------------
+   SportsUSA directory defaults (editable in UI)
+----------------------------- */
+const SPORTSUSA_DIRECTORY_BY_SPORTNAME = {
+  Football: "https://www.footballcampsusa.com/",
+  // Baseball: "https://www.baseballcampsusa.com/",
+  // Soccer: "https://www.soccercampsusa.com/",
+};
+
 export default function AdminImport() {
   const nav = useNavigate();
 
-  // Entities
-  const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
-  const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
-  const SchoolEntity = base44?.entities?.School || base44?.entities?.Schools || null;
-  const SchoolSportSiteEntity =
-    base44?.entities?.SchoolSportSite || base44?.entities?.SchoolSportSites || null;
+  /* ----------------------------
+     Logs per section
+  ----------------------------- */
+  const [logSportsUSA, setLogSportsUSA] = useState("");
+  const [logRyzer, setLogRyzer] = useState("");
+  const [logSeed, setLogSeed] = useState("");
+  const [logPromote, setLogPromote] = useState("");
+  const [logSportsAdmin, setLogSportsAdmin] = useState("");
 
-  const CampDemoEntity = base44?.entities?.CampDemo || null;
+  function append(setter, line) {
+    setter((prev) => (prev ? prev + "\n" + line : line));
+  }
 
   /* ----------------------------
-     Shared Sport selection (ONE selector drives all)
+     Stats
+  ----------------------------- */
+  const [workingPromote, setWorkingPromote] = useState(false);
+  const [promoteStats, setPromoteStats] = useState({ read: 0, created: 0, updated: 0, skipped: 0, errors: 0 });
+
+  const [seedWorking, setSeedWorking] = useState(false);
+  const [seedStats, setSeedStats] = useState({ attempted: 0, created: 0, updated: 0, errors: 0 });
+
+  const [sportsUSAWorking, setSportsUSAWorking] = useState(false);
+  const [sportsUSADryRun, setSportsUSADryRun] = useState(true);
+  const [sportsUSALimit, setSportsUSALimit] = useState(300);
+
+  const [ryzerWorking, setRyzerWorking] = useState(false);
+  const [ryzerDryRun, setRyzerDryRun] = useState(true);
+  const [ryzerRecordsPerPage, setRyzerRecordsPerPage] = useState(25);
+  const [ryzerMaxPages, setRyzerMaxPages] = useState(10);
+  const [ryzerMaxEvents, setRyzerMaxEvents] = useState(200);
+  const [ryzerActivityTypeId, setRyzerActivityTypeId] = useState("");
+
+  /* ----------------------------
+     Sport selection (single source of truth)
   ----------------------------- */
   const [sports, setSports] = useState([]);
   const [sportsLoading, setSportsLoading] = useState(false);
@@ -191,43 +275,42 @@ export default function AdminImport() {
   const [selectedSportId, setSelectedSportId] = useState("");
   const [selectedSportName, setSelectedSportName] = useState("");
 
-  const selectedSport = useMemo(() => {
-    return sports.find((s) => s.id === selectedSportId) || null;
-  }, [sports, selectedSportId]);
+  const [sportsUSADirectoryUrl, setSportsUSADirectoryUrl] = useState("");
 
   /* ----------------------------
-     Logs (unique per tool/section)
+     Entities
   ----------------------------- */
-  const [sportsusaLog, setSportsusaLog] = useState("");
-  const [ryzerLog, setRyzerLog] = useState("");
-  const [positionsLog, setPositionsLog] = useState("");
-  const [promoteLog, setPromoteLog] = useState("");
+  const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
+  const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
+  const SchoolEntity = base44?.entities?.School || base44?.entities?.Schools || null;
+  const SchoolSportSiteEntity =
+    base44?.entities?.SchoolSportSite || base44?.entities?.SchoolSportSites || null;
+  const CampDemoEntity = base44?.entities?.CampDemo || null;
 
-  const appendSportsUSALog = (line) =>
-    setSportsusaLog((p) => (p ? p + "\n" + line : line));
-  const appendRyzerLog = (line) => setRyzerLog((p) => (p ? p + "\n" + line : line));
-  const appendPositionsLog = (line) =>
-    setPositionsLog((p) => (p ? p + "\n" + line : line));
-  const appendPromoteLog = (line) =>
-    setPromoteLog((p) => (p ? p + "\n" + line : line));
+  /* ----------------------------
+     Derived
+  ----------------------------- */
+  const seedListForSelectedSport = useMemo(() => {
+    const name = String(selectedSportName || "").trim();
+    if (!name) return [];
+    return DEFAULT_POSITION_SEEDS[name] || [];
+  }, [selectedSportName]);
+
+  // When sport changes, auto-fill Ryzer ActivityTypeId if known
+  useEffect(() => {
+    const guess = RYZER_ACTIVITY_TYPE_BY_SPORTNAME[String(selectedSportName || "").trim()];
+    if (guess) setRyzerActivityTypeId(guess);
+  }, [selectedSportName]);
+
+  // When sport changes, auto-fill SportsUSA directory if known (user can still edit)
+  useEffect(() => {
+    const guess = SPORTSUSA_DIRECTORY_BY_SPORTNAME[String(selectedSportName || "").trim()];
+    if (guess) setSportsUSADirectoryUrl(guess);
+  }, [selectedSportName]);
 
   /* ----------------------------
      Load sports
   ----------------------------- */
-  function normalizeSportNameFromRow(r) {
-    return String(r?.sport_name || r?.name || r?.sportName || "").trim();
-  }
-
-  function readActiveFlag(row) {
-    if (typeof row?.active === "boolean") return row.active;
-    if (typeof row?.is_active === "boolean") return row.is_active;
-    if (typeof row?.isActive === "boolean") return row.isActive;
-    const st = String(row?.status || "").toLowerCase().trim();
-    if (st === "active") return true;
-    if (st === "inactive" || st === "in_active" || st === "in active") return false;
-    return true;
-  }
-
   async function loadSports() {
     if (!SportEntity?.filter) return;
 
@@ -239,16 +322,6 @@ export default function AdminImport() {
           id: r?.id ? String(r.id) : "",
           name: normalizeSportNameFromRow(r),
           active: readActiveFlag(r),
-          sportsusa_directory_url:
-            safeString(r?.sportsusa_directory_url) ||
-            safeString(r?.sportsUSA_directory_url) ||
-            safeString(r?.sportsusaDirectoryUrl) ||
-            null,
-          ryzer_activity_type_id:
-            safeString(r?.ryzer_activity_type_id) ||
-            safeString(r?.ryzerActivityTypeId) ||
-            safeString(r?.ryzer_activitytypeid) ||
-            null,
           raw: r,
         }))
         .filter((r) => r.id && r.name);
@@ -270,6 +343,7 @@ export default function AdminImport() {
     }
   }
 
+  // initial load
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -282,336 +356,26 @@ export default function AdminImport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    const hit = sports.find((s) => s.id === selectedSportId);
-    if (hit) setSelectedSportName(hit.name);
-  }, [selectedSportId, sports]);
-
   /* ----------------------------
-     SportsUSA config + seed schools
-  ----------------------------- */
-  const [sportsusaWorking, setSportsusaWorking] = useState(false);
-  const [sportsusaDryRun, setSportsusaDryRun] = useState(true);
-  const [sportsusaLimit, setSportsusaLimit] = useState(300);
-
-  // IMPORTANT: this URL is stored on Sport.sportsusa_directory_url
-  const [sportsusaDirectoryUrl, setSportsusaDirectoryUrl] = useState("");
-
-  useEffect(() => {
-    setSportsusaDirectoryUrl(selectedSport?.sportsusa_directory_url || "");
-  }, [selectedSport?.sportsusa_directory_url, selectedSportId]);
-
-  async function saveSportsUSADirectoryUrl() {
-    const runIso = new Date().toISOString();
-    setSportsusaLog("");
-    appendSportsUSALog(`[SportsUSA] Mapping: Save directory URL @ ${runIso}`);
-
-    if (!selectedSportId) return appendSportsUSALog("[SportsUSA] ERROR: Select a sport first.");
-    if (!SportEntity?.update) return appendSportsUSALog("[SportsUSA] ERROR: Sport entity missing update().");
-
-    const url = safeString(sportsusaDirectoryUrl);
-    if (!url) return appendSportsUSALog("[SportsUSA] ERROR: Directory URL is required.");
-
-    // Try multiple field names for safety, but your schema should be sportsusa_directory_url
-    const ok = await tryUpdateWithPayloads(SportEntity, selectedSportId, [
-      { sportsusa_directory_url: url },
-      { sportsUSA_directory_url: url },
-      { sportsusaDirectoryUrl: url },
-    ]);
-
-    appendSportsUSALog(ok ? `[SportsUSA] OK: Saved directory URL = ${url}` : "[SportsUSA] ERROR: Save failed (field mismatch?).");
-    await loadSports();
-  }
-
-  async function upsertSchoolFromSportsUSAItem(item, runIso) {
-    if (!SchoolEntity?.filter || !SchoolEntity?.create || !SchoolEntity?.update) {
-      throw new Error("School entity not available (expected entities.School).");
-    }
-
-    const school_name = safeString(item?.school_name);
-    if (!school_name) return { status: "skipped", reason: "missing_school_name" };
-
-    const normalized_name = normalizeSchoolNameForMatch(school_name);
-    const source_key = safeString(item?.source_key);
-    const logo_url = safeString(item?.logo_url);
-    const website_url = safeString(item?.view_site_url);
-    const source_school_url = safeString(item?.source_school_url) || website_url;
-
-    // Dedupe strategy:
-    // 1) source_key exact match (best)
-    // 2) normalized_name match (fallback)
-    let existing = [];
-
-    if (source_key) {
-      try {
-        existing = asArray(await SchoolEntity.filter({ source_key }));
-      } catch {
-        existing = [];
-      }
-    }
-
-    if (!existing.length && normalized_name) {
-      try {
-        // If your schema uses normalized_name, this works.
-        existing = asArray(await SchoolEntity.filter({ normalized_name }));
-      } catch {
-        existing = [];
-      }
-    }
-
-    const payload = {
-      school_name,
-      normalized_name,
-      school_type: "College/University",
-      active: true,
-      needs_review: false,
-      logo_url: logo_url || null,
-      website_url: website_url || null,
-      source_platform: "sportsusa",
-      source_school_url: source_school_url || null,
-      source_key: source_key || null,
-      last_seen_at: runIso,
-    };
-
-    if (existing.length && existing[0]?.id) {
-      const id = String(existing[0].id);
-
-      // Only overwrite logo_url if new one exists AND existing is blank OR clearly generic
-      const existingLogo = safeString(existing[0]?.logo_url);
-      const looksGeneric =
-        existingLogo && existingLogo.includes("logo-athletic.png"); // SportsUSA generic placeholder
-      const finalLogo =
-        logo_url && (!existingLogo || looksGeneric) ? logo_url : (existingLogo || null);
-
-      const updatePayload = { ...payload, logo_url: finalLogo };
-
-      await SchoolEntity.update(id, updatePayload);
-      return { status: "updated", school_id: id, school_name };
-    }
-
-    const created = await tryCreateWithPayloads(SchoolEntity, [
-      payload,
-      // fallback payloads in case schema differs slightly
-      {
-        school_name,
-        active: true,
-        logo_url: logo_url || null,
-        website_url: website_url || null,
-        source_platform: "sportsusa",
-        source_key: source_key || null,
-        last_seen_at: runIso,
-      },
-    ]);
-
-    // Base44 sometimes returns the created object, sometimes truthy
-    if (created && created.id) {
-      return { status: "created", school_id: String(created.id), school_name };
-    }
-
-    // If created is truthy but no id, do a best-effort re-fetch by source_key
-    if (source_key) {
-      try {
-        const post = asArray(await SchoolEntity.filter({ source_key }));
-        if (post.length && post[0]?.id) {
-          return { status: "created", school_id: String(post[0].id), school_name };
-        }
-      } catch {}
-    }
-
-    return { status: "error", reason: "create_failed_no_id" };
-  }
-
-  async function upsertSchoolSportSite({ school_id, sport_id, camp_site_url, logo_url, source_key }, runIso) {
-    if (!SchoolSportSiteEntity?.filter || !SchoolSportSiteEntity?.create || !SchoolSportSiteEntity?.update) {
-      throw new Error("SchoolSportSite entity not available (expected entities.SchoolSportSite).");
-    }
-
-    const sk = safeString(source_key) || `sportsusa:${sport_id}:${lc(camp_site_url || "")}`;
-    const payload = {
-      school_id,
-      sport_id,
-      camp_site_url,
-      logo_url: logo_url || null,
-      source_platform: "sportsusa",
-      source_key: sk,
-      active: true,
-      needs_review: false,
-      last_seen_at: runIso,
-    };
-
-    // Prefer dedupe by (school_id, sport_id)
-    let existing = [];
-    try {
-      existing = asArray(await SchoolSportSiteEntity.filter({ school_id, sport_id }));
-    } catch {
-      existing = [];
-    }
-
-    if (!existing.length) {
-      // fallback dedupe by source_key if available
-      try {
-        existing = asArray(await SchoolSportSiteEntity.filter({ source_key: sk }));
-      } catch {
-        existing = [];
-      }
-    }
-
-    if (existing.length && existing[0]?.id) {
-      await SchoolSportSiteEntity.update(String(existing[0].id), payload);
-      return "updated";
-    }
-
-    await SchoolSportSiteEntity.create(payload);
-    return "created";
-  }
-
-  async function seedSchoolsFromSportsUSA() {
-    const runIso = new Date().toISOString();
-    setSportsusaWorking(true);
-    setSportsusaLog("");
-
-    appendSportsUSALog(`[SportsUSA] Starting: SportsUSA School Seed (${selectedSportName || "?"}) @ ${runIso}`);
-    appendSportsUSALog(`[SportsUSA] DryRun=${sportsusaDryRun ? "true" : "false"} | Limit=${sportsusaLimit}`);
-
-    try {
-      if (!selectedSportId) {
-        appendSportsUSALog("[SportsUSA] ERROR: Select a sport first.");
-        return;
-      }
-
-      const siteUrl = safeString(sportsusaDirectoryUrl) || safeString(selectedSport?.sportsusa_directory_url);
-      if (!siteUrl) {
-        appendSportsUSALog("[SportsUSA] ERROR: No SportsUSA directory URL set for this sport.");
-        appendSportsUSALog("[SportsUSA] Fix: Enter the directory URL above (e.g., https://www.footballcampsusa.com) then click Save.");
-        return;
-      }
-
-      // Must call server-side function to avoid CORS
-      const res = await fetch("/functions/sportsUSASeedSchools", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sportId: selectedSportId,
-          sportName: selectedSportName,
-          siteUrl,
-          limit: sportsusaLimit,
-          dryRun: true, // collector dryRun is informational; DB writes happen here in AdminImport
-        }),
-      });
-
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        appendSportsUSALog(`[SportsUSA] ERROR: Function call failed (HTTP ${res.status}).`);
-        appendSportsUSALog(JSON.stringify(data || {}, null, 2));
-        appendSportsUSALog("[SportsUSA] NOTE: If you see KeyError:'sportsUSASeedSchools', the function is not deployed/named correctly in Base44.");
-        return;
-      }
-
-      const schools = asArray(data?.schools);
-      appendSportsUSALog(`[SportsUSA] SportsUSA fetched: schools_found=${schools.length} | http=${data?.stats?.http ?? "n/a"}`);
-
-      if (schools.length) {
-        appendSportsUSALog(`[SportsUSA] SportsUSA sample (first ${Math.min(3, schools.length)}):`);
-        schools.slice(0, 3).forEach((s) => {
-          appendSportsUSALog(`- name="${s?.school_name || ""}" | logo="${s?.logo_url || ""}" | view="${s?.view_site_url || ""}"`);
-        });
-      } else {
-        appendSportsUSALog("[SportsUSA] WARNING: No schools parsed. Site HTML structure may have changed.");
-        return;
-      }
-
-      if (sportsusaDryRun) {
-        appendSportsUSALog("[SportsUSA] DryRun=true: no School / SchoolSportSite writes performed.");
-        return;
-      }
-
-      if (!SchoolEntity || !SchoolSportSiteEntity) {
-        appendSportsUSALog("[SportsUSA] ERROR: Missing School or SchoolSportSite entity.");
-        return;
-      }
-
-      let createdSchools = 0;
-      let updatedSchools = 0;
-      let createdSites = 0;
-      let updatedSites = 0;
-      let skipped = 0;
-      let errors = 0;
-
-      for (let i = 0; i < schools.length; i++) {
-        const item = schools[i];
-
-        try {
-          const viewUrl = safeString(item?.view_site_url);
-          const name = safeString(item?.school_name);
-
-          if (!name || !viewUrl) {
-            skipped += 1;
-            appendSportsUSALog(`[SportsUSA] SKIP #${i + 1}: missing school_name or view_site_url`);
-            continue;
-          }
-
-          const sres = await upsertSchoolFromSportsUSAItem(item, runIso);
-          if (sres.status === "created") createdSchools += 1;
-          if (sres.status === "updated") updatedSchools += 1;
-          if (!sres.school_id) {
-            errors += 1;
-            appendSportsUSALog(`[SportsUSA] ERROR #${i + 1}: School upsert failed for "${name}" (${sres.reason || "unknown"})`);
-            continue;
-          }
-
-          // Upsert SchoolSportSite for this sport
-          const siteRes = await upsertSchoolSportSite(
-            {
-              school_id: sres.school_id,
-              sport_id: selectedSportId,
-              camp_site_url: viewUrl,
-              logo_url: safeString(item?.logo_url),
-              source_key: safeString(item?.source_key),
-            },
-            runIso
-          );
-
-          if (siteRes === "created") createdSites += 1;
-          if (siteRes === "updated") updatedSites += 1;
-
-          if ((i + 1) % 25 === 0) appendSportsUSALog(`[SportsUSA] Progress: ${i + 1}/${schools.length}`);
-          await sleep(25);
-        } catch (e) {
-          errors += 1;
-          appendSportsUSALog(`[SportsUSA] ERROR #${i + 1}: ${String(e?.message || e)}`);
-        }
-      }
-
-      appendSportsUSALog(
-        `[SportsUSA] Done. schools created=${createdSchools} updated=${updatedSchools} | sites created=${createdSites} updated=${updatedSites} | skipped=${skipped} errors=${errors}`
-      );
-    } catch (e) {
-      appendSportsUSALog(`[SportsUSA] ERROR: ${String(e?.message || e)}`);
-    } finally {
-      setSportsusaWorking(false);
-    }
-  }
-
-  /* ----------------------------
-     Positions (seed + CRUD minimal)
+     Positions refresh when sport changes
   ----------------------------- */
   const [positions, setPositions] = useState([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
-  const [seedPositionsWorking, setSeedPositionsWorking] = useState(false);
-  const [seedStats, setSeedStats] = useState({ attempted: 0, created: 0, updated: 0, errors: 0 });
 
-  const seedListForSelectedSport = useMemo(() => {
-    const name = String(selectedSportName || "").trim();
-    if (!name) return [];
-    return DEFAULT_POSITION_SEEDS[name] || [];
-  }, [selectedSportName]);
+  const [positionsEdit, setPositionsEdit] = useState({});
+  const [positionAddCode, setPositionAddCode] = useState("");
+  const [positionAddName, setPositionAddName] = useState("");
+  const [positionAddWorking, setPositionAddWorking] = useState(false);
+  const [positionSaveWorking, setPositionSaveWorking] = useState(false);
+  const [positionDeleteWorking, setPositionDeleteWorking] = useState("");
 
   async function loadPositionsForSport(sportId) {
     if (!PositionEntity?.filter || !sportId) {
       setPositions([]);
+      setPositionsEdit({});
       return;
     }
+
     setPositionsLoading(true);
     try {
       const rows = asArray(await PositionEntity.filter({ sport_id: sportId }));
@@ -620,23 +384,44 @@ export default function AdminImport() {
           id: r?.id ? String(r.id) : "",
           code: String(r?.position_code || "").trim(),
           name: String(r?.position_name || "").trim(),
+          raw: r,
         }))
         .filter((p) => p.id);
 
-      normalized.sort((a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || ""));
+      normalized.sort(
+        (a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || "")
+      );
       setPositions(normalized);
+
+      const nextEdit = {};
+      for (const p of normalized) {
+        nextEdit[p.id] = { code: p.code, name: p.name };
+      }
+      setPositionsEdit(nextEdit);
     } catch {
       setPositions([]);
+      setPositionsEdit({});
     } finally {
       setPositionsLoading(false);
     }
   }
 
   useEffect(() => {
-    if (selectedSportId) loadPositionsForSport(selectedSportId);
+    let cancelled = false;
+    (async () => {
+      if (!selectedSportId) return;
+      await loadPositionsForSport(selectedSportId);
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSportId]);
 
+  /* ----------------------------
+     Manual Position Manager (CRUD)
+  ----------------------------- */
   async function upsertPositionBySportAndCode({ sportId, code, name }) {
     if (!PositionEntity?.filter || !PositionEntity?.create || !PositionEntity?.update) {
       throw new Error("Position entity not available (expected entities.Position).");
@@ -646,8 +431,8 @@ export default function AdminImport() {
     const position_name = String(name || "").trim();
 
     if (!sportId) throw new Error("Missing sport_id for Position upsert.");
-    if (!position_code) throw new Error("Missing position_code.");
-    if (!position_name) throw new Error("Missing position_name.");
+    if (!position_code) throw new Error("Missing position_code for Position upsert.");
+    if (!position_name) throw new Error("Missing position_name for Position upsert.");
 
     let existing = [];
     try {
@@ -671,57 +456,392 @@ export default function AdminImport() {
 
   async function seedPositionsForSport() {
     const runIso = new Date().toISOString();
-    setSeedPositionsWorking(true);
+    setLogSeed("");
+    setSeedWorking(true);
     setSeedStats({ attempted: 0, created: 0, updated: 0, errors: 0 });
-    setPositionsLog("");
 
-    appendPositionsLog(`[Positions] Starting: Seed Positions (${selectedSportName || "?"}) @ ${runIso}`);
+    append(setLogSeed, `[Seed] Starting: Seed Positions @ ${runIso}`);
 
+    if (!selectedSportId) {
+      append(setLogSeed, "[Seed] ERROR: Select a sport first.");
+      setSeedWorking(false);
+      return;
+    }
+
+    const list = seedListForSelectedSport;
+    if (!list.length) {
+      append(setLogSeed, `[Seed] ERROR: No default seed list found for sport "${selectedSportName || "?"}".`);
+      setSeedWorking(false);
+      return;
+    }
+
+    append(setLogSeed, `[Seed] Sport: ${selectedSportName} (${selectedSportId})`);
+    append(setLogSeed, `[Seed] Seed rows: ${list.length}`);
+
+    for (let i = 0; i < list.length; i++) {
+      const row = list[i];
+      setSeedStats((s) => ({ ...s, attempted: s.attempted + 1 }));
+
+      try {
+        const result = await upsertPositionBySportAndCode({
+          sportId: selectedSportId,
+          code: row.position_code,
+          name: row.position_name,
+        });
+
+        if (result === "created") setSeedStats((s) => ({ ...s, created: s.created + 1 }));
+        if (result === "updated") setSeedStats((s) => ({ ...s, updated: s.updated + 1 }));
+
+        if ((i + 1) % 10 === 0) append(setLogSeed, `[Seed] Progress: ${i + 1}/${list.length}`);
+        await sleep(25);
+      } catch (e) {
+        setSeedStats((s) => ({ ...s, errors: s.errors + 1 }));
+        append(setLogSeed, `[Seed] ERROR #${i + 1}: ${String(e?.message || e)}`);
+      }
+    }
+
+    append(setLogSeed, "[Seed] Done.");
+    setSeedWorking(false);
+    await loadPositionsForSport(selectedSportId);
+  }
+
+  async function addPosition() {
+    if (!PositionEntity?.create) {
+      append(setLogSeed, "[Seed] ERROR: Position entity not available for create.");
+      return;
+    }
+    if (!selectedSportId) return append(setLogSeed, "[Seed] ERROR: Select a sport first.");
+
+    const code = safeString(positionAddCode)?.toUpperCase();
+    const name = safeString(positionAddName);
+
+    if (!code) return append(setLogSeed, "[Seed] ERROR: Position code is required.");
+    if (!name) return append(setLogSeed, "[Seed] ERROR: Position name is required.");
+
+    setPositionAddWorking(true);
     try {
-      if (!selectedSportId) {
-        appendPositionsLog("[Positions] ERROR: Select a sport first.");
-        return;
-      }
-      const list = seedListForSelectedSport;
-      if (!list.length) {
-        appendPositionsLog(`[Positions] ERROR: No default seed list found for sport "${selectedSportName || "?"}".`);
-        return;
-      }
+      const result = await upsertPositionBySportAndCode({ sportId: selectedSportId, code, name });
+      append(setLogSeed, result === "created" ? `[Seed] Created Position ${code}` : `[Seed] Updated Position ${code}`);
+      setPositionAddCode("");
+      setPositionAddName("");
+      await loadPositionsForSport(selectedSportId);
+    } catch (e) {
+      append(setLogSeed, `[Seed] ERROR add Position: ${String(e?.message || e)}`);
+    } finally {
+      setPositionAddWorking(false);
+    }
+  }
 
-      for (let i = 0; i < list.length; i++) {
-        const row = list[i];
-        setSeedStats((s) => ({ ...s, attempted: s.attempted + 1 }));
-        try {
-          const result = await upsertPositionBySportAndCode({
-            sportId: selectedSportId,
-            code: row.position_code,
-            name: row.position_name,
-          });
+  async function savePositionRow(positionId) {
+    if (!PositionEntity?.update) {
+      append(setLogSeed, "[Seed] ERROR: Position entity not available for update.");
+      return;
+    }
+    const row = positionsEdit?.[positionId];
+    if (!row) return;
 
-          if (result === "created") setSeedStats((s) => ({ ...s, created: s.created + 1 }));
-          if (result === "updated") setSeedStats((s) => ({ ...s, updated: s.updated + 1 }));
+    const code = safeString(row.code)?.toUpperCase();
+    const name = safeString(row.name);
 
-          if ((i + 1) % 5 === 0) appendPositionsLog(`[Positions] Progress: ${i + 1}/${list.length}`);
-          await sleep(30);
-        } catch (e) {
-          setSeedStats((s) => ({ ...s, errors: s.errors + 1 }));
-          appendPositionsLog(`[Positions] ERROR #${i + 1}: ${String(e?.message || e)}`);
-        }
-      }
+    if (!selectedSportId) return append(setLogSeed, "[Seed] ERROR: Select a sport first.");
+    if (!code) return append(setLogSeed, "[Seed] ERROR: Position code is required.");
+    if (!name) return append(setLogSeed, "[Seed] ERROR: Position name is required.");
 
-      appendPositionsLog("[Positions] Done.");
+    setPositionSaveWorking(true);
+    try {
+      await PositionEntity.update(String(positionId), {
+        sport_id: selectedSportId,
+        position_code: code,
+        position_name: name,
+      });
+      append(setLogSeed, `[Seed] Saved Position: ${code}`);
+      await loadPositionsForSport(selectedSportId);
+    } catch (e) {
+      append(setLogSeed, `[Seed] FAILED save Position: ${String(e?.message || e)}`);
+    } finally {
+      setPositionSaveWorking(false);
+    }
+  }
+
+  async function deletePosition(positionId) {
+    if (!positionId) return;
+    if (!PositionEntity) {
+      append(setLogSeed, "[Seed] ERROR: Position entity missing.");
+      return;
+    }
+
+    const hit = positions.find((p) => p.id === positionId);
+    const label = hit?.code ? `${hit.code} — ${hit.name || ""}` : positionId;
+
+    setPositionDeleteWorking(positionId);
+    try {
+      const ok = await tryDelete(PositionEntity, positionId);
+      append(setLogSeed, ok ? `[Seed] Deleted Position: ${label}` : `[Seed] FAILED delete Position: ${label}`);
       await loadPositionsForSport(selectedSportId);
     } finally {
-      setSeedPositionsWorking(false);
+      setPositionDeleteWorking("");
     }
   }
 
   /* ----------------------------
-     Promote CampDemo -> Camp (kept simple)
+     SportsUSA Seed Schools
+     - Calls /functions/sportsUSASeedSchools
+     - Upserts School + SchoolSportSite
   ----------------------------- */
-  const [promoteWorking, setPromoteWorking] = useState(false);
-  const [promoteStats, setPromoteStats] = useState({ read: 0, created: 0, updated: 0, skipped: 0, errors: 0 });
+  async function upsertSchoolBySourceKeyOrName(payload) {
+    if (!SchoolEntity?.filter || !SchoolEntity?.create || !SchoolEntity?.update) {
+      throw new Error("School entity not available (expected entities.School).");
+    }
 
+    const source_key = safeString(payload?.source_key);
+    const school_name = safeString(payload?.school_name);
+    const normalized_name = safeString(payload?.normalized_name) || (school_name ? normalizeSchoolNameKey(school_name) : null);
+
+    if (!school_name) throw new Error("Missing school_name for School upsert.");
+
+    // 1) Try source_key
+    if (source_key) {
+      try {
+        const hits = asArray(await SchoolEntity.filter({ source_key }));
+        if (hits.length && hits[0]?.id) {
+          await SchoolEntity.update(String(hits[0].id), payload);
+          return { id: String(hits[0].id), action: "updated" };
+        }
+      } catch {}
+    }
+
+    // 2) Try normalized_name
+    if (normalized_name) {
+      try {
+        const hits = asArray(await SchoolEntity.filter({ normalized_name }));
+        if (hits.length && hits[0]?.id) {
+          await SchoolEntity.update(String(hits[0].id), payload);
+          return { id: String(hits[0].id), action: "updated" };
+        }
+      } catch {}
+    }
+
+    // 3) Fallback: school_name exact
+    try {
+      const hits = asArray(await SchoolEntity.filter({ school_name }));
+      if (hits.length && hits[0]?.id) {
+        await SchoolEntity.update(String(hits[0].id), payload);
+        return { id: String(hits[0].id), action: "updated" };
+      }
+    } catch {}
+
+    const created = await SchoolEntity.create(payload);
+    const createdId = created?.id ? String(created.id) : null;
+    return { id: createdId, action: "created" };
+  }
+
+  async function upsertSchoolSportSite(payload) {
+    if (!SchoolSportSiteEntity?.filter || !SchoolSportSiteEntity?.create || !SchoolSportSiteEntity?.update) {
+      throw new Error("SchoolSportSite entity not available (expected entities.SchoolSportSite).");
+    }
+
+    const school_id = safeString(payload?.school_id);
+    const sport_id = safeString(payload?.sport_id);
+    const camp_site_url = safeString(payload?.camp_site_url);
+    const source_key = safeString(payload?.source_key);
+
+    if (!school_id || !sport_id || !camp_site_url || !source_key) {
+      throw new Error("Missing required fields for SchoolSportSite upsert (school_id, sport_id, camp_site_url, source_key).");
+    }
+
+    // Prefer source_key dedupe
+    try {
+      const hits = asArray(await SchoolSportSiteEntity.filter({ source_key }));
+      if (hits.length && hits[0]?.id) {
+        await SchoolSportSiteEntity.update(String(hits[0].id), payload);
+        return "updated";
+      }
+    } catch {}
+
+    // fallback dedupe: school_id + sport_id + camp_site_url
+    try {
+      const hits = asArray(await SchoolSportSiteEntity.filter({ school_id, sport_id, camp_site_url }));
+      if (hits.length && hits[0]?.id) {
+        await SchoolSportSiteEntity.update(String(hits[0].id), payload);
+        return "updated";
+      }
+    } catch {}
+
+    await SchoolSportSiteEntity.create(payload);
+    return "created";
+  }
+
+  function looksLikeGenericLogo(url) {
+    const u = lc(url || "");
+    if (!u) return false;
+    // footballcampsusa historically uses a generic placeholder sometimes;
+    // keep it, but mark needs_review
+    return u.includes("logo-athletic.png") || u.includes("images/logo");
+  }
+
+  async function runSportsUSASeedSchools() {
+    if (!selectedSportId) return append(setLogSportsUSA, "[SportsUSA] ERROR: Select a sport first.");
+    if (!SchoolEntity?.filter) return append(setLogSportsUSA, "[SportsUSA] ERROR: School entity not available.");
+    if (!SchoolSportSiteEntity) return append(setLogSportsUSA, "[SportsUSA] ERROR: SchoolSportSite entity not available.");
+
+    const runIso = new Date().toISOString();
+    setLogSportsUSA("");
+
+    setSportsUSAWorking(true);
+    append(setLogSportsUSA, `[SportsUSA] Starting: SportsUSA School Seed (${selectedSportName}) @ ${runIso}`);
+    append(setLogSportsUSA, `[SportsUSA] DryRun=${sportsUSADryRun ? "true" : "false"} | Limit=${sportsUSALimit}`);
+
+    const siteUrl = safeString(sportsUSADirectoryUrl);
+    if (!siteUrl) {
+      append(setLogSportsUSA, "[SportsUSA] ERROR: Missing SportsUSA directory URL (siteUrl).");
+      setSportsUSAWorking(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/functions/sportsUSASeedSchools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sportId: selectedSportId,
+          sportName: selectedSportName,
+          siteUrl,
+          limit: sportsUSALimit,
+          dryRun: sportsUSADryRun,
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        append(setLogSportsUSA, `[SportsUSA] ERROR: SportsUSA function ERROR (HTTP ${res.status})`);
+        append(setLogSportsUSA, JSON.stringify(data || {}, null, 2));
+        append(
+          setLogSportsUSA,
+          `[SportsUSA] NOTE: Ensure you have functions/sportsUSASeedSchools.js deployed (function name must match URL).`
+        );
+        return;
+      }
+
+      const found = data?.stats?.schools_found ?? 0;
+      const http = data?.stats?.http ?? "n/a";
+      append(setLogSportsUSA, `[SportsUSA] SportsUSA fetched: schools_found=${found} | http=${http}`);
+
+      const sample = asArray(data?.schools).slice(0, 3);
+      if (sample.length) {
+        append(setLogSportsUSA, `[SportsUSA] SportsUSA sample (first ${sample.length}):`);
+        for (const s of sample) {
+          append(
+            setLogSportsUSA,
+            `- name="${s?.school_name || ""}" | logo="${s?.logo_url || ""}" | view="${s?.view_site_url || ""}"`
+          );
+        }
+      }
+
+      if (sportsUSADryRun) {
+        append(setLogSportsUSA, "[SportsUSA] DryRun=true: no School / SchoolSportSite writes performed.");
+        return;
+      }
+
+      const rows = asArray(data?.schools);
+      if (!rows.length) {
+        append(setLogSportsUSA, "[SportsUSA] No schools returned to write.");
+        return;
+      }
+
+      let createdSchools = 0;
+      let updatedSchools = 0;
+      let createdSites = 0;
+      let updatedSites = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+
+        const school_name = safeString(r?.school_name);
+        const logo_url = safeString(r?.logo_url);
+        const view_site_url = safeString(r?.view_site_url);
+        const source_key = safeString(r?.source_key) || (view_site_url ? `sportsusa:view:${lc(view_site_url)}` : null);
+
+        if (!school_name || !source_key) {
+          skipped += 1;
+          continue;
+        }
+
+        const needs_review = looksLikeGenericLogo(logo_url) ? true : true; // default true for all automation, safer
+
+        const schoolPayload = {
+          school_name,
+          normalized_name: normalizeSchoolNameKey(school_name),
+          aliases_json: JSON.stringify([]),
+          school_type: "College/University",
+          active: true,
+          needs_review,
+          division: "Unknown",
+          conference: null,
+          city: null,
+          state: null,
+          country: "US",
+          logo_url: logo_url || null,
+          website_url: null,
+          source_platform: "sportsusa",
+          source_school_url: view_site_url || siteUrl,
+          source_key,
+          last_seen_at: runIso,
+        };
+
+        try {
+          const up = await upsertSchoolBySourceKeyOrName(schoolPayload);
+          if (up.action === "created") createdSchools += 1;
+          if (up.action === "updated") updatedSchools += 1;
+
+          const schoolId = up.id;
+          if (!schoolId || !view_site_url) {
+            skipped += 1;
+            continue;
+          }
+
+          const sitePayload = {
+            school_id: schoolId,
+            sport_id: selectedSportId,
+            camp_site_url: view_site_url,   // ✅ matches your schema
+            logo_url: logo_url || null,
+            source_platform: "sportsusa",
+            source_key: `sportsusa:${selectedSportId}:${lc(view_site_url)}`, // stable per sport+url
+            active: true,
+            needs_review: true,
+            last_seen_at: runIso,
+          };
+
+          const siteAction = await upsertSchoolSportSite(sitePayload);
+          if (siteAction === "created") createdSites += 1;
+          if (siteAction === "updated") updatedSites += 1;
+        } catch (e) {
+          errors += 1;
+          append(setLogSportsUSA, `[SportsUSA] WRITE ERROR #${i + 1}: ${String(e?.message || e)}`);
+        }
+
+        if ((i + 1) % 25 === 0) {
+          append(setLogSportsUSA, `[SportsUSA] Write progress: ${i + 1}/${rows.length}`);
+          await sleep(25);
+        }
+      }
+
+      append(
+        setLogSportsUSA,
+        `[SportsUSA] Writes done. Schools: created=${createdSchools} updated=${updatedSchools} | Sites: created=${createdSites} updated=${updatedSites} | skipped=${skipped} errors=${errors}`
+      );
+    } catch (e) {
+      append(setLogSportsUSA, `[SportsUSA] ERROR: ${String(e?.message || e)}`);
+    } finally {
+      setSportsUSAWorking(false);
+    }
+  }
+
+  /* ----------------------------
+     Promote CampDemo -> Camp (unchanged core logic)
+  ----------------------------- */
   async function upsertCampByEventKey(payload) {
     const key = payload?.event_key;
     if (!key) throw new Error("Missing event_key for upsert");
@@ -747,6 +867,7 @@ export default function AdminImport() {
     const school_id = safeString(r?.school_id);
     const sport_id = safeString(r?.sport_id);
     const camp_name = safeString(r?.camp_name || r?.name);
+
     const start_date = toISODate(r?.start_date);
     const end_date = toISODate(r?.end_date);
 
@@ -754,77 +875,107 @@ export default function AdminImport() {
       return { error: "Missing required fields (school_id, sport_id, camp_name, start_date)" };
     }
 
+    const city = safeString(r?.city);
+    const state = safeString(r?.state);
     const position_ids = normalizeStringArray(r?.position_ids);
     const price = safeNumber(r?.price);
-    const link_url = safeString(r?.link_url || r?.url) || null;
+    const link_url = safeString(r?.link_url || r?.url);
     const source_url = safeString(r?.source_url) || link_url;
 
-    const season_year =
-      safeNumber(r?.season_year) ??
-      safeNumber(computeSeasonYearFootball(start_date));
+    const season_year = safeNumber(r?.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
 
     const source_platform = safeString(r?.source_platform) || "seed";
-    const program_id = safeString(r?.program_id) || `seed:${school_id}:${slugify(camp_name)}`;
+    const program_id = safeString(r?.program_id) || seedProgramId({ school_id, camp_name });
 
     const event_key =
       safeString(r?.event_key) ||
-      `${source_platform}:${program_id}:${start_date}:${link_url || source_url || "na"}`;
+      buildEventKey({
+        source_platform,
+        program_id,
+        start_date,
+        link_url,
+        source_url,
+      });
 
     const content_hash =
       safeString(r?.content_hash) ||
-      simpleHash({ school_id, sport_id, camp_name, start_date, end_date, position_ids, price, link_url });
-
-    return {
-      payload: {
+      simpleHash({
         school_id,
         sport_id,
         camp_name,
         start_date,
-        end_date: end_date || null,
-        city: safeString(r?.city) || null,
-        state: safeString(r?.state) || null,
+        end_date,
+        city,
+        state,
         position_ids,
-        price: price != null ? price : null,
+        price,
         link_url,
-        notes: safeString(r?.notes) || null,
+        notes: safeString(r?.notes),
+      });
 
-        season_year: season_year != null ? season_year : null,
-        program_id,
-        event_key,
-        source_platform,
-        source_url: source_url || null,
-        last_seen_at: runIso,
-        content_hash,
+    const event_dates_raw = safeString(r?.event_dates_raw);
+    const grades_raw = safeString(r?.grades_raw);
+    const register_by_raw = safeString(r?.register_by_raw);
+    const price_raw = safeString(r?.price_raw);
 
-        event_dates_raw: safeString(r?.event_dates_raw) || null,
-        grades_raw: safeString(r?.grades_raw) || null,
-        register_by_raw: safeString(r?.register_by_raw) || null,
-        price_raw: safeString(r?.price_raw) || null,
-        price_min: safeNumber(r?.price_min),
-        price_max: safeNumber(r?.price_max),
-        sections_json: tryParseJson(r?.sections_json) || null,
-      },
+    const price_min = safeNumber(r?.price_min);
+    const price_max = safeNumber(r?.price_max);
+
+    const sections_json = safeObject(tryParseJson(r?.sections_json));
+    const notes = safeString(r?.notes);
+
+    const payload = {
+      school_id,
+      sport_id,
+      camp_name,
+      start_date,
+      end_date: end_date || null,
+      city: city || null,
+      state: state || null,
+      position_ids,
+      price: price != null ? price : null,
+      link_url: link_url || null,
+      notes: notes || null,
+
+      season_year: season_year != null ? season_year : null,
+      program_id,
+      event_key,
+      source_platform,
+      source_url: source_url || null,
+      last_seen_at: runIso,
+      content_hash,
+
+      event_dates_raw: event_dates_raw || null,
+      grades_raw: grades_raw || null,
+      register_by_raw: register_by_raw || null,
+      price_raw: price_raw || null,
+      price_min: price_min != null ? price_min : null,
+      price_max: price_max != null ? price_max : null,
+      sections_json: sections_json || null,
     };
+
+    return { payload };
   }
 
   async function promoteCampDemoToCamp() {
     const runIso = new Date().toISOString();
-    setPromoteWorking(true);
-    setPromoteLog("");
+
+    setWorkingPromote(true);
+    setLogPromote("");
     setPromoteStats({ read: 0, created: 0, updated: 0, skipped: 0, errors: 0 });
 
-    appendPromoteLog(`[Promote] Starting: Promote CampDemo → Camp @ ${runIso}`);
+    append(setLogPromote, `[Promote] Starting: Promote CampDemo → Camp @ ${runIso}`);
 
     let demoRows = [];
     try {
       demoRows = asArray(await base44.entities.CampDemo.filter({}));
     } catch (e) {
-      appendPromoteLog(`[Promote] ERROR reading CampDemo: ${String(e?.message || e)}`);
-      setPromoteWorking(false);
+      append(setLogPromote, `[Promote] ERROR reading CampDemo: ${String(e?.message || e)}`);
+      setWorkingPromote(false);
       return;
     }
 
-    appendPromoteLog(`[Promote] Found CampDemo rows: ${demoRows.length}`);
+    append(setLogPromote, `[Promote] Found CampDemo rows: ${demoRows.length}`);
     setPromoteStats((s) => ({ ...s, read: demoRows.length }));
 
     for (let i = 0; i < demoRows.length; i++) {
@@ -834,56 +985,145 @@ export default function AdminImport() {
         const built = buildSafeCampPayloadFromDemoRow(r, runIso);
         if (built.error) {
           setPromoteStats((s) => ({ ...s, skipped: s.skipped + 1 }));
-          appendPromoteLog(`[Promote] SKIP #${i + 1}: ${built.error}`);
+          append(setLogPromote, `[Promote] SKIP #${i + 1}: ${built.error}`);
           continue;
         }
 
         const result = await upsertCampByEventKey(built.payload);
+
         if (result === "created") setPromoteStats((s) => ({ ...s, created: s.created + 1 }));
         if (result === "updated") setPromoteStats((s) => ({ ...s, updated: s.updated + 1 }));
 
-        if ((i + 1) % 20 === 0) appendPromoteLog(`[Promote] Progress: ${i + 1}/${demoRows.length}`);
+        if ((i + 1) % 10 === 0) append(setLogPromote, `[Promote] Progress: ${i + 1}/${demoRows.length}`);
         await sleep(40);
       } catch (e) {
         setPromoteStats((s) => ({ ...s, errors: s.errors + 1 }));
-        appendPromoteLog(`[Promote] ERROR #${i + 1}: ${String(e?.message || e)}`);
+        append(setLogPromote, `[Promote] ERROR #${i + 1}: ${String(e?.message || e)}`);
       }
     }
 
-    appendPromoteLog("[Promote] Done.");
-    setPromoteWorking(false);
+    append(setLogPromote, "[Promote] Done.");
+    setWorkingPromote(false);
   }
 
   /* ----------------------------
-     Render
+     Ryzer ingestion runner (kept as-is; you may deprecate later)
+  ----------------------------- */
+  async function runRyzerIngestion() {
+    setLogRyzer("");
+
+    if (!selectedSportId) return append(setLogRyzer, "[Ryzer] ERROR: Select a sport first.");
+    if (!safeString(ryzerActivityTypeId)) return append(setLogRyzer, "[Ryzer] ERROR: Provide Ryzer ActivityTypeId GUID.");
+    if (!SchoolEntity?.filter) return append(setLogRyzer, "[Ryzer] ERROR: School entity not available.");
+    if (!CampDemoEntity) return append(setLogRyzer, "[Ryzer] ERROR: CampDemo entity not available.");
+
+    const runIso = new Date().toISOString();
+
+    setRyzerWorking(true);
+    append(setLogRyzer, `[Ryzer] Starting: Ryzer ingestion (${selectedSportName}) @ ${runIso}`);
+    append(
+      setLogRyzer,
+      `[Ryzer] DryRun=${ryzerDryRun ? "true" : "false"} | RPP=${ryzerRecordsPerPage} | Pages=${ryzerMaxPages} | MaxEvents=${ryzerMaxEvents}`
+    );
+
+    try {
+      const schoolRows = asArray(await SchoolEntity.filter({}));
+      const schools = schoolRows
+        .map((s) => ({
+          id: String(s?.id || ""),
+          school_name: String(s?.school_name || "").trim(),
+          state: String(s?.state || "").trim(),
+          aliases: asArray(tryParseJson(s?.aliases_json)).filter(Boolean),
+        }))
+        .filter((s) => s.id && s.school_name);
+
+      append(setLogRyzer, `[Ryzer] Loaded Schools: ${schools.length}`);
+
+      const res = await fetch("/functions/ryzerIngest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sportId: selectedSportId,
+          sportName: selectedSportName,
+          activityTypeId: ryzerActivityTypeId,
+          recordsPerPage: ryzerRecordsPerPage,
+          maxPages: ryzerMaxPages,
+          maxEvents: ryzerMaxEvents,
+          dryRun: ryzerDryRun,
+          schools,
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        append(setLogRyzer, `[Ryzer] ERROR: Ryzer function ERROR (HTTP ${res.status})`);
+        append(setLogRyzer, JSON.stringify(data || {}, null, 2));
+        return;
+      }
+
+      append(
+        setLogRyzer,
+        `[Ryzer] Ryzer results: accepted=${data?.stats?.accepted ?? 0}, rejected=${data?.stats?.rejected ?? 0}, errors=${data?.stats?.errors ?? 0}`
+      );
+      append(setLogRyzer, `[Ryzer] Ryzer processed: ${data?.stats?.processed ?? 0}`);
+      append(setLogRyzer, `[Ryzer] Ryzer debug version: ${data?.debug?.version || "MISSING"}`);
+
+      const p0 = asArray(data?.debug?.pages)[0] || null;
+      if (p0) {
+        append(setLogRyzer, `[Ryzer] p0 http=${p0.http ?? "n/a"} rowCount=${p0.rowCount ?? "n/a"} total=${p0.total ?? "n/a"}`);
+        append(setLogRyzer, `[Ryzer] p0 rowsArrayPath=${p0.rowsArrayPath || "n/a"}`);
+        append(setLogRyzer, `[Ryzer] p0 uniqueActivityNames=${JSON.stringify(p0.uniqueActivityNames || [])}`);
+      }
+
+      if (ryzerDryRun) {
+        append(setLogRyzer, "[Ryzer] DryRun=true: no DB writes performed.");
+        return;
+      }
+
+      append(setLogRyzer, "[Ryzer] NOTE: You currently have cross-sport leakage in Ryzer eventSearch; consider deprecating this path.");
+    } catch (e) {
+      append(setLogRyzer, `[Ryzer] ERROR: ${String(e?.message || e)}`);
+    } finally {
+      setRyzerWorking(false);
+    }
+  }
+
+  /* ----------------------------
+     Page UI
   ----------------------------- */
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-4xl mx-auto space-y-4">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <div className="text-2xl font-bold text-deep-navy">Admin Import</div>
-            <div className="text-sm text-slate-600">Sport-driven admin tools for seeding + promotion.</div>
+            <div className="text-sm text-slate-600">Admin tools for sports/positions + SportsUSA seeding + promotion.</div>
           </div>
+
           <Button variant="outline" onClick={() => nav(ROUTES.Workspace)}>
             Back to Workspace
           </Button>
         </div>
 
-        {/* ONE Sport selector drives everything */}
+        {/* ✅ Single sport selector (top of page) */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">Sport Selection</div>
-          <div className="text-sm text-slate-600 mt-1">Choose the sport once. All sections below use this selection.</div>
+          <div className="font-semibold text-deep-navy">Active sport</div>
+          <div className="text-sm text-slate-600 mt-1">All sections below run against this sport selection.</div>
 
-          <div className="mt-3 flex flex-col md:flex-row gap-3 md:items-end">
-            <div className="flex-1">
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            <div className="md:col-span-2">
               <label className="block text-xs font-semibold text-slate-700 mb-1">Sport</label>
               <select
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
                 value={selectedSportId}
-                onChange={(e) => setSelectedSportId(e.target.value)}
-                disabled={sportsLoading}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const hit = sports.find((x) => x.id === id) || null;
+                  setSelectedSportId(id);
+                  setSelectedSportName(hit?.name || "");
+                }}
+                disabled={sportsLoading || seedWorking || sportsUSAWorking || ryzerWorking || workingPromote}
               >
                 <option value="">Select…</option>
                 {sports.map((s) => (
@@ -892,191 +1132,350 @@ export default function AdminImport() {
                   </option>
                 ))}
               </select>
+              <div className="mt-1 text-[11px] text-slate-500">
+                {selectedSportName ? `Selected: ${selectedSportName}` : "Choose a sport"}
+              </div>
             </div>
 
-            <Button variant="outline" onClick={loadSports} disabled={sportsLoading}>
-              {sportsLoading ? "Refreshing…" : "Refresh Sports"}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => loadSports()} disabled={sportsLoading}>
+                {sportsLoading ? "Refreshing…" : "Refresh sports"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setLogSportsUSA("");
+                  setLogRyzer("");
+                  setLogSeed("");
+                  setLogPromote("");
+                  setLogSportsAdmin("");
+                }}
+                disabled={seedWorking || sportsUSAWorking || ryzerWorking || workingPromote}
+              >
+                Clear logs
+              </Button>
+            </div>
           </div>
         </Card>
 
-        {/* SportsUSA Config + Seed */}
+        {/* ✅ SportsUSA seeding */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">SportsUSA School Seeding</div>
+          <div className="font-semibold text-deep-navy">SportsUSA Seed Schools + Sites</div>
           <div className="text-sm text-slate-600 mt-1">
-            Stores the directory URL on <b>Sport</b>, then calls <b>/functions/sportsUSASeedSchools</b> to parse tiles and upsert
-            <b> School</b> + <b>SchoolSportSite</b>.
+            Pulls the Sport directory (like footballcampsusa.com) and writes:
+            <b> School</b> + <b>SchoolSportSite</b> (camp_site_url per school per sport).
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">SportsUSA directory URL (saved on Sport)</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">SportsUSA directory URL</label>
               <input
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={sportsusaDirectoryUrl}
-                onChange={(e) => setSportsusaDirectoryUrl(e.target.value)}
-                placeholder="https://www.footballcampsusa.com"
-                disabled={sportsusaWorking}
+                value={sportsUSADirectoryUrl}
+                onChange={(e) => setSportsUSADirectoryUrl(e.target.value)}
+                placeholder="https://www.footballcampsusa.com/"
+                disabled={sportsUSAWorking}
               />
               <div className="mt-1 text-[11px] text-slate-500">
-                Example: Football = https://www.footballcampsusa.com
+                This is the directory page that lists all school tiles for the sport.
               </div>
             </div>
 
-            <div className="flex items-end gap-3">
-              <Button onClick={saveSportsUSADirectoryUrl} disabled={!selectedSportId || sportsusaWorking}>
-                Save Directory URL
-              </Button>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Limit</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  type="number"
+                  value={sportsUSALimit}
+                  onChange={(e) => setSportsUSALimit(Number(e.target.value || 0))}
+                  min={10}
+                  max={3000}
+                  disabled={sportsUSAWorking}
+                />
+              </div>
 
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={sportsUSADryRun}
+                    onChange={(e) => setSportsUSADryRun(e.target.checked)}
+                    disabled={sportsUSAWorking}
+                  />
+                  Dry Run
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              onClick={runSportsUSASeedSchools}
+              disabled={sportsUSAWorking || !selectedSportId || seedWorking || ryzerWorking || workingPromote}
+            >
+              {sportsUSAWorking ? "Running…" : sportsUSADryRun ? "Run SportsUSA (Dry Run)" : "Run SportsUSA → Write School + Site"}
+            </Button>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-xs text-slate-500 mb-1">Log</div>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
+              {logSportsUSA || "—"}
+            </pre>
+          </div>
+
+          <div className="mt-2 text-[11px] text-slate-500">
+            If you see KeyError: 'sportsUSASeedSchools' then the backend function is missing or not named correctly.
+            File must be <b>functions/sportsUSASeedSchools.js</b> and called via <b>/functions/sportsUSASeedSchools</b>.
+          </div>
+        </Card>
+
+        {/* ✅ Ryzer ingestion (kept, but likely deprecated) */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">Ryzer Ingestion (diagnostic)</div>
+          <div className="text-sm text-slate-600 mt-1">
+            This path is currently leaking cross-sport results even with ActivityTypes. Keep for debugging only.
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Ryzer ActivityTypeId (GUID)</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={ryzerActivityTypeId}
+                onChange={(e) => setRyzerActivityTypeId(e.target.value)}
+                placeholder="A8ADF526-3822-4261-ADCF-1592CF4BB7FF"
+                disabled={ryzerWorking}
+              />
+            </div>
+
+            <div className="flex items-end gap-3">
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input
                   type="checkbox"
-                  checked={sportsusaDryRun}
-                  onChange={(e) => setSportsusaDryRun(e.target.checked)}
-                  disabled={sportsusaWorking}
+                  checked={ryzerDryRun}
+                  onChange={(e) => setRyzerDryRun(e.target.checked)}
+                  disabled={ryzerWorking}
                 />
                 Dry Run
               </label>
             </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Write limit</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Records per page</label>
               <input
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 type="number"
-                min={10}
-                max={5000}
-                value={sportsusaLimit}
-                onChange={(e) => setSportsusaLimit(Number(e.target.value || 0))}
-                disabled={sportsusaWorking}
+                value={ryzerRecordsPerPage}
+                onChange={(e) => setRyzerRecordsPerPage(Number(e.target.value || 0))}
+                min={5}
+                max={100}
+                disabled={ryzerWorking}
               />
             </div>
-
-            <div className="flex items-end gap-2">
-              <Button
-                onClick={seedSchoolsFromSportsUSA}
-                disabled={!selectedSportId || sportsusaWorking}
-              >
-                {sportsusaWorking ? "Running…" : sportsusaDryRun ? "Run Seed (Dry Run)" : "Run Seed → Write Schools"}
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={() => setSportsusaLog("")}
-                disabled={sportsusaWorking}
-              >
-                Clear Log
-              </Button>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Max pages</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={ryzerMaxPages}
+                onChange={(e) => setRyzerMaxPages(Number(e.target.value || 0))}
+                min={1}
+                max={200}
+                disabled={ryzerWorking}
+              />
             </div>
-          </div>
-
-          <div className="mt-4">
-            <div className="text-xs text-slate-500 mb-1">SportsUSA Log</div>
-            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
-              {sportsusaLog || "—"}
-            </pre>
-          </div>
-
-          <div className="mt-2 text-[11px] text-slate-500">
-            If you see <b>KeyError: 'sportsUSASeedSchools'</b>, the backend function is not deployed/named correctly in Base44.
-          </div>
-        </Card>
-
-        {/* Positions */}
-        <Card className="p-4">
-          <div className="font-semibold text-deep-navy">Positions</div>
-          <div className="text-sm text-slate-600 mt-1">
-            Auto-seed default positions for the selected sport.
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Max events</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={ryzerMaxEvents}
+                onChange={(e) => setRyzerMaxEvents(Number(e.target.value || 0))}
+                min={10}
+                max={5000}
+                disabled={ryzerWorking}
+              />
+            </div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
-              onClick={seedPositionsForSport}
-              disabled={!selectedSportId || seedPositionsWorking}
+              onClick={runRyzerIngestion}
+              disabled={ryzerWorking || seedWorking || sportsUSAWorking || workingPromote}
             >
-              {seedPositionsWorking ? "Seeding…" : "Auto-seed positions"}
+              {ryzerWorking ? "Running…" : "Run Ryzer (Dry Run recommended)"}
+            </Button>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-xs text-slate-500 mb-1">Log</div>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
+              {logRyzer || "—"}
+            </pre>
+          </div>
+        </Card>
+
+        {/* ✅ Positions Manager (uses top sport selection) */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">Manage Positions</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Uses the selected sport above. Auto-seed defaults or manage positions manually.
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2 items-center">
+            <div className="text-sm text-slate-700">
+              <b>Sport:</b> {selectedSportName || "—"}
+            </div>
+
+            <Button
+              onClick={seedPositionsForSport}
+              disabled={seedWorking || sportsUSAWorking || ryzerWorking || workingPromote || !selectedSportId}
+            >
+              {seedWorking ? "Seeding…" : "Auto-seed positions"}
             </Button>
 
             <Button
               variant="outline"
-              onClick={() => selectedSportId && loadPositionsForSport(selectedSportId)}
+              onClick={() => loadPositionsForSport(selectedSportId)}
               disabled={!selectedSportId || positionsLoading}
             >
               {positionsLoading ? "Refreshing…" : "Refresh"}
             </Button>
-
-            <Button
-              variant="outline"
-              onClick={() => setPositionsLog("")}
-              disabled={seedPositionsWorking}
-            >
-              Clear Log
-            </Button>
           </div>
 
-          <div className="mt-3 text-sm text-slate-700">
-            <div className="flex flex-wrap gap-4">
-              <span><b>Attempted:</b> {seedStats.attempted}</span>
-              <span><b>Created:</b> {seedStats.created}</span>
-              <span><b>Updated:</b> {seedStats.updated}</span>
-              <span><b>Errors:</b> {seedStats.errors}</span>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Code</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={positionAddCode}
+                onChange={(e) => setPositionAddCode(e.target.value)}
+                placeholder="e.g., QB"
+                disabled={!selectedSportId}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Name</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={positionAddName}
+                onChange={(e) => setPositionAddName(e.target.value)}
+                placeholder="e.g., Quarterback"
+                disabled={!selectedSportId}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button onClick={addPosition} disabled={!selectedSportId || positionAddWorking}>
+                {positionAddWorking ? "Saving…" : "Add / Upsert"}
+              </Button>
             </div>
           </div>
 
           <div className="mt-4">
-            <div className="text-xs text-slate-500 mb-1">Positions Log</div>
-            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
-              {positionsLog || "—"}
-            </pre>
-          </div>
+            <div className="text-xs text-slate-500 mb-2">Positions</div>
 
-          <div className="mt-4">
-            <div className="text-xs text-slate-500 mb-2">Current Positions</div>
             <div className="rounded-lg border border-slate-200 bg-white overflow-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50">
                   <tr className="text-left">
                     <th className="p-2 border-b border-slate-200 w-28">Code</th>
                     <th className="p-2 border-b border-slate-200">Name</th>
+                    <th className="p-2 border-b border-slate-200 w-44">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {positions.length ? (
-                    positions.map((p) => (
-                      <tr key={p.id} className="border-b border-slate-100">
-                        <td className="p-2">{p.code}</td>
-                        <td className="p-2">{p.name}</td>
-                      </tr>
-                    ))
+                    positions.map((p) => {
+                      const edit = positionsEdit[p.id] || { code: p.code, name: p.name };
+                      return (
+                        <tr key={p.id} className="border-b border-slate-100">
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.code ?? ""}
+                              onChange={(e) =>
+                                setPositionsEdit((prev) => ({
+                                  ...prev,
+                                  [p.id]: {
+                                    ...(prev[p.id] || {}),
+                                    code: e.target.value,
+                                    name: prev[p.id]?.name ?? p.name,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.name ?? ""}
+                              onChange={(e) =>
+                                setPositionsEdit((prev) => ({
+                                  ...prev,
+                                  [p.id]: {
+                                    ...(prev[p.id] || {}),
+                                    name: e.target.value,
+                                    code: prev[p.id]?.code ?? p.code,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td className="p-2">
+                            <div className="flex gap-2">
+                              <Button variant="outline" onClick={() => savePositionRow(p.id)} disabled={positionSaveWorking}>
+                                Save
+                              </Button>
+                              <Button
+                                variant="outline"
+                                onClick={() => deletePosition(p.id)}
+                                disabled={positionDeleteWorking === p.id}
+                              >
+                                {positionDeleteWorking === p.id ? "Deleting…" : "Delete"}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
-                      <td colSpan={2} className="p-3 text-slate-500">
-                        {selectedSportId ? (positionsLoading ? "Loading…" : "No positions found.") : "Select a sport first."}
+                      <td colSpan={3} className="p-3 text-slate-500">
+                        {selectedSportId ? (positionsLoading ? "Loading…" : "No positions found for this sport.") : "Select a sport first."}
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
+
+            <div className="mt-3 text-[11px] text-slate-500">
+              Positions are referenced by <b>AthleteProfile.primary_position_id</b>. If a position is in use, prefer renaming over deleting.
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-xs text-slate-500 mb-1">Log</div>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-64">
+              {logSeed || "—"}
+            </pre>
           </div>
         </Card>
 
-        {/* Promote */}
+        {/* Promote CampDemo -> Camp */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Promote CampDemo → Camp</div>
           <div className="text-sm text-slate-600 mt-1">
-            Upserts by <b>event_key</b>. Use after you have CampDemo rows.
+            Upserts by <b>event_key</b>. Payload is fully type-safe for Camp schema.
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button onClick={promoteCampDemoToCamp} disabled={promoteWorking}>
-              {promoteWorking ? "Running…" : "Run Promotion"}
-            </Button>
-
-            <Button variant="outline" onClick={() => setPromoteLog("")} disabled={promoteWorking}>
-              Clear Log
+            <Button onClick={promoteCampDemoToCamp} disabled={workingPromote || seedWorking || sportsUSAWorking || ryzerWorking}>
+              {workingPromote ? "Running…" : "Run Promotion"}
             </Button>
           </div>
 
@@ -1091,15 +1490,19 @@ export default function AdminImport() {
           </div>
 
           <div className="mt-4">
-            <div className="text-xs text-slate-500 mb-1">Promote Log</div>
+            <div className="text-xs text-slate-500 mb-1">Log</div>
             <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
-              {promoteLog || "—"}
+              {logPromote || "—"}
             </pre>
           </div>
         </Card>
 
         <div className="text-center">
-          <Button variant="outline" onClick={() => nav(ROUTES.Home)}>
+          <Button
+            variant="outline"
+            onClick={() => nav(ROUTES.Home)}
+            disabled={seedWorking || sportsUSAWorking || ryzerWorking || workingPromote}
+          >
             Go to Home
           </Button>
         </div>
