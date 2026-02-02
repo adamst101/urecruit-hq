@@ -1,16 +1,14 @@
 // functions/ryzerIngest.js
 // Base44 Backend Function (Deno)
 //
-// Goal: Return Football-only + University-only events from Ryzer eventSearch,
-// even if the API returns mixed sports on early pages.
-// This function does NOT write DB. AdminImport can write School/CampDemo.
-//
-// Editor-safe: NO optional chaining, NO ??, NO fancy TS.
+// v14 goals:
+// - FIX: sport gating uses activityTypeId first (not only activitytype name)
+// - FIX: return stats in the shape AdminImport expects (processed, missingHost, junkHost, wrongSport)
+// - Keep editor-safe syntax: NO optional chaining, NO ??, no TS
+// - Still supports nested { success:true, data:"{...}" } response
 
-// ---- version ----
-var VERSION = "ryzerIngest_2026-02-02_v13_collector_sport_and_university_editor_safe";
+var VERSION = "ryzerIngest_2026-02-02_v14_sport_gate_by_id_stats_compatible_editor_safe";
 
-// ---- helpers ----
 function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
@@ -51,78 +49,46 @@ function isObject(x) {
   return !!x && typeof x === "object" && !Array.isArray(x);
 }
 
-// ---- schools index (optional, used for stronger university gate) ----
-function buildSchoolIndex(schools) {
-  var list = asArray(schools)
-    .map(function (s) {
-      return {
-        id: safeString(s && s.id) || "",
-        name: safeString(s && (s.school_name || s.name)) || "",
-        state: safeString(s && s.state) || "",
-        aliases: asArray(s && s.aliases).map(function (a) { return safeString(a); }).filter(Boolean)
-      };
-    })
-    .filter(function (s) { return s.id && s.name; });
-
-  var idx = [];
-  for (var i = 0; i < list.length; i++) {
-    var s = list[i];
-    var keys = {};
-    keys[lc(stripNonAscii(s.name))] = true;
-    for (var j = 0; j < s.aliases.length; j++) {
-      keys[lc(stripNonAscii(s.aliases[j]))] = true;
-    }
-    idx.push({ id: s.id, name: s.name, state: s.state, keys: Object.keys(keys) });
-  }
-  return idx;
-}
-
-function matchSchoolByHost(hostText, schoolIndex) {
-  var host = lc(stripNonAscii(hostText || ""));
-  if (!host) return null;
-  for (var i = 0; i < schoolIndex.length; i++) {
-    var s = schoolIndex[i];
-    for (var j = 0; j < s.keys.length; j++) {
-      var k = s.keys[j];
-      if (!k) continue;
-      if (host === k) return s;
-      if (host.indexOf(k) >= 0 && Math.min(host.length, k.length) >= 6) return s;
-      if (k.indexOf(host) >= 0 && Math.min(host.length, k.length) >= 6) return s;
-    }
-  }
-  return null;
-}
-
-// ---- response normalization ----
+// ---------------------------
+// response normalization
+// ---------------------------
 function normalizeRyzerResponse(respJson) {
   if (!isObject(respJson)) return { normalized: respJson, dataWasString: false, innerKeys: [] };
 
   if (typeof respJson.data === "string") {
     var inner = tryParseJsonString(respJson.data);
     if (isObject(inner)) {
-      return { normalized: { success: respJson.success, data: inner }, dataWasString: true, innerKeys: Object.keys(inner) };
+      return {
+        normalized: { success: respJson.success, data: inner },
+        dataWasString: true,
+        innerKeys: Object.keys(inner),
+      };
     }
   }
+
   return { normalized: respJson, dataWasString: false, innerKeys: [] };
 }
 
-// ---- rows extraction ----
+// ---------------------------
+// row extraction
+// ---------------------------
 function extractRowsAndMeta(respJson) {
-  // supports: data.events (your real shape)
   if (isObject(respJson) && isObject(respJson.data) && Array.isArray(respJson.data.events)) {
     return {
       rows: respJson.data.events,
       total: respJson.data.totalresults || respJson.data.total || respJson.data.count || null,
-      rowsArrayPath: "data.events"
+      rowsArrayPath: "data.events",
     };
   }
 
-  // fallback: events at top
   if (isObject(respJson) && Array.isArray(respJson.events)) {
-    return { rows: respJson.events, total: respJson.total || respJson.count || null, rowsArrayPath: "events" };
+    return {
+      rows: respJson.events,
+      total: respJson.total || respJson.count || null,
+      rowsArrayPath: "events",
+    };
   }
 
-  // generic: first array property
   if (isObject(respJson)) {
     var keys = Object.keys(respJson);
     for (var i = 0; i < keys.length; i++) {
@@ -141,7 +107,9 @@ function extractRowsAndMeta(respJson) {
   return { rows: [], total: null, rowsArrayPath: "not_found" };
 }
 
-// ---- field pickers ----
+// ---------------------------
+// field helpers
+// ---------------------------
 function titleText(row) {
   return stripNonAscii(
     safeString(row && (row.eventTitle || row.EventTitle || row.title || row.Title || row.name || row.Name)) || ""
@@ -166,12 +134,21 @@ function pickState(row) {
 }
 
 function rowActivityTypeName(row) {
-  return safeString(row && (row.activitytype || row.activityType || row.ActivityType || row.ActivityTypeName || row.activityTypeName)) || null;
+  return safeString(
+    row && (row.activitytype || row.activityType || row.ActivityType || row.ActivityTypeName || row.activityTypeName)
+  ) || null;
 }
 
-// ---- host derivation ----
+function rowActivityTypeId(row) {
+  return safeString(
+    row && (row.activityTypeId || row.ActivityTypeId || row.activitytypeid || row.ActivityTypeID || row.activity_type_id)
+  ) || null;
+}
+
+// ---------------------------
+// host derivation + guardrails
+// ---------------------------
 function deriveHostGuess(row) {
-  // organizer is present in your real data sample
   var candidates = [
     safeString(row && row.organizer),
     safeString(row && row.Organizer),
@@ -182,14 +159,14 @@ function deriveHostGuess(row) {
     safeString(row && row.organizationName),
     safeString(row && row.OrganizationName),
     safeString(row && row.schoolName),
-    safeString(row && row.SchoolName)
-  ].filter(Boolean).map(stripNonAscii);
+    safeString(row && row.SchoolName),
+  ];
 
   for (var i = 0; i < candidates.length; i++) {
-    if (candidates[i]) return { host: candidates[i], source: "row_field" };
+    var c = candidates[i];
+    if (c) return { host: stripNonAscii(c), source: "row_field" };
   }
 
-  // fallback: "X @ Y"
   var t = titleText(row);
   if (t.indexOf(" @ ") >= 0) {
     var parts = t.split(" @ ");
@@ -200,67 +177,88 @@ function deriveHostGuess(row) {
   return { host: "", source: "missing" };
 }
 
-// ---- gating rules ----
-function sportGate(row, expectedSportName) {
-  var exp = lc(expectedSportName || "");
-  if (!exp) return { ok: true, reason: null };
-
-  var got = rowActivityTypeName(row);
-  var gotLc = lc(got || "");
-
-  if (!got) return { ok: false, reason: "missing_activitytype" };
-  if (gotLc !== exp) return { ok: false, reason: "wrong_sport" };
-
-  return { ok: true, reason: null };
-}
-
-function universityGate(hostGuess, schoolIndex) {
+// fail-closed: reject junk/non-college hosts
+function rejectHostReason(hostGuess) {
   var h = lc(stripNonAscii(hostGuess || ""));
-  if (!h) return { ok: false, reason: "missing_host" };
+  if (!h) return "missing_host";
+  if (h.length < 4) return "host_too_short";
 
-  // hard rejects (not college programs)
-  var rejectTerms = [
+  // Obvious non-college patterns (tune this list as you see data)
+  var rejectContains = [
     "middle school",
     "high school",
     "elementary",
     "community schools",
     "cub quest",
-    "youth",
+    "yoga",
+    "dance",
     "cheer",
-    "dance"
+    "clinic", // (optional: you can remove if this is too strict)
   ];
-  for (var i = 0; i < rejectTerms.length; i++) {
-    if (h.indexOf(rejectTerms[i]) >= 0) return { ok: false, reason: "non_university_host" };
+
+  for (var i = 0; i < rejectContains.length; i++) {
+    if (h.indexOf(rejectContains[i]) >= 0) return "junk_host";
   }
 
-  // strongest allow: match a known School (if passed in)
-  if (schoolIndex && schoolIndex.length) {
-    var hit = matchSchoolByHost(hostGuess, schoolIndex);
-    if (hit) return { ok: true, reason: null, matchedSchool: hit };
-  }
+  // Allow only if it looks like a college program (heuristic)
+  if (h.indexOf("university") >= 0) return null;
+  if (h.indexOf("college") >= 0) return null;
 
-  // heuristic allow: must look like college/university
-  if (h.indexOf("university") >= 0) return { ok: true, reason: null };
-  if (h.indexOf("college") >= 0) return { ok: true, reason: null };
+  // If you want to be slightly looser: allow "state" or "athletics"
+  if (h.indexOf("athletics") >= 0) return null;
+  if (h.indexOf("state") >= 0 && h.indexOf("university") >= 0) return null;
 
-  // otherwise fail-closed
-  return { ok: false, reason: "non_university_host" };
+  return "junk_host";
 }
 
-// ---- Deno handler ----
+// ---------------------------
+// sport gate (FIXED)
+// ---------------------------
+// Accept if row activity type ID matches requested activityTypeId.
+// If missing, fall back to activity type NAME match.
+// If still missing, (optional) fall back to title contains "football" when sportName is Football.
+function sportGate(row, sportName, requestedActivityTypeId) {
+  var wantId = safeString(requestedActivityTypeId);
+  var gotId = rowActivityTypeId(row);
+
+  if (wantId && gotId) {
+    if (lc(gotId) === lc(wantId)) return { ok: true, reason: null };
+    return { ok: false, reason: "wrong_sport" };
+  }
+
+  var wantName = lc(sportName || "");
+  var gotName = lc(rowActivityTypeName(row) || "");
+
+  if (wantName && gotName) {
+    if (gotName === wantName) return { ok: true, reason: null };
+    return { ok: false, reason: "wrong_sport" };
+  }
+
+  // optional heuristic: if user asked Football, allow title contains football
+  if (wantName === "football") {
+    var t = lc(titleText(row));
+    if (t.indexOf("football") >= 0) return { ok: true, reason: null };
+  }
+
+  return { ok: false, reason: "missing_activitytype" };
+}
+
+// ---------------------------
+// Deno handler
+// ---------------------------
 Deno.serve(async function (req) {
   var debug = {
     version: VERSION,
     startedAt: new Date().toISOString(),
     pages: [],
-    notes: []
+    notes: [],
   };
 
   try {
     if (req.method !== "POST") {
       return new Response(JSON.stringify({ error: "Method not allowed", debug: debug }), {
         status: 405,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -277,20 +275,13 @@ Deno.serve(async function (req) {
 
     var recordsPerPage = Number((body && body.recordsPerPage) || 25);
     var maxPages = Number((body && body.maxPages) || 10);
-
-    // IMPORTANT: treat maxEvents as "desired accepted count"
-    var maxEvents = Number((body && body.maxEvents) || 100);
+    var maxEvents = Number((body && body.maxEvents) || 200);
     var dryRun = !!(body && body.dryRun);
-
-    var schools = asArray(body && body.schools);
-    var schoolIndex = buildSchoolIndex(schools);
-
-    debug.notes.push("schools_in=" + schools.length + " schools_indexed=" + schoolIndex.length);
 
     if (!sportId || !activityTypeId) {
       return new Response(JSON.stringify({ error: "Missing required: sportId/activityTypeId", debug: debug }), {
         status: 400,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -299,7 +290,7 @@ Deno.serve(async function (req) {
       debug.notes.push("Missing env secret RYZER_AUTH (set in Base44 Secrets).");
       return new Response(JSON.stringify({ error: "Missing secret RYZER_AUTH", debug: debug }), {
         status: 500,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -309,14 +300,13 @@ Deno.serve(async function (req) {
     var rejected = [];
     var errors = [];
 
-    var scanned = 0;
+    // STATS — keep compatible with your existing AdminImport logging
+    var processed = 0; // how many rows evaluated
+    var missingHost = 0;
+    var junkHost = 0;
+    var wrongSport = 0;
 
-    var rejectedMissingHost = 0;
-    var rejectedNonUniversity = 0;
-    var rejectedWrongSport = 0;
-    var rejectedMissingActivityType = 0;
-
-    // Collector: keep paging until we collect enough accepted football rows
+    // Collector behavior: keep paging until we collect enough accepted rows
     for (var page = 0; page < maxPages; page++) {
       if (accepted.length >= maxEvents) break;
 
@@ -326,7 +316,7 @@ Deno.serve(async function (req) {
         SoldOut: 0,
         ActivityTypes: [activityTypeId],
         Proximity: "10000",
-        accountTypeList: ["A7FA36E0-87BE-4750-9DE3-CB60DE133648"]
+        accountTypeList: ["A7FA36E0-87BE-4750-9DE3-CB60DE133648"],
       };
 
       var http = 0;
@@ -341,12 +331,13 @@ Deno.serve(async function (req) {
             Accept: "*/*",
             authorization: auth,
             Origin: "https://ryzer.com",
-            Referer: "https://ryzer.com/Events/?tab=eventSearch"
+            Referer: "https://ryzer.com/Events/?tab=eventSearch",
           },
-          body: JSON.stringify(reqPayload)
+          body: JSON.stringify(reqPayload),
         });
 
         http = r.status;
+
         try {
           respText = await r.text();
         } catch (e2) {
@@ -367,7 +358,7 @@ Deno.serve(async function (req) {
         var total = extracted.total;
         var rowsArrayPath = extracted.rowsArrayPath;
 
-        // debug: activity names on this page
+        // Unique activity names observed (helps prove leakage)
         var uniq = {};
         for (var ui = 0; ui < rows.length; ui++) {
           var nm = rowActivityTypeName(rows[ui]);
@@ -387,7 +378,7 @@ Deno.serve(async function (req) {
           rowCount: Array.isArray(rows) ? rows.length : 0,
           total: total,
           uniqueActivityNames: uniqueActivityNames,
-          respSnippet: truncate(respText, 1400)
+          respSnippet: truncate(respText, 1400),
         });
 
         if (http === 401 || http === 403) {
@@ -395,65 +386,61 @@ Deno.serve(async function (req) {
           break;
         }
 
-        if (!rows || !rows.length) {
-          break;
-        }
+        if (!rows || !rows.length) break;
 
         for (var i = 0; i < rows.length; i++) {
           if (accepted.length >= maxEvents) break;
 
           var row = rows[i];
-          scanned += 1;
+          processed += 1;
 
           var title = titleText(row);
           var url = pickUrl(row);
-          var city = pickCity(row);
-          var state = pickState(row);
 
-          // 1) sport gate (fail-closed)
-          var sg = sportGate(row, sportName);
+          // 1) sport gate (fixed)
+          var sg = sportGate(row, sportName, activityTypeId);
           if (!sg.ok) {
-            if (sg.reason === "wrong_sport") rejectedWrongSport += 1;
-            if (sg.reason === "missing_activitytype") rejectedMissingActivityType += 1;
+            if (sg.reason === "wrong_sport") wrongSport += 1;
 
             rejected.push({
               reason: sg.reason,
               title: title,
               registrationUrl: url,
-              activitytype: rowActivityTypeName(row)
+              rowTypeName: rowActivityTypeName(row),
+              rowTypeId: rowActivityTypeId(row),
             });
             continue;
           }
 
-          // 2) host + university gate (fail-closed)
+          // 2) host gate (fail-closed)
           var d = deriveHostGuess(row);
           var hostGuess = d.host;
 
-          var ug = universityGate(hostGuess, schoolIndex);
-          if (!ug.ok) {
-            if (ug.reason === "missing_host") rejectedMissingHost += 1;
-            else rejectedNonUniversity += 1;
+          var hr = rejectHostReason(hostGuess);
+          if (hr) {
+            if (hr === "missing_host" || hr === "host_too_short") missingHost += 1;
+            else junkHost += 1;
 
             rejected.push({
-              reason: ug.reason,
+              reason: hr,
+              host_guess: hostGuess,
               title: title,
               registrationUrl: url,
-              host_guess: hostGuess
+              rowTypeName: rowActivityTypeName(row),
+              rowTypeId: rowActivityTypeId(row),
             });
             continue;
           }
 
           // Accepted
           accepted.push({
-            school_match: ug.matchedSchool
-              ? { school_id: ug.matchedSchool.id, school_name: ug.matchedSchool.name, state: ug.matchedSchool.state }
-              : null,
             derived: {
               host_name_guess: hostGuess,
               host_source: d.source,
-              city: city,
-              state: state,
-              activitytype_returned: rowActivityTypeName(row)
+              activitytype_returned: rowActivityTypeName(row),
+              activitytypeid_returned: rowActivityTypeId(row),
+              city: pickCity(row),
+              state: pickState(row),
             },
             event: {
               sportId: sportId,
@@ -465,11 +452,9 @@ Deno.serve(async function (req) {
               registerBy: safeString(row && row.regEndDate) || null,
               price: safeString(row && row.cost) || null,
               registrationUrl: url,
-              city: city,
-              state: state,
               source_event_id: safeString(row && row.id) || null,
-              raw: row
-            }
+              raw: row,
+            },
           });
         }
       } catch (e) {
@@ -479,32 +464,32 @@ Deno.serve(async function (req) {
       }
     }
 
+    // Return keys that your AdminImport already prints
     var response = {
       stats: {
-        scanned: scanned,
         accepted: accepted.length,
         rejected: rejected.length,
         errors: errors.length,
-        rejectedMissingHost: rejectedMissingHost,
-        rejectedNonUniversity: rejectedNonUniversity,
-        rejectedWrongSport: rejectedWrongSport,
-        rejectedMissingActivityType: rejectedMissingActivityType
+        processed: processed,       // ✅ back to processed
+        missingHost: missingHost,   // ✅ back to missingHost
+        junkHost: junkHost,         // ✅ back to junkHost
+        wrongSport: wrongSport,     // ✅ back to wrongSport
       },
       debug: debug,
       errors: errors.slice(0, 10),
       accepted: dryRun ? accepted.slice(0, 25) : accepted,
-      rejected_samples: rejected.slice(0, 25)
+      rejected: rejected.slice(0, 25),
     };
 
     return new Response(JSON.stringify(response), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   } catch (eTop) {
     debug.notes.push("top-level error: " + String((eTop && eTop.message) || eTop));
     return new Response(JSON.stringify({ error: "Unhandled error", debug: debug }), {
       status: 500,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   }
 });
