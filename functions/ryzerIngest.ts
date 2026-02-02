@@ -1,14 +1,14 @@
 // functions/ryzerIngest.js
 // Base44 Backend Function (Deno)
 //
-// Goal:
-// - Call Ryzer eventSearch
-// - Return normalized events with host_name_guess (best effort)
-// - Fail-closed sport gate (prevents cross-sport leakage from being accepted)
-// - Strong host guardrails to prevent junk schools (K-12, clubs, training, etc)
-// - NO optional chaining / NO nullish coalescing (editor-safe)
+// v13: verify sport via registration page when eventSearch returns cross-sport rows
+// - Editor-safe: no optional chaining, no ??, no trailing commas
+// - Fail-closed sport gate:
+//    * if row.activitytype matches -> OK
+//    * else fetch registration page and require it contains sport needle (e.g., "football")
+// - Host guardrails reject K-12 / clubs, but allow legit college programs even without "University"
 
-var VERSION = "ryzerIngest_2026-02-02_v12_fail_closed_sport_and_host";
+var VERSION = "ryzerIngest_2026-02-02_v13_verify_registration_page_editor_safe";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -66,7 +66,6 @@ function normalizeRyzerResponse(respJson) {
 }
 
 function extractRowsAndMeta(respJson) {
-  // Note: Ryzer returns data.events + data.totalresults in your logs
   var rows = null;
   var total = null;
   var path = "not_found";
@@ -133,13 +132,53 @@ function rowActivityTypeName(row) {
 // Host derivation + guardrails
 // ---------------------------
 
-// Fail-closed: if host is missing or looks like K-12 / club / training / generic, reject.
-function rejectHostReason(hostGuess) {
+// Host guess: pick first non-empty candidate (DO NOT reject during guessing)
+// We want a host guess even if it will later be rejected, so debug isn't blank.
+function deriveHostGuess(row) {
+  var candidates = [];
+
+  if (row && row.organizer) candidates.push(row.organizer);
+  if (row && row.Organizer) candidates.push(row.Organizer);
+
+  if (row && row.accountName) candidates.push(row.accountName);
+  if (row && row.AccountName) candidates.push(row.AccountName);
+
+  if (row && row.organizationName) candidates.push(row.organizationName);
+  if (row && row.OrganizationName) candidates.push(row.OrganizationName);
+
+  if (row && row.hostName) candidates.push(row.hostName);
+  if (row && row.HostName) candidates.push(row.HostName);
+
+  if (row && row.schoolName) candidates.push(row.schoolName);
+  if (row && row.SchoolName) candidates.push(row.SchoolName);
+
+  if (row && row.accountDisplayName) candidates.push(row.accountDisplayName);
+  if (row && row.AccountDisplayName) candidates.push(row.AccountDisplayName);
+
+  for (var i = 0; i < candidates.length; i++) {
+    var c = stripNonAscii(safeString(candidates[i]) || "");
+    if (c) return { host_name_guess: c, host_source: "row_field" };
+  }
+
+  // fallback: title parsing "X @ Host"
+  var t = titleText(row);
+  if (t && t.indexOf(" @ ") !== -1) {
+    var parts = t.split(" @ ");
+    var last = stripNonAscii(parts[parts.length - 1] || "");
+    if (last) return { host_name_guess: last, host_source: "title_at_pattern" };
+  }
+
+  return { host_name_guess: null, host_source: "unknown" };
+}
+
+// Reject K-12 / clubs / junk.
+// Allow college programs that may not include "University" by allowing sport keyword or athletics/state.
+function rejectHostReason(hostGuess, sportNeedleLc) {
   var h = lc(stripNonAscii(hostGuess || ""));
   if (!h) return "missing_host";
   if (h.length < 4) return "host_too_short";
 
-  // Strong reject terms (include your list + K-12 "school(s)")
+  // Strong reject terms (K-12 + non-college orgs)
   var rejectContains = [
     "middle school",
     "high school",
@@ -154,7 +193,7 @@ function rejectHostReason(hostGuess) {
     " inc",
     " inc.",
     " company",
-    "performance",
+    " performance",
     " facility",
     " complex"
   ];
@@ -164,73 +203,84 @@ function rejectHostReason(hostGuess) {
     if (term && h.indexOf(term) !== -1) return "host_reject_term:" + term;
   }
 
-  // Generic-only host strings we never want to auto-create
+  // Generic-only host strings we never want
   var genericOnly = ["prospect camp", "elite camp", "skills camp", "clinic", "camp", "showcase"];
   for (var j = 0; j < genericOnly.length; j++) {
     if (h === genericOnly[j]) return "host_generic";
   }
 
-  // College keyword gate (conservative)
-  // We only auto-create if host looks like an actual college/university program.
-  // This prevents “Franklin Community Schools” and similar from creating junk Schools.
-  var hasCollegeSignal =
+  // Positive signals (any one is enough)
+  var hasUniversitySignal =
     h.indexOf("university") !== -1 ||
     h.indexOf("college") !== -1 ||
-    h.indexOf("univ") !== -1 ||
-    h.indexOf("u of ") !== -1 ||
-    h.indexOf(" u-") !== -1;
+    h.indexOf("univ") !== -1;
 
-  if (!hasCollegeSignal) return "host_not_college_keyword";
+  var hasAthleticsSignal = h.indexOf("athletics") !== -1 || h.indexOf("athletic") !== -1;
+
+  var hasStateSignal = h.indexOf(" state") !== -1 || h.indexOf("state ") !== -1;
+
+  var hasSportSignal = false;
+  if (sportNeedleLc) {
+    if (h.indexOf(sportNeedleLc) !== -1) hasSportSignal = true;
+  }
+
+  if (!(hasUniversitySignal || hasAthleticsSignal || hasStateSignal || hasSportSignal)) {
+    return "host_not_college_signal";
+  }
 
   return null;
 }
 
-function deriveHostGuess(row) {
-  var candidates = [];
+// ---------------------------
+// Registration page sport verification
+// ---------------------------
 
-  // organizer is present in your earlier raw payloads
-  if (row && row.organizer) candidates.push(row.organizer);
-  if (row && row.Organizer) candidates.push(row.Organizer);
+async function fetchHtmlSnippet(url, msTimeout, maxChars) {
+  if (!url) return { ok: false, reason: "missing_url", snippet: "" };
 
-  // other possible fields
-  if (row && row.accountName) candidates.push(row.accountName);
-  if (row && row.AccountName) candidates.push(row.AccountName);
-  if (row && row.hostName) candidates.push(row.hostName);
-  if (row && row.HostName) candidates.push(row.HostName);
-  if (row && row.organizationName) candidates.push(row.organizationName);
-  if (row && row.OrganizationName) candidates.push(row.OrganizationName);
-  if (row && row.schoolName) candidates.push(row.schoolName);
-  if (row && row.SchoolName) candidates.push(row.SchoolName);
-  if (row && row.accountDisplayName) candidates.push(row.accountDisplayName);
-  if (row && row.AccountDisplayName) candidates.push(row.AccountDisplayName);
+  var timeoutMs = typeof msTimeout === "number" ? msTimeout : 6500;
+  var maxLen = typeof maxChars === "number" ? maxChars : 180000;
 
-  // Normalize + pick first that passes host guardrails
-  for (var i = 0; i < candidates.length; i++) {
-    var c = stripNonAscii(safeString(candidates[i]) || "");
-    if (!c) continue;
-    var reason = rejectHostReason(c);
-    if (!reason) {
-      return { host_name_guess: c, host_source: "row_field" };
+  var controller = new AbortController();
+  var t = setTimeout(function () {
+    try { controller.abort(); } catch (e) {}
+  }, timeoutMs);
+
+  try {
+    var resp = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0"
+      },
+      signal: controller.signal
+    });
+
+    var text = "";
+    try {
+      text = await resp.text();
+    } catch (e2) {
+      text = "";
     }
+
+    if (!resp.ok) {
+      clearTimeout(t);
+      return { ok: false, reason: "http_" + resp.status, snippet: truncate(text, 800) };
+    }
+
+    // cap size
+    if (text.length > maxLen) text = text.slice(0, maxLen);
+    clearTimeout(t);
+    return { ok: true, reason: "ok", snippet: text };
+  } catch (e3) {
+    clearTimeout(t);
+    return { ok: false, reason: "fetch_error", snippet: truncate(String((e3 && e3.message) || e3), 400) };
   }
+}
 
-  // fallback: title parsing
-  var t = titleText(row);
-
-  if (t && t.indexOf(" @ ") !== -1) {
-    var parts = t.split(" @ ");
-    var last = stripNonAscii(parts[parts.length - 1] || "");
-    var r1 = rejectHostReason(last);
-    if (!r1) return { host_name_guess: last, host_source: "title_at_pattern" };
-  }
-
-  // give best effort rejectedReason for debug
-  var best = candidates.length ? stripNonAscii(safeString(candidates[0]) || "") : null;
-  return {
-    host_name_guess: best,
-    host_source: best ? "row_field_rejected" : "unknown",
-    rejectedReason: rejectHostReason(best) || "missing_host"
-  };
+function pageMentionsSport(html, sportNeedleLc) {
+  if (!html || !sportNeedleLc) return false;
+  var h = lc(html);
+  return h.indexOf(sportNeedleLc) !== -1;
 }
 
 // ---------------------------
@@ -254,11 +304,7 @@ Deno.serve(async function (req) {
     }
 
     var body = null;
-    try {
-      body = await req.json();
-    } catch (e) {
-      body = null;
-    }
+    try { body = await req.json(); } catch (e) { body = null; }
 
     var sportId = safeString(body && body.sportId);
     var sportName = safeString(body && body.sportName) || "";
@@ -269,7 +315,13 @@ Deno.serve(async function (req) {
     var maxEvents = Number((body && body.maxEvents) || 100);
     var dryRun = !!(body && body.dryRun);
 
-    // Default true (fail-closed)
+    // NEW controls
+    var sportNeedle = safeString(body && body.sportNeedle) || (sportName ? lc(sportName) : "");
+    var sportNeedleLc = lc(sportNeedle);
+
+    var verifySportOnRegistrationPage = true;
+    if (body && body.verifySportOnRegistrationPage === false) verifySportOnRegistrationPage = false;
+
     var enforceSportNameGate = true;
     if (body && body.enforceSportNameGate === false) enforceSportNameGate = false;
 
@@ -301,11 +353,12 @@ Deno.serve(async function (req) {
     var rejectedJunkHost = 0;
     var rejectedWrongSport = 0;
     var rejectedMissingActivityType = 0;
+    var rejectedSportVerifyFailed = 0;
+    var verifiedByPage = 0;
 
     for (var page = 0; page < maxPages; page++) {
       if (processed >= maxEvents) break;
 
-      // Match DevTools payload fields
       var reqPayload = {
         Page: page,
         RecordsPerPage: recordsPerPage,
@@ -333,11 +386,7 @@ Deno.serve(async function (req) {
         });
 
         http = r.status;
-        try {
-          respText = await r.text();
-        } catch (e2) {
-          respText = "";
-        }
+        try { respText = await r.text(); } catch (e2) { respText = ""; }
 
         rawJson = tryParseJsonString(respText);
 
@@ -346,18 +395,13 @@ Deno.serve(async function (req) {
 
         var norm = normalizeRyzerResponse(rawJson);
         var normalized = norm.normalized;
-        var dataWasString = norm.dataWasString;
-        var innerKeys = norm.innerKeys;
-
-        var respKeys = [];
-        if (normalized && typeof normalized === "object" && !Array.isArray(normalized)) respKeys = Object.keys(normalized);
 
         var extracted = extractRowsAndMeta(normalized);
         var rows = extracted.rows;
         var total = extracted.total;
         var rowsArrayPath = extracted.rowsArrayPath;
 
-        // unique activity names (for diagnostics)
+        // unique activity names
         var uniq = {};
         for (var u = 0; u < rows.length; u++) {
           var nm = rowActivityTypeName(rows[u]);
@@ -365,26 +409,19 @@ Deno.serve(async function (req) {
         }
         var uniqueActivityNames = Object.keys(uniq);
 
-        // sample keys (helps us see if activityTypeId exists per row)
-        var sampleRowKeys = [];
-        if (rows && rows.length && rows[0] && typeof rows[0] === "object") {
-          sampleRowKeys = Object.keys(rows[0]).slice(0, 80);
-        }
-
         debug.pages.push({
           version: VERSION,
           page: page,
           http: http,
           reqPayload: reqPayload,
-          respKeys: respKeys.length ? respKeys : topKeys,
-          dataWasString: dataWasString,
-          innerKeys: innerKeys,
+          respKeys: topKeys,
+          dataWasString: norm.dataWasString,
+          innerKeys: norm.innerKeys,
           rowsArrayPath: rowsArrayPath,
           rowCount: Array.isArray(rows) ? rows.length : 0,
           total: total || null,
           uniqueActivityNames: uniqueActivityNames,
-          sampleRowKeys: sampleRowKeys,
-          respSnippet: truncate(respText, 1400)
+          respSnippet: truncate(respText, 900)
         });
 
         if (http === 401 || http === 403) {
@@ -403,40 +440,60 @@ Deno.serve(async function (req) {
           var city = pickCity(row);
           var state = pickState(row);
 
-          // FAIL-CLOSED sport gate:
-          // If enforceSportNameGate and sportName provided, require row.activitytype to exist AND match.
+          // ---- sport gate (fail-closed) ----
+          var rowTypeName = rowActivityTypeName(row);
+          var sportOk = true;
+
           if (enforceSportNameGate && sportName) {
-            var rowTypeName = rowActivityTypeName(row);
             if (!rowTypeName) {
+              // missing activity type; verify via page if enabled
               rejectedMissingActivityType += 1;
-              rejected.push({
-                reason: "missing_activitytype",
-                expected: { sportName: sportName, activityTypeId: activityTypeId },
-                title: title,
-                registrationUrl: url
-              });
-              processed += 1;
-              continue;
-            }
-            if (lc(rowTypeName) !== lc(sportName)) {
+              sportOk = false;
+            } else if (lc(rowTypeName) !== lc(sportName)) {
               rejectedWrongSport += 1;
-              rejected.push({
-                reason: "wrong_sport",
-                expected: { sportName: sportName, activityTypeId: activityTypeId },
-                got: { rowTypeName: rowTypeName },
-                title: title,
-                registrationUrl: url
-              });
-              processed += 1;
-              continue;
+              sportOk = false;
             }
           }
 
-          // Host derivation + guardrails (fail-closed)
+          var verifiedViaPage = false;
+          var verifyNote = null;
+
+          if (!sportOk) {
+            if (verifySportOnRegistrationPage && url) {
+              var fetched = await fetchHtmlSnippet(url, 6500, 180000);
+              if (fetched.ok) {
+                if (pageMentionsSport(fetched.snippet, sportNeedleLc)) {
+                  sportOk = true;
+                  verifiedViaPage = true;
+                  verifiedByPage += 1;
+                } else {
+                  rejectedSportVerifyFailed += 1;
+                  verifyNote = "page_missing_sport_keyword";
+                }
+              } else {
+                rejectedSportVerifyFailed += 1;
+                verifyNote = "page_fetch_failed:" + fetched.reason;
+              }
+            }
+          }
+
+          if (!sportOk) {
+            rejected.push({
+              reason: rowTypeName ? "wrong_sport" : "missing_activitytype",
+              title: title,
+              registrationUrl: url,
+              rowTypeName: rowTypeName || null,
+              verifyNote: verifyNote
+            });
+            processed += 1;
+            continue;
+          }
+
+          // ---- host gate ----
           var derived = deriveHostGuess(row);
           var hostGuess = derived.host_name_guess;
 
-          var hostReject = rejectHostReason(hostGuess);
+          var hostReject = rejectHostReason(hostGuess, sportNeedleLc);
           if (hostReject) {
             if (hostReject === "missing_host") rejectedMissingHost += 1;
             else rejectedJunkHost += 1;
@@ -445,14 +502,14 @@ Deno.serve(async function (req) {
               reason: hostReject,
               title: title,
               registrationUrl: url,
-              host_guess: hostGuess
+              host_guess: hostGuess || ""
             });
 
             processed += 1;
             continue;
           }
 
-          // Accepted
+          // accepted
           accepted.push({
             event: {
               sportId: sportId,
@@ -472,12 +529,8 @@ Deno.serve(async function (req) {
             derived: {
               host_name_guess: hostGuess,
               host_source: derived.host_source,
-              city: city,
-              state: state,
-              activitytype_returned: rowActivityTypeName(row)
-            },
-            debug: {
-              host_rejected_reason: derived.rejectedReason || null
+              activitytype_returned: rowTypeName || null,
+              verified_via_page: verifiedViaPage
             }
           });
 
@@ -486,21 +539,6 @@ Deno.serve(async function (req) {
       } catch (e3) {
         var msg = String((e3 && e3.message) || e3);
         errors.push({ page: page, error: msg });
-        debug.pages.push({
-          version: VERSION,
-          page: page,
-          http: http || 0,
-          reqPayload: reqPayload,
-          respKeys: [],
-          dataWasString: false,
-          innerKeys: [],
-          rowsArrayPath: "exception",
-          rowCount: 0,
-          total: null,
-          uniqueActivityNames: [],
-          sampleRowKeys: [],
-          respSnippet: truncate(respText || msg, 1400)
-        });
         break;
       }
     }
@@ -514,7 +552,9 @@ Deno.serve(async function (req) {
         rejectedMissingHost: rejectedMissingHost,
         rejectedJunkHost: rejectedJunkHost,
         rejectedWrongSport: rejectedWrongSport,
-        rejectedMissingActivityType: rejectedMissingActivityType
+        rejectedMissingActivityType: rejectedMissingActivityType,
+        rejectedSportVerifyFailed: rejectedSportVerifyFailed,
+        verifiedByPage: verifiedByPage
       },
       debug: debug,
       errors: errors.slice(0, 10),
