@@ -1,13 +1,12 @@
 // functions/sportsUSAIngestCamps.js
 // Base44 Backend Function (Deno)
 //
-// Updates in v3:
-// - Better date parsing from title/body patterns like:
-//   "February 21st - 22nd", "June 12th-13th", "Feb 3rd", etc.
-// - Returns start_date + end_date when possible
-// - Still editor-safe (no optional chaining, no external imports)
+// v4 updates:
+// - Parse dates from registration page BODY (not just title)
+// - Support numeric patterns like 02/21/2026 and ranges
+// - Keep editor-safe (no optional chaining, no external imports)
 
-const VERSION = "sportsUSAIngestCamps_2026-02-03_v3_parse_monthname_dates_editor_safe";
+const VERSION = "sportsUSAIngestCamps_2026-02-03_v4_parse_dates_from_reg_html_editor_safe";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -72,7 +71,6 @@ function uniq(list) {
 function extractHrefs(html) {
   var out = [];
   if (!html) return out;
-
   var re = /<a[^>]*href="([^"]+)"[^>]*>/gi;
   var m;
   while ((m = re.exec(html)) !== null) {
@@ -115,9 +113,7 @@ function extractLikelyIndexLinks(html, baseUrl) {
       var b = new URL(baseUrl);
       var x = new URL(u);
       if (x.host && b.host && x.host !== b.host) continue;
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
 
     if (
       s.indexOf("camps") >= 0 ||
@@ -142,7 +138,6 @@ function slugify(s) {
     .replace(/^-+|-+$/g, "");
 }
 
-// Return YYYY-MM-DD (UTC) or null
 function toISODateFromParts(year, month1to12, day1to31) {
   if (!year || !month1to12 || !day1to31) return null;
   var yyyy = String(year);
@@ -155,7 +150,6 @@ function computeSeasonYearFootball(startDateISO) {
   if (!startDateISO) return null;
   var d = new Date(startDateISO + "T00:00:00.000Z");
   if (isNaN(d.getTime())) return null;
-
   var y = d.getUTCFullYear();
   var feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
   return d >= feb1 ? y : y - 1;
@@ -191,85 +185,141 @@ function monthToNum(m) {
   if (s.indexOf("jul") === 0) return 7;
   if (s.indexOf("aug") === 0) return 8;
   if (s.indexOf("sep") === 0) return 9;
+  if (s.indexOf("sept") === 0) return 9;
   if (s.indexOf("oct") === 0) return 10;
   if (s.indexOf("nov") === 0) return 11;
   if (s.indexOf("dec") === 0) return 12;
   return null;
 }
 
-// Extract date range from strings like:
-// "February 21st - 22nd", "June 12th-13th", "Feb 3rd", "March 1 - 2"
 function extractMonthNameDateRange(text) {
   var t = stripNonAscii(text || "");
   if (!t) return { start: null, end: null, raw: null };
 
-  // Look for "Month D{suffix} - D{suffix}" (same month)
-  var reRange = /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2})(?:st|nd|rd|th)?\s*[-–]\s*(\d{1,2})(?:st|nd|rd|th)?\b/i;
+  var reRange =
+    /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2})(?:st|nd|rd|th)?\s*[-–]\s*(\d{1,2})(?:st|nd|rd|th)?\b/i;
   var m = reRange.exec(t);
   if (m) {
     var mon = monthToNum(m[1]);
     var d1 = parseInt(m[2], 10);
     var d2 = parseInt(m[3], 10);
-    if (mon && d1 && d2) {
-      return { start: { mon: mon, day: d1 }, end: { mon: mon, day: d2 }, raw: m[0] };
-    }
+    if (mon && d1 && d2) return { start: { mon: mon, day: d1 }, end: { mon: mon, day: d2 }, raw: m[0] };
   }
 
-  // Look for "Month D{suffix}" single
-  var reSingle = /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2})(?:st|nd|rd|th)?\b/i;
+  var reSingle =
+    /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2})(?:st|nd|rd|th)?\b/i;
   var m2 = reSingle.exec(t);
   if (m2) {
     var mon2 = monthToNum(m2[1]);
     var d = parseInt(m2[2], 10);
-    if (mon2 && d) {
-      return { start: { mon: mon2, day: d }, end: null, raw: m2[0] };
-    }
+    if (mon2 && d) return { start: { mon: mon2, day: d }, end: null, raw: m2[0] };
+  }
+
+  return { start: null, end: null, raw: null };
+}
+
+// Numeric patterns like 02/21/2026 or 2/21/26, including ranges:
+// 02/21/2026 - 02/22/2026
+function extractNumericDateRange(text) {
+  var t = stripNonAscii(text || "");
+  if (!t) return { start: null, end: null, raw: null };
+
+  var reRange = /\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s*[-–]\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/;
+  var m = reRange.exec(t);
+  if (m) {
+    var m1 = parseInt(m[1], 10);
+    var d1 = parseInt(m[2], 10);
+    var y1 = parseInt(m[3], 10);
+    var m2 = parseInt(m[4], 10);
+    var d2 = parseInt(m[5], 10);
+    var y2 = parseInt(m[6], 10);
+    if (y1 < 100) y1 = 2000 + y1;
+    if (y2 < 100) y2 = 2000 + y2;
+
+    return {
+      start: { year: y1, mon: m1, day: d1 },
+      end: { year: y2, mon: m2, day: d2 },
+      raw: m[0],
+    };
+  }
+
+  var reSingle = /\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/;
+  var mS = reSingle.exec(t);
+  if (mS) {
+    var mo = parseInt(mS[1], 10);
+    var da = parseInt(mS[2], 10);
+    var ye = parseInt(mS[3], 10);
+    if (ye < 100) ye = 2000 + ye;
+
+    return { start: { year: ye, mon: mo, day: da }, end: null, raw: mS[0] };
   }
 
   return { start: null, end: null, raw: null };
 }
 
 function inferYearFromHtmlOrNow(html) {
-  // Try to find a 4-digit year in the page, otherwise use current year.
   var y = null;
   if (html) {
+    // prefer a year that appears near "2026" in the page
     var m = /\b(20\d{2})\b/.exec(html);
     if (m && m[1]) y = parseInt(m[1], 10);
   }
-  if (!y) {
-    y = new Date().getUTCFullYear();
-  }
+  if (!y) y = new Date().getUTCFullYear();
   return y;
 }
 
-function deriveDatesFromTitleAndHtml(title, html) {
-  var year = inferYearFromHtmlOrNow(html);
+function findMetaDescription(html) {
+  if (!html) return "";
+  var m = /<meta[^>]*name="description"[^>]*content="([^"]*)"/i.exec(html);
+  if (m && m[1] !== undefined) return stripNonAscii(m[1]);
+  var m2 = /<meta[^>]*property="og:description"[^>]*content="([^"]*)"/i.exec(html);
+  if (m2 && m2[1] !== undefined) return stripNonAscii(m2[1]);
+  return "";
+}
 
-  // 1) title
+function deriveDatesFromTitleAndRegHtml(title, regHtml) {
+  var year = inferYearFromHtmlOrNow(regHtml);
+
+  // 1) title month-name
   var fromTitle = extractMonthNameDateRange(title || "");
   if (fromTitle && fromTitle.start) {
-    var startISO = toISODateFromParts(year, fromTitle.start.mon, fromTitle.start.day);
-    var endISO = null;
-    if (fromTitle.end) endISO = toISODateFromParts(year, fromTitle.end.mon, fromTitle.end.day);
-    return { start_date: startISO, end_date: endISO, raw: fromTitle.raw || title };
+    var s1 = toISODateFromParts(year, fromTitle.start.mon, fromTitle.start.day);
+    var e1 = null;
+    if (fromTitle.end) e1 = toISODateFromParts(year, fromTitle.end.mon, fromTitle.end.day);
+    return { start_date: s1, end_date: e1, raw: fromTitle.raw || title, method: "title_monthname" };
   }
 
-  // 2) body: common "Dates:" labels
-  var snippet = stripNonAscii(html || "");
-  if (snippet) {
-    // search a smaller window to avoid noise
-    var small = snippet.slice(0, 6000);
-
-    var fromBody = extractMonthNameDateRange(small);
-    if (fromBody && fromBody.start) {
-      var s2 = toISODateFromParts(year, fromBody.start.mon, fromBody.start.day);
-      var e2 = null;
-      if (fromBody.end) e2 = toISODateFromParts(year, fromBody.end.mon, fromBody.end.day);
-      return { start_date: s2, end_date: e2, raw: fromBody.raw || null };
-    }
+  // 2) reg page meta description often contains dates
+  var meta = findMetaDescription(regHtml || "");
+  var fromMeta = extractMonthNameDateRange(meta);
+  if (fromMeta && fromMeta.start) {
+    var sm = toISODateFromParts(year, fromMeta.start.mon, fromMeta.start.day);
+    var em = null;
+    if (fromMeta.end) em = toISODateFromParts(year, fromMeta.end.mon, fromMeta.end.day);
+    return { start_date: sm, end_date: em, raw: fromMeta.raw || meta, method: "meta_monthname" };
   }
 
-  return { start_date: null, end_date: null, raw: null };
+  // 3) reg page body month-name search (first 12k chars)
+  var body = stripNonAscii(regHtml || "");
+  var small = body ? body.slice(0, 12000) : "";
+  var fromBody = extractMonthNameDateRange(small);
+  if (fromBody && fromBody.start) {
+    var sb = toISODateFromParts(year, fromBody.start.mon, fromBody.start.day);
+    var eb = null;
+    if (fromBody.end) eb = toISODateFromParts(year, fromBody.end.mon, fromBody.end.day);
+    return { start_date: sb, end_date: eb, raw: fromBody.raw || null, method: "body_monthname" };
+  }
+
+  // 4) numeric dates in reg page body (MM/DD/YYYY)
+  var num = extractNumericDateRange(small);
+  if (num && num.start) {
+    var sn = toISODateFromParts(num.start.year, num.start.mon, num.start.day);
+    var en = null;
+    if (num.end) en = toISODateFromParts(num.end.year, num.end.mon, num.end.day);
+    return { start_date: sn, end_date: en, raw: num.raw || null, method: "body_numeric" };
+  }
+
+  return { start_date: null, end_date: null, raw: null, method: "none" };
 }
 
 Deno.serve(async (req) => {
@@ -393,7 +443,6 @@ Deno.serve(async (req) => {
 
           for (var pi = 0; pi < likelyPages.length; pi++) {
             if (regLinks.length >= maxRegsPerSite) break;
-
             var pageUrl = likelyPages[pi];
             try {
               var r2 = await fetch(pageUrl, {
@@ -413,9 +462,7 @@ Deno.serve(async (req) => {
                 regLinks.push(found[fi]);
               }
               regLinks = uniq(regLinks);
-            } catch (e2) {
-              // ignore per-page
-            }
+            } catch (e2) {}
           }
         }
 
@@ -454,8 +501,8 @@ Deno.serve(async (req) => {
             var regHtml = await rr.text();
             var regTitle = extractTitleFromHtml(regHtml) || "Camp";
 
-            // ✅ improved date derivation
-            var d = deriveDatesFromTitleAndHtml(regTitle, regHtml);
+            var d = deriveDatesFromTitleAndRegHtml(regTitle, regHtml);
+
             var startISO = d && d.start_date ? d.start_date : null;
             var endISO = d && d.end_date ? d.end_date : null;
             var datesRaw = d && d.raw ? d.raw : null;
@@ -486,7 +533,13 @@ Deno.serve(async (req) => {
               source_platform: "sportsusa",
               source_url: regUrl,
               last_seen_at: new Date().toISOString(),
-              content_hash: simpleHash({ campSiteUrl: campSiteUrl, regUrl: regUrl, title: regTitle, start: startISO, end: endISO }),
+              content_hash: simpleHash({
+                campSiteUrl: campSiteUrl,
+                regUrl: regUrl,
+                title: regTitle,
+                start: startISO,
+                end: endISO,
+              }),
 
               event_dates_raw: datesRaw,
               grades_raw: null,
@@ -497,10 +550,9 @@ Deno.serve(async (req) => {
               sections_json: null,
 
               debug: {
-                reg_title: regTitle,
-                derived_start: startISO,
-                derived_end: endISO,
+                date_method: d && d.method ? d.method : "none",
                 derived_raw: datesRaw,
+                reg_title: regTitle,
                 reg_html_snippet: truncate(regHtml, 800),
               },
             });
