@@ -1,25 +1,24 @@
 // src/pages/AdminImport.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
 import { base44 } from "../api/base44Client";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
 /* ----------------------------
-   Inline helpers (editor-safe)
+   Helpers (editor-safe)
 ----------------------------- */
 function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 function safeString(x) {
   if (x === null || x === undefined) return null;
-  var s = String(x).trim();
+  const s = String(x).trim();
   return s ? s : null;
 }
 function safeNumber(x) {
-  var n = Number(x);
-  return isFinite(n) ? n : null;
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
 }
 function safeObject(x) {
   if (!x || typeof x !== "object" || Array.isArray(x)) return null;
@@ -27,29 +26,23 @@ function safeObject(x) {
 }
 function tryParseJson(value) {
   if (typeof value !== "string") return value;
-  var s = value.trim();
+  const s = value.trim();
   if (!s) return value;
-  if (!(s.indexOf("{") === 0 || s.indexOf("[") === 0)) return value;
+  if (!(s.startsWith("{") || s.startsWith("["))) return value;
   try {
     return JSON.parse(s);
-  } catch (e) {
+  } catch {
     return value;
   }
 }
 function normalizeStringArray(value) {
-  var v = tryParseJson(value);
+  const v = tryParseJson(value);
   if (Array.isArray(v)) {
     return v
-      .map(function (x) {
-        if (x === null || x === undefined) return null;
-        var s = String(x).trim();
-        return s ? s : null;
-      })
-      .filter(function (x) {
-        return !!x;
-      });
+      .map((x) => (x == null ? null : String(x).trim()))
+      .filter((x) => !!x);
   }
-  var one = safeString(v);
+  const one = safeString(v);
   return one ? [one] : [];
 }
 function slugify(s) {
@@ -59,16 +52,18 @@ function slugify(s) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
-function lc(x) {
-  return String(x || "").toLowerCase().trim();
+function simpleHash(obj) {
+  const str = typeof obj === "string" ? obj : JSON.stringify(obj ?? {});
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (h << 5) - h + str.charCodeAt(i);
+    h |= 0;
+  }
+  return `h${Math.abs(h)}`;
 }
 function sleep(ms) {
-  return new Promise(function (r) {
-    setTimeout(r, ms);
-  });
+  return new Promise((r) => setTimeout(r, ms));
 }
-
-// Return YYYY-MM-DD (UTC-ish) or null
 function toISODate(dateInput) {
   if (!dateInput) return null;
 
@@ -77,265 +72,282 @@ function toISODate(dateInput) {
   }
 
   if (typeof dateInput === "string") {
-    var s = dateInput.trim();
-    var mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    const s = dateInput.trim();
+    const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (mdy) {
-      var mm = String(mdy[1]).padStart(2, "0");
-      var dd = String(mdy[2]).padStart(2, "0");
-      var yyyy = String(mdy[3]);
-      return yyyy + "-" + mm + "-" + dd;
+      const mm = String(mdy[1]).padStart(2, "0");
+      const dd = String(mdy[2]).padStart(2, "0");
+      const yyyy = String(mdy[3]);
+      return `${yyyy}-${mm}-${dd}`;
     }
   }
 
-  var d = new Date(dateInput);
-  if (isNaN(d.getTime())) return null;
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return null;
 
-  var yyyy2 = d.getUTCFullYear();
-  var mm2 = String(d.getUTCMonth() + 1).padStart(2, "0");
-  var dd2 = String(d.getUTCDate()).padStart(2, "0");
-  return yyyy2 + "-" + mm2 + "-" + dd2;
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
-
-// Football rollover: Feb 1 (UTC-ish)
+// Football rollover: Feb 1 UTC
 function computeSeasonYearFootball(startDateISO) {
   if (!startDateISO) return null;
-  var d = new Date(startDateISO + "T00:00:00.000Z");
-  if (isNaN(d.getTime())) return null;
+  const d = new Date(`${startDateISO}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return null;
 
-  var y = d.getUTCFullYear();
-  var feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
+  const y = d.getUTCFullYear();
+  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
   return d >= feb1 ? y : y - 1;
 }
-
-// Simple stable hash (not cryptographic)
-function simpleHash(obj) {
-  var str = typeof obj === "string" ? obj : JSON.stringify(obj || {});
-  var h = 0;
-  for (var i = 0; i < str.length; i++) {
-    h = (h << 5) - h + str.charCodeAt(i);
-    h |= 0;
-  }
-  return "h" + String(Math.abs(h));
+function normalizeSportNameFromRow(r) {
+  return String((r && (r.sport_name || r.name || r.sportName)) || "").trim();
 }
-
-function buildEventKey(opts) {
-  var source_platform = opts && opts.source_platform ? opts.source_platform : "seed";
-  var program_id = opts && opts.program_id ? opts.program_id : "na";
-  var start_date = opts && opts.start_date ? opts.start_date : "na";
-  var disc = opts && (opts.link_url || opts.source_url) ? (opts.link_url || opts.source_url) : "na";
-  return source_platform + ":" + program_id + ":" + start_date + ":" + disc;
-}
-
-function seedProgramId(school_id, camp_name) {
-  return "seed:" + String(school_id || "na") + ":" + slugify(camp_name || "camp");
-}
-
-async function tryDelete(Entity, id) {
-  if (!Entity || !id) return false;
-  var fns = ["delete", "remove", "destroy"];
-  for (var i = 0; i < fns.length; i++) {
-    var fn = fns[i];
-    try {
-      if (typeof Entity[fn] === "function") {
-        await Entity[fn](String(id));
-        return true;
-      }
-    } catch (e) {}
-  }
-  return false;
+function readActiveFlag(row) {
+  if (typeof row?.active === "boolean") return row.active;
+  if (typeof row?.is_active === "boolean") return row.is_active;
+  if (typeof row?.isActive === "boolean") return row.isActive;
+  const st = String(row?.status || "").toLowerCase().trim();
+  if (st === "active") return true;
+  if (st === "inactive" || st === "in_active" || st === "in active") return false;
+  return true;
 }
 
 /* ----------------------------
    Routes (hardcoded)
 ----------------------------- */
-var ROUTES = {
+const ROUTES = {
   Workspace: "/Workspace",
   Home: "/Home",
 };
 
 /* ----------------------------
-   SportsUSA directory URLs (per sport)
-   You can expand as you enable more sports.
+   SportsUSA directory defaults
 ----------------------------- */
-var SPORTSUSA_DIRECTORY_BY_SPORTNAME = {
-  Football: "https://www.footballcampsusa.com",
-  Baseball: "https://www.baseballcampsusa.com",
-  Soccer: "https://www.soccercampsusa.com",
-  Volleyball: "https://www.volleyballcampsusa.com",
-  Softball: "https://www.softballcampsusa.com",
+const SPORTSUSA_DIRECTORY_BY_SPORT = {
+  Football: "https://www.footballcampsusa.com/",
+  Baseball: "https://www.baseballcampsusa.com/",
+  Softball: "https://www.softballcampsusa.com/",
+  Soccer: "https://www.soccercampsusa.com/",
+  Volleyball: "https://www.volleyballcampsusa.com/",
 };
 
 export default function AdminImport() {
-  var nav = useNavigate();
+  const nav = useNavigate();
 
   // Entities
-  var SportEntity = base44 && base44.entities ? (base44.entities.Sport || base44.entities.Sports) : null;
-  var PositionEntity = base44 && base44.entities ? (base44.entities.Position || base44.entities.Positions) : null;
-  var SchoolEntity = base44 && base44.entities ? (base44.entities.School || base44.entities.Schools) : null;
-  var SchoolSportSiteEntity =
-    base44 && base44.entities ? (base44.entities.SchoolSportSite || base44.entities.SchoolSportSites) : null;
-  var CampDemoEntity = base44 && base44.entities ? base44.entities.CampDemo : null;
+  const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
+  const SchoolEntity = base44?.entities?.School || base44?.entities?.Schools || null;
+  const SchoolSportSiteEntity =
+    base44?.entities?.SchoolSportSite || base44?.entities?.SchoolSportSites || null;
+  const CampDemoEntity = base44?.entities?.CampDemo || null;
 
-  // Global selected sport (single selector drives all sections)
-  var [sports, setSports] = useState([]);
-  var [sportsLoading, setSportsLoading] = useState(false);
-  var [selectedSportId, setSelectedSportId] = useState("");
-  var [selectedSportName, setSelectedSportName] = useState("");
+  // Shared sport selection
+  const [sports, setSports] = useState([]);
+  const [sportsLoading, setSportsLoading] = useState(false);
+  const [selectedSportId, setSelectedSportId] = useState("");
+  const [selectedSportName, setSelectedSportName] = useState("");
 
-  // Positions list
-  var [positions, setPositions] = useState([]);
-  var [positionsLoading, setPositionsLoading] = useState(false);
+  // Per-section logs
+  const [logSportsUSA, setLogSportsUSA] = useState("");
+  const [logCamps, setLogCamps] = useState("");
 
-  // Per-section logs (unique)
-  var [sportsUSALog, setSportsUSALog] = useState("");
-  var [sportsUSACampsLog, setSportsUSACampsLog] = useState("");
-  var [promoteLog, setPromoteLog] = useState("");
+  const appendSportsUSA = (line) =>
+    setLogSportsUSA((p) => (p ? p + "\n" + line : line));
+  const appendCamps = (line) => setLogCamps((p) => (p ? p + "\n" + line : line));
 
-  function appendSportsUSALog(line) {
-    setSportsUSALog(function (prev) {
-      return prev ? prev + "\n" + line : line;
-    });
-  }
-  function appendSportsUSACampsLog(line) {
-    setSportsUSACampsLog(function (prev) {
-      return prev ? prev + "\n" + line : line;
-    });
-  }
-  function appendPromoteLog(line) {
-    setPromoteLog(function (prev) {
-      return prev ? prev + "\n" + line : line;
-    });
-  }
+  // ----------------------------
+  // SportsUSA: seed schools controls
+  // ----------------------------
+  const [sportsUSADryRun, setSportsUSADryRun] = useState(true);
+  const [sportsUSALimit, setSportsUSALimit] = useState(300);
+  const [sportsUSASiteUrl, setSportsUSASiteUrl] = useState("");
 
-  // SportsUSA seed controls
-  var [sportsUSADryRun, setSportsUSADryRun] = useState(true);
-  var [sportsUSALimit, setSportsUSALimit] = useState(300);
-  var [sportsUSADirectoryUrl, setSportsUSADirectoryUrl] = useState("");
+  const [sportsUSAWorking, setSportsUSAWorking] = useState(false);
 
-  var [sportsUSAWorking, setSportsUSAWorking] = useState(false);
-  var [sportsUSAStats, setSportsUSAStats] = useState({ createdSchools: 0, updatedSchools: 0, createdSites: 0, updatedSites: 0, skipped: 0, errors: 0 });
-
+  // ----------------------------
   // Camps ingest controls
-  var [campsDryRun, setCampsDryRun] = useState(true);
-  var [campsMaxSites, setCampsMaxSites] = useState(25);
-  var [campsMaxRegsPerSite, setCampsMaxRegsPerSite] = useState(8);
-  var [campsMaxEvents, setCampsMaxEvents] = useState(100);
-  var [campsWorking, setCampsWorking] = useState(false);
-  var [campsWriteStats, setCampsWriteStats] = useState({ created: 0, updated: 0, skipped: 0, errors: 0 });
+  // ----------------------------
+  const [campsDryRun, setCampsDryRun] = useState(true);
+  const [campsMaxSites, setCampsMaxSites] = useState(5);
+  const [campsMaxRegsPerSite, setCampsMaxRegsPerSite] = useState(5);
+  const [campsMaxEvents, setCampsMaxEvents] = useState(25);
+  const [campsWorking, setCampsWorking] = useState(false);
 
-  // Promote stats
-  var [promoteWorking, setPromoteWorking] = useState(false);
-  var [promoteStats, setPromoteStats] = useState({ read: 0, created: 0, updated: 0, skipped: 0, errors: 0 });
-
-  // Load Sports
+  // ----------------------------
+  // Load sports
+  // ----------------------------
   async function loadSports() {
-    if (!SportEntity || !SportEntity.filter) return;
+    if (!SportEntity?.filter) return;
     setSportsLoading(true);
     try {
-      var rows = asArray(await SportEntity.filter({}));
-      var normalized = rows
-        .map(function (r) {
-          var id = r && r.id ? String(r.id) : "";
-          var name = safeString(r && (r.sport_name || r.name || r.sportName)) || "";
-          var active = true;
-          if (typeof (r && r.active) === "boolean") active = r.active;
-          return { id: id, name: name, active: active };
-        })
-        .filter(function (r) {
-          return r.id && r.name;
-        });
+      const rows = asArray(await SportEntity.filter({}));
+      const normalized = rows
+        .map((r) => ({
+          id: r?.id ? String(r.id) : "",
+          name: normalizeSportNameFromRow(r),
+          active: readActiveFlag(r),
+          raw: r,
+        }))
+        .filter((r) => r.id && r.name);
 
-      normalized.sort(function (a, b) {
-        return a.name.localeCompare(b.name);
-      });
-
+      normalized.sort((a, b) => a.name.localeCompare(b.name));
       setSports(normalized);
 
-      // Auto-select if none
       if (!selectedSportId && normalized.length) {
         setSelectedSportId(normalized[0].id);
         setSelectedSportName(normalized[0].name);
       } else if (selectedSportId) {
-        var hit = null;
-        for (var i = 0; i < normalized.length; i++) {
-          if (normalized[i].id === selectedSportId) hit = normalized[i];
-        }
+        const hit = normalized.find((s) => s.id === selectedSportId);
         if (hit) setSelectedSportName(hit.name);
       }
-    } catch (e) {
-      // noop
     } finally {
       setSportsLoading(false);
     }
   }
 
-  // Load Positions for sport
-  async function loadPositionsForSport(sportId) {
-    if (!PositionEntity || !PositionEntity.filter || !sportId) {
-      setPositions([]);
-      return;
-    }
-    setPositionsLoading(true);
-    try {
-      var rows = asArray(await PositionEntity.filter({ sport_id: sportId }));
-      var normalized = rows
-        .map(function (r) {
-          return {
-            id: r && r.id ? String(r.id) : "",
-            code: String((r && r.position_code) || "").trim(),
-            name: String((r && r.position_name) || "").trim(),
-          };
-        })
-        .filter(function (p) { return p.id; });
-
-      normalized.sort(function (a, b) {
-        return (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || "");
-      });
-
-      setPositions(normalized);
-    } catch (e2) {
-      setPositions([]);
-    } finally {
-      setPositionsLoading(false);
-    }
-  }
-
-  useEffect(function () {
-    loadSports();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await loadSports();
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(function () {
-    if (!selectedSportId) return;
-    loadPositionsForSport(selectedSportId);
+  // Update directory URL when sport changes (default suggestion)
+  useEffect(() => {
+    const guess = SPORTSUSA_DIRECTORY_BY_SPORT[String(selectedSportName || "").trim()] || "";
+    if (guess) setSportsUSASiteUrl(guess);
+  }, [selectedSportName]);
 
-    // Auto-fill SportsUSA directory URL when sport changes
-    var guess = SPORTSUSA_DIRECTORY_BY_SPORTNAME[String(selectedSportName || "").trim()];
-    if (guess) setSportsUSADirectoryUrl(guess);
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const selectedSportLabel = useMemo(() => {
+    if (!selectedSportId) return "";
+    return `${selectedSportName} (${selectedSportId})`;
   }, [selectedSportId, selectedSportName]);
 
   /* ----------------------------
-     CampDemo upsert
+     Upserts
   ----------------------------- */
-  async function upsertCampDemoByEventKey(payload) {
-    if (!CampDemoEntity || !CampDemoEntity.filter || !CampDemoEntity.create || !CampDemoEntity.update) {
-      throw new Error("CampDemo entity not available (expected entities.CampDemo).");
+  async function upsertSchoolBySourceKey({ school_name, logo_url, source_key, source_school_url }) {
+    if (!SchoolEntity?.filter || !SchoolEntity?.create || !SchoolEntity?.update) {
+      throw new Error("School entity not available.");
     }
-    var key = payload && payload.event_key;
-    if (!key) throw new Error("Missing event_key for CampDemo upsert");
 
-    var existing = [];
+    const name = safeString(school_name);
+    if (!name) throw new Error("Missing school_name.");
+
+    const key = safeString(source_key) || `name:${String(name).toLowerCase()}`;
+    const nowIso = new Date().toISOString();
+
+    // find by source_key first, else by school_name
+    let existing = [];
     try {
-      existing = await CampDemoEntity.filter({ event_key: key });
-    } catch (e) {
+      existing = asArray(await SchoolEntity.filter({ source_key: key }));
+    } catch {
       existing = [];
     }
 
-    var arr = asArray(existing);
-    if (arr.length > 0 && arr[0] && arr[0].id) {
-      await CampDemoEntity.update(arr[0].id, payload);
+    if (!existing.length) {
+      try {
+        existing = asArray(await SchoolEntity.filter({ school_name: name }));
+      } catch {
+        existing = [];
+      }
+    }
+
+    const payload = {
+      school_name: name,
+      logo_url: safeString(logo_url) || null,
+      source_platform: "sportsusa",
+      source_school_url: safeString(source_school_url) || null,
+      source_key: key,
+      active: true,
+      needs_review: false,
+      last_seen_at: nowIso,
+    };
+
+    if (existing.length && existing[0]?.id) {
+      await SchoolEntity.update(String(existing[0].id), payload);
+      return { id: String(existing[0].id), mode: "updated" };
+    }
+
+    const created = await SchoolEntity.create(payload);
+    const id = created?.id ? String(created.id) : null;
+    return { id, mode: "created" };
+  }
+
+  async function upsertSchoolSportSite({
+    school_id,
+    sport_id,
+    camp_site_url,
+    logo_url,
+    source_key,
+  }) {
+    if (!SchoolSportSiteEntity?.filter || !SchoolSportSiteEntity?.create || !SchoolSportSiteEntity?.update) {
+      throw new Error("SchoolSportSite entity not available.");
+    }
+
+    const sid = safeString(school_id);
+    const spid = safeString(sport_id);
+    const url = safeString(camp_site_url);
+    const key = safeString(source_key) || `sportsusa:${spid}:${String(url || "").toLowerCase()}`;
+
+    if (!sid || !spid || !url) throw new Error("Missing required school_id/sport_id/camp_site_url");
+
+    const nowIso = new Date().toISOString();
+
+    let existing = [];
+    try {
+      existing = asArray(await SchoolSportSiteEntity.filter({ school_id: sid, sport_id: spid }));
+    } catch {
+      existing = [];
+    }
+
+    // If multiple rows exist, we upsert the first (MVP safe)
+    const hit = existing.length ? existing[0] : null;
+
+    const payload = {
+      school_id: sid,
+      sport_id: spid,
+      camp_site_url: url,
+      logo_url: safeString(logo_url) || null,
+      source_platform: "sportsusa",
+      source_key: key,
+      active: true,
+      needs_review: false,
+      last_seen_at: nowIso,
+    };
+
+    if (hit?.id) {
+      await SchoolSportSiteEntity.update(String(hit.id), payload);
+      return { id: String(hit.id), mode: "updated" };
+    }
+
+    const created = await SchoolSportSiteEntity.create(payload);
+    const id = created?.id ? String(created.id) : null;
+    return { id, mode: "created" };
+  }
+
+  async function upsertCampDemoByEventKey(payload) {
+    if (!CampDemoEntity?.filter || !CampDemoEntity?.create || !CampDemoEntity?.update) {
+      throw new Error("CampDemo entity not available.");
+    }
+    const key = payload?.event_key;
+    if (!key) throw new Error("Missing event_key for CampDemo upsert.");
+
+    let existing = [];
+    try {
+      existing = asArray(await CampDemoEntity.filter({ event_key: key }));
+    } catch {
+      existing = [];
+    }
+
+    if (existing.length && existing[0]?.id) {
+      await CampDemoEntity.update(String(existing[0].id), payload);
       return "updated";
     }
 
@@ -344,736 +356,375 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     SportsUSA: Seed Schools + SchoolSportSite
-     Calls /functions/sportsUSASeedSchools
+     1) SportsUSA Seed Schools
   ----------------------------- */
-  async function upsertSchoolBySourceKeyOrName(item, runIso) {
-    if (!SchoolEntity || !SchoolEntity.filter || !SchoolEntity.create || !SchoolEntity.update) {
-      throw new Error("School entity not available.");
-    }
-
-    var schoolName = safeString(item && item.school_name);
-    if (!schoolName) return { action: "skip", reason: "missing_school_name" };
-
-    var sourceKey = safeString(item && item.source_key);
-    var normalizedName = lc(schoolName)
-      .replace(/[^a-z0-9 ]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    // 1) Try match by source_key (if you store it)
-    var existing = [];
-    try {
-      existing = sourceKey ? asArray(await SchoolEntity.filter({ source_key: sourceKey })) : [];
-    } catch (e0) {
-      existing = [];
-    }
-
-    // 2) Fallback: match by normalized_name
-    if (!existing.length) {
-      try {
-        existing = normalizedName ? asArray(await SchoolEntity.filter({ normalized_name: normalizedName })) : [];
-      } catch (e1) {
-        existing = [];
-      }
-    }
-
-    // 3) Fallback: match by school_name exact
-    if (!existing.length) {
-      try {
-        existing = asArray(await SchoolEntity.filter({ school_name: schoolName }));
-      } catch (e2) {
-        existing = [];
-      }
-    }
-
-    var payload = {
-      school_name: schoolName,
-      normalized_name: normalizedName,
-      school_type: "College/University",
-      active: true,
-      needs_review: true,
-      division: "Unknown",
-      conference: null,
-      city: null,
-      state: null,
-      country: "US",
-      logo_url: safeString(item && item.logo_url) || null,
-      website_url: safeString(item && item.view_site_url) || null,
-
-      source_platform: "sportsusa",
-      source_school_url: safeString(item && item.source_school_url) || safeString(item && item.view_site_url) || null,
-      source_key: sourceKey || null,
-      last_seen_at: runIso,
-      aliases_json: "[]",
-    };
-
-    if (existing.length && existing[0] && existing[0].id) {
-      await SchoolEntity.update(String(existing[0].id), payload);
-      return { action: "updated", school_id: String(existing[0].id) };
-    }
-
-    var created = await SchoolEntity.create(payload);
-    var newId = created && created.id ? String(created.id) : null;
-
-    // if create() doesn't return id, refetch by name
-    if (!newId) {
-      try {
-        var ref = asArray(await SchoolEntity.filter({ school_name: schoolName }));
-        if (ref.length && ref[0] && ref[0].id) newId = String(ref[0].id);
-      } catch (e3) {}
-    }
-
-    return { action: "created", school_id: newId };
-  }
-
-  async function upsertSchoolSportSite(schoolId, sportId, item, runIso) {
-    if (!SchoolSportSiteEntity || !SchoolSportSiteEntity.filter || !SchoolSportSiteEntity.create || !SchoolSportSiteEntity.update) {
-      throw new Error("SchoolSportSite entity not available.");
-    }
-
-    var campSiteUrl = safeString(item && (item.view_site_url || item.camp_site_url));
-    if (!schoolId || !sportId || !campSiteUrl) return { action: "skip", reason: "missing_fields" };
-
-    var sourceKey = safeString(item && item.source_key) || ("sportsusa:" + String(sportId) + ":" + lc(campSiteUrl));
-
-    // match by source_key first
-    var existing = [];
-    try {
-      existing = asArray(await SchoolSportSiteEntity.filter({ source_key: sourceKey }));
-    } catch (e0) {
-      existing = [];
-    }
-
-    // fallback: school_id + sport_id + camp_site_url
-    if (!existing.length) {
-      try {
-        existing = asArray(await SchoolSportSiteEntity.filter({ school_id: schoolId, sport_id: sportId, camp_site_url: campSiteUrl }));
-      } catch (e1) {
-        existing = [];
-      }
-    }
-
-    var payload = {
-      school_id: schoolId,
-      sport_id: sportId,
-      camp_site_url: campSiteUrl,
-      logo_url: safeString(item && item.logo_url) || null,
-      source_platform: "sportsusa",
-      source_key: sourceKey,
-      active: true,
-      needs_review: true,
-      last_seen_at: runIso,
-    };
-
-    if (existing.length && existing[0] && existing[0].id) {
-      await SchoolSportSiteEntity.update(String(existing[0].id), payload);
-      return { action: "updated" };
-    }
-
-    await SchoolSportSiteEntity.create(payload);
-    return { action: "created" };
-  }
-
   async function runSportsUSASeedSchools() {
-    if (!selectedSportId) return appendSportsUSALog("[SportsUSA] ERROR: Select a sport first.");
-    if (!safeString(sportsUSADirectoryUrl)) return appendSportsUSALog("[SportsUSA] ERROR: Provide SportsUSA directory URL (e.g., https://www.footballcampsusa.com).");
-    if (!SchoolEntity || !SchoolSportSiteEntity) return appendSportsUSALog("[SportsUSA] ERROR: School / SchoolSportSite entities not available.");
-
-    var runIso = new Date().toISOString();
+    if (!selectedSportId) return appendSportsUSA("[SportsUSA] ERROR: Select a sport first.");
+    if (!safeString(sportsUSASiteUrl)) return appendSportsUSA("[SportsUSA] ERROR: Provide SportsUSA directory URL.");
 
     setSportsUSAWorking(true);
-    setSportsUSAStats({ createdSchools: 0, updatedSchools: 0, createdSites: 0, updatedSites: 0, skipped: 0, errors: 0 });
-    setSportsUSALog("");
+    setLogSportsUSA("");
 
-    appendSportsUSALog("[SportsUSA] Starting: SportsUSA School Seed (" + selectedSportName + ") @ " + runIso);
-    appendSportsUSALog("[SportsUSA] DryRun=" + (sportsUSADryRun ? "true" : "false") + " | Limit=" + sportsUSALimit);
-    appendSportsUSALog("[SportsUSA] Directory=" + sportsUSADirectoryUrl);
+    const runIso = new Date().toISOString();
+    appendSportsUSA(`[SportsUSA] Starting: SportsUSA School Seed (${selectedSportName}) @ ${runIso}`);
+    appendSportsUSA(`[SportsUSA] DryRun=${sportsUSADryRun ? "true" : "false"} | Limit=${sportsUSALimit}`);
+    appendSportsUSA(`[SportsUSA] Directory URL: ${sportsUSASiteUrl}`);
 
     try {
-      var res = await fetch("/functions/sportsUSASeedSchools", {
+      // Call backend collector
+      const res = await fetch("/functions/sportsUSASeedSchools", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sportId: selectedSportId,
           sportName: selectedSportName,
-          siteUrl: sportsUSADirectoryUrl,
+          siteUrl: sportsUSASiteUrl,
           limit: sportsUSALimit,
-          dryRun: true, // collector always returns data; DB writes happen in AdminImport
+          dryRun: sportsUSADryRun,
         }),
       });
 
-      var data = await res.json().catch(function () { return null; });
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        appendSportsUSALog("[SportsUSA] ERROR: SportsUSA function ERROR (HTTP " + res.status + ")");
-        appendSportsUSALog(JSON.stringify(data || {}, null, 2));
+        appendSportsUSA(`[SportsUSA] ERROR: Collector HTTP ${res.status}`);
+        appendSportsUSA(JSON.stringify(data || {}, null, 2));
         return;
       }
 
-      var schools = asArray(data && data.schools);
-      var http = data && data.stats ? data.stats.http : null;
+      const schools = asArray(data?.schools);
+      appendSportsUSA(`[SportsUSA] SportsUSA fetched: schools_found=${data?.stats?.schools_found ?? schools.length} | http=${data?.stats?.http ?? "n/a"}`);
 
-      appendSportsUSALog("[SportsUSA] SportsUSA fetched: schools_found=" + schools.length + " | http=" + String(http || "n/a"));
-
-      var sample = schools.slice(0, 3);
+      const sample = schools.slice(0, 3);
       if (sample.length) {
-        appendSportsUSALog("[SportsUSA] SportsUSA sample (first " + sample.length + "):");
-        for (var i = 0; i < sample.length; i++) {
-          appendSportsUSALog(
-            '- name="' + (sample[i].school_name || "") + '" | logo="' + (sample[i].logo_url || "") + '" | view="' + (sample[i].view_site_url || "") + '"'
-          );
+        appendSportsUSA(`[SportsUSA] SportsUSA sample (first ${sample.length}):`);
+        for (let i = 0; i < sample.length; i++) {
+          appendSportsUSA(`- name="${sample[i]?.school_name || ""}" | logo="${sample[i]?.logo_url || ""}" | view="${sample[i]?.view_site_url || ""}"`);
         }
       }
 
       if (sportsUSADryRun) {
-        appendSportsUSALog("[SportsUSA] DryRun=true: no School / SchoolSportSite writes performed.");
+        appendSportsUSA("[SportsUSA] DryRun=true: no School / SchoolSportSite writes performed.");
         return;
       }
 
-      appendSportsUSALog("[SportsUSA] Writing " + schools.length + " rows to School + SchoolSportSite…");
+      if (!SchoolEntity || !SchoolSportSiteEntity) {
+        appendSportsUSA("[SportsUSA] ERROR: Missing School or SchoolSportSite entities in base44.");
+        return;
+      }
 
-      var createdSchools = 0;
-      var updatedSchools = 0;
-      var createdSites = 0;
-      var updatedSites = 0;
-      var skipped = 0;
-      var errors = 0;
+      appendSportsUSA(`[SportsUSA] Writing ${schools.length} rows to School + SchoolSportSite…`);
 
-      for (var j = 0; j < schools.length; j++) {
-        var item = schools[j];
+      let schoolCreated = 0;
+      let schoolUpdated = 0;
+      let siteCreated = 0;
+      let siteUpdated = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      for (let i = 0; i < schools.length; i++) {
+        const row = schools[i] || {};
+        const school_name = safeString(row.school_name);
+        const logo_url = safeString(row.logo_url);
+        const view_site_url = safeString(row.view_site_url);
+        const source_key = safeString(row.source_key) || `view:${String(view_site_url || "").toLowerCase()}`;
+
+        if (!school_name || !view_site_url) {
+          skipped += 1;
+          continue;
+        }
 
         try {
-          var r1 = await upsertSchoolBySourceKeyOrName(item, runIso);
-          if (r1.action === "skip") {
-            skipped += 1;
+          const sRes = await upsertSchoolBySourceKey({
+            school_name,
+            logo_url,
+            source_key,
+            source_school_url: view_site_url,
+          });
+
+          if (sRes.mode === "created") schoolCreated += 1;
+          if (sRes.mode === "updated") schoolUpdated += 1;
+
+          const school_id = sRes.id;
+          if (!school_id) {
+            errors += 1;
             continue;
           }
 
-          if (r1.action === "created") createdSchools += 1;
-          if (r1.action === "updated") updatedSchools += 1;
+          const siteRes = await upsertSchoolSportSite({
+            school_id,
+            sport_id: selectedSportId,
+            camp_site_url: view_site_url,
+            logo_url,
+            source_key: `sportsusa:${selectedSportId}:${String(view_site_url).toLowerCase()}`,
+          });
 
-          var schoolId = r1.school_id;
-
-          var r2 = await upsertSchoolSportSite(schoolId, selectedSportId, item, runIso);
-          if (r2.action === "created") createdSites += 1;
-          if (r2.action === "updated") updatedSites += 1;
-
-          if ((j + 1) % 10 === 0) {
-            appendSportsUSALog(
-              "[SportsUSA] Progress " +
-                String(j + 1) +
-                "/" +
-                String(schools.length) +
-                " | Schools c/u=" +
-                String(createdSchools) +
-                "/" +
-                String(updatedSchools) +
-                " | Sites c/u=" +
-                String(createdSites) +
-                "/" +
-                String(updatedSites) +
-                " | skipped=" +
-                String(skipped) +
-                " errors=" +
-                String(errors)
-            );
-          }
-
-          await sleep(25);
-        } catch (e4) {
+          if (siteRes.mode === "created") siteCreated += 1;
+          if (siteRes.mode === "updated") siteUpdated += 1;
+        } catch (e) {
           errors += 1;
-          appendSportsUSALog("[SportsUSA] ERROR row #" + String(j + 1) + ": " + String((e4 && e4.message) || e4));
+          appendSportsUSA(`[SportsUSA] ERROR row #${i + 1}: ${String(e?.message || e)}`);
         }
 
-        setSportsUSAStats({
-          createdSchools: createdSchools,
-          updatedSchools: updatedSchools,
-          createdSites: createdSites,
-          updatedSites: updatedSites,
-          skipped: skipped,
-          errors: errors,
-        });
+        if ((i + 1) % 10 === 0) {
+          appendSportsUSA(
+            `[SportsUSA] Progress ${i + 1}/${schools.length} | Schools c/u=${schoolCreated}/${schoolUpdated} | Sites c/u=${siteCreated}/${siteUpdated} | skipped=${skipped} errors=${errors}`
+          );
+        }
+
+        await sleep(35);
       }
 
-      appendSportsUSALog(
-        "[SportsUSA] Writes done. Schools: created=" +
-          String(createdSchools) +
-          " updated=" +
-          String(updatedSchools) +
-          " | Sites: created=" +
-          String(createdSites) +
-          " updated=" +
-          String(updatedSites) +
-          " | skipped=" +
-          String(skipped) +
-          " errors=" +
-          String(errors)
+      appendSportsUSA(
+        `[SportsUSA] Writes done. Schools: created=${schoolCreated} updated=${schoolUpdated} | Sites: created=${siteCreated} updated=${siteUpdated} | skipped=${skipped} errors=${errors}`
       );
-    } catch (e5) {
-      appendSportsUSALog("[SportsUSA] ERROR: " + String((e5 && e5.message) || e5));
+    } catch (e) {
+      appendSportsUSA(`[SportsUSA] ERROR: ${String(e?.message || e)}`);
     } finally {
       setSportsUSAWorking(false);
     }
   }
 
   /* ----------------------------
-     SportsUSA: Ingest Camps
-     Reads SchoolSportSite rows for selected sport,
-     calls /functions/sportsUSAIngestCamps,
-     writes accepted into CampDemo (unless dry run)
+     2) Camps ingest (from SchoolSportSite)
   ----------------------------- */
-  async function runSportsUSAIngestCamps() {
-    if (!selectedSportId) return appendSportsUSACampsLog("[Camps] ERROR: Select a sport first.");
-    if (!SchoolSportSiteEntity || !SchoolSportSiteEntity.filter) return appendSportsUSACampsLog("[Camps] ERROR: SchoolSportSite entity not available.");
-    if (!CampDemoEntity) return appendSportsUSACampsLog("[Camps] ERROR: CampDemo entity not available.");
-
-    var runIso = new Date().toISOString();
+  async function runSportsUSACampsIngest() {
+    if (!selectedSportId) return appendCamps("[Camps] ERROR: Select a sport first.");
+    if (!SchoolSportSiteEntity?.filter) return appendCamps("[Camps] ERROR: SchoolSportSite entity missing.");
+    if (!CampDemoEntity) return appendCamps("[Camps] ERROR: CampDemo entity missing.");
 
     setCampsWorking(true);
-    setCampsWriteStats({ created: 0, updated: 0, skipped: 0, errors: 0 });
-    setSportsUSACampsLog("");
+    setLogCamps("");
 
-    appendSportsUSACampsLog("[Camps] Starting: SportsUSA Camps Ingest (" + selectedSportName + ") @ " + runIso);
-    appendSportsUSACampsLog(
-      "[Camps] DryRun=" +
-        (campsDryRun ? "true" : "false") +
-        " | MaxSites=" +
-        String(campsMaxSites) +
-        " | MaxRegsPerSite=" +
-        String(campsMaxRegsPerSite) +
-        " | MaxEvents=" +
-        String(campsMaxEvents)
+    const runIso = new Date().toISOString();
+    appendCamps(`[Camps] Starting: SportsUSA Camps Ingest (${selectedSportName}) @ ${runIso}`);
+    appendCamps(
+      `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${campsMaxSites} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents}`
     );
 
     try {
-      // Pull active sites for this sport
-      var siteRows = [];
-      try {
-        // Some Base44 filters may not support boolean equals reliably; if so, remove active filter.
-        siteRows = asArray(await SchoolSportSiteEntity.filter({ sport_id: selectedSportId }));
-      } catch (e0) {
-        siteRows = [];
-      }
-
-      // Normalize + only active
-      var sites = siteRows
-        .map(function (r) {
-          var active = true;
-          if (typeof (r && r.active) === "boolean") active = r.active;
-          return {
-            id: r && r.id ? String(r.id) : "",
-            school_id: r && r.school_id ? String(r.school_id) : "",
-            camp_site_url: safeString(r && r.camp_site_url),
-            logo_url: safeString(r && r.logo_url) || null,
-            active: active,
-          };
+      // Load per-sport sites
+      const siteRows = asArray(
+        await SchoolSportSiteEntity.filter({
+          sport_id: selectedSportId,
+          active: true,
         })
-        .filter(function (s) {
-          return s.school_id && s.camp_site_url && s.active;
-        });
+      );
 
-      appendSportsUSACampsLog("[Camps] Loaded SchoolSportSite rows: " + String(sites.length) + " (active)");
+      // Normalize + keep only usable URLs
+      const sites = siteRows
+        .map((r) => ({
+          id: r?.id ? String(r.id) : "",
+          school_id: safeString(r?.school_id),
+          camp_site_url: safeString(r?.camp_site_url),
+          logo_url: safeString(r?.logo_url),
+          active: r?.active !== false,
+        }))
+        .filter((s) => s.school_id && s.camp_site_url && s.active);
 
-      if (!sites.length) {
-        appendSportsUSACampsLog("[Camps] Nothing to crawl. Run SportsUSA Seed Schools first, or check SchoolSportSite.active.");
-        return;
-      }
+      appendCamps(`[Camps] Loaded SchoolSportSite rows: ${sites.length} (active)`);
 
-      // Limit client-side list size
-      var sendSites = sites.slice(0, campsMaxSites);
+      const payload = {
+        sportId: selectedSportId,
+        sportName: selectedSportName,
+        dryRun: true, // always dry-run on function; DB writes happen here
+        maxSites: campsMaxSites,
+        maxRegsPerSite: campsMaxRegsPerSite,
+        maxEvents: campsMaxEvents,
+        sites: sites.slice(0, Math.max(1, campsMaxSites)),
+      };
 
-      var res = await fetch("/functions/sportsUSAIngestCamps", {
+      // Call backend collector+parser
+      const res = await fetch("/functions/sportsUSAIngestCamps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sportId: selectedSportId,
-          sportName: selectedSportName,
-          dryRun: true, // function collects + returns; AdminImport controls DB writes
-          maxSites: campsMaxSites,
-          maxRegsPerSite: campsMaxRegsPerSite,
-          maxEvents: campsMaxEvents,
-          sites: sendSites,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      var data = await res.json().catch(function () { return null; });
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        appendSportsUSACampsLog("[Camps] ERROR: sportsUSAIngestCamps function ERROR (HTTP " + res.status + ")");
-        appendSportsUSACampsLog(JSON.stringify(data || {}, null, 2));
+        appendCamps(`[Camps] ERROR: Function HTTP ${res.status}`);
+        appendCamps(JSON.stringify(data || {}, null, 2));
         return;
       }
 
-      var stats = data && data.stats ? data.stats : {};
-      appendSportsUSACampsLog(
-        "[Camps] Collector stats: processedSites=" +
-          String(stats.processedSites || 0) +
-          " processedRegs=" +
-          String(stats.processedRegs || 0) +
-          " accepted=" +
-          String(stats.accepted || 0) +
-          " rejected=" +
-          String(stats.rejected || 0) +
-          " errors=" +
-          String(stats.errors || 0)
+      appendCamps(
+        `[Camps] Function stats: processedSites=${data?.stats?.processedSites ?? 0} processedRegs=${data?.stats?.processedRegs ?? 0} accepted=${data?.stats?.accepted ?? 0} rejected=${data?.stats?.rejected ?? 0} errors=${data?.stats?.errors ?? 0}`
       );
+      appendCamps(`[Camps] Function version: ${data?.debug?.version || "MISSING"}`);
 
-      var accepted = asArray(data && data.accepted);
-
-      if (accepted.length) {
-        appendSportsUSACampsLog("[Camps] Accepted sample (first " + String(Math.min(3, accepted.length)) + "):");
-        for (var i = 0; i < Math.min(3, accepted.length); i++) {
-          var a = accepted[i];
-          appendSportsUSACampsLog(
-            '- camp="' + (a.camp_name || "") + '" | start=' + (a.start_date || "") + " | url=" + (a.link_url || "")
+      // Print per-site debug (THIS is what will explain processedRegs=0)
+      const dbgSites = asArray(data?.debug?.sites);
+      if (dbgSites.length) {
+        appendCamps(`[Camps] Site debug (first ${Math.min(5, dbgSites.length)}):`);
+        for (let i = 0; i < Math.min(5, dbgSites.length); i++) {
+          const s = dbgSites[i] || {};
+          appendCamps(
+            `- school_id=${s.school_id || ""} http=${s.http ?? "n/a"} html=${s.htmlLooksLike || "n/a"} regLinks=${s.foundRegLinks ?? 0} sample=${(s.regLinksSample || []).slice(0, 2).join(" | ")}`
           );
+          if (s.notes && s.notes.length) appendCamps(`  notes=${s.notes.join(", ")}`);
         }
       }
 
-      if (campsDryRun) {
-        appendSportsUSACampsLog("[Camps] DryRun=true: no CampDemo writes performed.");
-        return;
-      }
+      const accepted = asArray(data?.accepted);
 
       if (!accepted.length) {
-        appendSportsUSACampsLog("[Camps] No accepted camps to write.");
+        appendCamps("[Camps] No accepted events returned from function.");
+        // If you want deeper debug, print a snippet of the first site’s HTML
+        if (dbgSites.length && dbgSites[0]?.snippet) {
+          appendCamps("[Camps] First site HTML snippet (debug):");
+          appendCamps(String(dbgSites[0].snippet));
+        }
         return;
       }
 
-      // Write to CampDemo (upsert by event_key)
-      appendSportsUSACampsLog("[Camps] Writing " + String(accepted.length) + " CampDemo rows…");
-
-      var created = 0;
-      var updated = 0;
-      var skipped = 0;
-      var errors = 0;
-
-      for (var j = 0; j < accepted.length; j++) {
-        var p = accepted[j] || {};
-
-        try {
-          // Ensure schema alignment + required fields
-          var school_id = safeString(p.school_id);
-          var sport_id = safeString(p.sport_id) || selectedSportId;
-          var camp_name = safeString(p.camp_name);
-          var start_date = toISODate(p.start_date);
-          var season_year = safeNumber(p.season_year);
-
-          var program_id = safeString(p.program_id) || seedProgramId(school_id, camp_name);
-          var source_platform = safeString(p.source_platform) || "sportsusa";
-          var link_url = safeString(p.link_url);
-
-          if (!school_id || !sport_id || !camp_name || !start_date || !season_year || !program_id || !link_url) {
-            skipped += 1;
-            appendSportsUSACampsLog("[Camps] SKIP #" + String(j + 1) + ": missing required fields");
-            continue;
-          }
-
-          var payload = {
-            school_id: school_id,
-            sport_id: sport_id,
-            camp_name: camp_name,
-            start_date: start_date,
-            end_date: toISODate(p.end_date) || null,
-            city: safeString(p.city) || null,
-            state: safeString(p.state) || null,
-            position_ids: asArray(p.position_ids),
-            price: safeNumber(p.price),
-            link_url: link_url,
-            notes: safeString(p.notes) || null,
-
-            season_year: season_year,
-            program_id: program_id,
-            event_key: safeString(p.event_key) || buildEventKey({
-              source_platform: source_platform,
-              program_id: program_id,
-              start_date: start_date,
-              link_url: link_url,
-              source_url: safeString(p.source_url),
-            }),
-            source_platform: source_platform,
-            source_url: safeString(p.source_url) || link_url,
-            last_seen_at: safeString(p.last_seen_at) || new Date().toISOString(),
-            content_hash: safeString(p.content_hash) || simpleHash(p),
-
-            event_dates_raw: safeString(p.event_dates_raw) || null,
-            grades_raw: safeString(p.grades_raw) || null,
-            register_by_raw: safeString(p.register_by_raw) || null,
-            price_raw: safeString(p.price_raw) || null,
-            price_min: safeNumber(p.price_min),
-            price_max: safeNumber(p.price_max),
-            sections_json: safeObject(p.sections_json) || null,
-          };
-
-          var r = await upsertCampDemoByEventKey(payload);
-          if (r === "created") created += 1;
-          if (r === "updated") updated += 1;
-
-          if ((j + 1) % 10 === 0) {
-            appendSportsUSACampsLog("[Camps] Write progress: " + String(j + 1) + "/" + String(accepted.length));
-          }
-          await sleep(35);
-        } catch (e2) {
-          errors += 1;
-          appendSportsUSACampsLog("[Camps] ERROR write #" + String(j + 1) + ": " + String((e2 && e2.message) || e2));
+      // If DryRun, do not write
+      if (campsDryRun) {
+        appendCamps("[Camps] DryRun=true: no CampDemo writes performed.");
+        // show a few accepted samples
+        const sample = accepted.slice(0, 5);
+        appendCamps(`[Camps] Accepted sample (first ${sample.length}):`);
+        for (let i = 0; i < sample.length; i++) {
+          appendCamps(`- ${sample[i]?.camp_name || ""} | ${sample[i]?.start_date || ""} | ${sample[i]?.link_url || ""}`);
         }
-
-        setCampsWriteStats({ created: created, updated: updated, skipped: skipped, errors: errors });
+        return;
       }
 
-      appendSportsUSACampsLog(
-        "[Camps] CampDemo writes done. created=" +
-          String(created) +
-          " updated=" +
-          String(updated) +
-          " skipped=" +
-          String(skipped) +
-          " errors=" +
-          String(errors)
-      );
-    } catch (e3) {
-      appendSportsUSACampsLog("[Camps] ERROR: " + String((e3 && e3.message) || e3));
+      // Write to CampDemo
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      appendCamps(`[Camps] Writing ${accepted.length} events → CampDemo (upsert by event_key)…`);
+
+      for (let i = 0; i < accepted.length; i++) {
+        const item = accepted[i] || {};
+
+        const school_id = safeString(item.school_id);
+        const sport_id = safeString(item.sport_id);
+        const camp_name = safeString(item.camp_name);
+        const start_date = safeString(item.start_date);
+        const end_date = safeString(item.end_date);
+
+        const event_key = safeString(item.event_key);
+        const program_id = safeString(item.program_id);
+        const season_year = safeNumber(item.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
+
+        if (!school_id || !sport_id || !camp_name || !start_date || !event_key || !program_id || season_year == null) {
+          skipped += 1;
+          continue;
+        }
+
+        const payloadRow = {
+          school_id,
+          sport_id,
+          camp_name,
+          start_date,
+          end_date: end_date || null,
+          city: null,
+          state: null,
+          position_ids: [],
+          price: null,
+          link_url: safeString(item.link_url) || null,
+          notes: null,
+
+          season_year,
+          program_id,
+          event_key,
+          source_platform: safeString(item.source_platform) || "sportsusa",
+          source_url: safeString(item.source_url) || null,
+          last_seen_at: safeString(item.last_seen_at) || new Date().toISOString(),
+          content_hash: safeString(item.content_hash) || simpleHash(item),
+
+          event_dates_raw: safeString(item.event_dates_raw) || null,
+          grades_raw: safeString(item.grades_raw) || null,
+          register_by_raw: safeString(item.register_by_raw) || null,
+          price_raw: safeString(item.price_raw) || null,
+          price_min: safeNumber(item.price_min),
+          price_max: safeNumber(item.price_max),
+          sections_json: safeObject(item.sections_json) || null,
+        };
+
+        try {
+          const r = await upsertCampDemoByEventKey(payloadRow);
+          if (r === "created") created += 1;
+          if (r === "updated") updated += 1;
+        } catch (e) {
+          errors += 1;
+          appendCamps(`[Camps] ERROR write #${i + 1}: ${String(e?.message || e)}`);
+        }
+
+        if ((i + 1) % 10 === 0) appendCamps(`[Camps] Progress ${i + 1}/${accepted.length} c/u=${created}/${updated} skipped=${skipped} errors=${errors}`);
+        await sleep(35);
+      }
+
+      appendCamps(`[Camps] Writes done. created=${created} updated=${updated} skipped=${skipped} errors=${errors}`);
+    } catch (e) {
+      appendCamps(`[Camps] ERROR: ${String(e?.message || e)}`);
     } finally {
       setCampsWorking(false);
     }
   }
 
-  /* ----------------------------
-     Promote CampDemo → Camp
-     (uses your existing Camp model logic)
-  ----------------------------- */
-  async function upsertCampByEventKey(payload) {
-    var key = payload && payload.event_key;
-    if (!key) throw new Error("Missing event_key for upsert");
-
-    var existing = [];
-    try {
-      existing = await base44.entities.Camp.filter({ event_key: key });
-    } catch (e) {
-      existing = [];
-    }
-
-    var arr = asArray(existing);
-    if (arr.length > 0 && arr[0] && arr[0].id) {
-      await base44.entities.Camp.update(arr[0].id, payload);
-      return "updated";
-    }
-
-    await base44.entities.Camp.create(payload);
-    return "created";
-  }
-
-  function buildSafeCampPayloadFromDemoRow(r, runIso) {
-    var school_id = safeString(r && r.school_id);
-    var sport_id = safeString(r && r.sport_id);
-    var camp_name = safeString(r && (r.camp_name || r.name));
-
-    var start_date = toISODate(r && r.start_date);
-    var end_date = toISODate(r && r.end_date);
-
-    if (!school_id || !sport_id || !camp_name || !start_date) {
-      return { error: "Missing required fields (school_id, sport_id, camp_name, start_date)" };
-    }
-
-    var city = safeString(r && r.city);
-    var state = safeString(r && r.state);
-    var position_ids = normalizeStringArray(r && r.position_ids);
-
-    var price = safeNumber(r && r.price);
-
-    var link_url = safeString(r && (r.link_url || r.url));
-    var source_url = safeString(r && r.source_url) || link_url;
-
-    var season_year = safeNumber(r && r.season_year);
-    if (!season_year && lc(selectedSportName) === "football") season_year = safeNumber(computeSeasonYearFootball(start_date));
-    if (!season_year) {
-      var m = start_date.match(/^(\d{4})-/);
-      season_year = m && m[1] ? Number(m[1]) : null;
-    }
-
-    var source_platform = safeString(r && r.source_platform) || "seed";
-    var program_id = safeString(r && r.program_id) || seedProgramId(school_id, camp_name);
-
-    var event_key =
-      safeString(r && r.event_key) ||
-      buildEventKey({
-        source_platform: source_platform,
-        program_id: program_id,
-        start_date: start_date,
-        link_url: link_url,
-        source_url: source_url,
-      });
-
-    var content_hash =
-      safeString(r && r.content_hash) ||
-      simpleHash({
-        school_id: school_id,
-        sport_id: sport_id,
-        camp_name: camp_name,
-        start_date: start_date,
-        end_date: end_date,
-        city: city,
-        state: state,
-        position_ids: position_ids,
-        price: price,
-        link_url: link_url,
-        notes: safeString(r && r.notes),
-      });
-
-    var payload = {
-      school_id: school_id,
-      sport_id: sport_id,
-      camp_name: camp_name,
-      start_date: start_date,
-      end_date: end_date || null,
-      city: city || null,
-      state: state || null,
-      position_ids: position_ids,
-      price: price !== null && price !== undefined ? price : null,
-      link_url: link_url || null,
-      notes: safeString(r && r.notes) || null,
-
-      season_year: season_year !== null && season_year !== undefined ? season_year : null,
-      program_id: program_id,
-      event_key: event_key,
-      source_platform: source_platform,
-      source_url: source_url || null,
-      last_seen_at: runIso,
-      content_hash: content_hash,
-
-      event_dates_raw: safeString(r && r.event_dates_raw) || null,
-      grades_raw: safeString(r && r.grades_raw) || null,
-      register_by_raw: safeString(r && r.register_by_raw) || null,
-      price_raw: safeString(r && r.price_raw) || null,
-      price_min: safeNumber(r && r.price_min),
-      price_max: safeNumber(r && r.price_max),
-      sections_json: safeObject(tryParseJson(r && r.sections_json)) || null,
-    };
-
-    return { payload: payload };
-  }
-
-  async function promoteCampDemoToCamp() {
-    var runIso = new Date().toISOString();
-    setPromoteWorking(true);
-    setPromoteLog("");
-    setPromoteStats({ read: 0, created: 0, updated: 0, skipped: 0, errors: 0 });
-
-    appendPromoteLog("[Promote] Starting: CampDemo → Camp @ " + runIso);
-
-    var demoRows = [];
-    try {
-      demoRows = asArray(await base44.entities.CampDemo.filter({ sport_id: selectedSportId }));
-    } catch (e) {
-      appendPromoteLog("[Promote] ERROR reading CampDemo: " + String((e && e.message) || e));
-      setPromoteWorking(false);
-      return;
-    }
-
-    appendPromoteLog("[Promote] Found CampDemo rows for sport: " + String(demoRows.length));
-    setPromoteStats(function (s) {
-      return { read: demoRows.length, created: 0, updated: 0, skipped: 0, errors: 0 };
-    });
-
-    var created = 0;
-    var updated = 0;
-    var skipped = 0;
-    var errors = 0;
-
-    for (var i = 0; i < demoRows.length; i++) {
-      var r = demoRows[i];
-
-      try {
-        var built = buildSafeCampPayloadFromDemoRow(r, runIso);
-        if (built.error) {
-          skipped += 1;
-          appendPromoteLog("[Promote] SKIP #" + String(i + 1) + ": " + built.error);
-          continue;
-        }
-
-        var result = await upsertCampByEventKey(built.payload);
-
-        if (result === "created") created += 1;
-        if (result === "updated") updated += 1;
-
-        if ((i + 1) % 10 === 0) appendPromoteLog("[Promote] Progress: " + String(i + 1) + "/" + String(demoRows.length));
-        await sleep(50);
-      } catch (e2) {
-        errors += 1;
-        appendPromoteLog("[Promote] ERROR #" + String(i + 1) + ": " + String((e2 && e2.message) || e2));
-      }
-
-      setPromoteStats({ read: demoRows.length, created: created, updated: updated, skipped: skipped, errors: errors });
-    }
-
-    appendPromoteLog("[Promote] Done. created=" + String(created) + " updated=" + String(updated) + " skipped=" + String(skipped) + " errors=" + String(errors));
-    setPromoteWorking(false);
-  }
-
   return (
     <div className="min-h-screen bg-slate-50 p-4">
-      <div className="max-w-3xl mx-auto space-y-4">
+      <div className="max-w-4xl mx-auto space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-2xl font-bold text-deep-navy">Admin Import</div>
             <div className="text-sm text-slate-600">
-              Select a sport once. All tools below run off that selection.
+              SportsUSA seed → School/SchoolSportSite → Camps ingest → CampDemo.
             </div>
           </div>
-
-          <Button variant="outline" onClick={function () { nav(ROUTES.Workspace); }}>
+          <Button variant="outline" onClick={() => nav(ROUTES.Workspace)}>
             Back to Workspace
           </Button>
         </div>
 
-        {/* Global sport selector */}
+        {/* ✅ Single sport selector (drives everything) */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">Sport Selection</div>
-          <div className="mt-3">
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Sport</label>
-            <select
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-              value={selectedSportId}
-              onChange={function (e) {
-                var id = e.target.value;
-                var hit = null;
-                for (var i = 0; i < sports.length; i++) {
-                  if (sports[i].id === id) hit = sports[i];
-                }
-                setSelectedSportId(id);
-                setSelectedSportName(hit ? hit.name : "");
-              }}
-              disabled={sportsLoading || sportsUSAWorking || campsWorking || promoteWorking}
-            >
-              <option value="">Select…</option>
-              {sports.map(function (s) {
-                return (
+          <div className="font-semibold text-deep-navy">Select Sport</div>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Sport</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                value={selectedSportId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const hit = sports.find((x) => x.id === id) || null;
+                  setSelectedSportId(id);
+                  setSelectedSportName(hit?.name || "");
+                }}
+                disabled={sportsLoading || sportsUSAWorking || campsWorking}
+              >
+                <option value="">Select…</option>
+                {sports.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} {s.active ? "" : "(Inactive)"}
                   </option>
-                );
-              })}
-            </select>
-
-            <div className="mt-2 flex gap-2">
+                ))}
+              </select>
+              <div className="mt-1 text-[11px] text-slate-500">
+                {selectedSportId ? `Selected: ${selectedSportLabel}` : "Choose a sport to enable tools below."}
+              </div>
+            </div>
+            <div className="flex items-end">
               <Button variant="outline" onClick={loadSports} disabled={sportsLoading}>
                 {sportsLoading ? "Refreshing…" : "Refresh Sports"}
               </Button>
             </div>
-
-            <div className="mt-3 text-[11px] text-slate-500">
-              Positions loaded for this sport: <b>{positionsLoading ? "Loading…" : String(positions.length)}</b>
-            </div>
           </div>
         </Card>
 
-        {/* SportsUSA Seed Schools */}
+        {/* ✅ SportsUSA Seed Schools */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">SportsUSA: Seed Schools + SchoolSportSite</div>
           <div className="text-sm text-slate-600 mt-1">
-            Pulls the directory (e.g., footballcampsusa) and writes:
-            <b> School</b> + <b>SchoolSportSite</b> (camp_site_url).
+            Pulls directory tiles from SportsUSA (footballcampsusa, etc.), then upserts:
+            <b> School</b> (logo) + <b>SchoolSportSite</b> (camp_site_url per sport).
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1081,13 +732,13 @@ export default function AdminImport() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">SportsUSA Directory URL</label>
               <input
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={sportsUSADirectoryUrl}
-                onChange={function (e) { setSportsUSADirectoryUrl(e.target.value); }}
-                placeholder="https://www.footballcampsusa.com"
-                disabled={sportsUSAWorking || campsWorking || promoteWorking}
+                value={sportsUSASiteUrl}
+                onChange={(e) => setSportsUSASiteUrl(e.target.value)}
+                placeholder="https://www.footballcampsusa.com/"
+                disabled={sportsUSAWorking || !selectedSportId}
               />
               <div className="mt-1 text-[11px] text-slate-500">
-                This is the directory listing page (not the individual school camp site).
+                This is the directory site (not the school camp site). Defaults based on sport name.
               </div>
             </div>
 
@@ -1098,10 +749,10 @@ export default function AdminImport() {
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   type="number"
                   value={sportsUSALimit}
-                  onChange={function (e) { setSportsUSALimit(Number(e.target.value || 0)); }}
+                  onChange={(e) => setSportsUSALimit(Number(e.target.value || 0))}
                   min={10}
-                  max={1000}
-                  disabled={sportsUSAWorking}
+                  max={2000}
+                  disabled={sportsUSAWorking || !selectedSportId}
                 />
               </div>
               <div className="flex items-end gap-2">
@@ -1109,8 +760,8 @@ export default function AdminImport() {
                   <input
                     type="checkbox"
                     checked={sportsUSADryRun}
-                    onChange={function (e) { setSportsUSADryRun(e.target.checked); }}
-                    disabled={sportsUSAWorking}
+                    onChange={(e) => setSportsUSADryRun(e.target.checked)}
+                    disabled={sportsUSAWorking || !selectedSportId}
                   />
                   Dry Run
                 </label>
@@ -1119,46 +770,33 @@ export default function AdminImport() {
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              onClick={runSportsUSASeedSchools}
-              disabled={!selectedSportId || sportsUSAWorking || campsWorking || promoteWorking}
-            >
-              {sportsUSAWorking ? "Running…" : sportsUSADryRun ? "Run Seed (Dry Run)" : "Run Seed → Write School + Site"}
+            <Button onClick={runSportsUSASeedSchools} disabled={!selectedSportId || sportsUSAWorking || campsWorking}>
+              {sportsUSAWorking ? "Running…" : sportsUSADryRun ? "Run Seed (Dry Run)" : "Run Seed → Write"}
             </Button>
 
             <Button
               variant="outline"
-              onClick={function () { setSportsUSALog(""); }}
+              onClick={() => setLogSportsUSA("")}
               disabled={sportsUSAWorking}
             >
               Clear Log
             </Button>
           </div>
 
-          <div className="mt-4 text-sm text-slate-700">
-            <div className="flex flex-wrap gap-4">
-              <span><b>Schools Created:</b> {sportsUSAStats.createdSchools}</span>
-              <span><b>Schools Updated:</b> {sportsUSAStats.updatedSchools}</span>
-              <span><b>Sites Created:</b> {sportsUSAStats.createdSites}</span>
-              <span><b>Sites Updated:</b> {sportsUSAStats.updatedSites}</span>
-              <span><b>Errors:</b> {sportsUSAStats.errors}</span>
-            </div>
-          </div>
-
           <div className="mt-4">
-            <div className="text-xs text-slate-500 mb-1">Log</div>
+            <div className="text-xs text-slate-500 mb-1">SportsUSA Log</div>
             <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
-              {sportsUSALog || "—"}
+              {logSportsUSA || "—"}
             </pre>
           </div>
         </Card>
 
-        {/* SportsUSA Ingest Camps */}
+        {/* ✅ Camps ingest */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">SportsUSA: Ingest Camps → CampDemo</div>
+          <div className="font-semibold text-deep-navy">Camps: Ingest from SchoolSportSite → CampDemo</div>
           <div className="text-sm text-slate-600 mt-1">
-            Crawls <b>SchoolSportSite.camp_site_url</b> for this sport, finds registration pages,
-            extracts dates/prices, and writes into <b>CampDemo</b>.
+            Reads <b>SchoolSportSite</b> for the selected sport (camp_site_url), extracts registration links,
+            fetches registration pages, parses details, and writes to <b>CampDemo</b>.
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -1168,10 +806,10 @@ export default function AdminImport() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 type="number"
                 value={campsMaxSites}
-                onChange={function (e) { setCampsMaxSites(Number(e.target.value || 0)); }}
+                onChange={(e) => setCampsMaxSites(Number(e.target.value || 0))}
                 min={1}
-                max={250}
-                disabled={campsWorking}
+                max={200}
+                disabled={campsWorking || !selectedSportId}
               />
             </div>
 
@@ -1181,10 +819,10 @@ export default function AdminImport() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 type="number"
                 value={campsMaxRegsPerSite}
-                onChange={function (e) { setCampsMaxRegsPerSite(Number(e.target.value || 0)); }}
+                onChange={(e) => setCampsMaxRegsPerSite(Number(e.target.value || 0))}
                 min={1}
-                max={25}
-                disabled={campsWorking}
+                max={50}
+                disabled={campsWorking || !selectedSportId}
               />
             </div>
 
@@ -1194,20 +832,20 @@ export default function AdminImport() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 type="number"
                 value={campsMaxEvents}
-                onChange={function (e) { setCampsMaxEvents(Number(e.target.value || 0)); }}
-                min={10}
-                max={500}
-                disabled={campsWorking}
+                onChange={(e) => setCampsMaxEvents(Number(e.target.value || 0))}
+                min={5}
+                max={2000}
+                disabled={campsWorking || !selectedSportId}
               />
             </div>
 
-            <div className="flex items-end">
+            <div className="flex items-end gap-2">
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input
                   type="checkbox"
                   checked={campsDryRun}
-                  onChange={function (e) { setCampsDryRun(e.target.checked); }}
-                  disabled={campsWorking}
+                  onChange={(e) => setCampsDryRun(e.target.checked)}
+                  disabled={campsWorking || !selectedSportId}
                 />
                 Dry Run
               </label>
@@ -1215,92 +853,29 @@ export default function AdminImport() {
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              onClick={runSportsUSAIngestCamps}
-              disabled={!selectedSportId || campsWorking || sportsUSAWorking || promoteWorking}
-            >
-              {campsWorking ? "Running…" : campsDryRun ? "Run Camps Ingest (Dry Run)" : "Run Camps Ingest → Write CampDemo"}
+            <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || campsWorking || sportsUSAWorking}>
+              {campsWorking ? "Running…" : campsDryRun ? "Run Camps (Dry Run)" : "Run Camps → Write CampDemo"}
             </Button>
 
-            <Button
-              variant="outline"
-              onClick={function () { setSportsUSACampsLog(""); }}
-              disabled={campsWorking}
-            >
+            <Button variant="outline" onClick={() => setLogCamps("")} disabled={campsWorking}>
               Clear Log
             </Button>
           </div>
 
-          <div className="mt-4 text-sm text-slate-700">
-            <div className="flex flex-wrap gap-4">
-              <span><b>CampDemo Created:</b> {campsWriteStats.created}</span>
-              <span><b>CampDemo Updated:</b> {campsWriteStats.updated}</span>
-              <span><b>Skipped:</b> {campsWriteStats.skipped}</span>
-              <span><b>Errors:</b> {campsWriteStats.errors}</span>
-            </div>
-          </div>
-
           <div className="mt-4">
-            <div className="text-xs text-slate-500 mb-1">Log</div>
+            <div className="text-xs text-slate-500 mb-1">Camps Log</div>
             <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
-              {sportsUSACampsLog || "—"}
+              {logCamps || "—"}
             </pre>
           </div>
 
           <div className="mt-2 text-[11px] text-slate-500">
-            If you get “function not found” KeyError, confirm the backend file is created as:
-            <b> /functions/sportsUSAIngestCamps.js</b> and saved.
-          </div>
-        </Card>
-
-        {/* Promote CampDemo -> Camp */}
-        <Card className="p-4">
-          <div className="font-semibold text-deep-navy">Promote CampDemo → Camp</div>
-          <div className="text-sm text-slate-600 mt-1">
-            Upserts by <b>event_key</b>. This is the final publish step.
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button
-              onClick={promoteCampDemoToCamp}
-              disabled={!selectedSportId || promoteWorking || campsWorking || sportsUSAWorking}
-            >
-              {promoteWorking ? "Running…" : "Run Promotion"}
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={function () { setPromoteLog(""); setPromoteStats({ read: 0, created: 0, updated: 0, skipped: 0, errors: 0 }); }}
-              disabled={promoteWorking}
-            >
-              Clear Log
-            </Button>
-          </div>
-
-          <div className="mt-4 text-sm text-slate-700">
-            <div className="flex flex-wrap gap-4">
-              <span><b>Read:</b> {promoteStats.read}</span>
-              <span><b>Created:</b> {promoteStats.created}</span>
-              <span><b>Updated:</b> {promoteStats.updated}</span>
-              <span><b>Skipped:</b> {promoteStats.skipped}</span>
-              <span><b>Errors:</b> {promoteStats.errors}</span>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <div className="text-xs text-slate-500 mb-1">Log</div>
-            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
-              {promoteLog || "—"}
-            </pre>
+            If you still see processedRegs=0, the first site HTML snippet will print in this log so we can confirm whether links are JS-injected.
           </div>
         </Card>
 
         <div className="text-center">
-          <Button
-            variant="outline"
-            onClick={function () { nav(ROUTES.Home); }}
-            disabled={sportsUSAWorking || campsWorking || promoteWorking}
-          >
+          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={sportsUSAWorking || campsWorking}>
             Go to Home
           </Button>
         </div>
