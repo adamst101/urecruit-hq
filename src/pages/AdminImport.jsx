@@ -1,12 +1,7 @@
 // src/pages/AdminImport.jsx
 import React, { useEffect, useMemo, useState } from "react";
 
-// NOTE: Replace these with your actual Base44 DB utilities if named differently.
-import { db } from "../lib/db"; // common pattern; adjust if your app uses a different path
-import { callFunction } from "../lib/functions"; // common pattern; adjust if your app uses a different path
-
-// If your project doesn't have these helpers, search your codebase for existing usage of db.table(...)
-// and callFunction("functionName", payload) and align the imports accordingly.
+import { base44 } from "../api/base44Client";
 
 function nowIso() {
   return new Date().toISOString();
@@ -63,7 +58,7 @@ function AdminImport() {
     let mounted = true;
     async function load() {
       try {
-        const rows = await db.table("Sport").select("*").order("sport_name");
+        const rows = await base44.entities.Sport.list();
         if (!mounted) return;
         setSports(rows || []);
         if ((rows || []).length && !selectedSportId) {
@@ -71,7 +66,6 @@ function AdminImport() {
         }
       } catch (e) {
         // If Sport load fails, user will see empty dropdown.
-        // You can also add a UI alert if you want.
       }
     }
     load();
@@ -125,7 +119,8 @@ function AdminImport() {
         dryRun: !!dryRun
       };
 
-      const resp = await callFunction("sportsUSASeedSchools", payload);
+      const result = await base44.functions.invoke('sportsUSASeedSchools', payload);
+      const resp = result.data;
 
       if (!resp || !resp.stats) {
         appendLog(setLogSportsUSA, `[SportsUSA] ERROR: No response or missing stats.`);
@@ -174,12 +169,12 @@ function AdminImport() {
         }
 
         try {
-          // Upsert School by normalized_name or school_name. We'll use school_name exact match for now.
-          const existing = await db.table("School").select("*").eq("school_name", schoolName).maybeSingle();
+          // Upsert School by school_name
+          const existingSchools = await base44.entities.School.filter({ school_name: schoolName });
 
           let schoolId = "";
-          if (!existing) {
-            const created = await db.table("School").insert({
+          if (!existingSchools || !existingSchools.length) {
+            const created = await base44.entities.School.create({
               school_name: schoolName,
               logo_url: logoUrl,
               active: true,
@@ -189,31 +184,31 @@ function AdminImport() {
               source_key: row.source_key || null,
               needs_review: false,
               last_seen_at: nowIso()
-            }).single();
+            });
             schoolId = created.id;
             schoolsCreated += 1;
           } else {
+            const existing = existingSchools[0];
             schoolId = existing.id;
-            await db.table("School").update({
+            await base44.entities.School.update(schoolId, {
               logo_url: logoUrl || existing.logo_url || null,
               source_platform: existing.source_platform || "sportsusa",
               source_school_url: existing.source_school_url || campSiteUrl,
               last_seen_at: nowIso()
-            }).eq("id", schoolId);
+            });
             schoolsUpdated += 1;
           }
 
           // Upsert SchoolSportSite by (school_id + sport_id)
-          const existingSite = await db.table("SchoolSportSite")
-            .select("*")
-            .eq("school_id", schoolId)
-            .eq("sport_id", selectedSportId)
-            .maybeSingle();
+          const existingSites = await base44.entities.SchoolSportSite.filter({
+            school_id: schoolId,
+            sport_id: selectedSportId
+          });
 
           const sourceKey = row.source_key || ("sportsusa:" + safeString(selectedSport.sport_name).toLowerCase() + ":" + safeString(campSiteUrl).toLowerCase());
 
-          if (!existingSite) {
-            await db.table("SchoolSportSite").insert({
+          if (!existingSites || !existingSites.length) {
+            await base44.entities.SchoolSportSite.create({
               school_id: schoolId,
               sport_id: selectedSportId,
               camp_site_url: campSiteUrl,
@@ -226,14 +221,15 @@ function AdminImport() {
             });
             sitesCreated += 1;
           } else {
-            await db.table("SchoolSportSite").update({
+            const existingSite = existingSites[0];
+            await base44.entities.SchoolSportSite.update(existingSite.id, {
               camp_site_url: campSiteUrl,
               logo_url: logoUrl || existingSite.logo_url || null,
               source_platform: existingSite.source_platform || "sportsusa",
               source_key: existingSite.source_key || sourceKey,
               active: true,
               last_seen_at: nowIso()
-            }).eq("id", existingSite.id);
+            });
             sitesUpdated += 1;
           }
 
@@ -267,10 +263,10 @@ function AdminImport() {
 
     try {
       // Load active SchoolSportSite rows for this sport
-      const sites = await db.table("SchoolSportSite")
-        .select("*")
-        .eq("sport_id", selectedSportId)
-        .eq("active", true);
+      const sites = await base44.entities.SchoolSportSite.filter({
+        sport_id: selectedSportId,
+        active: true
+      });
 
       appendLog(setLogCamps, `[Camps] Loaded SchoolSportSite rows: ${(sites || []).length} (active)`);
 
@@ -291,7 +287,8 @@ function AdminImport() {
         siteUrls: safeString(testSiteUrl).trim() ? null : urls
       };
 
-      const resp = await callFunction("sportsUSAIngestCamps", payload);
+      const result = await base44.functions.invoke('sportsUSAIngestCamps', payload);
+      const resp = result.data;
 
       // ✅ Always print version reliably
       const fnVersion = (resp && (resp.version || (resp.debug && resp.debug.version))) || "MISSING";
