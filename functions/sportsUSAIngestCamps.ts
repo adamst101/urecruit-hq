@@ -2,16 +2,20 @@
 // Base44 Backend Function (Deno)
 //
 // Purpose:
-// - Fetch each school camp site (e.g., hardingfootballcamps.com)
-// - Discover Ryzer registration links
-// - For each registration link:
-//    - Try parse dates from the camp-site link title text
-//    - If missing, fetch the Ryzer registration page and parse dates there
-// - Return normalized candidates with start_date/end_date (fail-closed)
+// - Input: sportId, sportName, list of SchoolSportSite URLs OR a testSiteUrl
+// - Fetch each camp site (e.g., https://www.hardingfootballcamps.com/)
+// - Discover registration links (Ryzer register.ryzer.com camp.cfm links)
+// - Return normalized "event candidates" with best-effort parsed dates + metadata
 //
-// Editor-safe: no optional chaining, no external imports.
+// Notes:
+// - No optional chaining (Base44 editor-safe).
+// - No external imports.
+// - This function DOES NOT write to DB. AdminImport writes CampDemo.
+//
+// Versioning:
+// - version is returned at TOP LEVEL and also in debug.version to prevent "MISSING" logs.
 
-const VERSION = "sportsUSAIngestCamps_2026-02-03_v7_fetch_ryzer_page_for_dates_editor_safe";
+const VERSION = "sportsUSAIngestCamps_2026-02-03_v6_better_errors_date_parse_editor_safe";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -32,7 +36,7 @@ function stripNonAscii(s) {
 
 function truncate(s, n) {
   var str = String(s || "");
-  var lim = n || 1400;
+  var lim = n || 1200;
   return str.length > lim ? str.slice(0, lim) + "…(truncated)" : str;
 }
 
@@ -43,6 +47,7 @@ function absUrl(baseUrl, maybeRelative) {
   if (u.indexOf("http://") === 0 || u.indexOf("https://") === 0) return u;
   if (u.indexOf("//") === 0) return "https:" + u;
 
+  // root-relative
   if (u.indexOf("/") === 0) {
     try {
       var b = new URL(baseUrl);
@@ -52,6 +57,7 @@ function absUrl(baseUrl, maybeRelative) {
     }
   }
 
+  // relative
   try {
     return new URL(u, baseUrl).toString();
   } catch (e2) {
@@ -63,7 +69,7 @@ function isRyzerRegLink(url) {
   var u = lc(url || "");
   if (!u) return false;
   if (u.indexOf("register.ryzer.com/camp.cfm") === -1) return false;
-  if (u.indexOf("id=") === -1) return false;
+  if (u.indexOf("sport=") === -1 && u.indexOf("id=") === -1) return false;
   return true;
 }
 
@@ -71,11 +77,11 @@ function extractRyzerLinksFromHtml(html, baseUrl, maxLinks) {
   var out = [];
   if (!html) return out;
 
+  // Find all href="..."
   var re = /href="([^"]+)"/gi;
   var m;
   while ((m = re.exec(html)) !== null) {
     if (maxLinks && out.length >= maxLinks) break;
-
     var href = m[1];
     var u = absUrl(baseUrl, href);
     if (!u) continue;
@@ -96,33 +102,41 @@ function extractRyzerLinksFromHtml(html, baseUrl, maxLinks) {
   return out;
 }
 
-// Best-effort pull of title near the reg link in the camp site HTML
-function bestEffortTitleNearLink(html, regUrl) {
-  if (!html || !regUrl) return null;
+// Try to grab a "camp title" nearby the link by scanning backward around the href match
+function bestEffortTitleNearLink(html, linkUrl) {
+  if (!html || !linkUrl) return null;
 
-  var idMatch = /[?&]id=([0-9]+)/i.exec(regUrl);
+  // We’ll search for the id=xxxxx fragment in the HTML to anchor position
+  var idMatch = /[?&]id=([0-9]+)/i.exec(linkUrl);
   var needle = null;
   if (idMatch && idMatch[1]) needle = "id=" + idMatch[1];
-  if (!needle) needle = regUrl;
+  if (!needle) needle = linkUrl;
 
   var idx = html.indexOf(needle);
   if (idx < 0) return null;
 
-  var start = idx - 2000;
+  var start = idx - 1800;
   if (start < 0) start = 0;
   var windowText = html.slice(start, idx + 200);
 
-  // Try to find last <a ...>TEXT</a> in that window
-  var aRe = /<a[^>]*>([^<]{3,220})<\/a>/gi;
+  // Try to find the nearest preceding <a ...>TEXT</a>
+  var aRe = /<a[^>]*>([^<]{3,180})<\/a>/gi;
   var lastText = null;
   var m;
   while ((m = aRe.exec(windowText)) !== null) {
     var t = stripNonAscii(m[1]);
-    if (!t) continue;
-    lastText = t;
+    if (t && lc(t).indexOf("view") !== 0 && lc(t).indexOf("register") !== 0) {
+      lastText = t;
+    } else if (t) {
+      // keep it anyway if we have nothing better
+      if (!lastText) lastText = t;
+    }
   }
 
-  return lastText;
+  // Some sites use "View XYZ Details" as the link text; that’s still useful.
+  if (lastText) return lastText;
+
+  return null;
 }
 
 // --------------------
@@ -130,8 +144,18 @@ function bestEffortTitleNearLink(html, regUrl) {
 // --------------------
 
 var MONTHS = {
-  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
-  july: 7, august: 8, september: 9, october: 10, november: 11, december: 12
+  january: 1,
+  february: 2,
+  march: 3,
+  april: 4,
+  may: 5,
+  june: 6,
+  july: 7,
+  august: 8,
+  september: 9,
+  october: 10,
+  november: 11,
+  december: 12
 };
 
 function pad2(n) {
@@ -143,13 +167,19 @@ function ymd(y, m, d) {
   return String(y) + "-" + pad2(m) + "-" + pad2(d);
 }
 
-// Parse numeric and month-name date patterns from a text blob.
+// Parses things like:
+// - "February 21st - 22nd"
+// - "June 12th-13th"
+// - "February 21st" (single day)
+// - "06/12/2026 - 06/13/2026"
+// - "06/12/2026"
 // Returns { start_date, end_date, notes }
 function parseDatesFromText(text, defaultYear) {
   var t = stripNonAscii(text || "");
   if (!t) return { start_date: null, end_date: null, notes: "no_text" };
 
-  // Numeric range: 06/12/2026 - 06/13/2026
+  // Prefer explicit YYYY in numeric formats
+  // 06/12/2026 - 06/13/2026
   var numRange = /(\d{1,2})\/(\d{1,2})\/(\d{4})\s*[-–]\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i.exec(t);
   if (numRange) {
     var m1 = Number(numRange[1]), d1 = Number(numRange[2]), y1 = Number(numRange[3]);
@@ -157,14 +187,15 @@ function parseDatesFromText(text, defaultYear) {
     return { start_date: ymd(y1, m1, d1), end_date: ymd(y2, m2, d2), notes: "numeric_range" };
   }
 
-  // Numeric single: 06/12/2026
+  // 06/12/2026
   var numSingle = /(\d{1,2})\/(\d{1,2})\/(\d{4})/i.exec(t);
   if (numSingle) {
     var ms = Number(numSingle[1]), ds = Number(numSingle[2]), ys = Number(numSingle[3]);
     return { start_date: ymd(ys, ms, ds), end_date: null, notes: "numeric_single" };
   }
 
-  // Month range: February 21st - 22nd  (year implied)
+  // Month name range: February 21st - 22nd (year missing)
+  // Also supports "June 12th-13th"
   var monthRange = /(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(st|nd|rd|th)?\s*[-–]\s*(\d{1,2})(st|nd|rd|th)?/i.exec(t);
   if (monthRange) {
     var monName = lc(monthRange[1]);
@@ -172,105 +203,54 @@ function parseDatesFromText(text, defaultYear) {
     var dStart = Number(monthRange[2]);
     var dEnd = Number(monthRange[4]);
     var yr = Number(defaultYear || new Date().getFullYear());
-    if (mNum) return { start_date: ymd(yr, mNum, dStart), end_date: ymd(yr, mNum, dEnd), notes: "monthname_range" };
+    if (mNum) {
+      return { start_date: ymd(yr, mNum, dStart), end_date: ymd(yr, mNum, dEnd), notes: "monthname_range" };
+    }
   }
 
-  // Month single: February 21st
+  // Month name single: February 21st
   var monthSingle = /(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(st|nd|rd|th)?/i.exec(t);
   if (monthSingle) {
     var monName2 = lc(monthSingle[1]);
     var mNum2 = MONTHS[monName2] || null;
     var dOne = Number(monthSingle[2]);
     var yr2 = Number(defaultYear || new Date().getFullYear());
-    if (mNum2) return { start_date: ymd(yr2, mNum2, dOne), end_date: null, notes: "monthname_single" };
+    if (mNum2) {
+      return { start_date: ymd(yr2, mNum2, dOne), end_date: null, notes: "monthname_single" };
+    }
   }
 
+  // If no explicit date found
   return { start_date: null, end_date: null, notes: "no_date_pattern" };
 }
 
-// Extract likely date line from a title like:
-// "View Youth Camp Session | February 21st - 22nd Details"
+// Extract a "date line" from camp title patterns like:
+// "View HS Prospect Camp 1 Details" (no date in title) -> return null
+// "View D-Line Training Camp | June 12th-13th Details" -> returns "June 12th-13th"
 function extractDateLineFromTitle(title) {
   var t = stripNonAscii(title || "");
   if (!t) return null;
 
-  // Pipe segment usually contains the date
+  // Split on pipe and take the segment that looks like it contains a month or numeric date
   var parts = t.split("|");
   if (parts.length >= 2) {
     var candidate = stripNonAscii(parts[1]);
-    return candidate || null;
+    if (candidate) return candidate;
   }
 
-  // Month name anywhere
+  // fallback: find a month name anywhere
   var monthAny = /(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}/i.exec(t);
   if (monthAny) return monthAny[0];
 
-  // Numeric any
+  // fallback: numeric date
   var numAny = /\d{1,2}\/\d{1,2}\/\d{4}/i.exec(t);
   if (numAny) return numAny[0];
 
   return null;
 }
 
-// Fetch Ryzer registration page and try to extract a date-like line.
-// This is the critical fix for "Prospect Camp 1" type links.
-async function fetchAndParseRyzerDates(regUrl) {
-  var debug = { http: 0, snippet: null, foundLine: null, parseNotes: null };
-
-  try {
-    var r = await fetch(regUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-        Accept: "text/html,*/*"
-      }
-    });
-
-    debug.http = r.status;
-
-    var html = await r.text();
-    debug.snippet = truncate(html, 900);
-
-    if (!r.ok) {
-      debug.parseNotes = "ryzer_fetch_non_200";
-      return { start_date: null, end_date: null, notes: "ryzer_fetch_failed", debug: debug };
-    }
-
-    // Look for common date labels in Ryzer pages.
-    // We capture a window after the label and attempt to parse dates from it.
-    var labelRe = /(camp\s*dates|dates|date)\s*[:\-]\s*([^<\n\r]{6,80})/i;
-    var lm = labelRe.exec(html);
-    var line = null;
-
-    if (lm && lm[2]) {
-      line = stripNonAscii(lm[2]);
-    }
-
-    // If label not found, brute force: find first month-name date sequence
-    if (!line) {
-      var monthLine = /(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}[^<\n\r]{0,40}/i.exec(html);
-      if (monthLine && monthLine[0]) line = stripNonAscii(monthLine[0]);
-    }
-
-    // Or numeric date
-    if (!line) {
-      var numLine = /\d{1,2}\/\d{1,2}\/\d{4}[^<\n\r]{0,40}/i.exec(html);
-      if (numLine && numLine[0]) line = stripNonAscii(numLine[0]);
-    }
-
-    debug.foundLine = line;
-
-    var parsed = parseDatesFromText(line, new Date().getFullYear());
-    debug.parseNotes = parsed.notes;
-
-    return { start_date: parsed.start_date, end_date: parsed.end_date, notes: "ryzer_page:" + parsed.notes, debug: debug };
-  } catch (e) {
-    debug.parseNotes = "ryzer_exception";
-    return { start_date: null, end_date: null, notes: "ryzer_exception", debug: debug };
-  }
-}
-
 function deriveProgramIdFromRyzerUrl(regUrl) {
+  // Use the Ryzer "id" as stable program_id
   var m = /[?&]id=([0-9]+)/i.exec(regUrl || "");
   if (m && m[1]) return "ryzer:" + m[1];
   return "ryzer:" + lc(regUrl || "");
@@ -288,8 +268,7 @@ Deno.serve(async (req) => {
     startedAt: new Date().toISOString(),
     notes: [],
     siteDebug: [],
-    firstSiteHtmlSnippet: null,
-    ryzerDebugSamples: []
+    firstSiteHtmlSnippet: null
   };
 
   try {
@@ -321,14 +300,19 @@ Deno.serve(async (req) => {
     }
 
     var urlsToProcess = [];
-    if (testSiteUrl) urlsToProcess = [testSiteUrl];
-    else if (siteUrls && siteUrls.length) urlsToProcess = siteUrls.slice(0, maxSites);
-    else {
+    if (testSiteUrl) {
+      urlsToProcess = [testSiteUrl];
+    } else if (siteUrls && siteUrls.length) {
+      urlsToProcess = siteUrls.slice(0, maxSites);
+    } else {
       return new Response(JSON.stringify({
         error: "Missing required: testSiteUrl OR siteUrls[]",
         version: VERSION,
         debug: debug
-      }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     var accepted = [];
@@ -364,8 +348,6 @@ Deno.serve(async (req) => {
         htmlType = safeString(r.headers.get("content-type")) || "";
         html = await r.text();
 
-        if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(html, 1600);
-
         if (!r.ok) {
           siteNotes.push("site_fetch_non_200");
           errors.push({ siteUrl: siteUrl, error: "site_fetch_failed", http: siteHttp });
@@ -375,6 +357,7 @@ Deno.serve(async (req) => {
           if (!regLinks.length) {
             siteNotes.push("no_registration_links_found");
           } else {
+            // Build candidates
             for (var li = 0; li < regLinks.length; li++) {
               if (accepted.length >= maxEvents) break;
 
@@ -384,56 +367,33 @@ Deno.serve(async (req) => {
               var title = bestEffortTitleNearLink(html, regUrl) || "Camp Registration";
               title = stripNonAscii(title);
 
-              // 1) Parse dates from title
+              // Attempt date parse from title
               var dateLine = extractDateLineFromTitle(title);
               var parsed = parseDatesFromText(dateLine, new Date().getFullYear());
 
-              var startDate = parsed.start_date;
-              var endDate = parsed.end_date;
-              var parseSource = "title:" + parsed.notes;
-
-              // 2) If missing, fetch Ryzer registration page and parse there
-              if (!startDate) {
-                var ryzerParsed = await fetchAndParseRyzerDates(regUrl);
-                startDate = ryzerParsed.start_date;
-                endDate = ryzerParsed.end_date;
-                parseSource = ryzerParsed.notes;
-
-                // capture a few debug samples (bounded)
-                if (debug.ryzerDebugSamples.length < 3) {
-                  debug.ryzerDebugSamples.push({
-                    regUrl: regUrl,
-                    title: title,
-                    ryzer_http: (ryzerParsed.debug && ryzerParsed.debug.http) || 0,
-                    foundLine: (ryzerParsed.debug && ryzerParsed.debug.foundLine) || null,
-                    parseNotes: (ryzerParsed.debug && ryzerParsed.debug.parseNotes) || null,
-                    snippet: (ryzerParsed.debug && ryzerParsed.debug.snippet) || null
-                  });
-                }
-              }
-
-              // Fail-closed if still missing
-              if (!startDate) {
+              // If still no date, we keep it but mark start_date null. AdminImport can optionally fetch Ryzer page later.
+              // BUT CampDemo requires start_date. So we *reject* if no start_date (fail-closed).
+              if (!parsed.start_date) {
                 rejected.push({
                   reason: "missing_start_date",
-                  title: title,
                   registrationUrl: regUrl,
+                  title: title,
                   event_dates_line: dateLine || null,
-                  parse_source: parseSource
+                  parse_notes: parsed.notes
                 });
                 continue;
               }
 
               var programId = deriveProgramIdFromRyzerUrl(regUrl);
-              var evKey = makeEventKey("sportsusa", programId, startDate, String(li));
+              var evKey = makeEventKey("sportsusa", programId, parsed.start_date, String(li));
 
               accepted.push({
                 event: {
                   sportId: sportId,
                   sportName: sportName,
                   camp_name: title,
-                  start_date: startDate,
-                  end_date: endDate,
+                  start_date: parsed.start_date,
+                  end_date: parsed.end_date,
                   link_url: regUrl,
                   source_platform: "sportsusa",
                   source_url: regUrl,
@@ -442,7 +402,7 @@ Deno.serve(async (req) => {
                 derived: {
                   program_id: programId,
                   event_key: evKey,
-                  parse_source: parseSource,
+                  parse_notes: parsed.notes,
                   site_url: siteUrl
                 }
               });
@@ -450,6 +410,7 @@ Deno.serve(async (req) => {
           }
         }
 
+        // Save debug for this site
         debug.siteDebug.push({
           siteUrl: siteUrl,
           http: siteHttp,
@@ -458,6 +419,10 @@ Deno.serve(async (req) => {
           sample: regLinks.length ? regLinks[0] : "",
           notes: siteNotes.join(",")
         });
+
+        if (!debug.firstSiteHtmlSnippet) {
+          debug.firstSiteHtmlSnippet = truncate(html, 1600);
+        }
       } catch (e) {
         var msg = String((e && e.message) || e);
         errors.push({ siteUrl: siteUrl, error: "exception", message: msg });
@@ -469,6 +434,9 @@ Deno.serve(async (req) => {
           sample: "",
           notes: "exception:" + msg
         });
+        if (!debug.firstSiteHtmlSnippet) {
+          debug.firstSiteHtmlSnippet = truncate(msg, 1600);
+        }
       }
 
       processedSites += 1;
