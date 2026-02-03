@@ -1,24 +1,13 @@
 // functions/sportsUSAIngestCamps.js
 // Base44 Backend Function (Deno)
 //
-// Purpose:
-// - Given a SchoolSportSite camp_site_url (e.g., https://www.hardingfootballcamps.com/)
-// - Fetch the site, discover Ryzer registration links (register.ryzer.com/camp.cfm?...id=...)
-// - For each registration link, fetch the Ryzer page and parse:
-//   - camp_name
-//   - start_date / end_date (from "Event Date(s)")
-//   - city/state (from "Location ... | City, ST")
-//   - grades_raw, register_by_raw, price_raw, price
-// - Return normalized events for AdminImport to write to CampDemo
-//
-// Editor-safe constraints:
-// - No optional chaining
-// - No external imports
-// - Best-effort regex parsing
-//
-// Version: v4 adds deep parse of Ryzer registration pages to fix single-date events (n/a issue)
+// v5 updates:
+// - Adds TOP-LEVEL `version` so AdminImport can always display it
+// - Keeps debug.version as well
+// - Adds stronger parsing for Ryzer "Event Date(s)" (handles a few formatting variants)
+// - Returns richer rejected_samples (so AdminImport can show the "why")
 
-const VERSION = "sportsUSAIngestCamps_2026-02-03_v4_parse_ryzer_registration_pages_editor_safe";
+const VERSION = "sportsUSAIngestCamps_2026-02-03_v5_top_level_version_and_better_rejects_editor_safe";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -48,9 +37,7 @@ function absUrl(baseUrl, maybeRelative) {
   if (!u) return null;
   if (u.indexOf("http://") === 0 || u.indexOf("https://") === 0) return u;
   if (u.indexOf("//") === 0) return "https:" + u;
-
   try {
-    // join relative to base
     return new URL(u, baseUrl).toString();
   } catch (e) {
     return u;
@@ -105,12 +92,12 @@ function ymdFromParts(year, monthNum, day) {
   return String(y) + "-" + pad2(m) + "-" + pad2(d);
 }
 
-// Parse "Feb 21, 2026" or "May 16, 2026"
+// Parse: "May 16, 2026" (also tolerates missing comma)
 function parseMonthNameDate(s) {
   var txt = stripNonAscii(s || "");
   if (!txt) return null;
 
-  // Month Day, Year
+  // Month Day, Year (comma optional)
   var re = /([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?\,?\s+(\d{4})/i;
   var m = re.exec(txt);
   if (!m) return null;
@@ -123,61 +110,57 @@ function parseMonthNameDate(s) {
   return ymdFromParts(year, mon, day);
 }
 
-// Parse the Ryzer "Event Date(s) X to Y" line
+// Parse "Event Date(s) ..." line
 function parseRyzerEventDatesLine(line) {
   var txt = stripNonAscii(line || "");
-  if (!txt) return { start: null, end: null };
+  if (!txt) return { start: null, end: null, raw: null };
 
-  // Example:
-  // "Event Date(s) Feb 21, 2026 to Feb 22, 2026"
-  // "Event Date(s) May 16, 2026"
+  // Normalize label variants
   txt = txt.replace(/^Event Date\(s\)\s*/i, "").trim();
 
-  // Split on " to " (Ryzer uses "to" on registration pages)
+  // Some pages may use "-" instead of "to"
+  // Split on " to " OR " - "
   var parts = txt.split(/\s+to\s+/i);
+  if (parts.length === 1) {
+    parts = txt.split(/\s*-\s*/);
+  }
 
   if (parts.length === 1) {
     var one = parseMonthNameDate(parts[0]);
-    return { start: one, end: one };
+    return { start: one, end: one, raw: txt };
   }
 
   var a = parseMonthNameDate(parts[0]);
   var b = parseMonthNameDate(parts[1]);
 
-  // If second parse fails but first succeeds, treat as single
-  if (a && !b) return { start: a, end: a };
-
-  return { start: a, end: b || a };
+  if (a && !b) return { start: a, end: a, raw: txt };
+  return { start: a, end: b || a, raw: txt };
 }
 
 function parseRyzerLocationLine(line) {
-  // "Location Huckeba Indoor Facility | Searcy, AR"
   var txt = stripNonAscii(line || "");
-  if (!txt) return { city: null, state: null, location_raw: null };
+  if (!txt) return { city: null, state: null, raw: null };
 
   txt = txt.replace(/^Location\s*/i, "").trim();
 
-  // Take part after "|" if present
+  // Use part after "|" if present
   var cityStatePart = txt;
   if (txt.indexOf("|") >= 0) {
     var split = txt.split("|");
     cityStatePart = stripNonAscii(split[split.length - 1]);
   }
 
-  // City, ST
   var m = /(.+)\,\s*([A-Z]{2})\b/.exec(cityStatePart);
   if (m) {
-    return { city: stripNonAscii(m[1]), state: stripNonAscii(m[2]), location_raw: txt };
+    return { city: stripNonAscii(m[1]), state: stripNonAscii(m[2]), raw: txt };
   }
-
-  return { city: null, state: null, location_raw: txt };
+  return { city: null, state: null, raw: txt };
 }
 
 function parseFirstPriceFromText(s) {
   var txt = stripNonAscii(s || "");
   if (!txt) return { price: null, price_raw: null };
 
-  // Find first $XX.XX
   var m = /\$([0-9]{1,5})(?:\.[0-9]{2})?/.exec(txt);
   if (!m) return { price: null, price_raw: null };
 
@@ -187,90 +170,82 @@ function parseFirstPriceFromText(s) {
   return { price: p, price_raw: "$" + m[1] };
 }
 
+// Extract key lines from the Ryzer registration page
 function extractRyzerFieldsFromHtml(html) {
-  // We will parse from rendered text-ish lines using simple tag stripping.
-  // Ryzer pages are fairly consistent.
   var raw = String(html || "");
 
-  // Convert <br> to newlines then strip tags
+  // Turn <br> and closing block tags into line-ish breaks, then strip tags
   var txt = raw.replace(/<br\s*\/?>/gi, "\n");
   txt = txt.replace(/<\/(p|div|h1|h2|h3|li|tr|td|section|article)>/gi, "\n");
   txt = txt.replace(/<[^>]+>/g, " ");
   txt = stripNonAscii(txt);
 
-  // Create "lines" by splitting on known separators
-  var lines = txt.split(/\s{2,}|\n+/g);
-  var i;
+  var lines = txt.split(/\n+|\s{2,}/g);
 
   var campName = null;
   var eventDatesLine = null;
   var locationLine = null;
   var gradesLine = null;
   var registerByLine = null;
-
-  // We also want price; it often appears as "$85.00" near "Register Now"
   var priceHit = null;
 
-  for (i = 0; i < lines.length; i++) {
+  for (var i = 0; i < lines.length; i++) {
     var line = stripNonAscii(lines[i]);
-
     if (!line) continue;
 
-    // Camp title is usually the first big title line; we can detect by presence after the sport header,
-    // but easiest: take the first line that is not cookie/legal and not the sport breadcrumb and not "Register..."
+    // Camp name: first "title-like" line that isn't boilerplate
     if (!campName) {
+      var low = lc(line);
       if (
-        lc(line).indexOf("we use cookies") === 0 ||
-        lc(line).indexOf("learn more") === 0 ||
-        lc(line).indexOf("terms of use") >= 0 ||
-        lc(line).indexOf("privacy policy") >= 0 ||
-        lc(line).indexOf("register for this event") >= 0
+        low.indexOf("event date") === 0 ||
+        low.indexOf("location") === 0 ||
+        low.indexOf("grades") === 0 ||
+        low.indexOf("register by") === 0 ||
+        low.indexOf("privacy policy") >= 0 ||
+        low.indexOf("terms of use") >= 0 ||
+        low.indexOf("we use cookies") === 0
       ) {
         // skip
       } else {
-        // If the line contains " - Football" and is short, it might be breadcrumb like "Harding University - Football"
-        if (!(line.indexOf(" - Football") > 0 && line.length < 60)) {
-          // Keep first plausible title
-          campName = line;
-        }
+        campName = line;
       }
     }
 
-    if (!locationLine && /^Location\s/i.test(line)) locationLine = line;
     if (!eventDatesLine && /^Event Date\(s\)\s/i.test(line)) eventDatesLine = line;
+    if (!locationLine && /^Location\s/i.test(line)) locationLine = line;
     if (!gradesLine && /^Grades\s/i.test(line)) gradesLine = line;
     if (!registerByLine && /^Register By\s/i.test(line)) registerByLine = line;
 
     if (!priceHit && line.indexOf("$") >= 0) {
-      // Heuristic: prefer price near "Register Now"
-      if (lc(line).indexOf("register now") >= 0 || lc(line).indexOf("select a price") >= 0) {
+      // Prefer nearby "Register Now" context
+      if (lc(line).indexOf("register") >= 0 || lc(line).indexOf("price") >= 0) {
         priceHit = line;
       }
     }
   }
 
-  // Fallback: if we didn't find a priceHit, scan entire text for a dollar amount
+  // Fallback: scan full text if we didn’t find a price line
   if (!priceHit && txt.indexOf("$") >= 0) priceHit = txt;
 
   var dates = parseRyzerEventDatesLine(eventDatesLine || "");
   var loc = parseRyzerLocationLine(locationLine || "");
   var priceParsed = parseFirstPriceFromText(priceHit || "");
 
-  // Grades line: "Grades 2nd to 7th"
   var gradesRaw = null;
   if (gradesLine) gradesRaw = stripNonAscii(gradesLine.replace(/^Grades\s*/i, "").trim());
 
-  // Register by raw: "Register By Feb 20, 2026 11:59pm CST"
   var registerByRaw = null;
   if (registerByLine) registerByRaw = stripNonAscii(registerByLine.replace(/^Register By\s*/i, "").trim());
 
   return {
     camp_name: campName,
+    event_dates_line: eventDatesLine,
     start_date: dates.start,
     end_date: dates.end,
+    event_dates_raw: dates.raw,
     city: loc.city,
     state: loc.state,
-    location_raw: loc.location_raw,
+    location_raw: loc.raw,
     grades_raw: gradesRaw,
     register_by_raw: registerByRaw,
     price: priceParsed.price,
@@ -279,13 +254,10 @@ function extractRyzerFieldsFromHtml(html) {
 }
 
 function discoverRyzerRegistrationLinks(siteHtml, siteUrl, maxLinks) {
-  // Find register.ryzer.com camp links; include variants with id= and sport=
-  // Example: https://register.ryzer.com/camp.cfm?sport=1&id=323894
   var html = String(siteHtml || "");
   var out = [];
   var seen = {};
 
-  // Capture href links
   var hrefRe = /href="([^"]+)"/gi;
   var m;
   while ((m = hrefRe.exec(html)) !== null) {
@@ -298,7 +270,6 @@ function discoverRyzerRegistrationLinks(siteHtml, siteUrl, maxLinks) {
     var low = lc(abs);
     if (low.indexOf("register.ryzer.com/camp.cfm") < 0) continue;
 
-    // Ensure it has an id=
     var idVal = parseQueryParam(abs, "id");
     if (!idVal) continue;
 
@@ -307,7 +278,6 @@ function discoverRyzerRegistrationLinks(siteHtml, siteUrl, maxLinks) {
     seen[key] = true;
 
     out.push(abs);
-
     if (maxLinks && out.length >= maxLinks) break;
   }
 
@@ -325,7 +295,7 @@ Deno.serve(async (req) => {
 
   try {
     if (req.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method not allowed", debug: debug }), {
+      return new Response(JSON.stringify({ error: "Method not allowed", version: VERSION, debug: debug }), {
         status: 405,
         headers: { "Content-Type": "application/json" }
       });
@@ -340,28 +310,22 @@ Deno.serve(async (req) => {
     var maxEvents = Number(body && body.maxEvents !== undefined ? body.maxEvents : 25);
     var dryRun = !!(body && body.dryRun);
 
-    // Optional: provide a direct test URL (bypasses loading from DB on the client side)
     var testSiteUrl = safeString(body && body.testSiteUrl);
-
-    // AdminImport typically loads SchoolSportSite rows client-side and sends selected site URLs.
-    // But we support a server-driven approach too: accept a list of site URLs to crawl.
     var siteUrls = body && body.siteUrls && Array.isArray(body.siteUrls) ? body.siteUrls : [];
 
     if (!sportId) {
-      return new Response(JSON.stringify({ error: "Missing required: sportId", debug: debug }), {
+      return new Response(JSON.stringify({ error: "Missing required: sportId", version: VERSION, debug: debug }), {
         status: 400,
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    // If testSiteUrl provided, use it as the only site
-    if (testSiteUrl) {
-      siteUrls = [testSiteUrl];
-    }
+    if (testSiteUrl) siteUrls = [testSiteUrl];
 
     if (!siteUrls || siteUrls.length === 0) {
       return new Response(JSON.stringify({
         error: "Missing required: siteUrls (or testSiteUrl)",
+        version: VERSION,
         debug: debug
       }), {
         status: 400,
@@ -369,7 +333,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Bound sites
     var boundedSites = siteUrls.slice(0, maxSites);
 
     var processedSites = 0;
@@ -386,9 +349,6 @@ Deno.serve(async (req) => {
 
       processedSites += 1;
 
-      var siteHttp = 0;
-      var siteHtml = "";
-
       try {
         var sr = await fetch(siteUrl, {
           method: "GET",
@@ -398,22 +358,14 @@ Deno.serve(async (req) => {
           }
         });
 
-        siteHttp = sr.status;
-        siteHtml = await sr.text();
+        var siteHttp = sr.status;
+        var siteHtml = await sr.text();
 
-        if (!debug.firstSiteHtmlSnippet) {
-          debug.firstSiteHtmlSnippet = truncate(siteHtml, 1600);
-        }
+        if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(siteHtml, 1600);
 
         if (!sr.ok) {
           errors.push({ siteUrl: siteUrl, error: "site_fetch_failed_http_" + siteHttp });
-          debug.siteDebug.push({
-            siteUrl: siteUrl,
-            http: siteHttp,
-            htmlType: safeString(sr.headers.get("content-type")),
-            regLinks: 0,
-            notes: "site_fetch_failed"
-          });
+          debug.siteDebug.push({ siteUrl: siteUrl, http: siteHttp, regLinks: 0, notes: "site_fetch_failed" });
           continue;
         }
 
@@ -428,9 +380,6 @@ Deno.serve(async (req) => {
           notes: regLinks.length ? "" : "no_registration_links_found"
         });
 
-        if (!regLinks.length) continue;
-
-        // For each registration link, fetch Ryzer page and parse fields
         for (var j = 0; j < regLinks.length; j++) {
           if (accepted.length >= maxEvents) break;
 
@@ -456,17 +405,17 @@ Deno.serve(async (req) => {
 
             var fields = extractRyzerFieldsFromHtml(regHtml);
 
-            // If we still can't parse a start_date, fail-closed (don’t write junk)
             if (!fields || !fields.start_date) {
               rejected.push({
                 reason: "missing_start_date",
                 registrationUrl: regUrl,
-                camp_name_guess: fields ? fields.camp_name : null
+                camp_name_guess: fields ? fields.camp_name : null,
+                event_dates_line: fields ? fields.event_dates_line : null,
+                event_dates_raw: fields ? fields.event_dates_raw : null
               });
               continue;
             }
 
-            // program_id / event_key based on Ryzer id
             var ryzerId = parseQueryParam(regUrl, "id");
             var programId = ryzerId ? "ryzer:" + ryzerId : ("url:" + lc(regUrl));
             var eventKey = programId + ":" + fields.start_date;
@@ -484,7 +433,6 @@ Deno.serve(async (req) => {
                 link_url: regUrl,
                 notes: null,
 
-                // Extended / staging fields
                 season_year: Number(String(fields.start_date).slice(0, 4)),
                 program_id: programId,
                 event_key: eventKey,
@@ -493,7 +441,7 @@ Deno.serve(async (req) => {
                 last_seen_at: new Date().toISOString(),
                 content_hash: null,
 
-                event_dates_raw: null,
+                event_dates_raw: fields.event_dates_raw,
                 grades_raw: fields.grades_raw,
                 register_by_raw: fields.register_by_raw,
                 price_raw: fields.price_raw,
@@ -517,6 +465,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(JSON.stringify({
+      version: VERSION,                 // ✅ TOP-LEVEL VERSION
       stats: {
         processedSites: processedSites,
         processedRegs: processedRegs,
@@ -535,7 +484,7 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     debug.notes.push("top-level error: " + String((e && e.message) || e));
-    return new Response(JSON.stringify({ error: "Unhandled error", debug: debug }), {
+    return new Response(JSON.stringify({ error: "Unhandled error", version: VERSION, debug: debug }), {
       status: 500,
       headers: { "Content-Type": "application/json" }
     });
