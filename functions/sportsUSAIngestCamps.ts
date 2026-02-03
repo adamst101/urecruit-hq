@@ -1,21 +1,29 @@
 // functions/sportsUSAIngestCamps.js
 // Base44 Backend Function (Deno)
 //
-// v4 updates:
-// - Parse dates from registration page BODY (not just title)
-// - Support numeric patterns like 02/21/2026 and ranges
-// - Keep editor-safe (no optional chaining, no external imports)
+// Purpose:
+// - Given a SchoolSportSite camp_site_url (e.g., https://www.hardingfootballcamps.com/)
+// - Fetch the site, discover Ryzer registration links (register.ryzer.com/camp.cfm?...id=...)
+// - For each registration link, fetch the Ryzer page and parse:
+//   - camp_name
+//   - start_date / end_date (from "Event Date(s)")
+//   - city/state (from "Location ... | City, ST")
+//   - grades_raw, register_by_raw, price_raw, price
+// - Return normalized events for AdminImport to write to CampDemo
+//
+// Editor-safe constraints:
+// - No optional chaining
+// - No external imports
+// - Best-effort regex parsing
+//
+// Version: v4 adds deep parse of Ryzer registration pages to fix single-date events (n/a issue)
 
-const VERSION = "sportsUSAIngestCamps_2026-02-03_v4_parse_dates_from_reg_html_editor_safe";
+const VERSION = "sportsUSAIngestCamps_2026-02-03_v4_parse_ryzer_registration_pages_editor_safe";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
   var s = String(x).trim();
   return s ? s : null;
-}
-
-function lc(x) {
-  return String(x || "").toLowerCase().trim();
 }
 
 function stripNonAscii(s) {
@@ -25,13 +33,13 @@ function stripNonAscii(s) {
     .trim();
 }
 
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
+function lc(s) {
+  return String(s || "").toLowerCase().trim();
 }
 
 function truncate(s, n) {
   var str = String(s || "");
-  var lim = n || 1200;
+  var lim = n || 1400;
   return str.length > lim ? str.slice(0, lim) + "…(truncated)" : str;
 }
 
@@ -40,286 +48,270 @@ function absUrl(baseUrl, maybeRelative) {
   if (!u) return null;
   if (u.indexOf("http://") === 0 || u.indexOf("https://") === 0) return u;
   if (u.indexOf("//") === 0) return "https:" + u;
-  if (u.indexOf("/") === 0) {
-    try {
-      var b = new URL(baseUrl);
-      return b.origin + u;
-    } catch (e) {
-      return u;
-    }
-  }
+
   try {
+    // join relative to base
     return new URL(u, baseUrl).toString();
-  } catch (e2) {
+  } catch (e) {
     return u;
   }
 }
 
-function uniq(list) {
-  var out = [];
-  var seen = {};
-  for (var i = 0; i < list.length; i++) {
-    var v = list[i];
-    if (!v) continue;
-    if (seen[v]) continue;
-    seen[v] = true;
-    out.push(v);
+function parseQueryParam(url, key) {
+  try {
+    var u = new URL(url);
+    return safeString(u.searchParams.get(key));
+  } catch (e) {
+    return null;
   }
-  return out;
 }
 
-function extractHrefs(html) {
-  var out = [];
-  if (!html) return out;
-  var re = /<a[^>]*href="([^"]+)"[^>]*>/gi;
-  var m;
-  while ((m = re.exec(html)) !== null) {
-    if (m[1] !== undefined) out.push(stripNonAscii(m[1]));
+function pad2(n) {
+  var x = Number(n);
+  if (!isFinite(x)) return null;
+  return x < 10 ? "0" + x : String(x);
+}
+
+function monthToNumber(m) {
+  var t = lc(m || "");
+  if (!t) return null;
+
+  var map = {
+    jan: 1, january: 1,
+    feb: 2, february: 2,
+    mar: 3, march: 3,
+    apr: 4, april: 4,
+    may: 5,
+    jun: 6, june: 6,
+    jul: 7, july: 7,
+    aug: 8, august: 8,
+    sep: 9, sept: 9, september: 9,
+    oct: 10, october: 10,
+    nov: 11, november: 11,
+    dec: 12, december: 12
+  };
+
+  return map[t] || null;
+}
+
+function ymdFromParts(year, monthNum, day) {
+  var y = Number(year);
+  var m = Number(monthNum);
+  var d = Number(day);
+  if (!isFinite(y) || !isFinite(m) || !isFinite(d)) return null;
+  if (y < 2000 || y > 2100) return null;
+  if (m < 1 || m > 12) return null;
+  if (d < 1 || d > 31) return null;
+  return String(y) + "-" + pad2(m) + "-" + pad2(d);
+}
+
+// Parse "Feb 21, 2026" or "May 16, 2026"
+function parseMonthNameDate(s) {
+  var txt = stripNonAscii(s || "");
+  if (!txt) return null;
+
+  // Month Day, Year
+  var re = /([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?\,?\s+(\d{4})/i;
+  var m = re.exec(txt);
+  if (!m) return null;
+
+  var mon = monthToNumber(m[1]);
+  var day = m[2];
+  var year = m[3];
+  if (!mon) return null;
+
+  return ymdFromParts(year, mon, day);
+}
+
+// Parse the Ryzer "Event Date(s) X to Y" line
+function parseRyzerEventDatesLine(line) {
+  var txt = stripNonAscii(line || "");
+  if (!txt) return { start: null, end: null };
+
+  // Example:
+  // "Event Date(s) Feb 21, 2026 to Feb 22, 2026"
+  // "Event Date(s) May 16, 2026"
+  txt = txt.replace(/^Event Date\(s\)\s*/i, "").trim();
+
+  // Split on " to " (Ryzer uses "to" on registration pages)
+  var parts = txt.split(/\s+to\s+/i);
+
+  if (parts.length === 1) {
+    var one = parseMonthNameDate(parts[0]);
+    return { start: one, end: one };
   }
-  return out;
+
+  var a = parseMonthNameDate(parts[0]);
+  var b = parseMonthNameDate(parts[1]);
+
+  // If second parse fails but first succeeds, treat as single
+  if (a && !b) return { start: a, end: a };
+
+  return { start: a, end: b || a };
 }
 
-function looksLikeRegUrl(u) {
-  var s = lc(u || "");
-  if (!s) return false;
-  if (s.indexOf("register.ryzer.com/camp.cfm") >= 0 && s.indexOf("id=") >= 0) return true;
-  if (s.indexOf("register.ryzer.com") >= 0 && s.indexOf("camp.cfm") >= 0 && s.indexOf("id=") >= 0) return true;
-  return false;
-}
+function parseRyzerLocationLine(line) {
+  // "Location Huckeba Indoor Facility | Searcy, AR"
+  var txt = stripNonAscii(line || "");
+  if (!txt) return { city: null, state: null, location_raw: null };
 
-function extractRegLinksFromHtml(html, baseUrl) {
-  var hrefs = extractHrefs(html);
-  var out = [];
-  for (var i = 0; i < hrefs.length; i++) {
-    var u = absUrl(baseUrl, hrefs[i]);
-    if (u && looksLikeRegUrl(u)) out.push(u);
+  txt = txt.replace(/^Location\s*/i, "").trim();
+
+  // Take part after "|" if present
+  var cityStatePart = txt;
+  if (txt.indexOf("|") >= 0) {
+    var split = txt.split("|");
+    cityStatePart = stripNonAscii(split[split.length - 1]);
   }
-  return uniq(out);
+
+  // City, ST
+  var m = /(.+)\,\s*([A-Z]{2})\b/.exec(cityStatePart);
+  if (m) {
+    return { city: stripNonAscii(m[1]), state: stripNonAscii(m[2]), location_raw: txt };
+  }
+
+  return { city: null, state: null, location_raw: txt };
 }
 
-function extractLikelyIndexLinks(html, baseUrl) {
-  var hrefs = extractHrefs(html);
-  var out = [];
-  for (var i = 0; i < hrefs.length; i++) {
-    var raw = hrefs[i];
-    var u = absUrl(baseUrl, raw);
-    if (!u) continue;
+function parseFirstPriceFromText(s) {
+  var txt = stripNonAscii(s || "");
+  if (!txt) return { price: null, price_raw: null };
 
-    var s = lc(u);
-    if (s.indexOf("mailto:") === 0) continue;
-    if (s.indexOf("javascript:") === 0) continue;
+  // Find first $XX.XX
+  var m = /\$([0-9]{1,5})(?:\.[0-9]{2})?/.exec(txt);
+  if (!m) return { price: null, price_raw: null };
 
-    try {
-      var b = new URL(baseUrl);
-      var x = new URL(u);
-      if (x.host && b.host && x.host !== b.host) continue;
-    } catch (e) {}
+  var p = Number(m[1]);
+  if (!isFinite(p)) return { price: null, price_raw: null };
 
-    if (
-      s.indexOf("camps") >= 0 ||
-      s.indexOf("camp.cfm") >= 0 ||
-      (s.indexOf("camp") >= 0 && s.indexOf("id=") < 0) ||
-      s.indexOf("events") >= 0 ||
-      s.indexOf("registration") >= 0 ||
-      s.indexOf("register") >= 0 ||
-      s.indexOf("clinics") >= 0
-    ) {
-      out.push(u);
+  return { price: p, price_raw: "$" + m[1] };
+}
+
+function extractRyzerFieldsFromHtml(html) {
+  // We will parse from rendered text-ish lines using simple tag stripping.
+  // Ryzer pages are fairly consistent.
+  var raw = String(html || "");
+
+  // Convert <br> to newlines then strip tags
+  var txt = raw.replace(/<br\s*\/?>/gi, "\n");
+  txt = txt.replace(/<\/(p|div|h1|h2|h3|li|tr|td|section|article)>/gi, "\n");
+  txt = txt.replace(/<[^>]+>/g, " ");
+  txt = stripNonAscii(txt);
+
+  // Create "lines" by splitting on known separators
+  var lines = txt.split(/\s{2,}|\n+/g);
+  var i;
+
+  var campName = null;
+  var eventDatesLine = null;
+  var locationLine = null;
+  var gradesLine = null;
+  var registerByLine = null;
+
+  // We also want price; it often appears as "$85.00" near "Register Now"
+  var priceHit = null;
+
+  for (i = 0; i < lines.length; i++) {
+    var line = stripNonAscii(lines[i]);
+
+    if (!line) continue;
+
+    // Camp title is usually the first big title line; we can detect by presence after the sport header,
+    // but easiest: take the first line that is not cookie/legal and not the sport breadcrumb and not "Register..."
+    if (!campName) {
+      if (
+        lc(line).indexOf("we use cookies") === 0 ||
+        lc(line).indexOf("learn more") === 0 ||
+        lc(line).indexOf("terms of use") >= 0 ||
+        lc(line).indexOf("privacy policy") >= 0 ||
+        lc(line).indexOf("register for this event") >= 0
+      ) {
+        // skip
+      } else {
+        // If the line contains " - Football" and is short, it might be breadcrumb like "Harding University - Football"
+        if (!(line.indexOf(" - Football") > 0 && line.length < 60)) {
+          // Keep first plausible title
+          campName = line;
+        }
+      }
+    }
+
+    if (!locationLine && /^Location\s/i.test(line)) locationLine = line;
+    if (!eventDatesLine && /^Event Date\(s\)\s/i.test(line)) eventDatesLine = line;
+    if (!gradesLine && /^Grades\s/i.test(line)) gradesLine = line;
+    if (!registerByLine && /^Register By\s/i.test(line)) registerByLine = line;
+
+    if (!priceHit && line.indexOf("$") >= 0) {
+      // Heuristic: prefer price near "Register Now"
+      if (lc(line).indexOf("register now") >= 0 || lc(line).indexOf("select a price") >= 0) {
+        priceHit = line;
+      }
     }
   }
-  return uniq(out).slice(0, 12);
+
+  // Fallback: if we didn't find a priceHit, scan entire text for a dollar amount
+  if (!priceHit && txt.indexOf("$") >= 0) priceHit = txt;
+
+  var dates = parseRyzerEventDatesLine(eventDatesLine || "");
+  var loc = parseRyzerLocationLine(locationLine || "");
+  var priceParsed = parseFirstPriceFromText(priceHit || "");
+
+  // Grades line: "Grades 2nd to 7th"
+  var gradesRaw = null;
+  if (gradesLine) gradesRaw = stripNonAscii(gradesLine.replace(/^Grades\s*/i, "").trim());
+
+  // Register by raw: "Register By Feb 20, 2026 11:59pm CST"
+  var registerByRaw = null;
+  if (registerByLine) registerByRaw = stripNonAscii(registerByLine.replace(/^Register By\s*/i, "").trim());
+
+  return {
+    camp_name: campName,
+    start_date: dates.start,
+    end_date: dates.end,
+    city: loc.city,
+    state: loc.state,
+    location_raw: loc.location_raw,
+    grades_raw: gradesRaw,
+    register_by_raw: registerByRaw,
+    price: priceParsed.price,
+    price_raw: priceParsed.price_raw
+  };
 }
 
-function slugify(s) {
-  return String(s || "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
+function discoverRyzerRegistrationLinks(siteHtml, siteUrl, maxLinks) {
+  // Find register.ryzer.com camp links; include variants with id= and sport=
+  // Example: https://register.ryzer.com/camp.cfm?sport=1&id=323894
+  var html = String(siteHtml || "");
+  var out = [];
+  var seen = {};
 
-function toISODateFromParts(year, month1to12, day1to31) {
-  if (!year || !month1to12 || !day1to31) return null;
-  var yyyy = String(year);
-  var mm = String(month1to12).padStart(2, "0");
-  var dd = String(day1to31).padStart(2, "0");
-  return yyyy + "-" + mm + "-" + dd;
-}
+  // Capture href links
+  var hrefRe = /href="([^"]+)"/gi;
+  var m;
+  while ((m = hrefRe.exec(html)) !== null) {
+    var href = m[1];
+    if (!href) continue;
 
-function computeSeasonYearFootball(startDateISO) {
-  if (!startDateISO) return null;
-  var d = new Date(startDateISO + "T00:00:00.000Z");
-  if (isNaN(d.getTime())) return null;
-  var y = d.getUTCFullYear();
-  var feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
-  return d >= feb1 ? y : y - 1;
-}
+    var abs = absUrl(siteUrl, href);
+    if (!abs) continue;
 
-function simpleHash(obj) {
-  var str = typeof obj === "string" ? obj : JSON.stringify(obj || {});
-  var h = 0;
-  for (var i = 0; i < str.length; i++) {
-    h = (h << 5) - h + str.charCodeAt(i);
-    h |= 0;
-  }
-  return "h" + String(Math.abs(h));
-}
+    var low = lc(abs);
+    if (low.indexOf("register.ryzer.com/camp.cfm") < 0) continue;
 
-function extractTitleFromHtml(html) {
-  if (!html) return null;
-  var m = /<title[^>]*>([^<]+)<\/title>/i.exec(html);
-  if (m && m[1] !== undefined) return stripNonAscii(m[1]);
-  var h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
-  if (h1 && h1[1] !== undefined) return stripNonAscii(h1[1].replace(/<[^>]+>/g, " "));
-  return null;
-}
+    // Ensure it has an id=
+    var idVal = parseQueryParam(abs, "id");
+    if (!idVal) continue;
 
-function monthToNum(m) {
-  var s = lc(m || "");
-  if (s.indexOf("jan") === 0) return 1;
-  if (s.indexOf("feb") === 0) return 2;
-  if (s.indexOf("mar") === 0) return 3;
-  if (s.indexOf("apr") === 0) return 4;
-  if (s.indexOf("may") === 0) return 5;
-  if (s.indexOf("jun") === 0) return 6;
-  if (s.indexOf("jul") === 0) return 7;
-  if (s.indexOf("aug") === 0) return 8;
-  if (s.indexOf("sep") === 0) return 9;
-  if (s.indexOf("sept") === 0) return 9;
-  if (s.indexOf("oct") === 0) return 10;
-  if (s.indexOf("nov") === 0) return 11;
-  if (s.indexOf("dec") === 0) return 12;
-  return null;
-}
+    var key = "id:" + idVal;
+    if (seen[key]) continue;
+    seen[key] = true;
 
-function extractMonthNameDateRange(text) {
-  var t = stripNonAscii(text || "");
-  if (!t) return { start: null, end: null, raw: null };
+    out.push(abs);
 
-  var reRange =
-    /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2})(?:st|nd|rd|th)?\s*[-–]\s*(\d{1,2})(?:st|nd|rd|th)?\b/i;
-  var m = reRange.exec(t);
-  if (m) {
-    var mon = monthToNum(m[1]);
-    var d1 = parseInt(m[2], 10);
-    var d2 = parseInt(m[3], 10);
-    if (mon && d1 && d2) return { start: { mon: mon, day: d1 }, end: { mon: mon, day: d2 }, raw: m[0] };
+    if (maxLinks && out.length >= maxLinks) break;
   }
 
-  var reSingle =
-    /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2})(?:st|nd|rd|th)?\b/i;
-  var m2 = reSingle.exec(t);
-  if (m2) {
-    var mon2 = monthToNum(m2[1]);
-    var d = parseInt(m2[2], 10);
-    if (mon2 && d) return { start: { mon: mon2, day: d }, end: null, raw: m2[0] };
-  }
-
-  return { start: null, end: null, raw: null };
-}
-
-// Numeric patterns like 02/21/2026 or 2/21/26, including ranges:
-// 02/21/2026 - 02/22/2026
-function extractNumericDateRange(text) {
-  var t = stripNonAscii(text || "");
-  if (!t) return { start: null, end: null, raw: null };
-
-  var reRange = /\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s*[-–]\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/;
-  var m = reRange.exec(t);
-  if (m) {
-    var m1 = parseInt(m[1], 10);
-    var d1 = parseInt(m[2], 10);
-    var y1 = parseInt(m[3], 10);
-    var m2 = parseInt(m[4], 10);
-    var d2 = parseInt(m[5], 10);
-    var y2 = parseInt(m[6], 10);
-    if (y1 < 100) y1 = 2000 + y1;
-    if (y2 < 100) y2 = 2000 + y2;
-
-    return {
-      start: { year: y1, mon: m1, day: d1 },
-      end: { year: y2, mon: m2, day: d2 },
-      raw: m[0],
-    };
-  }
-
-  var reSingle = /\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/;
-  var mS = reSingle.exec(t);
-  if (mS) {
-    var mo = parseInt(mS[1], 10);
-    var da = parseInt(mS[2], 10);
-    var ye = parseInt(mS[3], 10);
-    if (ye < 100) ye = 2000 + ye;
-
-    return { start: { year: ye, mon: mo, day: da }, end: null, raw: mS[0] };
-  }
-
-  return { start: null, end: null, raw: null };
-}
-
-function inferYearFromHtmlOrNow(html) {
-  var y = null;
-  if (html) {
-    // prefer a year that appears near "2026" in the page
-    var m = /\b(20\d{2})\b/.exec(html);
-    if (m && m[1]) y = parseInt(m[1], 10);
-  }
-  if (!y) y = new Date().getUTCFullYear();
-  return y;
-}
-
-function findMetaDescription(html) {
-  if (!html) return "";
-  var m = /<meta[^>]*name="description"[^>]*content="([^"]*)"/i.exec(html);
-  if (m && m[1] !== undefined) return stripNonAscii(m[1]);
-  var m2 = /<meta[^>]*property="og:description"[^>]*content="([^"]*)"/i.exec(html);
-  if (m2 && m2[1] !== undefined) return stripNonAscii(m2[1]);
-  return "";
-}
-
-function deriveDatesFromTitleAndRegHtml(title, regHtml) {
-  var year = inferYearFromHtmlOrNow(regHtml);
-
-  // 1) title month-name
-  var fromTitle = extractMonthNameDateRange(title || "");
-  if (fromTitle && fromTitle.start) {
-    var s1 = toISODateFromParts(year, fromTitle.start.mon, fromTitle.start.day);
-    var e1 = null;
-    if (fromTitle.end) e1 = toISODateFromParts(year, fromTitle.end.mon, fromTitle.end.day);
-    return { start_date: s1, end_date: e1, raw: fromTitle.raw || title, method: "title_monthname" };
-  }
-
-  // 2) reg page meta description often contains dates
-  var meta = findMetaDescription(regHtml || "");
-  var fromMeta = extractMonthNameDateRange(meta);
-  if (fromMeta && fromMeta.start) {
-    var sm = toISODateFromParts(year, fromMeta.start.mon, fromMeta.start.day);
-    var em = null;
-    if (fromMeta.end) em = toISODateFromParts(year, fromMeta.end.mon, fromMeta.end.day);
-    return { start_date: sm, end_date: em, raw: fromMeta.raw || meta, method: "meta_monthname" };
-  }
-
-  // 3) reg page body month-name search (first 12k chars)
-  var body = stripNonAscii(regHtml || "");
-  var small = body ? body.slice(0, 12000) : "";
-  var fromBody = extractMonthNameDateRange(small);
-  if (fromBody && fromBody.start) {
-    var sb = toISODateFromParts(year, fromBody.start.mon, fromBody.start.day);
-    var eb = null;
-    if (fromBody.end) eb = toISODateFromParts(year, fromBody.end.mon, fromBody.end.day);
-    return { start_date: sb, end_date: eb, raw: fromBody.raw || null, method: "body_monthname" };
-  }
-
-  // 4) numeric dates in reg page body (MM/DD/YYYY)
-  var num = extractNumericDateRange(small);
-  if (num && num.start) {
-    var sn = toISODateFromParts(num.start.year, num.start.mon, num.start.day);
-    var en = null;
-    if (num.end) en = toISODateFromParts(num.end.year, num.end.mon, num.end.day);
-    return { start_date: sn, end_date: en, raw: num.raw || null, method: "body_numeric" };
-  }
-
-  return { start_date: null, end_date: null, raw: null, method: "none" };
+  return out;
 }
 
 Deno.serve(async (req) => {
@@ -327,161 +319,122 @@ Deno.serve(async (req) => {
     version: VERSION,
     startedAt: new Date().toISOString(),
     notes: [],
-    site_debug: [],
+    siteDebug: [],
+    firstSiteHtmlSnippet: null
   };
 
   try {
     if (req.method !== "POST") {
       return new Response(JSON.stringify({ error: "Method not allowed", debug: debug }), {
         status: 405,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
 
-    var body = await req.json().catch(function () {
-      return null;
-    });
+    var body = await req.json().catch(function () { return null; });
 
     var sportId = safeString(body && body.sportId);
     var sportName = safeString(body && body.sportName) || "";
-    var sites = asArray(body && body.sites);
-
     var maxSites = Number(body && body.maxSites !== undefined ? body.maxSites : 5);
     var maxRegsPerSite = Number(body && body.maxRegsPerSite !== undefined ? body.maxRegsPerSite : 5);
     var maxEvents = Number(body && body.maxEvents !== undefined ? body.maxEvents : 25);
+    var dryRun = !!(body && body.dryRun);
 
+    // Optional: provide a direct test URL (bypasses loading from DB on the client side)
     var testSiteUrl = safeString(body && body.testSiteUrl);
-    var testSchoolId = safeString(body && body.testSchoolId);
+
+    // AdminImport typically loads SchoolSportSite rows client-side and sends selected site URLs.
+    // But we support a server-driven approach too: accept a list of site URLs to crawl.
+    var siteUrls = body && body.siteUrls && Array.isArray(body.siteUrls) ? body.siteUrls : [];
 
     if (!sportId) {
       return new Response(JSON.stringify({ error: "Missing required: sportId", debug: debug }), {
         status: 400,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
 
+    // If testSiteUrl provided, use it as the only site
     if (testSiteUrl) {
-      sites = [
-        {
-          school_id: testSchoolId || null,
-          sport_id: sportId,
-          camp_site_url: testSiteUrl,
-        },
-      ];
-      maxSites = 1;
-      debug.notes.push("testSiteUrl provided: running single-site mode");
+      siteUrls = [testSiteUrl];
     }
 
+    if (!siteUrls || siteUrls.length === 0) {
+      return new Response(JSON.stringify({
+        error: "Missing required: siteUrls (or testSiteUrl)",
+        debug: debug
+      }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // Bound sites
+    var boundedSites = siteUrls.slice(0, maxSites);
+
+    var processedSites = 0;
+    var processedRegs = 0;
     var accepted = [];
     var rejected = [];
     var errors = [];
 
-    var processedSites = 0;
-    var processedRegs = 0;
-
-    var picked = [];
-    for (var i = 0; i < sites.length; i++) {
-      if (picked.length >= maxSites) break;
-      var row = sites[i] || {};
-      var u = safeString(row.camp_site_url || row.site_url || row.url);
-      if (!u) continue;
-      picked.push(row);
-    }
-
-    for (var si = 0; si < picked.length; si++) {
+    for (var i = 0; i < boundedSites.length; i++) {
       if (accepted.length >= maxEvents) break;
 
-      var siteRow = picked[si] || {};
-      var schoolId = safeString(siteRow.school_id);
-      var campSiteUrl = safeString(siteRow.camp_site_url || siteRow.site_url || siteRow.url);
+      var siteUrl = safeString(boundedSites[i]);
+      if (!siteUrl) continue;
 
-      var siteDbg = {
-        school_id: schoolId || null,
-        site_url: campSiteUrl || null,
-        http: null,
-        htmlType: null,
-        regLinks: 0,
-        regLinksSample: "",
-        notes: [],
-        crawledPages: [],
-        htmlSnippet: null,
-      };
+      processedSites += 1;
 
-      if (!campSiteUrl) {
-        siteDbg.notes.push("missing_site_url");
-        debug.site_debug.push(siteDbg);
-        continue;
-      }
+      var siteHttp = 0;
+      var siteHtml = "";
 
       try {
-        var r = await fetch(campSiteUrl, {
+        var sr = await fetch(siteUrl, {
           method: "GET",
           headers: {
             "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-            Accept: "text/html,*/*",
-          },
+            Accept: "text/html,*/*"
+          }
         });
 
-        siteDbg.http = r.status;
-        siteDbg.htmlType = r.headers.get("content-type") || "";
+        siteHttp = sr.status;
+        siteHtml = await sr.text();
 
-        var html = await r.text();
-        siteDbg.htmlSnippet = truncate(html, 1200);
+        if (!debug.firstSiteHtmlSnippet) {
+          debug.firstSiteHtmlSnippet = truncate(siteHtml, 1600);
+        }
 
-        if (!r.ok) {
-          siteDbg.notes.push("non_200_fetch");
-          debug.site_debug.push(siteDbg);
-          processedSites += 1;
+        if (!sr.ok) {
+          errors.push({ siteUrl: siteUrl, error: "site_fetch_failed_http_" + siteHttp });
+          debug.siteDebug.push({
+            siteUrl: siteUrl,
+            http: siteHttp,
+            htmlType: safeString(sr.headers.get("content-type")),
+            regLinks: 0,
+            notes: "site_fetch_failed"
+          });
           continue;
         }
 
-        var regLinks = extractRegLinksFromHtml(html, campSiteUrl);
+        var regLinks = discoverRyzerRegistrationLinks(siteHtml, siteUrl, maxRegsPerSite);
 
-        if (!regLinks.length) {
-          var likelyPages = extractLikelyIndexLinks(html, campSiteUrl);
-          siteDbg.crawledPages = likelyPages.slice(0);
+        debug.siteDebug.push({
+          siteUrl: siteUrl,
+          http: siteHttp,
+          htmlType: safeString(sr.headers.get("content-type")),
+          regLinks: regLinks.length,
+          sample: regLinks.length ? regLinks[0] : "",
+          notes: regLinks.length ? "" : "no_registration_links_found"
+        });
 
-          for (var pi = 0; pi < likelyPages.length; pi++) {
-            if (regLinks.length >= maxRegsPerSite) break;
-            var pageUrl = likelyPages[pi];
-            try {
-              var r2 = await fetch(pageUrl, {
-                method: "GET",
-                headers: {
-                  "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-                  Accept: "text/html,*/*",
-                },
-              });
-              if (!r2.ok) continue;
+        if (!regLinks.length) continue;
 
-              var html2 = await r2.text();
-              var found = extractRegLinksFromHtml(html2, pageUrl);
-
-              for (var fi = 0; fi < found.length; fi++) {
-                if (regLinks.length >= maxRegsPerSite) break;
-                regLinks.push(found[fi]);
-              }
-              regLinks = uniq(regLinks);
-            } catch (e2) {}
-          }
-        }
-
-        regLinks = uniq(regLinks).slice(0, maxRegsPerSite);
-
-        siteDbg.regLinks = regLinks.length;
-        siteDbg.regLinksSample = regLinks.length ? regLinks[0] : "";
-
-        if (!regLinks.length) {
-          siteDbg.notes.push("no_registration_links_found");
-          debug.site_debug.push(siteDbg);
-          processedSites += 1;
-          continue;
-        }
-
-        for (var ri = 0; ri < regLinks.length; ri++) {
+        // For each registration link, fetch Ryzer page and parse fields
+        for (var j = 0; j < regLinks.length; j++) {
           if (accepted.length >= maxEvents) break;
 
-          var regUrl = regLinks[ri];
+          var regUrl = regLinks[j];
           processedRegs += 1;
 
           try {
@@ -489,110 +442,102 @@ Deno.serve(async (req) => {
               method: "GET",
               headers: {
                 "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-                Accept: "text/html,*/*",
-              },
+                Accept: "text/html,*/*"
+              }
             });
 
+            var regHttp = rr.status;
+            var regHtml = await rr.text();
+
             if (!rr.ok) {
-              rejected.push({ reason: "reg_fetch_failed", url: regUrl, http: rr.status, site: campSiteUrl });
+              rejected.push({ reason: "reg_fetch_failed_http_" + regHttp, registrationUrl: regUrl });
               continue;
             }
 
-            var regHtml = await rr.text();
-            var regTitle = extractTitleFromHtml(regHtml) || "Camp";
+            var fields = extractRyzerFieldsFromHtml(regHtml);
 
-            var d = deriveDatesFromTitleAndRegHtml(regTitle, regHtml);
+            // If we still can't parse a start_date, fail-closed (don’t write junk)
+            if (!fields || !fields.start_date) {
+              rejected.push({
+                reason: "missing_start_date",
+                registrationUrl: regUrl,
+                camp_name_guess: fields ? fields.camp_name : null
+              });
+              continue;
+            }
 
-            var startISO = d && d.start_date ? d.start_date : null;
-            var endISO = d && d.end_date ? d.end_date : null;
-            var datesRaw = d && d.raw ? d.raw : null;
-
-            var seasonYear = startISO ? computeSeasonYearFootball(startISO) : null;
-
-            var programId = "sportsusa:" + slugify(campSiteUrl) + ":" + slugify(regTitle);
-            var discriminator = regUrl;
-            var eventKey = "sportsusa:" + programId + ":" + (startISO || "na") + ":" + discriminator;
+            // program_id / event_key based on Ryzer id
+            var ryzerId = parseQueryParam(regUrl, "id");
+            var programId = ryzerId ? "ryzer:" + ryzerId : ("url:" + lc(regUrl));
+            var eventKey = programId + ":" + fields.start_date;
 
             accepted.push({
-              school_id: schoolId || null,
-              sport_id: sportId,
-              sport_name: sportName,
-              camp_site_url: campSiteUrl,
-              registration_url: regUrl,
+              event: {
+                sportId: sportId,
+                sportName: sportName,
+                camp_name: fields.camp_name || "Camp",
+                start_date: fields.start_date,
+                end_date: fields.end_date || fields.start_date,
+                city: fields.city,
+                state: fields.state,
+                price: fields.price,
+                link_url: regUrl,
+                notes: null,
 
-              camp_name: regTitle,
-              start_date: startISO,
-              end_date: endISO,
+                // Extended / staging fields
+                season_year: Number(String(fields.start_date).slice(0, 4)),
+                program_id: programId,
+                event_key: eventKey,
+                source_platform: "ryzer",
+                source_url: regUrl,
+                last_seen_at: new Date().toISOString(),
+                content_hash: null,
 
-              city: null,
-              state: null,
-
-              season_year: seasonYear,
-              program_id: programId,
-              event_key: eventKey,
-              source_platform: "sportsusa",
-              source_url: regUrl,
-              last_seen_at: new Date().toISOString(),
-              content_hash: simpleHash({
-                campSiteUrl: campSiteUrl,
-                regUrl: regUrl,
-                title: regTitle,
-                start: startISO,
-                end: endISO,
-              }),
-
-              event_dates_raw: datesRaw,
-              grades_raw: null,
-              register_by_raw: null,
-              price_raw: null,
-              price_min: null,
-              price_max: null,
-              sections_json: null,
-
-              debug: {
-                date_method: d && d.method ? d.method : "none",
-                derived_raw: datesRaw,
-                reg_title: regTitle,
-                reg_html_snippet: truncate(regHtml, 800),
+                event_dates_raw: null,
+                grades_raw: fields.grades_raw,
+                register_by_raw: fields.register_by_raw,
+                price_raw: fields.price_raw,
+                price_min: null,
+                price_max: null,
+                sections_json: null
               },
+              debug: {
+                discovered_from_site: siteUrl,
+                ryzer_id: ryzerId,
+                location_raw: fields.location_raw
+              }
             });
-          } catch (e3) {
-            errors.push({ error: String((e3 && e3.message) || e3), url: regUrl, site: campSiteUrl });
+          } catch (e2) {
+            errors.push({ registrationUrl: regUrl, error: String((e2 && e2.message) || e2) });
           }
         }
-
-        debug.site_debug.push(siteDbg);
-        processedSites += 1;
-      } catch (e1) {
-        siteDbg.notes.push("site_fetch_exception");
-        errors.push({ error: String((e1 && e1.message) || e1), site: campSiteUrl });
-        debug.site_debug.push(siteDbg);
-        processedSites += 1;
+      } catch (e) {
+        errors.push({ siteUrl: siteUrl, error: String((e && e.message) || e) });
       }
     }
 
-    return new Response(
-      JSON.stringify({
-        stats: {
-          processedSites: processedSites,
-          processedRegs: processedRegs,
-          accepted: accepted.length,
-          rejected: rejected.length,
-          errors: errors.length,
-        },
-        version: VERSION,
-        debug: debug,
-        accepted: accepted,
-        rejected_samples: rejected.slice(0, 25),
-        errors: errors.slice(0, 10),
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({
+      stats: {
+        processedSites: processedSites,
+        processedRegs: processedRegs,
+        accepted: accepted.length,
+        rejected: rejected.length,
+        errors: errors.length,
+        dryRun: dryRun
+      },
+      debug: debug,
+      errors: errors.slice(0, 10),
+      accepted: dryRun ? accepted.slice(0, 25) : accepted,
+      rejected_samples: rejected.slice(0, 25)
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
   } catch (e) {
     debug.notes.push("top-level error: " + String((e && e.message) || e));
     return new Response(JSON.stringify({ error: "Unhandled error", debug: debug }), {
       status: 500,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" }
     });
   }
 });
