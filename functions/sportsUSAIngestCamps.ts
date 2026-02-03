@@ -2,20 +2,21 @@
 // Base44 Backend Function (Deno)
 //
 // Purpose:
-// - Given a list of SchoolSportSite rows (camp_site_url per school for a sport),
-//   fetch each camp site and extract Ryzer registration links.
-// - Skip sites that clearly have "no upcoming events".
-// - For each registration link, fetch the Ryzer register page and extract:
-//   camp name, date text, location, grades, price, description (best-effort).
-// - Return normalized CampDemo-ready payloads to AdminImport (AdminImport writes).
+// - For each SchoolSportSite.camp_site_url:
+//   - Fetch the camp site HTML (e.g., https://www.hardingfootballcamps.com/)
+//   - Parse the event listing table and extract rows that contain register.ryzer.com links
+//   - Return normalized "events" list to AdminImport (AdminImport writes CampDemo)
 //
-// v2 changes:
-// - Scan MANY sites, but only PROCESS the first K sites that actually have events.
-// - Adds explicit "no_upcoming_events" detection (common on these sites).
-// - Broader registration link detection (camp.cfm + register.ryzer.com variants).
-// - Editor-safe: no optional chaining, no external imports.
+// Editor-safe:
+// - No optional chaining
+// - No external imports
+// - Regex-based parsing
+//
+// Version notes:
+// - v2 parses <tr> rows that contain register.ryzer.com/camp.cfm?id=...
+// - v2 also attempts to extract City/State from <title> "... | City, ST"
 
-const VERSION = "sportsUSAIngestCamps_2026-02-03_v2_scan_skip_empty_editor_safe";
+const VERSION = "sportsUSAIngestCamps_2026-02-03_v2_row_parser_editor_safe";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -30,27 +31,10 @@ function stripNonAscii(s) {
     .trim();
 }
 
-function lc(s) {
-  return String(s || "").toLowerCase().trim();
-}
-
 function truncate(s, n) {
   var str = String(s || "");
-  var lim = n || 1400;
-  return str.length > lim ? str.slice(0, lim) + "…(truncated)" : str;
-}
-
-function uniq(arr) {
-  var out = [];
-  var seen = {};
-  for (var i = 0; i < arr.length; i++) {
-    var v = arr[i];
-    if (!v) continue;
-    if (seen[v]) continue;
-    seen[v] = true;
-    out.push(v);
-  }
-  return out;
+  var max = n || 1200;
+  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
 }
 
 function absUrl(baseUrl, maybeRelative) {
@@ -73,259 +57,117 @@ function absUrl(baseUrl, maybeRelative) {
   }
 }
 
-function htmlToText(html) {
-  if (!html) return "";
-  var h = String(html);
-
-  // remove script/style
-  h = h.replace(/<script[\s\S]*?<\/script>/gi, " ");
-  h = h.replace(/<style[\s\S]*?<\/style>/gi, " ");
-
-  // convert <br> and </p> to newlines
-  h = h.replace(/<br\s*\/?>/gi, "\n");
-  h = h.replace(/<\/p>/gi, "\n");
-  h = h.replace(/<\/div>/gi, "\n");
-  h = h.replace(/<\/li>/gi, "\n");
-
-  // strip tags
-  h = h.replace(/<[^>]+>/g, " ");
-
-  // decode a few entities
-  h = h.replace(/&nbsp;/gi, " ");
-  h = h.replace(/&amp;/gi, "&");
-  h = h.replace(/&quot;/gi, '"');
-  h = h.replace(/&#39;/gi, "'");
-
-  // collapse whitespace
-  h = h.replace(/\r/g, "\n");
-  h = h.replace(/[ \t]+/g, " ");
-  h = h.replace(/\n\s*\n+/g, "\n");
-  return stripNonAscii(h);
+function textContent(html) {
+  // Very small HTML -> text helper (good enough for table cells)
+  var s = String(html || "");
+  s = s.replace(/<script[\s\S]*?<\/script>/gi, " ");
+  s = s.replace(/<style[\s\S]*?<\/style>/gi, " ");
+  s = s.replace(/<br\s*\/?>/gi, "\n");
+  s = s.replace(/<\/p>/gi, "\n");
+  s = s.replace(/<[^>]+>/g, " ");
+  s = s.replace(/&nbsp;/gi, " ");
+  s = s.replace(/&amp;/gi, "&");
+  s = s.replace(/&quot;/gi, '"');
+  s = s.replace(/&#39;/gi, "'");
+  s = s.replace(/\s+/g, " ");
+  return stripNonAscii(s);
 }
 
-function containsNoUpcomingEvents(htmlOrText) {
-  var t = lc(String(htmlOrText || ""));
-  // common phrase on these SportsConnect camp sites
-  if (t.indexOf("currently there are no upcoming events") >= 0) return true;
-  if (t.indexOf("no upcoming events") >= 0) return true;
-  if (t.indexOf("check back soon") >= 0 && t.indexOf("upcoming") >= 0) return true;
-  return false;
+function extractTitle(html) {
+  var m = /<title[^>]*>([^<]+)<\/title>/i.exec(String(html || ""));
+  return m && m[1] ? stripNonAscii(m[1]) : null;
 }
 
-function extractRegistrationLinks(siteHtml, siteUrl) {
-  var html = String(siteHtml || "");
-  var links = [];
+function extractCityStateFromTitle(title) {
+  // Example: "Walt Wells Football Camps | Eastern Kentucky University | Richmond, KY"
+  var t = safeString(title);
+  if (!t) return { city: null, state: null };
+  var parts = t.split("|").map(function (x) {
+    return stripNonAscii(x);
+  });
+  if (!parts.length) return { city: null, state: null };
 
-  // 1) explicit Ryzer camp register links
-  // example: https://register.ryzer.com/camp.cfm?id=321054&ryzer=1
-  var re1 = /href="([^"]*register\.ryzer\.com[^"]*)"/gi;
-  var m;
-  while ((m = re1.exec(html)) !== null) {
-    var u = absUrl(siteUrl, m[1]);
-    if (u) links.push(u);
+  var last = stripNonAscii(parts[parts.length - 1] || "");
+  var m = /([^,]+),\s*([A-Z]{2})\b/.exec(last);
+  if (m && m[1] && m[2]) {
+    return { city: stripNonAscii(m[1]), state: stripNonAscii(m[2]) };
   }
+  return { city: null, state: null };
+}
 
-  // 2) camp.cfm links even if not on register.ryzer.com
-  var re2 = /href="([^"]*camp\.cfm[^"]*)"/gi;
-  while ((m = re2.exec(html)) !== null) {
-    var u2 = absUrl(siteUrl, m[1]);
-    if (u2) links.push(u2);
-  }
-
-  // 3) Sometimes links appear in JS/JSON blobs (not href)
-  var re3 = /(https?:\/\/register\.ryzer\.com\/[^"' \n<>]+id=\d+[^"' \n<>]*)/gi;
-  while ((m = re3.exec(html)) !== null) {
-    var u3 = stripNonAscii(m[1]);
-    if (u3) links.push(u3);
-  }
-
-  links = uniq(links);
-
-  // Filter to likely registration links (must have id=NUMBER)
+function extractRegisterLinks(html) {
+  // Find ALL register.ryzer.com camp registration links
+  // We capture href and later use table row parsing to get metadata.
   var out = [];
-  for (var i = 0; i < links.length; i++) {
-    var u = links[i];
-    if (!u) continue;
-    if (lc(u).indexOf("ryzer.com") < 0 && lc(u).indexOf("camp.cfm") < 0) continue;
-    if (!/[\?&]id=\d+/i.test(u)) continue;
-    out.push(u);
-  }
-
-  return uniq(out);
-}
-
-function extractRyzerId(url) {
-  var u = safeString(url);
-  if (!u) return null;
-  var m = /[\?&]id=(\d+)/i.exec(u);
-  return m && m[1] ? m[1] : null;
-}
-
-// Parse a first date and optional second date from a line like:
-// "Jan 30th, 2026" or "Jan 30th, 2026 - Jan 31st, 2026"
-function parseDateIsoFromText(text) {
-  var t = stripNonAscii(text || "");
-  if (!t) return { start: null, end: null };
-
-  // Prefer ISO if present anywhere
-  var iso = /(\d{4}-\d{2}-\d{2})/.exec(t);
-  if (iso && iso[1]) return { start: iso[1], end: iso[1] };
-
-  // Month name parsing
-  var months = {
-    jan: 1, january: 1,
-    feb: 2, february: 2,
-    mar: 3, march: 3,
-    apr: 4, april: 4,
-    may: 5,
-    jun: 6, june: 6,
-    jul: 7, july: 7,
-    aug: 8, august: 8,
-    sep: 9, sept: 9, september: 9,
-    oct: 10, october: 10,
-    nov: 11, november: 11,
-    dec: 12, december: 12
-  };
-
-  function toIso(mon, day, year) {
-    var mm = String(mon).padStart(2, "0");
-    var dd = String(day).padStart(2, "0");
-    return year + "-" + mm + "-" + dd;
-  }
-
-  // capture sequences like "Jan 30, 2026" (supports "30th")
-  var re = /\b([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?\,?\s+(\d{4})\b/g;
-  var found = [];
+  var re = /<a[^>]*href="([^"]*register\.ryzer\.com[^"]*)"[^>]*>/gi;
   var m;
-  while ((m = re.exec(t)) !== null) {
-    var monTxt = lc(m[1]);
-    var mon = months[monTxt];
-    var day = parseInt(m[2], 10);
-    var year = parseInt(m[3], 10);
-    if (!mon || !day || !year) continue;
-    found.push(toIso(mon, day, year));
-    if (found.length >= 2) break;
+  while ((m = re.exec(String(html || ""))) !== null) {
+    if (m[1]) out.push(m[1]);
   }
-
-  if (found.length === 1) return { start: found[0], end: found[0] };
-  if (found.length >= 2) return { start: found[0], end: found[1] };
-
-  return { start: null, end: null };
+  // Dedup
+  var uniq = {};
+  var dedup = [];
+  for (var i = 0; i < out.length; i++) {
+    var u = stripNonAscii(out[i]);
+    if (!u) continue;
+    if (!uniq[u]) {
+      uniq[u] = true;
+      dedup.push(u);
+    }
+  }
+  return dedup;
 }
 
-function deriveSeasonYear(sportName, startDateIso) {
-  // Default: season_year = year(start_date)
-  // Football rule (your earlier decision): rollover Feb 1
-  var d = safeString(startDateIso);
-  if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+function parseEventRowsFromHtml(html, siteUrl, maxRegsPerSite) {
+  var events = [];
+  var s = String(html || "");
 
-  var year = parseInt(d.slice(0, 4), 10);
-  var month = parseInt(d.slice(5, 7), 10);
+  // Pull all table rows and keep those containing register.ryzer.com
+  var trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  var m;
+  while ((m = trRe.exec(s)) !== null) {
+    var rowHtml = m[1] || "";
+    if (rowHtml.toLowerCase().indexOf("register.ryzer.com") === -1) continue;
 
-  var sn = lc(sportName || "");
+    // registration link
+    var hrefM = /<a[^>]*href="([^"]*register\.ryzer\.com[^"]*)"[^>]*>\s*Register\s*<\/a>/i.exec(rowHtml);
+    if (!hrefM || !hrefM[1]) {
+      // fallback: any anchor with register.ryzer.com
+      var hrefM2 = /<a[^>]*href="([^"]*register\.ryzer\.com[^"]*)"[^>]*>/i.exec(rowHtml);
+      if (hrefM2 && hrefM2[1]) hrefM = hrefM2;
+    }
+    var regUrl = hrefM && hrefM[1] ? absUrl(siteUrl, hrefM[1]) : null;
 
-  if (sn === "football") {
-    // Jan belongs to prior season; Feb+ is current year
-    return month === 1 ? year - 1 : year;
+    // Extract TD cells in order
+    var tds = [];
+    var tdRe = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+    var tdM;
+    while ((tdM = tdRe.exec(rowHtml)) !== null) {
+      tds.push(stripNonAscii(textContent(tdM[1] || "")));
+    }
+
+    // Expected columns (often):
+    // [0]=Event Name, [1]=Dates, [2]=Grades, [3]=Cost, [4]=Register (ignored)
+    var campName = tds.length > 0 ? safeString(tds[0]) : null;
+    var dateRaw = tds.length > 1 ? safeString(tds[1]) : null;
+    var gradesRaw = tds.length > 2 ? safeString(tds[2]) : null;
+    var priceRaw = tds.length > 3 ? safeString(tds[3]) : null;
+
+    // Some sites have extra columns; keep best effort
+    if (!campName) continue;
+
+    events.push({
+      camp_name: campName,
+      event_dates_raw: dateRaw,
+      grades_raw: gradesRaw,
+      price_raw: priceRaw,
+      link_url: regUrl,
+    });
+
+    if (maxRegsPerSite && events.length >= maxRegsPerSite) break;
   }
 
-  return year;
-}
-
-function djb2Hash(str) {
-  var s = String(str || "");
-  var h = 5381;
-  for (var i = 0; i < s.length; i++) {
-    h = ((h << 5) + h) + s.charCodeAt(i);
-    h = h & 0xffffffff;
-  }
-  // unsigned hex
-  var u = (h >>> 0).toString(16);
-  return u;
-}
-
-function parseRyzerRegisterPage(regHtml) {
-  var html = String(regHtml || "");
-  var text = htmlToText(html);
-
-  // camp name: prefer <h1>, else use <title>
-  var campName = null;
-  var m = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
-  if (m && m[1]) campName = stripNonAscii(m[1].replace(/<[^>]+>/g, " "));
-  if (!campName) {
-    var t = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
-    if (t && t[1]) campName = stripNonAscii(t[1]);
-  }
-
-  // pull labeled fields from text (matches what Ryzer pages render)
-  function pickAfter(label) {
-    var re = new RegExp(label + "\\s*:\\s*([^\\n]+)", "i");
-    var mm = re.exec(text);
-    if (mm && mm[1]) return stripNonAscii(mm[1]);
-    return null;
-  }
-
-  var eventDatesRaw = pickAfter("Event Date\\(s\\)") || pickAfter("Event Dates") || null;
-  var locationRaw = pickAfter("Location") || null;
-  var gradesRaw = pickAfter("Grades") || null;
-  var priceRaw = pickAfter("Price") || null;
-
-  // sometimes price appears as "$200.00"
-  if (!priceRaw) {
-    var pm = /\$\s*\d+(\.\d{2})?/.exec(text);
-    if (pm && pm[0]) priceRaw = stripNonAscii(pm[0]);
-  }
-
-  // basic price number
-  var price = null;
-  if (priceRaw) {
-    var n = /(\d+(?:\.\d{1,2})?)/.exec(priceRaw.replace(/,/g, ""));
-    if (n && n[1]) price = Number(n[1]);
-  }
-
-  // parse dates (best-effort)
-  var dates = parseDateIsoFromText(eventDatesRaw || "");
-  var startDate = dates.start;
-  var endDate = dates.end;
-
-  // parse city/state from location like "Hardin-Simmons University - Abilene, TX"
-  var city = null;
-  var state = null;
-  if (locationRaw) {
-    var lm = /,\s*([A-Z]{2})\b/.exec(locationRaw);
-    if (lm && lm[1]) state = lm[1];
-    var cm = /-\s*([^,]+)\,\s*[A-Z]{2}\b/.exec(locationRaw);
-    if (cm && cm[1]) city = stripNonAscii(cm[1]);
-  }
-
-  // pull a short description block if present
-  var desc = null;
-  var dm = /Event Description\s*:\s*([\s\S]{0,1200})/i.exec(text);
-  if (dm && dm[1]) desc = stripNonAscii(dm[1]).slice(0, 800);
-
-  return {
-    camp_name: safeString(campName),
-    event_dates_raw: safeString(eventDatesRaw),
-    start_date: safeString(startDate),
-    end_date: safeString(endDate),
-    location_raw: safeString(locationRaw),
-    city: safeString(city),
-    state: safeString(state),
-    grades_raw: safeString(gradesRaw),
-    price_raw: safeString(priceRaw),
-    price: price,
-    notes: safeString(desc)
-  };
-}
-
-function looksLikeUniversityHost(s) {
-  // Conservative: enforce "university" or "college" in the register page title/host string.
-  // This is a guardrail to meet your "university only" requirement.
-  var t = lc(s || "");
-  if (!t) return false;
-  if (t.indexOf("university") >= 0) return true;
-  if (t.indexOf("college") >= 0) return true;
-  return false;
+  return events;
 }
 
 Deno.serve(async (req) => {
@@ -334,61 +176,75 @@ Deno.serve(async (req) => {
     startedAt: new Date().toISOString(),
     notes: [],
     siteDebug: [],
-    params: {}
   };
 
   try {
     if (req.method !== "POST") {
       return new Response(JSON.stringify({ error: "Method not allowed", debug: debug }), {
         status: 405,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
-    var body = await req.json().catch(function () { return null; });
+    var body = await req.json().catch(function () {
+      return null;
+    });
 
     var sportId = safeString(body && body.sportId);
     var sportName = safeString(body && body.sportName) || "";
     var dryRun = !!(body && body.dryRun);
 
-    // AdminImport passes in active sites (subset)
-    var sites = (body && body.sites && Array.isArray(body.sites)) ? body.sites : [];
+    var maxSites = Number(body && body.maxSites !== undefined ? body.maxSites : 5);
+    var maxRegsPerSite = Number(body && body.maxRegsPerSite !== undefined ? body.maxRegsPerSite : 5);
+    var maxEvents = Number(body && body.maxEvents !== undefined ? body.maxEvents : 25);
 
-    // Scan behavior
-    var maxSitesToScan = Number(body && body.maxSitesToScan !== undefined ? body.maxSitesToScan : sites.length);
-    var maxSitesWithEvents = Number(body && body.maxSitesWithEvents !== undefined ? body.maxSitesWithEvents : 5);
-    var maxRegsPerSite = Number(body && body.maxRegsPerSite !== undefined ? body.maxRegsPerSite : 10);
-    var maxEvents = Number(body && body.maxEvents !== undefined ? body.maxEvents : 100);
+    // Input sites array: [{ school_id, camp_site_url, logo_url, source_key }]
+    var sites = body && body.sites ? body.sites : [];
 
-    // default: enforce "university only" based on register page title/host string
-    var enforceUniversityOnly = (body && body.enforceUniversityOnly === false) ? false : true;
-
-    debug.params = {
-      sportId: sportId,
-      sportName: sportName,
-      dryRun: dryRun,
-      sitesProvided: sites.length,
-      maxSitesToScan: maxSitesToScan,
-      maxSitesWithEvents: maxSitesWithEvents,
-      maxRegsPerSite: maxRegsPerSite,
-      maxEvents: maxEvents,
-      enforceUniversityOnly: enforceUniversityOnly
-    };
+    // Optional: force a single test site
+    var testSiteUrl = safeString(body && body.testSiteUrl);
+    var testSchoolId = safeString(body && body.testSchoolId);
 
     if (!sportId) {
       return new Response(JSON.stringify({ error: "Missing required: sportId", debug: debug }), {
         status: 400,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
-    if (!sites.length) {
-      return new Response(JSON.stringify({
-        stats: { processedSites: 0, processedRegs: 0, accepted: 0, rejected: 0, errors: 0 },
-        debug: debug,
-        accepted: [],
-        rejected: []
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    var filteredSites = [];
+
+    if (testSiteUrl) {
+      if (!testSchoolId) {
+        return new Response(
+          JSON.stringify({
+            error: "Missing required when testSiteUrl provided: testSchoolId",
+            debug: debug,
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      filteredSites = [
+        {
+          school_id: testSchoolId,
+          camp_site_url: testSiteUrl,
+        },
+      ];
+      debug.notes.push("Using testSiteUrl override");
+    } else {
+      // Normal mode: use sites list
+      for (var i = 0; i < sites.length; i++) {
+        var row = sites[i] || {};
+        var sid = safeString(row.school_id);
+        var url = safeString(row.camp_site_url);
+        if (!sid || !url) continue;
+        filteredSites.push({ school_id: sid, camp_site_url: url });
+      }
+    }
+
+    // Bound maxSites
+    if (maxSites && filteredSites.length > maxSites) {
+      filteredSites = filteredSites.slice(0, maxSites);
     }
 
     var accepted = [];
@@ -396,279 +252,151 @@ Deno.serve(async (req) => {
     var errors = [];
 
     var processedSites = 0;
-    var sitesWithEventsProcessed = 0;
     var processedRegs = 0;
 
-    var skippedNoUpcoming = 0;
-    var skippedNoRegLinks = 0;
-
-    // scan in the order AdminImport provides (AdminImport should shuffle for better coverage)
-    for (var i = 0; i < sites.length; i++) {
-      if (processedSites >= maxSitesToScan) break;
+    for (var sidx = 0; sidx < filteredSites.length; sidx++) {
       if (accepted.length >= maxEvents) break;
-      if (sitesWithEventsProcessed >= maxSitesWithEvents) break;
 
-      var s = sites[i] || {};
-      var schoolId = safeString(s.school_id || s.schoolId || s.school);
-      var campSiteUrl = safeString(s.camp_site_url || s.campSiteUrl || s.site_url || s.siteUrl);
-      var siteLogo = safeString(s.logo_url || s.logoUrl);
+      var site = filteredSites[sidx];
+      var schoolId = safeString(site.school_id);
+      var siteUrl = safeString(site.camp_site_url);
 
       processedSites += 1;
 
-      if (!schoolId || !campSiteUrl) {
-        rejected.push({
-          reason: "missing_site_fields",
-          school_id: schoolId,
-          camp_site_url: campSiteUrl
-        });
-        continue;
-      }
+      if (!schoolId || !siteUrl) continue;
 
-      var siteHttp = 0;
-      var siteHtml = "";
-      var siteNotes = [];
-      var regLinks = [];
+      var http = 0;
+      var html = "";
+      var title = null;
 
       try {
-        var r = await fetch(campSiteUrl, {
+        var r = await fetch(siteUrl, {
           method: "GET",
           headers: {
             "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-            Accept: "text/html,*/*"
-          }
+            Accept: "text/html,*/*",
+          },
         });
 
-        siteHttp = r.status;
-        siteHtml = await r.text();
+        http = r.status;
+        html = await r.text();
+
+        title = extractTitle(html);
+        var loc = extractCityStateFromTitle(title);
 
         if (!r.ok) {
-          siteNotes.push("fetch_failed");
-          errors.push({ stage: "site_fetch", school_id: schoolId, url: campSiteUrl, http: siteHttp });
+          errors.push({ school_id: schoolId, site_url: siteUrl, http: http, error: "Fetch failed" });
           debug.siteDebug.push({
             school_id: schoolId,
-            camp_site_url: campSiteUrl,
-            http: siteHttp,
+            site_url: siteUrl,
+            http: http,
             regLinks: 0,
-            notes: "fetch_failed"
+            eventsParsed: 0,
+            notes: "non_200_fetch",
           });
           continue;
         }
 
-        // fast skip empties
-        if (containsNoUpcomingEvents(siteHtml)) {
-          skippedNoUpcoming += 1;
-          debug.siteDebug.push({
-            school_id: schoolId,
-            camp_site_url: campSiteUrl,
-            http: siteHttp,
-            regLinks: 0,
-            notes: "no_upcoming_events"
-          });
-          continue;
-        }
+        // Parse events from table rows
+        var events = parseEventRowsFromHtml(html, siteUrl, maxRegsPerSite);
 
-        regLinks = extractRegistrationLinks(siteHtml, campSiteUrl);
+        // Track reg links found (raw)
+        var regLinks = extractRegisterLinks(html);
 
-        if (!regLinks.length) {
-          skippedNoRegLinks += 1;
-          debug.siteDebug.push({
-            school_id: schoolId,
-            camp_site_url: campSiteUrl,
-            http: siteHttp,
-            regLinks: 0,
-            notes: "no_registration_links_found"
-          });
-          continue;
-        }
-
-        sitesWithEventsProcessed += 1;
-
-        // cap reg links per site
-        if (regLinks.length > maxRegsPerSite) regLinks = regLinks.slice(0, maxRegsPerSite);
-
-        // For each registration page
-        for (var j = 0; j < regLinks.length; j++) {
-          if (accepted.length >= maxEvents) break;
-
-          var regUrl = regLinks[j];
-          processedRegs += 1;
-
-          try {
-            var rr = await fetch(regUrl, {
-              method: "GET",
-              headers: {
-                "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-                Accept: "text/html,*/*"
-              }
-            });
-
-            var regHttp = rr.status;
-            var regHtml = await rr.text();
-
-            if (!rr.ok) {
-              rejected.push({
-                reason: "reg_fetch_failed",
-                school_id: schoolId,
-                registration_url: regUrl,
-                http: regHttp
-              });
-              continue;
-            }
-
-            var parsed = parseRyzerRegisterPage(regHtml);
-
-            // enforce "university only" based on page title or host string
-            if (enforceUniversityOnly) {
-              var titleM = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(regHtml);
-              var titleTxt = titleM && titleM[1] ? stripNonAscii(titleM[1]) : "";
-              var hostHint = titleTxt || "";
-              if (!looksLikeUniversityHost(hostHint)) {
-                rejected.push({
-                  reason: "not_university_host",
-                  school_id: schoolId,
-                  registration_url: regUrl,
-                  host_hint: truncate(hostHint, 120)
-                });
-                continue;
-              }
-            }
-
-            if (!parsed.camp_name) {
-              rejected.push({
-                reason: "missing_camp_name",
-                school_id: schoolId,
-                registration_url: regUrl
-              });
-              continue;
-            }
-
-            // must have a start_date for CampDemo required fields
-            if (!parsed.start_date) {
-              rejected.push({
-                reason: "missing_start_date",
-                school_id: schoolId,
-                registration_url: regUrl,
-                event_dates_raw: parsed.event_dates_raw || null
-              });
-              continue;
-            }
-
-            var ryzerId = extractRyzerId(regUrl);
-            var programId = ryzerId ? ("ryzer:" + ryzerId) : ("ryzer:url:" + lc(regUrl));
-            var seasonYear = deriveSeasonYear(sportName, parsed.start_date);
-
-            // event_key unique per occurrence
-            var eventKey = programId + ":" + parsed.start_date;
-
-            var nowIso = new Date().toISOString();
-
-            // content hash for change detection
-            var hashPayload = JSON.stringify({
-              camp_name: parsed.camp_name,
-              start_date: parsed.start_date,
-              end_date: parsed.end_date,
-              location_raw: parsed.location_raw,
-              grades_raw: parsed.grades_raw,
-              price_raw: parsed.price_raw,
-              notes: parsed.notes
-            });
-            var contentHash = djb2Hash(hashPayload);
-
-            accepted.push({
-              campdemo: {
-                school_id: schoolId,
-                sport_id: sportId,
-                camp_name: parsed.camp_name,
-                start_date: parsed.start_date,
-                end_date: parsed.end_date || parsed.start_date,
-                city: parsed.city,
-                state: parsed.state,
-                position_ids: [],
-
-                price: parsed.price,
-                link_url: regUrl,
-                notes: parsed.notes,
-
-                season_year: seasonYear,
-                program_id: programId,
-                event_key: eventKey,
-                source_platform: "sportsusa",
-                source_url: regUrl,
-                last_seen_at: nowIso,
-                content_hash: contentHash,
-
-                event_dates_raw: parsed.event_dates_raw,
-                grades_raw: parsed.grades_raw,
-                register_by_raw: null,
-                price_raw: parsed.price_raw,
-                price_min: null,
-                price_max: null,
-                sections_json: {}
-              },
-              debug: {
-                site_url: campSiteUrl,
-                site_logo: siteLogo,
-                reg_http: regHttp,
-                ryzer_id: ryzerId
-              }
-            });
-          } catch (eReg) {
-            errors.push({
-              stage: "reg_exception",
-              school_id: schoolId,
-              registration_url: regUrl,
-              error: String((eReg && eReg.message) || eReg)
-            });
-          }
-        }
-
-      } catch (eSite) {
-        errors.push({
-          stage: "site_exception",
-          school_id: schoolId,
-          url: campSiteUrl,
-          error: String((eSite && eSite.message) || eSite)
-        });
-      }
-
-      // Keep debug bounded
-      if (debug.siteDebug.length < 25) {
         debug.siteDebug.push({
           school_id: schoolId,
-          camp_site_url: campSiteUrl,
-          http: siteHttp,
+          site_url: siteUrl,
+          http: http,
+          pageTitle: title,
+          city: loc.city,
+          state: loc.state,
           regLinks: regLinks.length,
-          notes: siteNotes.join(",") || null,
-          regLinksSample: regLinks.slice(0, 3)
+          eventsParsed: events.length,
+          sampleRegLink: regLinks.length ? regLinks[0] : "",
+          notes: events.length ? "" : "no_event_rows_with_register_links",
+        });
+
+        if (!events.length) {
+          continue;
+        }
+
+        for (var eidx = 0; eidx < events.length; eidx++) {
+          if (accepted.length >= maxEvents) break;
+          var ev = events[eidx] || {};
+
+          var campName = safeString(ev.camp_name);
+          var linkUrl = safeString(ev.link_url);
+          var eventDatesRaw = safeString(ev.event_dates_raw);
+          var gradesRaw = safeString(ev.grades_raw);
+          var priceRaw = safeString(ev.price_raw);
+
+          // If no registration link, reject (fail closed)
+          if (!linkUrl) {
+            rejected.push({
+              reason: "missing_registration_url",
+              school_id: schoolId,
+              camp_site_url: siteUrl,
+              camp_name: campName,
+            });
+            continue;
+          }
+
+          processedRegs += 1;
+
+          accepted.push({
+            school_id: schoolId,
+            sport_id: sportId,
+            source_platform: "sportsusa",
+            source_url: siteUrl,
+            camp_name: campName,
+            link_url: linkUrl,
+            event_dates_raw: eventDatesRaw,
+            grades_raw: gradesRaw,
+            price_raw: priceRaw,
+            city: loc.city,
+            state: loc.state,
+            raw: {
+              page_title: title,
+            },
+          });
+        }
+      } catch (e) {
+        var msg = String((e && e.message) || e);
+        errors.push({ school_id: schoolId, site_url: siteUrl, http: http, error: msg });
+        debug.siteDebug.push({
+          school_id: schoolId,
+          site_url: siteUrl,
+          http: http || 0,
+          regLinks: 0,
+          eventsParsed: 0,
+          notes: "exception: " + truncate(msg, 250),
         });
       }
     }
 
-    return new Response(JSON.stringify({
-      stats: {
-        processedSites: processedSites,
-        sitesWithEventsProcessed: sitesWithEventsProcessed,
-        processedRegs: processedRegs,
-        accepted: accepted.length,
-        rejected: rejected.length,
-        errors: errors.length,
-        skippedNoUpcoming: skippedNoUpcoming,
-        skippedNoRegLinks: skippedNoRegLinks
-      },
-      debug: debug,
-      accepted: accepted,
-      rejected: rejected.slice(0, 50),
-      errors: errors.slice(0, 25)
-    }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
-    });
-
+    return new Response(
+      JSON.stringify({
+        stats: {
+          processedSites: processedSites,
+          processedRegs: processedRegs,
+          accepted: accepted.length,
+          rejected: rejected.length,
+          errors: errors.length,
+          dryRun: dryRun,
+          sportName: sportName,
+        },
+        debug: debug,
+        accepted: dryRun ? accepted.slice(0, 50) : accepted,
+        rejected: rejected.slice(0, 50),
+        errors: errors.slice(0, 20),
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
   } catch (e) {
     debug.notes.push("top-level error: " + String((e && e.message) || e));
     return new Response(JSON.stringify({ error: "Unhandled error", debug: debug }), {
       status: 500,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   }
 });
