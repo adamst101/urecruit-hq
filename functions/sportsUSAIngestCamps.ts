@@ -1,22 +1,13 @@
 // functions/sportsUSAIngestCamps.js
 // Base44 Backend Function (Deno)
 //
-// Purpose:
-// - Given a list of SchoolSportSite rows (school_id, sport_id, camp_site_url),
-//   fetch each camp site and discover Ryzer registration links.
-// - For each registration link (register.ryzer.com/camp.cfm?id=####), fetch the page
-//   and extract basic fields needed for CampDemo staging.
-//
-// Key updates:
-// - Editor-safe (no optional chaining, no external imports)
-// - Supports testSiteUrl (even if not in SchoolSportSite) for DRY RUN
-// - Two-step reg link discovery:
-//   A) direct links on homepage
-//   B) fallback: crawl 1 level deep into likely pages (camps, camp.cfm, registration, events)
-//
-// Returns: accepted[] events (normalized) + debug per site.
+// Updates in v3:
+// - Better date parsing from title/body patterns like:
+//   "February 21st - 22nd", "June 12th-13th", "Feb 3rd", etc.
+// - Returns start_date + end_date when possible
+// - Still editor-safe (no optional chaining, no external imports)
 
-const VERSION = "sportsUSAIngestCamps_2026-02-03_v2_reglink_discovery_plus_test_url_editor_safe";
+const VERSION = "sportsUSAIngestCamps_2026-02-03_v3_parse_monthname_dates_editor_safe";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -93,12 +84,8 @@ function extractHrefs(html) {
 function looksLikeRegUrl(u) {
   var s = lc(u || "");
   if (!s) return false;
-  // Ryzer canonical
   if (s.indexOf("register.ryzer.com/camp.cfm") >= 0 && s.indexOf("id=") >= 0) return true;
-
-  // Some sites include register.ryzer.com links with extra params
   if (s.indexOf("register.ryzer.com") >= 0 && s.indexOf("camp.cfm") >= 0 && s.indexOf("id=") >= 0) return true;
-
   return false;
 }
 
@@ -112,7 +99,6 @@ function extractRegLinksFromHtml(html, baseUrl) {
   return uniq(out);
 }
 
-// One-level crawl candidates
 function extractLikelyIndexLinks(html, baseUrl) {
   var hrefs = extractHrefs(html);
   var out = [];
@@ -122,11 +108,9 @@ function extractLikelyIndexLinks(html, baseUrl) {
     if (!u) continue;
 
     var s = lc(u);
-    // avoid external noise and mailto/js
     if (s.indexOf("mailto:") === 0) continue;
     if (s.indexOf("javascript:") === 0) continue;
 
-    // keep on same host if possible
     try {
       var b = new URL(baseUrl);
       var x = new URL(u);
@@ -135,11 +119,10 @@ function extractLikelyIndexLinks(html, baseUrl) {
       // ignore
     }
 
-    // likely pages where reg links live
     if (
       s.indexOf("camps") >= 0 ||
       s.indexOf("camp.cfm") >= 0 ||
-      s.indexOf("camp") >= 0 && s.indexOf("id=") < 0 || // index pages often include "camp" but not camp.cfm?id
+      (s.indexOf("camp") >= 0 && s.indexOf("id=") < 0) ||
       s.indexOf("events") >= 0 ||
       s.indexOf("registration") >= 0 ||
       s.indexOf("register") >= 0 ||
@@ -148,29 +131,7 @@ function extractLikelyIndexLinks(html, baseUrl) {
       out.push(u);
     }
   }
-  return uniq(out).slice(0, 12); // keep bounded
-}
-
-function safeJsonParseMaybe(s) {
-  if (typeof s !== "string") return null;
-  var t = s.trim();
-  if (!t) return null;
-  if (!(t.indexOf("{") === 0 || t.indexOf("[") === 0)) return null;
-  try {
-    return JSON.parse(t);
-  } catch (e) {
-    return null;
-  }
-}
-
-function computeSeasonYearFootball(startDateISO) {
-  if (!startDateISO) return null;
-  var d = new Date(startDateISO + "T00:00:00.000Z");
-  if (isNaN(d.getTime())) return null;
-
-  var y = d.getUTCFullYear();
-  var feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0)); // Feb 1 UTC
-  return d >= feb1 ? y : y - 1;
+  return uniq(out).slice(0, 12);
 }
 
 function slugify(s) {
@@ -182,34 +143,34 @@ function slugify(s) {
 }
 
 // Return YYYY-MM-DD (UTC) or null
-function toISODate(dateInput) {
-  if (!dateInput) return null;
-
-  if (typeof dateInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
-    return dateInput.trim();
-  }
-
-  if (typeof dateInput === "string") {
-    var s = dateInput.trim();
-    var mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (mdy) {
-      var mm = String(mdy[1]).padStart(2, "0");
-      var dd = String(mdy[2]).padStart(2, "0");
-      var yyyy = String(mdy[3]);
-      return yyyy + "-" + mm + "-" + dd;
-    }
-  }
-
-  var d = new Date(dateInput);
-  if (isNaN(d.getTime())) return null;
-
-  var yyyy2 = d.getUTCFullYear();
-  var mm2 = String(d.getUTCMonth() + 1).padStart(2, "0");
-  var dd2 = String(d.getUTCDate()).padStart(2, "0");
-  return yyyy2 + "-" + mm2 + "-" + dd2;
+function toISODateFromParts(year, month1to12, day1to31) {
+  if (!year || !month1to12 || !day1to31) return null;
+  var yyyy = String(year);
+  var mm = String(month1to12).padStart(2, "0");
+  var dd = String(day1to31).padStart(2, "0");
+  return yyyy + "-" + mm + "-" + dd;
 }
 
-// Extract camp name from registration HTML
+function computeSeasonYearFootball(startDateISO) {
+  if (!startDateISO) return null;
+  var d = new Date(startDateISO + "T00:00:00.000Z");
+  if (isNaN(d.getTime())) return null;
+
+  var y = d.getUTCFullYear();
+  var feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
+  return d >= feb1 ? y : y - 1;
+}
+
+function simpleHash(obj) {
+  var str = typeof obj === "string" ? obj : JSON.stringify(obj || {});
+  var h = 0;
+  for (var i = 0; i < str.length; i++) {
+    h = (h << 5) - h + str.charCodeAt(i);
+    h |= 0;
+  }
+  return "h" + String(Math.abs(h));
+}
+
 function extractTitleFromHtml(html) {
   if (!html) return null;
   var m = /<title[^>]*>([^<]+)<\/title>/i.exec(html);
@@ -219,23 +180,96 @@ function extractTitleFromHtml(html) {
   return null;
 }
 
-// Try to find first date in HTML, like 02/15/2026 or 2/15/2026
-function extractFirstMDY(html) {
-  if (!html) return null;
-  var m = /\b(\d{1,2}\/\d{1,2}\/\d{4})\b/.exec(html);
-  if (m && m[1] !== undefined) return m[1];
+function monthToNum(m) {
+  var s = lc(m || "");
+  if (s.indexOf("jan") === 0) return 1;
+  if (s.indexOf("feb") === 0) return 2;
+  if (s.indexOf("mar") === 0) return 3;
+  if (s.indexOf("apr") === 0) return 4;
+  if (s.indexOf("may") === 0) return 5;
+  if (s.indexOf("jun") === 0) return 6;
+  if (s.indexOf("jul") === 0) return 7;
+  if (s.indexOf("aug") === 0) return 8;
+  if (s.indexOf("sep") === 0) return 9;
+  if (s.indexOf("oct") === 0) return 10;
+  if (s.indexOf("nov") === 0) return 11;
+  if (s.indexOf("dec") === 0) return 12;
   return null;
 }
 
-// Simple stable hash (not cryptographic)
-function simpleHash(obj) {
-  var str = typeof obj === "string" ? obj : JSON.stringify(obj || {});
-  var h = 0;
-  for (var i = 0; i < str.length; i++) {
-    h = (h << 5) - h + str.charCodeAt(i);
-    h |= 0;
+// Extract date range from strings like:
+// "February 21st - 22nd", "June 12th-13th", "Feb 3rd", "March 1 - 2"
+function extractMonthNameDateRange(text) {
+  var t = stripNonAscii(text || "");
+  if (!t) return { start: null, end: null, raw: null };
+
+  // Look for "Month D{suffix} - D{suffix}" (same month)
+  var reRange = /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2})(?:st|nd|rd|th)?\s*[-–]\s*(\d{1,2})(?:st|nd|rd|th)?\b/i;
+  var m = reRange.exec(t);
+  if (m) {
+    var mon = monthToNum(m[1]);
+    var d1 = parseInt(m[2], 10);
+    var d2 = parseInt(m[3], 10);
+    if (mon && d1 && d2) {
+      return { start: { mon: mon, day: d1 }, end: { mon: mon, day: d2 }, raw: m[0] };
+    }
   }
-  return "h" + String(Math.abs(h));
+
+  // Look for "Month D{suffix}" single
+  var reSingle = /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2})(?:st|nd|rd|th)?\b/i;
+  var m2 = reSingle.exec(t);
+  if (m2) {
+    var mon2 = monthToNum(m2[1]);
+    var d = parseInt(m2[2], 10);
+    if (mon2 && d) {
+      return { start: { mon: mon2, day: d }, end: null, raw: m2[0] };
+    }
+  }
+
+  return { start: null, end: null, raw: null };
+}
+
+function inferYearFromHtmlOrNow(html) {
+  // Try to find a 4-digit year in the page, otherwise use current year.
+  var y = null;
+  if (html) {
+    var m = /\b(20\d{2})\b/.exec(html);
+    if (m && m[1]) y = parseInt(m[1], 10);
+  }
+  if (!y) {
+    y = new Date().getUTCFullYear();
+  }
+  return y;
+}
+
+function deriveDatesFromTitleAndHtml(title, html) {
+  var year = inferYearFromHtmlOrNow(html);
+
+  // 1) title
+  var fromTitle = extractMonthNameDateRange(title || "");
+  if (fromTitle && fromTitle.start) {
+    var startISO = toISODateFromParts(year, fromTitle.start.mon, fromTitle.start.day);
+    var endISO = null;
+    if (fromTitle.end) endISO = toISODateFromParts(year, fromTitle.end.mon, fromTitle.end.day);
+    return { start_date: startISO, end_date: endISO, raw: fromTitle.raw || title };
+  }
+
+  // 2) body: common "Dates:" labels
+  var snippet = stripNonAscii(html || "");
+  if (snippet) {
+    // search a smaller window to avoid noise
+    var small = snippet.slice(0, 6000);
+
+    var fromBody = extractMonthNameDateRange(small);
+    if (fromBody && fromBody.start) {
+      var s2 = toISODateFromParts(year, fromBody.start.mon, fromBody.start.day);
+      var e2 = null;
+      if (fromBody.end) e2 = toISODateFromParts(year, fromBody.end.mon, fromBody.end.day);
+      return { start_date: s2, end_date: e2, raw: fromBody.raw || null };
+    }
+  }
+
+  return { start_date: null, end_date: null, raw: null };
 }
 
 Deno.serve(async (req) => {
@@ -262,13 +296,10 @@ Deno.serve(async (req) => {
     var sportName = safeString(body && body.sportName) || "";
     var sites = asArray(body && body.sites);
 
-    // Limits
-    var dryRun = !!(body && body.dryRun);
     var maxSites = Number(body && body.maxSites !== undefined ? body.maxSites : 5);
     var maxRegsPerSite = Number(body && body.maxRegsPerSite !== undefined ? body.maxRegsPerSite : 5);
     var maxEvents = Number(body && body.maxEvents !== undefined ? body.maxEvents : 25);
 
-    // Test mode
     var testSiteUrl = safeString(body && body.testSiteUrl);
     var testSchoolId = safeString(body && body.testSchoolId);
 
@@ -279,11 +310,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // If testSiteUrl provided, override sites list with single synthetic site
     if (testSiteUrl) {
       sites = [
         {
-          school_id: testSchoolId || null, // may be null for DRY RUN
+          school_id: testSchoolId || null,
           sport_id: sportId,
           camp_site_url: testSiteUrl,
         },
@@ -299,7 +329,6 @@ Deno.serve(async (req) => {
     var processedSites = 0;
     var processedRegs = 0;
 
-    // pick sites to process
     var picked = [];
     for (var i = 0; i < sites.length; i++) {
       if (picked.length >= maxSites) break;
@@ -335,7 +364,6 @@ Deno.serve(async (req) => {
       }
 
       try {
-        // Fetch site home
         var r = await fetch(campSiteUrl, {
           method: "GET",
           headers: {
@@ -345,9 +373,7 @@ Deno.serve(async (req) => {
         });
 
         siteDbg.http = r.status;
-
-        var ctype = r.headers.get("content-type") || "";
-        siteDbg.htmlType = ctype;
+        siteDbg.htmlType = r.headers.get("content-type") || "";
 
         var html = await r.text();
         siteDbg.htmlSnippet = truncate(html, 1200);
@@ -359,10 +385,8 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Step A: direct reg links on homepage
         var regLinks = extractRegLinksFromHtml(html, campSiteUrl);
 
-        // Step B: 1-level crawl into likely pages
         if (!regLinks.length) {
           var likelyPages = extractLikelyIndexLinks(html, campSiteUrl);
           siteDbg.crawledPages = likelyPages.slice(0);
@@ -380,15 +404,17 @@ Deno.serve(async (req) => {
                 },
               });
               if (!r2.ok) continue;
+
               var html2 = await r2.text();
               var found = extractRegLinksFromHtml(html2, pageUrl);
+
               for (var fi = 0; fi < found.length; fi++) {
                 if (regLinks.length >= maxRegsPerSite) break;
                 regLinks.push(found[fi]);
               }
               regLinks = uniq(regLinks);
             } catch (e2) {
-              // ignore crawl errors per page
+              // ignore per-page
             }
           }
         }
@@ -405,7 +431,6 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // For each reg link: fetch registration page and parse basics
         for (var ri = 0; ri < regLinks.length; ri++) {
           if (accepted.length >= maxEvents) break;
 
@@ -428,11 +453,13 @@ Deno.serve(async (req) => {
 
             var regHtml = await rr.text();
             var regTitle = extractTitleFromHtml(regHtml) || "Camp";
-            var firstDate = extractFirstMDY(regHtml);
-            var startISO = firstDate ? toISODate(firstDate) : null;
 
-            // If we can't find a date, still return it (many sites post details late),
-            // but mark needs_review and let AdminImport decide whether to write.
+            // ✅ improved date derivation
+            var d = deriveDatesFromTitleAndHtml(regTitle, regHtml);
+            var startISO = d && d.start_date ? d.start_date : null;
+            var endISO = d && d.end_date ? d.end_date : null;
+            var datesRaw = d && d.raw ? d.raw : null;
+
             var seasonYear = startISO ? computeSeasonYearFootball(startISO) : null;
 
             var programId = "sportsusa:" + slugify(campSiteUrl) + ":" + slugify(regTitle);
@@ -446,25 +473,22 @@ Deno.serve(async (req) => {
               camp_site_url: campSiteUrl,
               registration_url: regUrl,
 
-              // normalized event-ish fields
               camp_name: regTitle,
               start_date: startISO,
-              end_date: null,
+              end_date: endISO,
 
               city: null,
               state: null,
 
-              // staging metadata
               season_year: seasonYear,
               program_id: programId,
               event_key: eventKey,
               source_platform: "sportsusa",
               source_url: regUrl,
               last_seen_at: new Date().toISOString(),
-              content_hash: simpleHash({ campSiteUrl: campSiteUrl, regUrl: regUrl, title: regTitle, start: startISO }),
+              content_hash: simpleHash({ campSiteUrl: campSiteUrl, regUrl: regUrl, title: regTitle, start: startISO, end: endISO }),
 
-              // raw/debug
-              event_dates_raw: firstDate || null,
+              event_dates_raw: datesRaw,
               grades_raw: null,
               register_by_raw: null,
               price_raw: null,
@@ -474,7 +498,9 @@ Deno.serve(async (req) => {
 
               debug: {
                 reg_title: regTitle,
-                first_date_mdy: firstDate || null,
+                derived_start: startISO,
+                derived_end: endISO,
+                derived_raw: datesRaw,
                 reg_html_snippet: truncate(regHtml, 800),
               },
             });
