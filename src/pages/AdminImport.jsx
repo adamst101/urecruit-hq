@@ -372,8 +372,8 @@ function AdminImport() {
         // Try match by site_url (derived)
         const siteUrl = dr.site_url || null;
         if (siteUrl) {
-          const srow = await db.table("SchoolSportSite").select("*").eq("camp_site_url", siteUrl).maybeSingle();
-          if (srow) schoolId = srow.school_id;
+          const siteRows = await base44.entities.SchoolSportSite.filter({ camp_site_url: siteUrl });
+          if (siteRows && siteRows.length) schoolId = siteRows[0].school_id;
         }
 
         if (!schoolId) {
@@ -384,7 +384,7 @@ function AdminImport() {
         }
 
         try {
-          await db.table("CampDemo").insert({
+          await base44.entities.CampDemo.create({
             school_id: schoolId,
             sport_id: selectedSportId,
             camp_name: ev.camp_name,
