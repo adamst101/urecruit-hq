@@ -110,31 +110,101 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
   var out = [];
   if (!html) return out;
 
-  // We specifically want register.ryzer.com/camp.cfm links.
-  var re = /href="([^"]+camp\.cfm[^"]*)"/gi;
-  var m;
-  while ((m = re.exec(html)) !== null) {
-    var href = m[1];
-    var u = absUrl(siteUrl, href);
-    if (!u) continue;
-    if (lc(u).indexOf("register.ryzer.com/camp.cfm") === -1) continue;
+  function normalizeUrl(u) {
+    if (!u) return null;
+    var s = String(u).trim();
+
+    // decode the most common HTML entity we see in URLs
+    s = s.replace(/&amp;/g, "&");
+
+    // drop fragments
+    s = s.split("#")[0];
+
+    // If link is protocol-relative
+    if (s.indexOf("//") === 0) s = "https:" + s;
+
+    // If link is relative to Ryzer registration (common on Ryzer templated camp sites)
+    // Examples: /camp.cfm?sport=1&id=123 OR camp.cfm?sport=1&id=123
+    if (s.indexOf("/camp.cfm") === 0) s = "https://register.ryzer.com" + s;
+    if (s.indexOf("camp.cfm") === 0) s = "https://register.ryzer.com/" + s;
+
+    // If still relative (like /register/camp.cfm...) let absUrl resolve against siteUrl
+    if (s.indexOf("http://") !== 0 && s.indexOf("https://") !== 0) {
+      s = absUrl(siteUrl, s);
+    }
+
+    return s ? String(s).trim() : null;
+  }
+
+  function isRyzerCampLink(u) {
+    var x = lc(u || "");
+    // Accept a few known shapes:
+    // - https://register.ryzer.com/camp.cfm...
+    // - https://register.ryzer.com/camp.cfm?... (case variations)
+    // - sometimes camp sites embed register.ryzer.com with extra path pieces; we just require camp.cfm
+    if (x.indexOf("register.ryzer.com") !== -1 && x.indexOf("camp.cfm") !== -1) return true;
+    return false;
+  }
+
+  function pushIfValid(raw) {
+    var u = normalizeUrl(raw);
+    if (!u) return;
+    if (!isRyzerCampLink(u)) return;
     out.push(u);
   }
 
-  // Also sometimes links show without href quotes or inside JS; try looser match
-  var re2 = /(https?:\/\/register\.ryzer\.com\/camp\.cfm[^"' <]+)/gi;
-  while ((m = re2.exec(html)) !== null) {
-    out.push(m[1]);
+  // 1) href="...camp.cfm..." (double quotes)
+  var reHrefDq = /href="([^"]*camp\.cfm[^"]*)"/gi;
+  var m;
+  while ((m = reHrefDq.exec(html)) !== null) {
+    pushIfValid(m[1]);
+  }
+
+  // 2) href='...camp.cfm...' (single quotes)
+  var reHrefSq = /href='([^']*camp\.cfm[^']*)'/gi;
+  while ((m = reHrefSq.exec(html)) !== null) {
+    pushIfValid(m[1]);
+  }
+
+  // 3) onclick="...camp.cfm..." and onclick='...camp.cfm...'
+  var reOnclickDq = /onclick="[^"]*(camp\.cfm[^"]*)"/gi;
+  while ((m = reOnclickDq.exec(html)) !== null) {
+    pushIfValid(m[1]);
+  }
+  var reOnclickSq = /onclick='[^']*(camp\.cfm[^']*)'/gi;
+  while ((m = reOnclickSq.exec(html)) !== null) {
+    pushIfValid(m[1]);
+  }
+
+  // 4) data-href / data-url attributes (quoted or unquoted)
+  var reData = /(data-href|data-url)\s*=\s*("([^"]*camp\.cfm[^"]*)"|'([^']*camp\.cfm[^']*)'|([^\s>]*camp\.cfm[^\s>]*))/gi;
+  while ((m = reData.exec(html)) !== null) {
+    pushIfValid(m[3] || m[4] || m[5]);
+  }
+
+  // 5) Fully-qualified URLs in plain text (JS, JSON, etc.)
+  var reFull = /(https?:\/\/register\.ryzer\.com\/[^"' <]*camp\.cfm[^"' <]*)/gi;
+  while ((m = reFull.exec(html)) !== null) {
+    pushIfValid(m[1]);
+  }
+
+  // 6) Relative occurrences in plain text (last resort)
+  // Example: "/camp.cfm?sport=1&id=123"
+  var reRel = /([\/]camp\.cfm\?[^"' <]+)/gi;
+  while ((m = reRel.exec(html)) !== null) {
+    pushIfValid(m[1]);
   }
 
   out = uniq(out);
 
-  // Normalize: drop fragments
+  // Normalize: drop fragments (again, after uniq)
   for (var i = 0; i < out.length; i++) {
-    out[i] = out[i].split("#")[0];
+    out[i] = String(out[i]).split("#")[0];
   }
+
   return out;
 }
+
 
 // -------------------------
 // Listing snippet extraction (camp site)
