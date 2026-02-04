@@ -1,411 +1,527 @@
 // src/pages/AdminImport.jsx
 import React, { useEffect, useMemo, useState } from "react";
 
-export default function AdminImport() {
+import { base44 } from "../api/base44Client";
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function safeString(x) {
+  if (x === null || x === undefined) return "";
+  return String(x);
+}
+
+function AdminImport() {
   // -------------------------
-  // State
+  // Sport selection (top-level)
   // -------------------------
-  var [sportId, setSportId] = useState("");
-  var [sportName, setSportName] = useState("Football");
-  var [dryRun, setDryRun] = useState(true);
-
-  var [maxSites, setMaxSites] = useState(1);
-  var [maxRegsPerSite, setMaxRegsPerSite] = useState(10);
-  var [maxEvents, setMaxEvents] = useState(25);
-
-  var [testSiteUrl, setTestSiteUrl] = useState("https://www.hardingfootballcamps.com/");
-
-  var [schoolSportSites, setSchoolSportSites] = useState([]);
-  var [loadingSites, setLoadingSites] = useState(false);
-
-  var [logs, setLogs] = useState([]);
-  var [lastResponse, setLastResponse] = useState(null);
-
-  // -------------------------
-  // Small helpers (editor-safe)
-  // -------------------------
-  function addLog(line) {
-    var s = String(line || "");
-    setLogs(function (prev) {
-      var next = prev.slice(0);
-      next.push(s);
-      return next;
-    });
-    // keep console available for deeper debugging without changing UI
-    console.log(s);
-  }
-
-  function safeNum(v, fallback) {
-    var n = Number(v);
-    if (isNaN(n)) return fallback;
-    return n;
-  }
-
-  function normalizeAcceptedItem(item) {
-    // Supports both:
-    // - { event:{...}, derived:{...}, debug:{...} }
-    // - flat event {...}
-    if (!item) return { ev: null, derived: null, dbg: null };
-    return {
-      ev: item.event ? item.event : item,
-      derived: item.derived ? item.derived : null,
-      dbg: item.debug ? item.debug : null,
-    };
-  }
-
-  // -------------------------
-  // Load SchoolSportSites (preserve your prior behavior if available)
-  // -------------------------
-  async function loadSchoolSportSites() {
-    setLoadingSites(true);
-    try {
-      var rows = [];
-      var ents = null;
-
-      if (typeof window !== "undefined" && window && window.entities) {
-        ents = window.entities;
+  const [sports, setSports] = useState([]);
+  const [selectedSportId, setSelectedSportId] = useState("");
+  const selectedSport = useMemo(() => {
+    let s = null;
+    for (let i = 0; i < sports.length; i++) {
+      if (sports[i].id === selectedSportId) {
+        s = sports[i];
+        break;
       }
-
-      // Try common Base44 entity access patterns without assuming one.
-      // If none exist, we fall back to empty array (testSiteUrl mode still works).
-      if (ents && ents.SchoolSportSite) {
-        var api = ents.SchoolSportSite;
-
-        // Pattern A: list()
-        if (api.list && typeof api.list === "function") {
-          rows = await api.list({ where: { active: true }, limit: 1000 }).catch(function () {
-            return [];
-          });
-        }
-        // Pattern B: findMany()
-        else if (api.findMany && typeof api.findMany === "function") {
-          rows = await api.findMany({ where: { active: true }, limit: 1000 }).catch(function () {
-            return [];
-          });
-        }
-        // Pattern C: query()
-        else if (api.query && typeof api.query === "function") {
-          rows = await api.query({ where: { active: true }, limit: 1000 }).catch(function () {
-            return [];
-          });
-        }
-        // Pattern D: find()
-        else if (api.find && typeof api.find === "function") {
-          rows = await api.find({ where: { active: true }, limit: 1000 }).catch(function () {
-            return [];
-          });
-        }
-      }
-
-      if (!rows) rows = [];
-      if (!Array.isArray(rows)) {
-        // Some SDKs wrap results
-        if (rows.items && Array.isArray(rows.items)) rows = rows.items;
-        else rows = [];
-      }
-
-      setSchoolSportSites(rows);
-      addLog("[Camps] Loaded SchoolSportSite rows: " + String(rows.length) + " (active)");
-    } catch (e) {
-      addLog("[Camps] ERROR loading SchoolSportSite rows: " + String((e && e.message) || e));
-      setSchoolSportSites([]);
-    } finally {
-      setLoadingSites(false);
     }
+    return s;
+  }, [sports, selectedSportId]);
+
+  // -------------------------
+  // Logging (per section)
+  // -------------------------
+  const [logSportsUSA, setLogSportsUSA] = useState("");
+  const [logCamps, setLogCamps] = useState("");
+
+  function appendLog(setter, line) {
+    setter((prev) => prev + line + "\n");
   }
 
-  useEffect(function () {
-    // Don’t spam logs on initial mount if user immediately runs testSiteUrl mode,
-    // but keep the existing behavior of loading if possible.
-    loadSchoolSportSites();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // -------------------------
+  // Controls
+  // -------------------------
+  const [dryRun, setDryRun] = useState(true);
+
+  // SportsUSA seed controls
+  const [seedLimit, setSeedLimit] = useState(300);
+
+  // Camps ingest controls
+  const [maxSites, setMaxSites] = useState(5);
+  const [maxRegsPerSite, setMaxRegsPerSite] = useState(10);
+  const [maxEvents, setMaxEvents] = useState(25);
+  const [testSiteUrl, setTestSiteUrl] = useState("");
+
+  // Load Sports
+  useEffect(() => {
+    let mounted = true;
+    async function load() {
+      try {
+        const rows = await base44.entities.Sport.list();
+        if (!mounted) return;
+        setSports(rows || []);
+        if ((rows || []).length && !selectedSportId) {
+          setSelectedSportId(rows[0].id);
+        }
+      } catch (e) {
+        // If Sport load fails, user will see empty dropdown.
+      }
+    }
+    load();
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line
   }, []);
 
   // -------------------------
-  // Build siteUrls from SchoolSportSites
+  // Actions: SportsUSA Seed
   // -------------------------
-  var siteUrls = useMemo(function () {
-    var out = [];
-    for (var i = 0; i < (schoolSportSites || []).length; i++) {
-      var r = schoolSportSites[i];
-      if (!r) continue;
-
-      // Common field name variants (keep safe)
-      var url =
-        r.camp_site_url ||
-        r.campSiteUrl ||
-        r.camp_site ||
-        r.site_url ||
-        r.siteUrl ||
-        r.url ||
-        null;
-
-      if (!url) continue;
-
-      // Optional: filter by sportId if row has sport_id
-      // (Only do it if both exist; prevents accidental filtering when schema differs)
-      if (sportId && r.sport_id && String(r.sport_id) !== String(sportId)) {
-        continue;
-      }
-
-      out.push(String(url));
-    }
-
-    // de-dupe
-    var seen = {};
-    var uniq = [];
-    for (var j = 0; j < out.length; j++) {
-      var u = out[j];
-      if (!u) continue;
-      if (seen[u]) continue;
-      seen[u] = true;
-      uniq.push(u);
-    }
-
-    return uniq;
-  }, [schoolSportSites, sportId]);
-
-  // -------------------------
-  // Run ingest
-  // -------------------------
-  async function runCampsIngest() {
-    setLogs([]);
-    setLastResponse(null);
-
-    var startedAt = new Date().toISOString();
-    addLog("[Camps] Starting: SportsUSA Camps Ingest (" + sportName + ") @ " + startedAt);
-    addLog(
-      "[Camps] DryRun=" +
-        String(!!dryRun) +
-        " | MaxSites=" +
-        String(maxSites) +
-        " | MaxRegsPerSite=" +
-        String(maxRegsPerSite) +
-        " | MaxEvents=" +
-        String(maxEvents)
-    );
-
-    if (!sportId) {
-      addLog("[Camps] ERROR: SportID is required.");
+  async function runSportsUSASeed() {
+    setLogSportsUSA("");
+    if (!selectedSportId || !selectedSport) {
+      appendLog(setLogSportsUSA, `[SportsUSA] ERROR: Select a sport first.`);
       return;
     }
 
-    var useTest = !!(testSiteUrl && String(testSiteUrl).trim());
-    if (!useTest) {
-      addLog("[Camps] Loaded SchoolSportSite rows: " + String((schoolSportSites || []).length) + " (active)");
-    }
-
-    var payload = {
-      sportId: String(sportId).trim(),
-      sportName: String(sportName || "").trim(),
-      dryRun: !!dryRun,
-      maxSites: safeNum(maxSites, 1),
-      maxRegsPerSite: safeNum(maxRegsPerSite, 10),
-      maxEvents: safeNum(maxEvents, 25),
-      testSiteUrl: useTest ? String(testSiteUrl).trim() : null,
-      siteUrls: useTest ? null : (siteUrls || []).slice(0, safeNum(maxSites, 1)),
-    };
+    appendLog(setLogSportsUSA, `[SportsUSA] Starting: SportsUSA School Seed (${selectedSport.sport_name}) @ ${nowIso()}`);
+    appendLog(setLogSportsUSA, `[SportsUSA] DryRun=${dryRun} | Limit=${seedLimit}`);
 
     try {
-      var resp = await fetch("/functions/sportsUSAIngestCamps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      // You must have /functions/sportsUSASeedSchools.js deployed.
+      // It requires: sportId, sportName, siteUrl, limit, dryRun
+      // We'll map sportName -> sports site URL by convention:
+      // football -> https://www.footballcampsusa.com
+      // soccer -> https://www.soccersportsusa.com  (adjust if your actual domains differ)
+      // baseball -> https://www.baseballcampsusa.com (etc)
+      //
+      // If you want this configurable later, store it in a table. For now, deterministic mapping.
 
-      var json = await resp.json().catch(function () {
-        return null;
-      });
-
-      setLastResponse(json);
-
-      var version = json && json.version ? json.version : "(missing)";
-      addLog("[Camps] Function version: " + version);
-
-      var st = json && json.stats ? json.stats : {};
-      addLog(
-        "[Camps] Function stats: processedSites=" +
-          String(st.processedSites || 0) +
-          " processedRegs=" +
-          String(st.processedRegs || 0) +
-          " accepted=" +
-          String(st.accepted || 0) +
-          " rejected=" +
-          String(st.rejected || 0) +
-          " errors=" +
-          String(st.errors || 0)
-      );
-
-      // Optional KPI (if function provides it)
-      var kpi = json && json.debug && json.debug.kpi ? json.debug.kpi : null;
-      if (kpi) {
-        addLog(
-          "[Camps] Date KPI: listing=" +
-            String(kpi.datesParsedFromListing || 0) +
-            " ryzer=" +
-            String(kpi.datesParsedFromRyzer || 0) +
-            " missing=" +
-            String(kpi.datesMissing || 0)
-        );
+      const sportNameLc = safeString(selectedSport.sport_name).toLowerCase().trim();
+      let siteUrl = "";
+      if (sportNameLc === "football") siteUrl = "https://www.footballcampsusa.com/";
+      else if (sportNameLc === "baseball") siteUrl = "https://www.baseballcampsusa.com/";
+      else if (sportNameLc === "softball") siteUrl = "https://www.softballcampsusa.com/";
+      else if (sportNameLc === "soccer") siteUrl = "https://www.soccersportsusa.com/";
+      else if (sportNameLc === "volleyball") siteUrl = "https://www.volleyballcampsusa.com/";
+      else {
+        appendLog(setLogSportsUSA, `[SportsUSA] ERROR: No known SportsUSA site mapping for sport "${selectedSport.sport_name}".`);
+        appendLog(setLogSportsUSA, `[SportsUSA] Fix: add a mapping in code for this sport.`);
+        return;
       }
 
-      var accepted = json && json.accepted ? json.accepted : [];
-      addLog("[Camps] Accepted events returned: " + String(accepted.length));
+      const payload = {
+        sportId: selectedSportId,
+        sportName: selectedSport.sport_name,
+        siteUrl: siteUrl,
+        limit: Number(seedLimit || 300),
+        dryRun: !!dryRun
+      };
 
-      // Critical: prove the shape (console only; does not change UI)
-      if (accepted && accepted.length) {
-        console.log("[Camps] RAW accepted[0] =", JSON.stringify(accepted[0], null, 2));
+      const result = await base44.functions.invoke('sportsUSASeedSchools', payload);
+      const resp = result.data;
+
+      if (!resp || !resp.stats) {
+        appendLog(setLogSportsUSA, `[SportsUSA] ERROR: No response or missing stats.`);
+        appendLog(setLogSportsUSA, JSON.stringify(resp || {}, null, 2));
+        return;
       }
 
-      addLog("[Camps] Sample (first 3):");
-      for (var i = 0; i < accepted.length && i < 3; i++) {
-        var norm = normalizeAcceptedItem(accepted[i]);
-        var ev = norm.ev;
+      appendLog(setLogSportsUSA, `[SportsUSA] SportsUSA fetched: schools_found=${resp.stats.schools_found} | http=${resp.stats.http}`);
 
-        var camp = ev && ev.camp_name ? ev.camp_name : "";
-        var start = ev && ev.start_date ? ev.start_date : "n/a";
-        var url = "";
-        if (ev && ev.link_url) url = ev.link_url;
-        else if (ev && ev.source_url) url = ev.source_url;
-
-        addLog("- camp=\"" + camp + "\" start=" + start + " url=" + url);
+      if (resp.debug && resp.debug.sample && resp.debug.sample.length) {
+        appendLog(setLogSportsUSA, `[SportsUSA] SportsUSA sample (first ${Math.min(resp.debug.sample.length, 3)}):`);
+        for (let i = 0; i < Math.min(resp.debug.sample.length, 3); i++) {
+          const s = resp.debug.sample[i];
+          appendLog(setLogSportsUSA, `- name="${s.school_name}" | logo="${s.logo_url}" | view="${s.view_site_url}"`);
+        }
       }
+
+      // Optional DB write (seed School + SchoolSportSite) should be done here.
+      // Based on your previous logs, you already have this part working in some version.
+      // Below is a safe upsert approach aligned with your schemas.
 
       if (dryRun) {
-        addLog("[Camps] DryRun=true: no CampDemo writes performed.");
+        appendLog(setLogSportsUSA, `[SportsUSA] DryRun=true: no School / SchoolSportSite writes performed.`);
+        return;
       }
 
-      var rejects = json && json.rejected_samples ? json.rejected_samples : [];
-      if (rejects && rejects.length) {
-        addLog("[Camps] Rejected samples: " + String(rejects.length));
-        for (var rj = 0; rj < rejects.length && rj < 5; rj++) {
-          var rr = rejects[rj];
-          addLog("  - " + String((rr && rr.reason) || "reject") + " " + String((rr && rr.registrationUrl) || ""));
+      const schools = resp.schools || [];
+      appendLog(setLogSportsUSA, `[SportsUSA] Writing ${schools.length} rows to School + SchoolSportSite…`);
+
+      let schoolsCreated = 0;
+      let schoolsUpdated = 0;
+      let sitesCreated = 0;
+      let sitesUpdated = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      for (let i = 0; i < schools.length; i++) {
+        const row = schools[i];
+        const schoolName = row.school_name;
+        const logoUrl = row.logo_url || null;
+        const campSiteUrl = row.view_site_url || null;
+
+        if (!schoolName || !campSiteUrl) {
+          skipped += 1;
+          continue;
+        }
+
+        try {
+          // Upsert School by school_name
+          const existingSchools = await base44.entities.School.filter({ school_name: schoolName });
+
+          let schoolId = "";
+          if (!existingSchools || !existingSchools.length) {
+            const created = await base44.entities.School.create({
+              school_name: schoolName,
+              logo_url: logoUrl,
+              active: true,
+              school_type: "College/University",
+              source_platform: "sportsusa",
+              source_school_url: campSiteUrl,
+              source_key: row.source_key || null,
+              needs_review: false,
+              last_seen_at: nowIso()
+            });
+            schoolId = created.id;
+            schoolsCreated += 1;
+          } else {
+            const existing = existingSchools[0];
+            schoolId = existing.id;
+            await base44.entities.School.update(schoolId, {
+              logo_url: logoUrl || existing.logo_url || null,
+              source_platform: existing.source_platform || "sportsusa",
+              source_school_url: existing.source_school_url || campSiteUrl,
+              last_seen_at: nowIso()
+            });
+            schoolsUpdated += 1;
+          }
+
+          // Upsert SchoolSportSite by (school_id + sport_id)
+          const existingSites = await base44.entities.SchoolSportSite.filter({
+            school_id: schoolId,
+            sport_id: selectedSportId
+          });
+
+          const sourceKey = row.source_key || ("sportsusa:" + safeString(selectedSport.sport_name).toLowerCase() + ":" + safeString(campSiteUrl).toLowerCase());
+
+          if (!existingSites || !existingSites.length) {
+            await base44.entities.SchoolSportSite.create({
+              school_id: schoolId,
+              sport_id: selectedSportId,
+              camp_site_url: campSiteUrl,
+              logo_url: logoUrl,
+              source_platform: "sportsusa",
+              source_key: sourceKey,
+              active: true,
+              needs_review: false,
+              last_seen_at: nowIso()
+            });
+            sitesCreated += 1;
+          } else {
+            const existingSite = existingSites[0];
+            await base44.entities.SchoolSportSite.update(existingSite.id, {
+              camp_site_url: campSiteUrl,
+              logo_url: logoUrl || existingSite.logo_url || null,
+              source_platform: existingSite.source_platform || "sportsusa",
+              source_key: existingSite.source_key || sourceKey,
+              active: true,
+              last_seen_at: nowIso()
+            });
+            sitesUpdated += 1;
+          }
+
+          if ((i + 1) % 10 === 0) {
+            appendLog(setLogSportsUSA, `[SportsUSA] Progress ${i + 1}/${schools.length} | Schools c/u=${schoolsCreated}/${schoolsUpdated} | Sites c/u=${sitesCreated}/${sitesUpdated} | skipped=${skipped} errors=${errors}`);
+          }
+        } catch (e) {
+          errors += 1;
+          appendLog(setLogSportsUSA, `[SportsUSA] ERROR row ${i + 1}: ${safeString((e && e.message) || e)}`);
         }
       }
 
-      var errs = json && json.errors ? json.errors : [];
-      if (errs && errs.length) {
-        addLog("[Camps] Errors: " + String(errs.length));
-        for (var ei = 0; ei < errs.length && ei < 5; ei++) {
-          var er = errs[ei];
-          addLog("  - " + String((er && er.error) || "error") + ": " + String((er && er.message) || ""));
-        }
-      }
+      appendLog(setLogSportsUSA, `[SportsUSA] Writes done. Schools: created=${schoolsCreated} updated=${schoolsUpdated} | Sites: created=${sitesCreated} updated=${sitesUpdated} | skipped=${skipped} errors=${errors}`);
     } catch (e) {
-      addLog("[Camps] ERROR calling function: " + String((e && e.message) || e));
+      appendLog(setLogSportsUSA, `[SportsUSA] ERROR: ${safeString((e && e.message) || e)}`);
     }
   }
 
   // -------------------------
-  // UI (kept simple + close to your existing AdminImport look)
+  // Actions: Camps ingest -> CampDemo
   // -------------------------
-  var fieldStyle = { width: 140, padding: 6, border: "1px solid #ddd", borderRadius: 4 };
-  var labelStyle = { fontSize: 12, marginBottom: 4, color: "#444" };
-  var rowStyle = { display: "flex", gap: 16, alignItems: "flex-end", flexWrap: "wrap" };
-  var boxStyle = { border: "1px solid #ddd", borderRadius: 6, padding: 10, background: "#fff" };
-  var btnStyle = { padding: "8px 12px", border: "1px solid #bbb", borderRadius: 6, background: "#f7f7f7", cursor: "pointer" };
+  async function runCampsIngest() {
+    setLogCamps("");
+    if (!selectedSportId || !selectedSport) {
+      appendLog(setLogCamps, `[Camps] ERROR: Select a sport first.`);
+      return;
+    }
 
+    appendLog(setLogCamps, `[Camps] Starting: SportsUSA Camps Ingest (${selectedSport.sport_name}) @ ${nowIso()}`);
+    appendLog(setLogCamps, `[Camps] DryRun=${dryRun} | MaxSites=${maxSites} | MaxRegsPerSite=${maxRegsPerSite} | MaxEvents=${maxEvents}`);
+
+    try {
+      // Load active SchoolSportSite rows for this sport
+      const sites = await base44.entities.SchoolSportSite.filter({
+        sport_id: selectedSportId,
+        active: true
+      });
+
+      appendLog(setLogCamps, `[Camps] Loaded SchoolSportSite rows: ${(sites || []).length} (active)`);
+
+      const urls = [];
+      for (let i = 0; i < (sites || []).length; i++) {
+        const u = sites[i].camp_site_url;
+        if (u) urls.push(u);
+      }
+
+      const payload = {
+        sportId: selectedSportId,
+        sportName: selectedSport.sport_name,
+        dryRun: !!dryRun,
+        maxSites: Number(maxSites || 5),
+        maxRegsPerSite: Number(maxRegsPerSite || 10),
+        maxEvents: Number(maxEvents || 25),
+        testSiteUrl: safeString(testSiteUrl).trim() ? safeString(testSiteUrl).trim() : null,
+        siteUrls: safeString(testSiteUrl).trim() ? null : urls
+      };
+
+      const result = await base44.functions.invoke('sportsUSAIngestCamps', payload);
+      const resp = result.data;
+
+      // ✅ Always print version reliably
+      const fnVersion = (resp && (resp.version || (resp.debug && resp.debug.version))) || "MISSING";
+      appendLog(setLogCamps, `[Camps] Function version: ${fnVersion}`);
+
+      // ✅ Stats
+      if (resp && resp.stats) {
+        appendLog(
+          setLogCamps,
+          `[Camps] Function stats: processedSites=${resp.stats.processedSites} processedRegs=${resp.stats.processedRegs} accepted=${resp.stats.accepted} rejected=${resp.stats.rejected} errors=${resp.stats.errors}`
+        );
+      } else {
+        appendLog(setLogCamps, `[Camps] ERROR: Missing resp.stats`);
+      }
+
+      // ✅ Errors (first 3)
+      if (resp && resp.errors && resp.errors.length) {
+        appendLog(setLogCamps, `[Camps] Function errors (first ${Math.min(resp.errors.length, 3)}):`);
+        for (let i = 0; i < Math.min(resp.errors.length, 3); i++) {
+          appendLog(setLogCamps, `- ${JSON.stringify(resp.errors[i])}`);
+        }
+      }
+
+      // ✅ Per-site debug (first 1)
+      if (resp && resp.debug && resp.debug.siteDebug && resp.debug.siteDebug.length) {
+        const s0 = resp.debug.siteDebug[0];
+        appendLog(setLogCamps, `[Camps] Site debug (first 1):`);
+        appendLog(
+          setLogCamps,
+          `- url=${s0.siteUrl || ""} http=${s0.http || ""} htmlType=${s0.htmlType || ""} regLinks=${s0.regLinks || 0} sample=${s0.sample || ""} notes=${s0.notes || ""}`
+        );
+      }
+
+      // ✅ HTML snippet (only useful when regLinks=0 or errors>0)
+      if (resp && resp.debug && resp.debug.firstSiteHtmlSnippet) {
+        appendLog(setLogCamps, `[Camps] First site HTML snippet (debug):`);
+        appendLog(setLogCamps, resp.debug.firstSiteHtmlSnippet);
+      }
+
+      // If nothing accepted, show rejects
+      if (resp && resp.accepted && resp.accepted.length) {
+        appendLog(setLogCamps, `[Camps] Accepted events returned: ${resp.accepted.length}`);
+        appendLog(setLogCamps, `[Camps] Sample (first 3):`);
+        for (let i = 0; i < Math.min(resp.accepted.length, 3); i++) {
+          const a = resp.accepted[i];
+          const ev = a.event || {};
+          appendLog(setLogCamps, `- camp="${ev.camp_name}" start=${ev.start_date || "n/a"} url=${ev.link_url || ""}`);
+        }
+      } else {
+        if (resp && resp.rejected_samples && resp.rejected_samples.length) {
+          appendLog(setLogCamps, `[Camps] Rejected samples (first ${Math.min(resp.rejected_samples.length, 5)}):`);
+          for (let i = 0; i < Math.min(resp.rejected_samples.length, 5); i++) {
+            const rj = resp.rejected_samples[i];
+            appendLog(setLogCamps, `- reason=${rj.reason} title="${rj.title || ""}" url=${rj.registrationUrl || ""} datesLine=${rj.event_dates_line || ""}`);
+          }
+        }
+        appendLog(setLogCamps, `[Camps] No accepted events returned from function.`);
+        if (dryRun) appendLog(setLogCamps, `[Camps] DryRun=true: no CampDemo writes performed.`);
+        return;
+      }
+
+      if (dryRun) {
+        appendLog(setLogCamps, `[Camps] DryRun=true: no CampDemo writes performed.`);
+        return;
+      }
+
+      // Write to CampDemo
+      let wrote = 0;
+      let writeErrors = 0;
+      const accepted = resp.accepted || [];
+
+      for (let i = 0; i < accepted.length; i++) {
+        const a = accepted[i];
+        const ev = a.event || {};
+        const dr = a.derived || {};
+
+        // We need a school_id. Since testSiteUrl may not map to a known school,
+        // we only write when we can resolve a SchoolSportSite row by matching camp_site_url.
+        let schoolId = null;
+
+        // Try match by site_url (derived)
+        const siteUrl = dr.site_url || null;
+        if (siteUrl) {
+          const siteRows = await base44.entities.SchoolSportSite.filter({ camp_site_url: siteUrl });
+          if (siteRows && siteRows.length) schoolId = siteRows[0].school_id;
+        }
+
+        if (!schoolId) {
+          // If we can't resolve school_id, skip write
+          writeErrors += 1;
+          appendLog(setLogCamps, `[Camps] SKIP: Could not resolve school_id for camp "${ev.camp_name}" (site_url missing or not found in SchoolSportSite).`);
+          continue;
+        }
+
+        try {
+          await base44.entities.CampDemo.create({
+            school_id: schoolId,
+            sport_id: selectedSportId,
+            camp_name: ev.camp_name,
+            start_date: ev.start_date,
+            end_date: ev.end_date || null,
+            city: ev.city || null,
+            state: ev.state || null,
+            price: ev.price || null,
+            link_url: ev.link_url,
+            notes: ev.notes || null,
+
+            season_year: new Date(ev.start_date).getFullYear(),
+            program_id: dr.program_id,
+            event_key: dr.event_key,
+            source_platform: ev.source_platform || "sportsusa",
+            source_url: ev.source_url || ev.link_url,
+            last_seen_at: nowIso(),
+            content_hash: null,
+
+            event_dates_raw: ev.event_dates_raw || null,
+            grades_raw: null,
+            register_by_raw: null,
+            price_raw: null,
+            price_min: null,
+            price_max: null,
+            sections_json: null
+          });
+          wrote += 1;
+        } catch (e) {
+          writeErrors += 1;
+          appendLog(setLogCamps, `[Camps] ERROR writing CampDemo: ${safeString((e && e.message) || e)}`);
+        }
+      }
+
+      appendLog(setLogCamps, `[Camps] CampDemo writes complete. wrote=${wrote} errors=${writeErrors}`);
+    } catch (e) {
+      appendLog(setLogCamps, `[Camps] ERROR: ${safeString((e && e.message) || e)}`);
+    }
+  }
+
+  // -------------------------
+  // UI
+  // -------------------------
   return (
-    <div style={{ padding: 16 }}>
-      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Admin Import</div>
+    <div style={{ padding: 16, maxWidth: 1100 }}>
+      <h2>Admin Import</h2>
 
-      <div style={rowStyle}>
+      {/* Top-level sport selector */}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
         <div>
-          <div style={labelStyle}>Sport ID (required)</div>
-          <input
-            style={{ ...fieldStyle, width: 220 }}
-            value={sportId}
-            onChange={function (e) { setSportId(e.target.value); }}
-            placeholder="sportId"
-          />
+          <div style={{ fontSize: 12, opacity: 0.7 }}>Sport</div>
+          <select
+            value={selectedSportId}
+            onChange={(e) => setSelectedSportId(e.target.value)}
+            style={{ padding: 8, minWidth: 260 }}
+          >
+            {sports.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.sport_name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>
-          <div style={labelStyle}>Sport Name</div>
-          <input
-            style={fieldStyle}
-            value={sportName}
-            onChange={function (e) { setSportName(e.target.value); }}
-            placeholder="Football"
-          />
-        </div>
-
-        <div>
-          <div style={labelStyle}>Dry Run</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", height: 32 }}>
-            <input
-              type="checkbox"
-              checked={!!dryRun}
-              onChange={function (e) { setDryRun(!!e.target.checked); }}
-            />
-            <div style={{ fontSize: 12 }}>{dryRun ? "true" : "false"}</div>
-          </div>
-        </div>
-
-        <div>
-          <div style={labelStyle}>Max Sites</div>
-          <input
-            style={{ ...fieldStyle, width: 90 }}
-            value={String(maxSites)}
-            onChange={function (e) { setMaxSites(e.target.value); }}
-          />
-        </div>
-
-        <div>
-          <div style={labelStyle}>Max Regs / Site</div>
-          <input
-            style={{ ...fieldStyle, width: 110 }}
-            value={String(maxRegsPerSite)}
-            onChange={function (e) { setMaxRegsPerSite(e.target.value); }}
-          />
-        </div>
-
-        <div>
-          <div style={labelStyle}>Max Events</div>
-          <input
-            style={{ ...fieldStyle, width: 90 }}
-            value={String(maxEvents)}
-            onChange={function (e) { setMaxEvents(e.target.value); }}
-          />
+          <div style={{ fontSize: 12, opacity: 0.7 }}>Dry Run</div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
+            <span>{dryRun ? "On" : "Off"}</span>
+          </label>
         </div>
       </div>
 
-      <div style={{ marginTop: 14 }}>
-        <div style={labelStyle}>Test Site URL (optional, overrides site list)</div>
+      {/* Section 1: Seed schools */}
+      <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 14, marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>[SportsUSA] Seed Schools</h3>
+
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <input
-            style={{ ...fieldStyle, width: "100%", maxWidth: 980 }}
-            value={testSiteUrl}
-            onChange={function (e) { setTestSiteUrl(e.target.value); }}
-            placeholder="https://www.hardingfootballcamps.com/"
-          />
-          <button style={btnStyle} onClick={runCampsIngest}>Run Camps Ingest</button>
-          <button
-            style={{ ...btnStyle, opacity: loadingSites ? 0.6 : 1 }}
-            onClick={loadSchoolSportSites}
-            disabled={loadingSites}
-          >
-            {loadingSites ? "Loading..." : "Reload SchoolSportSites"}
+          <div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Limit</div>
+            <input
+              type="number"
+              value={seedLimit}
+              onChange={(e) => setSeedLimit(Number(e.target.value))}
+              style={{ padding: 8, width: 120 }}
+            />
+          </div>
+
+          <button onClick={runSportsUSASeed} style={{ padding: "10px 14px" }}>
+            Run Seed
           </button>
         </div>
+
+        <pre style={{ marginTop: 12, background: "#111", color: "#0f0", padding: 12, borderRadius: 8, overflow: "auto" }}>
+          {logSportsUSA}
+        </pre>
       </div>
 
-      <div style={{ marginTop: 16 }}>
-        <div style={{ ...boxStyle, marginBottom: 12 }}>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>Logs</div>
-          <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.35 }}>
-            {logs && logs.length ? logs.join("\n") : "[Camps] Loaded SchoolSportSite rows: " + String((schoolSportSites || []).length) + " (active)"}
-          </pre>
+      {/* Section 2: Ingest camps */}
+      <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 14 }}>
+        <h3 style={{ marginTop: 0 }}>[Camps] Ingest Camps → CampDemo</h3>
+
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Max Sites</div>
+            <input type="number" value={maxSites} onChange={(e) => setMaxSites(Number(e.target.value))} style={{ padding: 8, width: 120 }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Max Reg Links / Site</div>
+            <input type="number" value={maxRegsPerSite} onChange={(e) => setMaxRegsPerSite(Number(e.target.value))} style={{ padding: 8, width: 160 }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Max Events</div>
+            <input type="number" value={maxEvents} onChange={(e) => setMaxEvents(Number(e.target.value))} style={{ padding: 8, width: 120 }} />
+          </div>
+
+          <div style={{ flex: 1, minWidth: 320 }}>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Test Site URL (optional)</div>
+            <input
+              value={testSiteUrl}
+              onChange={(e) => setTestSiteUrl(e.target.value)}
+              placeholder="https://www.hardingfootballcamps.com/"
+              style={{ padding: 8, width: "100%" }}
+            />
+          </div>
+
+          <button onClick={runCampsIngest} style={{ padding: "10px 14px" }}>
+            Run Camps Ingest
+          </button>
         </div>
 
-        <div style={boxStyle}>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>Last Response (JSON)</div>
-          <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.35, maxHeight: 360, overflow: "auto" }}>
-            {lastResponse ? JSON.stringify(lastResponse, null, 2) : "No response yet."}
-          </pre>
-        </div>
+        <pre style={{ marginTop: 12, background: "#111", color: "#0f0", padding: 12, borderRadius: 8, overflow: "auto" }}>
+          {logCamps}
+        </pre>
       </div>
     </div>
   );
 }
+
+export default AdminImport;
