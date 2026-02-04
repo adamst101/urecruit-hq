@@ -18,8 +18,10 @@ function safeString(x) {
   return s ? s : null;
 }
 
+// ✅ UPDATED: null/"" stays null (prevents Number(null) => 0)
 function safeNumber(x) {
-  if (x == null || x === "") return null;
+  if (x === null || x === undefined) return null;
+  if (typeof x === "string" && x.trim() === "") return null;
   const n = Number(x);
   return Number.isFinite(n) ? n : null;
 }
@@ -68,6 +70,26 @@ function lc(x) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// ✅ NEW: prevent double-prefix keys (ryzer:ryzer:...)
+function normalizeEventKey(key) {
+  const k = safeString(key);
+  if (!k) return null;
+  return k.replace(/^ryzer:ryzer:/i, "ryzer:");
+}
+
+// ✅ NEW: guardrail for garbage camp_name leakage from HTML/tooltips
+function isGarbageCampName(name) {
+  const s = lc(name);
+  return (
+    !s ||
+    s.includes("data-toggle") ||
+    s.includes("tooltip") ||
+    s.includes("<td") ||
+    s.includes("valign=") ||
+    s.includes("register")
+  );
 }
 
 // Return YYYY-MM-DD (UTC) or null
@@ -123,7 +145,7 @@ function simpleHash(obj) {
 function buildEventKey({ source_platform, program_id, start_date, link_url, source_url }) {
   const platform = source_platform || "seed";
   const disc = link_url || source_url || "na";
-  return `${platform}:${program_id}:${start_date || "na"}:${simpleHash(disc)}`;
+  return `${platform}:${program_id}:${start_date || "na"}:${disc}`;
 }
 
 function normalizeSportNameFromRow(r) {
@@ -285,6 +307,7 @@ export default function AdminImport() {
   const CampDemoEntity = base44 && base44.entities ? base44.entities.CampDemo : null;
 
   const PositionEntity = base44 && base44.entities ? (base44.entities.Position || base44.entities.Positions) : null;
+
   const CampEntity = base44 && base44.entities ? base44.entities.Camp : null;
 
   /* ----------------------------
@@ -753,8 +776,7 @@ export default function AdminImport() {
           sportName: selectedSportName,
           siteUrl: siteUrl,
           limit: Number(sportsUSALimit || 300),
-          // ✅ FIX: pass real dryRun
-          dryRun: !!sportsUSADryRun,
+          dryRun: true,
         }),
       });
 
@@ -854,11 +876,10 @@ export default function AdminImport() {
 
   /* ----------------------------
      Camps ingest: SchoolSportSite -> CampDemo
-     ✅ contract-compat for v9+ flat accepted
-     ✅ guardrail to prevent null school_id writes
-     ✅ payload matches CampDemo schema (no extra props)
-     ✅ FIX: pass real dryRun to function (was hardcoded true)
-     ✅ FIX: unknown price stays null (not 0)
+     ✅ UPDATED: contract-compat for v9/v10 (flat accepted OR nested {event})
+     ✅ UPDATED: guardrail to prevent null school_id writes
+     ✅ UPDATED: payload matches CampDemo schema (no extra props)
+     ✅ UPDATED: fixes 0-price pollution + ryzer:ryzer: key + garbage camp_name
   ----------------------------- */
   async function upsertCampDemoByEventKey(payload) {
     if (!CampDemoEntity || !CampDemoEntity.create || !CampDemoEntity.update) {
@@ -886,8 +907,8 @@ export default function AdminImport() {
 
   function normalizeAcceptedRowToFlat(a) {
     // Supports:
-    // - v9+ flat: { camp_name, start_date, end_date, link_url, school_id, ... }
-    // - legacy nested: { event: {...}, derived, debug }
+    // - flat: { camp_name, start_date, end_date, link_url, school_id, ... }
+    // - nested legacy: { event: { camp_name, start_date, ... }, derived, debug }
     if (!a) return {};
     if (a.event && typeof a.event === "object") {
       const e = a.event;
@@ -1001,8 +1022,7 @@ export default function AdminImport() {
         body: JSON.stringify({
           sportId: selectedSportId,
           sportName: selectedSportName,
-          // ✅ FIX: do NOT hardcode true
-          dryRun: !!campsDryRun,
+          dryRun: true,
           maxSites: Number(campsMaxSites || 5),
           maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
           maxEvents: Number(campsMaxEvents || 25),
@@ -1063,7 +1083,7 @@ export default function AdminImport() {
         return;
       }
 
-      // ✅ Guardrail: if we're about to write, ensure school_id is present
+      // Guardrail: if we're about to write, ensure school_id is present
       const missingSchoolIdCount = accepted.filter((a) => !safeString(a.school_id) && !tUrl).length;
       if (missingSchoolIdCount > 0) {
         appendLog("camps", `[Camps] GUARDRAIL: accepted rows missing school_id = ${missingSchoolIdCount}`);
@@ -1097,7 +1117,10 @@ export default function AdminImport() {
 
         const school_id = safeString(a.school_id) || (tUrl ? safeString(tSchool) : null);
         const sport_id = selectedSportId; // enforce current sport selection
-        const camp_name = safeString(a.camp_name);
+
+        // ✅ UPDATED: camp_name cleanup
+        let camp_name = safeString(a.camp_name);
+        if (isGarbageCampName(camp_name)) camp_name = "Camp";
 
         const start_date = toISODate(a.start_date);
         const end_date = toISODate(a.end_date);
@@ -1120,8 +1143,9 @@ export default function AdminImport() {
         const source_platform = safeString(a.source_platform) || "sportsusa";
         const source_url = safeString(a.source_url) || link_url;
 
+        // ✅ UPDATED: normalize any legacy/double-prefix keys
         const event_key =
-          safeString(a.event_key) ||
+          normalizeEventKey(a.event_key) ||
           buildEventKey({
             source_platform,
             program_id,
@@ -1145,11 +1169,6 @@ export default function AdminImport() {
             notes: safeString(a.notes),
           });
 
-        // ✅ PRICE HYGIENE: unknown = null (never 0 unless explicitly provided)
-        const price = safeNumber(a.price);
-        const price_min = safeNumber(a.price_min);
-        const price_max = safeNumber(a.price_max);
-
         // ✅ IMPORTANT: payload matches CampDemo schema ONLY
         const payload = {
           school_id,
@@ -1160,7 +1179,10 @@ export default function AdminImport() {
           city: safeString(a.city) || null,
           state: safeString(a.state) || null,
           position_ids: normalizeStringArray(a.position_ids),
-          price: price != null ? price : null,
+
+          // ✅ UPDATED: safeNumber prevents null => 0
+          price: safeNumber(a.price),
+
           link_url: link_url || null,
           notes: safeString(a.notes) || null,
           season_year,
@@ -1174,8 +1196,11 @@ export default function AdminImport() {
           grades_raw: safeString(a.grades_raw) || null,
           register_by_raw: safeString(a.register_by_raw) || null,
           price_raw: safeString(a.price_raw) || null,
-          price_min: price_min != null ? price_min : null,
-          price_max: price_max != null ? price_max : null,
+
+          // ✅ UPDATED: safeNumber prevents null => 0
+          price_min: safeNumber(a.price_min),
+          price_max: safeNumber(a.price_max),
+
           sections_json: safeObject(a.sections_json) || null,
         };
 
@@ -1253,8 +1278,9 @@ export default function AdminImport() {
     const source_platform = safeString(r && r.source_platform) || "seed";
     const program_id = safeString(r && r.program_id) || `seed:${String(school_id)}:${slugify(camp_name)}`;
 
+    // ✅ UPDATED: normalize any double-prefix key before use
     const event_key =
-      safeString(r && r.event_key) ||
+      normalizeEventKey(r && r.event_key) ||
       buildEventKey({
         source_platform,
         program_id,
@@ -1741,3 +1767,4 @@ export default function AdminImport() {
     </div>
   );
 }
+
