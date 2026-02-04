@@ -69,6 +69,17 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function formatNotes(n) {
+  if (n == null) return "";
+  if (Array.isArray(n)) return n.filter((x) => x != null && String(x).trim()).map((x) => String(x).trim()).join(", ");
+  if (typeof n === "string") return n.trim();
+  try {
+    return JSON.stringify(n);
+  } catch {
+    return String(n);
+  }
+}
+
 // Return YYYY-MM-DD (UTC) or null
 function toISODate(dateInput) {
   if (!dateInput) return null;
@@ -139,30 +150,6 @@ function readActiveFlag(row) {
   return true;
 }
 
-async function tryUpdateWithPayloads(Entity, id, payloads) {
-  for (const p of payloads) {
-    try {
-      await Entity.update(String(id), p);
-      return true;
-    } catch {
-      // try next
-    }
-  }
-  return false;
-}
-
-async function tryCreateWithPayloads(Entity, payloads) {
-  for (const p of payloads) {
-    try {
-      const created = await Entity.create(p);
-      return created || true;
-    } catch {
-      // try next
-    }
-  }
-  return null;
-}
-
 async function tryDelete(Entity, id) {
   if (!Entity || !id) return false;
   const fns = ["delete", "remove", "destroy"];
@@ -211,22 +198,6 @@ async function entityList(Entity, whereObj) {
   }
 
   throw new Error("Entity has no supported list method (filter/list/findMany/all).");
-}
-
-/* ----------------------------
-   ✅ NEW: Safe notes formatter
-   Fixes: "notes.join is not a function"
------------------------------ */
-function formatNotes(notes) {
-  if (!notes) return "";
-  if (Array.isArray(notes)) return notes.filter((x) => x != null && String(x).trim()).map(String).join(", ");
-  if (typeof notes === "string") return notes.trim();
-  if (typeof notes === "number" || typeof notes === "boolean") return String(notes);
-  try {
-    return JSON.stringify(notes);
-  } catch {
-    return String(notes);
-  }
 }
 
 /* ----------------------------
@@ -328,7 +299,7 @@ export default function AdminImport() {
   const CampEntity = base44 && base44.entities ? base44.entities.Camp : null;
 
   /* ----------------------------
-     One Sport selection to rule them all
+     One Sport selection
   ----------------------------- */
   const [sports, setSports] = useState([]);
   const [sportsLoading, setSportsLoading] = useState(false);
@@ -336,7 +307,7 @@ export default function AdminImport() {
   const [selectedSportName, setSelectedSportName] = useState("");
 
   /* ----------------------------
-     Logs (unique per section)
+     Logs
   ----------------------------- */
   const [logSportsUSA, setLogSportsUSA] = useState("");
   const [logCamps, setLogCamps] = useState("");
@@ -378,7 +349,7 @@ export default function AdminImport() {
   const [testSchoolId, setTestSchoolId] = useState("");
 
   /* ----------------------------
-     Positions manager
+     Positions manager (optional)
   ----------------------------- */
   const [positions, setPositions] = useState([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
@@ -453,6 +424,7 @@ export default function AdminImport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // auto-fill SportsUSA directory for sport
   useEffect(() => {
     const guess = SPORTSUSA_DIRECTORY_BY_SPORTNAME[String(selectedSportName || "").trim()];
     if (guess) setSportsUSASiteUrl(guess);
@@ -480,10 +452,7 @@ export default function AdminImport() {
         }))
         .filter((p) => p.id);
 
-      normalized.sort(
-        (a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || "")
-      );
-
+      normalized.sort((a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || ""));
       setPositions(normalized);
 
       const nextEdit = {};
@@ -529,9 +498,7 @@ export default function AdminImport() {
       existing = [];
     }
 
-    const hit = asArray(existing).find(
-      (r) => String(r && r.position_code ? r.position_code : "").trim().toUpperCase() === position_code
-    );
+    const hit = asArray(existing).find((r) => String(r && r.position_code ? r.position_code : "").trim().toUpperCase() === position_code);
 
     const payload = { sport_id: sportId, position_code, position_name };
 
@@ -809,7 +776,7 @@ export default function AdminImport() {
       }
 
       const schools = asArray(data && data.schools ? data.schools : []);
-      appendLog("sportsusa", `[SportsUSA] SportsUSA fetched: schools_found=${schools.length} | http=${(data && data.stats && data.stats.http) ? data.stats.http : res.status}`);
+      appendLog("sportsusa", `[SportsUSA] SportsUSA fetched: schools_found=${schools.length} | http=${data && data.stats && data.stats.http ? data.stats.http : res.status}`);
 
       const sample = schools.slice(0, 3);
       if (sample.length) {
@@ -874,18 +841,12 @@ export default function AdminImport() {
         }
 
         if ((i + 1) % 10 === 0) {
-          appendLog(
-            "sportsusa",
-            `[SportsUSA] Progress ${i + 1}/${schools.length} | Schools c/u=${schoolsCreated}/${schoolsUpdated} | Sites c/u=${sitesCreated}/${sitesUpdated} | skipped=${skipped} errors=${errors}`
-          );
+          appendLog("sportsusa", `[SportsUSA] Progress ${i + 1}/${schools.length} | Schools c/u=${schoolsCreated}/${schoolsUpdated} | Sites c/u=${sitesCreated}/${sitesUpdated} | skipped=${skipped} errors=${errors}`);
         }
         await sleep(20);
       }
 
-      appendLog(
-        "sportsusa",
-        `[SportsUSA] Writes done. Schools: created=${schoolsCreated} updated=${schoolsUpdated} | Sites: created=${sitesCreated} updated=${sitesUpdated} | skipped=${skipped} errors=${errors}`
-      );
+      appendLog("sportsusa", `[SportsUSA] Writes done. Schools: created=${schoolsCreated} updated=${schoolsUpdated} | Sites: created=${sitesCreated} updated=${sitesUpdated} | skipped=${skipped} errors=${errors}`);
     } catch (e) {
       appendLog("sportsusa", `[SportsUSA] ERROR: ${String(e && e.message ? e.message : e)}`);
     } finally {
@@ -926,10 +887,7 @@ export default function AdminImport() {
     setLogCamps("");
 
     appendLog("camps", `[Camps] Starting: SportsUSA Camps Ingest (${selectedSportName}) @ ${runIso}`);
-    appendLog(
-      "camps",
-      `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${campsMaxSites} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents}`
-    );
+    appendLog("camps", `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${campsMaxSites} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents}`);
 
     try {
       if (!selectedSportId) {
@@ -945,7 +903,6 @@ export default function AdminImport() {
         return;
       }
 
-      // Load active sites for this sport
       const siteRows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
       appendLog("camps", `[Camps] Loaded SchoolSportSite rows: ${siteRows.length} (active)`);
 
@@ -963,6 +920,13 @@ export default function AdminImport() {
         return;
       }
 
+      // ✅ CRITICAL FIX: your function expects `siteUrls` (not `sites`)
+      // This was causing processedSites=0 + errors=1 even though the call was “ok”.
+      const siteUrls = sites
+        .map((x) => safeString(x.camp_site_url))
+        .filter((x) => !!x)
+        .slice(0, Number(campsMaxSites || 5));
+
       const res = await fetch("/functions/sportsUSAIngestCamps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -973,9 +937,12 @@ export default function AdminImport() {
           maxSites: Number(campsMaxSites || 5),
           maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
           maxEvents: Number(campsMaxEvents || 25),
-          sites: sites,
+
+          // ✅ function input shape
+          siteUrls: siteUrls,
+
+          // single-site test mode
           testSiteUrl: tUrl || null,
-          testSchoolId: tSchool || null,
         }),
       });
 
@@ -988,113 +955,60 @@ export default function AdminImport() {
       }
 
       appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
+
+      // Log top-level errors even when HTTP 200
+      const fnErrors = asArray(data && data.errors ? data.errors : []);
+      if (fnErrors.length) {
+        appendLog("camps", `[Camps] Function returned errors: ${fnErrors.length}`);
+        for (let i = 0; i < Math.min(3, fnErrors.length); i++) {
+          appendLog("camps", `- ${JSON.stringify(fnErrors[i])}`);
+        }
+      }
+
       appendLog(
         "camps",
         `[Camps] Function stats: processedSites=${data && data.stats ? data.stats.processedSites : 0} processedRegs=${data && data.stats ? data.stats.processedRegs : 0} accepted=${data && data.stats ? data.stats.accepted : 0} rejected=${data && data.stats ? data.stats.rejected : 0} errors=${data && data.stats ? data.stats.errors : 0}`
       );
 
-      // ✅ Date KPI (supports multiple response shapes)
-      const kpi =
-        (data && data.stats && data.stats.dateKpi) ||
-        (data && data.debug && data.debug.dateKpi) ||
-        (data && data.kpi) ||
-        null;
-      if (kpi) {
-        appendLog(
-          "camps",
-          `[Camps] Date KPI: listing=${kpi.listing != null ? kpi.listing : 0} ryzer=${kpi.ryzer != null ? kpi.ryzer : 0} missing=${kpi.missing != null ? kpi.missing : 0}`
-        );
-      }
-
-      // ✅ Site debug: support both key variants
-      const siteDebugRows =
-        asArray(data && data.debug && data.debug.site_debug ? data.debug.site_debug : null).length
-          ? asArray(data.debug.site_debug)
-          : asArray(data && data.debug && data.debug.siteDebug ? data.debug.siteDebug : null);
-
-      const siteDbg = siteDebugRows.slice(0, 1);
+      // ✅ Support both debug shapes: debug.siteDebug (function) and debug.site_debug (older)
+      const rawSiteDbg = asArray(data && data.debug ? (data.debug.siteDebug || data.debug.site_debug || []) : []);
+      const siteDbg = rawSiteDbg.slice(0, 1);
       if (siteDbg.length) {
         appendLog("camps", "[Camps] Site debug (first 1):");
         for (let i = 0; i < siteDbg.length; i++) {
           const sd = siteDbg[i] || {};
           appendLog(
             "camps",
-            `- school_id=${sd.school_id || ""} http=${sd.http || "n/a"} html=${sd.htmlType || ""} regLinks=${sd.regLinks || 0} sample=${sd.regLinksSample || sd.sample || ""}`
+            `- siteUrl=${sd.siteUrl || ""} http=${sd.http || "n/a"} html=${sd.htmlType || ""} regLinks=${sd.regLinks || 0} sample=${sd.sample || ""}`
           );
-
-          // ✅ FIX: notes may be string/object/array; never assume join()
-          const notesText = formatNotes(sd.notes);
-          if (notesText) appendLog("camps", `  notes=${notesText}`);
-
-          const firstHtml = sd.htmlSnippet ? sd.htmlSnippet : null;
-          if (firstHtml) {
-            appendLog("camps", "[Camps] First site HTML snippet (debug):");
-            appendLog("camps", String(firstHtml));
-          }
+          const notesStr = formatNotes(sd.notes);
+          if (notesStr) appendLog("camps", `  notes=${notesStr}`);
         }
       }
 
-      // ✅ Accepted: support both shapes
-      const acceptedRaw = asArray(data && data.accepted ? data.accepted : []);
-      if (!acceptedRaw.length) {
+      // HTML snippet support (function uses debug.firstSiteHtmlSnippet)
+      const firstHtml = data && data.debug ? (data.debug.firstSiteHtmlSnippet || null) : null;
+      if (firstHtml) {
+        appendLog("camps", "[Camps] First site HTML snippet (debug):");
+        appendLog("camps", String(firstHtml));
+      }
+
+      const accepted = asArray(data && data.accepted ? data.accepted : []);
+      if (!accepted.length) {
         appendLog("camps", "[Camps] No accepted events returned from function.");
         return;
       }
-
-      // Normalize:
-      // - v6 style: accepted[i] = { event, derived, debug }
-      // - older style: accepted[i] = { camp_name, start_date, registration_url, ... }
-      const accepted = acceptedRaw.map((a) => {
-        if (a && a.event && typeof a.event === "object") {
-          const evt = a.event;
-          return {
-            school_id: safeString(evt.school_id),
-            camp_name: safeString(evt.camp_name),
-            start_date: safeString(evt.start_date),
-            end_date: safeString(evt.end_date),
-            program_id: safeString(evt.program_id),
-            event_key: safeString(evt.event_key),
-            content_hash: safeString(evt.content_hash),
-            registration_url: safeString(evt.link_url || evt.source_url),
-            source_url: safeString(evt.source_url),
-            event_dates_raw: safeString(evt.event_dates_raw),
-            grades_raw: safeString(evt.grades_raw),
-            register_by_raw: safeString(evt.register_by_raw),
-            price_raw: safeString(evt.price_raw),
-            price_min: safeNumber(evt.price_min),
-            price_max: safeNumber(evt.price_max),
-            sections_json: evt.sections_json || null,
-            season_year: safeNumber(evt.season_year),
-          };
-        }
-
-        // flat
-        return {
-          school_id: safeString(a && a.school_id),
-          camp_name: safeString(a && a.camp_name),
-          start_date: safeString(a && a.start_date),
-          end_date: safeString(a && a.end_date),
-          program_id: safeString(a && a.program_id),
-          event_key: safeString(a && a.event_key),
-          content_hash: safeString(a && a.content_hash),
-          registration_url: safeString(a && (a.registration_url || a.link_url || a.source_url)),
-          source_url: safeString(a && a.source_url),
-          event_dates_raw: safeString(a && a.event_dates_raw),
-          grades_raw: safeString(a && a.grades_raw),
-          register_by_raw: safeString(a && a.register_by_raw),
-          price_raw: safeString(a && a.price_raw),
-          price_min: safeNumber(a && a.price_min),
-          price_max: safeNumber(a && a.price_max),
-          sections_json: a && a.sections_json ? a.sections_json : null,
-          season_year: safeNumber(a && a.season_year),
-        };
-      });
 
       appendLog("camps", `[Camps] Accepted events returned: ${accepted.length}`);
       appendLog("camps", `[Camps] Sample (first 3):`);
       for (let i = 0; i < Math.min(3, accepted.length); i++) {
         const a = accepted[i] || {};
-        appendLog("camps", `- camp="${a.camp_name || ""}" start=${a.start_date || "n/a"} url=${a.registration_url || ""}`);
+        // Function returns accepted[] objects as {event, derived, debug}
+        const ev = a.event || a;
+        const campName = safeString(ev.camp_name) || "";
+        const start = safeString(ev.start_date) || "n/a";
+        const url = safeString(ev.link_url || ev.source_url || "") || "";
+        appendLog("camps", `- camp="${campName}" start=${start} url=${url}`);
       }
 
       if (campsDryRun) {
@@ -1102,7 +1016,6 @@ export default function AdminImport() {
         return;
       }
 
-      // Write to CampDemo
       let created = 0;
       let updated = 0;
       let skipped = 0;
@@ -1110,28 +1023,29 @@ export default function AdminImport() {
 
       for (let i = 0; i < accepted.length; i++) {
         const a = accepted[i] || {};
+        const ev = a.event || a;
 
-        const school_id = safeString(a.school_id) || (tUrl ? safeString(tSchool) : null);
-        const camp_name = safeString(a.camp_name);
-        const link_url = safeString(a.registration_url || a.source_url);
-        const start_date = toISODate(a.start_date);
+        const school_id = safeString(ev.school_id) || (tUrl ? safeString(tSchool) : null);
+        const camp_name = safeString(ev.camp_name);
+        const link_url = safeString(ev.link_url || ev.source_url);
+        const start_date = toISODate(ev.start_date);
 
         if (!school_id || !camp_name || !start_date) {
           skipped += 1;
           continue;
         }
 
-        const season_year = safeNumber(a.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
+        const season_year = safeNumber(ev.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
         if (season_year == null) {
           skipped += 1;
           continue;
         }
 
-        const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
+        const program_id = safeString(ev.program_id) || `sportsusa:${slugify(camp_name)}`;
         const event_key =
-          safeString(a.event_key) ||
+          safeString(ev.event_key) ||
           buildEventKey({
-            source_platform: "sportsusa",
+            source_platform: safeString(ev.source_platform) || "sportsusa",
             program_id,
             start_date,
             link_url,
@@ -1143,29 +1057,30 @@ export default function AdminImport() {
           sport_id: selectedSportId,
           camp_name,
           start_date,
-          end_date: toISODate(a.end_date) || null,
-          city: null,
-          state: null,
-          position_ids: [],
-          price: null,
+          end_date: toISODate(ev.end_date) || null,
+          city: safeString(ev.city) || null,
+          state: safeString(ev.state) || null,
+          position_ids: normalizeStringArray(ev.position_ids),
+          price: safeNumber(ev.price),
+
           link_url: link_url || null,
-          notes: null,
+          notes: safeString(ev.notes) || null,
 
           season_year,
           program_id,
           event_key,
-          source_platform: "sportsusa",
-          source_url: link_url || null,
+          source_platform: safeString(ev.source_platform) || "sportsusa",
+          source_url: safeString(ev.source_url) || link_url || null,
           last_seen_at: runIso,
-          content_hash: safeString(a.content_hash) || simpleHash({ school_id, camp_name, start_date, link_url }),
+          content_hash: safeString(ev.content_hash) || simpleHash({ school_id, camp_name, start_date, link_url }),
 
-          event_dates_raw: safeString(a.event_dates_raw) || null,
-          grades_raw: safeString(a.grades_raw) || null,
-          register_by_raw: safeString(a.register_by_raw) || null,
-          price_raw: safeString(a.price_raw) || null,
-          price_min: safeNumber(a.price_min),
-          price_max: safeNumber(a.price_max),
-          sections_json: safeObject(a.sections_json),
+          event_dates_raw: safeString(ev.event_dates_raw) || null,
+          grades_raw: safeString(ev.grades_raw) || null,
+          register_by_raw: safeString(ev.register_by_raw) || null,
+          price_raw: safeString(ev.price_raw) || null,
+          price_min: safeNumber(ev.price_min),
+          price_max: safeNumber(ev.price_max),
+          sections_json: safeObject(ev.sections_json),
         };
 
         try {
@@ -1382,7 +1297,7 @@ export default function AdminImport() {
           </Button>
         </div>
 
-        {/* Sport Selector */}
+        {/* Global Sport Selector */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">1) Select Sport</div>
           <div className="text-sm text-slate-600 mt-1">This selection drives Seed Schools, Camps Ingest, Positions, and Promote.</div>
@@ -1421,7 +1336,7 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* Seed Schools */}
+        {/* SportsUSA Seed Schools */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">2) Seed Schools from SportsUSA (School + SchoolSportSite)</div>
           <div className="text-sm text-slate-600 mt-1">
@@ -1456,12 +1371,7 @@ export default function AdminImport() {
               </div>
               <div className="flex items-end">
                 <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={sportsUSADryRun}
-                    onChange={(e) => setSportsUSADryRun(e.target.checked)}
-                    disabled={sportsUSAWorking}
-                  />
+                  <input type="checkbox" checked={sportsUSADryRun} onChange={(e) => setSportsUSADryRun(e.target.checked)} disabled={sportsUSAWorking} />
                   Dry Run
                 </label>
               </div>
@@ -1469,10 +1379,7 @@ export default function AdminImport() {
           </div>
 
           <div className="mt-3 flex gap-2">
-            <Button
-              onClick={runSportsUSASeedSchools}
-              disabled={!selectedSportId || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}
-            >
+            <Button onClick={runSportsUSASeedSchools} disabled={!selectedSportId || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}>
               {sportsUSAWorking ? "Running…" : sportsUSADryRun ? "Run Seed (Dry Run)" : "Run Seed → Write School + Site"}
             </Button>
 
@@ -1584,7 +1491,9 @@ export default function AdminImport() {
         {/* Promote */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">4) Promote CampDemo → Camp</div>
-          <div className="text-sm text-slate-600 mt-1">Upserts by <b>event_key</b>. (Runs for the currently selected sport.)</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Upserts by <b>event_key</b>. (Runs for the currently selected sport.)
+          </div>
 
           <div className="mt-3 flex gap-2">
             <Button onClick={promoteCampDemoToCamp} disabled={!selectedSportId || promoteWorking || sportsUSAWorking || campsWorking || seedWorking}>
@@ -1602,7 +1511,7 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* Positions */}
+        {/* Positions (optional) */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Positions (optional)</div>
           <div className="text-sm text-slate-600 mt-1">Auto-seed a default set, or manually add/edit/delete positions per sport.</div>
@@ -1677,7 +1586,7 @@ export default function AdminImport() {
                                   [p.id]: {
                                     ...(prev[p.id] || {}),
                                     code: e.target.value,
-                                    name: (prev[p.id] && prev[p.id].name != null) ? prev[p.id].name : p.name,
+                                    name: prev[p.id] && prev[p.id].name != null ? prev[p.id].name : p.name,
                                   },
                                 }))
                               }
@@ -1693,7 +1602,7 @@ export default function AdminImport() {
                                   [p.id]: {
                                     ...(prev[p.id] || {}),
                                     name: e.target.value,
-                                    code: (prev[p.id] && prev[p.id].code != null) ? prev[p.id].code : p.code,
+                                    code: prev[p.id] && prev[p.id].code != null ? prev[p.id].code : p.code,
                                   },
                                 }))
                               }
