@@ -288,7 +288,7 @@ export default function AdminImport() {
   const CampEntity = base44 && base44.entities ? base44.entities.Camp : null;
 
   /* ----------------------------
-     Sport selection
+     One Sport selection to rule them all
   ----------------------------- */
   const [sports, setSports] = useState([]);
   const [sportsLoading, setSportsLoading] = useState(false);
@@ -414,6 +414,7 @@ export default function AdminImport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // auto-fill SportsUSA directory for sport
   useEffect(() => {
     const guess = SPORTSUSA_DIRECTORY_BY_SPORTNAME[String(selectedSportName || "").trim()];
     if (guess) setSportsUSASiteUrl(guess);
@@ -752,7 +753,7 @@ export default function AdminImport() {
           sportName: selectedSportName,
           siteUrl: siteUrl,
           limit: Number(sportsUSALimit || 300),
-          // ✅ FIX: pass the user-selected dryRun flag
+          // ✅ FIX: pass real dryRun
           dryRun: !!sportsUSADryRun,
         }),
       });
@@ -853,8 +854,11 @@ export default function AdminImport() {
 
   /* ----------------------------
      Camps ingest: SchoolSportSite -> CampDemo
-     ✅ FIX: pass dryRun flag correctly
-     ✅ FIX: never write 0 for unknown prices
+     ✅ contract-compat for v9+ flat accepted
+     ✅ guardrail to prevent null school_id writes
+     ✅ payload matches CampDemo schema (no extra props)
+     ✅ FIX: pass real dryRun to function (was hardcoded true)
+     ✅ FIX: unknown price stays null (not 0)
   ----------------------------- */
   async function upsertCampDemoByEventKey(payload) {
     if (!CampDemoEntity || !CampDemoEntity.create || !CampDemoEntity.update) {
@@ -881,9 +885,10 @@ export default function AdminImport() {
   }
 
   function normalizeAcceptedRowToFlat(a) {
+    // Supports:
+    // - v9+ flat: { camp_name, start_date, end_date, link_url, school_id, ... }
+    // - legacy nested: { event: {...}, derived, debug }
     if (!a) return {};
-
-    // If function ever returns nested, keep compatibility
     if (a.event && typeof a.event === "object") {
       const e = a.event;
       return {
@@ -912,11 +917,10 @@ export default function AdminImport() {
         price_min: safeNumber(e.price_min),
         price_max: safeNumber(e.price_max),
         sections_json: safeObject(tryParseJson(e.sections_json)),
-        registration_url: safeString(e.link_url),
+        registration_url: safeString(e.link_url), // for sample logging compatibility
       };
     }
 
-    // v9+ flat
     return {
       school_id: safeString(a.school_id),
       sport_id: safeString(a.sport_id),
@@ -997,7 +1001,7 @@ export default function AdminImport() {
         body: JSON.stringify({
           sportId: selectedSportId,
           sportName: selectedSportName,
-          // ✅ FIX: pass the user-selected dryRun flag
+          // ✅ FIX: do NOT hardcode true
           dryRun: !!campsDryRun,
           maxSites: Number(campsMaxSites || 5),
           maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
@@ -1031,6 +1035,7 @@ export default function AdminImport() {
         appendLog("camps", `[Camps] Site KPI: sitesWithRegLinks=${sk.sitesWithRegLinks || 0} sitesWithNoRegLinks=${sk.sitesWithNoRegLinks || 0}`);
       }
 
+      // Site debug (first 1)
       const siteDbg = asArray(data && data.debug && data.debug.siteDebug ? data.debug.siteDebug : []).slice(0, 1);
       if (siteDbg.length) {
         appendLog("camps", "[Camps] Site debug (first 1):");
@@ -1058,6 +1063,7 @@ export default function AdminImport() {
         return;
       }
 
+      // ✅ Guardrail: if we're about to write, ensure school_id is present
       const missingSchoolIdCount = accepted.filter((a) => !safeString(a.school_id) && !tUrl).length;
       if (missingSchoolIdCount > 0) {
         appendLog("camps", `[Camps] GUARDRAIL: accepted rows missing school_id = ${missingSchoolIdCount}`);
@@ -1080,6 +1086,7 @@ export default function AdminImport() {
         return;
       }
 
+      // Write to CampDemo (schema-accurate)
       let created = 0;
       let updated = 0;
       let skipped = 0;
@@ -1089,7 +1096,7 @@ export default function AdminImport() {
         const a = accepted[i] || {};
 
         const school_id = safeString(a.school_id) || (tUrl ? safeString(tSchool) : null);
-        const sport_id = selectedSportId;
+        const sport_id = selectedSportId; // enforce current sport selection
         const camp_name = safeString(a.camp_name);
 
         const start_date = toISODate(a.start_date);
@@ -1109,6 +1116,7 @@ export default function AdminImport() {
         }
 
         const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
+
         const source_platform = safeString(a.source_platform) || "sportsusa";
         const source_url = safeString(a.source_url) || link_url;
 
@@ -1135,15 +1143,14 @@ export default function AdminImport() {
             program_id,
             event_dates_raw: safeString(a.event_dates_raw),
             notes: safeString(a.notes),
-            grades_raw: safeString(a.grades_raw),
-            price_raw: safeString(a.price_raw),
           });
 
-        // ✅ PRICE HYGIENE: unknown values remain null (not 0)
+        // ✅ PRICE HYGIENE: unknown = null (never 0 unless explicitly provided)
         const price = safeNumber(a.price);
         const price_min = safeNumber(a.price_min);
         const price_max = safeNumber(a.price_max);
 
+        // ✅ IMPORTANT: payload matches CampDemo schema ONLY
         const payload = {
           school_id,
           sport_id,
@@ -1194,7 +1201,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Promote CampDemo -> Camp (unchanged)
+     Promote CampDemo -> Camp (kept minimal)
   ----------------------------- */
   async function upsertCampByEventKey(payload) {
     if (!CampEntity || !CampEntity.create || !CampEntity.update) {
@@ -1270,8 +1277,6 @@ export default function AdminImport() {
         price,
         link_url,
         notes: safeString(r && r.notes),
-        grades_raw: safeString(r && r.grades_raw),
-        price_raw: safeString(r && r.price_raw),
       });
 
     const payload = {
@@ -1370,17 +1375,363 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     UI (UNCHANGED from your file)
-     NOTE: I’m not re-pasting the full JSX here to keep this response usable,
-     but you can keep your UI section exactly as-is.
+     UI
   ----------------------------- */
-
   return (
     <div className="min-h-screen bg-slate-50 p-4">
-      {/* keep your UI block exactly as you had it */}
-      {/* ... */}
       <div className="max-w-4xl mx-auto space-y-4">
-        {/* (paste your existing UI here unchanged) */}
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-2xl font-bold text-deep-navy">Admin Import</div>
+            <div className="text-sm text-slate-600">SportsUSA seeding + camp ingestion + promotion.</div>
+          </div>
+
+          <Button variant="outline" onClick={() => nav(ROUTES.Workspace)}>
+            Back to Workspace
+          </Button>
+        </div>
+
+        {/* Global Sport Selector */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">1) Select Sport</div>
+          <div className="text-sm text-slate-600 mt-1">This selection drives Seed Schools, Camps Ingest, Positions, and Promote.</div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Sport</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                value={selectedSportId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const hit = sports.find((x) => x.id === id) || null;
+                  setSelectedSportId(id);
+                  setSelectedSportName(hit && hit.name ? hit.name : "");
+                }}
+                disabled={sportsLoading || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}
+              >
+                <option value="">Select…</option>
+                {sports.map((sx) => (
+                  <option key={sx.id} value={sx.id}>
+                    {sx.name} {sx.active ? "" : "(Inactive)"}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-1 text-[11px] text-slate-500">
+                {sportsLoading ? "Loading sports…" : selectedSportName ? `Selected: ${selectedSportName}` : "Choose a sport"}
+              </div>
+            </div>
+
+            <div className="flex items-end gap-2">
+              <Button variant="outline" onClick={() => loadSports()} disabled={sportsLoading}>
+                {sportsLoading ? "Refreshing…" : "Refresh Sports"}
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        {/* SportsUSA Seed Schools */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">2) Seed Schools from SportsUSA (School + SchoolSportSite)</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Pulls the sport directory (e.g., footballcampsusa.com) and seeds your canonical universities + their per-sport camp site URL.
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">SportsUSA directory URL</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={sportsUSASiteUrl}
+                onChange={(e) => setSportsUSASiteUrl(e.target.value)}
+                placeholder="https://www.footballcampsusa.com/"
+                disabled={sportsUSAWorking}
+              />
+              <div className="mt-1 text-[11px] text-slate-500">Default auto-fills based on sport. You can override if needed.</div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Limit</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  type="number"
+                  value={sportsUSALimit}
+                  onChange={(e) => setSportsUSALimit(Number(e.target.value || 0))}
+                  min={50}
+                  max={2000}
+                  disabled={sportsUSAWorking}
+                />
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={sportsUSADryRun} onChange={(e) => setSportsUSADryRun(e.target.checked)} disabled={sportsUSAWorking} />
+                  Dry Run
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <Button onClick={runSportsUSASeedSchools} disabled={!selectedSportId || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}>
+              {sportsUSAWorking ? "Running…" : sportsUSADryRun ? "Run Seed (Dry Run)" : "Run Seed → Write School + Site"}
+            </Button>
+
+            <Button variant="outline" onClick={() => setLogSportsUSA("")} disabled={sportsUSAWorking}>
+              Clear Log
+            </Button>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-xs text-slate-500 mb-1">SportsUSA Log</div>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{logSportsUSA || "—"}</pre>
+          </div>
+        </Card>
+
+        {/* Camps ingest */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">3) Ingest Camps (from SchoolSportSite → CampDemo)</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Crawls per-school camp sites and discovers Ryzer registration pages. Writes accepted occurrences into <b>CampDemo</b>.
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Max sites</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={campsMaxSites}
+                onChange={(e) => setCampsMaxSites(Number(e.target.value || 0))}
+                min={1}
+                max={500}
+                disabled={campsWorking}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Max regs/site</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={campsMaxRegsPerSite}
+                onChange={(e) => setCampsMaxRegsPerSite(Number(e.target.value || 0))}
+                min={1}
+                max={50}
+                disabled={campsWorking}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Max events</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={campsMaxEvents}
+                onChange={(e) => setCampsMaxEvents(Number(e.target.value || 0))}
+                min={5}
+                max={5000}
+                disabled={campsWorking}
+              />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={campsDryRun} onChange={(e) => setCampsDryRun(e.target.checked)} disabled={campsWorking} />
+                Dry Run
+              </label>
+            </div>
+          </div>
+
+          {/* Test Mode */}
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Test Site URL (optional)</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={testSiteUrl}
+                onChange={(e) => setTestSiteUrl(e.target.value)}
+                placeholder="https://www.hardingfootballcamps.com/"
+                disabled={campsWorking}
+              />
+              <div className="mt-1 text-[11px] text-slate-500">If set, runs single-site mode. Dry run works even if it’s not in SchoolSportSite.</div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Test School ID (required for writes)</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={testSchoolId}
+                onChange={(e) => setTestSchoolId(e.target.value)}
+                placeholder="Paste School.id (only needed when DryRun=false)"
+                disabled={campsWorking}
+              />
+              <div className="mt-1 text-[11px] text-slate-500">Only required if you turn Dry Run off while using a Test Site URL.</div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || campsWorking || sportsUSAWorking || promoteWorking || seedWorking}>
+              {campsWorking ? "Running…" : campsDryRun ? "Run Camps Ingest (Dry Run)" : "Run Camps Ingest → Write CampDemo"}
+            </Button>
+
+            <Button variant="outline" onClick={() => setLogCamps("")} disabled={campsWorking}>
+              Clear Log
+            </Button>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-xs text-slate-500 mb-1">Camps Log</div>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{logCamps || "—"}</pre>
+          </div>
+        </Card>
+
+        {/* Promote */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">4) Promote CampDemo → Camp</div>
+          <div className="text-sm text-slate-600 mt-1">Upserts by <b>event_key</b>. (Runs for the currently selected sport.)</div>
+
+          <div className="mt-3 flex gap-2">
+            <Button onClick={promoteCampDemoToCamp} disabled={!selectedSportId || promoteWorking || sportsUSAWorking || campsWorking || seedWorking}>
+              {promoteWorking ? "Running…" : "Run Promotion"}
+            </Button>
+
+            <Button variant="outline" onClick={() => setLogPromote("")} disabled={promoteWorking}>
+              Clear Log
+            </Button>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-xs text-slate-500 mb-1">Promote Log</div>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{logPromote || "—"}</pre>
+          </div>
+        </Card>
+
+        {/* Positions (optional) */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">Positions (optional)</div>
+          <div className="text-sm text-slate-600 mt-1">Auto-seed a default set, or manually add/edit/delete positions per sport.</div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button onClick={seedPositionsForSport} disabled={!selectedSportId || seedWorking || sportsUSAWorking || campsWorking || promoteWorking}>
+              {seedWorking ? "Seeding…" : "Auto-seed positions"}
+            </Button>
+
+            <Button variant="outline" onClick={() => loadPositionsForSport(selectedSportId)} disabled={!selectedSportId || positionsLoading}>
+              {positionsLoading ? "Refreshing…" : "Refresh"}
+            </Button>
+
+            <Button variant="outline" onClick={() => setLogPositions("")} disabled={seedWorking}>
+              Clear Log
+            </Button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Code</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={positionAddCode}
+                onChange={(e) => setPositionAddCode(e.target.value)}
+                placeholder="e.g., QB"
+                disabled={!selectedSportId}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Name</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={positionAddName}
+                onChange={(e) => setPositionAddName(e.target.value)}
+                placeholder="e.g., Quarterback"
+                disabled={!selectedSportId}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button onClick={addPosition} disabled={!selectedSportId || positionAddWorking}>
+                {positionAddWorking ? "Saving…" : "Add / Upsert"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-xs text-slate-500 mb-2">Positions</div>
+
+            <div className="rounded-lg border border-slate-200 bg-white overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr className="text-left">
+                    <th className="p-2 border-b border-slate-200 w-28">Code</th>
+                    <th className="p-2 border-b border-slate-200">Name</th>
+                    <th className="p-2 border-b border-slate-200 w-44">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {positions.length ? (
+                    positions.map((p) => {
+                      const edit = positionsEdit[p.id] || { code: p.code, name: p.name };
+                      return (
+                        <tr key={p.id} className="border-b border-slate-100">
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.code ?? ""}
+                              onChange={(e) =>
+                                setPositionsEdit((prev) => ({
+                                  ...prev,
+                                  [p.id]: {
+                                    ...(prev[p.id] || {}),
+                                    code: e.target.value,
+                                    name: prev[p.id] && prev[p.id].name != null ? prev[p.id].name : p.name,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.name ?? ""}
+                              onChange={(e) =>
+                                setPositionsEdit((prev) => ({
+                                  ...prev,
+                                  [p.id]: {
+                                    ...(prev[p.id] || {}),
+                                    name: e.target.value,
+                                    code: prev[p.id] && prev[p.id].code != null ? prev[p.id].code : p.code,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td className="p-2">
+                            <div className="flex gap-2">
+                              <Button variant="outline" onClick={() => savePositionRow(p.id)} disabled={positionSaveWorking}>
+                                Save
+                              </Button>
+                              <Button variant="outline" onClick={() => deletePosition(p.id)} disabled={positionDeleteWorking === p.id}>
+                                {positionDeleteWorking === p.id ? "Deleting…" : "Delete"}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={3} className="p-3 text-slate-500">
+                        {selectedSportId ? (positionsLoading ? "Loading…" : "No positions found for this sport.") : "Select a sport first."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4">
+              <div className="text-xs text-slate-500 mb-1">Positions Log</div>
+              <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-56">{logPositions || "—"}</pre>
+            </div>
+          </div>
+        </Card>
+
         <div className="text-center">
           <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={sportsUSAWorking || campsWorking || promoteWorking || seedWorking}>
             Go to Home
