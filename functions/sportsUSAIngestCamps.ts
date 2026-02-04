@@ -38,7 +38,7 @@
 // }
 
 const VERSION =
-  "sportsUSAIngestCamps_2026-02-03_v7_listing_first_then_ryzer_multi_pass_date_parse_kpi_debug";
+  "sportsUSAIngestCamps_2026-02-04_v8_site_classification_debug_campCfmHits_registerHits";
 
 // -------------------------
 // Helpers
@@ -103,6 +103,45 @@ function hashLite(s) {
 }
 
 // -------------------------
+// ✅ NEW: site classification helpers
+// -------------------------
+function countRegexHits(text, re) {
+  if (!text || !re) return 0;
+  try {
+    var m = String(text).match(re);
+    return m ? m.length : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function sampleMatches(text, re, maxSamples) {
+  var out = [];
+  if (!text || !re) return out;
+
+  var s = String(text);
+  var m;
+  var count = 0;
+  var max = maxSamples || 3;
+
+  // Ensure global
+  var flags = "gi";
+  var src = re.source ? re.source : String(re);
+  var rx = new RegExp(src, flags);
+
+  while ((m = rx.exec(s)) !== null) {
+    var hit = m[0] || "";
+    if (hit) out.push(truncate(stripNonAscii(hit), 160));
+    count += 1;
+    if (count >= max) break;
+    // safety: avoid infinite loops for zero-width
+    if (rx.lastIndex === m.index) rx.lastIndex += 1;
+  }
+
+  return out;
+}
+
+// -------------------------
 // Registration link discovery
 // -------------------------
 
@@ -114,21 +153,20 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
     if (!u) return null;
     var s = String(u).trim();
 
-    // decode the most common HTML entity we see in URLs
+    // decode common HTML entity
     s = s.replace(/&amp;/g, "&");
 
     // drop fragments
     s = s.split("#")[0];
 
-    // If link is protocol-relative
+    // protocol-relative
     if (s.indexOf("//") === 0) s = "https:" + s;
 
-    // If link is relative to Ryzer registration (common on Ryzer templated camp sites)
-    // Examples: /camp.cfm?sport=1&id=123 OR camp.cfm?sport=1&id=123
+    // relative to Ryzer registration
     if (s.indexOf("/camp.cfm") === 0) s = "https://register.ryzer.com" + s;
     if (s.indexOf("camp.cfm") === 0) s = "https://register.ryzer.com/" + s;
 
-    // If still relative (like /register/camp.cfm...) let absUrl resolve against siteUrl
+    // if still relative, resolve to siteUrl
     if (s.indexOf("http://") !== 0 && s.indexOf("https://") !== 0) {
       s = absUrl(siteUrl, s);
     }
@@ -138,10 +176,6 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
 
   function isRyzerCampLink(u) {
     var x = lc(u || "");
-    // Accept a few known shapes:
-    // - https://register.ryzer.com/camp.cfm...
-    // - https://register.ryzer.com/camp.cfm?... (case variations)
-    // - sometimes camp sites embed register.ryzer.com with extra path pieces; we just require camp.cfm
     if (x.indexOf("register.ryzer.com") !== -1 && x.indexOf("camp.cfm") !== -1) return true;
     return false;
   }
@@ -153,20 +187,20 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
     out.push(u);
   }
 
-  // 1) href="...camp.cfm..." (double quotes)
+  // 1) href="...camp.cfm..."
   var reHrefDq = /href="([^"]*camp\.cfm[^"]*)"/gi;
   var m;
   while ((m = reHrefDq.exec(html)) !== null) {
     pushIfValid(m[1]);
   }
 
-  // 2) href='...camp.cfm...' (single quotes)
+  // 2) href='...camp.cfm...'
   var reHrefSq = /href='([^']*camp\.cfm[^']*)'/gi;
   while ((m = reHrefSq.exec(html)) !== null) {
     pushIfValid(m[1]);
   }
 
-  // 3) onclick="...camp.cfm..." and onclick='...camp.cfm...'
+  // 3) onclick patterns
   var reOnclickDq = /onclick="[^"]*(camp\.cfm[^"]*)"/gi;
   while ((m = reOnclickDq.exec(html)) !== null) {
     pushIfValid(m[1]);
@@ -176,20 +210,20 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
     pushIfValid(m[1]);
   }
 
-  // 4) data-href / data-url attributes (quoted or unquoted)
-  var reData = /(data-href|data-url)\s*=\s*("([^"]*camp\.cfm[^"]*)"|'([^']*camp\.cfm[^']*)'|([^\s>]*camp\.cfm[^\s>]*))/gi;
+  // 4) data-href / data-url
+  var reData =
+    /(data-href|data-url)\s*=\s*("([^"]*camp\.cfm[^"]*)"|'([^']*camp\.cfm[^']*)'|([^\s>]*camp\.cfm[^\s>]*))/gi;
   while ((m = reData.exec(html)) !== null) {
     pushIfValid(m[3] || m[4] || m[5]);
   }
 
-  // 5) Fully-qualified URLs in plain text (JS, JSON, etc.)
+  // 5) fully-qualified in text
   var reFull = /(https?:\/\/register\.ryzer\.com\/[^"' <]*camp\.cfm[^"' <]*)/gi;
   while ((m = reFull.exec(html)) !== null) {
     pushIfValid(m[1]);
   }
 
-  // 6) Relative occurrences in plain text (last resort)
-  // Example: "/camp.cfm?sport=1&id=123"
+  // 6) relative in text (last resort)
   var reRel = /([\/]camp\.cfm\?[^"' <]+)/gi;
   while ((m = reRel.exec(html)) !== null) {
     pushIfValid(m[1]);
@@ -197,14 +231,12 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
 
   out = uniq(out);
 
-  // Normalize: drop fragments (again, after uniq)
   for (var i = 0; i < out.length; i++) {
     out[i] = String(out[i]).split("#")[0];
   }
 
   return out;
 }
-
 
 // -------------------------
 // Listing snippet extraction (camp site)
@@ -215,17 +247,14 @@ function escapeRegExp(s) {
 }
 
 function extractSnippetAroundNeedle(html, needle, radius) {
-  // Returns a small chunk around the first occurrence of needle (case-insensitive).
   if (!html || !needle) return null;
   var r = radius || 260;
 
   var hay = String(html);
   var ndl = String(needle);
 
-  // Try direct find first (fast)
   var idx = hay.indexOf(ndl);
   if (idx < 0) {
-    // Try case-insensitive find
     var lowHay = hay.toLowerCase();
     var lowNdl = ndl.toLowerCase();
     idx = lowHay.indexOf(lowNdl);
@@ -244,14 +273,10 @@ function htmlToText(html) {
   if (!html) return "";
   var s = String(html);
 
-  // Remove script/style blocks first
   s = s.replace(/<script[\s\S]*?<\/script>/gi, " ");
   s = s.replace(/<style[\s\S]*?<\/style>/gi, " ");
-
-  // Replace tags with spaces
   s = s.replace(/<\/?[^>]+>/g, " ");
 
-  // Decode a few common entities (minimal)
   s = s.replace(/&nbsp;/gi, " ");
   s = s.replace(/&amp;/gi, "&");
   s = s.replace(/&quot;/gi, '"');
@@ -259,9 +284,7 @@ function htmlToText(html) {
   s = s.replace(/&lt;/gi, "<");
   s = s.replace(/&gt;/gi, ">");
 
-  // Collapse whitespace
   s = s.replace(/\s+/g, " ").trim();
-
   return s;
 }
 
@@ -311,7 +334,6 @@ function parseMMDDYYYY(s) {
 }
 
 function parseMonthNameDate(s) {
-  // "February 21st, 2026" OR "February 21st" (year may be missing)
   var m =
     /\b(January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\b\s+(\d{1,2}(?:st|nd|rd|th)?)\b(?:[,\s]+(\d{4}))?/i.exec(
       s
@@ -326,13 +348,17 @@ function parseMonthNameDate(s) {
 
 function parseSingleOrRangeDate(line, defaultYear) {
   var raw = safeString(line);
-  if (!raw) return {
-    start: null, end: null, rawLine: null, pattern: null, inferredYear: false
-  };
+  if (!raw)
+    return {
+      start: null,
+      end: null,
+      rawLine: null,
+      pattern: null,
+      inferredYear: false,
+    };
 
   var t = stripNonAscii(raw);
 
-  // 1) Numeric range: 06/12/2026 - 06/13/2026
   var m1 =
     /(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/.exec(t);
   if (m1) {
@@ -343,11 +369,10 @@ function parseSingleOrRangeDate(line, defaultYear) {
       end: b ? toIsoDate(b.y, b.m, b.d) : null,
       rawLine: t,
       pattern: "mdy_range",
-      inferredYear: false
+      inferredYear: false,
     };
   }
 
-  // 2) Numeric single: 02/15/2026
   var a1 = parseMMDDYYYY(t);
   if (a1) {
     return {
@@ -355,11 +380,10 @@ function parseSingleOrRangeDate(line, defaultYear) {
       end: null,
       rawLine: t,
       pattern: "mdy_single",
-      inferredYear: false
+      inferredYear: false,
     };
   }
 
-  // 3) Month name range: "February 21st - 22nd" (same month, year maybe missing)
   var m2 =
     /\b(January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\b\s+(\d{1,2}(?:st|nd|rd|th)?)\s*[-–]\s*(\d{1,2}(?:st|nd|rd|th)?)\b(?:[,\s]+(\d{4}))?/i.exec(
       t
@@ -368,18 +392,17 @@ function parseSingleOrRangeDate(line, defaultYear) {
     var mm = monthNumFromName(m2[1]);
     var d1 = Number(stripOrdinal(m2[2]));
     var d2 = Number(stripOrdinal(m2[3]));
-    var hasYear = !!(m2[4]);
-    var yy = m2[4] ? Number(m2[4]) : (defaultYear || null);
+    var hasYear = !!m2[4];
+    var yy = m2[4] ? Number(m2[4]) : defaultYear || null;
     return {
       start: yy && mm && d1 ? toIsoDate(yy, mm, d1) : null,
       end: yy && mm && d2 ? toIsoDate(yy, mm, d2) : null,
       rawLine: t,
       pattern: hasYear ? "month_range_year" : "month_range_infer_year",
-      inferredYear: !hasYear
+      inferredYear: !hasYear,
     };
   }
 
-  // 4) Month name with year range: "February 21st, 2026 - February 22nd, 2026"
   var m3 =
     /(\b(?:January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\b\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?)\s*[-–]\s*(\b(?:January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\b\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?)/i.exec(
       t
@@ -395,11 +418,10 @@ function parseSingleOrRangeDate(line, defaultYear) {
       end: p2 ? toIsoDate(y2, p2.m, p2.d) : null,
       rawLine: t,
       pattern: "month_full_range",
-      inferredYear: inferred
+      inferredYear: inferred,
     };
   }
 
-  // 5) Month name single: "February 15th" or "Feb 15, 2026"
   var p = parseMonthNameDate(t);
   if (p) {
     var hasY = !!p.y;
@@ -409,7 +431,7 @@ function parseSingleOrRangeDate(line, defaultYear) {
       end: null,
       rawLine: t,
       pattern: hasY ? "month_single_year" : "month_single_infer_year",
-      inferredYear: !hasY
+      inferredYear: !hasY,
     };
   }
 
@@ -417,12 +439,11 @@ function parseSingleOrRangeDate(line, defaultYear) {
 }
 
 function scoreParsedDate(parsed) {
-  // higher is better
   if (!parsed || !parsed.start) return 0;
   var score = 10;
-  if (parsed.end) score += 5; // range slightly more confident
+  if (parsed.end) score += 5;
   if (parsed.pattern && parsed.pattern.indexOf("infer_year") >= 0) score -= 2;
-  if (parsed.pattern && parsed.pattern.indexOf("mdy") >= 0) score += 2; // numeric often explicit
+  if (parsed.pattern && parsed.pattern.indexOf("mdy") >= 0) score += 2;
   return score;
 }
 
@@ -455,7 +476,6 @@ function extractHeaderTextCandidates(html) {
     if (txt && txt.length >= 3) out.push(txt);
   }
 
-  // title too
   var t = extractTitle(html);
   if (t) out.push(t);
 
@@ -463,56 +483,71 @@ function extractHeaderTextCandidates(html) {
 }
 
 function extractRyzerDateCandidates(html) {
-  // Return a list of strings likely containing date(s)
   var out = [];
   if (!html) return out;
 
-  // 1) Labeled sections: Dates/Date/Camp Date/When
-  // We try several shapes because HTML varies.
   var patterns = [
     /(?:Dates?|Camp Dates?|Camp Date|Event Date|When)\s*<\/[^>]+>\s*<[^>]+>\s*([^<]{3,80})</i,
     /(?:Dates?|Camp Dates?|Camp Date|Event Date|When)\s*:\s*([^<]{3,80})</i,
-    /(?:Dates?|Camp Dates?|Camp Date|Event Date|When)\s*-\s*([^<]{3,80})</i
+    /(?:Dates?|Camp Dates?|Camp Date|Event Date|When)\s*-\s*([^<]{3,80})</i,
   ];
   for (var i = 0; i < patterns.length; i++) {
     var m = patterns[i].exec(html);
     if (m && m[1]) out.push(stripNonAscii(m[1]));
   }
 
-  // 2) Direct numeric range occurrences
   var m2 = /(\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]\s*\d{1,2}\/\d{1,2}\/\d{4})/.exec(html);
   if (m2 && m2[1]) out.push(stripNonAscii(m2[1]));
 
-  // 3) Numeric single occurrences (may be many; we take first few by scanning)
   var reSingle = /(\d{1,2}\/\d{1,2}\/\d{4})/g;
-  var m3, count3 = 0;
+  var m3,
+    count3 = 0;
   while ((m3 = reSingle.exec(html)) !== null) {
     out.push(stripNonAscii(m3[1]));
     count3++;
     if (count3 >= 3) break;
   }
 
-  // 4) Month-name patterns (take a few)
-  var reMonth = /((January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{1,2}(?:st|nd|rd|th)?)?(?:,\s*\d{4})?)/gi;
-  var m4, count4 = 0;
+  var reMonth =
+    /((January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{1,2}(?:st|nd|rd|th)?)?(?:,\s*\d{4})?)/gi;
+  var m4,
+    count4 = 0;
   while ((m4 = reMonth.exec(html)) !== null) {
     if (m4[1]) out.push(stripNonAscii(m4[1]));
     count4++;
     if (count4 >= 5) break;
   }
 
-  // 5) Header candidates (h1/h2/title) can contain dates sometimes
   var headers = extractHeaderTextCandidates(html);
   for (var j = 0; j < headers.length; j++) out.push(headers[j]);
 
-  // 6) Plain text "snippets" containing months or numeric dates
-  // We convert to text once and then carve out small windows around tokens.
   var text = htmlToText(html);
   if (text) {
     var tokens = [
-      "january","february","march","april","may","june","july","august","september","october","november","december",
-      "jan ","feb ","mar ","apr ","jun ","jul ","aug ","sep ","oct ","nov ","dec ",
-      "/20" // catches years like /2026
+      "january",
+      "february",
+      "march",
+      "april",
+      "may",
+      "june",
+      "july",
+      "august",
+      "september",
+      "october",
+      "november",
+      "december",
+      "jan ",
+      "feb ",
+      "mar ",
+      "apr ",
+      "jun ",
+      "jul ",
+      "aug ",
+      "sep ",
+      "oct ",
+      "nov ",
+      "dec ",
+      "/20",
     ];
 
     var lower = text.toLowerCase();
@@ -520,8 +555,10 @@ function extractRyzerDateCandidates(html) {
     for (var k = 0; k < tokens.length; k++) {
       var idx = lower.indexOf(tokens[k]);
       if (idx >= 0) {
-        var start = idx - 60; if (start < 0) start = 0;
-        var end = idx + 140; if (end > text.length) end = text.length;
+        var start = idx - 60;
+        if (start < 0) start = 0;
+        var end = idx + 140;
+        if (end > text.length) end = text.length;
         var snip = stripNonAscii(text.slice(start, end));
         if (snip && snip.length >= 8) out.push(snip);
         added++;
@@ -534,8 +571,6 @@ function extractRyzerDateCandidates(html) {
 }
 
 function guessDefaultYearFromContext(nowDate) {
-  // Conservative: current year.
-  // (You can enhance later: if current month is Nov/Dec and dates show Jan/Feb with no year, assume next year)
   var d = nowDate || new Date();
   return d.getFullYear();
 }
@@ -555,8 +590,14 @@ function pickBestParsedDateFromCandidates(candidates, defaultYear) {
       bestScore = sc;
       bestRaw = c;
     }
-    // If we got a strong hit (range + explicit year), stop early
-    if (best && best.start && best.end && bestScore >= 15 && best.pattern && best.pattern.indexOf("infer") < 0) {
+    if (
+      best &&
+      best.start &&
+      best.end &&
+      bestScore >= 15 &&
+      best.pattern &&
+      best.pattern.indexOf("infer") < 0
+    ) {
       break;
     }
   }
@@ -584,8 +625,8 @@ Deno.serve(async (req) => {
     kpi: {
       datesParsedFromListing: 0,
       datesParsedFromRyzer: 0,
-      datesMissing: 0
-    }
+      datesMissing: 0,
+    },
   };
 
   try {
@@ -596,7 +637,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    var body = await req.json().catch(function () { return null; });
+    var body = await req.json().catch(function () {
+      return null;
+    });
 
     var sportId = safeString(body && body.sportId);
     var sportName = safeString(body && body.sportName) || "";
@@ -618,7 +661,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Decide which site URLs to crawl
     var crawlUrls = [];
 
     if (testSiteUrl) {
@@ -626,14 +668,18 @@ Deno.serve(async (req) => {
     } else if (siteUrls && Array.isArray(siteUrls) && siteUrls.length) {
       crawlUrls = siteUrls.slice(0, maxSites);
     } else if (testSchoolSportSiteId) {
-      // We can't look up DB here (function-only). AdminImport should translate ID -> URL and pass it in.
       return new Response(
         JSON.stringify({
           version: VERSION,
           stats: { processedSites: 0, processedRegs: 0, accepted: 0, rejected: 0, errors: 1 },
           accepted: [],
           rejected_samples: [],
-          errors: [{ error: "Provide testSiteUrl OR siteUrls. testSchoolSportSiteId must be resolved client-side." }],
+          errors: [
+            {
+              error:
+                "Provide testSiteUrl OR siteUrls. testSchoolSportSiteId must be resolved client-side.",
+            },
+          ],
           debug: debug,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
@@ -684,13 +730,20 @@ Deno.serve(async (req) => {
 
         http = r.status;
         htmlType = r.headers.get("content-type") || "";
-        html = await r.text().catch(function () { return ""; });
+        html = await r.text().catch(function () {
+          return "";
+        });
 
         regLinks = extractRyzerRegLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
 
         if (!debug.firstSiteHtmlSnippet) {
           debug.firstSiteHtmlSnippet = truncate(html, 1600);
         }
+
+        // ✅ NEW: classify whether the page even contains camp.cfm references
+        var campCfmHits = countRegexHits(html, /camp\.cfm/gi);
+        var registerHits = countRegexHits(html, /register\.ryzer\.com/gi);
+        var campCfmSamples = sampleMatches(html, /[^"' <]{0,60}camp\.cfm[^"' <]{0,120}/gi, 3);
 
         debug.siteDebug.push({
           siteUrl: siteUrl,
@@ -699,21 +752,24 @@ Deno.serve(async (req) => {
           regLinks: regLinks.length,
           sample: regLinks.length ? regLinks[0] : "",
           notes: regLinks.length ? "" : "no_registration_links_found",
+          campCfmHits: campCfmHits,
+          registerRyzerHits: registerHits,
+          campCfmSamples: campCfmSamples,
         });
 
         if (!regLinks.length) continue;
 
-        // For each registration link:
         for (var i = 0; i < regLinks.length; i++) {
           if (accepted.length >= maxEvents) break;
 
           var regUrl = regLinks[i];
           processedRegs += 1;
 
-          // 1) Listing-first: try parse from snippet around link on the camp site
           var listingSnippetHtml = extractSnippetAroundNeedle(html, regUrl, 320);
           var listingSnippetText = listingSnippetHtml ? htmlToText(listingSnippetHtml) : null;
-          var listingParsed = listingSnippetText ? parseSingleOrRangeDate(listingSnippetText, defaultYear) : null;
+          var listingParsed = listingSnippetText
+            ? parseSingleOrRangeDate(listingSnippetText, defaultYear)
+            : null;
 
           var finalParsed = null;
           var datesSource = null;
@@ -728,7 +784,6 @@ Deno.serve(async (req) => {
             debug.kpi.datesParsedFromListing += 1;
           }
 
-          // 2) If missing from listing, fetch and parse Ryzer
           var regHttp = 0;
           var regHtml = "";
           var ryzerCandidates = [];
@@ -745,7 +800,9 @@ Deno.serve(async (req) => {
               });
 
               regHttp = rr.status;
-              regHtml = await rr.text().catch(function () { return ""; });
+              regHtml = await rr.text().catch(function () {
+                return "";
+              });
 
               if (!rr.ok || !regHtml) {
                 rejected.push({
@@ -770,7 +827,7 @@ Deno.serve(async (req) => {
               errors.push({
                 error: "reg_exception",
                 message: String((eRegFetch && eRegFetch.message) || eRegFetch),
-                registrationUrl: regUrl
+                registrationUrl: regUrl,
               });
             }
           }
@@ -784,25 +841,22 @@ Deno.serve(async (req) => {
                 siteUrl: siteUrl,
                 listingSnippetText: listingSnippetText ? truncate(listingSnippetText, 360) : null,
                 ryzerCandidatesSample: ryzerCandidates && ryzerCandidates.length ? ryzerCandidates.slice(0, 6) : [],
-                regHttp: regHttp || null
-              }
+                regHttp: regHttp || null,
+              },
             });
             continue;
           }
 
-          // Parse title/desc from ryzer if we fetched it; otherwise fall back to generic name
           var title = null;
           var desc = null;
           if (regHtml) {
             title = extractTitle(regHtml) || "Camp";
             desc = extractMetaDescription(regHtml) || null;
           } else {
-            // if we didn’t fetch Ryzer (listing provided date), still fetch title lightly? skip for now (performance)
             title = "Camp";
             desc = null;
           }
 
-          // Derive program_id from regUrl id param if present
           var programId = null;
           var idMatch = /[?&]id=(\d+)/i.exec(regUrl);
           if (idMatch && idMatch[1]) programId = "ryzer:" + idMatch[1];
@@ -812,7 +866,7 @@ Deno.serve(async (req) => {
 
           accepted.push({
             event: {
-              school_id: null, // AdminImport fills from SchoolSportSite context
+              school_id: null,
               sport_id: sportId,
               camp_name: stripNonAscii(title),
               start_date: finalParsed.start,
@@ -830,9 +884,7 @@ Deno.serve(async (req) => {
               source_platform: "ryzer",
               source_url: regUrl,
               last_seen_at: new Date().toISOString(),
-              content_hash: hashLite(
-                stripNonAscii(title) + "|" + (desc || "") + "|" + (eventDatesRaw || "")
-              ),
+              content_hash: hashLite(stripNonAscii(title) + "|" + (desc || "") + "|" + (eventDatesRaw || "")),
 
               event_dates_raw: eventDatesRaw || null,
               grades_raw: null,
@@ -847,13 +899,13 @@ Deno.serve(async (req) => {
               dates_source: datesSource,
               date_pattern: datePattern,
               listing_snippet_used: datesSource === "listing" ? true : false,
-              ryzer_candidates_count: ryzerCandidates ? ryzerCandidates.length : 0
+              ryzer_candidates_count: ryzerCandidates ? ryzerCandidates.length : 0,
             },
             debug: {
               reg_url: regUrl,
               site_url: siteUrl,
               listingSnippetText: listingSnippetText ? truncate(listingSnippetText, 360) : null,
-              ryzerCandidatesSample: ryzerCandidates && ryzerCandidates.length ? ryzerCandidates.slice(0, 6) : []
+              ryzerCandidatesSample: ryzerCandidates && ryzerCandidates.length ? ryzerCandidates.slice(0, 6) : [],
             },
           });
         }
@@ -861,7 +913,7 @@ Deno.serve(async (req) => {
         errors.push({
           error: "site_exception",
           message: String((eSite && eSite.message) || eSite),
-          siteUrl: siteUrl
+          siteUrl: siteUrl,
         });
         debug.siteDebug.push({
           siteUrl: siteUrl,
@@ -879,7 +931,7 @@ Deno.serve(async (req) => {
     var percentWithStartDate = 0;
     var denom = processedRegs;
     if (denom > 0) {
-      percentWithStartDate = Math.round((accepted.length / denom) * 1000) / 10; // 1 decimal
+      percentWithStartDate = Math.round((accepted.length / denom) * 1000) / 10;
     }
 
     return new Response(
@@ -891,7 +943,7 @@ Deno.serve(async (req) => {
           accepted: accepted.length,
           rejected: rejected.length,
           errors: errors.length,
-          percentWithStartDate: percentWithStartDate
+          percentWithStartDate: percentWithStartDate,
         },
         accepted: accepted,
         rejected_samples: rejected_samples,
