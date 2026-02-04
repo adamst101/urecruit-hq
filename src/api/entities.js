@@ -1,40 +1,58 @@
 // src/api/entities.js
 import { base44 } from "./base44Client";
 
+// Helper: some Base44 projects use plural entity names (Camps, Sports, etc.)
+function pickEntity(...names) {
+  const e = base44?.entities;
+  for (const n of names) {
+    if (e && e[n]) return e[n];
+  }
+  return undefined;
+}
+
 // --- Entities (tables) ---
-// Export ONLY what you use. Add more as needed.
-export const AthleteProfile = base44.entities.AthleteProfile;
-export const BudgetConstraint = base44.entities.BudgetConstraint;
-export const CalendarConstraint = base44.entities.CalendarConstraint;
+export const AthleteProfile = pickEntity("AthleteProfile");
+export const BudgetConstraint = pickEntity("BudgetConstraint");
+export const CalendarConstraint = pickEntity("CalendarConstraint");
 
-export const Camp = base44.entities.Camp;
-export const CampDecisionScore = base44.entities.CampDecisionScore;
-export const CampDemo = base44.entities.CampDemo;
-export const CampIntent = base44.entities.CampIntent;
-export const CampIntentHistory = base44.entities.CampIntentHistory;
+export const Camp = pickEntity("Camp", "Camps");
+export const CampDecisionScore = pickEntity("CampDecisionScore", "CampDecisionScores");
+export const CampDemo = pickEntity("CampDemo", "CampDemos");
+export const CampIntent = pickEntity("CampIntent", "CampIntents");
+export const CampIntentHistory = pickEntity("CampIntentHistory", "CampIntentHistories");
 
-export const Entitlement = base44.entities.Entitlement;
-export const Event = base44.entities.Event;
+export const Entitlement = pickEntity("Entitlement", "Entitlements");
+export const Event = pickEntity("Event", "Events");
 
-export const Favorite = base44.entities.Favorite;
-export const Position = base44.entities.Position;
-export const Registration = base44.entities.Registration;
+export const Favorite = pickEntity("Favorite", "Favorites");
+export const Position = pickEntity("Position", "Positions");
+export const Registration = pickEntity("Registration", "Registrations");
 
-export const Scenario = base44.entities.Scenario;
-export const ScenarioCamp = base44.entities.ScenarioCamp;
+export const Scenario = pickEntity("Scenario", "Scenarios");
+export const ScenarioCamp = pickEntity("ScenarioCamp", "ScenarioCamps");
 
-export const School = base44.entities.School;
-export const SchoolSportSite = base44.entities.SchoolSportSite;
-export const Sport = base44.entities.Sport;
+export const School = pickEntity("School", "Schools");
+export const SchoolSportSite = pickEntity("SchoolSportSite", "SchoolSportSites");
+export const Sport = pickEntity("Sport", "Sports");
 
-export const TargetSchool = base44.entities.TargetSchool;
-export const TargetSchoolHistory = base44.entities.TargetSchoolHistory;
+export const TargetSchool = pickEntity("TargetSchool", "TargetSchools");
+export const TargetSchoolHistory = pickEntity("TargetSchoolHistory", "TargetSchoolHistories");
 
-export const TravelConstraint = base44.entities.TravelConstraint;
-export const UserCamp = base44.entities.UserCamp;
+export const TravelConstraint = pickEntity("TravelConstraint", "TravelConstraints");
+export const UserCamp = pickEntity("UserCamp", "UserCamps");
 
 // Optional: keep Query if you’re using it
-export const Query = base44.entities.Query;
+export const Query = pickEntity("Query");
 
 // --- Auth SDK ---
-export const User = base44.auth;
+export const User = base44?.auth;
+
+// Optional: quick sanity check you can call from anywhere
+export function _entitiesSanity() {
+  return {
+    hasBase44: !!base44,
+    hasEntities: !!base44?.entities,
+    hasCampExport: typeof Camp !== "undefined",
+    hasSportExport: typeof Sport !== "undefined",
+  };
+}
