@@ -2,17 +2,17 @@
 // Base44 Backend Function (Deno)
 //
 // Purpose:
-// - Crawl per-school camp sites
+// - Crawl per-school camp sites (SchoolSportSite.camp_site_url)
 // - Discover Ryzer registration links (register.ryzer.com/...camp.cfm...)
-// - Parse dates (listing first, then Ryzer fallback)
-// - Parse best-effort camp_name (Ryzer-first, then listing fallback)
-// - Return normalized accepted events (flat + wrapped) that AdminImport can write into CampDemo.
+// - Parse dates listing-first (snippet around link), then Ryzer page as truth source
+// - Return a contract-compatible flat "accepted" array that AdminImport can upsert into CampDemo
 //
 // Design goals:
 // - Editor-safe: NO optional chaining, NO external imports.
 // - Fail-soft with verbose debug.
+// - High likelihood of "no camps listed yet": skip cleanly.
 //
-// Inputs (supported):
+// Inputs (supports both shapes):
 // {
 //   sportId: string (required),
 //   sportName: string (required),
@@ -20,32 +20,27 @@
 //   maxSites: number,
 //   maxRegsPerSite: number,
 //   maxEvents: number,
-//
-//   // Option A: direct URLs
-//   siteUrls: string[]|null,
-//
-//   // Option B: structured sites (preferred for writing)
-//   sites: [{ school_id: string|null, sport_id?: string|null, camp_site_url: string|null }]|null,
-//
-//   // Test mode
 //   testSiteUrl: string|null,
-//   testSchoolId: string|null
+//   testSchoolId: string|null,
+//   sites: [{ school_id, camp_site_url }] | null,
+//   siteUrls: string[] | null
 // }
 //
 // Output:
 // {
 //   version,
 //   stats,
-//   accepted: [ { school_id, sport_id, camp_name, start_date, end_date, registration_url, program_id, event_key, source_platform, source_url, event_dates_raw, content_hash, season_year, derived, debug } ],
-//   accepted_wrapped: [ { event, derived, debug } ],
+//   accepted: [{ ...flatCampDemoLike }],
 //   rejected_samples,
 //   errors,
-//   debug: { siteDebug:[], firstSiteHtmlSnippet:"...", kpi:{} }
+//   debug: { siteDebug:[], firstSiteHtmlSnippet:"...", kpi:{...}, siteKpi:{...} }
 // }
 
-const VERSION =
-  "sportsUSAIngestCamps_2026-02-04_v9_contract_compat_flatAccepted_plus_better_campName";
+const VERSION = "sportsUSAIngestCamps_2026-02-04_v9_contract_compat_flatAccepted_plus_better_campName";
 
+// -------------------------
+// Helpers
+// -------------------------
 function safeString(x) {
   if (x === null || x === undefined) return null;
   var s = String(x).trim();
@@ -96,6 +91,7 @@ function uniq(arr) {
 }
 
 function hashLite(s) {
+  // small deterministic hash (not crypto) for event_key stability
   var str = String(s || "");
   var h = 0;
   for (var i = 0; i < str.length; i++) {
@@ -104,10 +100,9 @@ function hashLite(s) {
   return String(h);
 }
 
-/* -------------------------
-   Registration link discovery
-------------------------- */
-
+// -------------------------
+// Registration link discovery
+// -------------------------
 function extractRyzerRegLinksFromHtml(html, siteUrl) {
   var out = [];
   if (!html) return out;
@@ -158,8 +153,7 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
   var reOnclickSq = /onclick='[^']*(camp\.cfm[^']*)'/gi;
   while ((m = reOnclickSq.exec(html)) !== null) pushIfValid(m[1]);
 
-  var reData =
-    /(data-href|data-url)\s*=\s*("([^"]*camp\.cfm[^"]*)"|'([^']*camp\.cfm[^']*)'|([^\s>]*camp\.cfm[^\s>]*))/gi;
+  var reData = /(data-href|data-url)\s*=\s*("([^"]*camp\.cfm[^"]*)"|'([^']*camp\.cfm[^']*)'|([^\s>]*camp\.cfm[^\s>]*))/gi;
   while ((m = reData.exec(html)) !== null) pushIfValid(m[3] || m[4] || m[5]);
 
   var reFull = /(https?:\/\/register\.ryzer\.com\/[^"' <]*camp\.cfm[^"' <]*)/gi;
@@ -170,20 +164,18 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
 
   out = uniq(out);
 
-  for (var i = 0; i < out.length; i++) {
-    out[i] = String(out[i]).split("#")[0];
-  }
+  for (var i = 0; i < out.length; i++) out[i] = String(out[i]).split("#")[0];
 
   return out;
 }
 
-/* -------------------------
-   Listing snippet extraction
-------------------------- */
-
+// -------------------------
+// Listing snippet extraction (camp site)
+// -------------------------
 function extractSnippetAroundNeedle(html, needle, radius) {
   if (!html || !needle) return null;
   var r = radius || 260;
+
   var hay = String(html);
   var ndl = String(needle);
 
@@ -220,14 +212,13 @@ function htmlToText(html) {
   s = s.replace(/&gt;/gi, ">");
 
   s = s.replace(/\s+/g, " ").trim();
-
   return s;
 }
 
-/* -------------------------
-   Date parsing
-------------------------- */
-
+// -------------------------
+// Date parsing (single or range)
+// Output: { start, end, rawLine, pattern, inferredYear }
+// -------------------------
 function pad2(n) {
   return n < 10 ? "0" + n : String(n);
 }
@@ -283,8 +274,7 @@ function parseMonthNameDate(s) {
 
 function parseSingleOrRangeDate(line, defaultYear) {
   var raw = safeString(line);
-  if (!raw)
-    return { start: null, end: null, rawLine: null, pattern: null, inferredYear: false };
+  if (!raw) return { start: null, end: null, rawLine: null, pattern: null, inferredYear: false };
 
   var t = stripNonAscii(raw);
 
@@ -303,13 +293,7 @@ function parseSingleOrRangeDate(line, defaultYear) {
 
   var a1 = parseMMDDYYYY(t);
   if (a1) {
-    return {
-      start: toIsoDate(a1.y, a1.m, a1.d),
-      end: null,
-      rawLine: t,
-      pattern: "mdy_single",
-      inferredYear: false,
-    };
+    return { start: toIsoDate(a1.y, a1.m, a1.d), end: null, rawLine: t, pattern: "mdy_single", inferredYear: false };
   }
 
   var m2 =
@@ -375,10 +359,9 @@ function scoreParsedDate(parsed) {
   return score;
 }
 
-/* -------------------------
-   Ryzer page parsing
-------------------------- */
-
+// -------------------------
+// Ryzer parsing
+// -------------------------
 function extractTitle(html) {
   if (!html) return null;
   var m = /<title[^>]*>([^<]+)<\/title>/i.exec(html);
@@ -393,6 +376,23 @@ function extractMetaDescription(html) {
   return stripNonAscii(m[1]);
 }
 
+function extractHeaderTextCandidates(html) {
+  var out = [];
+  if (!html) return out;
+
+  var m;
+  var re = /<(h1|h2)[^>]*>([\s\S]*?)<\/\1>/gi;
+  while ((m = re.exec(html)) !== null) {
+    var txt = stripNonAscii(htmlToText(m[2]));
+    if (txt && txt.length >= 3) out.push(txt);
+  }
+
+  var t = extractTitle(html);
+  if (t) out.push(t);
+
+  return uniq(out);
+}
+
 function extractRyzerDateCandidates(html) {
   var out = [];
   if (!html) return out;
@@ -402,7 +402,6 @@ function extractRyzerDateCandidates(html) {
     /(?:Dates?|Camp Dates?|Camp Date|Event Date|When)\s*:\s*([^<]{3,80})</i,
     /(?:Dates?|Camp Dates?|Camp Date|Event Date|When)\s*-\s*([^<]{3,80})</i,
   ];
-
   for (var i = 0; i < patterns.length; i++) {
     var m = patterns[i].exec(html);
     if (m && m[1]) out.push(stripNonAscii(m[1]));
@@ -412,61 +411,39 @@ function extractRyzerDateCandidates(html) {
   if (m2 && m2[1]) out.push(stripNonAscii(m2[1]));
 
   var reSingle = /(\d{1,2}\/\d{1,2}\/\d{4})/g;
-  var m3,
-    count3 = 0;
+  var m3, count3 = 0;
   while ((m3 = reSingle.exec(html)) !== null) {
     out.push(stripNonAscii(m3[1]));
     count3++;
     if (count3 >= 3) break;
   }
 
-  var reMonth =
-    /((January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{1,2}(?:st|nd|rd|th)?)?(?:,\s*\d{4})?)/gi;
-  var m4,
-    count4 = 0;
+  var reMonth = /((January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{1,2}(?:st|nd|rd|th)?)?(?:,\s*\d{4})?)/gi;
+  var m4, count4 = 0;
   while ((m4 = reMonth.exec(html)) !== null) {
     if (m4[1]) out.push(stripNonAscii(m4[1]));
     count4++;
     if (count4 >= 5) break;
   }
 
+  var headers = extractHeaderTextCandidates(html);
+  for (var j = 0; j < headers.length; j++) out.push(headers[j]);
+
   var text = htmlToText(html);
   if (text) {
     var tokens = [
-      "january",
-      "february",
-      "march",
-      "april",
-      "may",
-      "june",
-      "july",
-      "august",
-      "september",
-      "october",
-      "november",
-      "december",
-      "jan ",
-      "feb ",
-      "mar ",
-      "apr ",
-      "jun ",
-      "jul ",
-      "aug ",
-      "sep ",
-      "oct ",
-      "nov ",
-      "dec ",
-      "/20",
+      "january","february","march","april","may","june","july","august","september","october","november","december",
+      "jan ","feb ","mar ","apr ","jun ","jul ","aug ","sep ","oct ","nov ","dec ",
+      "/20"
     ];
+
     var lower = text.toLowerCase();
     var added = 0;
     for (var k = 0; k < tokens.length; k++) {
       var idx = lower.indexOf(tokens[k]);
       if (idx >= 0) {
-        var start = idx - 60;
-        if (start < 0) start = 0;
-        var end = idx + 140;
-        if (end > text.length) end = text.length;
+        var start = idx - 60; if (start < 0) start = 0;
+        var end = idx + 140; if (end > text.length) end = text.length;
         var snip = stripNonAscii(text.slice(start, end));
         if (snip && snip.length >= 8) out.push(snip);
         added++;
@@ -498,143 +475,10 @@ function pickBestParsedDateFromCandidates(candidates, defaultYear) {
       bestScore = sc;
       bestRaw = c;
     }
-    if (
-      best &&
-      best.start &&
-      best.end &&
-      bestScore >= 15 &&
-      best.pattern &&
-      best.pattern.indexOf("infer") < 0
-    ) {
-      break;
-    }
+    if (best && best.start && best.end && bestScore >= 15 && best.pattern && best.pattern.indexOf("infer") < 0) break;
   }
 
   return { parsed: best, bestRaw: bestRaw, score: bestScore };
-}
-
-/* -------------------------
-   Better camp name extraction
-------------------------- */
-
-function cleanCampName(s) {
-  var t = stripNonAscii(s || "");
-  if (!t) return null;
-
-  // common cleanup
-  t = t.replace(/\s+\|\s+/g, " | ");
-  t = t.replace(/\bDetails\b/gi, "").trim();
-
-  // If it's a long title like "Register | School Camps | City"
-  // keep the left-most meaningful segment unless it's generic.
-  if (t.indexOf("|") >= 0) {
-    var parts = t.split("|").map(function (x) {
-      return stripNonAscii(x);
-    });
-    // pick the first non-generic segment
-    for (var i = 0; i < parts.length; i++) {
-      var p = stripNonAscii(parts[i]);
-      if (!p) continue;
-      if (lc(p) === "camp" || lc(p) === "register" || lc(p) === "registration") continue;
-      return p;
-    }
-  }
-
-  if (lc(t) === "camp") return null;
-
-  return t;
-}
-
-function extractOgTitle(html) {
-  if (!html) return null;
-  var m = /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i.exec(html);
-  if (m && m[1]) return stripNonAscii(m[1]);
-  return null;
-}
-
-function extractH1H2Text(html) {
-  var out = [];
-  if (!html) return out;
-
-  var m;
-  var re = /<(h1|h2)[^>]*>([\s\S]*?)<\/\1>/gi;
-  while ((m = re.exec(html)) !== null) {
-    var txt = stripNonAscii(htmlToText(m[2]));
-    if (txt && txt.length >= 3) out.push(txt);
-  }
-  return uniq(out);
-}
-
-function extractLabeledName(html) {
-  if (!html) return null;
-
-  // Try shapes like: "Camp Name: XYZ" or "<label>Camp Name</label> XYZ"
-  var m1 = /Camp Name\s*:\s*([^\n<]{3,120})/i.exec(html);
-  if (m1 && m1[1]) return stripNonAscii(m1[1]);
-
-  var m2 = /Camp Name\s*<\/[^>]+>\s*<[^>]+>\s*([^<]{3,120})</i.exec(html);
-  if (m2 && m2[1]) return stripNonAscii(m2[1]);
-
-  // Sometimes "Event" or "Program"
-  var m3 = /(Event|Program)\s*Name\s*:\s*([^\n<]{3,120})/i.exec(html);
-  if (m3 && m3[2]) return stripNonAscii(m3[2]);
-
-  return null;
-}
-
-function pickBestCampName(regHtml, listingSnippetText) {
-  var candidates = [];
-
-  var labeled = extractLabeledName(regHtml);
-  if (labeled) candidates.push(labeled);
-
-  var og = extractOgTitle(regHtml);
-  if (og) candidates.push(og);
-
-  var h = extractH1H2Text(regHtml);
-  for (var i = 0; i < h.length; i++) candidates.push(h[i]);
-
-  var t = extractTitle(regHtml);
-  if (t) candidates.push(t);
-
-  // listing snippet sometimes has "View XYZ Camp" even when Ryzer title is generic
-  if (listingSnippetText) {
-    // Pull a “View ...” phrase if present
-    var m = /\bView\s+([A-Za-z0-9][A-Za-z0-9\s\/&\-\(\)]{3,80})/i.exec(listingSnippetText);
-    if (m && m[0]) candidates.push(stripNonAscii(m[0]));
-  }
-
-  // score candidates
-  var best = null;
-  var bestScore = 0;
-
-  for (var j = 0; j < candidates.length; j++) {
-    var raw = candidates[j];
-    if (!raw) continue;
-    var cleaned = cleanCampName(raw);
-    if (!cleaned) continue;
-
-    var s = 10;
-
-    // prefer explicit "Camp" phrases that are not just "Camp"
-    if (lc(cleaned).indexOf("camp") >= 0) s += 3;
-    if (lc(cleaned).indexOf("registration") >= 0) s -= 5;
-    if (lc(cleaned).indexOf("register") >= 0) s -= 5;
-
-    // penalize if it looks like the site homepage title
-    if (cleaned.indexOf("Football Camps") >= 0) s -= 2;
-
-    // length heuristic
-    if (cleaned.length >= 10 && cleaned.length <= 80) s += 2;
-    if (cleaned.length > 110) s -= 2;
-
-    if (s > bestScore) {
-      bestScore = s;
-      best = cleaned;
-    }
-  }
-
-  return best || "Camp";
 }
 
 function buildEventKey(platform, programId, startDate, url) {
@@ -645,10 +489,76 @@ function buildEventKey(platform, programId, startDate, url) {
   return p + ":" + pr + ":" + sd + ":" + hashLite(u);
 }
 
-function safeArray(x) {
-  return Array.isArray(x) ? x : [];
+function cleanCampName(title) {
+  var t = stripNonAscii(title || "");
+  if (!t) return "Camp";
+
+  t = t.replace(/\s*\|\s*Ryzer\s*$/i, "").trim();
+  t = t.replace(/\s*\|\s*Registration\s*$/i, "").trim();
+  t = t.replace(/\s*-\s*Registration\s*$/i, "").trim();
+
+  // Common noisy prefixes from "View ... Details"
+  t = t.replace(/^View\s+/i, "");
+  t = t.replace(/\s+Details$/i, "");
+
+  t = t.replace(/\s+/g, " ").trim();
+  return t || "Camp";
 }
 
+function findCampNameFromListingSnippet(listingSnippetText) {
+  // best-effort: grab a short "title-ish" segment around common keywords
+  var t = safeString(listingSnippetText);
+  if (!t) return null;
+
+  var s = stripNonAscii(t);
+
+  // If the snippet includes "View X Details" capture X
+  var m = /\bView\s+(.{3,80}?)\s+Details\b/i.exec(s);
+  if (m && m[1]) return cleanCampName(m[1]);
+
+  // Otherwise: first ~60 chars before a date token might be name-ish
+  var idx = s.search(/(January|February|March|April|May|June|July|August|September|October|November|December|\d{1,2}\/\d{1,2}\/\d{4})/i);
+  if (idx > 6) {
+    var head = s.slice(0, idx).trim();
+    if (head.length >= 3) return cleanCampName(head.slice(0, 80));
+  }
+
+  return null;
+}
+
+function normalizeSitesInput(body) {
+  var out = [];
+
+  var sites = body && body.sites ? body.sites : null;
+  if (sites && Array.isArray(sites) && sites.length) {
+    for (var i = 0; i < sites.length; i++) {
+      var r = sites[i] || {};
+      var url = safeString(r.camp_site_url) || safeString(r.siteUrl) || safeString(r.url);
+      if (!url) continue;
+      out.push({
+        siteUrl: url,
+        school_id: safeString(r.school_id),
+      });
+    }
+    return out;
+  }
+
+  var siteUrls = body && body.siteUrls ? body.siteUrls : null;
+  if (siteUrls && Array.isArray(siteUrls) && siteUrls.length) {
+    for (var j = 0; j < siteUrls.length; j++) {
+      var u = safeString(siteUrls[j]);
+      if (!u) continue;
+      out.push({ siteUrl: u, school_id: null });
+    }
+    return out;
+  }
+
+  return out;
+}
+
+// -------------------------
+// Main handler
+// -------------------------
 Deno.serve(async (req) => {
   var debug = {
     version: VERSION,
@@ -658,23 +568,23 @@ Deno.serve(async (req) => {
     kpi: {
       datesParsedFromListing: 0,
       datesParsedFromRyzer: 0,
-      datesMissing: 0,
-      sitesWithNoRegLinks: 0,
-      sitesWithRegLinks: 0,
+      datesMissing: 0
     },
+    siteKpi: {
+      sitesWithRegLinks: 0,
+      sitesWithNoRegLinks: 0
+    }
   };
 
   try {
     if (req.method !== "POST") {
-      return new Response(
-        JSON.stringify({ error: "Method not allowed", version: VERSION, debug: debug }),
-        { status: 405, headers: { "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Method not allowed", version: VERSION, debug: debug }), {
+        status: 405,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    var body = await req.json().catch(function () {
-      return null;
-    });
+    var body = await req.json().catch(function () { return null; });
 
     var sportId = safeString(body && body.sportId);
     var sportName = safeString(body && body.sportName) || "";
@@ -687,52 +597,37 @@ Deno.serve(async (req) => {
     var testSiteUrl = safeString(body && body.testSiteUrl);
     var testSchoolId = safeString(body && body.testSchoolId);
 
-    var siteUrls = body && body.siteUrls ? body.siteUrls : null;
-    var sites = body && body.sites ? body.sites : null;
-
     if (!sportId || !sportName) {
-      return new Response(
-        JSON.stringify({ error: "Missing required: sportId/sportName", version: VERSION, debug: debug }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Missing required: sportId/sportName", version: VERSION, debug: debug }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    // Build crawl plan with optional school_id context
-    var crawl = []; // [{ siteUrl, schoolId }]
+    // Decide which site URLs to crawl
+    var crawl = [];
+
     if (testSiteUrl) {
-      crawl.push({ siteUrl: testSiteUrl, schoolId: testSchoolId || null });
-    } else if (sites && Array.isArray(sites) && sites.length) {
-      var sliced = sites.slice(0, maxSites);
-      for (var i = 0; i < sliced.length; i++) {
-        var r = sliced[i] || {};
-        var u = safeString(r.camp_site_url || r.siteUrl || r.url);
-        if (!u) continue;
-        crawl.push({ siteUrl: u, schoolId: safeString(r.school_id) });
-      }
-    } else if (siteUrls && Array.isArray(siteUrls) && siteUrls.length) {
-      var su = siteUrls.slice(0, maxSites);
-      for (var j = 0; j < su.length; j++) {
-        var uu = safeString(su[j]);
-        if (!uu) continue;
-        crawl.push({ siteUrl: uu, schoolId: null });
-      }
+      crawl = [{ siteUrl: testSiteUrl, school_id: testSchoolId || null }];
     } else {
-      return new Response(
-        JSON.stringify({
-          version: VERSION,
-          stats: { processedSites: 0, processedRegs: 0, accepted: 0, rejected: 0, errors: 1 },
-          accepted: [],
-          accepted_wrapped: [],
-          rejected_samples: [],
-          errors: [{ error: "Provide sites[] OR siteUrls[] OR testSiteUrl." }],
-          debug: debug,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
+      crawl = normalizeSitesInput(body);
+      if (!crawl.length) {
+        return new Response(
+          JSON.stringify({
+            version: VERSION,
+            stats: { processedSites: 0, processedRegs: 0, accepted: 0, rejected: 0, errors: 1 },
+            accepted: [],
+            rejected_samples: [],
+            errors: [{ error: "Provide sites[] (preferred) or siteUrls[] or testSiteUrl." }],
+            debug: debug,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      crawl = crawl.slice(0, maxSites);
     }
 
-    var acceptedWrapped = [];
-    var acceptedFlat = [];
+    var accepted = [];
     var rejected = [];
     var errors = [];
 
@@ -743,10 +638,10 @@ Deno.serve(async (req) => {
     var defaultYear = guessDefaultYearFromContext(now);
 
     for (var s = 0; s < crawl.length; s++) {
-      if (acceptedFlat.length >= maxEvents) break;
+      if (accepted.length >= maxEvents) break;
 
       var siteUrl = crawl[s].siteUrl;
-      var schoolId = crawl[s].schoolId;
+      var schoolIdForSite = crawl[s].school_id || null;
 
       processedSites += 1;
 
@@ -766,37 +661,35 @@ Deno.serve(async (req) => {
 
         http = r.status;
         htmlType = r.headers.get("content-type") || "";
-        html = await r.text().catch(function () {
-          return "";
-        });
-
-        regLinks = extractRyzerRegLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
+        html = await r.text().catch(function () { return ""; });
 
         if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(html, 1600);
 
-        if (!regLinks.length) debug.kpi.sitesWithNoRegLinks += 1;
-        else debug.kpi.sitesWithRegLinks += 1;
+        regLinks = extractRyzerRegLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
+
+        if (regLinks.length) debug.siteKpi.sitesWithRegLinks += 1;
+        else debug.siteKpi.sitesWithNoRegLinks += 1;
 
         debug.siteDebug.push({
           siteUrl: siteUrl,
-          school_id: schoolId || null,
+          school_id: schoolIdForSite || null,
           http: http,
           htmlType: htmlType,
           regLinks: regLinks.length,
           sample: regLinks.length ? regLinks[0] : "",
-          notes: regLinks.length ? "has_registration_links" : "no_registration_links_found",
+          notes: regLinks.length ? "" : "no_registration_links_found",
         });
 
         if (!regLinks.length) continue;
 
-        for (var k = 0; k < regLinks.length; k++) {
-          if (acceptedFlat.length >= maxEvents) break;
+        for (var i = 0; i < regLinks.length; i++) {
+          if (accepted.length >= maxEvents) break;
 
-          var regUrl = regLinks[k];
+          var regUrl = regLinks[i];
           processedRegs += 1;
 
-          // listing-first date parse
-          var listingSnippetHtml = extractSnippetAroundNeedle(html, regUrl, 360);
+          // 1) listing-first
+          var listingSnippetHtml = extractSnippetAroundNeedle(html, regUrl, 320);
           var listingSnippetText = listingSnippetHtml ? htmlToText(listingSnippetHtml) : null;
           var listingParsed = listingSnippetText ? parseSingleOrRangeDate(listingSnippetText, defaultYear) : null;
 
@@ -813,15 +706,23 @@ Deno.serve(async (req) => {
             debug.kpi.datesParsedFromListing += 1;
           }
 
+          // Camp name attempt from listing snippet
+          var campNameFromListing = findCampNameFromListingSnippet(listingSnippetText);
+
+          // 2) ryzer fetch (if needed for dates OR camp name)
           var regHttp = 0;
           var regHtml = "";
           var ryzerCandidates = [];
           var ryzerPick = null;
 
-          // always fetch Ryzer if we need dates OR if we need name quality (camp_name currently a problem)
-          var mustFetchRyzer = true;
+          var needRyzer = false;
+          if (!finalParsed || !finalParsed.start) needRyzer = true;
+          if (!campNameFromListing) needRyzer = true;
 
-          if (mustFetchRyzer) {
+          var title = null;
+          var desc = null;
+
+          if (needRyzer) {
             try {
               var rr = await fetch(regUrl, {
                 method: "GET",
@@ -832,20 +733,16 @@ Deno.serve(async (req) => {
               });
 
               regHttp = rr.status;
-              regHtml = await rr.text().catch(function () {
-                return "";
-              });
+              regHtml = await rr.text().catch(function () { return ""; });
 
               if (!rr.ok || !regHtml) {
-                rejected.push({
-                  reason: "reg_fetch_failed",
-                  registrationUrl: regUrl,
-                  http: regHttp,
-                });
+                rejected.push({ reason: "reg_fetch_failed", registrationUrl: regUrl, http: regHttp });
                 continue;
               }
 
-              // date fallback if listing didn't produce
+              title = extractTitle(regHtml) || null;
+              desc = extractMetaDescription(regHtml) || null;
+
               if (!finalParsed || !finalParsed.start) {
                 ryzerCandidates = extractRyzerDateCandidates(regHtml);
                 ryzerPick = pickBestParsedDateFromCandidates(ryzerCandidates, defaultYear);
@@ -875,15 +772,20 @@ Deno.serve(async (req) => {
               debug: {
                 siteUrl: siteUrl,
                 listingSnippetText: listingSnippetText ? truncate(listingSnippetText, 360) : null,
-                ryzerCandidatesSample:
-                  ryzerCandidates && ryzerCandidates.length ? ryzerCandidates.slice(0, 6) : [],
+                ryzerCandidatesSample: ryzerCandidates && ryzerCandidates.length ? ryzerCandidates.slice(0, 6) : [],
                 regHttp: regHttp || null,
               },
             });
             continue;
           }
 
-          // Program ID from query id
+          // Determine best camp_name
+          var campName = null;
+          if (campNameFromListing) campName = campNameFromListing;
+          else if (title) campName = cleanCampName(title);
+          else campName = "Camp";
+
+          // Derive program_id from regUrl id param if present
           var programId = null;
           var idMatch = /[?&]id=(\d+)/i.exec(regUrl);
           if (idMatch && idMatch[1]) programId = "ryzer:" + idMatch[1];
@@ -891,97 +793,47 @@ Deno.serve(async (req) => {
 
           var eventKey = buildEventKey("ryzer", programId, finalParsed.start, regUrl);
 
-          // Better camp name
-          var campName = "Camp";
-          var desc = null;
-          if (regHtml) {
-            campName = pickBestCampName(regHtml, listingSnippetText);
-            desc = extractMetaDescription(regHtml) || null;
-          } else {
-            campName = listingSnippetText ? cleanCampName(listingSnippetText) || "Camp" : "Camp";
-            desc = null;
-          }
-
-          var wrapped = {
-            event: {
-              school_id: schoolId || null,
-              sport_id: sportId,
-              camp_name: stripNonAscii(campName),
-              start_date: finalParsed.start,
-              end_date: finalParsed.end || null,
-              city: null,
-              state: null,
-              position_ids: [],
-              price: null,
-              link_url: regUrl,
-              notes: desc,
-
-              season_year: Number(finalParsed.start.slice(0, 4)),
-              program_id: programId,
-              event_key: eventKey,
-              source_platform: "ryzer",
-              source_url: regUrl,
-              last_seen_at: new Date().toISOString(),
-              content_hash: hashLite(
-                stripNonAscii(campName) + "|" + (desc || "") + "|" + (eventDatesRaw || "")
-              ),
-
-              event_dates_raw: eventDatesRaw || null,
-              grades_raw: null,
-              register_by_raw: null,
-              price_raw: null,
-              price_min: null,
-              price_max: null,
-              sections_json: null,
-            },
-            derived: {
-              reg_http: regHttp || null,
-              dates_source: datesSource,
-              date_pattern: datePattern,
-              listing_snippet_used: datesSource === "listing" ? true : false,
-              ryzer_candidates_count: ryzerCandidates ? ryzerCandidates.length : 0,
-              camp_name_source: regHtml ? "ryzer" : "listing",
-            },
-            debug: {
-              reg_url: regUrl,
-              site_url: siteUrl,
-              school_id: schoolId || null,
-              listingSnippetText: listingSnippetText ? truncate(listingSnippetText, 360) : null,
-              ryzerCandidatesSample:
-                ryzerCandidates && ryzerCandidates.length ? ryzerCandidates.slice(0, 6) : [],
-            },
-          };
-
-          acceptedWrapped.push(wrapped);
-
-          // Flat record for AdminImport stability (old log formatting expects these keys)
-          acceptedFlat.push({
-            school_id: schoolId || null,
+          // ✅ Contract-compat: FLAT accepted rows (AdminImport writes into CampDemo)
+          accepted.push({
+            school_id: schoolIdForSite || null,
             sport_id: sportId,
-            camp_name: wrapped.event.camp_name,
-            start_date: wrapped.event.start_date,
-            end_date: wrapped.event.end_date,
+            camp_name: stripNonAscii(campName),
+            start_date: finalParsed.start,
+            end_date: finalParsed.end || null,
+            city: null,
+            state: null,
+            position_ids: [],
+            price: null,
+            link_url: regUrl,
+            notes: desc,
+
+            season_year: Number(finalParsed.start.slice(0, 4)),
+            program_id: programId,
+            event_key: eventKey,
+            source_platform: "ryzer",
+            source_url: regUrl,
+            last_seen_at: new Date().toISOString(),
+            content_hash: hashLite(stripNonAscii(campName) + "|" + (desc || "") + "|" + (eventDatesRaw || "")),
+
+            event_dates_raw: eventDatesRaw || null,
+            grades_raw: null,
+            register_by_raw: null,
+            price_raw: null,
+            price_min: null,
+            price_max: null,
+            sections_json: null,
+
+            // extra convenience fields for logging/back-compat
             registration_url: regUrl,
-            program_id: wrapped.event.program_id,
-            event_key: wrapped.event.event_key,
-            source_platform: wrapped.event.source_platform,
-            source_url: wrapped.event.source_url,
-            season_year: wrapped.event.season_year,
-            content_hash: wrapped.event.content_hash,
-            event_dates_raw: wrapped.event.event_dates_raw,
-            derived: wrapped.derived,
-            debug: wrapped.debug,
+            dates_source: datesSource,
+            date_pattern: datePattern,
           });
         }
       } catch (eSite) {
-        errors.push({
-          error: "site_exception",
-          message: String((eSite && eSite.message) || eSite),
-          siteUrl: siteUrl,
-        });
+        errors.push({ error: "site_exception", message: String((eSite && eSite.message) || eSite), siteUrl: siteUrl });
         debug.siteDebug.push({
           siteUrl: siteUrl,
-          school_id: schoolId || null,
+          school_id: schoolIdForSite || null,
           http: http || 0,
           htmlType: htmlType || "",
           regLinks: 0,
@@ -996,7 +848,7 @@ Deno.serve(async (req) => {
     var percentWithStartDate = 0;
     var denom = processedRegs;
     if (denom > 0) {
-      percentWithStartDate = Math.round((acceptedFlat.length / denom) * 1000) / 10;
+      percentWithStartDate = Math.round((accepted.length / denom) * 1000) / 10;
     }
 
     return new Response(
@@ -1005,13 +857,12 @@ Deno.serve(async (req) => {
         stats: {
           processedSites: processedSites,
           processedRegs: processedRegs,
-          accepted: acceptedFlat.length,
+          accepted: accepted.length,
           rejected: rejected.length,
           errors: errors.length,
           percentWithStartDate: percentWithStartDate,
         },
-        accepted: acceptedFlat, // ✅ stable shape for AdminImport
-        accepted_wrapped: acceptedWrapped, // ✅ richer debugging retained
+        accepted: accepted,
         rejected_samples: rejected_samples,
         errors: errors.slice(0, 10),
         debug: debug,
@@ -1019,26 +870,17 @@ Deno.serve(async (req) => {
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   } catch (eTop) {
-    return new Response(
-      JSON.stringify({
-        error: "Unhandled error",
-        version: VERSION,
-        debug: {
-          version: VERSION,
-          startedAt: new Date().toISOString(),
-          siteDebug: [
-            {
-              siteUrl: "",
-              http: 0,
-              htmlType: "",
-              regLinks: 0,
-              sample: "",
-              notes: "top-level error: " + String((eTop && eTop.message) || eTop),
-            },
-          ],
-        },
-      }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    debug.siteDebug.push({
+      siteUrl: "",
+      http: 0,
+      htmlType: "",
+      regLinks: 0,
+      sample: "",
+      notes: "top-level error: " + String((eTop && eTop.message) || eTop),
+    });
+    return new Response(JSON.stringify({ error: "Unhandled error", version: VERSION, debug: debug }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 });
