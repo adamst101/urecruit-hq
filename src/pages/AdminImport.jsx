@@ -69,17 +69,6 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function formatNotes(n) {
-  if (n == null) return "";
-  if (Array.isArray(n)) return n.filter((x) => x != null && String(x).trim()).map((x) => String(x).trim()).join(", ");
-  if (typeof n === "string") return n.trim();
-  try {
-    return JSON.stringify(n);
-  } catch {
-    return String(n);
-  }
-}
-
 // Return YYYY-MM-DD (UTC) or null
 function toISODate(dateInput) {
   if (!dateInput) return null;
@@ -299,7 +288,7 @@ export default function AdminImport() {
   const CampEntity = base44 && base44.entities ? base44.entities.Camp : null;
 
   /* ----------------------------
-     One Sport selection
+     Sport selection
   ----------------------------- */
   const [sports, setSports] = useState([]);
   const [sportsLoading, setSportsLoading] = useState(false);
@@ -345,11 +334,12 @@ export default function AdminImport() {
   const [campsMaxRegsPerSite, setCampsMaxRegsPerSite] = useState(5);
   const [campsMaxEvents, setCampsMaxEvents] = useState(25);
 
+  // Test mode
   const [testSiteUrl, setTestSiteUrl] = useState("");
   const [testSchoolId, setTestSchoolId] = useState("");
 
   /* ----------------------------
-     Positions manager (optional)
+     Positions manager
   ----------------------------- */
   const [positions, setPositions] = useState([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
@@ -424,7 +414,6 @@ export default function AdminImport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // auto-fill SportsUSA directory for sport
   useEffect(() => {
     const guess = SPORTSUSA_DIRECTORY_BY_SPORTNAME[String(selectedSportName || "").trim()];
     if (guess) setSportsUSASiteUrl(guess);
@@ -452,7 +441,11 @@ export default function AdminImport() {
         }))
         .filter((p) => p.id);
 
-      normalized.sort((a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || ""));
+      normalized.sort(
+        (a, b) =>
+          (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || "")
+      );
+
       setPositions(normalized);
 
       const nextEdit = {};
@@ -498,7 +491,9 @@ export default function AdminImport() {
       existing = [];
     }
 
-    const hit = asArray(existing).find((r) => String(r && r.position_code ? r.position_code : "").trim().toUpperCase() === position_code);
+    const hit = asArray(existing).find(
+      (r) => String(r && r.position_code ? r.position_code : "").trim().toUpperCase() === position_code
+    );
 
     const payload = { sport_id: sportId, position_code, position_name };
 
@@ -579,7 +574,10 @@ export default function AdminImport() {
         code: code.toUpperCase(),
         name: name,
       });
-      appendLog("positions", result === "created" ? `[Positions] Created ${code.toUpperCase()}` : `[Positions] Updated ${code.toUpperCase()}`);
+      appendLog(
+        "positions",
+        result === "created" ? `[Positions] Created ${code.toUpperCase()}` : `[Positions] Updated ${code.toUpperCase()}`
+      );
       setPositionAddCode("");
       setPositionAddName("");
       await loadPositionsForSport(selectedSportId);
@@ -776,7 +774,7 @@ export default function AdminImport() {
       }
 
       const schools = asArray(data && data.schools ? data.schools : []);
-      appendLog("sportsusa", `[SportsUSA] SportsUSA fetched: schools_found=${schools.length} | http=${data && data.stats && data.stats.http ? data.stats.http : res.status}`);
+      appendLog("sportsusa", `[SportsUSA] SportsUSA fetched: schools_found=${schools.length} | http=${(data && data.stats && data.stats.http) ? data.stats.http : res.status}`);
 
       const sample = schools.slice(0, 3);
       if (sample.length) {
@@ -841,12 +839,18 @@ export default function AdminImport() {
         }
 
         if ((i + 1) % 10 === 0) {
-          appendLog("sportsusa", `[SportsUSA] Progress ${i + 1}/${schools.length} | Schools c/u=${schoolsCreated}/${schoolsUpdated} | Sites c/u=${sitesCreated}/${sitesUpdated} | skipped=${skipped} errors=${errors}`);
+          appendLog(
+            "sportsusa",
+            `[SportsUSA] Progress ${i + 1}/${schools.length} | Schools c/u=${schoolsCreated}/${schoolsUpdated} | Sites c/u=${sitesCreated}/${sitesUpdated} | skipped=${skipped} errors=${errors}`
+          );
         }
         await sleep(20);
       }
 
-      appendLog("sportsusa", `[SportsUSA] Writes done. Schools: created=${schoolsCreated} updated=${schoolsUpdated} | Sites: created=${sitesCreated} updated=${sitesUpdated} | skipped=${skipped} errors=${errors}`);
+      appendLog(
+        "sportsusa",
+        `[SportsUSA] Writes done. Schools: created=${schoolsCreated} updated=${schoolsUpdated} | Sites: created=${sitesCreated} updated=${sitesUpdated} | skipped=${skipped} errors=${errors}`
+      );
     } catch (e) {
       appendLog("sportsusa", `[SportsUSA] ERROR: ${String(e && e.message ? e.message : e)}`);
     } finally {
@@ -887,7 +891,10 @@ export default function AdminImport() {
     setLogCamps("");
 
     appendLog("camps", `[Camps] Starting: SportsUSA Camps Ingest (${selectedSportName}) @ ${runIso}`);
-    appendLog("camps", `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${campsMaxSites} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents}`);
+    appendLog(
+      "camps",
+      `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${campsMaxSites} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents}`
+    );
 
     try {
       if (!selectedSportId) {
@@ -920,13 +927,6 @@ export default function AdminImport() {
         return;
       }
 
-      // ✅ CRITICAL FIX: your function expects `siteUrls` (not `sites`)
-      // This was causing processedSites=0 + errors=1 even though the call was “ok”.
-      const siteUrls = sites
-        .map((x) => safeString(x.camp_site_url))
-        .filter((x) => !!x)
-        .slice(0, Number(campsMaxSites || 5));
-
       const res = await fetch("/functions/sportsUSAIngestCamps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -937,12 +937,9 @@ export default function AdminImport() {
           maxSites: Number(campsMaxSites || 5),
           maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
           maxEvents: Number(campsMaxEvents || 25),
-
-          // ✅ function input shape
-          siteUrls: siteUrls,
-
-          // single-site test mode
+          sites: sites,
           testSiteUrl: tUrl || null,
+          testSchoolId: tSchool || null,
         }),
       });
 
@@ -955,42 +952,66 @@ export default function AdminImport() {
       }
 
       appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
-
-      // Log top-level errors even when HTTP 200
-      const fnErrors = asArray(data && data.errors ? data.errors : []);
-      if (fnErrors.length) {
-        appendLog("camps", `[Camps] Function returned errors: ${fnErrors.length}`);
-        for (let i = 0; i < Math.min(3, fnErrors.length); i++) {
-          appendLog("camps", `- ${JSON.stringify(fnErrors[i])}`);
-        }
-      }
-
       appendLog(
         "camps",
         `[Camps] Function stats: processedSites=${data && data.stats ? data.stats.processedSites : 0} processedRegs=${data && data.stats ? data.stats.processedRegs : 0} accepted=${data && data.stats ? data.stats.accepted : 0} rejected=${data && data.stats ? data.stats.rejected : 0} errors=${data && data.stats ? data.stats.errors : 0}`
       );
 
-      // ✅ Support both debug shapes: debug.siteDebug (function) and debug.site_debug (older)
-      const rawSiteDbg = asArray(data && data.debug ? (data.debug.siteDebug || data.debug.site_debug || []) : []);
-      const siteDbg = rawSiteDbg.slice(0, 1);
+      // ✅ NEW: Date KPI if present
+      const kpi = data && data.debug && data.debug.kpi ? data.debug.kpi : null;
+      if (kpi) {
+        appendLog(
+          "camps",
+          `[Camps] Date KPI: listing=${kpi.datesParsedFromListing || 0} ryzer=${kpi.datesParsedFromRyzer || 0} missing=${kpi.datesMissing || 0}`
+        );
+      }
+
+      // ✅ FIXED: handle both debug.siteDebug and debug.site_debug
+      const debugObj = data && data.debug ? data.debug : {};
+      const siteDbgRaw = asArray(debugObj.siteDebug || debugObj.site_debug || []);
+      const siteDbg = siteDbgRaw.slice(0, 1);
+
       if (siteDbg.length) {
         appendLog("camps", "[Camps] Site debug (first 1):");
         for (let i = 0; i < siteDbg.length; i++) {
           const sd = siteDbg[i] || {};
           appendLog(
             "camps",
-            `- siteUrl=${sd.siteUrl || ""} http=${sd.http || "n/a"} html=${sd.htmlType || ""} regLinks=${sd.regLinks || 0} sample=${sd.sample || ""}`
+            `- siteUrl=${sd.siteUrl || sd.site_url || ""} http=${sd.http || "n/a"} html=${sd.htmlType || sd.html_type || ""} regLinks=${sd.regLinks || 0} sample=${sd.sample || ""}`
           );
-          const notesStr = formatNotes(sd.notes);
-          if (notesStr) appendLog("camps", `  notes=${notesStr}`);
-        }
-      }
 
-      // HTML snippet support (function uses debug.firstSiteHtmlSnippet)
-      const firstHtml = data && data.debug ? (data.debug.firstSiteHtmlSnippet || null) : null;
-      if (firstHtml) {
-        appendLog("camps", "[Camps] First site HTML snippet (debug):");
-        appendLog("camps", String(firstHtml));
+          // ✅ NEW: print classification fields
+          if (sd.campCfmHits != null || sd.registerRyzerHits != null) {
+            appendLog(
+              "camps",
+              `  campCfmHits=${sd.campCfmHits != null ? sd.campCfmHits : "n/a"} registerRyzerHits=${sd.registerRyzerHits != null ? sd.registerRyzerHits : "n/a"}`
+            );
+          }
+          if (sd.campCfmSamples && Array.isArray(sd.campCfmSamples) && sd.campCfmSamples.length) {
+            appendLog("camps", `  campCfmSamples=${sd.campCfmSamples.slice(0, 3).join(" | ")}`);
+          }
+
+          // ✅ FIXED: notes can be string or array
+          if (sd.notes) {
+            if (Array.isArray(sd.notes)) {
+              if (sd.notes.length) appendLog("camps", `  notes=${sd.notes.join(",")}`);
+            } else {
+              appendLog("camps", `  notes=${String(sd.notes)}`);
+            }
+          }
+        }
+
+        // ✅ FIXED: handle firstSiteHtmlSnippet vs htmlSnippet
+        const firstHtml =
+          (debugObj && debugObj.firstSiteHtmlSnippet) ||
+          (siteDbg[0] && siteDbg[0].htmlSnippet) ||
+          (siteDbg[0] && siteDbg[0].html_snippet) ||
+          null;
+
+        if (firstHtml) {
+          appendLog("camps", "[Camps] First site HTML snippet (debug):");
+          appendLog("camps", String(firstHtml));
+        }
       }
 
       const accepted = asArray(data && data.accepted ? data.accepted : []);
@@ -1003,12 +1024,8 @@ export default function AdminImport() {
       appendLog("camps", `[Camps] Sample (first 3):`);
       for (let i = 0; i < Math.min(3, accepted.length); i++) {
         const a = accepted[i] || {};
-        // Function returns accepted[] objects as {event, derived, debug}
-        const ev = a.event || a;
-        const campName = safeString(ev.camp_name) || "";
-        const start = safeString(ev.start_date) || "n/a";
-        const url = safeString(ev.link_url || ev.source_url || "") || "";
-        appendLog("camps", `- camp="${campName}" start=${start} url=${url}`);
+        const ev = a.event ? a.event : a;
+        appendLog("camps", `- camp="${(ev && ev.camp_name) || ""}" start=${(ev && ev.start_date) || "n/a"} url=${(ev && (ev.link_url || ev.registration_url || ev.source_url)) || ""}`);
       }
 
       if (campsDryRun) {
@@ -1022,30 +1039,30 @@ export default function AdminImport() {
       let errors = 0;
 
       for (let i = 0; i < accepted.length; i++) {
-        const a = accepted[i] || {};
-        const ev = a.event || a;
+        const wrap = accepted[i] || {};
+        const a = wrap.event ? wrap.event : wrap;
 
-        const school_id = safeString(ev.school_id) || (tUrl ? safeString(tSchool) : null);
-        const camp_name = safeString(ev.camp_name);
-        const link_url = safeString(ev.link_url || ev.source_url);
-        const start_date = toISODate(ev.start_date);
+        const school_id = safeString(a.school_id) || (tUrl ? safeString(tSchool) : null);
+        const camp_name = safeString(a.camp_name);
+        const link_url = safeString(a.link_url || a.registration_url || a.source_url);
+        const start_date = toISODate(a.start_date);
 
         if (!school_id || !camp_name || !start_date) {
           skipped += 1;
           continue;
         }
 
-        const season_year = safeNumber(ev.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
+        const season_year = safeNumber(a.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
         if (season_year == null) {
           skipped += 1;
           continue;
         }
 
-        const program_id = safeString(ev.program_id) || `sportsusa:${slugify(camp_name)}`;
+        const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
         const event_key =
-          safeString(ev.event_key) ||
+          safeString(a.event_key) ||
           buildEventKey({
-            source_platform: safeString(ev.source_platform) || "sportsusa",
+            source_platform: "sportsusa",
             program_id,
             start_date,
             link_url,
@@ -1057,30 +1074,29 @@ export default function AdminImport() {
           sport_id: selectedSportId,
           camp_name,
           start_date,
-          end_date: toISODate(ev.end_date) || null,
-          city: safeString(ev.city) || null,
-          state: safeString(ev.state) || null,
-          position_ids: normalizeStringArray(ev.position_ids),
-          price: safeNumber(ev.price),
-
+          end_date: toISODate(a.end_date) || null,
+          city: null,
+          state: null,
+          position_ids: [],
+          price: null,
           link_url: link_url || null,
-          notes: safeString(ev.notes) || null,
+          notes: safeString(a.notes) || null,
 
           season_year,
           program_id,
           event_key,
-          source_platform: safeString(ev.source_platform) || "sportsusa",
-          source_url: safeString(ev.source_url) || link_url || null,
+          source_platform: "sportsusa",
+          source_url: link_url || null,
           last_seen_at: runIso,
-          content_hash: safeString(ev.content_hash) || simpleHash({ school_id, camp_name, start_date, link_url }),
+          content_hash: safeString(a.content_hash) || simpleHash({ school_id, camp_name, start_date, link_url }),
 
-          event_dates_raw: safeString(ev.event_dates_raw) || null,
-          grades_raw: safeString(ev.grades_raw) || null,
-          register_by_raw: safeString(ev.register_by_raw) || null,
-          price_raw: safeString(ev.price_raw) || null,
-          price_min: safeNumber(ev.price_min),
-          price_max: safeNumber(ev.price_max),
-          sections_json: safeObject(ev.sections_json),
+          event_dates_raw: safeString(a.event_dates_raw) || null,
+          grades_raw: safeString(a.grades_raw) || null,
+          register_by_raw: safeString(a.register_by_raw) || null,
+          price_raw: safeString(a.price_raw) || null,
+          price_min: safeNumber(a.price_min),
+          price_max: safeNumber(a.price_max),
+          sections_json: safeObject(a.sections_json),
         };
 
         try {
@@ -1297,10 +1313,12 @@ export default function AdminImport() {
           </Button>
         </div>
 
-        {/* Global Sport Selector */}
+        {/* Sport Selector */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">1) Select Sport</div>
-          <div className="text-sm text-slate-600 mt-1">This selection drives Seed Schools, Camps Ingest, Positions, and Promote.</div>
+          <div className="text-sm text-slate-600 mt-1">
+            This selection drives Seed Schools, Camps Ingest, Positions, and Promote.
+          </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -1336,7 +1354,7 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* SportsUSA Seed Schools */}
+        {/* Seed Schools */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">2) Seed Schools from SportsUSA (School + SchoolSportSite)</div>
           <div className="text-sm text-slate-600 mt-1">
@@ -1353,7 +1371,9 @@ export default function AdminImport() {
                 placeholder="https://www.footballcampsusa.com/"
                 disabled={sportsUSAWorking}
               />
-              <div className="mt-1 text-[11px] text-slate-500">Default auto-fills based on sport. You can override if needed.</div>
+              <div className="mt-1 text-[11px] text-slate-500">
+                Default auto-fills based on sport. You can override if needed.
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1371,7 +1391,12 @@ export default function AdminImport() {
               </div>
               <div className="flex items-end">
                 <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={sportsUSADryRun} onChange={(e) => setSportsUSADryRun(e.target.checked)} disabled={sportsUSAWorking} />
+                  <input
+                    type="checkbox"
+                    checked={sportsUSADryRun}
+                    onChange={(e) => setSportsUSADryRun(e.target.checked)}
+                    disabled={sportsUSAWorking}
+                  />
                   Dry Run
                 </label>
               </div>
@@ -1379,7 +1404,10 @@ export default function AdminImport() {
           </div>
 
           <div className="mt-3 flex gap-2">
-            <Button onClick={runSportsUSASeedSchools} disabled={!selectedSportId || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}>
+            <Button
+              onClick={runSportsUSASeedSchools}
+              disabled={!selectedSportId || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}
+            >
               {sportsUSAWorking ? "Running…" : sportsUSADryRun ? "Run Seed (Dry Run)" : "Run Seed → Write School + Site"}
             </Button>
 
@@ -1390,7 +1418,9 @@ export default function AdminImport() {
 
           <div className="mt-4">
             <div className="text-xs text-slate-500 mb-1">SportsUSA Log</div>
-            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{logSportsUSA || "—"}</pre>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
+              {logSportsUSA || "—"}
+            </pre>
           </div>
         </Card>
 
@@ -1440,7 +1470,12 @@ export default function AdminImport() {
             </div>
             <div className="flex items-end">
               <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={campsDryRun} onChange={(e) => setCampsDryRun(e.target.checked)} disabled={campsWorking} />
+                <input
+                  type="checkbox"
+                  checked={campsDryRun}
+                  onChange={(e) => setCampsDryRun(e.target.checked)}
+                  disabled={campsWorking}
+                />
                 Dry Run
               </label>
             </div>
@@ -1457,7 +1492,9 @@ export default function AdminImport() {
                 placeholder="https://www.hardingfootballcamps.com/"
                 disabled={campsWorking}
               />
-              <div className="mt-1 text-[11px] text-slate-500">If set, runs single-site mode. Dry run works even if it’s not in SchoolSportSite.</div>
+              <div className="mt-1 text-[11px] text-slate-500">
+                If set, runs single-site mode. Dry run works even if it’s not in SchoolSportSite.
+              </div>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Test School ID (required for writes)</label>
@@ -1468,12 +1505,17 @@ export default function AdminImport() {
                 placeholder="Paste School.id (only needed when DryRun=false)"
                 disabled={campsWorking}
               />
-              <div className="mt-1 text-[11px] text-slate-500">Only required if you turn Dry Run off while using a Test Site URL.</div>
+              <div className="mt-1 text-[11px] text-slate-500">
+                Only required if you turn Dry Run off while using a Test Site URL.
+              </div>
             </div>
           </div>
 
           <div className="mt-3 flex gap-2">
-            <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || campsWorking || sportsUSAWorking || promoteWorking || seedWorking}>
+            <Button
+              onClick={runSportsUSACampsIngest}
+              disabled={!selectedSportId || campsWorking || sportsUSAWorking || promoteWorking || seedWorking}
+            >
               {campsWorking ? "Running…" : campsDryRun ? "Run Camps Ingest (Dry Run)" : "Run Camps Ingest → Write CampDemo"}
             </Button>
 
@@ -1484,7 +1526,9 @@ export default function AdminImport() {
 
           <div className="mt-4">
             <div className="text-xs text-slate-500 mb-1">Camps Log</div>
-            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{logCamps || "—"}</pre>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
+              {logCamps || "—"}
+            </pre>
           </div>
         </Card>
 
@@ -1496,7 +1540,10 @@ export default function AdminImport() {
           </div>
 
           <div className="mt-3 flex gap-2">
-            <Button onClick={promoteCampDemoToCamp} disabled={!selectedSportId || promoteWorking || sportsUSAWorking || campsWorking || seedWorking}>
+            <Button
+              onClick={promoteCampDemoToCamp}
+              disabled={!selectedSportId || promoteWorking || sportsUSAWorking || campsWorking || seedWorking}
+            >
               {promoteWorking ? "Running…" : "Run Promotion"}
             </Button>
 
@@ -1507,21 +1554,32 @@ export default function AdminImport() {
 
           <div className="mt-4">
             <div className="text-xs text-slate-500 mb-1">Promote Log</div>
-            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{logPromote || "—"}</pre>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">
+              {logPromote || "—"}
+            </pre>
           </div>
         </Card>
 
-        {/* Positions (optional) */}
+        {/* Positions */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Positions (optional)</div>
-          <div className="text-sm text-slate-600 mt-1">Auto-seed a default set, or manually add/edit/delete positions per sport.</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Auto-seed a default set, or manually add/edit/delete positions per sport.
+          </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button onClick={seedPositionsForSport} disabled={!selectedSportId || seedWorking || sportsUSAWorking || campsWorking || promoteWorking}>
+            <Button
+              onClick={seedPositionsForSport}
+              disabled={!selectedSportId || seedWorking || sportsUSAWorking || campsWorking || promoteWorking}
+            >
               {seedWorking ? "Seeding…" : "Auto-seed positions"}
             </Button>
 
-            <Button variant="outline" onClick={() => loadPositionsForSport(selectedSportId)} disabled={!selectedSportId || positionsLoading}>
+            <Button
+              variant="outline"
+              onClick={() => loadPositionsForSport(selectedSportId)}
+              disabled={!selectedSportId || positionsLoading}
+            >
               {positionsLoading ? "Refreshing…" : "Refresh"}
             </Button>
 
@@ -1586,7 +1644,7 @@ export default function AdminImport() {
                                   [p.id]: {
                                     ...(prev[p.id] || {}),
                                     code: e.target.value,
-                                    name: prev[p.id] && prev[p.id].name != null ? prev[p.id].name : p.name,
+                                    name: prev[p.id]?.name ?? p.name,
                                   },
                                 }))
                               }
@@ -1602,7 +1660,7 @@ export default function AdminImport() {
                                   [p.id]: {
                                     ...(prev[p.id] || {}),
                                     name: e.target.value,
-                                    code: prev[p.id] && prev[p.id].code != null ? prev[p.id].code : p.code,
+                                    code: prev[p.id]?.code ?? p.code,
                                   },
                                 }))
                               }
@@ -1613,7 +1671,11 @@ export default function AdminImport() {
                               <Button variant="outline" onClick={() => savePositionRow(p.id)} disabled={positionSaveWorking}>
                                 Save
                               </Button>
-                              <Button variant="outline" onClick={() => deletePosition(p.id)} disabled={positionDeleteWorking === p.id}>
+                              <Button
+                                variant="outline"
+                                onClick={() => deletePosition(p.id)}
+                                disabled={positionDeleteWorking === p.id}
+                              >
                                 {positionDeleteWorking === p.id ? "Deleting…" : "Delete"}
                               </Button>
                             </div>
@@ -1634,13 +1696,19 @@ export default function AdminImport() {
 
             <div className="mt-4">
               <div className="text-xs text-slate-500 mb-1">Positions Log</div>
-              <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-56">{logPositions || "—"}</pre>
+              <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-56">
+                {logPositions || "—"}
+              </pre>
             </div>
           </div>
         </Card>
 
         <div className="text-center">
-          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={sportsUSAWorking || campsWorking || promoteWorking || seedWorking}>
+          <Button
+            variant="outline"
+            onClick={() => nav(ROUTES.Home)}
+            disabled={sportsUSAWorking || campsWorking || promoteWorking || seedWorking}
+          >
             Go to Home
           </Button>
         </div>
