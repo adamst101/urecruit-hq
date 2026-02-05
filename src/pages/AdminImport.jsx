@@ -31,12 +31,6 @@ function safeObject(x) {
   return x;
 }
 
-function truncate(s, n) {
-  const str = String(s ?? "");
-  const max = n || 1200;
-  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
-}
-
 function tryParseJson(value) {
   if (typeof value !== "string") return value;
   const s = value.trim();
@@ -199,31 +193,6 @@ async function entityList(Entity, whereObj) {
 }
 
 /* ----------------------------
-   ✅ Fetch JSON with debug (prevents “MISSING” mystery)
------------------------------ */
-async function fetchJsonWithDebug(url, options) {
-  const res = await fetch(url, options);
-  const status = res.status;
-  const contentType = (res.headers.get("content-type") || "").toLowerCase();
-
-  const text = await res.text().catch(() => "");
-  let json = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {
-    json = null;
-  }
-
-  return {
-    ok: res.ok,
-    status,
-    contentType,
-    text,
-    json,
-  };
-}
-
-/* ----------------------------
    Routes (hardcoded)
 ----------------------------- */
 const ROUTES = {
@@ -305,6 +274,15 @@ const DEFAULT_POSITION_SEEDS = {
     { position_code: "FWD", position_name: "Forward" },
   ],
 };
+
+/* ----------------------------
+   ✅ Truncate helper (needed for robust debug logs)
+----------------------------- */
+function truncate(s, n) {
+  const str = String(s ?? "");
+  const max = Number(n ?? 500);
+  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
+}
 
 export default function AdminImport() {
   const nav = useNavigate();
@@ -779,31 +757,48 @@ export default function AdminImport() {
         return;
       }
 
-      const payload = {
-        sportId: selectedSportId,
-        sportName: selectedSportName,
-        siteUrl: siteUrl,
-        limit: Number(sportsUSALimit || 300),
-        dryRun: !!sportsUSADryRun,
-      };
-
-      const result = await fetchJsonWithDebug("/functions/sportsUSASeedSchools", {
+      const res = await fetch("/functions/sportsUSASeedSchools", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          sportId: selectedSportId,
+          sportName: selectedSportName,
+          siteUrl: siteUrl,
+          limit: Number(sportsUSALimit || 300),
+          // ✅ send the toggle
+          dryRun: !!sportsUSADryRun,
+        }),
       });
 
-      if (!result.ok || !result.json) {
-        appendLog("sportsusa", `[SportsUSA] Function response not usable (HTTP ${result.status}) content-type=${result.contentType || "n/a"}`);
-        appendLog("sportsusa", `[SportsUSA] Body snippet: ${truncate(result.text || "", 900)}`);
-        appendLog("sportsusa", "[SportsUSA] NOTE: Verify function file name is EXACTLY sportsUSASeedSchools.js and is deployed.");
+      let data = null;
+      let rawText = null;
+      try {
+        data = await res.json();
+      } catch {
+        rawText = await res.text().catch(() => null);
+      }
+
+      if (!res.ok) {
+        appendLog("sportsusa", `[SportsUSA] SportsUSA function ERROR (HTTP ${res.status})`);
+        if (data) appendLog("sportsusa", JSON.stringify(data || {}, null, 2));
+        if (!data && rawText) appendLog("sportsusa", `[SportsUSA] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
+        appendLog("sportsusa", "[SportsUSA] NOTE: Verify your function name is EXACTLY sportsUSASeedSchools.js");
         return;
       }
 
-      const data = result.json;
+      if (!data) {
+        appendLog("sportsusa", `[SportsUSA] WARNING: Response was not JSON. HTTP ${res.status}`);
+        if (rawText) appendLog("sportsusa", `[SportsUSA] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
+        return;
+      }
 
       const schools = asArray(data && data.schools ? data.schools : []);
-      appendLog("sportsusa", `[SportsUSA] SportsUSA fetched: schools_found=${schools.length} | http=${(data && data.stats && data.stats.http) ? data.stats.http : result.status}`);
+      appendLog(
+        "sportsusa",
+        `[SportsUSA] SportsUSA fetched: schools_found=${schools.length} | http=${
+          data && data.stats && data.stats.http ? data.stats.http : res.status
+        }`
+      );
 
       const sample = schools.slice(0, 3);
       if (sample.length) {
@@ -1006,18 +1001,13 @@ export default function AdminImport() {
       const siteRows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
       appendLog("camps", `[Camps] Loaded SchoolSportSite rows: ${siteRows.length} (active)`);
 
-      const sitesAll = asArray(siteRows)
+      const sites = asArray(siteRows)
         .map((r) => ({
           school_id: r && r.school_id ? String(r.school_id) : null,
           sport_id: r && r.sport_id ? String(r.sport_id) : selectedSportId,
           camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : null,
         }))
         .filter((x) => !!x.camp_site_url);
-
-      appendLog("camps", `[Camps] Prepared sites payload: ${sitesAll.length} (non-null camp_site_url)`);
-
-      const sample = sitesAll[0] || null;
-      if (sample) appendLog("camps", `[Camps] Sample site: school_id=${sample.school_id || "n/a"} url=${sample.camp_site_url || ""}`);
 
       const tUrl = safeString(testSiteUrl);
       const tSchool = safeString(testSchoolId);
@@ -1027,42 +1017,67 @@ export default function AdminImport() {
         return;
       }
 
-      // ✅ For full runs: testSiteUrl MUST be empty
-      appendLog("camps", `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesAll.length}, testSiteUrl=${tUrl ? "yes" : "no"})`);
+      // ✅ IMPORTANT: If testSiteUrl is set, do NOT send the full sites list
+      const sitesToSend = tUrl ? [] : sites;
 
-      const payload = {
-        sportId: selectedSportId,
-        sportName: selectedSportName,
-        dryRun: !!campsDryRun,
-        maxSites: Number(campsMaxSites || 5),
-        maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
-        maxEvents: Number(campsMaxEvents || 25),
-        sites: sitesAll,
-        testSiteUrl: tUrl || null,
-        testSchoolId: tSchool || null,
-      };
+      appendLog("camps", `[Camps] Prepared sites payload: ${sites.length} (non-null camp_site_url)`);
+      if (sites.length) {
+        appendLog("camps", `[Camps] Sample site: school_id=${sites[0].school_id || ""} url=${sites[0].camp_site_url || ""}`);
+      }
+      appendLog("camps", `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesToSend.length}, testSiteUrl=${tUrl ? tUrl : "no"})`);
 
-      const result = await fetchJsonWithDebug("/functions/sportsUSAIngestCamps", {
+      const res = await fetch("/functions/sportsUSAIngestCamps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          sportId: selectedSportId,
+          sportName: selectedSportName,
+          dryRun: !!campsDryRun,
+          maxSites: Number(campsMaxSites || 5),
+          maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
+          maxEvents: Number(campsMaxEvents || 25),
+          sites: sitesToSend,
+          testSiteUrl: tUrl || null,
+          testSchoolId: tSchool || null,
+        }),
       });
 
-      if (!result.ok || !result.json) {
-        appendLog("camps", `[Camps] Function returned non-JSON or empty body (HTTP ${result.status}).`);
-        appendLog("camps", `[Camps] content-type=${result.contentType || "n/a"}`);
-        appendLog("camps", `[Camps] Body snippet: ${truncate(result.text || "", 1200)}`);
-        appendLog("camps", `[Camps] Fix: confirm the function is deployed as functions/sportsUSAIngestCamps.js and the endpoint path matches EXACT casing.`);
+      // ✅ Robust parse: capture raw response if not JSON
+      let data = null;
+      let rawText = null;
+
+      try {
+        data = await res.json();
+      } catch {
+        rawText = await res.text().catch(() => null);
+      }
+
+      if (!res.ok) {
+        appendLog("camps", `[Camps] Function ERROR (HTTP ${res.status})`);
+        if (data) appendLog("camps", JSON.stringify(data || {}, null, 2));
+        if (!data && rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
         return;
       }
 
-      const data = result.json;
+      if (!data) {
+        appendLog("camps", `[Camps] WARNING: Response was not JSON. HTTP ${res.status}`);
+        if (rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
+        return;
+      }
 
       appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
       appendLog(
         "camps",
         `[Camps] Function stats: processedSites=${data && data.stats ? data.stats.processedSites : 0} processedRegs=${data && data.stats ? data.stats.processedRegs : 0} accepted=${data && data.stats ? data.stats.accepted : 0} rejected=${data && data.stats ? data.stats.rejected : 0} errors=${data && data.stats ? data.stats.errors : 0}`
       );
+
+      if (data && data.debug && data.debug.received) {
+        const rcv = data.debug.received;
+        appendLog(
+          "camps",
+          `[Camps] Function received: testSiteUrl=${rcv.testSiteUrl || "no"} sitesCount=${rcv.sitesCount || 0} siteUrlsCount=${rcv.siteUrlsCount || 0}`
+        );
+      }
 
       if (data && data.debug && data.debug.kpi) {
         const k = data.debug.kpi;
@@ -1078,10 +1093,7 @@ export default function AdminImport() {
         appendLog("camps", "[Camps] Site debug (first 1):");
         for (let i = 0; i < siteDbg.length; i++) {
           const sd = siteDbg[i] || {};
-          appendLog(
-            "camps",
-            `- siteUrl=${sd.siteUrl || ""} http=${sd.http || "n/a"} html=${sd.htmlType || ""} regLinks=${sd.regLinks || 0} sample=${sd.sample || ""}`
-          );
+          appendLog("camps", `- siteUrl=${sd.siteUrl || ""} http=${sd.http || "n/a"} html=${sd.htmlType || ""} regLinks=${sd.regLinks || 0} sample=${sd.sample || ""}`);
           if (sd.notes) appendLog("camps", `  notes=${String(sd.notes)}`);
         }
 
@@ -1180,9 +1192,10 @@ export default function AdminImport() {
             notes: safeString(a.notes),
           });
 
+        // ✅ prefer price_max as the single price
         const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
 
-        const payloadWrite = {
+        const payload = {
           school_id,
           sport_id,
           camp_name,
@@ -1211,7 +1224,7 @@ export default function AdminImport() {
         };
 
         try {
-          const r = await upsertCampDemoByEventKey(payloadWrite);
+          const r = await upsertCampDemoByEventKey(payload);
           if (r === "created") created += 1;
           if (r === "updated") updated += 1;
         } catch (e) {
