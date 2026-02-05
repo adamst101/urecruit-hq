@@ -1,16 +1,17 @@
 // functions/sportsUSAIngestCamps.js
 // Base44 Backend Function (Deno)
 //
-// v12 updates (2026-02-05):
-// - Add fastMode (default true): if listing snippet yields date, skip Ryzer fetch to avoid 504s
-// - Add wall-clock cap maxMs (default 45000ms) to return partial results rather than timing out
-// - Add per-request timeouts for site and reg fetches
-// - Add global cap maxRegFetchTotal (default 250) for predictable run time
+// v13 updates (2026-02-05):
+// - FIX: stop double-JSON-stringifying responses (AdminImport was seeing version=MISSING + zeros)
+// - Add directRegistrationUrl handling:
+//   - If testSiteUrl (or a siteUrl) is already a registration/listing page (register.cfm / camp.cfm),
+//     treat it as a reg URL directly (no reg-link discovery step).
+// - Keep v12 controls: fastMode, maxMs, timeouts, maxRegFetchTotal
 // - Preserve flat CampDemo-shaped accepted objects
 // - Preserve event_key single-prefix (no double "ryzer:")
 
 const VERSION =
-  "sportsUSAIngestCamps_2026-02-05_v12_fastMode_maxMs_timeouts_maxRegFetchTotal";
+  "sportsUSAIngestCamps_2026-02-05_v13_fix_json_response_direct_registration_url";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -84,7 +85,26 @@ async function fetchWithTimeout(url, opts, ms) {
 }
 
 /* -------------------------
-   Registration link discovery
+   Identify direct registration/listing pages
+   - SportsUSA sites often use /register.cfm on the same domain
+   - Ryzer pages are usually register.ryzer.com/camp.cfm?id=...
+-------------------------- */
+function isDirectRegistrationUrl(url) {
+  const u = safeString(url);
+  if (!u) return false;
+  const x = lc(u);
+
+  // Most common SportsUSA listing page
+  if (x.includes("/register.cfm")) return true;
+
+  // Ryzer camp registration page
+  if (x.includes("camp.cfm")) return true;
+
+  return false;
+}
+
+/* -------------------------
+   Registration link discovery (Ryzer camp links)
 -------------------------- */
 function extractRyzerRegLinksFromHtml(html, siteUrl) {
   let out = [];
@@ -99,6 +119,7 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
 
     if (s.startsWith("//")) s = "https:" + s;
 
+    // If the site uses relative Ryzer pathing, normalize it
     if (s.startsWith("/camp.cfm")) s = "https://register.ryzer.com" + s;
     if (s.startsWith("camp.cfm")) s = "https://register.ryzer.com/" + s;
 
@@ -111,7 +132,6 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
 
   function isRyzerCampLink(u) {
     const x = lc(u || "");
-    // Accept ANY Ryzer camp link (Montana-style included)
     return x.includes("register.ryzer.com") && x.includes("camp.cfm");
   }
 
@@ -506,21 +526,12 @@ function extractRegisterNowPrices(text) {
     if (totals.length >= 10) break;
   }
 
-  const reBase = /\(\s*\$\s*([0-9]{1,5})(?:\.[0-9]{2})?\s*\+\s*\$\s*([0-9]{1,5})(?:\.[0-9]{2})?\s*Fees?\s*\)/gi;
-  const bases = [];
-  let mb;
-  while ((mb = reBase.exec(t)) !== null) {
-    const base = Number(mb[1]);
-    if (Number.isFinite(base) && base > 0) bases.push(base);
-    if (bases.length >= 10) break;
-  }
-
   const rawLine = (() => {
     const mm = /\bRegister\s+Now\b[^\.]{0,180}/i.exec(t);
     return mm && mm[0] ? stripNonAscii(mm[0]) : null;
   })();
 
-  return { totals, bases, raw: rawLine };
+  return { totals, bases: [], raw: rawLine };
 }
 
 function extractPricesFromText(text) {
@@ -552,13 +563,8 @@ function extractPricesFromText(text) {
   if (!nums.length) return { price_raw: null, price_min: null, price_max: null, price_best: null };
 
   nums.sort((a, b) => a - b);
-  const rawLine = (() => {
-    const mm = /\b(?:Cost|Price)\b[^\.]{0,180}/i.exec(t);
-    return mm && mm[0] ? stripNonAscii(mm[0]) : "Prices detected: " + nums.slice(0, 6).join(", ");
-  })();
-
   return {
-    price_raw: rawLine,
+    price_raw: "Prices detected: " + nums.slice(0, 6).join(", "),
     price_min: nums[0],
     price_max: nums[nums.length - 1],
     price_best: nums[nums.length - 1],
@@ -607,6 +613,7 @@ Deno.serve(async (req) => {
   const debug = {
     version: VERSION,
     startedAt: new Date().toISOString(),
+    received: {},
     stoppedEarly: false,
     stopReason: null,
     timeMs: 0,
@@ -622,6 +629,7 @@ Deno.serve(async (req) => {
     siteKpi: {
       sitesWithRegLinks: 0,
       sitesWithNoRegLinks: 0,
+      sitesDirectRegUrl: 0,
     },
   };
 
@@ -654,7 +662,6 @@ Deno.serve(async (req) => {
     const maxRegsPerSite = Number(body && body.maxRegsPerSite !== undefined ? body.maxRegsPerSite : 5);
     const maxEvents = Number(body && body.maxEvents !== undefined ? body.maxEvents : 25);
 
-    // New runtime controls
     const fastMode = body && body.fastMode !== undefined ? !!body.fastMode : true;
     const maxMs = Number(body && body.maxMs !== undefined ? body.maxMs : 45000);
     const siteTimeoutMs = Number(body && body.siteTimeoutMs !== undefined ? body.siteTimeoutMs : 12000);
@@ -666,6 +673,24 @@ Deno.serve(async (req) => {
 
     const sites = body && Array.isArray(body.sites) ? body.sites : null;
     const siteUrls = body && Array.isArray(body.siteUrls) ? body.siteUrls : null;
+
+    debug.received = {
+      sportId,
+      sportName,
+      dryRun,
+      maxSites,
+      maxRegsPerSite,
+      maxEvents,
+      fastMode,
+      maxMs,
+      siteTimeoutMs,
+      regTimeoutMs,
+      maxRegFetchTotal,
+      testSiteUrl,
+      testSchoolId,
+      sitesCount: sites ? sites.length : 0,
+      siteUrlsCount: siteUrls ? siteUrls.length : 0,
+    };
 
     if (!sportId || !sportName) {
       return finishResponse({ error: "Missing required: sportId/sportName", version: VERSION, debug }, 400);
@@ -710,8 +735,7 @@ Deno.serve(async (req) => {
     let processedSites = 0;
     let processedRegs = 0;
 
-    const now = new Date();
-    const defaultYear = guessDefaultYearFromContext(now);
+    const defaultYear = guessDefaultYearFromContext(new Date());
 
     for (let s = 0; s < crawl.length; s++) {
       if (accepted.length >= maxEvents) break;
@@ -732,39 +756,54 @@ Deno.serve(async (req) => {
       let regLinks = [];
 
       try {
-        const r = await fetchWithTimeout(
-          siteUrl,
-          {
-            method: "GET",
-            headers: {
-              "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-              Accept: "text/html,*/*",
+        // DIRECT REG URL MODE (e.g., https://www.montanafootballcamps.com/register.cfm)
+        if (isDirectRegistrationUrl(siteUrl)) {
+          debug.siteKpi.sitesDirectRegUrl += 1;
+          regLinks = [siteUrl];
+
+          debug.siteDebug.push({
+            siteUrl,
+            http: 0,
+            htmlType: "",
+            regLinks: 1,
+            sample: siteUrl,
+            notes: "direct_registration_url",
+          });
+        } else {
+          const r = await fetchWithTimeout(
+            siteUrl,
+            {
+              method: "GET",
+              headers: {
+                "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
+                Accept: "text/html,*/*",
+              },
             },
-          },
-          siteTimeoutMs
-        );
+            siteTimeoutMs
+          );
 
-        http = r.status;
-        htmlType = r.headers.get("content-type") || "";
-        html = await r.text().catch(() => "");
+          http = r.status;
+          htmlType = r.headers.get("content-type") || "";
+          html = await r.text().catch(() => "");
 
-        regLinks = extractRyzerRegLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
+          if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(html, 1600);
 
-        if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(html, 1600);
+          regLinks = extractRyzerRegLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
 
-        if (regLinks.length) debug.siteKpi.sitesWithRegLinks += 1;
-        else debug.siteKpi.sitesWithNoRegLinks += 1;
+          if (regLinks.length) debug.siteKpi.sitesWithRegLinks += 1;
+          else debug.siteKpi.sitesWithNoRegLinks += 1;
 
-        debug.siteDebug.push({
-          siteUrl,
-          http,
-          htmlType,
-          regLinks: regLinks.length,
-          sample: regLinks.length ? regLinks[0] : "",
-          notes: regLinks.length ? "" : "no_registration_links_found",
-        });
+          debug.siteDebug.push({
+            siteUrl,
+            http,
+            htmlType,
+            regLinks: regLinks.length,
+            sample: regLinks.length ? regLinks[0] : "",
+            notes: regLinks.length ? "" : "no_registration_links_found",
+          });
 
-        if (!regLinks.length) continue;
+          if (!regLinks.length) continue;
+        }
 
         for (let i2 = 0; i2 < regLinks.length; i2++) {
           if (accepted.length >= maxEvents) break;
@@ -777,31 +816,33 @@ Deno.serve(async (req) => {
           const regUrl = regLinks[i2];
           processedRegs += 1;
 
-          // listing-first attempt
-          const listingSnippetHtml = extractSnippetAroundNeedle(html, regUrl, 340);
-          const listingSnippetText = listingSnippetHtml ? htmlToText(listingSnippetHtml) : null;
-          const listingParsed = listingSnippetText ? parseSingleOrRangeDate(listingSnippetText, defaultYear) : null;
-
           let finalParsed = null;
           let eventDatesRaw = null;
 
-          if (listingParsed && listingParsed.start) {
-            finalParsed = listingParsed;
-            eventDatesRaw = listingParsed.rawLine || truncate(listingSnippetText, 240);
-            debug.kpi.datesParsedFromListing += 1;
+          // If we came from a site homepage crawl, we may have html to try a listing snippet.
+          // If direct_registration_url, we likely do not have listing html; we'll rely on reg fetch.
+          if (html) {
+            const listingSnippetHtml = extractSnippetAroundNeedle(html, regUrl, 340);
+            const listingSnippetText = listingSnippetHtml ? htmlToText(listingSnippetHtml) : null;
+            const listingParsed = listingSnippetText ? parseSingleOrRangeDate(listingSnippetText, defaultYear) : null;
+            if (listingParsed && listingParsed.start) {
+              finalParsed = listingParsed;
+              eventDatesRaw = listingParsed.rawLine || truncate(listingSnippetText, 240);
+              debug.kpi.datesParsedFromListing += 1;
+            }
           }
 
-          // FAST MODE: if listing gave us a date, skip Ryzer fetch to save time
           let regHttp = 0;
           let regHtml = "";
           let regText = "";
           let ryzerCandidates = [];
           let ryzerPick = null;
 
-          const shouldFetchRyzer =
-            !fastMode || !(finalParsed && finalParsed.start) ? true : false;
+          const shouldFetchReg =
+            // If direct reg URL, we must fetch
+            true;
 
-          if (shouldFetchRyzer) {
+          if (shouldFetchReg) {
             if (debug.regFetches >= maxRegFetchTotal) {
               debug.stoppedEarly = true;
               debug.stopReason = "maxRegFetchTotal_reached";
@@ -834,6 +875,8 @@ Deno.serve(async (req) => {
               });
             }
 
+            // FAST MODE: if listing already provided a date, we can skip candidate scan to save time,
+            // BUT we still fetched regHtml above (we need this for direct-registration pages).
             if ((!finalParsed || !finalParsed.start) && regHtml) {
               ryzerCandidates = extractRyzerDateCandidates(regHtml);
               ryzerPick = pickBestParsedDateFromCandidates(ryzerCandidates, defaultYear);
@@ -843,9 +886,9 @@ Deno.serve(async (req) => {
                 eventDatesRaw = ryzerPick.bestRaw || (finalParsed.rawLine || null);
                 debug.kpi.datesParsedFromRyzer += 1;
               }
+            } else if (fastMode && finalParsed && finalParsed.start) {
+              debug.regFetchSkippedFastMode += 0; // we didn't skip fetch; we skipped scan
             }
-          } else {
-            debug.regFetchSkippedFastMode += 1;
           }
 
           if (!finalParsed || !finalParsed.start) {
@@ -855,23 +898,20 @@ Deno.serve(async (req) => {
               registrationUrl: regUrl,
               debug: {
                 siteUrl,
-                listingSnippetText: listingSnippetText ? truncate(listingSnippetText, 360) : null,
-                ryzerCandidatesSample: ryzerCandidates && ryzerCandidates.length ? ryzerCandidates.slice(0, 6) : [],
                 regHttp: regHttp || null,
+                sampleCandidates: ryzerCandidates && ryzerCandidates.length ? ryzerCandidates.slice(0, 6) : [],
               },
             });
             continue;
           }
 
-          // Name / Notes / Enrichment:
-          // - In fastMode with listing date, we may not have regHtml. Keep camp_name minimal.
+          // Name / Notes / Enrichment
           const h1 = regHtml ? extractH1(regHtml) : null;
           const title = regHtml ? extractTitle(regHtml) : null;
           const campName = sanitizeCampName(h1 || title || "Camp");
-
           const desc = regHtml ? extractMetaDescription(regHtml) : null;
 
-          // Program id from id=
+          // Program id from id= if present
           let programId = null;
           const idMatch = /[?&]id=(\d+)/i.exec(regUrl);
           if (idMatch && idMatch[1]) programId = "ryzer:" + idMatch[1];
@@ -879,7 +919,6 @@ Deno.serve(async (req) => {
 
           const eventKey = buildEventKey("ryzer", programId, finalParsed.start, regUrl);
 
-          // Extract grades/location/prices from Ryzer text (only available if we fetched)
           const gradesRaw = regText ? extractGradesRawFromText(regText) : null;
           const loc = regText ? extractLocationFromText(regText) : { city: null, state: null, location_raw: null };
           const pricePack = regText ? extractPricesFromText(regText) : { price_raw: null, price_min: null, price_max: null, price_best: null };
@@ -950,13 +989,11 @@ Deno.serve(async (req) => {
     }
 
     const rejected_samples = rejected.slice(0, 25);
-
     let percentWithStartDate = 0;
-    const denom = processedRegs;
-    if (denom > 0) percentWithStartDate = Math.round((accepted.length / denom) * 1000) / 10;
+    if (processedRegs > 0) percentWithStartDate = Math.round((accepted.length / processedRegs) * 1000) / 10;
 
     return finishResponse(
-      JSON.stringify({
+      {
         version: VERSION,
         stats: {
           processedSites,
@@ -977,7 +1014,7 @@ Deno.serve(async (req) => {
         rejected_samples,
         errors: errors.slice(0, 10),
         debug,
-      }),
+      },
       200
     );
   } catch (eTop) {
@@ -988,4 +1025,3 @@ Deno.serve(async (req) => {
     });
   }
 });
-
