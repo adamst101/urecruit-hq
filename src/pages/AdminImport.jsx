@@ -72,6 +72,13 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// ✅ NEW: truncate helper (prevents AdminImport crash when function returns non-JSON)
+function truncate(s, n) {
+  const str = String(s || "");
+  const max = n || 1200;
+  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
+}
+
 // Return YYYY-MM-DD (UTC) or null
 function toISODate(dateInput) {
   if (!dateInput) return null;
@@ -223,7 +230,7 @@ const DEFAULT_POSITION_SEEDS = {
     { position_code: "OL", position_name: "Offensive Line" },
     { position_code: "DL", position_name: "Defensive Line" },
     { position_code: "LB", position_name: "Linebacker" },
-    { position_code: "DB", position_name: "Defensive Back" },
+    { position_code: "DB", position_code2: "DB", position_name: "Defensive Back" },
     { position_code: "K", position_name: "Kicker" },
     { position_code: "P", position_name: "Punter" },
     { position_code: "LS", position_name: "Long Snapper" },
@@ -287,6 +294,7 @@ export default function AdminImport() {
   const CampDemoEntity = base44 && base44.entities ? base44.entities.CampDemo : null;
 
   const PositionEntity = base44 && base44.entities ? (base44.entities.Position || base44.entities.Positions) : null;
+
   const CampEntity = base44 && base44.entities ? base44.entities.Camp : null;
 
   /* ----------------------------
@@ -341,13 +349,13 @@ export default function AdminImport() {
   const [testSchoolId, setTestSchoolId] = useState("");
 
   /* ----------------------------
-     Promote scope controls ✅ NEW
+     Promotion scope controls (All vs One)
   ----------------------------- */
   const [promoteScope, setPromoteScope] = useState("all"); // "all" | "one"
   const [promoteSchoolId, setPromoteSchoolId] = useState("");
-  const [promoteSitePickId, setPromoteSitePickId] = useState("");
-  const [promoteSiteOptions, setPromoteSiteOptions] = useState([]);
   const [promoteSitesLoading, setPromoteSitesLoading] = useState(false);
+  const [promoteSiteOptions, setPromoteSiteOptions] = useState([]);
+  const [promoteSelectedSiteKey, setPromoteSelectedSiteKey] = useState("");
 
   /* ----------------------------
      Positions manager
@@ -429,52 +437,42 @@ export default function AdminImport() {
   useEffect(() => {
     const guess = SPORTSUSA_DIRECTORY_BY_SPORTNAME[String(selectedSportName || "").trim()];
     if (guess) setSportsUSASiteUrl(guess);
-
-    // reset promote scope picker when sport changes (safer)
-    setPromoteSitePickId("");
-    setPromoteSchoolId("");
-    setPromoteScope("all");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSportName]);
 
   /* ----------------------------
-     Promote: Load SchoolSportSite options ✅ NEW
-     (used only for helper dropdown)
+     Promotion: load SchoolSportSite options for selector
   ----------------------------- */
-  async function loadPromoteSiteOptions(sportId) {
+  async function loadPromoteSitesForSport(sportId) {
     if (!SchoolSportSiteEntity || !sportId) {
       setPromoteSiteOptions([]);
+      setPromoteSelectedSiteKey("");
       return;
     }
 
     setPromoteSitesLoading(true);
     try {
-      // try both field styles for active (some tables use active, others is_active)
-      let rows = [];
-      try {
-        rows = await entityList(SchoolSportSiteEntity, { sport_id: sportId, active: true });
-      } catch {
-        rows = await entityList(SchoolSportSiteEntity, { sport_id: sportId });
-      }
-
+      const rows = await entityList(SchoolSportSiteEntity, { sport_id: sportId, active: true });
       const normalized = asArray(rows)
-        .map((r) => ({
-          id: r && r.id ? String(r.id) : "",
-          school_id: r && r.school_id ? String(r.school_id) : "",
-          camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : (r && r.site_url ? String(r.site_url) : ""),
-          active: readActiveFlag(r),
-        }))
-        .filter((x) => x.id && x.school_id);
+        .map((r) => {
+          const school_id = r && r.school_id ? String(r.school_id) : "";
+          const url = r && r.camp_site_url ? String(r.camp_site_url) : "";
+          const key = r && r.id ? String(r.id) : `${school_id}|${url}`;
+          const label = url ? url.replace(/^https?:\/\//i, "") : "(missing url)";
+          return { key, school_id, url, label };
+        })
+        .filter((x) => x.school_id);
 
-      // Only keep active if we got the signal
-      const actives = normalized.filter((x) => x.active);
-      const final = actives.length ? actives : normalized;
+      normalized.sort((a, b) => (a.label || "").localeCompare(b.label || ""));
+      setPromoteSiteOptions(normalized);
 
-      final.sort((a, b) => (a.camp_site_url || "").localeCompare(b.camp_site_url || ""));
-
-      setPromoteSiteOptions(final);
+      // If current selected isn't in list, clear it
+      if (promoteSelectedSiteKey) {
+        const hit = normalized.find((x) => x.key === promoteSelectedSiteKey);
+        if (!hit) setPromoteSelectedSiteKey("");
+      }
     } catch {
       setPromoteSiteOptions([]);
+      setPromoteSelectedSiteKey("");
     } finally {
       setPromoteSitesLoading(false);
     }
@@ -484,7 +482,7 @@ export default function AdminImport() {
     let cancelled = false;
     (async () => {
       if (!selectedSportId) return;
-      await loadPromoteSiteOptions(selectedSportId);
+      await loadPromoteSitesForSport(selectedSportId);
       if (cancelled) return;
     })();
     return () => {
@@ -492,6 +490,13 @@ export default function AdminImport() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSportId]);
+
+  // If you select from dropdown, set school_id automatically
+  useEffect(() => {
+    if (!promoteSelectedSiteKey) return;
+    const hit = promoteSiteOptions.find((x) => x.key === promoteSelectedSiteKey);
+    if (hit && hit.school_id) setPromoteSchoolId(hit.school_id);
+  }, [promoteSelectedSiteKey, promoteSiteOptions]);
 
   /* ----------------------------
      Positions: load per sport
@@ -830,17 +835,11 @@ export default function AdminImport() {
         }),
       });
 
-      const text = await res.text().catch(() => "");
-      let data = null;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        data = null;
-      }
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
         appendLog("sportsusa", `[SportsUSA] SportsUSA function ERROR (HTTP ${res.status})`);
-        appendLog("sportsusa", truncate(text || "{}", 2000));
+        appendLog("sportsusa", JSON.stringify(data || {}, null, 2));
         appendLog("sportsusa", "[SportsUSA] NOTE: Verify your function name is EXACTLY sportsUSASeedSchools.js");
         return;
       }
@@ -932,7 +931,6 @@ export default function AdminImport() {
 
   /* ----------------------------
      Camps ingest: SchoolSportSite -> CampDemo
-     ✅ UPDATED logging to diagnose "version missing"
   ----------------------------- */
   async function upsertCampDemoByEventKey(payload) {
     if (!CampDemoEntity || !CampDemoEntity.create || !CampDemoEntity.update) {
@@ -1054,15 +1052,12 @@ export default function AdminImport() {
         .map((r) => ({
           school_id: r && r.school_id ? String(r.school_id) : null,
           sport_id: r && r.sport_id ? String(r.sport_id) : selectedSportId,
-          camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : (r && r.site_url ? String(r.site_url) : null),
+          camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : null,
         }))
         .filter((x) => !!x.camp_site_url);
 
       appendLog("camps", `[Camps] Prepared sites payload: ${sites.length} (non-null camp_site_url)`);
-      if (sites.length) {
-        const s0 = sites[0];
-        appendLog("camps", `[Camps] Sample site: school_id=${s0.school_id || "n/a"} url=${s0.camp_site_url || "n/a"}`);
-      }
+      if (sites.length) appendLog("camps", `[Camps] Sample site: school_id=${sites[0].school_id || "n/a"} url=${sites[0].camp_site_url || "n/a"}`);
 
       const tUrl = safeString(testSiteUrl);
       const tSchool = safeString(testSchoolId);
@@ -1092,7 +1087,6 @@ export default function AdminImport() {
         body: JSON.stringify(payload),
       });
 
-      // ✅ ALWAYS read text first so we can log non-JSON responses (e.g., gateway timeouts, HTML, empty body)
       const rawText = await res.text().catch(() => "");
       let data = null;
       try {
@@ -1101,30 +1095,16 @@ export default function AdminImport() {
         data = null;
       }
 
-      if (!res.ok) {
-        appendLog("camps", `[Camps] Function ERROR (HTTP ${res.status})`);
-        appendLog("camps", truncate(rawText || "{}", 2000));
-        return;
-      }
-
-      if (!data || typeof data !== "object") {
+      if (!data) {
         appendLog("camps", `[Camps] Function returned non-JSON or empty body (HTTP ${res.status}).`);
-        appendLog("camps", truncate(rawText || "{}", 2000));
+        if (rawText) appendLog("camps", `[Camps] Raw body (snippet): ${truncate(rawText, 1600)}`);
         return;
       }
 
       appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
-
-      // ✅ Log raw keys when version missing
-      if (!data.version) {
-        appendLog("camps", `[Camps] DEBUG: Function response keys: ${Object.keys(data).join(", ") || "(none)"}`);
-        appendLog("camps", `[Camps] DEBUG: Raw response snippet: ${truncate(rawText || "{}", 1200)}`);
-      }
-
-      const stats = data && data.stats ? data.stats : {};
       appendLog(
         "camps",
-        `[Camps] Function stats: processedSites=${stats.processedSites || 0} processedRegs=${stats.processedRegs || 0} accepted=${stats.accepted || 0} rejected=${stats.rejected || 0} errors=${stats.errors || 0}`
+        `[Camps] Function stats: processedSites=${data && data.stats ? data.stats.processedSites : 0} processedRegs=${data && data.stats ? data.stats.processedRegs : 0} accepted=${data && data.stats ? data.stats.accepted : 0} rejected=${data && data.stats ? data.stats.rejected : 0} errors=${data && data.stats ? data.stats.errors : 0}`
       );
 
       if (data && data.debug && data.debug.kpi) {
@@ -1155,24 +1135,11 @@ export default function AdminImport() {
         }
       }
 
-      // ✅ If function returned errors[] even with OK status, surface them
-      const errArr = asArray(data && data.errors ? data.errors : []);
-      if (errArr.length) {
-        appendLog("camps", `[Camps] Function errors (first 3):`);
-        for (let i = 0; i < Math.min(3, errArr.length); i++) {
-          appendLog("camps", `- ${truncate(JSON.stringify(errArr[i]), 260)}`);
-        }
-      }
-
       const acceptedRaw = asArray(data && data.accepted ? data.accepted : []);
       const accepted = acceptedRaw.map((x) => normalizeAcceptedRowToFlat(x));
 
       if (!accepted.length) {
         appendLog("camps", "[Camps] No accepted events returned from function.");
-        // ✅ extra hint if payload/crawl was empty
-        if (!tUrl && !sites.length) {
-          appendLog("camps", "[Camps] NOTE: sites[] was empty and no testSiteUrl provided. Function had nothing to crawl.");
-        }
         return;
       }
 
@@ -1258,7 +1225,7 @@ export default function AdminImport() {
 
         const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
 
-        const payload2 = {
+        const payloadWrite = {
           school_id,
           sport_id,
           camp_name,
@@ -1287,7 +1254,7 @@ export default function AdminImport() {
         };
 
         try {
-          const r = await upsertCampDemoByEventKey(payload2);
+          const r = await upsertCampDemoByEventKey(payloadWrite);
           if (r === "created") created += 1;
           if (r === "updated") updated += 1;
         } catch (e) {
@@ -1308,8 +1275,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Promote CampDemo -> Camp
-     ✅ UPDATED: scope (all vs one school) + guardrails + better log
+     Promote CampDemo -> Camp (kept minimal, plus scope)
   ----------------------------- */
   async function upsertCampByEventKey(payload) {
     if (!CampEntity || !CampEntity.create || !CampEntity.update) {
@@ -1427,6 +1393,12 @@ export default function AdminImport() {
 
     appendLog("promote", `[Promote] Starting: Promote CampDemo → Camp @ ${runIso}`);
 
+    if (!selectedSportId) {
+      appendLog("promote", "[Promote] ERROR: Select a sport first.");
+      setPromoteWorking(false);
+      return;
+    }
+
     if (!CampDemoEntity) {
       appendLog("promote", "[Promote] ERROR: CampDemo entity not available.");
       setPromoteWorking(false);
@@ -1440,32 +1412,19 @@ export default function AdminImport() {
       return;
     }
 
-    if (!selectedSportId) {
-      appendLog("promote", "[Promote] ERROR: Select a sport first.");
-      setPromoteWorking(false);
-      return;
-    }
-
-    const scope = promoteScope === "one" ? "one" : "all";
+    const scope = promoteScope === "one" ? "ONE" : "ALL";
     const schoolId = safeString(promoteSchoolId);
 
-    if (scope === "one" && !schoolId) {
+    if (scope === "ONE" && !schoolId) {
       appendLog("promote", "[Promote] ERROR: Scope=Specific school requires a school_id.");
       setPromoteWorking(false);
       return;
     }
 
+    const where = scope === "ONE" ? { sport_id: selectedSportId, school_id: schoolId } : { sport_id: selectedSportId };
+
     let demoRows = [];
     try {
-      const where = scope === "one"
-        ? { sport_id: selectedSportId, school_id: schoolId }
-        : { sport_id: selectedSportId };
-
-      appendLog(
-        "promote",
-        `[Promote] Query: sport=${selectedSportName || selectedSportId} | scope=${scope === "one" ? "Specific school" : "All schools"}${scope === "one" ? ` | school_id=${schoolId}` : ""}`
-      );
-
       demoRows = await entityList(CampDemoEntity, where);
     } catch (e) {
       appendLog("promote", `[Promote] ERROR reading CampDemo: ${String(e && e.message ? e.message : e)}`);
@@ -1475,7 +1434,7 @@ export default function AdminImport() {
 
     appendLog(
       "promote",
-      `[Promote] Found CampDemo rows: ${demoRows.length} (sport=${selectedSportName || selectedSportId}${scope === "one" ? `, school_id=${schoolId}` : ""})`
+      `[Promote] Found CampDemo rows: ${demoRows.length} (sport=${selectedSportName || selectedSportId}${scope === "ONE" ? `, school=${schoolId}` : ""})`
     );
 
     let created = 0;
@@ -1723,76 +1682,68 @@ export default function AdminImport() {
           <div className="font-semibold text-deep-navy">4) Promote CampDemo → Camp</div>
           <div className="text-sm text-slate-600 mt-1">Upserts by <b>event_key</b>. (Runs for the currently selected sport.)</div>
 
-          {/* ✅ NEW: Promote Scope Control */}
-          <div className="mt-3 border border-slate-200 rounded-lg bg-white p-3">
-            <div className="text-sm font-semibold text-slate-800">Promotion Scope</div>
+          {/* Scope UI (inside Promote card; layout preserved) */}
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-xs font-semibold text-slate-700">Promotion Scope</div>
 
-            <div className="mt-2 flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
+            <div className="mt-2 flex flex-wrap gap-4 text-sm">
+              <label className="flex items-center gap-2">
                 <input
                   type="radio"
-                  name="promote_scope"
+                  name="promoteScope"
+                  value="all"
                   checked={promoteScope === "all"}
-                  onChange={() => {
-                    setPromoteScope("all");
-                    setPromoteSchoolId("");
-                    setPromoteSitePickId("");
-                  }}
-                  disabled={promoteWorking || sportsUSAWorking || campsWorking || seedWorking}
+                  onChange={() => setPromoteScope("all")}
+                  disabled={promoteWorking}
                 />
                 All schools (selected sport)
               </label>
 
-              <label className="flex items-center gap-2 text-sm text-slate-700">
+              <label className="flex items-center gap-2">
                 <input
                   type="radio"
-                  name="promote_scope"
+                  name="promoteScope"
+                  value="one"
                   checked={promoteScope === "one"}
                   onChange={() => setPromoteScope("one")}
-                  disabled={promoteWorking || sportsUSAWorking || campsWorking || seedWorking}
+                  disabled={promoteWorking}
                 />
-                Specific school (by school_id)
+                Specific school
               </label>
             </div>
 
             {promoteScope === "one" ? (
               <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">School ID</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">school_id</label>
                   <input
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                     value={promoteSchoolId}
                     onChange={(e) => setPromoteSchoolId(e.target.value)}
-                    placeholder="Paste school_id (works even if School table UI hides id)"
+                    placeholder="Paste School.id"
                     disabled={promoteWorking}
                   />
-                  <div className="mt-1 text-[11px] text-slate-500">Guardrail: promotion will block if this is blank.</div>
+                  <div className="mt-1 text-[11px] text-slate-500">Paste a School.id directly (works even if School table UI doesn’t show id).</div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">School (from sites table) (optional)</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">School (from sites table)</label>
                   <select
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                    value={promoteSitePickId}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      setPromoteSitePickId(id);
-
-                      const hit = promoteSiteOptions.find((x) => x.id === id) || null;
-                      if (hit && hit.school_id) setPromoteSchoolId(hit.school_id);
-                    }}
+                    value={promoteSelectedSiteKey}
+                    onChange={(e) => setPromoteSelectedSiteKey(e.target.value)}
                     disabled={promoteWorking || promoteSitesLoading}
                   >
-                    <option value="">
-                      {promoteSitesLoading ? "Loading…" : "Pick from SchoolSportSite (recommended)"}
-                    </option>
-                    {promoteSiteOptions.map((x) => (
-                      <option key={x.id} value={x.id}>
-                        {x.camp_site_url ? x.camp_site_url : "(no url)"}  —  school_id: {x.school_id}
+                    <option value="">Select from SchoolSportSite…</option>
+                    {promoteSiteOptions.map((o) => (
+                      <option key={o.key} value={o.key}>
+                        {o.label} (school_id={o.school_id})
                       </option>
                     ))}
                   </select>
-                  <div className="mt-1 text-[11px] text-slate-500">Uses SchoolSportSite rows because school_id is reliably present there.</div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {promoteSitesLoading ? "Loading…" : `Options: ${promoteSiteOptions.length}`}
+                  </div>
                 </div>
               </div>
             ) : null}
