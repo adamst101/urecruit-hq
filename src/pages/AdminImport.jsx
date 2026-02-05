@@ -18,10 +18,7 @@ function safeString(x) {
   return s ? s : null;
 }
 
-// ✅ UPDATED: null/"" stays null (prevents Number(null) => 0)
 function safeNumber(x) {
-  if (x === null || x === undefined) return null;
-  if (typeof x === "string" && x.trim() === "") return null;
   const n = Number(x);
   return Number.isFinite(n) ? n : null;
 }
@@ -70,26 +67,6 @@ function lc(x) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-// ✅ NEW: prevent double-prefix keys (ryzer:ryzer:...)
-function normalizeEventKey(key) {
-  const k = safeString(key);
-  if (!k) return null;
-  return k.replace(/^ryzer:ryzer:/i, "ryzer:");
-}
-
-// ✅ NEW: guardrail for garbage camp_name leakage from HTML/tooltips
-function isGarbageCampName(name) {
-  const s = lc(name);
-  return (
-    !s ||
-    s.includes("data-toggle") ||
-    s.includes("tooltip") ||
-    s.includes("<td") ||
-    s.includes("valign=") ||
-    s.includes("register")
-  );
 }
 
 // Return YYYY-MM-DD (UTC) or null
@@ -776,7 +753,8 @@ export default function AdminImport() {
           sportName: selectedSportName,
           siteUrl: siteUrl,
           limit: Number(sportsUSALimit || 300),
-          dryRun: true,
+          // ✅ FIX: honor the checkbox
+          dryRun: !!sportsUSADryRun,
         }),
       });
 
@@ -876,10 +854,6 @@ export default function AdminImport() {
 
   /* ----------------------------
      Camps ingest: SchoolSportSite -> CampDemo
-     ✅ UPDATED: contract-compat for v9/v10 (flat accepted OR nested {event})
-     ✅ UPDATED: guardrail to prevent null school_id writes
-     ✅ UPDATED: payload matches CampDemo schema (no extra props)
-     ✅ UPDATED: fixes 0-price pollution + ryzer:ryzer: key + garbage camp_name
   ----------------------------- */
   async function upsertCampDemoByEventKey(payload) {
     if (!CampDemoEntity || !CampDemoEntity.create || !CampDemoEntity.update) {
@@ -906,9 +880,6 @@ export default function AdminImport() {
   }
 
   function normalizeAcceptedRowToFlat(a) {
-    // Supports:
-    // - flat: { camp_name, start_date, end_date, link_url, school_id, ... }
-    // - nested legacy: { event: { camp_name, start_date, ... }, derived, debug }
     if (!a) return {};
     if (a.event && typeof a.event === "object") {
       const e = a.event;
@@ -938,7 +909,7 @@ export default function AdminImport() {
         price_min: safeNumber(e.price_min),
         price_max: safeNumber(e.price_max),
         sections_json: safeObject(tryParseJson(e.sections_json)),
-        registration_url: safeString(e.link_url), // for sample logging compatibility
+        registration_url: safeString(e.link_url),
       };
     }
 
@@ -1022,7 +993,8 @@ export default function AdminImport() {
         body: JSON.stringify({
           sportId: selectedSportId,
           sportName: selectedSportName,
-          dryRun: true,
+          // ✅ FIX: honor the checkbox
+          dryRun: !!campsDryRun,
           maxSites: Number(campsMaxSites || 5),
           maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
           maxEvents: Number(campsMaxEvents || 25),
@@ -1055,16 +1027,12 @@ export default function AdminImport() {
         appendLog("camps", `[Camps] Site KPI: sitesWithRegLinks=${sk.sitesWithRegLinks || 0} sitesWithNoRegLinks=${sk.sitesWithNoRegLinks || 0}`);
       }
 
-      // Site debug (first 1)
       const siteDbg = asArray(data && data.debug && data.debug.siteDebug ? data.debug.siteDebug : []).slice(0, 1);
       if (siteDbg.length) {
         appendLog("camps", "[Camps] Site debug (first 1):");
         for (let i = 0; i < siteDbg.length; i++) {
           const sd = siteDbg[i] || {};
-          appendLog(
-            "camps",
-            `- siteUrl=${sd.siteUrl || ""} http=${sd.http || "n/a"} html=${sd.htmlType || ""} regLinks=${sd.regLinks || 0} sample=${sd.sample || ""}`
-          );
+          appendLog("camps", `- siteUrl=${sd.siteUrl || ""} http=${sd.http || "n/a"} html=${sd.htmlType || ""} regLinks=${sd.regLinks || 0} sample=${sd.sample || ""}`);
           if (sd.notes) appendLog("camps", `  notes=${String(sd.notes)}`);
         }
 
@@ -1083,7 +1051,6 @@ export default function AdminImport() {
         return;
       }
 
-      // Guardrail: if we're about to write, ensure school_id is present
       const missingSchoolIdCount = accepted.filter((a) => !safeString(a.school_id) && !tUrl).length;
       if (missingSchoolIdCount > 0) {
         appendLog("camps", `[Camps] GUARDRAIL: accepted rows missing school_id = ${missingSchoolIdCount}`);
@@ -1106,7 +1073,6 @@ export default function AdminImport() {
         return;
       }
 
-      // Write to CampDemo (schema-accurate)
       let created = 0;
       let updated = 0;
       let skipped = 0;
@@ -1116,11 +1082,8 @@ export default function AdminImport() {
         const a = accepted[i] || {};
 
         const school_id = safeString(a.school_id) || (tUrl ? safeString(tSchool) : null);
-        const sport_id = selectedSportId; // enforce current sport selection
-
-        // ✅ UPDATED: camp_name cleanup
-        let camp_name = safeString(a.camp_name);
-        if (isGarbageCampName(camp_name)) camp_name = "Camp";
+        const sport_id = selectedSportId;
+        const camp_name = safeString(a.camp_name);
 
         const start_date = toISODate(a.start_date);
         const end_date = toISODate(a.end_date);
@@ -1143,9 +1106,8 @@ export default function AdminImport() {
         const source_platform = safeString(a.source_platform) || "sportsusa";
         const source_url = safeString(a.source_url) || link_url;
 
-        // ✅ UPDATED: normalize any legacy/double-prefix keys
         const event_key =
-          normalizeEventKey(a.event_key) ||
+          safeString(a.event_key) ||
           buildEventKey({
             source_platform,
             program_id,
@@ -1169,7 +1131,6 @@ export default function AdminImport() {
             notes: safeString(a.notes),
           });
 
-        // ✅ IMPORTANT: payload matches CampDemo schema ONLY
         const payload = {
           school_id,
           sport_id,
@@ -1179,10 +1140,7 @@ export default function AdminImport() {
           city: safeString(a.city) || null,
           state: safeString(a.state) || null,
           position_ids: normalizeStringArray(a.position_ids),
-
-          // ✅ UPDATED: safeNumber prevents null => 0
           price: safeNumber(a.price),
-
           link_url: link_url || null,
           notes: safeString(a.notes) || null,
           season_year,
@@ -1196,11 +1154,8 @@ export default function AdminImport() {
           grades_raw: safeString(a.grades_raw) || null,
           register_by_raw: safeString(a.register_by_raw) || null,
           price_raw: safeString(a.price_raw) || null,
-
-          // ✅ UPDATED: safeNumber prevents null => 0
           price_min: safeNumber(a.price_min),
           price_max: safeNumber(a.price_max),
-
           sections_json: safeObject(a.sections_json) || null,
         };
 
@@ -1278,9 +1233,8 @@ export default function AdminImport() {
     const source_platform = safeString(r && r.source_platform) || "seed";
     const program_id = safeString(r && r.program_id) || `seed:${String(school_id)}:${slugify(camp_name)}`;
 
-    // ✅ UPDATED: normalize any double-prefix key before use
     const event_key =
-      normalizeEventKey(r && r.event_key) ||
+      safeString(r && r.event_key) ||
       buildEventKey({
         source_platform,
         program_id,
@@ -1767,4 +1721,3 @@ export default function AdminImport() {
     </div>
   );
 }
-
