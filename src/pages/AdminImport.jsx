@@ -31,6 +31,12 @@ function safeObject(x) {
   return x;
 }
 
+function truncate(s, n) {
+  const str = String(s ?? "");
+  const max = n || 1200;
+  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
+}
+
 function tryParseJson(value) {
   if (typeof value !== "string") return value;
   const s = value.trim();
@@ -47,7 +53,9 @@ function normalizeStringArray(value) {
   const v = tryParseJson(value);
 
   if (Array.isArray(v)) {
-    return v.map((x) => (x == null ? null : String(x).trim())).filter((x) => !!x);
+    return v
+      .map((x) => (x == null ? null : String(x).trim()))
+      .filter((x) => !!x);
   }
 
   const one = safeString(v);
@@ -68,13 +76,6 @@ function lc(x) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-// ✅ used in logging / non-JSON debug
-function truncate(s, n) {
-  const str = String(s ?? "");
-  const max = n ?? 800;
-  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
 }
 
 // Return YYYY-MM-DD (UTC) or null
@@ -198,6 +199,31 @@ async function entityList(Entity, whereObj) {
 }
 
 /* ----------------------------
+   ✅ Fetch JSON with debug (prevents “MISSING” mystery)
+----------------------------- */
+async function fetchJsonWithDebug(url, options) {
+  const res = await fetch(url, options);
+  const status = res.status;
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+
+  const text = await res.text().catch(() => "");
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+
+  return {
+    ok: res.ok,
+    status,
+    contentType,
+    text,
+    json,
+  };
+}
+
+/* ----------------------------
    Routes (hardcoded)
 ----------------------------- */
 const ROUTES = {
@@ -290,7 +316,9 @@ export default function AdminImport() {
   const SchoolEntity = base44 && base44.entities ? (base44.entities.School || base44.entities.Schools) : null;
   const SchoolSportSiteEntity = base44 && base44.entities ? (base44.entities.SchoolSportSite || base44.entities.SchoolSportSites) : null;
   const CampDemoEntity = base44 && base44.entities ? base44.entities.CampDemo : null;
+
   const PositionEntity = base44 && base44.entities ? (base44.entities.Position || base44.entities.Positions) : null;
+
   const CampEntity = base44 && base44.entities ? base44.entities.Camp : null;
 
   /* ----------------------------
@@ -343,39 +371,6 @@ export default function AdminImport() {
   // Test mode
   const [testSiteUrl, setTestSiteUrl] = useState("");
   const [testSchoolId, setTestSchoolId] = useState("");
-
-  /* ----------------------------
-     ✅ Promote scope controls
-  ----------------------------- */
-  const [promoteScope, setPromoteScope] = useState("all"); // "all" | "one"
-  const [promoteSchoolId, setPromoteSchoolId] = useState("");
-  const [promoteSiteOptions, setPromoteSiteOptions] = useState([]);
-  const [promoteSitesLoading, setPromoteSitesLoading] = useState(false);
-
-  async function loadPromoteSiteOptionsForSport(sportId) {
-    if (!SchoolSportSiteEntity || !sportId) {
-      setPromoteSiteOptions([]);
-      return;
-    }
-    setPromoteSitesLoading(true);
-    try {
-      const rows = await entityList(SchoolSportSiteEntity, { sport_id: sportId, active: true });
-      const normalized = asArray(rows)
-        .map((r) => ({
-          id: r && r.id ? String(r.id) : "",
-          school_id: r && r.school_id ? String(r.school_id) : "",
-          camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : "",
-        }))
-        .filter((x) => x.school_id);
-
-      normalized.sort((a, b) => (a.camp_site_url || "").localeCompare(b.camp_site_url || ""));
-      setPromoteSiteOptions(normalized);
-    } catch {
-      setPromoteSiteOptions([]);
-    } finally {
-      setPromoteSitesLoading(false);
-    }
-  }
 
   /* ----------------------------
      Positions manager
@@ -458,20 +453,6 @@ export default function AdminImport() {
     const guess = SPORTSUSA_DIRECTORY_BY_SPORTNAME[String(selectedSportName || "").trim()];
     if (guess) setSportsUSASiteUrl(guess);
   }, [selectedSportName]);
-
-  // refresh promote dropdown options when sport changes
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!selectedSportId) return;
-      await loadPromoteSiteOptionsForSport(selectedSportId);
-      if (cancelled) return;
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSportId]);
 
   /* ----------------------------
      Positions: load per sport
@@ -798,29 +779,31 @@ export default function AdminImport() {
         return;
       }
 
-      const res = await fetch("/functions/sportsUSASeedSchools", {
+      const payload = {
+        sportId: selectedSportId,
+        sportName: selectedSportName,
+        siteUrl: siteUrl,
+        limit: Number(sportsUSALimit || 300),
+        dryRun: !!sportsUSADryRun,
+      };
+
+      const result = await fetchJsonWithDebug("/functions/sportsUSASeedSchools", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sportId: selectedSportId,
-          sportName: selectedSportName,
-          siteUrl: siteUrl,
-          limit: Number(sportsUSALimit || 300),
-          dryRun: !!sportsUSADryRun,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        appendLog("sportsusa", `[SportsUSA] SportsUSA function ERROR (HTTP ${res.status})`);
-        appendLog("sportsusa", JSON.stringify(data || {}, null, 2));
-        appendLog("sportsusa", "[SportsUSA] NOTE: Verify your function name is EXACTLY sportsUSASeedSchools.js");
+      if (!result.ok || !result.json) {
+        appendLog("sportsusa", `[SportsUSA] Function response not usable (HTTP ${result.status}) content-type=${result.contentType || "n/a"}`);
+        appendLog("sportsusa", `[SportsUSA] Body snippet: ${truncate(result.text || "", 900)}`);
+        appendLog("sportsusa", "[SportsUSA] NOTE: Verify function file name is EXACTLY sportsUSASeedSchools.js and is deployed.");
         return;
       }
 
+      const data = result.json;
+
       const schools = asArray(data && data.schools ? data.schools : []);
-      appendLog("sportsusa", `[SportsUSA] SportsUSA fetched: schools_found=${schools.length} | http=${(data && data.stats && data.stats.http) ? data.stats.http : res.status}`);
+      appendLog("sportsusa", `[SportsUSA] SportsUSA fetched: schools_found=${schools.length} | http=${(data && data.stats && data.stats.http) ? data.stats.http : result.status}`);
 
       const sample = schools.slice(0, 3);
       if (sample.length) {
@@ -1023,7 +1006,7 @@ export default function AdminImport() {
       const siteRows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
       appendLog("camps", `[Camps] Loaded SchoolSportSite rows: ${siteRows.length} (active)`);
 
-      const preparedSites = asArray(siteRows)
+      const sitesAll = asArray(siteRows)
         .map((r) => ({
           school_id: r && r.school_id ? String(r.school_id) : null,
           sport_id: r && r.sport_id ? String(r.sport_id) : selectedSportId,
@@ -1031,10 +1014,10 @@ export default function AdminImport() {
         }))
         .filter((x) => !!x.camp_site_url);
 
-      appendLog("camps", `[Camps] Prepared sites payload: ${preparedSites.length} (non-null camp_site_url)`);
-      if (preparedSites.length) {
-        appendLog("camps", `[Camps] Sample site: school_id=${preparedSites[0].school_id || "n/a"} url=${preparedSites[0].camp_site_url || "n/a"}`);
-      }
+      appendLog("camps", `[Camps] Prepared sites payload: ${sitesAll.length} (non-null camp_site_url)`);
+
+      const sample = sitesAll[0] || null;
+      if (sample) appendLog("camps", `[Camps] Sample site: school_id=${sample.school_id || "n/a"} url=${sample.camp_site_url || ""}`);
 
       const tUrl = safeString(testSiteUrl);
       const tSchool = safeString(testSchoolId);
@@ -1044,47 +1027,36 @@ export default function AdminImport() {
         return;
       }
 
-      // ✅ CRITICAL FIX:
-      // If testSiteUrl is provided, DO NOT send the full 563 sites payload.
-      const payloadSites = tUrl ? [] : preparedSites;
+      // ✅ For full runs: testSiteUrl MUST be empty
+      appendLog("camps", `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesAll.length}, testSiteUrl=${tUrl ? "yes" : "no"})`);
 
-      appendLog("camps", `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${payloadSites.length}, testSiteUrl=${tUrl ? "yes" : "no"})`);
+      const payload = {
+        sportId: selectedSportId,
+        sportName: selectedSportName,
+        dryRun: !!campsDryRun,
+        maxSites: Number(campsMaxSites || 5),
+        maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
+        maxEvents: Number(campsMaxEvents || 25),
+        sites: sitesAll,
+        testSiteUrl: tUrl || null,
+        testSchoolId: tSchool || null,
+      };
 
-      const res = await fetch("/functions/sportsUSAIngestCamps", {
+      const result = await fetchJsonWithDebug("/functions/sportsUSAIngestCamps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sportId: selectedSportId,
-          sportName: selectedSportName,
-          dryRun: !!campsDryRun,
-          maxSites: Number(campsMaxSites || 5),
-          maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
-          maxEvents: Number(campsMaxEvents || 25),
-          sites: payloadSites,
-          testSiteUrl: tUrl || null,
-          testSchoolId: tSchool || null,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      const rawText = await res.text().catch(() => "");
-      let data = null;
-      try {
-        data = rawText ? JSON.parse(rawText) : null;
-      } catch {
-        data = null;
-      }
-
-      if (!res.ok) {
-        appendLog("camps", `[Camps] Function ERROR (HTTP ${res.status})`);
-        appendLog("camps", data ? JSON.stringify(data || {}, null, 2) : truncate(rawText, 600));
+      if (!result.ok || !result.json) {
+        appendLog("camps", `[Camps] Function returned non-JSON or empty body (HTTP ${result.status}).`);
+        appendLog("camps", `[Camps] content-type=${result.contentType || "n/a"}`);
+        appendLog("camps", `[Camps] Body snippet: ${truncate(result.text || "", 1200)}`);
+        appendLog("camps", `[Camps] Fix: confirm the function is deployed as functions/sportsUSAIngestCamps.js and the endpoint path matches EXACT casing.`);
         return;
       }
 
-      if (!data) {
-        appendLog("camps", `[Camps] Function returned non-JSON or empty body (HTTP ${res.status}).`);
-        appendLog("camps", `[Camps] Body (first 600 chars): ${truncate(rawText, 600) || "—empty—"}`);
-        return;
-      }
+      const data = result.json;
 
       appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
       appendLog(
@@ -1116,7 +1088,7 @@ export default function AdminImport() {
         const firstHtml = data && data.debug ? data.debug.firstSiteHtmlSnippet : null;
         if (firstHtml) {
           appendLog("camps", "[Camps] First site HTML snippet (debug):");
-          appendLog("camps", truncate(String(firstHtml), 900));
+          appendLog("camps", String(firstHtml));
         }
       }
 
@@ -1210,7 +1182,7 @@ export default function AdminImport() {
 
         const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
 
-        const payload = {
+        const payloadWrite = {
           school_id,
           sport_id,
           camp_name,
@@ -1239,7 +1211,7 @@ export default function AdminImport() {
         };
 
         try {
-          const r = await upsertCampDemoByEventKey(payload);
+          const r = await upsertCampDemoByEventKey(payloadWrite);
           if (r === "created") created += 1;
           if (r === "updated") updated += 1;
         } catch (e) {
@@ -1260,7 +1232,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Promote CampDemo -> Camp (scope-aware, upsert by event_key)
+     Promote CampDemo -> Camp (kept minimal)
   ----------------------------- */
   async function upsertCampByEventKey(payload) {
     if (!CampEntity || !CampEntity.create || !CampEntity.update) {
@@ -1391,30 +1363,16 @@ export default function AdminImport() {
       return;
     }
 
-    const scope = promoteScope === "one" ? "one" : "all";
-    const schoolId = safeString(promoteSchoolId);
-
-    if (scope === "one" && !schoolId) {
-      appendLog("promote", "[Promote] BLOCKED: Scope=Specific school but school_id is blank.");
-      setPromoteWorking(false);
-      return;
-    }
-
-    const where = scope === "one" ? { sport_id: selectedSportId, school_id: schoolId } : { sport_id: selectedSportId };
-
     let demoRows = [];
     try {
-      demoRows = await entityList(CampDemoEntity, where);
+      demoRows = await entityList(CampDemoEntity, { sport_id: selectedSportId });
     } catch (e) {
       appendLog("promote", `[Promote] ERROR reading CampDemo: ${String(e && e.message ? e.message : e)}`);
       setPromoteWorking(false);
       return;
     }
 
-    appendLog(
-      "promote",
-      `[Promote] Found CampDemo rows: ${demoRows.length} (sport=${selectedSportName || selectedSportId}${scope === "one" ? `, school=${schoolId}` : ""})`
-    );
+    appendLog("promote", `[Promote] Found CampDemo rows for sport: ${demoRows.length}`);
 
     let created = 0;
     let updated = 0;
@@ -1481,7 +1439,6 @@ export default function AdminImport() {
                   const hit = sports.find((x) => x.id === id) || null;
                   setSelectedSportId(id);
                   setSelectedSportName(hit && hit.name ? hit.name : "");
-                  setPromoteSchoolId("");
                 }}
                 disabled={sportsLoading || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}
               >
@@ -1623,10 +1580,10 @@ export default function AdminImport() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 value={testSiteUrl}
                 onChange={(e) => setTestSiteUrl(e.target.value)}
-                placeholder="https://www.pittfootballcamps.com/"
+                placeholder="https://www.hardingfootballcamps.com/"
                 disabled={campsWorking}
               />
-              <div className="mt-1 text-[11px] text-slate-500">If set, runs single-site mode. (Now sends a tiny payload.)</div>
+              <div className="mt-1 text-[11px] text-slate-500">If set, runs single-site mode. Dry run works even if it’s not in SchoolSportSite.</div>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Test School ID (required for writes)</label>
@@ -1661,54 +1618,6 @@ export default function AdminImport() {
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">4) Promote CampDemo → Camp</div>
           <div className="text-sm text-slate-600 mt-1">Upserts by <b>event_key</b>. (Runs for the currently selected sport.)</div>
-
-          {/* ✅ Scope controls inside Promote card */}
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <div className="text-xs font-semibold text-slate-700 mb-2">Promotion scope</div>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="radio" name="promoteScope" checked={promoteScope === "all"} onChange={() => setPromoteScope("all")} disabled={promoteWorking} />
-                All schools (selected sport)
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700 mt-1">
-                <input type="radio" name="promoteScope" checked={promoteScope === "one"} onChange={() => setPromoteScope("one")} disabled={promoteWorking} />
-                Specific school
-              </label>
-              <div className="mt-1 text-[11px] text-slate-500">Use “Specific school” to validate safely before promoting everything.</div>
-            </div>
-
-            <div className={promoteScope === "one" ? "" : "opacity-50 pointer-events-none select-none"}>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">school_id</label>
-              <input
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={promoteSchoolId}
-                onChange={(e) => setPromoteSchoolId(e.target.value)}
-                placeholder="Paste School.id"
-                disabled={promoteWorking}
-              />
-
-              <div className="mt-2">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">School (from sites table)</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                  value=""
-                  onChange={(e) => {
-                    const sid = safeString(e.target.value);
-                    if (sid) setPromoteSchoolId(sid);
-                  }}
-                  disabled={promoteWorking || promoteSitesLoading}
-                >
-                  <option value="">{promoteSitesLoading ? "Loading…" : "Pick a school_id from SchoolSportSite…"}</option>
-                  {promoteSiteOptions.map((o) => (
-                    <option key={o.id} value={o.school_id}>
-                      {o.school_id} — {o.camp_site_url || ""}
-                    </option>
-                  ))}
-                </select>
-                <div className="mt-1 text-[11px] text-slate-500">This uses SchoolSportSite because it reliably contains school_id even if School table UI doesn’t show it.</div>
-              </div>
-            </div>
-          </div>
 
           <div className="mt-3 flex gap-2">
             <Button onClick={promoteCampDemoToCamp} disabled={!selectedSportId || promoteWorking || sportsUSAWorking || campsWorking || seedWorking}>
