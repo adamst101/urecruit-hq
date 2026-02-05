@@ -294,9 +294,7 @@ export default function AdminImport() {
   const SchoolEntity = base44 && base44.entities ? (base44.entities.School || base44.entities.Schools) : null;
   const SchoolSportSiteEntity = base44 && base44.entities ? (base44.entities.SchoolSportSite || base44.entities.SchoolSportSites) : null;
   const CampDemoEntity = base44 && base44.entities ? base44.entities.CampDemo : null;
-
   const PositionEntity = base44 && base44.entities ? (base44.entities.Position || base44.entities.Positions) : null;
-
   const CampEntity = base44 && base44.entities ? base44.entities.Camp : null;
 
   /* ----------------------------
@@ -345,6 +343,14 @@ export default function AdminImport() {
   const [campsMaxSites, setCampsMaxSites] = useState(5);
   const [campsMaxRegsPerSite, setCampsMaxRegsPerSite] = useState(5);
   const [campsMaxEvents, setCampsMaxEvents] = useState(25);
+
+  // ✅ NEW: runtime knobs (match v16 function defaults)
+  const [campsFastMode, setCampsFastMode] = useState(true);
+  const [campsMaxMs, setCampsMaxMs] = useState(45000);
+  const [campsSiteTimeoutMs, setCampsSiteTimeoutMs] = useState(12000);
+  const [campsRegTimeoutMs, setCampsRegTimeoutMs] = useState(12000);
+  const [campsNameTimeoutMs, setCampsNameTimeoutMs] = useState(6000);
+  const [campsMaxRegFetchTotal, setCampsMaxRegFetchTotal] = useState(250);
 
   // Test mode
   const [testSiteUrl, setTestSiteUrl] = useState("");
@@ -765,7 +771,6 @@ export default function AdminImport() {
           sportName: selectedSportName,
           siteUrl: siteUrl,
           limit: Number(sportsUSALimit || 300),
-          // ✅ send the toggle
           dryRun: !!sportsUSADryRun,
         }),
       });
@@ -795,9 +800,7 @@ export default function AdminImport() {
       const schools = asArray(data && data.schools ? data.schools : []);
       appendLog(
         "sportsusa",
-        `[SportsUSA] SportsUSA fetched: schools_found=${schools.length} | http=${
-          data && data.stats && data.stats.http ? data.stats.http : res.status
-        }`
+        `[SportsUSA] SportsUSA fetched: schools_found=${schools.length} | http=${data && data.stats && data.stats.http ? data.stats.http : res.status}`
       );
 
       const sample = schools.slice(0, 3);
@@ -979,10 +982,6 @@ export default function AdminImport() {
     setLogCamps("");
 
     appendLog("camps", `[Camps] Starting: SportsUSA Camps Ingest (${selectedSportName}) @ ${runIso}`);
-    appendLog(
-      "camps",
-      `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${campsMaxSites} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents}`
-    );
 
     try {
       if (!selectedSportId) {
@@ -998,6 +997,21 @@ export default function AdminImport() {
         return;
       }
 
+      const tUrl = safeString(testSiteUrl);
+      const tSchool = safeString(testSchoolId);
+
+      // Guardrail: test mode should never crawl multiple sites
+      const maxSitesEffective = tUrl ? 1 : Number(campsMaxSites || 5);
+
+      appendLog(
+        "camps",
+        `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${maxSitesEffective} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents} | fastMode=${campsFastMode ? "true" : "false"}`
+      );
+      appendLog(
+        "camps",
+        `[Camps] Runtime: maxMs=${campsMaxMs} siteTimeoutMs=${campsSiteTimeoutMs} regTimeoutMs=${campsRegTimeoutMs} nameTimeoutMs=${campsNameTimeoutMs} maxRegFetchTotal=${campsMaxRegFetchTotal}`
+      );
+
       const siteRows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
       appendLog("camps", `[Camps] Loaded SchoolSportSite rows: ${siteRows.length} (active)`);
 
@@ -1009,22 +1023,22 @@ export default function AdminImport() {
         }))
         .filter((x) => !!x.camp_site_url);
 
-      const tUrl = safeString(testSiteUrl);
-      const tSchool = safeString(testSchoolId);
-
       if (tUrl && !campsDryRun && !tSchool) {
         appendLog("camps", "[Camps] ERROR: For non-dry-run with Test Site URL, you must provide Test School ID.");
         return;
       }
 
-      // ✅ IMPORTANT: If testSiteUrl is set, do NOT send the full sites list
+      // IMPORTANT: If testSiteUrl is set, do NOT send the full sites list
       const sitesToSend = tUrl ? [] : sites;
 
       appendLog("camps", `[Camps] Prepared sites payload: ${sites.length} (non-null camp_site_url)`);
       if (sites.length) {
         appendLog("camps", `[Camps] Sample site: school_id=${sites[0].school_id || ""} url=${sites[0].camp_site_url || ""}`);
       }
-      appendLog("camps", `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesToSend.length}, testSiteUrl=${tUrl ? tUrl : "no"})`);
+      appendLog(
+        "camps",
+        `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesToSend.length}, testSiteUrl=${tUrl ? tUrl : "no"})`
+      );
 
       const res = await fetch("/functions/sportsUSAIngestCamps", {
         method: "POST",
@@ -1033,16 +1047,26 @@ export default function AdminImport() {
           sportId: selectedSportId,
           sportName: selectedSportName,
           dryRun: !!campsDryRun,
-          maxSites: Number(campsMaxSites || 5),
+
+          maxSites: maxSitesEffective,
           maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
           maxEvents: Number(campsMaxEvents || 25),
+
+          // ✅ new knobs (v16)
+          fastMode: !!campsFastMode,
+          maxMs: Number(campsMaxMs || 45000),
+          siteTimeoutMs: Number(campsSiteTimeoutMs || 12000),
+          regTimeoutMs: Number(campsRegTimeoutMs || 12000),
+          nameTimeoutMs: Number(campsNameTimeoutMs || 6000),
+          maxRegFetchTotal: Number(campsMaxRegFetchTotal || 250),
+
           sites: sitesToSend,
           testSiteUrl: tUrl || null,
           testSchoolId: tSchool || null,
         }),
       });
 
-      // ✅ Robust parse: capture raw response if not JSON
+      // Robust parse: capture raw response if not JSON
       let data = null;
       let rawText = null;
 
@@ -1068,7 +1092,11 @@ export default function AdminImport() {
       appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
       appendLog(
         "camps",
-        `[Camps] Function stats: processedSites=${data && data.stats ? data.stats.processedSites : 0} processedRegs=${data && data.stats ? data.stats.processedRegs : 0} accepted=${data && data.stats ? data.stats.accepted : 0} rejected=${data && data.stats ? data.stats.rejected : 0} errors=${data && data.stats ? data.stats.errors : 0}`
+        `[Camps] Function stats: processedSites=${data && data.stats ? data.stats.processedSites : 0} processedRegs=${
+          data && data.stats ? data.stats.processedRegs : 0
+        } accepted=${data && data.stats ? data.stats.accepted : 0} rejected=${data && data.stats ? data.stats.rejected : 0} errors=${
+          data && data.stats ? data.stats.errors : 0
+        }`
       );
 
       if (data && data.debug && data.debug.received) {
@@ -1079,13 +1107,27 @@ export default function AdminImport() {
         );
       }
 
+      // ✅ KPI keys updated: support both older and v16
       if (data && data.debug && data.debug.kpi) {
         const k = data.debug.kpi;
-        appendLog("camps", `[Camps] Date KPI: listing=${k.datesParsedFromListing || 0} ryzer=${k.datesParsedFromRyzer || 0} missing=${k.datesMissing || 0}`);
-      }
-      if (data && data.debug && data.debug.siteKpi) {
-        const sk = data.debug.siteKpi;
-        appendLog("camps", `[Camps] Site KPI: sitesWithRegLinks=${sk.sitesWithRegLinks || 0} sitesWithNoRegLinks=${sk.sitesWithNoRegLinks || 0}`);
+        const listing = k.datesParsedFromListing ?? 0;
+
+        // v14/v15 used datesParsedFromRyzer, v16 uses datesParsedFromDetail
+        const detail = k.datesParsedFromDetail ?? k.datesParsedFromRyzer ?? 0;
+        const missing = k.datesMissing ?? 0;
+
+        const namesFromListing = k.namesFromListing ?? 0;
+        const namesFromDetail = k.namesFromDetail ?? 0;
+        const namesMissing = k.namesMissing ?? 0;
+        const namesRejected = k.namesRejectedByQualityGate ?? 0;
+
+        appendLog("camps", `[Camps] Date KPI: listing=${listing} detail=${detail} missing=${missing}`);
+        if (namesFromListing || namesFromDetail || namesMissing || namesRejected) {
+          appendLog(
+            "camps",
+            `[Camps] Name KPI: listing=${namesFromListing} detail=${namesFromDetail} missing=${namesMissing} qualityReject=${namesRejected}`
+          );
+        }
       }
 
       const siteDbg = asArray(data && data.debug && data.debug.siteDebug ? data.debug.siteDebug : []).slice(0, 1);
@@ -1093,7 +1135,10 @@ export default function AdminImport() {
         appendLog("camps", "[Camps] Site debug (first 1):");
         for (let i = 0; i < siteDbg.length; i++) {
           const sd = siteDbg[i] || {};
-          appendLog("camps", `- siteUrl=${sd.siteUrl || ""} http=${sd.http || "n/a"} html=${sd.htmlType || ""} regLinks=${sd.regLinks || 0} sample=${sd.sample || ""}`);
+          appendLog(
+            "camps",
+            `- siteUrl=${sd.siteUrl || ""} http=${sd.http || "n/a"} html=${sd.htmlType || ""} regLinks=${sd.regLinks || 0} sample=${sd.sample || ""}`
+          );
           if (sd.notes) appendLog("camps", `  notes=${String(sd.notes)}`);
         }
 
@@ -1192,7 +1237,6 @@ export default function AdminImport() {
             notes: safeString(a.notes),
           });
 
-        // ✅ prefer price_max as the single price
         const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
 
         const payload = {
@@ -1585,6 +1629,79 @@ export default function AdminImport() {
             </div>
           </div>
 
+          {/* ✅ Runtime knobs */}
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={campsFastMode} onChange={(e) => setCampsFastMode(e.target.checked)} disabled={campsWorking} />
+                fastMode (skip detail fetch when listing has date)
+              </label>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">maxMs</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={campsMaxMs}
+                onChange={(e) => setCampsMaxMs(Number(e.target.value || 0))}
+                min={5000}
+                max={120000}
+                disabled={campsWorking}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">maxRegFetchTotal</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={campsMaxRegFetchTotal}
+                onChange={(e) => setCampsMaxRegFetchTotal(Number(e.target.value || 0))}
+                min={10}
+                max={2000}
+                disabled={campsWorking}
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">siteTimeoutMs</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={campsSiteTimeoutMs}
+                onChange={(e) => setCampsSiteTimeoutMs(Number(e.target.value || 0))}
+                min={2000}
+                max={60000}
+                disabled={campsWorking}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">regTimeoutMs</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={campsRegTimeoutMs}
+                onChange={(e) => setCampsRegTimeoutMs(Number(e.target.value || 0))}
+                min={2000}
+                max={60000}
+                disabled={campsWorking}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">nameTimeoutMs</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={campsNameTimeoutMs}
+                onChange={(e) => setCampsNameTimeoutMs(Number(e.target.value || 0))}
+                min={1000}
+                max={20000}
+                disabled={campsWorking}
+              />
+            </div>
+          </div>
+
           {/* Test Mode */}
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -1593,7 +1710,7 @@ export default function AdminImport() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 value={testSiteUrl}
                 onChange={(e) => setTestSiteUrl(e.target.value)}
-                placeholder="https://www.hardingfootballcamps.com/"
+                placeholder="https://www.montanafootballcamps.com/register.cfm"
                 disabled={campsWorking}
               />
               <div className="mt-1 text-[11px] text-slate-500">If set, runs single-site mode. Dry run works even if it’s not in SchoolSportSite.</div>
