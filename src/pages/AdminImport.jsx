@@ -18,6 +18,7 @@ function safeString(x) {
   return s ? s : null;
 }
 
+// ✅ FIX: null/"" should stay null, not become 0
 function safeNumber(x) {
   if (x == null) return null;
   if (typeof x === "string" && !x.trim()) return null;
@@ -192,15 +193,6 @@ async function entityList(Entity, whereObj) {
 }
 
 /* ----------------------------
-   Truncate helper (logs)
------------------------------ */
-function truncate(s, n) {
-  const str = String(s ?? "");
-  const max = Number(n ?? 500);
-  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
-}
-
-/* ----------------------------
    Routes (hardcoded)
 ----------------------------- */
 const ROUTES = {
@@ -283,6 +275,55 @@ const DEFAULT_POSITION_SEEDS = {
   ],
 };
 
+/* ----------------------------
+   ✅ Truncate helper
+----------------------------- */
+function truncate(s, n) {
+  const str = String(s ?? "");
+  const max = Number(n ?? 500);
+  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
+}
+
+/* ----------------------------
+   ✅ Crawl-state helpers
+----------------------------- */
+function parseIsoOrNull(x) {
+  const s = safeString(x);
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isDueNow(site) {
+  // due if:
+  // - next_crawl_at missing OR next_crawl_at <= now
+  // and active=true
+  const now = new Date();
+  const next = parseIsoOrNull(site && site.next_crawl_at);
+  return !next || next <= now;
+}
+
+function statusOf(site) {
+  const s = safeString(site && site.crawl_status);
+  return s || "ready";
+}
+
+function normalizeSiteRow(r) {
+  return {
+    id: r && r.id ? String(r.id) : "",
+    school_id: r && r.school_id ? String(r.school_id) : null,
+    sport_id: r && r.sport_id ? String(r.sport_id) : null,
+    camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : null,
+    active: typeof r && typeof r.active === "boolean" ? r.active : !!(r && r.active),
+    crawl_status: statusOf(r),
+    last_crawled_at: safeString(r && r.last_crawled_at),
+    next_crawl_at: safeString(r && r.next_crawl_at),
+    crawl_error: safeString(r && r.crawl_error),
+    last_crawl_run_id: safeString(r && r.last_crawl_run_id),
+    raw: r,
+  };
+}
+
 export default function AdminImport() {
   const nav = useNavigate();
 
@@ -293,13 +334,11 @@ export default function AdminImport() {
   const SchoolEntity = base44 && base44.entities ? (base44.entities.School || base44.entities.Schools) : null;
   const SchoolSportSiteEntity = base44 && base44.entities ? (base44.entities.SchoolSportSite || base44.entities.SchoolSportSites) : null;
   const CampDemoEntity = base44 && base44.entities ? base44.entities.CampDemo : null;
-
   const PositionEntity = base44 && base44.entities ? (base44.entities.Position || base44.entities.Positions) : null;
-
   const CampEntity = base44 && base44.entities ? base44.entities.Camp : null;
 
   /* ----------------------------
-     One Sport selection to rule them all
+     Sport selector
   ----------------------------- */
   const [sports, setSports] = useState([]);
   const [sportsLoading, setSportsLoading] = useState(false);
@@ -313,7 +352,7 @@ export default function AdminImport() {
   const [logCamps, setLogCamps] = useState("");
   const [logPromote, setLogPromote] = useState("");
   const [logPositions, setLogPositions] = useState("");
-  const [logEnrich, setLogEnrich] = useState("");
+  const [logCounters, setLogCounters] = useState("");
 
   function appendLog(which, line) {
     const add = (prev) => (prev ? prev + "\n" + line : line);
@@ -321,7 +360,7 @@ export default function AdminImport() {
     if (which === "camps") setLogCamps(add);
     if (which === "promote") setLogPromote(add);
     if (which === "positions") setLogPositions(add);
-    if (which === "enrich") setLogEnrich(add);
+    if (which === "counters") setLogCounters(add);
   }
 
   /* ----------------------------
@@ -331,7 +370,8 @@ export default function AdminImport() {
   const [campsWorking, setCampsWorking] = useState(false);
   const [promoteWorking, setPromoteWorking] = useState(false);
   const [seedWorking, setSeedWorking] = useState(false);
-  const [enrichWorking, setEnrichWorking] = useState(false);
+  const [countersWorking, setCountersWorking] = useState(false);
+  const [resetWorking, setResetWorking] = useState(false);
 
   /* ----------------------------
      Seed Schools controls
@@ -344,47 +384,152 @@ export default function AdminImport() {
      Camps ingest controls
   ----------------------------- */
   const [campsDryRun, setCampsDryRun] = useState(true);
-  const [campsMaxSites, setCampsMaxSites] = useState(25);
-  const [campsMaxRegsPerSite, setCampsMaxRegsPerSite] = useState(10);
-  const [campsMaxEvents, setCampsMaxEvents] = useState(500);
+  const [campsMaxSites, setCampsMaxSites] = useState(5);
+  const [campsMaxRegsPerSite, setCampsMaxRegsPerSite] = useState(5);
+  const [campsMaxEvents, setCampsMaxEvents] = useState(25);
 
-  // Runtime knobs (passed to function)
-  const [fastMode, setFastMode] = useState(false); // ✅ default OFF for quality
-  const [maxMs, setMaxMs] = useState(45000);
-  const [siteTimeoutMs, setSiteTimeoutMs] = useState(12000);
-  const [regTimeoutMs, setRegTimeoutMs] = useState(12000);
-  const [nameTimeoutMs, setNameTimeoutMs] = useState(6000);
-  const [maxRegFetchTotal, setMaxRegFetchTotal] = useState(250);
+  const [fastMode, setFastMode] = useState(false);
+
+  // Rerun mode (this is your missing piece)
+  const RERUN_MODES = [
+    { id: "due", label: "Due only (normal)" },
+    { id: "all", label: "Force recrawl ALL active" },
+    { id: "error", label: "Recrawl ERROR only" },
+    { id: "no_events", label: "Recrawl NO_EVENTS only" },
+    { id: "ok", label: "Recrawl OK only" },
+    { id: "ready", label: "Recrawl READY only" },
+  ];
+  const [rerunMode, setRerunMode] = useState("due");
 
   // Test mode
   const [testSiteUrl, setTestSiteUrl] = useState("");
   const [testSchoolId, setTestSchoolId] = useState("");
 
   /* ----------------------------
-     Enrichment controls (fix "Register" + missing price)
+     Crawl Counters (for the countdown you want)
   ----------------------------- */
-  const [enrichDryRun, setEnrichDryRun] = useState(true);
-  const [enrichLimit, setEnrichLimit] = useState(200);
-  const [enrichSeasonYear, setEnrichSeasonYear] = useState(new Date().getUTCFullYear());
-  const [enrichOnlyRegister, setEnrichOnlyRegister] = useState(true);
-  const [enrichOnlyMissingPrice, setEnrichOnlyMissingPrice] = useState(true);
+  const [siteCounters, setSiteCounters] = useState({
+    active: 0,
+    ready: 0,
+    ok: 0,
+    no_events: 0,
+    error: 0,
+    dueNow: 0,
+    done: 0,
+  });
+
+  async function refreshCrawlCounters() {
+    const nowIso = new Date().toISOString();
+    setCountersWorking(true);
+
+    try {
+      if (!selectedSportId) {
+        setSiteCounters({ active: 0, ready: 0, ok: 0, no_events: 0, error: 0, dueNow: 0, done: 0 });
+        appendLog("counters", `[Counters] Select a sport first.`);
+        return;
+      }
+      if (!SchoolSportSiteEntity) {
+        appendLog("counters", `[Counters] ERROR: SchoolSportSite entity not available.`);
+        return;
+      }
+
+      const rows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
+      const sites = rows.map(normalizeSiteRow);
+
+      let active = sites.length;
+      let ready = 0;
+      let ok = 0;
+      let no_events = 0;
+      let error = 0;
+      let dueNow = 0;
+
+      for (const s of sites) {
+        const st = statusOf(s);
+        if (st === "ready") ready += 1;
+        if (st === "ok") ok += 1;
+        if (st === "no_events") no_events += 1;
+        if (st === "error") error += 1;
+        if (isDueNow(s)) dueNow += 1;
+      }
+
+      const done = ok + no_events + error; // “touched” states (not ready)
+      setSiteCounters({ active, ready, ok, no_events, error, dueNow, done });
+
+      const pct = active ? Math.round((done / active) * 1000) / 10 : 0;
+      appendLog(
+        "counters",
+        `[Counters] Refreshed @ ${nowIso} | Sites: active=${active} done=${done} (${pct}%) ready=${ready} ok=${ok} no_events=${no_events} error=${error} dueNow=${dueNow}`
+      );
+    } catch (e) {
+      appendLog("counters", `[Counters] ERROR: ${String(e && e.message ? e.message : e)}`);
+    } finally {
+      setCountersWorking(false);
+    }
+  }
+
+  // Refresh counters when sport changes
+  useEffect(() => {
+    if (!selectedSportId) return;
+    refreshCrawlCounters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSportId]);
+
+  async function resetCrawlStateForSport() {
+    const runIso = new Date().toISOString();
+    setResetWorking(true);
+    appendLog("camps", `[Camps] Reset crawl-state requested @ ${runIso}`);
+
+    try {
+      if (!selectedSportId) return appendLog("camps", "[Camps] ERROR: Select a sport first.");
+      if (!SchoolSportSiteEntity || !SchoolSportSiteEntity.update) {
+        return appendLog("camps", "[Camps] ERROR: SchoolSportSite update not available.");
+      }
+
+      const rows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
+      const sites = rows.map(normalizeSiteRow).filter((x) => x.id);
+
+      appendLog("camps", `[Camps] Resetting ${sites.length} SchoolSportSite rows to READY…`);
+
+      let updated = 0;
+      let errors = 0;
+
+      for (let i = 0; i < sites.length; i++) {
+        const s = sites[i];
+        try {
+          await SchoolSportSiteEntity.update(String(s.id), {
+            crawl_status: "ready",
+            crawl_error: null,
+            last_crawled_at: null,
+            next_crawl_at: null,
+            last_crawl_run_id: null,
+            last_seen_at: runIso,
+          });
+          updated += 1;
+        } catch {
+          errors += 1;
+        }
+        if ((i + 1) % 50 === 0) appendLog("camps", `[Camps] Reset progress: ${i + 1}/${sites.length}`);
+        await sleep(10);
+      }
+
+      appendLog("camps", `[Camps] Reset done. updated=${updated} errors=${errors}`);
+      await refreshCrawlCounters();
+    } finally {
+      setResetWorking(false);
+    }
+  }
 
   /* ----------------------------
-     Progress / counters (so you know when you’re done)
+     Positions manager
   ----------------------------- */
-  const [siteProgressLoading, setSiteProgressLoading] = useState(false);
-  const [siteTotals, setSiteTotals] = useState({ totalActive: 0, dueNow: 0, ok: 0, no_events: 0, error: 0, ready: 0 });
-  const [siteDonePct, setSiteDonePct] = useState(0);
-
-  const [campTotalsLoading, setCampTotalsLoading] = useState(false);
-  const [campTotals, setCampTotals] = useState({
-    total: 0,
-    registerName: 0,
-    missingPrice: 0,
-    bad: 0,
-    sport: 0,
-    season: 0,
-  });
+  const [positions, setPositions] = useState([]);
+  const [positionsLoading, setPositionsLoading] = useState(false);
+  const [positionsEdit, setPositionsEdit] = useState({});
+  const [positionAddCode, setPositionAddCode] = useState("");
+  const [positionAddName, setPositionAddName] = useState("");
+  const [positionAddWorking, setPositionAddWorking] = useState(false);
+  const [positionSaveWorking, setPositionSaveWorking] = useState(false);
+  const [positionDeleteWorking, setPositionDeleteWorking] = useState("");
 
   const seedListForSelectedSport = useMemo(() => {
     const name = String(selectedSportName || "").trim();
@@ -457,117 +602,8 @@ export default function AdminImport() {
   }, [selectedSportName]);
 
   /* ----------------------------
-     Site progress + Camp totals
-  ----------------------------- */
-  function isDue(siteRow, nowIso) {
-    // "done" sites are ok/no_events
-    const status = String(siteRow?.crawl_status || "ready").trim().toLowerCase();
-    if (status === "ok" || status === "no_events") return false;
-
-    const nextAt = safeString(siteRow?.next_crawl_at);
-    if (!nextAt) return true;
-
-    const now = new Date(nowIso);
-    const t = new Date(nextAt);
-    if (Number.isNaN(t.getTime())) return true;
-    return t.getTime() <= now.getTime();
-  }
-
-  async function refreshProgressCounters() {
-    if (!selectedSportId || !SchoolSportSiteEntity) return;
-
-    const runIso = new Date().toISOString();
-    setSiteProgressLoading(true);
-    setCampTotalsLoading(true);
-
-    try {
-      const siteRows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
-      const totalActive = siteRows.length;
-
-      let dueNow = 0;
-      let ok = 0;
-      let no_events = 0;
-      let error = 0;
-      let ready = 0;
-
-      for (const r of siteRows) {
-        const st = String(r?.crawl_status || "ready").trim().toLowerCase();
-        if (st === "ok") ok += 1;
-        else if (st === "no_events") no_events += 1;
-        else if (st === "error") error += 1;
-        else ready += 1;
-
-        if (isDue(r, runIso)) dueNow += 1;
-      }
-
-      const done = ok + no_events;
-      const pct = totalActive > 0 ? Math.round((done / totalActive) * 1000) / 10 : 0;
-
-      setSiteTotals({ totalActive, dueNow, ok, no_events, error, ready });
-      setSiteDonePct(pct);
-
-      // CampDemo quality counters
-      if (CampDemoEntity) {
-        const allDemo = await entityList(CampDemoEntity, { sport_id: selectedSportId });
-        const sportCount = allDemo.length;
-
-        // If season_year exists on rows, use it, but don’t require it.
-        const seasonRows = allDemo.filter((r) => safeNumber(r?.season_year) === safeNumber(enrichSeasonYear));
-        const seasonCount = seasonRows.length;
-
-        const base = seasonCount ? seasonRows : allDemo;
-
-        const registerName = base.filter((r) => String(r?.camp_name || "").trim().toLowerCase() === "register").length;
-        const missingPrice = base.filter((r) => r?.price == null || Number(r?.price) === 0).length;
-        const bad = base.filter((r) => String(r?.camp_name || "").trim().toLowerCase() === "register" || r?.price == null || Number(r?.price) === 0).length;
-
-        setCampTotals({
-          total: base.length,
-          registerName,
-          missingPrice,
-          bad,
-          sport: sportCount,
-          season: seasonCount,
-        });
-      } else {
-        setCampTotals((prev) => ({ ...prev, total: 0, registerName: 0, missingPrice: 0, bad: 0 }));
-      }
-
-      appendLog("camps", `[Counters] Refreshed @ ${runIso} | Sites: active=${totalActive} done=${done} (${pct}%) dueNow=${dueNow}`);
-    } catch (e) {
-      appendLog("camps", `[Counters] ERROR: ${String(e?.message || e)}`);
-    } finally {
-      setSiteProgressLoading(false);
-      setCampTotalsLoading(false);
-    }
-  }
-
-  // refresh counters when sport changes
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!selectedSportId) return;
-      await refreshProgressCounters();
-      if (cancelled) return;
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSportId]);
-
-  /* ----------------------------
      Positions: load per sport
   ----------------------------- */
-  const [positions, setPositions] = useState([]);
-  const [positionsLoading, setPositionsLoading] = useState(false);
-  const [positionsEdit, setPositionsEdit] = useState({});
-  const [positionAddCode, setPositionAddCode] = useState("");
-  const [positionAddName, setPositionAddName] = useState("");
-  const [positionAddWorking, setPositionAddWorking] = useState(false);
-  const [positionSaveWorking, setPositionSaveWorking] = useState(false);
-  const [positionDeleteWorking, setPositionDeleteWorking] = useState("");
-
   async function loadPositionsForSport(sportId) {
     if (!PositionEntity || !sportId) {
       setPositions([]);
@@ -634,9 +670,7 @@ export default function AdminImport() {
       existing = [];
     }
 
-    const hit = asArray(existing).find(
-      (r) => String(r && r.position_code ? r.position_code : "").trim().toUpperCase() === position_code
-    );
+    const hit = asArray(existing).find((r) => String(r && r.position_code ? r.position_code : "").trim().toUpperCase() === position_code);
 
     const payload = { sport_id: sportId, position_code, position_name };
 
@@ -778,7 +812,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     SportsUSA Seed Schools
+     SportsUSA Seed Schools (unchanged from your version)
   ----------------------------- */
   async function upsertSchoolBySourceKey({ school_name, logo_url, source_key, source_school_url }) {
     if (!SchoolEntity || !SchoolEntity.create || !SchoolEntity.update) {
@@ -853,8 +887,7 @@ export default function AdminImport() {
       active: true,
       needs_review: false,
       last_seen_at: new Date().toISOString(),
-
-      // ✅ crawl state fields (you said they exist in the table)
+      // crawl state defaults (safe if table has these cols)
       crawl_status: "ready",
       crawl_error: null,
       last_crawled_at: null,
@@ -863,18 +896,7 @@ export default function AdminImport() {
     };
 
     if (existing.length && existing[0] && existing[0].id) {
-      // preserve crawl state if it already exists (don’t reset progress)
-      const ex = existing[0];
-      const preserved = {
-        ...payload,
-        crawl_status: safeString(ex?.crawl_status) || payload.crawl_status,
-        crawl_error: safeString(ex?.crawl_error) || null,
-        last_crawled_at: safeString(ex?.last_crawled_at) || null,
-        next_crawl_at: safeString(ex?.next_crawl_at) || null,
-        last_crawl_run_id: safeString(ex?.last_crawl_run_id) || null,
-      };
-
-      await SchoolSportSiteEntity.update(String(existing[0].id), preserved);
+      await SchoolSportSiteEntity.update(String(existing[0].id), payload);
       return { id: String(existing[0].id), mode: "updated" };
     }
 
@@ -1029,7 +1051,7 @@ export default function AdminImport() {
         `[SportsUSA] Writes done. Schools: created=${schoolsCreated} updated=${schoolsUpdated} | Sites: created=${sitesCreated} updated=${sitesUpdated} | skipped=${skipped} errors=${errors}`
       );
 
-      await refreshProgressCounters();
+      await refreshCrawlCounters();
     } catch (e) {
       appendLog("sportsusa", `[SportsUSA] ERROR: ${String(e && e.message ? e.message : e)}`);
     } finally {
@@ -1039,7 +1061,7 @@ export default function AdminImport() {
 
   /* ----------------------------
      Camps ingest: SchoolSportSite -> CampDemo
-     (Updated: batching, dueNow, and crawl-state update plan)
+     ✅ Updated to support rerun modes + prevent empty payload calls
   ----------------------------- */
   async function upsertCampDemoByEventKey(payload) {
     if (!CampDemoEntity || !CampDemoEntity.create || !CampDemoEntity.update) {
@@ -1063,17 +1085,6 @@ export default function AdminImport() {
 
     await CampDemoEntity.create(payload);
     return "created";
-  }
-
-  async function updateSiteCrawlState(siteId, patch) {
-    if (!SchoolSportSiteEntity || !SchoolSportSiteEntity.update) return false;
-    if (!siteId) return false;
-    try {
-      await SchoolSportSiteEntity.update(String(siteId), patch);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   function normalizeAcceptedRowToFlat(a) {
@@ -1140,10 +1151,40 @@ export default function AdminImport() {
     };
   }
 
+  async function updateCrawlStateForSites(siteIds, patch) {
+    if (!SchoolSportSiteEntity || !SchoolSportSiteEntity.update) return { updated: 0, errors: 0 };
+    const ids = asArray(siteIds).filter((x) => !!x);
+    let updated = 0;
+    let errors = 0;
+
+    for (let i = 0; i < ids.length; i++) {
+      try {
+        await SchoolSportSiteEntity.update(String(ids[i]), patch);
+        updated += 1;
+      } catch {
+        errors += 1;
+      }
+      if ((i + 1) % 50 === 0) await sleep(5);
+    }
+    return { updated, errors };
+  }
+
+  function pickSitesByRerunMode(sites) {
+    const arr = asArray(sites);
+
+    if (rerunMode === "all") return arr; // force all
+    if (rerunMode === "error") return arr.filter((s) => statusOf(s) === "error");
+    if (rerunMode === "no_events") return arr.filter((s) => statusOf(s) === "no_events");
+    if (rerunMode === "ok") return arr.filter((s) => statusOf(s) === "ok");
+    if (rerunMode === "ready") return arr.filter((s) => statusOf(s) === "ready");
+
+    // default: due only
+    return arr.filter((s) => isDueNow(s));
+  }
+
   async function runSportsUSACampsIngest() {
     const runIso = new Date().toISOString();
-    const runId = `run_${runIso.replace(/[:.]/g, "-")}_${Math.random().toString(16).slice(2, 8)}`;
-
+    const runId = `run_${runIso.replace(/[:.]/g, "").slice(0, 15)}`;
     setCampsWorking(true);
     setLogCamps("");
 
@@ -1151,10 +1192,6 @@ export default function AdminImport() {
     appendLog(
       "camps",
       `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${campsMaxSites} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents} | fastMode=${fastMode ? "true" : "false"}`
-    );
-    appendLog(
-      "camps",
-      `[Camps] Runtime: maxMs=${maxMs} siteTimeoutMs=${siteTimeoutMs} regTimeoutMs=${regTimeoutMs} nameTimeoutMs=${nameTimeoutMs} maxRegFetchTotal=${maxRegFetchTotal}`
     );
 
     try {
@@ -1171,29 +1208,23 @@ export default function AdminImport() {
         return;
       }
 
-      // Pull active sites + compute dueNow + batch
-      const allSiteRows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
-      appendLog("camps", `[Camps] Loaded SchoolSportSite rows: ${allSiteRows.length} (active)`);
+      const siteRowsRaw = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
+      const siteRows = siteRowsRaw.map(normalizeSiteRow);
 
-      const due = [];
-      for (const r of allSiteRows) {
-        if (isDue(r, runIso)) due.push(r);
-      }
+      appendLog("camps", `[Camps] Loaded SchoolSportSite rows: ${siteRows.length} (active)`);
 
-      appendLog("camps", `[Camps] Due sites: ${due.length}`);
+      const filtered = pickSitesByRerunMode(siteRows);
+      appendLog("camps", `[Camps] Rerun mode: ${rerunMode}`);
+      appendLog("camps", `[Camps] Due sites (per mode): ${filtered.length}`);
 
-      // Optional: keep deterministic order
-      due.sort((a, b) => String(a?.camp_site_url || "").localeCompare(String(b?.camp_site_url || "")));
+      const batch = filtered.slice(0, Number(campsMaxSites || 5));
+      appendLog("camps", `[Camps] Batch size: ${batch.length} (MaxSites=${campsMaxSites})`);
 
-      const batchSize = Math.max(1, Number(campsMaxSites || 25));
-      const batch = due.slice(0, batchSize);
-
-      appendLog("camps", `[Camps] Batch size: ${batch.length} (MaxSites=${batchSize})`);
-      if (batch.length) {
-        appendLog(
-          "camps",
-          `[Camps] Batch sample: site_id=${batch[0]?.id || ""} school_id=${batch[0]?.school_id || ""} url=${batch[0]?.camp_site_url || ""}`
-        );
+      if (!batch.length) {
+        appendLog("camps", `[Camps] Nothing to do for rerunMode="${rerunMode}".`);
+        appendLog("camps", `[Camps] Tip: choose a different rerun mode (e.g., Force recrawl ALL) or Reset crawl state.`);
+        await refreshCrawlCounters();
+        return;
       }
 
       const tUrl = safeString(testSiteUrl);
@@ -1204,26 +1235,15 @@ export default function AdminImport() {
         return;
       }
 
-      // If testSiteUrl is set: single-site mode
-      const sitesToSend = tUrl
-        ? []
-        : batch
-            .map((r) => ({
-              id: r?.id ? String(r.id) : null, // keep for local crawl-state updates
-              school_id: r?.school_id ? String(r.school_id) : null,
-              sport_id: r?.sport_id ? String(r.sport_id) : selectedSportId,
-              camp_site_url: r?.camp_site_url ? String(r.camp_site_url) : null,
-            }))
-            .filter((x) => !!x.camp_site_url);
+      // If testSiteUrl is set, do NOT send batch list
+      const sitesToSend = tUrl ? [] : batch.map((r) => ({
+        id: r.id,
+        school_id: r.school_id,
+        sport_id: r.sport_id,
+        camp_site_url: r.camp_site_url,
+      }));
 
-      appendLog("camps", `[Camps] Prepared sites payload: ${allSiteRows.length} (non-null camp_site_url)`);
-      if (allSiteRows.length) {
-        appendLog("camps", `[Camps] Sample site: school_id=${allSiteRows[0].school_id || ""} url=${allSiteRows[0].camp_site_url || ""}`);
-      }
-      appendLog(
-        "camps",
-        `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesToSend.length}, testSiteUrl=${tUrl ? tUrl : "no"})`
-      );
+      appendLog("camps", `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesToSend.length}, testSiteUrl=${tUrl ? tUrl : "no"})`);
 
       const res = await fetch("/functions/sportsUSAIngestCamps", {
         method: "POST",
@@ -1232,25 +1252,15 @@ export default function AdminImport() {
           sportId: selectedSportId,
           sportName: selectedSportName,
           dryRun: !!campsDryRun,
+          maxSites: Number(campsMaxSites || 5),
+          maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
+          maxEvents: Number(campsMaxEvents || 25),
 
-          maxSites: Number(campsMaxSites || 25),
-          maxRegsPerSite: Number(campsMaxRegsPerSite || 10),
-          maxEvents: Number(campsMaxEvents || 500),
-
-          // runtime knobs
           fastMode: !!fastMode,
-          maxMs: Number(maxMs || 45000),
-          siteTimeoutMs: Number(siteTimeoutMs || 12000),
-          regTimeoutMs: Number(regTimeoutMs || 12000),
-          nameTimeoutMs: Number(nameTimeoutMs || 6000),
-          maxRegFetchTotal: Number(maxRegFetchTotal || 250),
 
           sites: sitesToSend,
           testSiteUrl: tUrl || null,
           testSchoolId: tSchool || null,
-
-          // useful metadata
-          runId,
         }),
       });
 
@@ -1279,106 +1289,65 @@ export default function AdminImport() {
       appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
       appendLog(
         "camps",
-        `[Camps] Function stats: processedSites=${data?.stats?.processedSites ?? 0} processedRegs=${data?.stats?.processedRegs ?? 0} accepted=${data?.stats?.accepted ?? 0} rejected=${data?.stats?.rejected ?? 0} errors=${data?.stats?.errors ?? 0}`
+        `[Camps] Function stats: processedSites=${data && data.stats ? data.stats.processedSites : 0} processedRegs=${data && data.stats ? data.stats.processedRegs : 0} accepted=${data && data.stats ? data.stats.accepted : 0} rejected=${data && data.stats ? data.stats.rejected : 0} errors=${data && data.stats ? data.stats.errors : 0}`
       );
 
-      if (data?.stats?.stoppedEarly) {
-        appendLog("camps", `[Camps] NOTE: Function stopped early. reason=${data?.stats?.stopReason || "n/a"}`);
-      }
-
-      if (data?.debug?.kpi) {
+      if (data && data.debug && data.debug.kpi) {
         const k = data.debug.kpi;
-        appendLog("camps", `[Camps] Date KPI: listing=${k.datesParsedFromListing || 0} detail=${k.datesParsedFromRyzer || 0} missing=${k.datesMissing || 0}`);
-      }
-      if (data?.debug?.nameKpi) {
-        const nk = data.debug.nameKpi;
-        appendLog("camps", `[Camps] Name KPI: listing=${nk.listing || 0} detail=${nk.detail || 0} missing=${nk.missing || 0} qualityReject=${nk.qualityReject || 0}`);
-      }
-
-      const siteDbg = asArray(data?.debug?.siteDebug || []).slice(0, 1);
-      if (siteDbg.length) {
-        appendLog("camps", "[Camps] Site debug (first 1):");
-        for (let i = 0; i < siteDbg.length; i++) {
-          const sd = siteDbg[i] || {};
-          appendLog("camps", `- siteUrl=${sd.siteUrl || ""} http=${sd.http || "n/a"} html=${sd.htmlType || ""} regLinks=${sd.regLinks || 0} sample=${sd.sample || ""}`);
-          if (sd.notes) appendLog("camps", `  notes=${String(sd.notes)}`);
+        appendLog("camps", `[Camps] Date KPI: listing=${k.datesParsedFromListing || 0} detail=${k.datesParsedFromDetail || 0} missing=${k.datesMissing || 0}`);
+        if (k.namesFromListing != null || k.namesFromDetail != null || k.namesMissing != null) {
+          appendLog(
+            "camps",
+            `[Camps] Name KPI: listing=${k.namesFromListing || 0} detail=${k.namesFromDetail || 0} missing=${k.namesMissing || 0} qualityReject=${k.namesRejectedByQualityGate || 0}`
+          );
         }
-
-        const firstHtml = data?.debug?.firstSiteHtmlSnippet || null;
-        if (firstHtml) {
-          appendLog("camps", "[Camps] First site HTML snippet (debug):");
-          appendLog("camps", String(firstHtml));
+        if (k.pricesFromDetail != null) {
+          appendLog("camps", `[Camps] Price KPI: detail=${k.pricesFromDetail || 0} missing=${k.pricesMissing || 0}`);
         }
       }
 
-      const acceptedRaw = asArray(data?.accepted || []);
+      const acceptedRaw = asArray(data && data.accepted ? data.accepted : []);
       const accepted = acceptedRaw.map((x) => normalizeAcceptedRowToFlat(x));
 
-      if (!accepted.length) {
-        appendLog("camps", "[Camps] No accepted events returned from function.");
-
-        // even if none, mark crawl state for batch sites as no_events (only if not dry run)
-        if (!campsDryRun && !tUrl) {
-          for (const s of batch) {
-            await updateSiteCrawlState(s?.id, {
-              last_crawled_at: runIso,
-              crawl_status: "no_events",
-              crawl_error: null,
-              next_crawl_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(), // 30 days
-              last_crawl_run_id: runId,
-            });
-          }
-          appendLog("camps", `[Camps] Updated crawl-state for batch sites: ${batch.length} (no_events)`);
-        } else {
-          appendLog("camps", `[Camps] DryRun=true: would update crawl-state for batch sites: ${batch.length} (skipped)`);
-        }
-
-        await refreshProgressCounters();
-        return;
-      }
-
-      const missingSchoolIdCount = accepted.filter((a) => !safeString(a.school_id) && !tUrl).length;
-      if (missingSchoolIdCount > 0) {
-        appendLog("camps", `[Camps] GUARDRAIL: accepted rows missing school_id = ${missingSchoolIdCount}`);
-        appendLog("camps", `[Camps] This usually means the function did not receive sites[] with school_id mapping.`);
-        if (!campsDryRun) {
-          appendLog("camps", "[Camps] ABORTING WRITES (DryRun=false) to prevent null school_id events in CampDemo.");
-          return;
-        }
-      }
-
       appendLog("camps", `[Camps] Accepted events returned: ${accepted.length}`);
-      appendLog("camps", `[Camps] Sample (first 5):`);
-      for (let i = 0; i < Math.min(5, accepted.length); i++) {
-        const a = accepted[i] || {};
-        appendLog("camps", `- camp="${a.camp_name || ""}" start=${a.start_date || "n/a"} url=${a.link_url || a.registration_url || ""}`);
+      if (accepted.length) {
+        appendLog("camps", `[Camps] Sample (first 5):`);
+        for (let i = 0; i < Math.min(5, accepted.length); i++) {
+          const a = accepted[i] || {};
+          appendLog("camps", `- camp="${a.camp_name || ""}" start=${a.start_date || "n/a"} price=${a.price != null ? a.price : "n/a"} url=${a.link_url || a.registration_url || ""}`);
+        }
       }
 
-      // Crawl-state updates plan (even in dry-run we show intent)
-      if (!tUrl) {
-        if (campsDryRun) {
-          appendLog("camps", `[Camps] DryRun=true: would update crawl-state for batch sites: ${batch.length} (skipped)`);
-        } else {
-          // Determine status for each site in batch:
-          // - If site produced any accepted, mark ok; else no_events.
-          // We infer by siteUrl match inside function debug siteDebug if available; fallback to ok for entire batch.
-          const nextAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(); // 30 days
-          for (const s of batch) {
-            await updateSiteCrawlState(s?.id, {
-              last_crawled_at: runIso,
-              crawl_status: "ok",
-              crawl_error: null,
-              next_crawl_at: nextAt,
-              last_crawl_run_id: runId,
-            });
-          }
-          appendLog("camps", `[Camps] Updated crawl-state for batch sites: ${batch.length} (ok)`);
-        }
+      // Update crawl-state for batch sites (even on dry-run, we show what would happen)
+      if (tUrl) {
+        appendLog("camps", `[Camps] Test mode: not updating SchoolSportSite crawl-state (no site ids).`);
+      } else if (campsDryRun) {
+        appendLog("camps", `[Camps] DryRun=true: would update crawl-state for batch sites: ${batch.length} (skipped)`);
+      } else {
+        const outcome = accepted.length ? "ok" : "no_events";
+        const patch = {
+          crawl_status: outcome,
+          crawl_error: null,
+          last_crawled_at: runIso,
+          // optional: push next_crawl_at out (your call). Here: 180 days.
+          next_crawl_at: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
+          last_crawl_run_id: runId,
+          last_seen_at: runIso,
+        };
+        const ids = batch.map((b) => b.id).filter(Boolean);
+        const upd = await updateCrawlStateForSites(ids, patch);
+        appendLog("camps", `[Camps] Updated crawl-state for batch sites: ${upd.updated} (${outcome}) errors=${upd.errors}`);
       }
 
       if (campsDryRun) {
         appendLog("camps", "[Camps] DryRun=true: no CampDemo writes performed.");
-        await refreshProgressCounters();
+        await refreshCrawlCounters();
+        return;
+      }
+
+      if (!accepted.length) {
+        appendLog("camps", "[Camps] No accepted events returned from function.");
+        await refreshCrawlCounters();
         return;
       }
 
@@ -1438,6 +1407,10 @@ export default function AdminImport() {
             program_id,
             event_dates_raw: safeString(a.event_dates_raw),
             notes: safeString(a.notes),
+            price: safeNumber(a.price),
+            price_min: safeNumber(a.price_min),
+            price_max: safeNumber(a.price_max),
+            price_raw: safeString(a.price_raw),
           });
 
         const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
@@ -1479,13 +1452,12 @@ export default function AdminImport() {
           appendLog("camps", `[Camps] WRITE ERROR #${i + 1}: ${String(e && e.message ? e.message : e)}`);
         }
 
-        if ((i + 1) % 50 === 0) appendLog("camps", `[Camps] Write progress: ${i + 1}/${accepted.length}`);
-        await sleep(25);
+        if ((i + 1) % 25 === 0) appendLog("camps", `[Camps] Write progress: ${i + 1}/${accepted.length}`);
+        await sleep(20);
       }
 
       appendLog("camps", `[Camps] CampDemo writes done. created=${created} updated=${updated} skipped=${skipped} errors=${errors}`);
-
-      await refreshProgressCounters();
+      await refreshCrawlCounters();
     } catch (e) {
       appendLog("camps", `[Camps] ERROR: ${String(e && e.message ? e.message : e)}`);
     } finally {
@@ -1494,135 +1466,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     NEW: Enrich bad CampDemo rows (Register name / missing price)
-     (Calls backend function you'll provide next: /functions/sportsUSAEnrichCampsByRegUrl)
-  ----------------------------- */
-  async function loadBadCampDemoRows() {
-    if (!CampDemoEntity) throw new Error("CampDemo entity missing.");
-
-    const rows = await entityList(CampDemoEntity, { sport_id: selectedSportId });
-    const seasonY = safeNumber(enrichSeasonYear);
-
-    const filtered = rows.filter((r) => {
-      const nameIsRegister = String(r?.camp_name || "").trim().toLowerCase() === "register";
-      const priceMissing = r?.price == null || Number(r?.price) === 0;
-      const seasonOk = seasonY == null ? true : safeNumber(r?.season_year) === seasonY;
-
-      if (!seasonOk) return false;
-
-      if (enrichOnlyRegister && enrichOnlyMissingPrice) return nameIsRegister || priceMissing;
-      if (enrichOnlyRegister) return nameIsRegister;
-      if (enrichOnlyMissingPrice) return priceMissing;
-      return nameIsRegister || priceMissing;
-    });
-
-    const withUrl = filtered.filter((r) => String(r?.link_url || r?.source_url || "").includes("register.ryzer.com"));
-    return withUrl.slice(0, Math.max(1, Number(enrichLimit || 200)));
-  }
-
-  async function runEnrichBadCampDemo() {
-    const runIso = new Date().toISOString();
-    setEnrichWorking(true);
-    setLogEnrich("");
-
-    appendLog("enrich", `[Enrich] Starting @ ${runIso}`);
-    appendLog(
-      "enrich",
-      `[Enrich] DryRun=${enrichDryRun ? "true" : "false"} limit=${enrichLimit} season=${enrichSeasonYear} onlyRegister=${
-        enrichOnlyRegister ? "true" : "false"
-      } onlyMissingPrice=${enrichOnlyMissingPrice ? "true" : "false"}`
-    );
-
-    try {
-      if (!selectedSportId) {
-        appendLog("enrich", "[Enrich] ERROR: select a sport first.");
-        return;
-      }
-      if (!CampDemoEntity) {
-        appendLog("enrich", "[Enrich] ERROR: CampDemo entity missing.");
-        return;
-      }
-
-      const badRows = await loadBadCampDemoRows();
-      appendLog("enrich", `[Enrich] Bad CampDemo rows found (after filter+limit): ${badRows.length}`);
-
-      if (!badRows.length) {
-        appendLog("enrich", "[Enrich] Nothing to enrich.");
-        return;
-      }
-
-      const items = badRows.map((r) => ({
-        event_key: String(r.event_key),
-        school_id: String(r.school_id || ""),
-        sport_id: String(r.sport_id || selectedSportId),
-        url: String(r.link_url || r.source_url || ""),
-      }));
-
-      appendLog("enrich", `[Enrich] Calling /functions/sportsUSAEnrichCampsByRegUrl items=${items.length}`);
-
-      const res = await fetch("/functions/sportsUSAEnrichCampsByRegUrl", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dryRun: !!enrichDryRun,
-          sportId: selectedSportId,
-          sportName: selectedSportName,
-          seasonYear: Number(enrichSeasonYear),
-          items,
-
-          maxMs: Number(maxMs || 45000),
-          regTimeoutMs: Number(regTimeoutMs || 12000),
-          nameTimeoutMs: Number(nameTimeoutMs || 6000),
-        }),
-      });
-
-      let data = null;
-      let rawText = null;
-      try {
-        data = await res.json();
-      } catch {
-        rawText = await res.text().catch(() => null);
-      }
-
-      if (!res.ok) {
-        appendLog("enrich", `[Enrich] ERROR HTTP ${res.status}`);
-        if (data) appendLog("enrich", JSON.stringify(data, null, 2));
-        if (!data && rawText) appendLog("enrich", rawText.slice(0, 500));
-        return;
-      }
-
-      if (!data) {
-        appendLog("enrich", `[Enrich] WARNING: non-JSON response HTTP ${res.status}`);
-        if (rawText) appendLog("enrich", rawText.slice(0, 500));
-        return;
-      }
-
-      appendLog("enrich", `[Enrich] Function version: ${data.version || "n/a"}`);
-      appendLog(
-        "enrich",
-        `[Enrich] Stats: processed=${data?.stats?.processed || 0} updated=${data?.stats?.updated || 0} unchanged=${data?.stats?.unchanged || 0} errors=${data?.stats?.errors || 0}`
-      );
-
-      const sample = asArray(data.updated || []).slice(0, 5);
-      if (sample.length) {
-        appendLog("enrich", "[Enrich] Sample updates:");
-        for (const u of sample) {
-          appendLog("enrich", `- ${u.event_key} name="${u.camp_name || ""}" price=${u.price ?? "n/a"} start=${u.start_date ?? "n/a"}`);
-        }
-      }
-
-      appendLog("enrich", enrichDryRun ? "[Enrich] DryRun=true: no CampDemo writes performed." : "[Enrich] Done: CampDemo updated.");
-
-      await refreshProgressCounters();
-    } catch (e) {
-      appendLog("enrich", `[Enrich] ERROR: ${String(e?.message || e)}`);
-    } finally {
-      setEnrichWorking(false);
-    }
-  }
-
-  /* ----------------------------
-     Promote CampDemo -> Camp (kept minimal)
+     Promote CampDemo -> Camp (left as-is)
   ----------------------------- */
   async function upsertCampByEventKey(payload) {
     if (!CampEntity || !CampEntity.create || !CampEntity.update) {
@@ -1798,8 +1642,6 @@ export default function AdminImport() {
   /* ----------------------------
      UI
   ----------------------------- */
-  const disableAll = sportsUSAWorking || campsWorking || promoteWorking || seedWorking || enrichWorking;
-
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-4xl mx-auto space-y-4">
@@ -1807,7 +1649,7 @@ export default function AdminImport() {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-2xl font-bold text-deep-navy">Admin Import</div>
-            <div className="text-sm text-slate-600">SportsUSA seeding + camp ingestion + enrichment + promotion.</div>
+            <div className="text-sm text-slate-600">SportsUSA seeding + camp ingestion + promotion.</div>
           </div>
 
           <Button variant="outline" onClick={() => nav(ROUTES.Workspace)}>
@@ -1815,69 +1657,10 @@ export default function AdminImport() {
           </Button>
         </div>
 
-        {/* Progress / Counters */}
-        <Card className="p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="font-semibold text-deep-navy">Progress & Validation Counters</div>
-              <div className="text-sm text-slate-600 mt-1">
-                This tells you how many sites are left to crawl and how much CampDemo still needs enrichment.
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={refreshProgressCounters} disabled={disableAll || !selectedSportId}>
-                {siteProgressLoading || campTotalsLoading ? "Refreshing…" : "Refresh Counters"}
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="rounded-lg border border-slate-200 bg-white p-3">
-              <div className="text-xs text-slate-500">SchoolSportSite Crawl</div>
-              <div className="mt-1 text-sm">
-                <div>
-                  Active sites: <b>{siteTotals.totalActive}</b>
-                </div>
-                <div>
-                  Done (ok + no_events): <b>{siteTotals.ok + siteTotals.no_events}</b> ({siteDonePct}%)
-                </div>
-                <div>
-                  Due now: <b>{siteTotals.dueNow}</b>
-                </div>
-                <div className="text-xs text-slate-500 mt-2">
-                  ok={siteTotals.ok} | no_events={siteTotals.no_events} | error={siteTotals.error} | ready={siteTotals.ready}
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-slate-200 bg-white p-3">
-              <div className="text-xs text-slate-500">CampDemo Quality</div>
-              <div className="mt-1 text-sm">
-                <div>
-                  Rows (season-filtered): <b>{campTotals.total}</b>
-                </div>
-                <div>
-                  camp_name = "Register": <b>{campTotals.registerName}</b>
-                </div>
-                <div>
-                  Missing price: <b>{campTotals.missingPrice}</b>
-                </div>
-                <div>
-                  Bad (Register OR missing price): <b>{campTotals.bad}</b>
-                </div>
-                <div className="text-xs text-slate-500 mt-2">
-                  Sport total={campTotals.sport} | Season total={campTotals.season || "n/a"} | Season filter uses Enrich Season Year
-                </div>
-              </div>
-            </div>
-          </div>
-        </Card>
-
         {/* Global Sport Selector */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">1) Select Sport</div>
-          <div className="text-sm text-slate-600 mt-1">This selection drives Seed Schools, Camps Ingest, Enrichment, Positions, and Promote.</div>
+          <div className="text-sm text-slate-600 mt-1">This selection drives Seed Schools, Camps Ingest, Positions, and Promote.</div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -1891,7 +1674,7 @@ export default function AdminImport() {
                   setSelectedSportId(id);
                   setSelectedSportName(hit && hit.name ? hit.name : "");
                 }}
-                disabled={sportsLoading || disableAll}
+                disabled={sportsLoading || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}
               >
                 <option value="">Select…</option>
                 {sports.map((sx) => (
@@ -1906,10 +1689,64 @@ export default function AdminImport() {
             </div>
 
             <div className="flex items-end gap-2">
-              <Button variant="outline" onClick={() => loadSports()} disabled={sportsLoading || disableAll}>
+              <Button variant="outline" onClick={() => loadSports()} disabled={sportsLoading}>
                 {sportsLoading ? "Refreshing…" : "Refresh Sports"}
               </Button>
+              <Button variant="outline" onClick={() => refreshCrawlCounters()} disabled={countersWorking || !selectedSportId}>
+                {countersWorking ? "Refreshing…" : "Refresh Counters"}
+              </Button>
             </div>
+          </div>
+        </Card>
+
+        {/* ✅ Crawl Counters Panel (your countdown) */}
+        <Card className="p-4">
+          <div className="font-semibold text-deep-navy">Crawl Counters</div>
+          <div className="text-sm text-slate-600 mt-1">This is your “countdown.” It tells you what’s left and what reruns will do.</div>
+
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-7 gap-2 text-sm">
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Active</div>
+              <div className="font-semibold">{siteCounters.active}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Done</div>
+              <div className="font-semibold">{siteCounters.done}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Due Now</div>
+              <div className="font-semibold">{siteCounters.dueNow}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Ready</div>
+              <div className="font-semibold">{siteCounters.ready}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">OK</div>
+              <div className="font-semibold">{siteCounters.ok}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">No Events</div>
+              <div className="font-semibold">{siteCounters.no_events}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Error</div>
+              <div className="font-semibold">{siteCounters.error}</div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <Button variant="outline" onClick={resetCrawlStateForSport} disabled={!selectedSportId || resetWorking || campsWorking}>
+              {resetWorking ? "Resetting…" : "Reset crawl state (READY for all)"}
+            </Button>
+            <Button variant="outline" onClick={() => setLogCounters("")} disabled={countersWorking}>
+              Clear Counters Log
+            </Button>
+          </div>
+
+          <div className="mt-3">
+            <div className="text-xs text-slate-500 mb-1">Counters Log</div>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-56">{logCounters || "—"}</pre>
           </div>
         </Card>
 
@@ -1917,7 +1754,7 @@ export default function AdminImport() {
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">2) Seed Schools from SportsUSA (School + SchoolSportSite)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Pulls the sport directory (e.g., footballcampsusa.com) and seeds your canonical universities + their per-sport camp site URL.
+            Pulls the sport directory (e.g., footballcampsusa.com) and seeds universities + their per-sport camp site URL.
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1956,7 +1793,7 @@ export default function AdminImport() {
           </div>
 
           <div className="mt-3 flex gap-2">
-            <Button onClick={runSportsUSASeedSchools} disabled={!selectedSportId || disableAll}>
+            <Button onClick={runSportsUSASeedSchools} disabled={!selectedSportId || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}>
               {sportsUSAWorking ? "Running…" : sportsUSADryRun ? "Run Seed (Dry Run)" : "Run Seed → Write School + Site"}
             </Button>
 
@@ -1973,83 +1810,89 @@ export default function AdminImport() {
 
         {/* Camps ingest */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">3) Ingest Camps (from SchoolSportSite → CampDemo)</div>
+          <div className="font-semibold text-deep-navy">3) Ingest Camps (SchoolSportSite → CampDemo)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Crawls per-school camp sites and discovers registration/detail pages. Writes accepted occurrences into <b>CampDemo</b>.
+            Crawls per-school camp sites and discovers registration pages. Writes accepted occurrences into <b>CampDemo</b>.
           </div>
 
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Max sites (batch)</label>
-              <input
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                type="number"
-                value={campsMaxSites}
-                onChange={(e) => setCampsMaxSites(Number(e.target.value || 0))}
-                min={1}
-                max={500}
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Rerun mode</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                value={rerunMode}
+                onChange={(e) => setRerunMode(e.target.value)}
                 disabled={campsWorking}
-              />
+              >
+                {RERUN_MODES.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-1 text-[11px] text-slate-500">
+                If you see <b>Due sites: 0</b>, you’re “done” for that mode. Switch mode or reset crawl-state.
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Max regs/site</label>
-              <input
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                type="number"
-                value={campsMaxRegsPerSite}
-                onChange={(e) => setCampsMaxRegsPerSite(Number(e.target.value || 0))}
-                min={1}
-                max={50}
-                disabled={campsWorking}
-              />
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Max sites</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  type="number"
+                  value={campsMaxSites}
+                  onChange={(e) => setCampsMaxSites(Number(e.target.value || 0))}
+                  min={1}
+                  max={500}
+                  disabled={campsWorking}
+                />
+              </div>
+
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={campsDryRun} onChange={(e) => setCampsDryRun(e.target.checked)} disabled={campsWorking} />
+                  Dry Run
+                </label>
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Max events</label>
-              <input
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                type="number"
-                value={campsMaxEvents}
-                onChange={(e) => setCampsMaxEvents(Number(e.target.value || 0))}
-                min={5}
-                max={5000}
-                disabled={campsWorking}
-              />
-            </div>
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={campsDryRun} onChange={(e) => setCampsDryRun(e.target.checked)} disabled={campsWorking} />
-                Dry Run
-              </label>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Max regs/site</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  type="number"
+                  value={campsMaxRegsPerSite}
+                  onChange={(e) => setCampsMaxRegsPerSite(Number(e.target.value || 0))}
+                  min={1}
+                  max={50}
+                  disabled={campsWorking}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Max events</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  type="number"
+                  value={campsMaxEvents}
+                  onChange={(e) => setCampsMaxEvents(Number(e.target.value || 0))}
+                  min={5}
+                  max={5000}
+                  disabled={campsWorking}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Runtime knobs */}
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={fastMode} onChange={(e) => setFastMode(e.target.checked)} disabled={campsWorking} />
-                fastMode
-              </label>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">maxMs</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={maxMs} onChange={(e) => setMaxMs(Number(e.target.value || 0))} disabled={campsWorking} />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">siteTimeoutMs</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={siteTimeoutMs} onChange={(e) => setSiteTimeoutMs(Number(e.target.value || 0))} disabled={campsWorking} />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">regTimeoutMs</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={regTimeoutMs} onChange={(e) => setRegTimeoutMs(Number(e.target.value || 0))} disabled={campsWorking} />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">maxRegFetchTotal</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={maxRegFetchTotal} onChange={(e) => setMaxRegFetchTotal(Number(e.target.value || 0))} disabled={campsWorking} />
+          <div className="mt-3">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={fastMode} onChange={(e) => setFastMode(e.target.checked)} disabled={campsWorking} />
+              fastMode (fewer detail fetches; faster but can miss deep fields)
+            </label>
+            <div className="mt-1 text-[11px] text-slate-500">
+              Recommendation: keep <b>fastMode OFF</b> for high-quality ingest. Use smaller MaxSites.
             </div>
           </div>
 
@@ -2064,7 +1907,7 @@ export default function AdminImport() {
                 placeholder="https://www.hardingfootballcamps.com/"
                 disabled={campsWorking}
               />
-              <div className="mt-1 text-[11px] text-slate-500">If set, runs single-site mode. Dry run works even if it’s not in SchoolSportSite.</div>
+              <div className="mt-1 text-[11px] text-slate-500">If set, runs single-site mode (does not touch SchoolSportSite state).</div>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Test School ID (required for writes)</label>
@@ -2075,12 +1918,11 @@ export default function AdminImport() {
                 placeholder="Paste School.id (only needed when DryRun=false)"
                 disabled={campsWorking}
               />
-              <div className="mt-1 text-[11px] text-slate-500">Only required if you turn Dry Run off while using a Test Site URL.</div>
             </div>
           </div>
 
           <div className="mt-3 flex gap-2">
-            <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || disableAll}>
+            <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || campsWorking || sportsUSAWorking || promoteWorking || seedWorking}>
               {campsWorking ? "Running…" : campsDryRun ? "Run Camps Ingest (Dry Run)" : "Run Camps Ingest → Write CampDemo"}
             </Button>
 
@@ -2095,77 +1937,13 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* Enrichment */}
-        <Card className="p-4">
-          <div className="font-semibold text-deep-navy">3B) Enrich Bad CampDemo Rows (fix “Register” + missing prices)</div>
-          <div className="text-sm text-slate-600 mt-1">
-            Targets CampDemo rows where camp_name is “Register” and/or price is missing, and re-fetches the Ryzer registration page to fill in name/price.
-          </div>
-
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={enrichDryRun} onChange={(e) => setEnrichDryRun(e.target.checked)} disabled={enrichWorking} />
-                Dry Run
-              </label>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Season year</label>
-              <input
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                type="number"
-                value={enrichSeasonYear}
-                onChange={(e) => setEnrichSeasonYear(Number(e.target.value || 0))}
-                disabled={enrichWorking}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Limit</label>
-              <input
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                type="number"
-                value={enrichLimit}
-                onChange={(e) => setEnrichLimit(Number(e.target.value || 0))}
-                disabled={enrichWorking}
-              />
-            </div>
-
-            <div className="flex items-end gap-4">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={enrichOnlyRegister} onChange={(e) => setEnrichOnlyRegister(e.target.checked)} disabled={enrichWorking} />
-                Register
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={enrichOnlyMissingPrice} onChange={(e) => setEnrichOnlyMissingPrice(e.target.checked)} disabled={enrichWorking} />
-                Missing price
-              </label>
-            </div>
-          </div>
-
-          <div className="mt-3 flex gap-2">
-            <Button onClick={runEnrichBadCampDemo} disabled={!selectedSportId || disableAll}>
-              {enrichWorking ? "Running…" : enrichDryRun ? "Run Enrichment (Dry Run)" : "Run Enrichment → Write CampDemo"}
-            </Button>
-            <Button variant="outline" onClick={() => setLogEnrich("")} disabled={enrichWorking}>
-              Clear Log
-            </Button>
-          </div>
-
-          <div className="mt-4">
-            <div className="text-xs text-slate-500 mb-1">Enrichment Log</div>
-            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{logEnrich || "—"}</pre>
-          </div>
-        </Card>
-
         {/* Promote */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">4) Promote CampDemo → Camp</div>
           <div className="text-sm text-slate-600 mt-1">Upserts by <b>event_key</b>. (Runs for the currently selected sport.)</div>
 
           <div className="mt-3 flex gap-2">
-            <Button onClick={promoteCampDemoToCamp} disabled={!selectedSportId || disableAll}>
+            <Button onClick={promoteCampDemoToCamp} disabled={!selectedSportId || promoteWorking || sportsUSAWorking || campsWorking || seedWorking}>
               {promoteWorking ? "Running…" : "Run Promotion"}
             </Button>
 
@@ -2186,11 +1964,11 @@ export default function AdminImport() {
           <div className="text-sm text-slate-600 mt-1">Auto-seed a default set, or manually add/edit/delete positions per sport.</div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button onClick={seedPositionsForSport} disabled={!selectedSportId || disableAll}>
+            <Button onClick={seedPositionsForSport} disabled={!selectedSportId || seedWorking || sportsUSAWorking || campsWorking || promoteWorking}>
               {seedWorking ? "Seeding…" : "Auto-seed positions"}
             </Button>
 
-            <Button variant="outline" onClick={() => loadPositionsForSport(selectedSportId)} disabled={!selectedSportId || positionsLoading || disableAll}>
+            <Button variant="outline" onClick={() => loadPositionsForSport(selectedSportId)} disabled={!selectedSportId || positionsLoading}>
               {positionsLoading ? "Refreshing…" : "Refresh"}
             </Button>
 
@@ -2207,7 +1985,7 @@ export default function AdminImport() {
                 value={positionAddCode}
                 onChange={(e) => setPositionAddCode(e.target.value)}
                 placeholder="e.g., QB"
-                disabled={!selectedSportId || disableAll}
+                disabled={!selectedSportId}
               />
             </div>
             <div>
@@ -2217,11 +1995,11 @@ export default function AdminImport() {
                 value={positionAddName}
                 onChange={(e) => setPositionAddName(e.target.value)}
                 placeholder="e.g., Quarterback"
-                disabled={!selectedSportId || disableAll}
+                disabled={!selectedSportId}
               />
             </div>
             <div className="flex items-end">
-              <Button onClick={addPosition} disabled={!selectedSportId || positionAddWorking || disableAll}>
+              <Button onClick={addPosition} disabled={!selectedSportId || positionAddWorking}>
                 {positionAddWorking ? "Saving…" : "Add / Upsert"}
               </Button>
             </div>
@@ -2259,7 +2037,6 @@ export default function AdminImport() {
                                   },
                                 }))
                               }
-                              disabled={disableAll}
                             />
                           </td>
                           <td className="p-2">
@@ -2276,15 +2053,14 @@ export default function AdminImport() {
                                   },
                                 }))
                               }
-                              disabled={disableAll}
                             />
                           </td>
                           <td className="p-2">
                             <div className="flex gap-2">
-                              <Button variant="outline" onClick={() => savePositionRow(p.id)} disabled={positionSaveWorking || disableAll}>
+                              <Button variant="outline" onClick={() => savePositionRow(p.id)} disabled={positionSaveWorking}>
                                 Save
                               </Button>
-                              <Button variant="outline" onClick={() => deletePosition(p.id)} disabled={disableAll || positionDeleteWorking === p.id}>
+                              <Button variant="outline" onClick={() => deletePosition(p.id)} disabled={positionDeleteWorking === p.id}>
                                 {positionDeleteWorking === p.id ? "Deleting…" : "Delete"}
                               </Button>
                             </div>
@@ -2311,7 +2087,7 @@ export default function AdminImport() {
         </Card>
 
         <div className="text-center">
-          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={disableAll}>
+          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={sportsUSAWorking || campsWorking || promoteWorking || seedWorking}>
             Go to Home
           </Button>
         </div>
