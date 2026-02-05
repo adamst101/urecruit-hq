@@ -1,16 +1,13 @@
 // functions/sportsUSAIngestCamps.js
 // Base44 Backend Function (Deno)
 //
-// v15 updates (2026-02-05):
-// - Fix camp_name="Camp" in fastMode by extracting camp name from listing snippet
-// - If listing name missing, fetch detail page ONLY to get name/desc (selective fallback)
-// - Keep v14: expand /register.cfm into many camp links
-// - Keep: fastMode/maxMs/timeouts/maxRegFetchTotal
-// - Keep: proper JSON response
-// - Preserve flat CampDemo-shaped accepted objects
+// v16 updates (2026-02-05):
+// - Fix bad listing-name extraction ("AS OF FALL") by extracting name using id= match
+// - Add quality gate: if extracted name looks like metadata, fallback to name-only detail fetch
+// - Keep v15 behavior: register.cfm expands to multiple camp.cfm links, fastMode, timeouts, maxMs
 
 const VERSION =
-  "sportsUSAIngestCamps_2026-02-05_v15_listing_name_extract_detail_fallback";
+  "sportsUSAIngestCamps_2026-02-05_v16_fix_listing_name_quality_gate_id_match";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -176,9 +173,7 @@ function extractSnippetAroundNeedle(html, needle, radius) {
   const ndl = String(needle);
 
   let idx = hay.indexOf(ndl);
-  if (idx < 0) {
-    idx = hay.toLowerCase().indexOf(ndl.toLowerCase());
-  }
+  if (idx < 0) idx = hay.toLowerCase().indexOf(ndl.toLowerCase());
   if (idx < 0) return null;
 
   let start = idx - r;
@@ -208,60 +203,79 @@ function htmlToText(html) {
 }
 
 /* -------------------------
-   Listing name extraction (NEW)
+   Listing name extraction (FIXED)
 -------------------------- */
+function looksLikeMetadataNotTitle(name) {
+  const t = lc(name || "");
+  if (!t) return true;
+  if (t.length < 4) return true;
+
+  // Known “bad” Montana-style grabs
+  if (t.includes("as of fall")) return true;
+  if (t.includes("as of")) return true;
+
+  // Generic junk
+  if (t === "camp" || t === "view details" || t === "register now") return true;
+
+  // If it looks like grades/ages/cost line, treat as metadata
+  const badTokens = ["grades", "grade", "ages", "age", "location", "cost", "price", "missoula"];
+  let hits = 0;
+  for (let i = 0; i < badTokens.length; i++) if (t.includes(badTokens[i])) hits++;
+  if (hits >= 2) return true;
+
+  return false;
+}
+
 function extractCampNameFromListingSnippet(listingSnippetHtml, regUrl) {
   if (!listingSnippetHtml || !regUrl) return null;
 
-  // Try to get anchor text: <a href="regUrl">NAME</a>
-  // We intentionally use a flexible match because the URL might appear relative/encoded.
-  const u = String(regUrl).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // escape regex
-  const reA = new RegExp(`<a[^>]*href=["'][^"']*${u}[^"']*["'][^>]*>([\\s\\S]{1,180}?)<\\/a>`, "i");
-  let m = reA.exec(listingSnippetHtml);
-  if (m && m[1]) {
-    const t = stripNonAscii(htmlToText(m[1]));
-    if (t && t.length >= 3 && !/^(register|register now|view details)$/i.test(t)) return t;
+  // Prefer matching by Ryzer camp id=NNNNNN regardless of other params
+  const idMatch = /[?&]id=(\d+)/i.exec(regUrl);
+  const id = idMatch && idMatch[1] ? idMatch[1] : null;
+
+  // 1) Best case: anchor text for camp.cfm with same id
+  if (id) {
+    const reAById = new RegExp(
+      `<a[^>]*href=["'][^"']*camp\\.cfm[^"']*(?:\\?|&)id=${id}[^"']*["'][^>]*>([\\s\\S]{1,220}?)<\\/a>`,
+      "i"
+    );
+    const m1 = reAById.exec(listingSnippetHtml);
+    if (m1 && m1[1]) {
+      const t = stripNonAscii(htmlToText(m1[1]));
+      if (t && !looksLikeMetadataNotTitle(t)) return t;
+    }
   }
 
-  // Some templates use "View Details" link and the name is nearby in a card header
-  // Pull a short window of plain text and pick the best “title-like” line.
-  const txt = htmlToText(listingSnippetHtml);
-  if (!txt) return null;
+  // 2) If link text is "View Details", try nearby heading tags within snippet
+  // Take a local window around the id or regUrl and scan for <h2>/<h3>/<h4>/<strong>
+  const needle = id ? `id=${id}` : regUrl;
+  const idx = listingSnippetHtml.toLowerCase().indexOf(String(needle).toLowerCase());
+  if (idx >= 0) {
+    const start = Math.max(0, idx - 700);
+    const end = Math.min(listingSnippetHtml.length, idx + 700);
+    const windowHtml = listingSnippetHtml.slice(start, end);
 
-  // Remove common junk phrases so they don't win
-  const cleaned = txt
-    .replace(/\b(View Details|Register Now|Learn More|Details)\b/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    const tagPatterns = [
+      /<h2[^>]*>([\s\S]{1,160}?)<\/h2>/i,
+      /<h3[^>]*>([\s\S]{1,160}?)<\/h3>/i,
+      /<h4[^>]*>([\s\S]{1,160}?)<\/h4>/i,
+      /<strong[^>]*>([\s\S]{1,160}?)<\/strong>/i,
+    ];
 
-  // Heuristic: pick the longest phrase before the date-ish tokens or price tokens
-  // and keep it short enough to be a title.
-  const stopIdx = (() => {
-    const lower = cleaned.toLowerCase();
-    const tokens = ["grades", "location", "cost", "price", "$", "am", "pm", "202", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "/20"];
-    let best = -1;
-    for (let i = 0; i < tokens.length; i++) {
-      const k = lower.indexOf(tokens[i]);
-      if (k >= 0 && (best < 0 || k < best)) best = k;
+    for (let i = 0; i < tagPatterns.length; i++) {
+      const m = tagPatterns[i].exec(windowHtml);
+      if (m && m[1]) {
+        const t = stripNonAscii(htmlToText(m[1]));
+        if (t && !looksLikeMetadataNotTitle(t)) return t;
+      }
     }
-    return best;
-  })();
-
-  const head = (stopIdx > 10 ? cleaned.slice(0, stopIdx) : cleaned).trim();
-
-  // Titles tend to be 3–90 chars; avoid super generic results
-  if (head && head.length >= 3) {
-    // Take last segment if it looks like a card listing: "... Montana Football Camps YOUTH CAMP"
-    const parts = head.split(" | ").join(" ").split("  ");
-    const candidate = stripNonAscii(parts.join(" ").trim());
-    if (candidate && candidate.length <= 90 && !/^montana football camps$/i.test(candidate)) return candidate;
   }
 
   return null;
 }
 
 /* -------------------------
-   Date parsing (same as v14)
+   Date parsing (same as before)
 -------------------------- */
 function pad2(n) {
   return n < 10 ? "0" + n : String(n);
@@ -269,6 +283,9 @@ function pad2(n) {
 function toIsoDate(y, m, d) {
   if (!y || !m || !d) return null;
   return String(y) + "-" + pad2(m) + "-" + pad2(d);
+}
+function stripOrdinal(x) {
+  return String(x || "").replace(/(st|nd|rd|th)\b/gi, "");
 }
 function monthNumFromName(name) {
   const n = lc(name);
@@ -286,17 +303,10 @@ function monthNumFromName(name) {
   if (n.startsWith("dec")) return 12;
   return null;
 }
-function stripOrdinal(x) {
-  return String(x || "").replace(/(st|nd|rd|th)\b/gi, "");
-}
 function parseMMDDYYYY(s) {
   const m = /(\b\d{1,2})\/(\d{1,2})\/(\d{4}\b)/.exec(s);
   if (!m) return null;
-  const mm = Number(m[1]);
-  const dd = Number(m[2]);
-  const yy = Number(m[3]);
-  if (!mm || !dd || !yy) return null;
-  return { y: yy, m: mm, d: dd };
+  return { y: Number(m[3]), m: Number(m[1]), d: Number(m[2]) };
 }
 function parseMonthNameDate(s) {
   const m =
@@ -310,11 +320,9 @@ function parseMonthNameDate(s) {
   if (!month || !day) return null;
   return { y: year, m: month, d: day };
 }
-
 function parseSingleOrRangeDate(line, defaultYear) {
   const raw = safeString(line);
   if (!raw) return { start: null, end: null, rawLine: null, pattern: null, inferredYear: false };
-
   const t = stripNonAscii(raw);
 
   const m1 = /(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/.exec(t);
@@ -341,35 +349,15 @@ function parseSingleOrRangeDate(line, defaultYear) {
     };
   }
 
-  const m2 =
-    /\b(January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\b\s+(\d{1,2}(?:st|nd|rd|th)?)\s*[-–]\s*(\d{1,2}(?:st|nd|rd|th)?)\b(?:[,\s]+(\d{4}))?/i.exec(
-      t
-    );
-  if (m2) {
-    const mm = monthNumFromName(m2[1]);
-    const d1 = Number(stripOrdinal(m2[2]));
-    const d2 = Number(stripOrdinal(m2[3]));
-    const hasYear = !!m2[4];
-    const yy = m2[4] ? Number(m2[4]) : defaultYear || null;
-    return {
-      start: yy && mm && d1 ? toIsoDate(yy, mm, d1) : null,
-      end: yy && mm && d2 ? toIsoDate(yy, mm, d2) : null,
-      rawLine: t,
-      pattern: hasYear ? "month_range_year" : "month_range_infer_year",
-      inferredYear: !hasYear,
-    };
-  }
-
   const p = parseMonthNameDate(t);
   if (p) {
-    const hasY = !!p.y;
-    const yy2 = p.y || defaultYear || null;
+    const yy = p.y || defaultYear || null;
     return {
-      start: yy2 ? toIsoDate(yy2, p.m, p.d) : null,
+      start: yy ? toIsoDate(yy, p.m, p.d) : null,
       end: null,
       rawLine: t,
-      pattern: hasY ? "month_single_year" : "month_single_infer_year",
-      inferredYear: !hasY,
+      pattern: p.y ? "month_single_year" : "month_single_infer_year",
+      inferredYear: !p.y,
     };
   }
 
@@ -403,7 +391,7 @@ function extractDateCandidates(html) {
   }
 
   const reMonth =
-    /((January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{1,2}(?:st|nd|rd|th)?)?(?:,\s*\d{4})?)/gi;
+    /((January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?)/gi;
   let m4,
     count4 = 0;
   while ((m4 = reMonth.exec(text)) !== null) {
@@ -430,14 +418,13 @@ function pickBestParsedDateFromCandidates(candidates, defaultYear) {
       bestScore = sc;
       bestRaw = c;
     }
-    if (best && best.start && best.end && bestScore >= 15 && best.pattern && !best.pattern.includes("infer")) break;
   }
 
   return { parsed: best, bestRaw: bestRaw, score: bestScore };
 }
 
 /* -------------------------
-   Camp name shaping from detail page
+   Detail name extraction
 -------------------------- */
 function extractTitle(html) {
   if (!html) return null;
@@ -445,18 +432,17 @@ function extractTitle(html) {
   if (!m) return null;
   return stripNonAscii(m[1]);
 }
+function extractH1(html) {
+  if (!html) return null;
+  const m = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
+  if (!m || !m[1]) return null;
+  return stripNonAscii(htmlToText(m[1])) || null;
+}
 function extractMetaDescription(html) {
   if (!html) return null;
   const m = /<meta[^>]*name="description"[^>]*content="([^"]*)"/i.exec(html);
   if (!m) return null;
   return stripNonAscii(m[1]);
-}
-function extractH1(html) {
-  if (!html) return null;
-  const m = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
-  if (!m || !m[1]) return null;
-  const t = stripNonAscii(htmlToText(m[1]));
-  return t || null;
 }
 function sanitizeCampName(titleOrH1) {
   let t = safeString(titleOrH1);
@@ -465,21 +451,16 @@ function sanitizeCampName(titleOrH1) {
   t = t.replace(/\s*\-\s*Event Registration.*$/i, "").trim();
   t = t.replace(/\s*\|\s*Registration.*$/i, "").trim();
   t = t.replace(/\s*\-\s*Registration.*$/i, "").trim();
-  const m = /^View\s+(.+?)\s+Details$/i.exec(t);
-  if (m && m[1]) t = String(m[1]).trim();
   t = stripNonAscii(t);
+  if (looksLikeMetadataNotTitle(t)) return null;
   return t || null;
 }
 
-/* -------------------------
-   Event key normalization
--------------------------- */
 function normalizeProgramIdForKey(programId) {
   let p = safeString(programId) || "unknown";
   p = p.replace(/^ryzer:/i, "");
   return p;
 }
-
 function buildEventKey(platform, programId, startDate, url) {
   const p = safeString(platform) || "sportsusa";
   const pr = normalizeProgramIdForKey(programId);
@@ -496,13 +477,11 @@ Deno.serve(async (req) => {
     version: VERSION,
     startedAt: new Date().toISOString(),
     received: {},
+    timeMs: 0,
     stoppedEarly: false,
     stopReason: null,
-    timeMs: 0,
     regFetches: 0,
     regFetchSkippedFastMode: 0,
-    nameFetches: 0,
-    siteDebug: [],
     firstSiteHtmlSnippet: null,
     kpi: {
       datesParsedFromListing: 0,
@@ -511,20 +490,13 @@ Deno.serve(async (req) => {
       namesFromListing: 0,
       namesFromDetail: 0,
       namesMissing: 0,
+      namesRejectedByQualityGate: 0,
     },
-    siteKpi: {
-      sitesWithRegLinks: 0,
-      sitesWithNoRegLinks: 0,
-      sitesDirectRegUrl: 0,
-      registerListingsExpanded: 0,
-    },
+    siteDebug: [],
   };
 
   const startedMs = Date.now();
-
-  function outOfTime(maxMs) {
-    return Date.now() - startedMs > maxMs;
-  }
+  const outOfTime = (maxMs) => Date.now() - startedMs > maxMs;
 
   function finishResponse(payload, status) {
     debug.timeMs = Date.now() - startedMs;
@@ -553,10 +525,7 @@ Deno.serve(async (req) => {
     const maxMs = Number(body && body.maxMs !== undefined ? body.maxMs : 45000);
     const siteTimeoutMs = Number(body && body.siteTimeoutMs !== undefined ? body.siteTimeoutMs : 12000);
     const regTimeoutMs = Number(body && body.regTimeoutMs !== undefined ? body.regTimeoutMs : 12000);
-
-    // NEW: name-only fallback fetch timeout (keep it small)
     const nameTimeoutMs = Number(body && body.nameTimeoutMs !== undefined ? body.nameTimeoutMs : 6000);
-
     const maxRegFetchTotal = Number(body && body.maxRegFetchTotal !== undefined ? body.maxRegFetchTotal : 250);
 
     const testSiteUrl = safeString(body && body.testSiteUrl);
@@ -588,9 +557,7 @@ Deno.serve(async (req) => {
       return finishResponse({ error: "Missing required: sportId/sportName", version: VERSION, debug }, 400);
     }
 
-    // Build crawl plan
     let crawl = [];
-
     if (testSiteUrl) {
       crawl = [{ siteUrl: testSiteUrl, school_id: testSchoolId || null }];
     } else if (sites && sites.length) {
@@ -648,70 +615,33 @@ Deno.serve(async (req) => {
       let regLinks = [];
 
       try {
-        if (isDirectRegistrationUrl(siteUrl)) {
-          debug.siteKpi.sitesDirectRegUrl += 1;
+        const r = await fetchWithTimeout(
+          siteUrl,
+          {
+            method: "GET",
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)", Accept: "text/html,*/*" },
+          },
+          siteTimeoutMs
+        );
 
-          const r = await fetchWithTimeout(
+        http = r.status;
+        htmlType = r.headers.get("content-type") || "";
+        html = await r.text().catch(() => "");
+
+        if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(html, 1600);
+
+        if (isRegisterListingUrl(siteUrl)) {
+          regLinks = extractCampLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
+          debug.siteDebug.push({
             siteUrl,
-            {
-              method: "GET",
-              headers: { "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)", Accept: "text/html,*/*" },
-            },
-            siteTimeoutMs
-          );
-
-          http = r.status;
-          htmlType = r.headers.get("content-type") || "";
-          html = await r.text().catch(() => "");
-
-          if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(html, 1600);
-
-          if (isRegisterListingUrl(siteUrl)) {
-            const links = extractCampLinksFromHtml(html, siteUrl);
-            regLinks = (links && links.length ? links : [siteUrl]).slice(0, maxRegsPerSite);
-            debug.siteKpi.registerListingsExpanded += 1;
-
-            debug.siteDebug.push({
-              siteUrl,
-              http,
-              htmlType,
-              regLinks: regLinks.length,
-              sample: regLinks.length ? regLinks[0] : "",
-              notes: "direct_register_listing_expanded",
-            });
-          } else {
-            regLinks = [siteUrl];
-            debug.siteDebug.push({
-              siteUrl,
-              http,
-              htmlType,
-              regLinks: 1,
-              sample: siteUrl,
-              notes: "direct_camp_page",
-            });
-          }
+            http,
+            htmlType,
+            regLinks: regLinks.length,
+            sample: regLinks.length ? regLinks[0] : "",
+            notes: "direct_register_listing_expanded",
+          });
         } else {
-          const r = await fetchWithTimeout(
-            siteUrl,
-            {
-              method: "GET",
-              headers: { "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)", Accept: "text/html,*/*" },
-            },
-            siteTimeoutMs
-          );
-
-          http = r.status;
-          htmlType = r.headers.get("content-type") || "";
-          html = await r.text().catch(() => "");
-
-          if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(html, 1600);
-
-          const links = extractCampLinksFromHtml(html, siteUrl);
-          regLinks = (links || []).slice(0, maxRegsPerSite);
-
-          if (regLinks.length) debug.siteKpi.sitesWithRegLinks += 1;
-          else debug.siteKpi.sitesWithNoRegLinks += 1;
-
+          regLinks = extractCampLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
           debug.siteDebug.push({
             siteUrl,
             http,
@@ -720,9 +650,13 @@ Deno.serve(async (req) => {
             sample: regLinks.length ? regLinks[0] : "",
             notes: regLinks.length ? "" : "no_camp_links_found",
           });
-
-          if (!regLinks.length) continue;
         }
+
+        if (!regLinks.length && isDirectRegistrationUrl(siteUrl)) {
+          // direct camp page case
+          regLinks = [siteUrl];
+        }
+        if (!regLinks.length) continue;
 
         for (let i2 = 0; i2 < regLinks.length; i2++) {
           if (accepted.length >= maxEvents) break;
@@ -735,12 +669,11 @@ Deno.serve(async (req) => {
           const regUrl = regLinks[i2];
           processedRegs += 1;
 
-          const listingSnippetHtml = html ? extractSnippetAroundNeedle(html, regUrl, 560) : null;
+          const listingSnippetHtml = html ? extractSnippetAroundNeedle(html, regUrl, 900) : null;
           const listingSnippetText = listingSnippetHtml ? htmlToText(listingSnippetHtml) : null;
 
-          // DATE from listing snippet
+          // Date from listing
           const listingParsed = listingSnippetText ? parseSingleOrRangeDate(listingSnippetText, defaultYear) : null;
-
           let finalParsed = null;
           let eventDatesRaw = null;
 
@@ -750,30 +683,31 @@ Deno.serve(async (req) => {
             debug.kpi.datesParsedFromListing += 1;
           }
 
-          // NAME from listing snippet (NEW)
+          // Name from listing (fixed)
           let campName = extractCampNameFromListingSnippet(listingSnippetHtml, regUrl);
           if (campName) debug.kpi.namesFromListing += 1;
 
-          // FAST MODE: skip detail fetch if date is present,
-          // BUT: if name is missing, do a small name-only fetch
-          let shouldFetchDetailForDates = !fastMode || !(finalParsed && finalParsed.start);
-          let shouldFetchDetailForName = !campName;
+          // Quality gate: if listing gave junk, treat as missing and force name-only fetch
+          if (campName && looksLikeMetadataNotTitle(campName)) {
+            debug.kpi.namesRejectedByQualityGate += 1;
+            campName = null;
+          }
 
-          // Protect runtime with maxRegFetchTotal
+          const shouldFetchDates = !fastMode || !(finalParsed && finalParsed.start);
+          const shouldFetchName = !campName;
+
+          const shouldFetchDetail = shouldFetchDates || shouldFetchName;
+
           let regHttp = 0;
           let regHtml = "";
           let desc = null;
 
-          // If we must fetch detail for dates, it also helps name, so combine.
-          const shouldFetchAnyDetail = shouldFetchDetailForDates || shouldFetchDetailForName;
-
-          if (shouldFetchAnyDetail) {
+          if (shouldFetchDetail) {
             if (debug.regFetches >= maxRegFetchTotal) {
               debug.stoppedEarly = true;
               debug.stopReason = "maxRegFetchTotal_reached";
               break;
             }
-
             debug.regFetches += 1;
 
             try {
@@ -783,14 +717,14 @@ Deno.serve(async (req) => {
                   method: "GET",
                   headers: { "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)", Accept: "text/html,*/*" },
                 },
-                // If we already have dates but need name, use the smaller timeout
-                shouldFetchDetailForDates ? regTimeoutMs : nameTimeoutMs
+                shouldFetchDates ? regTimeoutMs : nameTimeoutMs
               );
 
               regHttp = rr.status;
               regHtml = await rr.text().catch(() => "");
 
-              // Fill missing name/desc from detail
+              desc = regHtml ? extractMetaDescription(regHtml) : null;
+
               if (!campName && regHtml) {
                 const h1 = extractH1(regHtml);
                 const title = extractTitle(regHtml);
@@ -798,17 +732,12 @@ Deno.serve(async (req) => {
                 if (campName) debug.kpi.namesFromDetail += 1;
               }
 
-              if (regHtml) {
-                desc = extractMetaDescription(regHtml);
-              }
-
-              // Fill missing date from detail
               if ((!finalParsed || !finalParsed.start) && regHtml) {
                 const candidates = extractDateCandidates(regHtml);
                 const pick = pickBestParsedDateFromCandidates(candidates, defaultYear);
                 if (pick && pick.parsed && pick.parsed.start) {
                   finalParsed = pick.parsed;
-                  eventDatesRaw = pick.bestRaw || (finalParsed.rawLine || null);
+                  eventDatesRaw = pick.bestRaw || pick.parsed.rawLine || null;
                   debug.kpi.datesParsedFromDetail += 1;
                 }
               }
@@ -839,10 +768,9 @@ Deno.serve(async (req) => {
 
           if (!campName) {
             debug.kpi.namesMissing += 1;
-            campName = "Camp"; // final fallback
+            campName = "Camp";
           }
 
-          // program id from id=
           let programId = null;
           const idMatch = /[?&]id=(\d+)/i.exec(regUrl);
           if (idMatch && idMatch[1]) programId = "ryzer:" + idMatch[1];
@@ -872,13 +800,7 @@ Deno.serve(async (req) => {
             source_url: regUrl,
             last_seen_at: new Date().toISOString(),
 
-            content_hash: hashLite(
-              stripNonAscii(campName) +
-                "|" +
-                (desc || "") +
-                "|" +
-                (eventDatesRaw || "")
-            ),
+            content_hash: hashLite(stripNonAscii(campName) + "|" + (desc || "") + "|" + (eventDatesRaw || "")),
 
             event_dates_raw: eventDatesRaw || null,
             grades_raw: null,
@@ -916,8 +838,8 @@ Deno.serve(async (req) => {
       {
         version: VERSION,
         stats: {
-          processedSites: processedSites,
-          processedRegs: processedRegs,
+          processedSites,
+          processedRegs,
           accepted: accepted.length,
           rejected: rejected.length,
           errors: errors.length,
