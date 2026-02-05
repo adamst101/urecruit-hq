@@ -1,15 +1,16 @@
 // functions/sportsUSAIngestCamps.js
 // Base44 Backend Function (Deno)
 //
-// v10 updates:
-// - Contract-compat: accepted is FLAT CampDemo-shaped objects (no nested {event})
-// - Fix event_key: avoid double "ryzer:" prefix
-// - Price hygiene: unknown price stays null (never 0)
-// - Parse grades + price_min/price_max from Ryzer page text (best-effort)
-// - Debug KPIs retained (dates listing vs ryzer, site KPI)
+// v11 updates:
+// - Price: prefer "Register Now" / tooltip fee patterns; compute total ($50 + $9 Fees => 59)
+// - Price hygiene: set price = price_max (best single value) when available; otherwise null
+// - Avoid Base44 defaults: return nulls, and UI can omit on write (AdminImport updated)
+// - Location: parse city/state from "Location:" line (best-effort)
+// - Contract-compat: accepted remains FLAT CampDemo-shaped objects
+// - Event key normalization retained (avoid ryzer:ryzer double prefix)
 
 const VERSION =
-  "sportsUSAIngestCamps_2026-02-04_v10_price_grades_parse_null_price_fix_eventKey_prefix_fix";
+  "sportsUSAIngestCamps_2026-02-04_v11_registerNow_price_location_city_state";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -97,8 +98,7 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
 
   function isRyzerCampLink(u) {
     var x = lc(u || "");
-    if (x.indexOf("register.ryzer.com") !== -1 && x.indexOf("camp.cfm") !== -1) return true;
-    return false;
+    return x.indexOf("register.ryzer.com") !== -1 && x.indexOf("camp.cfm") !== -1;
   }
 
   function pushIfValid(raw) {
@@ -403,21 +403,7 @@ function extractRyzerDateCandidates(html) {
 
   var text = htmlToText(html);
   if (text) {
-    var tokens = [
-      "january",
-      "february",
-      "march",
-      "april",
-      "may",
-      "june",
-      "july",
-      "august",
-      "september",
-      "october",
-      "november",
-      "december",
-      "/20",
-    ];
+    var tokens = ["location", "grades", "register", "cost", "price", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "/20"];
     var lower = text.toLowerCase();
     var added = 0;
     for (var k = 0; k < tokens.length; k++) {
@@ -425,7 +411,7 @@ function extractRyzerDateCandidates(html) {
       if (idx >= 0) {
         var start = idx - 60;
         if (start < 0) start = 0;
-        var end = idx + 160;
+        var end = idx + 200;
         if (end > text.length) end = text.length;
         var snip = stripNonAscii(text.slice(start, end));
         if (snip && snip.length >= 8) out.push(snip);
@@ -458,72 +444,120 @@ function pickBestParsedDateFromCandidates(candidates, defaultYear) {
       bestScore = sc;
       bestRaw = c;
     }
-    if (
-      best &&
-      best.start &&
-      best.end &&
-      bestScore >= 15 &&
-      best.pattern &&
-      best.pattern.indexOf("infer") < 0
-    ) {
-      break;
-    }
+    if (best && best.start && best.end && bestScore >= 15 && best.pattern && best.pattern.indexOf("infer") < 0) break;
   }
 
   return { parsed: best, bestRaw: bestRaw, score: bestScore };
 }
 
 /* -------------------------
-   Grades / Price parsing
+   Grades / Price / Location parsing
 -------------------------- */
 function extractGradesRawFromText(text) {
   var t = safeString(text);
   if (!t) return null;
 
-  // Examples:
-  // "Grades: 9th - 12th"
-  // "Grades: 7-12"
-  // "Grade: 9-12"
-  var m = /\bGrades?\s*:\s*([^\.\|]{3,40})/i.exec(t);
+  var m = /\bGrades?\s*:\s*([^\.\|]{3,50})/i.exec(t);
   if (m && m[1]) return stripNonAscii(m[1]);
 
   return null;
 }
 
+// Pull a clean "Location:" line and parse "City, ST" out of it.
+// Examples it should handle:
+//   "Location: Richmond, KY"
+//   "Location: Roy Kidd Stadium - Richmond, KY"
+//   "Location: Eastern Kentucky University | Richmond, KY"
+function extractCityStateFromText(text) {
+  var t = safeString(text);
+  if (!t) return { city: null, state: null, location_raw: null };
+
+  var m = /\bLocation\s*:\s*([^\|]{3,140})/i.exec(t);
+  var raw = m && m[1] ? stripNonAscii(m[1]) : null;
+  if (!raw) return { city: null, state: null, location_raw: null };
+
+  // Look for last "City, ST" in the raw string
+  var m2 = /([A-Za-z][A-Za-z .'-]{2,40})\s*,\s*([A-Za-z]{2})\b/.exec(raw);
+  if (!m2) {
+    // fallback "City ST"
+    m2 = /([A-Za-z][A-Za-z .'-]{2,40})\s+([A-Za-z]{2})\b/.exec(raw);
+  }
+
+  var city = m2 && m2[1] ? stripNonAscii(m2[1]) : null;
+  var state = m2 && m2[2] ? String(m2[2]).toUpperCase() : null;
+
+  return { city: city || null, state: state || null, location_raw: raw };
+}
+
+// Price parsing rules:
+// - Prefer "Register Now" context
+// - If we see "($50.00 + $9.00 Fees)" compute 59 as the total
+// - Otherwise, prefer an explicit "$59.00" near Register
+// - price_max should be the best "all-in" total (or highest seen near Register)
+// - price_min is lowest near Register (optional)
 function extractPricesFromText(text) {
   var t = safeString(text);
   if (!t) return { price_raw: null, price_min: null, price_max: null };
 
-  // Capture all $ amounts
-  var re = /\$\s*([0-9]{1,5})(?:\.[0-9]{2})?/g;
-  var m;
-  var nums = [];
-  while ((m = re.exec(t)) !== null) {
-    var n = Number(m[1]);
-    if (Number.isFinite(n) && n > 0) nums.push(n);
-    if (nums.length >= 10) break;
+  var lower = t.toLowerCase();
+
+  function pullWindow(needle, radius) {
+    var idx = lower.indexOf(needle);
+    if (idx < 0) return null;
+    var start = idx - (radius || 180);
+    if (start < 0) start = 0;
+    var end = idx + (radius || 180);
+    if (end > t.length) end = t.length;
+    return t.slice(start, end);
   }
 
-  if (!nums.length) return { price_raw: null, price_min: null, price_max: null };
+  // Best window: around "register now" or "register"
+  var win =
+    pullWindow("register now", 220) ||
+    pullWindow("register", 220) ||
+    pullWindow("cost", 220) ||
+    pullWindow("price", 220) ||
+    t;
 
-  nums.sort(function (a, b) {
-    return a - b;
-  });
+  // 1) Try fee-combo pattern: ($50.00 + $9.00 Fees)
+  // We'll take the FIRST pair found in the "register" window as the primary.
+  var combo = /\(\s*\$\s*([0-9]{1,5}(?:\.[0-9]{1,2})?)\s*\+\s*\$\s*([0-9]{1,5}(?:\.[0-9]{1,2})?)\s*(?:Fees?)?\s*\)/i.exec(win);
+  if (combo) {
+    var a = Number(combo[1]);
+    var b = Number(combo[2]);
+    if (Number.isFinite(a) && Number.isFinite(b) && a > 0 && b >= 0) {
+      var total = Math.round((a + b) * 100) / 100;
+      return {
+        price_raw: stripNonAscii(combo[0]),
+        price_min: total,
+        price_max: total,
+      };
+    }
+  }
 
-  // Prefer lines that mention cost/price
-  var rawLine = null;
-  var m2 = /\b(?:Cost|Price)\b[^\.]{0,120}/i.exec(t);
-  if (m2 && m2[0]) rawLine = stripNonAscii(m2[0]);
-  if (!rawLine) rawLine = "Prices detected: " + nums.slice(0, 5).join(", ");
+  // 2) Try explicit total like "$59.00" near register
+  var dollars = [];
+  var re = /\$\s*([0-9]{1,5})(?:\.[0-9]{2})?/g;
+  var m;
+  while ((m = re.exec(win)) !== null) {
+    var n = Number(m[1]);
+    if (Number.isFinite(n) && n > 0) dollars.push(n);
+    if (dollars.length >= 12) break;
+  }
 
-  var min = nums[0] || null;
-  var max = nums[nums.length - 1] || null;
+  if (dollars.length) {
+    dollars.sort(function (a, b) {
+      return a - b;
+    });
 
-  return {
-    price_raw: rawLine,
-    price_min: min,
-    price_max: max,
-  };
+    return {
+      price_raw: stripNonAscii(win),
+      price_min: dollars[0] || null,
+      price_max: dollars[dollars.length - 1] || null,
+    };
+  }
+
+  return { price_raw: null, price_min: null, price_max: null };
 }
 
 /* -------------------------
@@ -533,15 +567,19 @@ function sanitizeCampName(title) {
   var t = safeString(title);
   if (!t) return "Camp";
 
-  // Trim common Ryzer title suffixes/noise
   t = t.replace(/\s*\|\s*Event Registration.*$/i, "").trim();
   t = t.replace(/\s*\-\s*Event Registration.*$/i, "").trim();
   t = t.replace(/\s*\|\s*Registration.*$/i, "").trim();
   t = t.replace(/\s*\-\s*Registration.*$/i, "").trim();
 
-  // "View XYZ Details" -> "XYZ"
   var m = /^View\s+(.+?)\s+Details$/i.exec(t);
   if (m && m[1]) t = String(m[1]).trim();
+
+  // Guard against tooltip/table junk becoming the name
+  var bad = lc(t);
+  if (bad.indexOf("data-toggle") !== -1 || bad.indexOf("tooltip") !== -1 || bad.indexOf("valign") !== -1 || bad.indexOf("data-th") !== -1) {
+    return "Camp";
+  }
 
   return stripNonAscii(t) || "Camp";
 }
@@ -551,8 +589,6 @@ function sanitizeCampName(title) {
 -------------------------- */
 function normalizeProgramIdForKey(programId) {
   var p = safeString(programId) || "unknown";
-  // If programId already includes "ryzer:" then don't double-prefix later
-  // We'll remove a leading "ryzer:" only for key construction stability
   p = p.replace(/^ryzer:/i, "");
   return p;
 }
@@ -608,10 +644,7 @@ Deno.serve(async (req) => {
     var testSiteUrl = safeString(body && body.testSiteUrl);
     var testSchoolId = safeString(body && body.testSchoolId);
 
-    // Preferred: sites[] = [{school_id, sport_id, camp_site_url}]
     var sites = body && Array.isArray(body.sites) ? body.sites : null;
-
-    // Back-compat: siteUrls[]
     var siteUrls = body && Array.isArray(body.siteUrls) ? body.siteUrls : null;
 
     if (!sportId || !sportName) {
@@ -621,7 +654,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Build crawl plan (keep mapping to school_id if we have it)
     var crawl = [];
 
     if (testSiteUrl) {
@@ -715,7 +747,6 @@ Deno.serve(async (req) => {
           var regUrl = regLinks[i2];
           processedRegs += 1;
 
-          // Listing-first attempt
           var listingSnippetHtml = extractSnippetAroundNeedle(html, regUrl, 340);
           var listingSnippetText = listingSnippetHtml ? htmlToText(listingSnippetHtml) : null;
           var listingParsed = listingSnippetText ? parseSingleOrRangeDate(listingSnippetText, defaultYear) : null;
@@ -723,17 +754,14 @@ Deno.serve(async (req) => {
           var finalParsed = null;
           var datesSource = null;
           var eventDatesRaw = null;
-          var datePattern = null;
 
           if (listingParsed && listingParsed.start) {
             finalParsed = listingParsed;
             datesSource = "listing";
             eventDatesRaw = listingParsed.rawLine || truncate(listingSnippetText, 240);
-            datePattern = listingParsed.pattern || null;
             debug.kpi.datesParsedFromListing += 1;
           }
 
-          // Ryzer fetch if needed (or for metadata/price/grades)
           var regHttp = 0;
           var regHtml = "";
           var regText = "";
@@ -773,7 +801,6 @@ Deno.serve(async (req) => {
               finalParsed = ryzerPick.parsed;
               datesSource = "ryzer";
               eventDatesRaw = ryzerPick.bestRaw || (finalParsed.rawLine || null);
-              datePattern = finalParsed.pattern || null;
               debug.kpi.datesParsedFromRyzer += 1;
             }
           }
@@ -793,40 +820,46 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          // Metadata
           var title = regHtml ? extractTitle(regHtml) : null;
           var desc = regHtml ? extractMetaDescription(regHtml) : null;
           var campName = sanitizeCampName(title);
+          if (campName === "Camp") {
+            // fallback: try a header candidate if title looked junky
+            var headerCandidates = regHtml ? extractHeaderTextCandidates(regHtml) : [];
+            if (headerCandidates && headerCandidates.length) campName = stripNonAscii(headerCandidates[0]) || "Camp";
+          }
 
-          // Program id from id= param
           var programId = null;
           var idMatch = /[?&]id=(\d+)/i.exec(regUrl);
           if (idMatch && idMatch[1]) programId = "ryzer:" + idMatch[1];
           if (!programId) programId = "ryzer:" + hashLite(regUrl);
 
-          // event_key (single-prefix fix)
           var eventKey = buildEventKey("ryzer", programId, finalParsed.start, regUrl);
 
-          // Grades + Price (from Ryzer page text)
           var gradesRaw = extractGradesRawFromText(regText);
+
+          // Price: Register Now preference
           var pricePack = extractPricesFromText(regText);
 
-          // IMPORTANT: unknown price stays null (not 0)
-          var priceMin = pricePack.price_min;
-          var priceMax = pricePack.price_max;
-          var priceRaw = pricePack.price_raw;
+          // Location: parse city/state from Location:
+          var loc = extractCityStateFromText(regText);
+
+          // Best single numeric price (what you want): drive on price_max
+          var priceMax = pricePack.price_max != null ? pricePack.price_max : null;
+          var priceMin = pricePack.price_min != null ? pricePack.price_min : null;
 
           accepted.push({
-            // CampDemo-shaped flat object
-            school_id: siteSchoolId || null, // AdminImport can overwrite if needed
+            school_id: siteSchoolId || null,
             sport_id: sportId,
             camp_name: campName,
             start_date: finalParsed.start,
             end_date: finalParsed.end || null,
-            city: null,
-            state: null,
+
+            city: loc.city || null,
+            state: loc.state || null,
+
             position_ids: [],
-            price: null, // keep null; UI can use min/max
+            price: priceMax != null ? priceMax : null, // ✅ drive on price_max as the single value
             link_url: regUrl,
             notes: desc || null,
 
@@ -836,14 +869,28 @@ Deno.serve(async (req) => {
             source_platform: "ryzer",
             source_url: regUrl,
             last_seen_at: new Date().toISOString(),
-            content_hash: hashLite(stripNonAscii(campName) + "|" + (desc || "") + "|" + (eventDatesRaw || "") + "|" + (gradesRaw || "") + "|" + (priceRaw || "")),
+            content_hash: hashLite(
+              stripNonAscii(campName) +
+                "|" +
+                (desc || "") +
+                "|" +
+                (eventDatesRaw || "") +
+                "|" +
+                (gradesRaw || "") +
+                "|" +
+                (pricePack.price_raw || "") +
+                "|" +
+                (loc.location_raw || "")
+            ),
 
             event_dates_raw: eventDatesRaw || null,
             grades_raw: gradesRaw || null,
             register_by_raw: null,
-            price_raw: priceRaw || null,
-            price_min: priceMin != null ? priceMin : null,
-            price_max: priceMax != null ? priceMax : null,
+
+            price_raw: pricePack.price_raw || null,
+            price_min: priceMin,
+            price_max: priceMax,
+
             sections_json: null,
           });
         }
