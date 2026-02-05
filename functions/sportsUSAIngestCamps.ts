@@ -1,15 +1,16 @@
 // functions/sportsUSAIngestCamps.js
 // Base44 Backend Function (Deno)
 //
-// v11 updates (2026-02-04):
-// - Parse Location -> city/state
-// - Price: prefer "Register Now" totals; set price = price_max (all-in)
-// - Improve camp_name: prefer <h1> text, then <title>
-// - Keep flat CampDemo-shaped accepted objects
-// - Keep event_key single-prefix (no double "ryzer:")
+// v12 updates (2026-02-05):
+// - Add fastMode (default true): if listing snippet yields date, skip Ryzer fetch to avoid 504s
+// - Add wall-clock cap maxMs (default 45000ms) to return partial results rather than timing out
+// - Add per-request timeouts for site and reg fetches
+// - Add global cap maxRegFetchTotal (default 250) for predictable run time
+// - Preserve flat CampDemo-shaped accepted objects
+// - Preserve event_key single-prefix (no double "ryzer:")
 
 const VERSION =
-  "sportsUSAIngestCamps_2026-02-04_v11_location_registerNow_price_name_fix";
+  "sportsUSAIngestCamps_2026-02-05_v12_fastMode_maxMs_timeouts_maxRegFetchTotal";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -70,6 +71,19 @@ function hashLite(s) {
 }
 
 /* -------------------------
+   Fetch with timeout
+-------------------------- */
+async function fetchWithTimeout(url, opts, ms) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), Math.max(1000, Number(ms || 12000)));
+  try {
+    return await fetch(url, { ...(opts || {}), signal: controller.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/* -------------------------
    Registration link discovery
 -------------------------- */
 function extractRyzerRegLinksFromHtml(html, siteUrl) {
@@ -97,6 +111,7 @@ function extractRyzerRegLinksFromHtml(html, siteUrl) {
 
   function isRyzerCampLink(u) {
     const x = lc(u || "");
+    // Accept ANY Ryzer camp link (Montana-style included)
     return x.includes("register.ryzer.com") && x.includes("camp.cfm");
   }
 
@@ -180,17 +195,15 @@ function htmlToText(html) {
 }
 
 /* -------------------------
-   Date parsing (same as v10)
+   Date parsing
 -------------------------- */
 function pad2(n) {
   return n < 10 ? "0" + n : String(n);
 }
-
 function toIsoDate(y, m, d) {
   if (!y || !m || !d) return null;
   return String(y) + "-" + pad2(m) + "-" + pad2(d);
 }
-
 function monthNumFromName(name) {
   const n = lc(name);
   if (n.startsWith("jan")) return 1;
@@ -207,11 +220,9 @@ function monthNumFromName(name) {
   if (n.startsWith("dec")) return 12;
   return null;
 }
-
 function stripOrdinal(x) {
   return String(x || "").replace(/(st|nd|rd|th)\b/gi, "");
 }
-
 function parseMMDDYYYY(s) {
   const m = /(\b\d{1,2})\/(\d{1,2})\/(\d{4}\b)/.exec(s);
   if (!m) return null;
@@ -221,7 +232,6 @@ function parseMMDDYYYY(s) {
   if (!mm || !dd || !yy) return null;
   return { y: yy, m: mm, d: dd };
 }
-
 function parseMonthNameDate(s) {
   const m =
     /\b(January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\b\s+(\d{1,2}(?:st|nd|rd|th)?)\b(?:[,\s]+(\d{4}))?/i.exec(
@@ -337,14 +347,12 @@ function extractTitle(html) {
   if (!m) return null;
   return stripNonAscii(m[1]);
 }
-
 function extractMetaDescription(html) {
   if (!html) return null;
   const m = /<meta[^>]*name="description"[^>]*content="([^"]*)"/i.exec(html);
   if (!m) return null;
   return stripNonAscii(m[1]);
 }
-
 function extractH1(html) {
   if (!html) return null;
   const m = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
@@ -396,7 +404,21 @@ function extractRyzerDateCandidates(html) {
   const text = htmlToText(html);
   if (text) {
     const lower = text.toLowerCase();
-    const tokens = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "/20"];
+    const tokens = [
+      "january",
+      "february",
+      "march",
+      "april",
+      "may",
+      "june",
+      "july",
+      "august",
+      "september",
+      "october",
+      "november",
+      "december",
+      "/20",
+    ];
     let added = 0;
     for (let k = 0; k < tokens.length; k++) {
       const idx = lower.indexOf(tokens[k]);
@@ -457,7 +479,6 @@ function extractLocationFromText(text) {
   const t = safeString(text);
   if (!t) return { city: null, state: null, location_raw: null };
 
-  // Prefer explicit "Location City, ST"
   let m = /\bLocation\b\s*:\s*([A-Za-z0-9 .'\-]+)\s*,\s*([A-Z]{2})\b/.exec(t);
   if (!m) m = /\bLocation\b\s+([A-Za-z0-9 .'\-]+)\s*,\s*([A-Z]{2})\b/.exec(t);
 
@@ -476,7 +497,6 @@ function extractRegisterNowPrices(text) {
   const t = safeString(text);
   if (!t) return { totals: [], bases: [], raw: null };
 
-  // Example: "Register Now $106.00 ($95.00 + $11.00 Fees)"
   const re = /\bRegister\s+Now\b[^$]{0,20}\$\s*([0-9]{1,5})(?:\.[0-9]{2})?/gi;
   let m;
   const totals = [];
@@ -486,7 +506,6 @@ function extractRegisterNowPrices(text) {
     if (totals.length >= 10) break;
   }
 
-  // Base inside parens
   const reBase = /\(\s*\$\s*([0-9]{1,5})(?:\.[0-9]{2})?\s*\+\s*\$\s*([0-9]{1,5})(?:\.[0-9]{2})?\s*Fees?\s*\)/gi;
   const bases = [];
   let mb;
@@ -496,7 +515,6 @@ function extractRegisterNowPrices(text) {
     if (bases.length >= 10) break;
   }
 
-  // Capture a representative raw line
   const rawLine = (() => {
     const mm = /\bRegister\s+Now\b[^\.]{0,180}/i.exec(t);
     return mm && mm[0] ? stripNonAscii(mm[0]) : null;
@@ -509,7 +527,6 @@ function extractPricesFromText(text) {
   const t = safeString(text);
   if (!t) return { price_raw: null, price_min: null, price_max: null, price_best: null };
 
-  // 1) Prefer Register Now totals
   const reg = extractRegisterNowPrices(t);
   if (reg.totals.length) {
     const totals = reg.totals.slice().sort((a, b) => a - b);
@@ -520,11 +537,10 @@ function extractPricesFromText(text) {
       price_raw: reg.raw || "Register Now prices detected",
       price_min: minTotal,
       price_max: maxTotal,
-      price_best: maxTotal, // choose all-in price as the single value
+      price_best: maxTotal,
     };
   }
 
-  // 2) Fallback: any $ amounts
   const re = /\$\s*([0-9]{1,5})(?:\.[0-9]{2})?/g;
   let m;
   const nums = [];
@@ -591,6 +607,11 @@ Deno.serve(async (req) => {
   const debug = {
     version: VERSION,
     startedAt: new Date().toISOString(),
+    stoppedEarly: false,
+    stopReason: null,
+    timeMs: 0,
+    regFetches: 0,
+    regFetchSkippedFastMode: 0,
     siteDebug: [],
     firstSiteHtmlSnippet: null,
     kpi: {
@@ -604,12 +625,23 @@ Deno.serve(async (req) => {
     },
   };
 
+  const startedMs = Date.now();
+
+  function outOfTime(maxMs) {
+    return Date.now() - startedMs > maxMs;
+  }
+
+  function finishResponse(payload, status) {
+    debug.timeMs = Date.now() - startedMs;
+    return new Response(JSON.stringify(payload), {
+      status: status || 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   try {
     if (req.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method not allowed", version: VERSION, debug }), {
-        status: 405,
-        headers: { "Content-Type": "application/json" },
-      });
+      return finishResponse({ error: "Method not allowed", version: VERSION, debug }, 405);
     }
 
     const body = await req.json().catch(() => null);
@@ -622,6 +654,13 @@ Deno.serve(async (req) => {
     const maxRegsPerSite = Number(body && body.maxRegsPerSite !== undefined ? body.maxRegsPerSite : 5);
     const maxEvents = Number(body && body.maxEvents !== undefined ? body.maxEvents : 25);
 
+    // New runtime controls
+    const fastMode = body && body.fastMode !== undefined ? !!body.fastMode : true;
+    const maxMs = Number(body && body.maxMs !== undefined ? body.maxMs : 45000);
+    const siteTimeoutMs = Number(body && body.siteTimeoutMs !== undefined ? body.siteTimeoutMs : 12000);
+    const regTimeoutMs = Number(body && body.regTimeoutMs !== undefined ? body.regTimeoutMs : 12000);
+    const maxRegFetchTotal = Number(body && body.maxRegFetchTotal !== undefined ? body.maxRegFetchTotal : 250);
+
     const testSiteUrl = safeString(body && body.testSiteUrl);
     const testSchoolId = safeString(body && body.testSchoolId);
 
@@ -629,10 +668,7 @@ Deno.serve(async (req) => {
     const siteUrls = body && Array.isArray(body.siteUrls) ? body.siteUrls : null;
 
     if (!sportId || !sportName) {
-      return new Response(JSON.stringify({ error: "Missing required: sportId/sportName", version: VERSION, debug }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+      return finishResponse({ error: "Missing required: sportId/sportName", version: VERSION, debug }, 400);
     }
 
     // Build crawl plan
@@ -654,16 +690,16 @@ Deno.serve(async (req) => {
         crawl.push({ siteUrl: u2, school_id: null });
       }
     } else {
-      return new Response(
-        JSON.stringify({
+      return finishResponse(
+        {
           version: VERSION,
-          stats: { processedSites: 0, processedRegs: 0, accepted: 0, rejected: 0, errors: 1 },
+          stats: { processedSites: 0, processedRegs: 0, accepted: 0, rejected: 0, errors: 1, percentWithStartDate: 0 },
           accepted: [],
           rejected_samples: [],
           errors: [{ error: "Provide sites[] OR siteUrls[] OR testSiteUrl." }],
           debug,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
+        },
+        200
       );
     }
 
@@ -679,6 +715,11 @@ Deno.serve(async (req) => {
 
     for (let s = 0; s < crawl.length; s++) {
       if (accepted.length >= maxEvents) break;
+      if (outOfTime(maxMs)) {
+        debug.stoppedEarly = true;
+        debug.stopReason = "maxMs_exceeded";
+        break;
+      }
 
       const siteUrl = crawl[s].siteUrl;
       const siteSchoolId = crawl[s].school_id;
@@ -691,13 +732,17 @@ Deno.serve(async (req) => {
       let regLinks = [];
 
       try {
-        const r = await fetch(siteUrl, {
-          method: "GET",
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-            Accept: "text/html,*/*",
+        const r = await fetchWithTimeout(
+          siteUrl,
+          {
+            method: "GET",
+            headers: {
+              "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
+              Accept: "text/html,*/*",
+            },
           },
-        });
+          siteTimeoutMs
+        );
 
         http = r.status;
         htmlType = r.headers.get("content-type") || "";
@@ -723,6 +768,11 @@ Deno.serve(async (req) => {
 
         for (let i2 = 0; i2 < regLinks.length; i2++) {
           if (accepted.length >= maxEvents) break;
+          if (outOfTime(maxMs)) {
+            debug.stoppedEarly = true;
+            debug.stopReason = "maxMs_exceeded";
+            break;
+          }
 
           const regUrl = regLinks[i2];
           processedRegs += 1;
@@ -741,42 +791,61 @@ Deno.serve(async (req) => {
             debug.kpi.datesParsedFromListing += 1;
           }
 
-          // ryzer fetch
+          // FAST MODE: if listing gave us a date, skip Ryzer fetch to save time
           let regHttp = 0;
           let regHtml = "";
           let regText = "";
           let ryzerCandidates = [];
           let ryzerPick = null;
 
-          try {
-            const rr = await fetch(regUrl, {
-              method: "GET",
-              headers: {
-                "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-                Accept: "text/html,*/*",
-              },
-            });
+          const shouldFetchRyzer =
+            !fastMode || !(finalParsed && finalParsed.start) ? true : false;
 
-            regHttp = rr.status;
-            regHtml = await rr.text().catch(() => "");
-            if (rr.ok && regHtml) regText = htmlToText(regHtml);
-          } catch (eRegFetch) {
-            errors.push({
-              error: "reg_exception",
-              message: String((eRegFetch && eRegFetch.message) || eRegFetch),
-              registrationUrl: regUrl,
-            });
-          }
-
-          if ((!finalParsed || !finalParsed.start) && regHtml) {
-            ryzerCandidates = extractRyzerDateCandidates(regHtml);
-            ryzerPick = pickBestParsedDateFromCandidates(ryzerCandidates, defaultYear);
-
-            if (ryzerPick && ryzerPick.parsed && ryzerPick.parsed.start) {
-              finalParsed = ryzerPick.parsed;
-              eventDatesRaw = ryzerPick.bestRaw || (finalParsed.rawLine || null);
-              debug.kpi.datesParsedFromRyzer += 1;
+          if (shouldFetchRyzer) {
+            if (debug.regFetches >= maxRegFetchTotal) {
+              debug.stoppedEarly = true;
+              debug.stopReason = "maxRegFetchTotal_reached";
+              break;
             }
+
+            debug.regFetches += 1;
+
+            try {
+              const rr = await fetchWithTimeout(
+                regUrl,
+                {
+                  method: "GET",
+                  headers: {
+                    "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
+                    Accept: "text/html,*/*",
+                  },
+                },
+                regTimeoutMs
+              );
+
+              regHttp = rr.status;
+              regHtml = await rr.text().catch(() => "");
+              if (rr.ok && regHtml) regText = htmlToText(regHtml);
+            } catch (eRegFetch) {
+              errors.push({
+                error: "reg_exception",
+                message: String((eRegFetch && eRegFetch.message) || eRegFetch),
+                registrationUrl: regUrl,
+              });
+            }
+
+            if ((!finalParsed || !finalParsed.start) && regHtml) {
+              ryzerCandidates = extractRyzerDateCandidates(regHtml);
+              ryzerPick = pickBestParsedDateFromCandidates(ryzerCandidates, defaultYear);
+
+              if (ryzerPick && ryzerPick.parsed && ryzerPick.parsed.start) {
+                finalParsed = ryzerPick.parsed;
+                eventDatesRaw = ryzerPick.bestRaw || (finalParsed.rawLine || null);
+                debug.kpi.datesParsedFromRyzer += 1;
+              }
+            }
+          } else {
+            debug.regFetchSkippedFastMode += 1;
           }
 
           if (!finalParsed || !finalParsed.start) {
@@ -794,12 +863,12 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          // Name
+          // Name / Notes / Enrichment:
+          // - In fastMode with listing date, we may not have regHtml. Keep camp_name minimal.
           const h1 = regHtml ? extractH1(regHtml) : null;
           const title = regHtml ? extractTitle(regHtml) : null;
-          const campName = sanitizeCampName(h1 || title);
+          const campName = sanitizeCampName(h1 || title || "Camp");
 
-          // Notes
           const desc = regHtml ? extractMetaDescription(regHtml) : null;
 
           // Program id from id=
@@ -808,17 +877,12 @@ Deno.serve(async (req) => {
           if (idMatch && idMatch[1]) programId = "ryzer:" + idMatch[1];
           if (!programId) programId = "ryzer:" + hashLite(regUrl);
 
-          // event_key single-prefix
           const eventKey = buildEventKey("ryzer", programId, finalParsed.start, regUrl);
 
-          // Extract grades/location/prices from Ryzer text
-          const gradesRaw = extractGradesRawFromText(regText);
-          const loc = extractLocationFromText(regText);
-          const pricePack = extractPricesFromText(regText);
-
-          const priceMin = pricePack.price_min;
-          const priceMax = pricePack.price_max;
-          const priceBest = pricePack.price_best;
+          // Extract grades/location/prices from Ryzer text (only available if we fetched)
+          const gradesRaw = regText ? extractGradesRawFromText(regText) : null;
+          const loc = regText ? extractLocationFromText(regText) : { city: null, state: null, location_raw: null };
+          const pricePack = regText ? extractPricesFromText(regText) : { price_raw: null, price_min: null, price_max: null, price_best: null };
 
           accepted.push({
             school_id: siteSchoolId || null,
@@ -831,8 +895,7 @@ Deno.serve(async (req) => {
             state: loc.state || null,
             position_ids: [],
 
-            // ✅ Set single value to "all-in" best (typically price_max)
-            price: priceBest != null ? priceBest : null,
+            price: pricePack.price_best != null ? pricePack.price_best : null,
 
             link_url: regUrl,
             notes: desc || null,
@@ -855,7 +918,7 @@ Deno.serve(async (req) => {
                 "|" +
                 (pricePack.price_raw || "") +
                 "|" +
-                (loc.location_raw || "")
+                ((loc && loc.location_raw) || "")
             ),
 
             event_dates_raw: eventDatesRaw || null,
@@ -863,8 +926,8 @@ Deno.serve(async (req) => {
             register_by_raw: null,
 
             price_raw: pricePack.price_raw || null,
-            price_min: priceMin != null ? priceMin : null,
-            price_max: priceMax != null ? priceMax : null,
+            price_min: pricePack.price_min != null ? pricePack.price_min : null,
+            price_max: pricePack.price_max != null ? pricePack.price_max : null,
 
             sections_json: null,
           });
@@ -892,7 +955,7 @@ Deno.serve(async (req) => {
     const denom = processedRegs;
     if (denom > 0) percentWithStartDate = Math.round((accepted.length / denom) * 1000) / 10;
 
-    return new Response(
+    return finishResponse(
       JSON.stringify({
         version: VERSION,
         stats: {
@@ -902,18 +965,27 @@ Deno.serve(async (req) => {
           rejected: rejected.length,
           errors: errors.length,
           percentWithStartDate,
+          fastMode: fastMode ? true : false,
+          maxMs,
+          maxRegFetchTotal,
+          regFetches: debug.regFetches,
+          regFetchSkippedFastMode: debug.regFetchSkippedFastMode,
+          stoppedEarly: debug.stoppedEarly,
+          stopReason: debug.stopReason,
         },
         accepted,
         rejected_samples,
         errors: errors.slice(0, 10),
         debug,
       }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+      200
     );
   } catch (eTop) {
+    debug.timeMs = Date.now() - startedMs;
     return new Response(JSON.stringify({ error: "Unhandled error", version: VERSION, debug }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
   }
 });
+
