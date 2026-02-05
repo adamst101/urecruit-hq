@@ -1,17 +1,17 @@
 // functions/sportsUSAIngestCamps.js
 // Base44 Backend Function (Deno)
 //
-// v13 updates (2026-02-05):
-// - FIX: stop double-JSON-stringifying responses (AdminImport was seeing version=MISSING + zeros)
-// - Add directRegistrationUrl handling:
-//   - If testSiteUrl (or a siteUrl) is already a registration/listing page (register.cfm / camp.cfm),
-//     treat it as a reg URL directly (no reg-link discovery step).
-// - Keep v12 controls: fastMode, maxMs, timeouts, maxRegFetchTotal
+// v14 updates (2026-02-05):
+// - Expand SportsUSA /register.cfm listing pages into MANY camp reg links
+//   (previously treated register.cfm as a single "regUrl" -> only 1 accepted event)
+// - Keep v13 fixes: proper JSON response, direct registration URL handling
+// - Broaden camp link extraction to include same-domain camp.cfm?id=... links (not only register.ryzer.com)
+// - Preserve v12 controls: fastMode, maxMs, timeouts, maxRegFetchTotal
 // - Preserve flat CampDemo-shaped accepted objects
 // - Preserve event_key single-prefix (no double "ryzer:")
 
 const VERSION =
-  "sportsUSAIngestCamps_2026-02-05_v13_fix_json_response_direct_registration_url";
+  "sportsUSAIngestCamps_2026-02-05_v14_expand_register_listing_multi_events";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -86,88 +86,103 @@ async function fetchWithTimeout(url, opts, ms) {
 
 /* -------------------------
    Identify direct registration/listing pages
-   - SportsUSA sites often use /register.cfm on the same domain
-   - Ryzer pages are usually register.ryzer.com/camp.cfm?id=...
 -------------------------- */
+function isRegisterListingUrl(url) {
+  const u = safeString(url);
+  if (!u) return false;
+  return lc(u).includes("/register.cfm");
+}
+
 function isDirectRegistrationUrl(url) {
   const u = safeString(url);
   if (!u) return false;
   const x = lc(u);
-
-  // Most common SportsUSA listing page
   if (x.includes("/register.cfm")) return true;
-
-  // Ryzer camp registration page
   if (x.includes("camp.cfm")) return true;
-
   return false;
 }
 
 /* -------------------------
-   Registration link discovery (Ryzer camp links)
+   Registration link discovery
+   - Ryzer direct links: register.ryzer.com/camp.cfm?id=...
+   - SportsUSA same-domain camp pages: https://{school}footballcamps.com/camp.cfm?id=...
 -------------------------- */
-function extractRyzerRegLinksFromHtml(html, siteUrl) {
+function extractCampLinksFromHtml(html, baseUrl) {
   let out = [];
   if (!html) return out;
 
   function normalizeUrl(u) {
     if (!u) return null;
     let s = String(u).trim();
-
     s = s.replace(/&amp;/g, "&");
     s = s.split("#")[0];
 
     if (s.startsWith("//")) s = "https:" + s;
 
-    // If the site uses relative Ryzer pathing, normalize it
-    if (s.startsWith("/camp.cfm")) s = "https://register.ryzer.com" + s;
-    if (s.startsWith("camp.cfm")) s = "https://register.ryzer.com/" + s;
-
+    // Allow relative links
     if (!s.startsWith("http://") && !s.startsWith("https://")) {
-      s = absUrl(siteUrl, s);
+      s = absUrl(baseUrl, s);
     }
 
     return s ? String(s).trim() : null;
   }
 
-  function isRyzerCampLink(u) {
+  function isCampLikeLink(u) {
     const x = lc(u || "");
-    return x.includes("register.ryzer.com") && x.includes("camp.cfm");
+    if (!x) return false;
+    if (x.startsWith("mailto:") || x.startsWith("tel:")) return false;
+
+    // Core target: camp.cfm with id parameter (most SportsUSA/Ryzer camp detail pages)
+    if (x.includes("camp.cfm") && x.includes("id=")) return true;
+
+    // Some sites still use camp.cfm without id in rare cases; allow it but lower confidence
+    if (x.includes("camp.cfm")) return true;
+
+    // Keep legacy Ryzer pattern too
+    if (x.includes("register.ryzer.com") && x.includes("camp.cfm")) return true;
+
+    return false;
   }
 
   function pushIfValid(raw) {
     const u = normalizeUrl(raw);
     if (!u) return;
-    if (!isRyzerCampLink(u)) return;
+    if (!isCampLikeLink(u)) return;
     out.push(u);
   }
 
   let m;
 
+  // href="...camp.cfm..."
   const reHrefDq = /href="([^"]*camp\.cfm[^"]*)"/gi;
   while ((m = reHrefDq.exec(html)) !== null) pushIfValid(m[1]);
 
+  // href='...camp.cfm...'
   const reHrefSq = /href='([^']*camp\.cfm[^']*)'/gi;
   while ((m = reHrefSq.exec(html)) !== null) pushIfValid(m[1]);
 
+  // onclick="...camp.cfm..."
   const reOnclickDq = /onclick="[^"]*(camp\.cfm[^"]*)"/gi;
   while ((m = reOnclickDq.exec(html)) !== null) pushIfValid(m[1]);
 
   const reOnclickSq = /onclick='[^']*(camp\.cfm[^']*)'/gi;
   while ((m = reOnclickSq.exec(html)) !== null) pushIfValid(m[1]);
 
+  // data-url / data-href
   const reData =
     /(data-href|data-url)\s*=\s*("([^"]*camp\.cfm[^"]*)"|'([^']*camp\.cfm[^']*)'|([^\s>]*camp\.cfm[^\s>]*))/gi;
   while ((m = reData.exec(html)) !== null) pushIfValid(m[3] || m[4] || m[5]);
 
-  const reFull = /(https?:\/\/register\.ryzer\.com\/[^"' <]*camp\.cfm[^"' <]*)/gi;
+  // full URLs that include camp.cfm
+  const reFull = /(https?:\/\/[^"' <]*camp\.cfm[^"' <]*)/gi;
   while ((m = reFull.exec(html)) !== null) pushIfValid(m[1]);
 
-  const reRel = /([\/]camp\.cfm\?[^"' <]+)/gi;
-  while ((m = reRel.exec(html)) !== null) pushIfValid(m[1]);
+  out = uniq(out).map((u) => String(u).split("#")[0]);
 
-  out = uniq(out);
-  for (let i = 0; i < out.length; i++) out[i] = String(out[i]).split("#")[0];
+  // Strongly prefer camp.cfm?id=... when present (reduces noise)
+  const withId = out.filter((u) => lc(u).includes("camp.cfm") && lc(u).includes("id="));
+  if (withId.length) return withId;
+
   return out;
 }
 
@@ -314,25 +329,6 @@ function parseSingleOrRangeDate(line, defaultYear) {
     };
   }
 
-  const m3 =
-    /(\b(?:January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\b\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?)\s*[-–]\s*(\b(?:January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\b\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?)/i.exec(
-      t
-    );
-  if (m3) {
-    const p1 = parseMonthNameDate(m3[1]);
-    const p2 = parseMonthNameDate(m3[2]);
-    const y1 = (p1 && p1.y) || defaultYear || null;
-    const y2 = (p2 && p2.y) || y1 || null;
-    const inferred = !((p1 && p1.y) || (p2 && p2.y));
-    return {
-      start: p1 ? toIsoDate(y1, p1.m, p1.d) : null,
-      end: p2 ? toIsoDate(y2, p2.m, p2.d) : null,
-      rawLine: t,
-      pattern: "month_full_range",
-      inferredYear: inferred,
-    };
-  }
-
   const p = parseMonthNameDate(t);
   if (p) {
     const hasY = !!p.y;
@@ -359,7 +355,7 @@ function scoreParsedDate(parsed) {
 }
 
 /* -------------------------
-   Ryzer extraction: name/date candidates
+   Camp name / meta helpers
 -------------------------- */
 function extractTitle(html) {
   if (!html) return null;
@@ -381,21 +377,30 @@ function extractH1(html) {
   return t || null;
 }
 
-function extractRyzerDateCandidates(html) {
-  let out = [];
-  if (!html) return out;
+function sanitizeCampName(titleOrH1) {
+  let t = safeString(titleOrH1);
+  if (!t) return "Camp";
 
-  const patterns = [
-    /(?:Dates?|Camp Dates?|Camp Date|Event Date|When)\s*<\/[^>]+>\s*<[^>]+>\s*([^<]{3,120})</i,
-    /(?:Dates?|Camp Dates?|Camp Date|Event Date|When)\s*:\s*([^<]{3,120})</i,
-    /(?:Dates?|Camp Dates?|Camp Date|Event Date|When)\s*-\s*([^<]{3,120})</i,
-  ];
+  t = t.replace(/\s*\|\s*Event Registration.*$/i, "").trim();
+  t = t.replace(/\s*\-\s*Event Registration.*$/i, "").trim();
+  t = t.replace(/\s*\|\s*Registration.*$/i, "").trim();
+  t = t.replace(/\s*\-\s*Registration.*$/i, "").trim();
 
-  for (let i = 0; i < patterns.length; i++) {
-    const m = patterns[i].exec(html);
-    if (m && m[1]) out.push(stripNonAscii(m[1]));
-  }
+  const m = /^View\s+(.+?)\s+Details$/i.exec(t);
+  if (m && m[1]) t = String(m[1]).trim();
 
+  return stripNonAscii(t) || "Camp";
+}
+
+/* -------------------------
+   Candidate extraction from any page html
+-------------------------- */
+function extractDateCandidates(html) {
+  if (!html) return [];
+  const text = htmlToText(html);
+  const out = [];
+
+  // common compact patterns
   const m2 = /(\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]\s*\d{1,2}\/\d{1,2}\/\d{4})/.exec(html);
   if (m2 && m2[1]) out.push(stripNonAscii(m2[1]));
 
@@ -405,47 +410,30 @@ function extractRyzerDateCandidates(html) {
   while ((m3 = reSingle.exec(html)) !== null) {
     out.push(stripNonAscii(m3[1]));
     count3++;
-    if (count3 >= 3) break;
+    if (count3 >= 4) break;
   }
 
   const reMonth =
     /((January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{1,2}(?:st|nd|rd|th)?)?(?:,\s*\d{4})?)/gi;
   let m4,
     count4 = 0;
-  while ((m4 = reMonth.exec(html)) !== null) {
+  while ((m4 = reMonth.exec(text)) !== null) {
     if (m4[1]) out.push(stripNonAscii(m4[1]));
     count4++;
     if (count4 >= 6) break;
   }
 
-  const h1 = extractH1(html);
-  if (h1) out.push(h1);
-
-  const text = htmlToText(html);
+  // light context snippets
   if (text) {
     const lower = text.toLowerCase();
-    const tokens = [
-      "january",
-      "february",
-      "march",
-      "april",
-      "may",
-      "june",
-      "july",
-      "august",
-      "september",
-      "october",
-      "november",
-      "december",
-      "/20",
-    ];
+    const tokens = ["dates", "camp date", "when", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "/20"];
     let added = 0;
     for (let k = 0; k < tokens.length; k++) {
       const idx = lower.indexOf(tokens[k]);
       if (idx >= 0) {
         let start = idx - 60;
         if (start < 0) start = 0;
-        let end = idx + 160;
+        let end = idx + 180;
         if (end > text.length) end = text.length;
         const snip = stripNonAscii(text.slice(start, end));
         if (snip && snip.length >= 8) out.push(snip);
@@ -456,11 +444,6 @@ function extractRyzerDateCandidates(html) {
   }
 
   return uniq(out);
-}
-
-function guessDefaultYearFromContext(nowDate) {
-  const d = nowDate || new Date();
-  return d.getFullYear();
 }
 
 function pickBestParsedDateFromCandidates(candidates, defaultYear) {
@@ -482,111 +465,6 @@ function pickBestParsedDateFromCandidates(candidates, defaultYear) {
   }
 
   return { parsed: best, bestRaw: bestRaw, score: bestScore };
-}
-
-/* -------------------------
-   Grades / Location / Price parsing
--------------------------- */
-function extractGradesRawFromText(text) {
-  const t = safeString(text);
-  if (!t) return null;
-  const m = /\bGrades?\s*:\s*([^\.\|]{3,60})/i.exec(t);
-  if (m && m[1]) return stripNonAscii(m[1]);
-  return null;
-}
-
-function extractLocationFromText(text) {
-  const t = safeString(text);
-  if (!t) return { city: null, state: null, location_raw: null };
-
-  let m = /\bLocation\b\s*:\s*([A-Za-z0-9 .'\-]+)\s*,\s*([A-Z]{2})\b/.exec(t);
-  if (!m) m = /\bLocation\b\s+([A-Za-z0-9 .'\-]+)\s*,\s*([A-Z]{2})\b/.exec(t);
-
-  if (m && m[1] && m[2]) {
-    return {
-      city: stripNonAscii(m[1]),
-      state: String(m[2]).trim().toUpperCase(),
-      location_raw: stripNonAscii(m[0]),
-    };
-  }
-
-  return { city: null, state: null, location_raw: null };
-}
-
-function extractRegisterNowPrices(text) {
-  const t = safeString(text);
-  if (!t) return { totals: [], bases: [], raw: null };
-
-  const re = /\bRegister\s+Now\b[^$]{0,20}\$\s*([0-9]{1,5})(?:\.[0-9]{2})?/gi;
-  let m;
-  const totals = [];
-  while ((m = re.exec(t)) !== null) {
-    const n = Number(m[1]);
-    if (Number.isFinite(n) && n > 0) totals.push(n);
-    if (totals.length >= 10) break;
-  }
-
-  const rawLine = (() => {
-    const mm = /\bRegister\s+Now\b[^\.]{0,180}/i.exec(t);
-    return mm && mm[0] ? stripNonAscii(mm[0]) : null;
-  })();
-
-  return { totals, bases: [], raw: rawLine };
-}
-
-function extractPricesFromText(text) {
-  const t = safeString(text);
-  if (!t) return { price_raw: null, price_min: null, price_max: null, price_best: null };
-
-  const reg = extractRegisterNowPrices(t);
-  if (reg.totals.length) {
-    const totals = reg.totals.slice().sort((a, b) => a - b);
-    const minTotal = totals[0];
-    const maxTotal = totals[totals.length - 1];
-
-    return {
-      price_raw: reg.raw || "Register Now prices detected",
-      price_min: minTotal,
-      price_max: maxTotal,
-      price_best: maxTotal,
-    };
-  }
-
-  const re = /\$\s*([0-9]{1,5})(?:\.[0-9]{2})?/g;
-  let m;
-  const nums = [];
-  while ((m = re.exec(t)) !== null) {
-    const n = Number(m[1]);
-    if (Number.isFinite(n) && n > 0) nums.push(n);
-    if (nums.length >= 12) break;
-  }
-  if (!nums.length) return { price_raw: null, price_min: null, price_max: null, price_best: null };
-
-  nums.sort((a, b) => a - b);
-  return {
-    price_raw: "Prices detected: " + nums.slice(0, 6).join(", "),
-    price_min: nums[0],
-    price_max: nums[nums.length - 1],
-    price_best: nums[nums.length - 1],
-  };
-}
-
-/* -------------------------
-   Camp name shaping
--------------------------- */
-function sanitizeCampName(titleOrH1) {
-  let t = safeString(titleOrH1);
-  if (!t) return "Camp";
-
-  t = t.replace(/\s*\|\s*Event Registration.*$/i, "").trim();
-  t = t.replace(/\s*\-\s*Event Registration.*$/i, "").trim();
-  t = t.replace(/\s*\|\s*Registration.*$/i, "").trim();
-  t = t.replace(/\s*\-\s*Registration.*$/i, "").trim();
-
-  const m = /^View\s+(.+?)\s+Details$/i.exec(t);
-  if (m && m[1]) t = String(m[1]).trim();
-
-  return stripNonAscii(t) || "Camp";
 }
 
 /* -------------------------
@@ -623,13 +501,14 @@ Deno.serve(async (req) => {
     firstSiteHtmlSnippet: null,
     kpi: {
       datesParsedFromListing: 0,
-      datesParsedFromRyzer: 0,
+      datesParsedFromDetail: 0,
       datesMissing: 0,
     },
     siteKpi: {
       sitesWithRegLinks: 0,
       sitesWithNoRegLinks: 0,
       sitesDirectRegUrl: 0,
+      registerListingsExpanded: 0,
     },
   };
 
@@ -735,7 +614,7 @@ Deno.serve(async (req) => {
     let processedSites = 0;
     let processedRegs = 0;
 
-    const defaultYear = guessDefaultYearFromContext(new Date());
+    const defaultYear = new Date().getFullYear();
 
     for (let s = 0; s < crawl.length; s++) {
       if (accepted.length >= maxEvents) break;
@@ -756,20 +635,10 @@ Deno.serve(async (req) => {
       let regLinks = [];
 
       try {
-        // DIRECT REG URL MODE (e.g., https://www.montanafootballcamps.com/register.cfm)
+        // If it's a direct reg/listing URL, fetch it and expand appropriately
         if (isDirectRegistrationUrl(siteUrl)) {
           debug.siteKpi.sitesDirectRegUrl += 1;
-          regLinks = [siteUrl];
 
-          debug.siteDebug.push({
-            siteUrl,
-            http: 0,
-            htmlType: "",
-            regLinks: 1,
-            sample: siteUrl,
-            notes: "direct_registration_url",
-          });
-        } else {
           const r = await fetchWithTimeout(
             siteUrl,
             {
@@ -788,7 +657,55 @@ Deno.serve(async (req) => {
 
           if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(html, 1600);
 
-          regLinks = extractRyzerRegLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
+          if (isRegisterListingUrl(siteUrl)) {
+            // EXPAND listing -> camp links
+            const links = extractCampLinksFromHtml(html, siteUrl);
+            regLinks = (links && links.length ? links : [siteUrl]).slice(0, maxRegsPerSite);
+            debug.siteKpi.registerListingsExpanded += 1;
+
+            debug.siteDebug.push({
+              siteUrl,
+              http,
+              htmlType,
+              regLinks: regLinks.length,
+              sample: regLinks.length ? regLinks[0] : "",
+              notes: "direct_register_listing_expanded",
+            });
+          } else {
+            // camp.cfm already
+            regLinks = [siteUrl];
+
+            debug.siteDebug.push({
+              siteUrl,
+              http,
+              htmlType,
+              regLinks: 1,
+              sample: siteUrl,
+              notes: "direct_camp_page",
+            });
+          }
+        } else {
+          // Normal site homepage crawl: fetch and extract camp links
+          const r = await fetchWithTimeout(
+            siteUrl,
+            {
+              method: "GET",
+              headers: {
+                "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
+                Accept: "text/html,*/*",
+              },
+            },
+            siteTimeoutMs
+          );
+
+          http = r.status;
+          htmlType = r.headers.get("content-type") || "";
+          html = await r.text().catch(() => "");
+
+          if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(html, 1600);
+
+          const links = extractCampLinksFromHtml(html, siteUrl);
+          regLinks = (links || []).slice(0, maxRegsPerSite);
 
           if (regLinks.length) debug.siteKpi.sitesWithRegLinks += 1;
           else debug.siteKpi.sitesWithNoRegLinks += 1;
@@ -799,12 +716,13 @@ Deno.serve(async (req) => {
             htmlType,
             regLinks: regLinks.length,
             sample: regLinks.length ? regLinks[0] : "",
-            notes: regLinks.length ? "" : "no_registration_links_found",
+            notes: regLinks.length ? "" : "no_camp_links_found",
           });
 
           if (!regLinks.length) continue;
         }
 
+        // Process each camp link
         for (let i2 = 0; i2 < regLinks.length; i2++) {
           if (accepted.length >= maxEvents) break;
           if (outOfTime(maxMs)) {
@@ -816,33 +734,30 @@ Deno.serve(async (req) => {
           const regUrl = regLinks[i2];
           processedRegs += 1;
 
+          // listing-first attempt: parse from snippet around the link within listing/homepage HTML
+          const listingSnippetHtml = html ? extractSnippetAroundNeedle(html, regUrl, 460) : null;
+          const listingSnippetText = listingSnippetHtml ? htmlToText(listingSnippetHtml) : null;
+          const listingParsed = listingSnippetText ? parseSingleOrRangeDate(listingSnippetText, defaultYear) : null;
+
           let finalParsed = null;
           let eventDatesRaw = null;
 
-          // If we came from a site homepage crawl, we may have html to try a listing snippet.
-          // If direct_registration_url, we likely do not have listing html; we'll rely on reg fetch.
-          if (html) {
-            const listingSnippetHtml = extractSnippetAroundNeedle(html, regUrl, 340);
-            const listingSnippetText = listingSnippetHtml ? htmlToText(listingSnippetHtml) : null;
-            const listingParsed = listingSnippetText ? parseSingleOrRangeDate(listingSnippetText, defaultYear) : null;
-            if (listingParsed && listingParsed.start) {
-              finalParsed = listingParsed;
-              eventDatesRaw = listingParsed.rawLine || truncate(listingSnippetText, 240);
-              debug.kpi.datesParsedFromListing += 1;
-            }
+          if (listingParsed && listingParsed.start) {
+            finalParsed = listingParsed;
+            eventDatesRaw = listingParsed.rawLine || truncate(listingSnippetText, 240);
+            debug.kpi.datesParsedFromListing += 1;
           }
+
+          // FAST MODE: if listing gave date and it's not a direct camp page, we can skip fetching regUrl
+          const shouldFetchDetail = !fastMode || !(finalParsed && finalParsed.start);
 
           let regHttp = 0;
           let regHtml = "";
           let regText = "";
-          let ryzerCandidates = [];
-          let ryzerPick = null;
+          let candidates = [];
+          let pick = null;
 
-          const shouldFetchReg =
-            // If direct reg URL, we must fetch
-            true;
-
-          if (shouldFetchReg) {
+          if (shouldFetchDetail) {
             if (debug.regFetches >= maxRegFetchTotal) {
               debug.stoppedEarly = true;
               debug.stopReason = "maxRegFetchTotal_reached";
@@ -875,20 +790,18 @@ Deno.serve(async (req) => {
               });
             }
 
-            // FAST MODE: if listing already provided a date, we can skip candidate scan to save time,
-            // BUT we still fetched regHtml above (we need this for direct-registration pages).
             if ((!finalParsed || !finalParsed.start) && regHtml) {
-              ryzerCandidates = extractRyzerDateCandidates(regHtml);
-              ryzerPick = pickBestParsedDateFromCandidates(ryzerCandidates, defaultYear);
+              candidates = extractDateCandidates(regHtml);
+              pick = pickBestParsedDateFromCandidates(candidates, defaultYear);
 
-              if (ryzerPick && ryzerPick.parsed && ryzerPick.parsed.start) {
-                finalParsed = ryzerPick.parsed;
-                eventDatesRaw = ryzerPick.bestRaw || (finalParsed.rawLine || null);
-                debug.kpi.datesParsedFromRyzer += 1;
+              if (pick && pick.parsed && pick.parsed.start) {
+                finalParsed = pick.parsed;
+                eventDatesRaw = pick.bestRaw || (finalParsed.rawLine || null);
+                debug.kpi.datesParsedFromDetail += 1;
               }
-            } else if (fastMode && finalParsed && finalParsed.start) {
-              debug.regFetchSkippedFastMode += 0; // we didn't skip fetch; we skipped scan
             }
+          } else {
+            debug.regFetchSkippedFastMode += 1;
           }
 
           if (!finalParsed || !finalParsed.start) {
@@ -898,30 +811,27 @@ Deno.serve(async (req) => {
               registrationUrl: regUrl,
               debug: {
                 siteUrl,
+                listingSnippetText: listingSnippetText ? truncate(listingSnippetText, 360) : null,
                 regHttp: regHttp || null,
-                sampleCandidates: ryzerCandidates && ryzerCandidates.length ? ryzerCandidates.slice(0, 6) : [],
+                sampleCandidates: candidates && candidates.length ? candidates.slice(0, 6) : [],
               },
             });
             continue;
           }
 
-          // Name / Notes / Enrichment
+          // Name/notes enrichment from detail page if fetched; else fallback to site title-ish
           const h1 = regHtml ? extractH1(regHtml) : null;
           const title = regHtml ? extractTitle(regHtml) : null;
           const campName = sanitizeCampName(h1 || title || "Camp");
           const desc = regHtml ? extractMetaDescription(regHtml) : null;
 
-          // Program id from id= if present
+          // program id from id= when present
           let programId = null;
           const idMatch = /[?&]id=(\d+)/i.exec(regUrl);
           if (idMatch && idMatch[1]) programId = "ryzer:" + idMatch[1];
           if (!programId) programId = "ryzer:" + hashLite(regUrl);
 
           const eventKey = buildEventKey("ryzer", programId, finalParsed.start, regUrl);
-
-          const gradesRaw = regText ? extractGradesRawFromText(regText) : null;
-          const loc = regText ? extractLocationFromText(regText) : { city: null, state: null, location_raw: null };
-          const pricePack = regText ? extractPricesFromText(regText) : { price_raw: null, price_min: null, price_max: null, price_best: null };
 
           accepted.push({
             school_id: siteSchoolId || null,
@@ -930,11 +840,11 @@ Deno.serve(async (req) => {
             start_date: finalParsed.start,
             end_date: finalParsed.end || null,
 
-            city: loc.city || null,
-            state: loc.state || null,
+            city: null,
+            state: null,
             position_ids: [],
 
-            price: pricePack.price_best != null ? pricePack.price_best : null,
+            price: null,
 
             link_url: regUrl,
             notes: desc || null,
@@ -942,7 +852,7 @@ Deno.serve(async (req) => {
             season_year: Number(finalParsed.start.slice(0, 4)),
             program_id: programId,
             event_key: eventKey,
-            source_platform: "ryzer",
+            source_platform: "sportsusa",
             source_url: regUrl,
             last_seen_at: new Date().toISOString(),
 
@@ -951,22 +861,16 @@ Deno.serve(async (req) => {
                 "|" +
                 (desc || "") +
                 "|" +
-                (eventDatesRaw || "") +
-                "|" +
-                (gradesRaw || "") +
-                "|" +
-                (pricePack.price_raw || "") +
-                "|" +
-                ((loc && loc.location_raw) || "")
+                (eventDatesRaw || "")
             ),
 
             event_dates_raw: eventDatesRaw || null,
-            grades_raw: gradesRaw || null,
+            grades_raw: null,
             register_by_raw: null,
 
-            price_raw: pricePack.price_raw || null,
-            price_min: pricePack.price_min != null ? pricePack.price_min : null,
-            price_max: pricePack.price_max != null ? pricePack.price_max : null,
+            price_raw: null,
+            price_min: null,
+            price_max: null,
 
             sections_json: null,
           });
