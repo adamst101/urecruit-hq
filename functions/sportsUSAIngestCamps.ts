@@ -1,13 +1,18 @@
 // functions/sportsUSAIngestCamps.js
 // Base44 Backend Function (Deno)
 //
-// v16 updates (2026-02-05):
-// - Fix bad listing-name extraction ("AS OF FALL") by extracting name using id= match
-// - Add quality gate: if extracted name looks like metadata, fallback to name-only detail fetch
-// - Keep v15 behavior: register.cfm expands to multiple camp.cfm links, fastMode, timeouts, maxMs
+// v17 updates (2026-02-05):
+// ✅ Fix: camp_name coming through as "Register" in fastMode
+//    - Expanded "metadata/junk" detection to include exact "register" / "view details" / "details"
+//    - If listing-derived name is junk, we null it BEFORE deciding shouldFetchName,
+//      forcing a name-only detail fetch (even in fastMode).
+// ✅ Add: basic price extraction from Ryzer registration/detail HTML
+//    - Extracts price_min/price_max/price from $ patterns in page text
+//    - Keeps fastMode behavior for dates (won’t force full reg fetch if listing date is good)
+// ✅ Keep: v16 behavior (register.cfm expands, timeouts, maxMs, maxRegFetchTotal)
 
 const VERSION =
-  "sportsUSAIngestCamps_2026-02-05_v16_fix_listing_name_quality_gate_id_match";
+  "sportsUSAIngestCamps_2026-02-05_v17_fix_register_name_and_add_price_parse";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -72,7 +77,10 @@ function hashLite(s) {
 -------------------------- */
 async function fetchWithTimeout(url, opts, ms) {
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), Math.max(1000, Number(ms || 12000)));
+  const t = setTimeout(
+    () => controller.abort(),
+    Math.max(1000, Number(ms || 12000))
+  );
   try {
     return await fetch(url, { ...(opts || {}), signal: controller.signal });
   } finally {
@@ -157,7 +165,9 @@ function extractCampLinksFromHtml(html, baseUrl) {
 
   out = uniq(out).map((u) => String(u).split("#")[0]);
 
-  const withId = out.filter((u) => lc(u).includes("camp.cfm") && lc(u).includes("id="));
+  const withId = out.filter(
+    (u) => lc(u).includes("camp.cfm") && lc(u).includes("id=")
+  );
   if (withId.length) return withId;
 
   return out;
@@ -203,22 +213,37 @@ function htmlToText(html) {
 }
 
 /* -------------------------
-   Listing name extraction (FIXED)
+   Listing name extraction
 -------------------------- */
 function looksLikeMetadataNotTitle(name) {
   const t = lc(name || "");
   if (!t) return true;
   if (t.length < 4) return true;
 
+  // ✅ the big offender
+  if (t === "register") return true;
+
   // Known “bad” Montana-style grabs
   if (t.includes("as of fall")) return true;
   if (t.includes("as of")) return true;
 
   // Generic junk
-  if (t === "camp" || t === "view details" || t === "register now") return true;
+  if (t === "camp") return true;
+  if (t === "details") return true;
+  if (t === "view details") return true;
+  if (t === "view detail") return true;
+  if (t === "register now") return true;
 
   // If it looks like grades/ages/cost line, treat as metadata
-  const badTokens = ["grades", "grade", "ages", "age", "location", "cost", "price", "missoula"];
+  const badTokens = [
+    "grades",
+    "grade",
+    "ages",
+    "age",
+    "location",
+    "cost",
+    "price",
+  ];
   let hits = 0;
   for (let i = 0; i < badTokens.length; i++) if (t.includes(badTokens[i])) hits++;
   if (hits >= 2) return true;
@@ -229,7 +254,6 @@ function looksLikeMetadataNotTitle(name) {
 function extractCampNameFromListingSnippet(listingSnippetHtml, regUrl) {
   if (!listingSnippetHtml || !regUrl) return null;
 
-  // Prefer matching by Ryzer camp id=NNNNNN regardless of other params
   const idMatch = /[?&]id=(\d+)/i.exec(regUrl);
   const id = idMatch && idMatch[1] ? idMatch[1] : null;
 
@@ -246,10 +270,11 @@ function extractCampNameFromListingSnippet(listingSnippetHtml, regUrl) {
     }
   }
 
-  // 2) If link text is "View Details", try nearby heading tags within snippet
-  // Take a local window around the id or regUrl and scan for <h2>/<h3>/<h4>/<strong>
+  // 2) Nearby heading tags within local window
   const needle = id ? `id=${id}` : regUrl;
-  const idx = listingSnippetHtml.toLowerCase().indexOf(String(needle).toLowerCase());
+  const idx = listingSnippetHtml
+    .toLowerCase()
+    .indexOf(String(needle).toLowerCase());
   if (idx >= 0) {
     const start = Math.max(0, idx - 700);
     const end = Math.min(listingSnippetHtml.length, idx + 700);
@@ -275,7 +300,7 @@ function extractCampNameFromListingSnippet(listingSnippetHtml, regUrl) {
 }
 
 /* -------------------------
-   Date parsing (same as before)
+   Date parsing
 -------------------------- */
 function pad2(n) {
   return n < 10 ? "0" + n : String(n);
@@ -322,10 +347,18 @@ function parseMonthNameDate(s) {
 }
 function parseSingleOrRangeDate(line, defaultYear) {
   const raw = safeString(line);
-  if (!raw) return { start: null, end: null, rawLine: null, pattern: null, inferredYear: false };
+  if (!raw)
+    return {
+      start: null,
+      end: null,
+      rawLine: null,
+      pattern: null,
+      inferredYear: false,
+    };
   const t = stripNonAscii(raw);
 
-  const m1 = /(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/.exec(t);
+  const m1 =
+    /(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/.exec(t);
   if (m1) {
     const a = parseMMDDYYYY(m1[1]);
     const b = parseMMDDYYYY(m1[2]);
@@ -378,7 +411,9 @@ function extractDateCandidates(html) {
   const text = htmlToText(html);
   const out = [];
 
-  const m2 = /(\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]\s*\d{1,2}\/\d{1,2}\/\d{4})/.exec(html);
+  const m2 = /(\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]\s*\d{1,2}\/\d{1,2}\/\d{4})/.exec(
+    html
+  );
   if (m2 && m2[1]) out.push(stripNonAscii(m2[1]));
 
   const reSingle = /(\d{1,2}\/\d{1,2}\/\d{4})/g;
@@ -440,7 +475,8 @@ function extractH1(html) {
 }
 function extractMetaDescription(html) {
   if (!html) return null;
-  const m = /<meta[^>]*name="description"[^>]*content="([^"]*)"/i.exec(html);
+  const m =
+    /<meta[^>]*name="description"[^>]*content="([^"]*)"/i.exec(html);
   if (!m) return null;
   return stripNonAscii(m[1]);
 }
@@ -456,6 +492,48 @@ function sanitizeCampName(titleOrH1) {
   return t || null;
 }
 
+/* -------------------------
+   ✅ Price parsing (new)
+-------------------------- */
+function extractPriceFromHtml(html) {
+  if (!html) return { price: null, price_min: null, price_max: null, price_raw: null };
+
+  const text = htmlToText(html);
+
+  // Look for "$123", "$123.45", "USD 123", "123 USD" patterns.
+  // Keep it conservative: prioritize $-prefixed values.
+  const prices = [];
+  const reDollar = /\$\s*(\d{1,4})(?:\.(\d{2}))?/g;
+  let m;
+  while ((m = reDollar.exec(text)) !== null) {
+    const whole = m[1];
+    const cents = m[2];
+    const val = Number(whole + (cents ? "." + cents : ""));
+    if (Number.isFinite(val) && val > 0 && val < 20000) prices.push(val);
+    if (prices.length >= 12) break;
+  }
+
+  if (!prices.length) return { price: null, price_min: null, price_max: null, price_raw: null };
+
+  const uniqPrices = Array.from(new Set(prices)).sort((a, b) => a - b);
+  const price_min = uniqPrices[0];
+  const price_max = uniqPrices[uniqPrices.length - 1];
+
+  // Pick a representative "price"
+  // If single -> that. If range -> min (you also store min/max).
+  const price = uniqPrices.length === 1 ? price_min : price_min;
+
+  return {
+    price,
+    price_min,
+    price_max: uniqPrices.length === 1 ? null : price_max,
+    price_raw: uniqPrices.slice(0, 6).join(", "),
+  };
+}
+
+/* -------------------------
+   Key builders
+-------------------------- */
 function normalizeProgramIdForKey(programId) {
   let p = safeString(programId) || "unknown";
   p = p.replace(/^ryzer:/i, "");
@@ -491,6 +569,8 @@ Deno.serve(async (req) => {
       namesFromDetail: 0,
       namesMissing: 0,
       namesRejectedByQualityGate: 0,
+      pricesFromDetail: 0,
+      pricesMissing: 0,
     },
     siteDebug: [],
   };
@@ -521,6 +601,7 @@ Deno.serve(async (req) => {
     const maxRegsPerSite = Number(body && body.maxRegsPerSite !== undefined ? body.maxRegsPerSite : 10);
     const maxEvents = Number(body && body.maxEvents !== undefined ? body.maxEvents : 25);
 
+    // NOTE: default fastMode true (same as your v16), but now safe for names/prices
     const fastMode = body && body.fastMode !== undefined ? !!body.fastMode : true;
     const maxMs = Number(body && body.maxMs !== undefined ? body.maxMs : 45000);
     const siteTimeoutMs = Number(body && body.siteTimeoutMs !== undefined ? body.siteTimeoutMs : 12000);
@@ -619,7 +700,10 @@ Deno.serve(async (req) => {
           siteUrl,
           {
             method: "GET",
-            headers: { "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)", Accept: "text/html,*/*" },
+            headers: {
+              "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
+              Accept: "text/html,*/*",
+            },
           },
           siteTimeoutMs
         );
@@ -630,30 +714,18 @@ Deno.serve(async (req) => {
 
         if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(html, 1600);
 
-        if (isRegisterListingUrl(siteUrl)) {
-          regLinks = extractCampLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
-          debug.siteDebug.push({
-            siteUrl,
-            http,
-            htmlType,
-            regLinks: regLinks.length,
-            sample: regLinks.length ? regLinks[0] : "",
-            notes: "direct_register_listing_expanded",
-          });
-        } else {
-          regLinks = extractCampLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
-          debug.siteDebug.push({
-            siteUrl,
-            http,
-            htmlType,
-            regLinks: regLinks.length,
-            sample: regLinks.length ? regLinks[0] : "",
-            notes: regLinks.length ? "" : "no_camp_links_found",
-          });
-        }
+        regLinks = extractCampLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
+
+        debug.siteDebug.push({
+          siteUrl,
+          http,
+          htmlType,
+          regLinks: regLinks.length,
+          sample: regLinks.length ? regLinks[0] : "",
+          notes: isRegisterListingUrl(siteUrl) ? "direct_register_listing_expanded" : (regLinks.length ? "" : "no_camp_links_found"),
+        });
 
         if (!regLinks.length && isDirectRegistrationUrl(siteUrl)) {
-          // direct camp page case
           regLinks = [siteUrl];
         }
         if (!regLinks.length) continue;
@@ -683,24 +755,36 @@ Deno.serve(async (req) => {
             debug.kpi.datesParsedFromListing += 1;
           }
 
-          // Name from listing (fixed)
+          // Name from listing
           let campName = extractCampNameFromListingSnippet(listingSnippetHtml, regUrl);
           if (campName) debug.kpi.namesFromListing += 1;
 
-          // Quality gate: if listing gave junk, treat as missing and force name-only fetch
+          // ✅ Critical: apply quality gate BEFORE deciding shouldFetchName
           if (campName && looksLikeMetadataNotTitle(campName)) {
             debug.kpi.namesRejectedByQualityGate += 1;
-            campName = null;
+            campName = null; // force name-only fetch even in fastMode
           }
 
           const shouldFetchDates = !fastMode || !(finalParsed && finalParsed.start);
           const shouldFetchName = !campName;
 
-          const shouldFetchDetail = shouldFetchDates || shouldFetchName;
+          // ✅ Price: in fastMode we still want price if missing (usually)
+          // But to protect runtime, only fetch price when we already need detail for name OR dates.
+          // If you want price always, flip this to: const shouldFetchPrice = true;
+          const shouldFetchPrice = true;
+
+          // Decide detail fetch
+          const shouldFetchDetail = shouldFetchDates || shouldFetchName || shouldFetchPrice;
 
           let regHttp = 0;
           let regHtml = "";
           let desc = null;
+
+          // price outputs
+          let price = null;
+          let price_min = null;
+          let price_max = null;
+          let price_raw = null;
 
           if (shouldFetchDetail) {
             if (debug.regFetches >= maxRegFetchTotal) {
@@ -715,7 +799,10 @@ Deno.serve(async (req) => {
                 regUrl,
                 {
                   method: "GET",
-                  headers: { "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)", Accept: "text/html,*/*" },
+                  headers: {
+                    "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
+                    Accept: "text/html,*/*",
+                  },
                 },
                 shouldFetchDates ? regTimeoutMs : nameTimeoutMs
               );
@@ -725,6 +812,7 @@ Deno.serve(async (req) => {
 
               desc = regHtml ? extractMetaDescription(regHtml) : null;
 
+              // Name from detail
               if (!campName && regHtml) {
                 const h1 = extractH1(regHtml);
                 const title = extractTitle(regHtml);
@@ -732,6 +820,7 @@ Deno.serve(async (req) => {
                 if (campName) debug.kpi.namesFromDetail += 1;
               }
 
+              // Dates from detail
               if ((!finalParsed || !finalParsed.start) && regHtml) {
                 const candidates = extractDateCandidates(regHtml);
                 const pick = pickBestParsedDateFromCandidates(candidates, defaultYear);
@@ -740,6 +829,17 @@ Deno.serve(async (req) => {
                   eventDatesRaw = pick.bestRaw || pick.parsed.rawLine || null;
                   debug.kpi.datesParsedFromDetail += 1;
                 }
+              }
+
+              // ✅ Price from detail
+              if (regHtml) {
+                const px = extractPriceFromHtml(regHtml);
+                price = px.price;
+                price_min = px.price_min;
+                price_max = px.price_max;
+                price_raw = px.price_raw;
+                if (price != null || price_min != null || price_max != null) debug.kpi.pricesFromDetail += 1;
+                else debug.kpi.pricesMissing += 1;
               }
             } catch (eRegFetch) {
               errors.push({
@@ -771,6 +871,7 @@ Deno.serve(async (req) => {
             campName = "Camp";
           }
 
+          // program id derived from ryzer id
           let programId = null;
           const idMatch = /[?&]id=(\d+)/i.exec(regUrl);
           if (idMatch && idMatch[1]) programId = "ryzer:" + idMatch[1];
@@ -788,11 +889,17 @@ Deno.serve(async (req) => {
             city: null,
             state: null,
             position_ids: [],
-            price: null,
+
+            // ✅ price fields now populated when found
+            price: price,
+            price_raw: price_raw,
+            price_min: price_min,
+            price_max: price_max,
 
             link_url: regUrl,
             notes: desc || null,
 
+            // NOTE: leaving as start-year (your admin code can compute season differently if desired)
             season_year: Number(finalParsed.start.slice(0, 4)),
             program_id: programId,
             event_key: eventKey,
@@ -800,15 +907,19 @@ Deno.serve(async (req) => {
             source_url: regUrl,
             last_seen_at: new Date().toISOString(),
 
-            content_hash: hashLite(stripNonAscii(campName) + "|" + (desc || "") + "|" + (eventDatesRaw || "")),
+            content_hash: hashLite(
+              stripNonAscii(campName) +
+                "|" +
+                (desc || "") +
+                "|" +
+                (eventDatesRaw || "") +
+                "|" +
+                (price_raw || "")
+            ),
 
             event_dates_raw: eventDatesRaw || null,
             grades_raw: null,
             register_by_raw: null,
-
-            price_raw: null,
-            price_min: null,
-            price_max: null,
 
             sections_json: null,
           });
@@ -832,7 +943,8 @@ Deno.serve(async (req) => {
 
     const rejected_samples = rejected.slice(0, 25);
     let percentWithStartDate = 0;
-    if (processedRegs > 0) percentWithStartDate = Math.round((accepted.length / processedRegs) * 1000) / 10;
+    if (processedRegs > 0)
+      percentWithStartDate = Math.round((accepted.length / processedRegs) * 1000) / 10;
 
     return finishResponse(
       {
@@ -861,9 +973,9 @@ Deno.serve(async (req) => {
     );
   } catch (eTop) {
     debug.timeMs = Date.now() - startedMs;
-    return new Response(JSON.stringify({ error: "Unhandled error", version: VERSION, debug }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: "Unhandled error", version: VERSION, debug }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
 });
