@@ -342,6 +342,15 @@ export default function AdminImport() {
   const [testSchoolId, setTestSchoolId] = useState("");
 
   /* ----------------------------
+     ✅ Promote scope controls (NEW)
+  ----------------------------- */
+  const [promoteScope, setPromoteScope] = useState("ALL"); // "ALL" | "ONE"
+  const [promoteSchoolId, setPromoteSchoolId] = useState("");
+  const [promoteSitesLoading, setPromoteSitesLoading] = useState(false);
+  const [promoteSites, setPromoteSites] = useState([]);
+  const [promoteSitePickId, setPromoteSitePickId] = useState("");
+
+  /* ----------------------------
      Positions manager
   ----------------------------- */
   const [positions, setPositions] = useState([]);
@@ -422,6 +431,65 @@ export default function AdminImport() {
     const guess = SPORTSUSA_DIRECTORY_BY_SPORTNAME[String(selectedSportName || "").trim()];
     if (guess) setSportsUSASiteUrl(guess);
   }, [selectedSportName]);
+
+  /* ----------------------------
+     ✅ Promote helper: load SchoolSportSite rows for dropdown (NEW)
+  ----------------------------- */
+  async function loadPromoteSitesForSport(sportId) {
+    if (!SchoolSportSiteEntity || !sportId) {
+      setPromoteSites([]);
+      return;
+    }
+
+    setPromoteSitesLoading(true);
+    try {
+      const rows = await entityList(SchoolSportSiteEntity, { sport_id: sportId, active: true });
+      const normalized = asArray(rows)
+        .map((r) => ({
+          id: r && r.id ? String(r.id) : "",
+          school_id: r && r.school_id ? String(r.school_id) : "",
+          camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : "",
+          source_platform: r && r.source_platform ? String(r.source_platform) : "",
+          raw: r,
+        }))
+        .filter((x) => x.id && x.school_id);
+
+      normalized.sort((a, b) => (a.school_id || "").localeCompare(b.school_id || "") || (a.camp_site_url || "").localeCompare(b.camp_site_url || ""));
+      setPromoteSites(normalized);
+
+      // keep current pick if it still exists; else clear
+      if (promoteSitePickId && !normalized.find((x) => x.id === promoteSitePickId)) {
+        setPromoteSitePickId("");
+      }
+    } catch {
+      setPromoteSites([]);
+    } finally {
+      setPromoteSitesLoading(false);
+    }
+  }
+
+  // refresh promote dropdown when entering ONE scope or when sport changes
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (promoteScope !== "ONE") return;
+      if (!selectedSportId) return;
+      await loadPromoteSitesForSport(selectedSportId);
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promoteScope, selectedSportId]);
+
+  // when you change sport, default promote scope safely
+  useEffect(() => {
+    // keep whatever user chose, but clear school-specific inputs on sport change
+    setPromoteSchoolId("");
+    setPromoteSitePickId("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSportId]);
 
   /* ----------------------------
      Positions: load per sport
@@ -1324,16 +1392,32 @@ export default function AdminImport() {
       return;
     }
 
+    // ✅ NEW: scope-based where clause
+    const scope = promoteScope === "ONE" ? "ONE" : "ALL";
+    const schoolId = safeString(promoteSchoolId);
+
+    if (scope === "ONE" && !schoolId) {
+      appendLog("promote", "[Promote] ERROR: Scope is Specific school but school_id is blank. Paste a school_id or pick from the dropdown.");
+      setPromoteWorking(false);
+      return;
+    }
+
+    const where = scope === "ONE" ? { sport_id: selectedSportId, school_id: schoolId } : { sport_id: selectedSportId };
+
     let demoRows = [];
     try {
-      demoRows = await entityList(CampDemoEntity, { sport_id: selectedSportId });
+      demoRows = await entityList(CampDemoEntity, where);
     } catch (e) {
       appendLog("promote", `[Promote] ERROR reading CampDemo: ${String(e && e.message ? e.message : e)}`);
       setPromoteWorking(false);
       return;
     }
 
-    appendLog("promote", `[Promote] Found CampDemo rows for sport: ${demoRows.length}`);
+    // ✅ NEW: log totals with scope context
+    appendLog(
+      "promote",
+      `[Promote] Found CampDemo rows: ${demoRows.length} (sport=${selectedSportName || selectedSportId || "n/a"}${scope === "ONE" ? `, school_id=${schoolId}` : ""})`
+    );
 
     let created = 0;
     let updated = 0;
@@ -1579,6 +1663,105 @@ export default function AdminImport() {
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">4) Promote CampDemo → Camp</div>
           <div className="text-sm text-slate-600 mt-1">Upserts by <b>event_key</b>. (Runs for the currently selected sport.)</div>
+
+          {/* ✅ NEW: Promotion scope controls */}
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-xs font-semibold text-slate-700">Promotion scope</div>
+
+            <div className="mt-2 flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="promoteScope"
+                  value="ALL"
+                  checked={promoteScope === "ALL"}
+                  onChange={() => setPromoteScope("ALL")}
+                  disabled={promoteWorking}
+                />
+                All schools (selected sport)
+              </label>
+
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="promoteScope"
+                  value="ONE"
+                  checked={promoteScope === "ONE"}
+                  onChange={() => setPromoteScope("ONE")}
+                  disabled={promoteWorking}
+                />
+                Specific school
+              </label>
+            </div>
+
+            {promoteScope === "ONE" ? (
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">school_id</label>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    value={promoteSchoolId}
+                    onChange={(e) => {
+                      setPromoteSchoolId(e.target.value);
+                      // keep dropdown independent, but if user pastes manually, clear pick
+                      setPromoteSitePickId("");
+                    }}
+                    placeholder="Paste School.id"
+                    disabled={promoteWorking}
+                  />
+                  <div className="mt-1 text-[11px] text-slate-500">Manual paste works even if School table UI doesn’t show id.</div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">School (from sites table)</label>
+                  <select
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                    value={promoteSitePickId}
+                    onChange={(e) => {
+                      const pickId = e.target.value;
+                      setPromoteSitePickId(pickId);
+
+                      const hit = promoteSites.find((x) => x.id === pickId) || null;
+                      if (hit && hit.school_id) {
+                        setPromoteSchoolId(hit.school_id);
+                      }
+                    }}
+                    disabled={promoteWorking || promoteSitesLoading || !selectedSportId}
+                  >
+                    <option value="">
+                      {promoteSitesLoading ? "Loading sites…" : promoteSites.length ? "Select a site row…" : "No active sites found for this sport"}
+                    </option>
+                    {promoteSites.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.school_id} {s.camp_site_url ? `• ${s.camp_site_url}` : ""}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => loadPromoteSitesForSport(selectedSportId)}
+                      disabled={promoteWorking || promoteSitesLoading || !selectedSportId}
+                    >
+                      {promoteSitesLoading ? "Refreshing…" : "Refresh list"}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setPromoteSchoolId("");
+                        setPromoteSitePickId("");
+                      }}
+                      disabled={promoteWorking}
+                    >
+                      Clear school
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <div className="mt-3 flex gap-2">
             <Button onClick={promoteCampDemoToCamp} disabled={!selectedSportId || promoteWorking || sportsUSAWorking || campsWorking || seedWorking}>
