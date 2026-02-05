@@ -753,8 +753,7 @@ export default function AdminImport() {
           sportName: selectedSportName,
           siteUrl: siteUrl,
           limit: Number(sportsUSALimit || 300),
-          // ✅ FIX: honor the checkbox
-          dryRun: !!sportsUSADryRun,
+          dryRun: true,
         }),
       });
 
@@ -854,6 +853,7 @@ export default function AdminImport() {
 
   /* ----------------------------
      Camps ingest: SchoolSportSite -> CampDemo
+     ✅ Updated: set price = price_max preference, and omit null numeric fields
   ----------------------------- */
   async function upsertCampDemoByEventKey(payload) {
     if (!CampDemoEntity || !CampDemoEntity.create || !CampDemoEntity.update) {
@@ -993,8 +993,7 @@ export default function AdminImport() {
         body: JSON.stringify({
           sportId: selectedSportId,
           sportName: selectedSportName,
-          // ✅ FIX: honor the checkbox
-          dryRun: !!campsDryRun,
+          dryRun: true,
           maxSites: Number(campsMaxSites || 5),
           maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
           maxEvents: Number(campsMaxEvents || 25),
@@ -1025,22 +1024,6 @@ export default function AdminImport() {
       if (data && data.debug && data.debug.siteKpi) {
         const sk = data.debug.siteKpi;
         appendLog("camps", `[Camps] Site KPI: sitesWithRegLinks=${sk.sitesWithRegLinks || 0} sitesWithNoRegLinks=${sk.sitesWithNoRegLinks || 0}`);
-      }
-
-      const siteDbg = asArray(data && data.debug && data.debug.siteDebug ? data.debug.siteDebug : []).slice(0, 1);
-      if (siteDbg.length) {
-        appendLog("camps", "[Camps] Site debug (first 1):");
-        for (let i = 0; i < siteDbg.length; i++) {
-          const sd = siteDbg[i] || {};
-          appendLog("camps", `- siteUrl=${sd.siteUrl || ""} http=${sd.http || "n/a"} html=${sd.htmlType || ""} regLinks=${sd.regLinks || 0} sample=${sd.sample || ""}`);
-          if (sd.notes) appendLog("camps", `  notes=${String(sd.notes)}`);
-        }
-
-        const firstHtml = data && data.debug ? data.debug.firstSiteHtmlSnippet : null;
-        if (firstHtml) {
-          appendLog("camps", "[Camps] First site HTML snippet (debug):");
-          appendLog("camps", String(firstHtml));
-        }
       }
 
       const acceptedRaw = asArray(data && data.accepted ? data.accepted : []);
@@ -1131,6 +1114,12 @@ export default function AdminImport() {
             notes: safeString(a.notes),
           });
 
+        // ✅ Price policy: drive on price_max first
+        const priceMax = safeNumber(a.price_max);
+        const priceMin = safeNumber(a.price_min);
+        const priceBest = safeNumber(a.price) ?? priceMax ?? null;
+
+        // ✅ IMPORTANT: omit numeric fields when null (prevents Base44 default 0)
         const payload = {
           school_id,
           sport_id,
@@ -1140,7 +1129,6 @@ export default function AdminImport() {
           city: safeString(a.city) || null,
           state: safeString(a.state) || null,
           position_ids: normalizeStringArray(a.position_ids),
-          price: safeNumber(a.price),
           link_url: link_url || null,
           notes: safeString(a.notes) || null,
           season_year,
@@ -1154,10 +1142,12 @@ export default function AdminImport() {
           grades_raw: safeString(a.grades_raw) || null,
           register_by_raw: safeString(a.register_by_raw) || null,
           price_raw: safeString(a.price_raw) || null,
-          price_min: safeNumber(a.price_min),
-          price_max: safeNumber(a.price_max),
           sections_json: safeObject(a.sections_json) || null,
         };
+
+        if (priceBest != null) payload.price = priceBest;
+        if (priceMin != null) payload.price_min = priceMin;
+        if (priceMax != null) payload.price_max = priceMax;
 
         try {
           const r = await upsertCampDemoByEventKey(payload);
@@ -1223,6 +1213,7 @@ export default function AdminImport() {
     const state = safeString(r && r.state);
     const position_ids = normalizeStringArray(r && r.position_ids);
 
+    // ✅ keep using price if present (will now be price_max driven from CampDemo writes)
     const price = safeNumber(r && r.price);
 
     const link_url = safeString(r && (r.link_url || r.url));
@@ -1659,7 +1650,7 @@ export default function AdminImport() {
                                   [p.id]: {
                                     ...(prev[p.id] || {}),
                                     code: e.target.value,
-                                    name: prev[p.id] && prev[p.id].name != null ? prev[p.id].name : p.name,
+                                    name: (prev[p.id] && prev[p.id].name != null) ? prev[p.id].name : p.name,
                                   },
                                 }))
                               }
@@ -1675,7 +1666,7 @@ export default function AdminImport() {
                                   [p.id]: {
                                     ...(prev[p.id] || {}),
                                     name: e.target.value,
-                                    code: prev[p.id] && prev[p.id].code != null ? prev[p.id].code : p.code,
+                                    code: (prev[p.id] && prev[p.id].code != null) ? prev[p.id].code : p.code,
                                   },
                                 }))
                               }
