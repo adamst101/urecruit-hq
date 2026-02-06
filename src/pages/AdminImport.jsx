@@ -1,5 +1,5 @@
 // src/pages/AdminImport.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "../api/base44Client";
 import { Card } from "../components/ui/card";
@@ -295,9 +295,6 @@ function parseIsoOrNull(x) {
 }
 
 function isDueNow(site) {
-  // due if:
-  // - next_crawl_at missing OR next_crawl_at <= now
-  // and active=true
   const now = new Date();
   const next = parseIsoOrNull(site && site.next_crawl_at);
   return !next || next <= now;
@@ -309,13 +306,12 @@ function statusOf(site) {
 }
 
 function normalizeSiteRow(r) {
-  // ✅ FIX: the old "typeof r && typeof r.active" was always truthy/buggy.
   return {
     id: r && r.id ? String(r.id) : "",
     school_id: r && r.school_id ? String(r.school_id) : null,
     sport_id: r && r.sport_id ? String(r.sport_id) : null,
     camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : null,
-    active: typeof (r && r.active) === "boolean" ? r.active : !!(r && r.active),
+    active: typeof r && typeof r.active === "boolean" ? r.active : !!(r && r.active),
     crawl_status: statusOf(r),
     last_crawled_at: safeString(r && r.last_crawled_at),
     next_crawl_at: safeString(r && r.next_crawl_at),
@@ -326,38 +322,49 @@ function normalizeSiteRow(r) {
 }
 
 /* ----------------------------
-   ✅ Next improvement: deterministic per-site outcomes + "Run until done"
-   Why: your current logic marks *all sites* OK/NO_EVENTS based on total accepted events,
-   which can hide site-level failures and makes it harder to prove you got all dates.
+   ✅ Rate limit handling
 ----------------------------- */
-function computeNextCrawlAt(outcome) {
-  const now = Date.now();
-  // Tuneable defaults:
-  // - ok: crawl less often
-  // - no_events: crawl sooner (sites change)
-  // - error: retry sooner
-  const days =
-    outcome === "ok" ? 180 : outcome === "no_events" ? 30 : outcome === "error" ? 3 : 30;
-  return new Date(now + days * 24 * 60 * 60 * 1000).toISOString();
+function isRateLimitError(err) {
+  const msg = String(err && (err.message || err) ? (err.message || err) : "").toLowerCase();
+  return msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("429");
 }
 
-function safePerSiteResults(data) {
-  // Supports multiple possible return shapes without breaking older function versions.
-  // Preferred: data.perSiteResults = [{ site_id, acceptedCount, status, error }]
-  // Alternate: data.statsBySite = { [site_id]: { accepted, status, error } }
-  if (data && Array.isArray(data.perSiteResults)) return data.perSiteResults;
+async function withRetry(fn, opts) {
+  const {
+    tries = 6,
+    baseDelayMs = 600,
+    maxDelayMs = 8000,
+    jitterMs = 250,
+    onRetry,
+    classifyRateLimit = isRateLimitError,
+  } = opts || {};
 
-  const map = data && data.statsBySite && typeof data.statsBySite === "object" ? data.statsBySite : null;
-  if (map) {
-    return Object.keys(map).map((site_id) => ({
-      site_id,
-      acceptedCount: safeNumber(map[site_id] && (map[site_id].accepted ?? map[site_id].acceptedCount)) ?? 0,
-      status: safeString(map[site_id] && map[site_id].status),
-      error: safeString(map[site_id] && map[site_id].error),
-    }));
+  let lastErr = null;
+
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+
+      const isRL = classifyRateLimit(e);
+      // If it's NOT rate limit, still retry a couple times for transient failures
+      const shouldRetry = isRL || attempt < Math.min(3, tries);
+
+      if (!shouldRetry || attempt === tries) break;
+
+      const expo = baseDelayMs * Math.pow(2, attempt - 1);
+      const delay = Math.min(maxDelayMs, expo) + Math.floor(Math.random() * jitterMs);
+
+      if (typeof onRetry === "function") {
+        onRetry({ attempt, tries, delay, isRateLimit: isRL, error: e });
+      }
+
+      await sleep(delay);
+    }
   }
 
-  return [];
+  throw lastErr;
 }
 
 export default function AdminImport() {
@@ -423,12 +430,7 @@ export default function AdminImport() {
   const [campsMaxSites, setCampsMaxSites] = useState(5);
   const [campsMaxRegsPerSite, setCampsMaxRegsPerSite] = useState(5);
   const [campsMaxEvents, setCampsMaxEvents] = useState(25);
-
   const [fastMode, setFastMode] = useState(false);
-
-  // ✅ NEW: run-until-done mode (batch loop)
-  const [runUntilDone, setRunUntilDone] = useState(false);
-  const [runUntilDoneMaxBatches, setRunUntilDoneMaxBatches] = useState(50);
 
   // Rerun mode
   const RERUN_MODES = [
@@ -446,7 +448,7 @@ export default function AdminImport() {
   const [testSchoolId, setTestSchoolId] = useState("");
 
   /* ----------------------------
-     Crawl Counters (for the countdown you want)
+     Crawl Counters
   ----------------------------- */
   const [siteCounters, setSiteCounters] = useState({
     active: 0,
@@ -492,7 +494,7 @@ export default function AdminImport() {
         if (isDueNow(s)) dueNow += 1;
       }
 
-      const done = ok + no_events + error; // “touched” states (not ready)
+      const done = ok + no_events + error;
       setSiteCounters({ active, ready, ok, no_events, error, dueNow, done });
 
       const pct = active ? Math.round((done / active) * 1000) / 10 : 0;
@@ -507,7 +509,6 @@ export default function AdminImport() {
     }
   }
 
-  // Refresh counters when sport changes
   useEffect(() => {
     if (!selectedSportId) return;
     refreshCrawlCounters();
@@ -560,7 +561,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Positions manager
+     Positions manager (unchanged)
   ----------------------------- */
   const [positions, setPositions] = useState([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
@@ -577,9 +578,6 @@ export default function AdminImport() {
     return DEFAULT_POSITION_SEEDS[name] || [];
   }, [selectedSportName]);
 
-  /* ----------------------------
-     Load Sports
-  ----------------------------- */
   async function loadSports() {
     setSportsLoading(true);
 
@@ -635,15 +633,11 @@ export default function AdminImport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // auto-fill SportsUSA directory for sport
   useEffect(() => {
     const guess = SPORTSUSA_DIRECTORY_BY_SPORTNAME[String(selectedSportName || "").trim()];
     if (guess) setSportsUSASiteUrl(guess);
   }, [selectedSportName]);
 
-  /* ----------------------------
-     Positions: load per sport
-  ----------------------------- */
   async function loadPositionsForSport(sportId) {
     if (!PositionEntity || !sportId) {
       setPositions([]);
@@ -852,7 +846,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     SportsUSA Seed Schools
+     SportsUSA Seed Schools (unchanged)
   ----------------------------- */
   async function upsertSchoolBySourceKey({ school_name, logo_url, source_key, source_school_url }) {
     if (!SchoolEntity || !SchoolEntity.create || !SchoolEntity.update) {
@@ -927,7 +921,6 @@ export default function AdminImport() {
       active: true,
       needs_review: false,
       last_seen_at: new Date().toISOString(),
-      // crawl state defaults (safe if table has these cols)
       crawl_status: "ready",
       crawl_error: null,
       last_crawled_at: null,
@@ -1100,34 +1093,61 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Camps ingest: SchoolSportSite -> CampDemo
-     ✅ Updated to support:
-       - rerun modes
-       - per-site crawl-state outcomes (if function returns per-site stats)
-       - run-until-done batching loop (optional)
+     Camps ingest: Rate-limit safe writes
   ----------------------------- */
-  async function upsertCampDemoByEventKey(payload) {
+
+  // ✅ In-run cache to avoid extra reads for keys we already touched this run
+  const seenEventKeysRef = useRef(new Set());
+
+  async function upsertCampDemoByEventKey_RateSafe(payload, logPrefix) {
     if (!CampDemoEntity || !CampDemoEntity.create || !CampDemoEntity.update) {
       throw new Error("CampDemo entity not available (expected entities.CampDemo).");
     }
+
     const key = payload && payload.event_key ? payload.event_key : null;
     if (!key) throw new Error("Missing event_key for CampDemo upsert");
 
-    let existing = [];
-    try {
-      existing = await entityList(CampDemoEntity, { event_key: key });
-    } catch {
-      existing = [];
-    }
+    // If we already wrote this key in this run, skip the pre-read and just do an update attempt
+    const alreadyTouched = seenEventKeysRef.current.has(key);
 
-    const arr = asArray(existing);
-    if (arr.length > 0 && arr[0] && arr[0].id) {
-      await CampDemoEntity.update(arr[0].id, payload);
-      return "updated";
-    }
+    return await withRetry(
+      async () => {
+        // Strategy:
+        // - If already touched: try update via lookup (still needs read to get id) -> we do a minimal read
+        // - Else: do the existing "find then update/create" but wrapped in retry
+        let existing = [];
+        if (!alreadyTouched) {
+          existing = await entityList(CampDemoEntity, { event_key: key });
+        } else {
+          // minimal read (still necessary unless Base44 supports updateByWhere)
+          existing = await entityList(CampDemoEntity, { event_key: key });
+        }
 
-    await CampDemoEntity.create(payload);
-    return "created";
+        const arr = asArray(existing);
+        if (arr.length > 0 && arr[0] && arr[0].id) {
+          await CampDemoEntity.update(arr[0].id, payload);
+          seenEventKeysRef.current.add(key);
+          return "updated";
+        }
+
+        await CampDemoEntity.create(payload);
+        seenEventKeysRef.current.add(key);
+        return "created";
+      },
+      {
+        tries: 6,
+        baseDelayMs: 700,
+        maxDelayMs: 9000,
+        jitterMs: 350,
+        onRetry: ({ attempt, tries, delay, isRateLimit }) => {
+          if (isRateLimit) {
+            appendLog("camps", `${logPrefix} Rate limit hit. retry ${attempt}/${tries} in ${delay}ms`);
+          } else {
+            appendLog("camps", `${logPrefix} Transient error. retry ${attempt}/${tries} in ${delay}ms`);
+          }
+        },
+      }
+    );
   }
 
   function normalizeAcceptedRowToFlat(a) {
@@ -1161,9 +1181,6 @@ export default function AdminImport() {
         price_max: safeNumber(e.price_max),
         sections_json: safeObject(tryParseJson(e.sections_json)),
         registration_url: safeString(e.link_url),
-        // ✅ pass-through for per-site correlation if the function provides it
-        site_id: safeString(e.site_id) || safeString(a.site_id),
-        source_site_url: safeString(e.source_site_url) || safeString(a.source_site_url),
       };
     }
 
@@ -1194,8 +1211,6 @@ export default function AdminImport() {
       price_max: safeNumber(a.price_max),
       sections_json: safeObject(tryParseJson(a.sections_json)),
       registration_url: safeString(a.registration_url),
-      site_id: safeString(a.site_id),
-      source_site_url: safeString(a.source_site_url),
     };
   }
 
@@ -1217,56 +1232,15 @@ export default function AdminImport() {
     return { updated, errors };
   }
 
-  async function updateCrawlStatePerSite(perSiteResults, runIso, runId) {
-    if (!SchoolSportSiteEntity || !SchoolSportSiteEntity.update) return { updated: 0, errors: 0 };
-
-    const arr = asArray(perSiteResults);
-    let updated = 0;
-    let errors = 0;
-
-    for (let i = 0; i < arr.length; i++) {
-      const r = arr[i] || {};
-      const site_id = safeString(r.site_id || r.id);
-      if (!site_id) continue;
-
-      // Normalize status
-      const acceptedCount = safeNumber(r.acceptedCount ?? r.accepted ?? r.accepted_count) ?? 0;
-      const status =
-        safeString(r.status) ||
-        (safeString(r.error) ? "error" : acceptedCount > 0 ? "ok" : "no_events");
-
-      const patch = {
-        crawl_status: status,
-        crawl_error: safeString(r.error) || null,
-        last_crawled_at: runIso,
-        next_crawl_at: computeNextCrawlAt(status),
-        last_crawl_run_id: runId,
-        last_seen_at: runIso,
-      };
-
-      try {
-        await SchoolSportSiteEntity.update(String(site_id), patch);
-        updated += 1;
-      } catch {
-        errors += 1;
-      }
-
-      if ((i + 1) % 50 === 0) await sleep(5);
-    }
-
-    return { updated, errors };
-  }
-
   function pickSitesByRerunMode(sites) {
     const arr = asArray(sites);
 
-    if (rerunMode === "all") return arr; // force all
+    if (rerunMode === "all") return arr;
     if (rerunMode === "error") return arr.filter((s) => statusOf(s) === "error");
     if (rerunMode === "no_events") return arr.filter((s) => statusOf(s) === "no_events");
     if (rerunMode === "ok") return arr.filter((s) => statusOf(s) === "ok");
     if (rerunMode === "ready") return arr.filter((s) => statusOf(s) === "ready");
 
-    // default: due only
     return arr.filter((s) => isDueNow(s));
   }
 
@@ -1276,10 +1250,13 @@ export default function AdminImport() {
     setCampsWorking(true);
     setLogCamps("");
 
+    // ✅ reset in-run cache per run
+    seenEventKeysRef.current = new Set();
+
     appendLog("camps", `[Camps] Starting: SportsUSA Camps Ingest (${selectedSportName}) @ ${runIso}`);
     appendLog(
       "camps",
-      `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${campsMaxSites} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents} | fastMode=${fastMode ? "true" : "false"} | runUntilDone=${runUntilDone ? "true" : "false"}`
+      `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${campsMaxSites} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents} | fastMode=${fastMode ? "true" : "false"}`
     );
 
     try {
@@ -1296,6 +1273,25 @@ export default function AdminImport() {
         return;
       }
 
+      const siteRowsRaw = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
+      const siteRows = siteRowsRaw.map(normalizeSiteRow);
+
+      appendLog("camps", `[Camps] Loaded SchoolSportSite rows: ${siteRows.length} (active)`);
+
+      const filtered = pickSitesByRerunMode(siteRows);
+      appendLog("camps", `[Camps] Rerun mode: ${rerunMode}`);
+      appendLog("camps", `[Camps] Due sites (per mode): ${filtered.length}`);
+
+      const batch = filtered.slice(0, Number(campsMaxSites || 5));
+      appendLog("camps", `[Camps] Batch size: ${batch.length} (MaxSites=${campsMaxSites})`);
+
+      if (!batch.length) {
+        appendLog("camps", `[Camps] Nothing to do for rerunMode="${rerunMode}".`);
+        appendLog("camps", `[Camps] Tip: choose a different rerun mode (e.g., Force recrawl ALL) or Reset crawl state.`);
+        await refreshCrawlCounters();
+        return;
+      }
+
       const tUrl = safeString(testSiteUrl);
       const tSchool = safeString(testSchoolId);
 
@@ -1304,326 +1300,240 @@ export default function AdminImport() {
         return;
       }
 
-      // ✅ Batch loop (optional)
-      const maxBatches = Math.max(1, Math.min(500, Number(runUntilDoneMaxBatches || 50)));
-      const batchLimit = Math.max(1, Number(campsMaxSites || 5));
+      const sitesToSend = tUrl
+        ? []
+        : batch.map((r) => ({
+            id: r.id,
+            school_id: r.school_id,
+            sport_id: r.sport_id,
+            camp_site_url: r.camp_site_url,
+          }));
 
-      let totalAccepted = 0;
-      let totalCreated = 0;
-      let totalUpdated = 0;
-      let totalSkipped = 0;
-      let totalErrors = 0;
+      appendLog("camps", `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesToSend.length}, testSiteUrl=${tUrl ? tUrl : "no"})`);
 
-      for (let batchNo = 1; batchNo <= (runUntilDone ? maxBatches : 1); batchNo++) {
-        const siteRowsRaw = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
-        const siteRows = siteRowsRaw.map(normalizeSiteRow);
+      const res = await fetch("/functions/sportsUSAIngestCamps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sportId: selectedSportId,
+          sportName: selectedSportName,
+          dryRun: !!campsDryRun,
+          maxSites: Number(campsMaxSites || 5),
+          maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
+          maxEvents: Number(campsMaxEvents || 25),
+          fastMode: !!fastMode,
+          sites: sitesToSend,
+          testSiteUrl: tUrl || null,
+          testSchoolId: tSchool || null,
+        }),
+      });
 
-        const filtered = pickSitesByRerunMode(siteRows);
-        const batch = (tUrl ? [] : filtered).slice(0, batchLimit);
+      let data = null;
+      let rawText = null;
 
-        appendLog("camps", `\n[Camps] ---- Batch ${batchNo} ----`);
-        appendLog("camps", `[Camps] Loaded sites: active=${siteRows.length} | eligible(per mode)=${filtered.length} | batchSize=${tUrl ? "TEST" : batch.length}`);
+      try {
+        data = await res.json();
+      } catch {
+        rawText = await res.text().catch(() => null);
+      }
 
-        if (!tUrl && !batch.length) {
-          appendLog("camps", `[Camps] Nothing to do for rerunMode="${rerunMode}".`);
-          break;
+      if (!res.ok) {
+        appendLog("camps", `[Camps] Function ERROR (HTTP ${res.status})`);
+        if (data) appendLog("camps", JSON.stringify(data || {}, null, 2));
+        if (!data && rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
+        return;
+      }
+
+      if (!data) {
+        appendLog("camps", `[Camps] WARNING: Response was not JSON. HTTP ${res.status}`);
+        if (rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
+        return;
+      }
+
+      appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
+      appendLog(
+        "camps",
+        `[Camps] Function stats: processedSites=${data && data.stats ? data.stats.processedSites : 0} processedRegs=${data && data.stats ? data.stats.processedRegs : 0} accepted=${data && data.stats ? data.stats.accepted : 0} rejected=${data && data.stats ? data.stats.rejected : 0} errors=${data && data.stats ? data.stats.errors : 0}`
+      );
+
+      if (data && data.debug && data.debug.kpi) {
+        const k = data.debug.kpi;
+        appendLog("camps", `[Camps] Date KPI: listing=${k.datesParsedFromListing || 0} detail=${k.datesParsedFromDetail || 0} missing=${k.datesMissing || 0}`);
+        if (k.namesFromListing != null || k.namesFromDetail != null || k.namesMissing != null) {
+          appendLog(
+            "camps",
+            `[Camps] Name KPI: listing=${k.namesFromListing || 0} detail=${k.namesFromDetail || 0} missing=${k.namesMissing || 0} qualityReject=${k.namesRejectedByQualityGate || 0}`
+          );
         }
-
-        const sitesToSend = tUrl
-          ? []
-          : batch.map((r) => ({
-              id: r.id,
-              school_id: r.school_id,
-              sport_id: r.sport_id,
-              camp_site_url: r.camp_site_url,
-            }));
-
-        appendLog("camps", `[Camps] Calling /functions/sportsUSAIngestCamps (sites=${sitesToSend.length}, testSiteUrl=${tUrl ? tUrl : "no"})`);
-
-        const res = await fetch("/functions/sportsUSAIngestCamps", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sportId: selectedSportId,
-            sportName: selectedSportName,
-            dryRun: !!campsDryRun,
-            maxSites: batchLimit,
-            maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
-            maxEvents: Number(campsMaxEvents || 25),
-            fastMode: !!fastMode,
-            sites: sitesToSend,
-            testSiteUrl: tUrl || null,
-            testSchoolId: tSchool || null,
-          }),
-        });
-
-        let data = null;
-        let rawText = null;
-
-        try {
-          data = await res.json();
-        } catch {
-          rawText = await res.text().catch(() => null);
+        if (k.pricesFromDetail != null) {
+          appendLog("camps", `[Camps] Price KPI: detail=${k.pricesFromDetail || 0} missing=${k.pricesMissing || 0}`);
         }
+      }
 
-        if (!res.ok) {
-          appendLog("camps", `[Camps] Function ERROR (HTTP ${res.status})`);
-          if (data) appendLog("camps", JSON.stringify(data || {}, null, 2));
-          if (!data && rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
-          break;
-        }
+      const acceptedRaw = asArray(data && data.accepted ? data.accepted : []);
+      const accepted = acceptedRaw.map((x) => normalizeAcceptedRowToFlat(x));
 
-        if (!data) {
-          appendLog("camps", `[Camps] WARNING: Response was not JSON. HTTP ${res.status}`);
-          if (rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
-          break;
-        }
-
-        appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
-        appendLog(
-          "camps",
-          `[Camps] Function stats: processedSites=${data && data.stats ? data.stats.processedSites : 0} processedRegs=${data && data.stats ? data.stats.processedRegs : 0} accepted=${data && data.stats ? data.stats.accepted : 0} rejected=${data && data.stats ? data.stats.rejected : 0} errors=${data && data.stats ? data.stats.errors : 0}`
-        );
-
-        if (data && data.debug && data.debug.kpi) {
-          const k = data.debug.kpi;
-          appendLog("camps", `[Camps] Date KPI: listing=${k.datesParsedFromListing || 0} detail=${k.datesParsedFromDetail || 0} missing=${k.datesMissing || 0}`);
-          if (k.namesFromListing != null || k.namesFromDetail != null || k.namesMissing != null) {
-            appendLog(
-              "camps",
-              `[Camps] Name KPI: listing=${k.namesFromListing || 0} detail=${k.namesFromDetail || 0} missing=${k.namesMissing || 0} qualityReject=${k.namesRejectedByQualityGate || 0}`
-            );
-          }
-          if (k.pricesFromDetail != null) {
-            appendLog("camps", `[Camps] Price KPI: detail=${k.pricesFromDetail || 0} missing=${k.pricesMissing || 0}`);
-          }
-        }
-
-        const acceptedRaw = asArray(data && data.accepted ? data.accepted : []);
-        const accepted = acceptedRaw.map((x) => normalizeAcceptedRowToFlat(x));
-
-        appendLog("camps", `[Camps] Accepted events returned: ${accepted.length}`);
-        totalAccepted += accepted.length;
-
-        if (accepted.length) {
-          appendLog("camps", `[Camps] Sample (first 5):`);
-          for (let i = 0; i < Math.min(5, accepted.length); i++) {
-            const a = accepted[i] || {};
-            appendLog("camps", `- camp="${a.camp_name || ""}" start=${a.start_date || "n/a"} price=${a.price != null ? a.price : "n/a"} url=${a.link_url || a.registration_url || ""}`);
-          }
-        }
-
-        // ✅ Per-site crawl-state update (best) OR fallback old behavior
-        if (tUrl) {
-          appendLog("camps", `[Camps] Test mode: not updating SchoolSportSite crawl-state (no site ids).`);
-        } else if (campsDryRun) {
-          appendLog("camps", `[Camps] DryRun=true: would update crawl-state for batch sites: ${batch.length} (skipped)`);
-        } else {
-          const perSite = safePerSiteResults(data);
-
-          if (perSite.length) {
-            const upd = await updateCrawlStatePerSite(perSite, runIso, runId);
-            appendLog("camps", `[Camps] Updated crawl-state PER SITE: updated=${upd.updated} errors=${upd.errors}`);
-          } else {
-            // Fallback: do NOT mark all sites based on total accepted globally.
-            // Instead: mark "ok" only if we got any accepted AND we *can* tie accepted to site_id; otherwise mark "no_events".
-            const acceptedBySite = {};
-            for (const a of accepted) {
-              const sid = safeString(a.site_id);
-              if (!sid) continue;
-              acceptedBySite[sid] = (acceptedBySite[sid] || 0) + 1;
-            }
-
-            let okIds = [];
-            let noIds = [];
-
-            for (const s of batch) {
-              const sid = safeString(s && s.id);
-              const c = sid && acceptedBySite[sid] ? acceptedBySite[sid] : 0;
-              if (c > 0) okIds.push(sid);
-              else noIds.push(sid);
-            }
-
-            if (okIds.length) {
-              const patchOk = {
-                crawl_status: "ok",
-                crawl_error: null,
-                last_crawled_at: runIso,
-                next_crawl_at: computeNextCrawlAt("ok"),
-                last_crawl_run_id: runId,
-                last_seen_at: runIso,
-              };
-              const updOk = await updateCrawlStateForSites(okIds, patchOk);
-              appendLog("camps", `[Camps] Updated crawl-state fallback: ok=${updOk.updated} errors=${updOk.errors}`);
-            }
-
-            if (noIds.length) {
-              const patchNo = {
-                crawl_status: "no_events",
-                crawl_error: null,
-                last_crawled_at: runIso,
-                next_crawl_at: computeNextCrawlAt("no_events"),
-                last_crawl_run_id: runId,
-                last_seen_at: runIso,
-              };
-              const updNo = await updateCrawlStateForSites(noIds, patchNo);
-              appendLog("camps", `[Camps] Updated crawl-state fallback: no_events=${updNo.updated} errors=${updNo.errors}`);
-            }
-
-            if (!okIds.length && !noIds.length) {
-              appendLog("camps", `[Camps] WARNING: Fallback crawl-state update had 0 ids (unexpected).`);
-            }
-          }
-        }
-
-        if (campsDryRun) {
-          appendLog("camps", "[Camps] DryRun=true: no CampDemo writes performed.");
-          await refreshCrawlCounters();
-          if (!runUntilDone) return;
-          // keep looping batches for visibility even in dry-run
-          continue;
-        }
-
-        if (!accepted.length) {
-          appendLog("camps", "[Camps] No accepted events returned from function.");
-          await refreshCrawlCounters();
-          if (!runUntilDone) return;
-          // continue; more sites may still have events
-          continue;
-        }
-
-        let created = 0;
-        let updated = 0;
-        let skipped = 0;
-        let errors = 0;
-
-        for (let i = 0; i < accepted.length; i++) {
+      appendLog("camps", `[Camps] Accepted events returned: ${accepted.length}`);
+      if (accepted.length) {
+        appendLog("camps", `[Camps] Sample (first 5):`);
+        for (let i = 0; i < Math.min(5, accepted.length); i++) {
           const a = accepted[i] || {};
+          appendLog("camps", `- camp="${a.camp_name || ""}" start=${a.start_date || "n/a"} price=${a.price != null ? a.price : "n/a"} url=${a.link_url || a.registration_url || ""}`);
+        }
+      }
 
-          const school_id = safeString(a.school_id) || (tUrl ? safeString(tSchool) : null);
-          const sport_id = selectedSportId;
-          const camp_name = safeString(a.camp_name);
+      // Crawl-state update
+      if (tUrl) {
+        appendLog("camps", `[Camps] Test mode: not updating SchoolSportSite crawl-state (no site ids).`);
+      } else if (campsDryRun) {
+        appendLog("camps", `[Camps] DryRun=true: would update crawl-state for batch sites: ${batch.length} (skipped)`);
+      } else {
+        const outcome = accepted.length ? "ok" : "no_events";
+        const patch = {
+          crawl_status: outcome,
+          crawl_error: null,
+          last_crawled_at: runIso,
+          next_crawl_at: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
+          last_crawl_run_id: runId,
+          last_seen_at: runIso,
+        };
+        const ids = batch.map((b) => b.id).filter(Boolean);
+        const upd = await updateCrawlStateForSites(ids, patch);
+        appendLog("camps", `[Camps] Updated crawl-state for batch sites: ${upd.updated} (${outcome}) errors=${upd.errors}`);
+      }
 
-          const start_date = toISODate(a.start_date);
-          const end_date = toISODate(a.end_date);
+      if (campsDryRun) {
+        appendLog("camps", "[Camps] DryRun=true: no CampDemo writes performed.");
+        await refreshCrawlCounters();
+        return;
+      }
 
-          const link_url = safeString(a.link_url) || safeString(a.registration_url) || safeString(a.source_url);
+      if (!accepted.length) {
+        appendLog("camps", "[Camps] No accepted events returned from function.");
+        await refreshCrawlCounters();
+        return;
+      }
 
-          if (!school_id || !sport_id || !camp_name || !start_date) {
-            skipped += 1;
-            continue;
-          }
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+      let errors = 0;
 
-          const season_year = safeNumber(a.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
-          if (season_year == null) {
-            skipped += 1;
-            continue;
-          }
+      // ✅ batch-level rate limit signal
+      let rateLimitHits = 0;
 
-          const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
+      for (let i = 0; i < accepted.length; i++) {
+        const a = accepted[i] || {};
 
-          const source_platform = safeString(a.source_platform) || "sportsusa";
-          const source_url = safeString(a.source_url) || link_url;
+        const school_id = safeString(a.school_id) || (tUrl ? safeString(tSchool) : null);
+        const sport_id = selectedSportId;
+        const camp_name = safeString(a.camp_name);
 
-          const event_key =
-            safeString(a.event_key) ||
-            buildEventKey({
-              source_platform,
-              program_id,
-              start_date,
-              link_url,
-              source_url,
-            });
+        const start_date = toISODate(a.start_date);
+        const end_date = toISODate(a.end_date);
 
-          const content_hash =
-            safeString(a.content_hash) ||
-            simpleHash({
-              school_id,
-              sport_id,
-              camp_name,
-              start_date,
-              end_date,
-              link_url,
-              source_platform,
-              program_id,
-              event_dates_raw: safeString(a.event_dates_raw),
-              notes: safeString(a.notes),
-              price: safeNumber(a.price),
-              price_min: safeNumber(a.price_min),
-              price_max: safeNumber(a.price_max),
-              price_raw: safeString(a.price_raw),
-            });
+        const link_url = safeString(a.link_url) || safeString(a.registration_url) || safeString(a.source_url);
 
-          const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
+        if (!school_id || !sport_id || !camp_name || !start_date) {
+          skipped += 1;
+          continue;
+        }
 
-          const payload = {
+        const season_year = safeNumber(a.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
+        if (season_year == null) {
+          skipped += 1;
+          continue;
+        }
+
+        const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
+
+        const source_platform = safeString(a.source_platform) || "sportsusa";
+        const source_url = safeString(a.source_url) || link_url;
+
+        const event_key =
+          safeString(a.event_key) ||
+          buildEventKey({
+            source_platform,
+            program_id,
+            start_date,
+            link_url,
+            source_url,
+          });
+
+        const content_hash =
+          safeString(a.content_hash) ||
+          simpleHash({
             school_id,
             sport_id,
             camp_name,
             start_date,
-            end_date: end_date || null,
-            city: safeString(a.city) || null,
-            state: safeString(a.state) || null,
-            position_ids: normalizeStringArray(a.position_ids),
-            price: price_best,
-            link_url: link_url || null,
-            notes: safeString(a.notes) || null,
-            season_year,
-            program_id,
-            event_key,
+            end_date,
+            link_url,
             source_platform,
-            source_url: source_url || null,
-            last_seen_at: runIso,
-            content_hash,
-            event_dates_raw: safeString(a.event_dates_raw) || null,
-            grades_raw: safeString(a.grades_raw) || null,
-            register_by_raw: safeString(a.register_by_raw) || null,
-            price_raw: safeString(a.price_raw) || null,
+            program_id,
+            event_dates_raw: safeString(a.event_dates_raw),
+            notes: safeString(a.notes),
+            price: safeNumber(a.price),
             price_min: safeNumber(a.price_min),
             price_max: safeNumber(a.price_max),
-            sections_json: safeObject(a.sections_json) || null,
-          };
+            price_raw: safeString(a.price_raw),
+          });
 
-          try {
-            const r = await upsertCampDemoByEventKey(payload);
-            if (r === "created") created += 1;
-            if (r === "updated") updated += 1;
-          } catch (e) {
-            errors += 1;
-            appendLog("camps", `[Camps] WRITE ERROR #${i + 1}: ${String(e && e.message ? e.message : e)}`);
-          }
+        const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
 
-          if ((i + 1) % 25 === 0) appendLog("camps", `[Camps] Write progress: ${i + 1}/${accepted.length}`);
-          await sleep(20);
+        const payload = {
+          school_id,
+          sport_id,
+          camp_name,
+          start_date,
+          end_date: end_date || null,
+          city: safeString(a.city) || null,
+          state: safeString(a.state) || null,
+          position_ids: normalizeStringArray(a.position_ids),
+          price: price_best,
+          link_url: link_url || null,
+          notes: safeString(a.notes) || null,
+          season_year,
+          program_id,
+          event_key,
+          source_platform,
+          source_url: source_url || null,
+          last_seen_at: runIso,
+          content_hash,
+          event_dates_raw: safeString(a.event_dates_raw) || null,
+          grades_raw: safeString(a.grades_raw) || null,
+          register_by_raw: safeString(a.register_by_raw) || null,
+          price_raw: safeString(a.price_raw) || null,
+          price_min: safeNumber(a.price_min),
+          price_max: safeNumber(a.price_max),
+          sections_json: safeObject(a.sections_json) || null,
+        };
+
+        try {
+          const result = await upsertCampDemoByEventKey_RateSafe(payload, `[Camps] WRITE #${i + 1}/${accepted.length}:`);
+          if (result === "created") created += 1;
+          if (result === "updated") updated += 1;
+        } catch (e) {
+          errors += 1;
+          if (isRateLimitError(e)) rateLimitHits += 1;
+          appendLog("camps", `[Camps] WRITE ERROR #${i + 1}: ${String(e && e.message ? e.message : e)}`);
         }
 
-        totalCreated += created;
-        totalUpdated += updated;
-        totalSkipped += skipped;
-        totalErrors += errors;
-
-        appendLog("camps", `[Camps] Batch writes done. created=${created} updated=${updated} skipped=${skipped} errors=${errors}`);
-        await refreshCrawlCounters();
-
-        // If not running until done, stop after first batch
-        if (!runUntilDone) break;
-
-        // If due sites are 0, stop early
-        if (rerunMode === "due" && siteCounters.dueNow === 0) {
-          appendLog("camps", `[Camps] Stopping early: dueNow=0 for rerunMode="due".`);
-          break;
+        // ✅ If we’re hitting rate limit repeatedly, cool down the batch
+        if (rateLimitHits > 0 && rateLimitHits % 3 === 0) {
+          appendLog("camps", `[Camps] Cooldown: pausing 5000ms after ${rateLimitHits} rate-limit hits…`);
+          await sleep(5000);
         }
 
-        // Small pause between batches
-        await sleep(150);
+        if ((i + 1) % 25 === 0) appendLog("camps", `[Camps] Write progress: ${i + 1}/${accepted.length}`);
+
+        // ✅ slow base cadence (was 20ms)
+        await sleep(175);
       }
 
-      if (!campsDryRun) {
-        appendLog(
-          "camps",
-          `\n[Camps] Summary: totalAccepted=${totalAccepted} | totalCreated=${totalCreated} totalUpdated=${totalUpdated} totalSkipped=${totalSkipped} totalErrors=${totalErrors}`
-        );
-      }
+      appendLog("camps", `[Camps] CampDemo writes done. created=${created} updated=${updated} skipped=${skipped} errors=${errors}`);
+
+      await refreshCrawlCounters();
     } catch (e) {
       appendLog("camps", `[Camps] ERROR: ${String(e && e.message ? e.message : e)}`);
     } finally {
@@ -1632,7 +1542,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Promote CampDemo -> Camp (left as-is)
+     Promote CampDemo -> Camp (unchanged from your version)
   ----------------------------- */
   async function upsertCampByEventKey(payload) {
     if (!CampEntity || !CampEntity.create || !CampEntity.update) {
@@ -1806,7 +1716,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     UI
+     UI (same as your version)
   ----------------------------- */
   return (
     <div className="min-h-screen bg-slate-50 p-4">
@@ -1865,40 +1775,26 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* Crawl Counters Panel */}
+        {/* Counters Panel */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Crawl Counters</div>
           <div className="text-sm text-slate-600 mt-1">This is your “countdown.” It tells you what’s left and what reruns will do.</div>
 
           <div className="mt-3 grid grid-cols-2 md:grid-cols-7 gap-2 text-sm">
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Active</div>
-              <div className="font-semibold">{siteCounters.active}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Done</div>
-              <div className="font-semibold">{siteCounters.done}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Due Now</div>
-              <div className="font-semibold">{siteCounters.dueNow}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Ready</div>
-              <div className="font-semibold">{siteCounters.ready}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">OK</div>
-              <div className="font-semibold">{siteCounters.ok}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">No Events</div>
-              <div className="font-semibold">{siteCounters.no_events}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Error</div>
-              <div className="font-semibold">{siteCounters.error}</div>
-            </div>
+            {[
+              ["Active", siteCounters.active],
+              ["Done", siteCounters.done],
+              ["Due Now", siteCounters.dueNow],
+              ["Ready", siteCounters.ready],
+              ["OK", siteCounters.ok],
+              ["No Events", siteCounters.no_events],
+              ["Error", siteCounters.error],
+            ].map(([label, val]) => (
+              <div key={label} className="rounded-lg bg-white border border-slate-200 p-2">
+                <div className="text-[11px] text-slate-500">{label}</div>
+                <div className="font-semibold">{val}</div>
+              </div>
+            ))}
           </div>
 
           <div className="mt-3 flex gap-2">
@@ -1916,12 +1812,10 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* SportsUSA Seed Schools */}
+        {/* Seed Schools */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">2) Seed Schools from SportsUSA (School + SchoolSportSite)</div>
-          <div className="text-sm text-slate-600 mt-1">
-            Pulls the sport directory (e.g., footballcampsusa.com) and seeds universities + their per-sport camp site URL.
-          </div>
+          <div className="text-sm text-slate-600 mt-1">Pulls the sport directory and seeds universities + their per-sport camp site URL.</div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -1984,7 +1878,12 @@ export default function AdminImport() {
           <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Rerun mode</label>
-              <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white" value={rerunMode} onChange={(e) => setRerunMode(e.target.value)} disabled={campsWorking}>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                value={rerunMode}
+                onChange={(e) => setRerunMode(e.target.value)}
+                disabled={campsWorking}
+              >
                 {RERUN_MODES.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.label}
@@ -1992,7 +1891,7 @@ export default function AdminImport() {
                 ))}
               </select>
               <div className="mt-1 text-[11px] text-slate-500">
-                If you see <b>eligible(per mode)=0</b>, you’re “done” for that mode. Switch mode or reset crawl-state.
+                If you see <b>Due sites: 0</b>, you’re “done” for that mode. Switch mode or reset crawl-state.
               </div>
             </div>
 
@@ -2057,30 +1956,6 @@ export default function AdminImport() {
             </div>
           </div>
 
-          {/* ✅ NEW: Run until done */}
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={runUntilDone} onChange={(e) => setRunUntilDone(e.target.checked)} disabled={campsWorking} />
-                Run until done (batch loop)
-              </label>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Max batches</label>
-              <input
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                type="number"
-                value={runUntilDoneMaxBatches}
-                onChange={(e) => setRunUntilDoneMaxBatches(Number(e.target.value || 0))}
-                min={1}
-                max={500}
-                disabled={campsWorking || !runUntilDone}
-              />
-              <div className="mt-1 text-[11px] text-slate-500">Safety rail so you can “run it down” without babysitting.</div>
-            </div>
-            <div />
-          </div>
-
           {/* Test Mode */}
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -2143,7 +2018,7 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* Positions */}
+        {/* Positions (optional) */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Positions (optional)</div>
           <div className="text-sm text-slate-600 mt-1">Auto-seed a default set, or manually add/edit/delete positions per sport.</div>
@@ -2165,11 +2040,23 @@ export default function AdminImport() {
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Code</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={positionAddCode} onChange={(e) => setPositionAddCode(e.target.value)} placeholder="e.g., QB" disabled={!selectedSportId} />
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={positionAddCode}
+                onChange={(e) => setPositionAddCode(e.target.value)}
+                placeholder="e.g., QB"
+                disabled={!selectedSportId}
+              />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Name</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={positionAddName} onChange={(e) => setPositionAddName(e.target.value)} placeholder="e.g., Quarterback" disabled={!selectedSportId} />
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={positionAddName}
+                onChange={(e) => setPositionAddName(e.target.value)}
+                placeholder="e.g., Quarterback"
+                disabled={!selectedSportId}
+              />
             </div>
             <div className="flex items-end">
               <Button onClick={addPosition} disabled={!selectedSportId || positionAddWorking}>
