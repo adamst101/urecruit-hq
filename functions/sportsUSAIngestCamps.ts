@@ -1,18 +1,23 @@
 // functions/sportsUSAIngestCamps.js
 // Base44 Backend Function (Deno)
 //
-// v17 updates (2026-02-05):
-// ✅ Fix: camp_name coming through as "Register" in fastMode
-//    - Expanded "metadata/junk" detection to include exact "register" / "view details" / "details"
-//    - If listing-derived name is junk, we null it BEFORE deciding shouldFetchName,
-//      forcing a name-only detail fetch (even in fastMode).
-// ✅ Add: basic price extraction from Ryzer registration/detail HTML
-//    - Extracts price_min/price_max/price from $ patterns in page text
-//    - Keeps fastMode behavior for dates (won’t force full reg fetch if listing date is good)
-// ✅ Keep: v16 behavior (register.cfm expands, timeouts, maxMs, maxRegFetchTotal)
+// v18 updates (2026-02-06):
+// ✅ Fix: camp_name accidentally becoming "$475.00" / "$90.00" etc
+//    - Hard “money-string” gate: never accept a title that is just a price.
+//    - Applies to BOTH listing-derived and detail-derived name candidates.
+// ✅ Fix: price parsing producing wrong values (e.g., $90 → 10)
+//    - Stop using “min price” as the representative.
+//    - Use a scored selector (context keywords) with a strong fallback to price_max.
+//    - Store price_min/price_max AND choose a single price that is most likely the true camp cost.
+// ✅ Add: KPIs so you can see cleanup progress + quality regressions fast
+//    - namesRejectedAsMoney, namesRecoveredFromDetail
+//    - pricesCandidates, pricesChosenByScore, pricesChosenByMaxFallback, pricesMissing
+//
+// NOTE: This function does NOT write to your DB. It returns accepted rows.
+// AdminImport (frontend) writes CampDemo. Rate limits are handled there.
 
 const VERSION =
-  "sportsUSAIngestCamps_2026-02-05_v17_fix_register_name_and_add_price_parse";
+  "sportsUSAIngestCamps_2026-02-06_v18_fix_money_names_and_price_selection";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -213,6 +218,25 @@ function htmlToText(html) {
 }
 
 /* -------------------------
+   ✅ Money-string detection (new)
+-------------------------- */
+function looksLikeMoneyString(name) {
+  const t = safeString(name);
+  if (!t) return false;
+
+  // strip spaces and commas for checks
+  const raw = t.replace(/\s+/g, "").replace(/,/g, "");
+
+  // "$475.00" / "475.00" / "$90" / "90"
+  if (/^\$?\d{1,5}(\.\d{2})?$/.test(raw)) return true;
+
+  // "$ 475.00" variations
+  if (/^\$\d{1,5}(\.\d{2})?$/.test(raw)) return true;
+
+  return false;
+}
+
+/* -------------------------
    Listing name extraction
 -------------------------- */
 function looksLikeMetadataNotTitle(name) {
@@ -220,10 +244,13 @@ function looksLikeMetadataNotTitle(name) {
   if (!t) return true;
   if (t.length < 4) return true;
 
+  // ✅ NEVER accept a price string as a name
+  if (looksLikeMoneyString(name)) return true;
+
   // ✅ the big offender
   if (t === "register") return true;
 
-  // Known “bad” Montana-style grabs
+  // Known “bad” grabs
   if (t.includes("as of fall")) return true;
   if (t.includes("as of")) return true;
 
@@ -235,15 +262,7 @@ function looksLikeMetadataNotTitle(name) {
   if (t === "register now") return true;
 
   // If it looks like grades/ages/cost line, treat as metadata
-  const badTokens = [
-    "grades",
-    "grade",
-    "ages",
-    "age",
-    "location",
-    "cost",
-    "price",
-  ];
+  const badTokens = ["grades", "grade", "ages", "age", "location", "cost", "price"];
   let hits = 0;
   for (let i = 0; i < badTokens.length; i++) if (t.includes(badTokens[i])) hits++;
   if (hits >= 2) return true;
@@ -272,9 +291,7 @@ function extractCampNameFromListingSnippet(listingSnippetHtml, regUrl) {
 
   // 2) Nearby heading tags within local window
   const needle = id ? `id=${id}` : regUrl;
-  const idx = listingSnippetHtml
-    .toLowerCase()
-    .indexOf(String(needle).toLowerCase());
+  const idx = listingSnippetHtml.toLowerCase().indexOf(String(needle).toLowerCase());
   if (idx >= 0) {
     const start = Math.max(0, idx - 700);
     const end = Math.min(listingSnippetHtml.length, idx + 700);
@@ -300,7 +317,7 @@ function extractCampNameFromListingSnippet(listingSnippetHtml, regUrl) {
 }
 
 /* -------------------------
-   Date parsing
+   Date parsing (unchanged)
 -------------------------- */
 function pad2(n) {
   return n < 10 ? "0" + n : String(n);
@@ -411,14 +428,11 @@ function extractDateCandidates(html) {
   const text = htmlToText(html);
   const out = [];
 
-  const m2 = /(\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]\s*\d{1,2}\/\d{1,2}\/\d{4})/.exec(
-    html
-  );
+  const m2 = /(\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]\s*\d{1,2}\/\d{1,2}\/\d{4})/.exec(html);
   if (m2 && m2[1]) out.push(stripNonAscii(m2[1]));
 
   const reSingle = /(\d{1,2}\/\d{1,2}\/\d{4})/g;
-  let m3,
-    count3 = 0;
+  let m3, count3 = 0;
   while ((m3 = reSingle.exec(html)) !== null) {
     out.push(stripNonAscii(m3[1]));
     count3++;
@@ -427,8 +441,7 @@ function extractDateCandidates(html) {
 
   const reMonth =
     /((January|Jan|February|Feb|March|Mar|April|Apr|May|June|Jun|July|Jul|August|Aug|September|Sep|October|Oct|November|Nov|December|Dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?)/gi;
-  let m4,
-    count4 = 0;
+  let m4, count4 = 0;
   while ((m4 = reMonth.exec(text)) !== null) {
     if (m4[1]) out.push(stripNonAscii(m4[1]));
     count4++;
@@ -475,59 +488,144 @@ function extractH1(html) {
 }
 function extractMetaDescription(html) {
   if (!html) return null;
-  const m =
-    /<meta[^>]*name="description"[^>]*content="([^"]*)"/i.exec(html);
+  const m = /<meta[^>]*name="description"[^>]*content="([^"]*)"/i.exec(html);
   if (!m) return null;
   return stripNonAscii(m[1]);
 }
 function sanitizeCampName(titleOrH1) {
   let t = safeString(titleOrH1);
   if (!t) return null;
+
   t = t.replace(/\s*\|\s*Event Registration.*$/i, "").trim();
   t = t.replace(/\s*\-\s*Event Registration.*$/i, "").trim();
   t = t.replace(/\s*\|\s*Registration.*$/i, "").trim();
   t = t.replace(/\s*\-\s*Registration.*$/i, "").trim();
   t = stripNonAscii(t);
+
+  // ✅ Hard reject if it is money-like or metadata-like
+  if (looksLikeMoneyString(t)) return null;
   if (looksLikeMetadataNotTitle(t)) return null;
+
   return t || null;
 }
 
 /* -------------------------
-   ✅ Price parsing (new)
+   ✅ Price parsing (improved)
 -------------------------- */
+function parseMoneyStringToNumber(moneyStr) {
+  if (!moneyStr) return null;
+  const s = String(moneyStr)
+    .replace(/\s+/g, "")
+    .replace(/^\$/, "")
+    .replace(/,/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function scorePriceCandidate(snippetText, value) {
+  const t = lc(snippetText || "");
+
+  let score = 0;
+
+  // value sanity
+  if (value >= 25 && value <= 2500) score += 6;
+  else if (value >= 10 && value < 25) score += 1;
+  else if (value < 10) score -= 3;
+  else if (value > 2500 && value <= 20000) score -= 2;
+  else if (value > 20000) score -= 6;
+
+  // positive context
+  const good = ["price", "cost", "fee", "tuition", "registration fee", "camp fee", "camp cost"];
+  for (let i = 0; i < good.length; i++) if (t.includes(good[i])) score += 4;
+
+  // negative context
+  const bad = ["deposit", "processing", "convenience", "service fee", "refund", "remaining", "balance"];
+  for (let i = 0; i < bad.length; i++) if (t.includes(bad[i])) score -= 4;
+
+  return score;
+}
+
 function extractPriceFromHtml(html) {
-  if (!html) return { price: null, price_min: null, price_max: null, price_raw: null };
+  if (!html) return { price: null, price_min: null, price_max: null, price_raw: null, debug: null };
 
   const text = htmlToText(html);
+  const candidates = [];
 
-  // Look for "$123", "$123.45", "USD 123", "123 USD" patterns.
-  // Keep it conservative: prioritize $-prefixed values.
-  const prices = [];
-  const reDollar = /\$\s*(\d{1,4})(?:\.(\d{2}))?/g;
+  // capture: $475.00, $1,250.00, $90, etc
+  const re = /\$\s*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/g;
+
   let m;
-  while ((m = reDollar.exec(text)) !== null) {
-    const whole = m[1];
-    const cents = m[2];
-    const val = Number(whole + (cents ? "." + cents : ""));
-    if (Number.isFinite(val) && val > 0 && val < 20000) prices.push(val);
-    if (prices.length >= 12) break;
+  while ((m = re.exec(text)) !== null) {
+    const raw = m[0]; // includes $
+    const val = parseMoneyStringToNumber(raw);
+    if (!Number.isFinite(val)) continue;
+    if (val <= 0) continue;
+
+    // take local context window around the match
+    const idx = m.index || 0;
+    const start = Math.max(0, idx - 90);
+    const end = Math.min(text.length, idx + 90);
+    const snippet = text.slice(start, end);
+
+    const score = scorePriceCandidate(snippet, val);
+
+    candidates.push({ val, raw: raw.trim(), score });
+    if (candidates.length >= 20) break;
   }
 
-  if (!prices.length) return { price: null, price_min: null, price_max: null, price_raw: null };
+  if (!candidates.length) {
+    return { price: null, price_min: null, price_max: null, price_raw: null, debug: { candidates: 0 } };
+  }
 
-  const uniqPrices = Array.from(new Set(prices)).sort((a, b) => a - b);
-  const price_min = uniqPrices[0];
-  const price_max = uniqPrices[uniqPrices.length - 1];
+  // Deduplicate by numeric value, keep best score per value
+  const byVal = new Map();
+  for (const c of candidates) {
+    const key = String(c.val);
+    const cur = byVal.get(key);
+    if (!cur || c.score > cur.score) byVal.set(key, c);
+  }
+  const deduped = Array.from(byVal.values());
 
-  // Pick a representative "price"
-  // If single -> that. If range -> min (you also store min/max).
-  const price = uniqPrices.length === 1 ? price_min : price_min;
+  // Compute min/max (over plausible-ish values)
+  const vals = deduped.map((x) => x.val).sort((a, b) => a - b);
+  const price_min = vals[0] ?? null;
+  const price_max = vals.length ? vals[vals.length - 1] : null;
+
+  // Choose “best”:
+  // 1) highest score
+  // 2) tie-breaker: higher value (camp cost beats deposit)
+  let best = null;
+  for (const c of deduped) {
+    if (!best) best = c;
+    else if (c.score > best.score) best = c;
+    else if (c.score === best.score && c.val > best.val) best = c;
+  }
+
+  // If best is very low-confidence (<= -2) but we have a reasonable max, prefer max
+  let price = best ? best.val : null;
+  let chosenBy = "score";
+  if (best && best.score <= -2 && price_max != null) {
+    price = price_max;
+    chosenBy = "max_fallback";
+  }
+
+  const price_raw = deduped
+    .sort((a, b) => b.score - a.score || b.val - a.val)
+    .slice(0, 6)
+    .map((x) => `${x.raw}`)
+    .join(", ");
 
   return {
     price,
     price_min,
-    price_max: uniqPrices.length === 1 ? null : price_max,
-    price_raw: uniqPrices.slice(0, 6).join(", "),
+    price_max: vals.length > 1 ? price_max : null,
+    price_raw,
+    debug: {
+      candidates: candidates.length,
+      deduped: deduped.length,
+      chosenBy,
+      bestScore: best ? best.score : null,
+    },
   };
 }
 
@@ -565,12 +663,19 @@ Deno.serve(async (req) => {
       datesParsedFromListing: 0,
       datesParsedFromDetail: 0,
       datesMissing: 0,
+
       namesFromListing: 0,
       namesFromDetail: 0,
       namesMissing: 0,
       namesRejectedByQualityGate: 0,
+      namesRejectedAsMoney: 0,
+      namesRecoveredFromDetail: 0,
+
       pricesFromDetail: 0,
       pricesMissing: 0,
+      pricesCandidates: 0,
+      pricesChosenByScore: 0,
+      pricesChosenByMaxFallback: 0,
     },
     siteDebug: [],
   };
@@ -601,8 +706,8 @@ Deno.serve(async (req) => {
     const maxRegsPerSite = Number(body && body.maxRegsPerSite !== undefined ? body.maxRegsPerSite : 10);
     const maxEvents = Number(body && body.maxEvents !== undefined ? body.maxEvents : 25);
 
-    // NOTE: default fastMode true (same as your v16), but now safe for names/prices
     const fastMode = body && body.fastMode !== undefined ? !!body.fastMode : true;
+
     const maxMs = Number(body && body.maxMs !== undefined ? body.maxMs : 45000);
     const siteTimeoutMs = Number(body && body.siteTimeoutMs !== undefined ? body.siteTimeoutMs : 12000);
     const regTimeoutMs = Number(body && body.regTimeoutMs !== undefined ? body.regTimeoutMs : 12000);
@@ -722,7 +827,11 @@ Deno.serve(async (req) => {
           htmlType,
           regLinks: regLinks.length,
           sample: regLinks.length ? regLinks[0] : "",
-          notes: isRegisterListingUrl(siteUrl) ? "direct_register_listing_expanded" : (regLinks.length ? "" : "no_camp_links_found"),
+          notes: isRegisterListingUrl(siteUrl)
+            ? "direct_register_listing_expanded"
+            : regLinks.length
+              ? ""
+              : "no_camp_links_found",
         });
 
         if (!regLinks.length && isDirectRegistrationUrl(siteUrl)) {
@@ -759,32 +868,30 @@ Deno.serve(async (req) => {
           let campName = extractCampNameFromListingSnippet(listingSnippetHtml, regUrl);
           if (campName) debug.kpi.namesFromListing += 1;
 
-          // ✅ Critical: apply quality gate BEFORE deciding shouldFetchName
+          // ✅ Hard gate BEFORE deciding detail behavior
           if (campName && looksLikeMetadataNotTitle(campName)) {
             debug.kpi.namesRejectedByQualityGate += 1;
-            campName = null; // force name-only fetch even in fastMode
+            if (looksLikeMoneyString(campName)) debug.kpi.namesRejectedAsMoney += 1;
+            campName = null;
           }
 
           const shouldFetchDates = !fastMode || !(finalParsed && finalParsed.start);
           const shouldFetchName = !campName;
 
-          // ✅ Price: in fastMode we still want price if missing (usually)
-          // But to protect runtime, only fetch price when we already need detail for name OR dates.
-          // If you want price always, flip this to: const shouldFetchPrice = true;
+          // We want price whenever possible (your cleanup goals).
           const shouldFetchPrice = true;
 
-          // Decide detail fetch
           const shouldFetchDetail = shouldFetchDates || shouldFetchName || shouldFetchPrice;
 
           let regHttp = 0;
           let regHtml = "";
           let desc = null;
 
-          // price outputs
           let price = null;
           let price_min = null;
           let price_max = null;
           let price_raw = null;
+          let priceChosenBy = null;
 
           if (shouldFetchDetail) {
             if (debug.regFetches >= maxRegFetchTotal) {
@@ -816,8 +923,17 @@ Deno.serve(async (req) => {
               if (!campName && regHtml) {
                 const h1 = extractH1(regHtml);
                 const title = extractTitle(regHtml);
-                campName = sanitizeCampName(h1 || title) || null;
-                if (campName) debug.kpi.namesFromDetail += 1;
+                const candidate = sanitizeCampName(h1 || title) || null;
+
+                if (candidate) {
+                  campName = candidate;
+                  debug.kpi.namesFromDetail += 1;
+                  debug.kpi.namesRecoveredFromDetail += 1;
+                } else {
+                  // if detail tried to give us a money-like name, count it
+                  const rawCandidate = safeString(h1 || title);
+                  if (rawCandidate && looksLikeMoneyString(rawCandidate)) debug.kpi.namesRejectedAsMoney += 1;
+                }
               }
 
               // Dates from detail
@@ -834,12 +950,22 @@ Deno.serve(async (req) => {
               // ✅ Price from detail
               if (regHtml) {
                 const px = extractPriceFromHtml(regHtml);
+                if (px && px.debug) debug.kpi.pricesCandidates += Number(px.debug.deduped || 0);
+
                 price = px.price;
                 price_min = px.price_min;
                 price_max = px.price_max;
                 price_raw = px.price_raw;
-                if (price != null || price_min != null || price_max != null) debug.kpi.pricesFromDetail += 1;
-                else debug.kpi.pricesMissing += 1;
+
+                if (px && px.debug && px.debug.chosenBy) priceChosenBy = px.debug.chosenBy;
+
+                if (price != null || price_min != null || price_max != null) {
+                  debug.kpi.pricesFromDetail += 1;
+                  if (priceChosenBy === "score") debug.kpi.pricesChosenByScore += 1;
+                  if (priceChosenBy === "max_fallback") debug.kpi.pricesChosenByMaxFallback += 1;
+                } else {
+                  debug.kpi.pricesMissing += 1;
+                }
               }
             } catch (eRegFetch) {
               errors.push({
@@ -890,16 +1016,15 @@ Deno.serve(async (req) => {
             state: null,
             position_ids: [],
 
-            // ✅ price fields now populated when found
-            price: price,
-            price_raw: price_raw,
-            price_min: price_min,
-            price_max: price_max,
+            // ✅ price fields (representative price is now selected sanely)
+            price,
+            price_raw,
+            price_min,
+            price_max,
 
             link_url: regUrl,
             notes: desc || null,
 
-            // NOTE: leaving as start-year (your admin code can compute season differently if desired)
             season_year: Number(finalParsed.start.slice(0, 4)),
             program_id: programId,
             event_key: eventKey,
