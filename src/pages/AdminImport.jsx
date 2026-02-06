@@ -89,15 +89,6 @@ function AdminImport() {
     appendLog(setLogSportsUSA, `[SportsUSA] DryRun=${dryRun} | Limit=${seedLimit}`);
 
     try {
-      // You must have /functions/sportsUSASeedSchools.js deployed.
-      // It requires: sportId, sportName, siteUrl, limit, dryRun
-      // We'll map sportName -> sports site URL by convention:
-      // football -> https://www.footballcampsusa.com
-      // soccer -> https://www.soccersportsusa.com  (adjust if your actual domains differ)
-      // baseball -> https://www.baseballcampsusa.com (etc)
-      //
-      // If you want this configurable later, store it in a table. For now, deterministic mapping.
-
       const sportNameLc = safeString(selectedSport.sport_name).toLowerCase().trim();
       let siteUrl = "";
       if (sportNameLc === "football") siteUrl = "https://www.footballcampsusa.com/";
@@ -138,10 +129,6 @@ function AdminImport() {
         }
       }
 
-      // Optional DB write (seed School + SchoolSportSite) should be done here.
-      // Based on your previous logs, you already have this part working in some version.
-      // Below is a safe upsert approach aligned with your schemas.
-
       if (dryRun) {
         appendLog(setLogSportsUSA, `[SportsUSA] DryRun=true: no School / SchoolSportSite writes performed.`);
         return;
@@ -169,7 +156,6 @@ function AdminImport() {
         }
 
         try {
-          // Upsert School by school_name
           const existingSchools = await base44.entities.School.filter({ school_name: schoolName });
 
           let schoolId = "";
@@ -199,7 +185,6 @@ function AdminImport() {
             schoolsUpdated += 1;
           }
 
-          // Upsert SchoolSportSite by (school_id + sport_id)
           const existingSites = await base44.entities.SchoolSportSite.filter({
             school_id: schoolId,
             sport_id: selectedSportId
@@ -262,7 +247,6 @@ function AdminImport() {
     appendLog(setLogCamps, `[Camps] DryRun=${dryRun} | MaxSites=${maxSites} | MaxRegsPerSite=${maxRegsPerSite} | MaxEvents=${maxEvents}`);
 
     try {
-      // Load active SchoolSportSite rows for this sport
       const sites = await base44.entities.SchoolSportSite.filter({
         sport_id: selectedSportId,
         active: true
@@ -290,11 +274,9 @@ function AdminImport() {
       const result = await base44.functions.invoke('sportsUSAIngestCamps', payload);
       const resp = result.data;
 
-      // ✅ Always print version reliably
       const fnVersion = (resp && (resp.version || (resp.debug && resp.debug.version))) || "MISSING";
       appendLog(setLogCamps, `[Camps] Function version: ${fnVersion}`);
 
-      // ✅ Stats
       if (resp && resp.stats) {
         appendLog(
           setLogCamps,
@@ -304,7 +286,6 @@ function AdminImport() {
         appendLog(setLogCamps, `[Camps] ERROR: Missing resp.stats`);
       }
 
-      // ✅ Errors (first 3)
       if (resp && resp.errors && resp.errors.length) {
         appendLog(setLogCamps, `[Camps] Function errors (first ${Math.min(resp.errors.length, 3)}):`);
         for (let i = 0; i < Math.min(resp.errors.length, 3); i++) {
@@ -312,7 +293,6 @@ function AdminImport() {
         }
       }
 
-      // ✅ Per-site debug (first 1)
       if (resp && resp.debug && resp.debug.siteDebug && resp.debug.siteDebug.length) {
         const s0 = resp.debug.siteDebug[0];
         appendLog(setLogCamps, `[Camps] Site debug (first 1):`);
@@ -322,27 +302,24 @@ function AdminImport() {
         );
       }
 
-      // ✅ HTML snippet (only useful when regLinks=0 or errors>0)
       if (resp && resp.debug && resp.debug.firstSiteHtmlSnippet) {
         appendLog(setLogCamps, `[Camps] First site HTML snippet (debug):`);
         appendLog(setLogCamps, resp.debug.firstSiteHtmlSnippet);
       }
 
-      // If nothing accepted, show rejects
       if (resp && resp.accepted && resp.accepted.length) {
         appendLog(setLogCamps, `[Camps] Accepted events returned: ${resp.accepted.length}`);
         appendLog(setLogCamps, `[Camps] Sample (first 3):`);
         for (let i = 0; i < Math.min(resp.accepted.length, 3); i++) {
           const a = resp.accepted[i];
-          const ev = a.event || {};
-          appendLog(setLogCamps, `- camp="${ev.camp_name}" start=${ev.start_date || "n/a"} url=${ev.link_url || ""}`);
+          appendLog(setLogCamps, `- camp="${a.camp_name}" start=${a.start_date || "n/a"} url=${a.link_url || ""}`);
         }
       } else {
         if (resp && resp.rejected_samples && resp.rejected_samples.length) {
           appendLog(setLogCamps, `[Camps] Rejected samples (first ${Math.min(resp.rejected_samples.length, 5)}):`);
           for (let i = 0; i < Math.min(resp.rejected_samples.length, 5); i++) {
             const rj = resp.rejected_samples[i];
-            appendLog(setLogCamps, `- reason=${rj.reason} title="${rj.title || ""}" url=${rj.registrationUrl || ""} datesLine=${rj.event_dates_line || ""}`);
+            appendLog(setLogCamps, `- reason=${rj.reason} url=${rj.registrationUrl || ""}`);
           }
         }
         appendLog(setLogCamps, `[Camps] No accepted events returned from function.`);
@@ -355,31 +332,21 @@ function AdminImport() {
         return;
       }
 
-      // Write to CampDemo
       let wrote = 0;
       let writeErrors = 0;
       const accepted = resp.accepted || [];
 
       for (let i = 0; i < accepted.length; i++) {
-        const a = accepted[i];
-        const ev = a.event || {};
-        const dr = a.derived || {};
+        const ev = accepted[i];
 
-        // We need a school_id. Since testSiteUrl may not map to a known school,
-        // we only write when we can resolve a SchoolSportSite row by matching camp_site_url.
         let schoolId = null;
-
-        // Try match by site_url (derived)
-        const siteUrl = dr.site_url || null;
-        if (siteUrl) {
-          const siteRows = await base44.entities.SchoolSportSite.filter({ camp_site_url: siteUrl });
-          if (siteRows && siteRows.length) schoolId = siteRows[0].school_id;
+        if (ev.school_id) {
+          schoolId = ev.school_id;
         }
 
         if (!schoolId) {
-          // If we can't resolve school_id, skip write
           writeErrors += 1;
-          appendLog(setLogCamps, `[Camps] SKIP: Could not resolve school_id for camp "${ev.camp_name}" (site_url missing or not found in SchoolSportSite).`);
+          appendLog(setLogCamps, `[Camps] SKIP: Could not resolve school_id for camp "${ev.camp_name}".`);
           continue;
         }
 
@@ -397,19 +364,19 @@ function AdminImport() {
             notes: ev.notes || null,
 
             season_year: new Date(ev.start_date).getFullYear(),
-            program_id: dr.program_id,
-            event_key: dr.event_key,
+            program_id: ev.program_id,
+            event_key: ev.event_key,
             source_platform: ev.source_platform || "sportsusa",
             source_url: ev.source_url || ev.link_url,
             last_seen_at: nowIso(),
-            content_hash: null,
+            content_hash: ev.content_hash || null,
 
             event_dates_raw: ev.event_dates_raw || null,
             grades_raw: null,
             register_by_raw: null,
-            price_raw: null,
-            price_min: null,
-            price_max: null,
+            price_raw: ev.price_raw || null,
+            price_min: ev.price_min || null,
+            price_max: ev.price_max || null,
             sections_json: null
           });
           wrote += 1;
