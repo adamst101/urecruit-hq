@@ -1,9 +1,36 @@
 // src/pages/AdminImport.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "../api/base44Client";
-import { Card } from "../components/ui/card";
-import { Button } from "../components/ui/button";
+import { base44 } from "../api/entities"; // ✅ FIX: align to your project pattern (entities.js exports base44)
+
+/* =========================================================
+   AdminImport
+   - Seed Schools (SportsUSA)
+   - Ingest Camps (SchoolSportSite -> CampDemo)
+   - Promote (CampDemo -> Camp)
+   - Crawl Counters (state)
+   - Quality Counters (cleanup targeting + stop signals)
+   - Batch Runner per click (with delays + rate-limit friendly writes)
+========================================================= */
+
+/* ----------------------------
+   Minimal UI wrappers (avoids blank page if ui/* imports differ)
+----------------------------- */
+const Card = ({ className = "", children }) => (
+  <div className={`rounded-xl border border-slate-200 bg-white ${className}`}>{children}</div>
+);
+const Button = ({ variant = "solid", className = "", disabled, onClick, children, ...rest }) => {
+  const base = "px-3 py-2 rounded-lg text-sm border disabled:opacity-50 disabled:cursor-not-allowed";
+  const style =
+    variant === "outline"
+      ? "bg-white border-slate-300 hover:bg-slate-50"
+      : "bg-slate-900 text-white border-slate-900 hover:bg-slate-800";
+  return (
+    <button className={`${base} ${style} ${className}`} disabled={disabled} onClick={onClick} {...rest}>
+      {children}
+    </button>
+  );
+};
 
 /* ----------------------------
    Helpers (editor-safe)
@@ -18,6 +45,7 @@ function safeString(x) {
   return s ? s : null;
 }
 
+// null/"" stays null; numeric strings convert; invalid -> null
 function safeNumber(x) {
   if (x == null) return null;
   if (typeof x === "string" && !x.trim()) return null;
@@ -44,9 +72,13 @@ function tryParseJson(value) {
 
 function normalizeStringArray(value) {
   const v = tryParseJson(value);
+
   if (Array.isArray(v)) {
-    return v.map((x) => (x == null ? null : String(x).trim())).filter((x) => !!x);
+    return v
+      .map((x) => (x == null ? null : String(x).trim()))
+      .filter((x) => !!x);
   }
+
   const one = safeString(v);
   return one ? [one] : [];
 }
@@ -65,12 +97,6 @@ function lc(x) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-function truncate(s, n) {
-  const str = String(s ?? "");
-  const max = Number(n ?? 500);
-  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
 }
 
 // Return YYYY-MM-DD (UTC) or null
@@ -112,7 +138,7 @@ function computeSeasonYearFootball(startDateISO) {
   return d >= feb1 ? y : y - 1;
 }
 
-// Simple stable hash (MVP-safe; not cryptographic)
+// Simple stable hash (MVP-safe; not crypto)
 function simpleHash(obj) {
   const str = typeof obj === "string" ? obj : JSON.stringify(obj ?? {});
   let h = 0;
@@ -129,34 +155,10 @@ function buildEventKey({ source_platform, program_id, start_date, link_url, sour
   return `${platform}:${program_id}:${start_date || "na"}:${disc}`;
 }
 
-function normalizeSportNameFromRow(r) {
-  return String(r && (r.sport_name || r.name || r.sportName) ? (r.sport_name || r.name || r.sportName) : "").trim();
-}
-
-function readActiveFlag(row) {
-  if (typeof (row && row.active) === "boolean") return row.active;
-  if (typeof (row && row.is_active) === "boolean") return row.is_active;
-  if (typeof (row && row.isActive) === "boolean") return row.isActive;
-  const st = String(row && row.status ? row.status : "").toLowerCase().trim();
-  if (st === "active") return true;
-  if (st === "inactive" || st === "in_active" || st === "in active") return false;
-  return true;
-}
-
-async function tryDelete(Entity, id) {
-  if (!Entity || !id) return false;
-  const fns = ["delete", "remove", "destroy"];
-  for (const fn of fns) {
-    try {
-      if (typeof Entity[fn] === "function") {
-        await Entity[fn](String(id));
-        return true;
-      }
-    } catch {
-      // ignore
-    }
-  }
-  return false;
+function truncate(s, n) {
+  const str = String(s ?? "");
+  const max = Number(n ?? 600);
+  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
 }
 
 /* ----------------------------
@@ -209,70 +211,6 @@ const SPORTSUSA_DIRECTORY_BY_SPORTNAME = {
 };
 
 /* ----------------------------
-   Default Positions
------------------------------ */
-const DEFAULT_POSITION_SEEDS = {
-  Football: [
-    { position_code: "QB", position_name: "Quarterback" },
-    { position_code: "RB", position_name: "Running Back" },
-    { position_code: "WR", position_name: "Wide Receiver" },
-    { position_code: "TE", position_name: "Tight End" },
-    { position_code: "OL", position_name: "Offensive Line" },
-    { position_code: "DL", position_name: "Defensive Line" },
-    { position_code: "LB", position_name: "Linebacker" },
-    { position_code: "DB", position_name: "Defensive Back" },
-    { position_code: "K", position_name: "Kicker" },
-    { position_code: "P", position_name: "Punter" },
-    { position_code: "LS", position_name: "Long Snapper" },
-  ],
-  Baseball: [
-    { position_code: "P", position_name: "Pitcher" },
-    { position_code: "C", position_name: "Catcher" },
-    { position_code: "1B", position_name: "First Base" },
-    { position_code: "2B", position_name: "Second Base" },
-    { position_code: "3B", position_name: "Third Base" },
-    { position_code: "SS", position_name: "Shortstop" },
-    { position_code: "LF", position_name: "Left Field" },
-    { position_code: "CF", position_name: "Center Field" },
-    { position_code: "RF", position_name: "Right Field" },
-    { position_code: "UTIL", position_name: "Utility" },
-  ],
-  Basketball: [
-    { position_code: "PG", position_name: "Point Guard" },
-    { position_code: "SG", position_name: "Shooting Guard" },
-    { position_code: "SF", position_name: "Small Forward" },
-    { position_code: "PF", position_name: "Power Forward" },
-    { position_code: "C", position_name: "Center" },
-  ],
-  Softball: [
-    { position_code: "P", position_name: "Pitcher" },
-    { position_code: "C", position_name: "Catcher" },
-    { position_code: "1B", position_name: "First Base" },
-    { position_code: "2B", position_name: "Second Base" },
-    { position_code: "3B", position_name: "Third Base" },
-    { position_code: "SS", position_name: "Shortstop" },
-    { position_code: "LF", position_name: "Left Field" },
-    { position_code: "CF", position_name: "Center Field" },
-    { position_code: "RF", position_name: "Right Field" },
-    { position_code: "UTIL", position_name: "Utility" },
-  ],
-  Volleyball: [
-    { position_code: "S", position_name: "Setter" },
-    { position_code: "OH", position_name: "Outside Hitter" },
-    { position_code: "MB", position_name: "Middle Blocker" },
-    { position_code: "OPP", position_name: "Opposite" },
-    { position_code: "L", position_name: "Libero" },
-    { position_code: "DS", position_name: "Defensive Specialist" },
-  ],
-  Soccer: [
-    { position_code: "GK", position_name: "Goalkeeper" },
-    { position_code: "DEF", position_name: "Defender" },
-    { position_code: "MID", position_name: "Midfielder" },
-    { position_code: "FWD", position_name: "Forward" },
-  ],
-};
-
-/* ----------------------------
    Crawl-state helpers
 ----------------------------- */
 function parseIsoOrNull(x) {
@@ -299,7 +237,7 @@ function normalizeSiteRow(r) {
     school_id: r && r.school_id ? String(r.school_id) : null,
     sport_id: r && r.sport_id ? String(r.sport_id) : null,
     camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : null,
-    active: typeof (r && r.active) === "boolean" ? r.active : !!(r && r.active),
+    active: typeof r?.active === "boolean" ? r.active : !!(r && r.active),
     crawl_status: statusOf(r),
     last_crawled_at: safeString(r && r.last_crawled_at),
     next_crawl_at: safeString(r && r.next_crawl_at),
@@ -310,58 +248,51 @@ function normalizeSiteRow(r) {
 }
 
 /* ----------------------------
-   ✅ Quality detection helpers (THIS is what you care about)
+   Quality rules (what “needs cleanup” means)
 ----------------------------- */
-function looksPriceLikeName(name) {
-  const s = lc(name || "");
-  if (!s) return false;
-  // "$475.00" or "475.00" or "475"
-  if (/^\$?\s*\d+(\.\d{1,2})?\s*$/.test(s)) return true;
-  // "usd 475"
-  if (/^usd\s*\d+(\.\d{1,2})?\s*$/.test(s)) return true;
-  return false;
-}
-
-function isBadCampName(name) {
-  const s = lc(name || "");
-  if (!s) return true;
-  if (s === "register") return true;
-  if (s === "register now") return true;
-  if (s === "view details" || s === "details" || s === "detail") return true;
-  if (s === "camp") return true;
-  if (looksPriceLikeName(s)) return true;
-  // very short junk
-  if (s.length < 4) return true;
+function isRegisterishName(name) {
+  const t = lc(name);
+  if (!t) return false;
+  if (t === "register") return true;
+  if (t === "register now") return true;
+  if (t === "view details") return true;
+  if (t === "details") return true;
   return false;
 }
 
 function isMissingOrZeroPrice(row) {
-  const p = safeNumber(row && row.price);
-  const pmin = safeNumber(row && row.price_min);
-  const pmax = safeNumber(row && row.price_max);
+  // Treat missing/0 as needing cleanup
+  const p = safeNumber(row?.price);
+  const pmin = safeNumber(row?.price_min);
+  const pmax = safeNumber(row?.price_max);
 
-  // treat null OR 0 as missing (your ask)
-  const allNull = p == null && pmin == null && pmax == null;
-  const allZeroish =
-    (p == null || p === 0) &&
-    (pmin == null || pmin === 0) &&
-    (pmax == null || pmax === 0);
+  // “0” is junk in your context; null is missing
+  const any = [p, pmin, pmax].some((x) => x != null);
+  if (!any) return true;
+  if (p === 0) return true;
+  if (pmin === 0) return true;
+  if (pmax === 0) return true;
 
-  return allNull || allZeroish;
+  // if all present values are null (already handled) or all are 0 handled
+  // If price exists but min/max missing, that's still acceptable; do NOT flag.
+  return false;
 }
 
+/* =========================================================
+   Component
+========================================================= */
 export default function AdminImport() {
   const nav = useNavigate();
 
   /* ----------------------------
-     Entities
+     Entities (defensive)
   ----------------------------- */
-  const SportEntity = base44 && base44.entities ? (base44.entities.Sport || base44.entities.Sports) : null;
-  const SchoolEntity = base44 && base44.entities ? (base44.entities.School || base44.entities.Schools) : null;
-  const SchoolSportSiteEntity = base44 && base44.entities ? (base44.entities.SchoolSportSite || base44.entities.SchoolSportSites) : null;
-  const CampDemoEntity = base44 && base44.entities ? base44.entities.CampDemo : null;
-  const PositionEntity = base44 && base44.entities ? (base44.entities.Position || base44.entities.Positions) : null;
-  const CampEntity = base44 && base44.entities ? base44.entities.Camp : null;
+  const SportEntity = base44?.entities ? base44.entities.Sport || base44.entities.Sports : null;
+  const SchoolEntity = base44?.entities ? base44.entities.School || base44.entities.Schools : null;
+  const SchoolSportSiteEntity = base44?.entities ? base44.entities.SchoolSportSite || base44.entities.SchoolSportSites : null;
+
+  const CampDemoEntity = base44?.entities ? base44.entities.CampDemo : null;
+  const CampEntity = base44?.entities ? base44.entities.Camp : null;
 
   /* ----------------------------
      Sport selector
@@ -377,7 +308,6 @@ export default function AdminImport() {
   const [logSportsUSA, setLogSportsUSA] = useState("");
   const [logCamps, setLogCamps] = useState("");
   const [logPromote, setLogPromote] = useState("");
-  const [logPositions, setLogPositions] = useState("");
   const [logCounters, setLogCounters] = useState("");
   const [logQuality, setLogQuality] = useState("");
 
@@ -386,7 +316,6 @@ export default function AdminImport() {
     if (which === "sportsusa") setLogSportsUSA(add);
     if (which === "camps") setLogCamps(add);
     if (which === "promote") setLogPromote(add);
-    if (which === "positions") setLogPositions(add);
     if (which === "counters") setLogCounters(add);
     if (which === "quality") setLogQuality(add);
   }
@@ -397,7 +326,6 @@ export default function AdminImport() {
   const [sportsUSAWorking, setSportsUSAWorking] = useState(false);
   const [campsWorking, setCampsWorking] = useState(false);
   const [promoteWorking, setPromoteWorking] = useState(false);
-  const [seedWorking, setSeedWorking] = useState(false);
   const [countersWorking, setCountersWorking] = useState(false);
   const [qualityWorking, setQualityWorking] = useState(false);
   const [resetWorking, setResetWorking] = useState(false);
@@ -418,11 +346,13 @@ export default function AdminImport() {
   const [campsMaxEvents, setCampsMaxEvents] = useState(300);
   const [fastMode, setFastMode] = useState(false);
 
-  // Batch runner controls (prevents “one click = one tiny batch”)
-  const [runMultipleBatches, setRunMultipleBatches] = useState(true);
+  // Write throttling (prevents “Rate limit exceeded”)
+  const [writeDelayMs, setWriteDelayMs] = useState(150);
+  const [batchDelayMs, setBatchDelayMs] = useState(400);
+
+  // Batch runner
+  const [batchRunnerOn, setBatchRunnerOn] = useState(true);
   const [maxBatchesPerClick, setMaxBatchesPerClick] = useState(10);
-  const [writeDelayMs, setWriteDelayMs] = useState(125);
-  const [batchDelayMs, setBatchDelayMs] = useState(750);
 
   // Rerun mode
   const RERUN_MODES = [
@@ -433,15 +363,15 @@ export default function AdminImport() {
     { id: "ok", label: "Recrawl OK only" },
     { id: "ready", label: "Recrawl READY only" },
   ];
-  const [rerunMode, setRerunMode] = useState("all"); // ✅ cleanup default
+  const [rerunMode, setRerunMode] = useState("due");
 
-  // ✅ Quality mode (aligned to what you want)
+  // Quality mode (THIS is the aligned list you asked for)
   const QUALITY_MODES = [
     { id: "none", label: "No quality filter (use rerun mode only)" },
-    { id: "bad_name", label: 'Only schools with bad camp names (Register OR price-like OR junk)' },
-    { id: "missing_price", label: "Only schools with missing/zero price" },
-    { id: "no_camps", label: "Only schools with NO camps" },
-    { id: "any_cleanup", label: "Schools needing cleanup (bad name OR missing price OR no camps)" },
+    { id: "register_only", label: "Only schools with camp_name='Register'" },
+    { id: "missing_price_only", label: "Only schools with missing price" },
+    { id: "no_camps_only", label: "Only schools with NO camps" },
+    { id: "any_cleanup", label: "Schools needing cleanup (Register OR missing price OR no camps)" },
   ];
   const [qualityMode, setQualityMode] = useState("any_cleanup");
 
@@ -450,7 +380,7 @@ export default function AdminImport() {
   const [testSchoolId, setTestSchoolId] = useState("");
 
   /* ----------------------------
-     Crawl Counters (state)
+     Crawl Counters (site state)
   ----------------------------- */
   const [siteCounters, setSiteCounters] = useState({
     active: 0,
@@ -502,125 +432,142 @@ export default function AdminImport() {
       const pct = active ? Math.round((done / active) * 1000) / 10 : 0;
       appendLog(
         "counters",
-        `[Counters] Refreshed @ ${nowIso} | active=${active} done=${done} (${pct}%) ready=${ready} ok=${ok} no_events=${no_events} error=${error} dueNow=${dueNow}`
+        `[Counters] Refreshed @ ${nowIso} | Sites: active=${active} done=${done} (${pct}%) ready=${ready} ok=${ok} no_events=${no_events} error=${error} dueNow=${dueNow}`
       );
     } catch (e) {
-      appendLog("counters", `[Counters] ERROR: ${String(e && e.message ? e.message : e)}`);
+      appendLog("counters", `[Counters] ERROR: ${String(e?.message || e)}`);
     } finally {
       setCountersWorking(false);
     }
   }
 
   /* ----------------------------
-     ✅ Quality Counters (stop signals)
-     These are what tell you when to stop cleanup.
+     Quality Counters (STOP signals)
+     - Register names remaining (events)
+     - Missing price remaining (events)
+     - Schools with no camps
+     - Improved this run (events updated from "bad" -> "good")
+     - Also: school counts for targeting
   ----------------------------- */
   const [qualityCounters, setQualityCounters] = useState({
-    badNameRemaining: 0,
+    registerNamesRemaining: 0,
     missingPriceRemaining: 0,
-    schoolsNoCamps: 0,
+    schoolsWithNoCamps: 0,
     improvedThisRun: 0,
-    schoolsBadName: 0,
-    schoolsMissingPrice: 0,
-    schoolsAnyCleanup: 0,
-
-    // internal sets for targeting (not displayed)
-    _schoolSetBadName: new Set(),
-    _schoolSetMissingPrice: new Set(),
-    _schoolSetNoCamps: new Set(),
-    _schoolSetAnyCleanup: new Set(),
+    schoolsNeedingRegisterFix: 0,
+    schoolsNeedingPriceFix: 0,
+    schoolsNeedingAnyCleanup: 0,
   });
 
-  async function refreshQualityCounters() {
+  // Store the target school_id sets to drive qualityMode filtering
+  const [qualitySchoolSets, setQualitySchoolSets] = useState({
+    register: new Set(),
+    missingPrice: new Set(),
+    noCamps: new Set(),
+    any: new Set(),
+  });
+
+  async function refreshQualityCounters({ improvedThisRunOverride } = {}) {
     const nowIso = new Date().toISOString();
     setQualityWorking(true);
 
     try {
       if (!selectedSportId) {
+        setQualityCounters({
+          registerNamesRemaining: 0,
+          missingPriceRemaining: 0,
+          schoolsWithNoCamps: 0,
+          improvedThisRun: 0,
+          schoolsNeedingRegisterFix: 0,
+          schoolsNeedingPriceFix: 0,
+          schoolsNeedingAnyCleanup: 0,
+        });
+        setQualitySchoolSets({ register: new Set(), missingPrice: new Set(), noCamps: new Set(), any: new Set() });
         appendLog("quality", `[Quality] Select a sport first.`);
         return;
       }
-      if (!CampDemoEntity || !SchoolSportSiteEntity) {
-        appendLog("quality", `[Quality] ERROR: Missing CampDemo or SchoolSportSite entity.`);
+      if (!SchoolSportSiteEntity || !CampDemoEntity) {
+        appendLog("quality", `[Quality] ERROR: Missing entities (SchoolSportSite or CampDemo).`);
         return;
       }
 
-      // Load sites (active)
+      // Load sites
       const siteRows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
-      const sites = siteRows.map(normalizeSiteRow);
-      const activeSchoolIds = new Set(sites.map((s) => safeString(s.school_id)).filter(Boolean));
+      const sites = siteRows.map(normalizeSiteRow).filter((s) => s.school_id);
 
-      // Load CampDemo for sport
+      // Load CampDemo rows for sport
       const demoRows = await entityList(CampDemoEntity, { sport_id: selectedSportId });
 
-      // Compute sets
-      let badNameRemaining = 0;
+      let registerNamesRemaining = 0;
       let missingPriceRemaining = 0;
 
-      const schoolSetBadName = new Set();
-      const schoolSetMissingPrice = new Set();
-      const schoolSetHasCamps = new Set();
+      const schoolHasCamp = new Set();
+      const registerSchools = new Set();
+      const missingPriceSchools = new Set();
 
-      for (const r of demoRows) {
-        const schoolId = safeString(r && r.school_id);
-        if (!schoolId) continue;
+      for (const r of asArray(demoRows)) {
+        const schoolId = safeString(r?.school_id);
+        if (schoolId) schoolHasCamp.add(schoolId);
 
-        schoolSetHasCamps.add(schoolId);
-
-        // bad name rows
-        if (isBadCampName(r && r.camp_name)) {
-          badNameRemaining += 1;
-          schoolSetBadName.add(schoolId);
+        const name = safeString(r?.camp_name);
+        if (schoolId && isRegisterishName(name)) {
+          registerNamesRemaining += 1;
+          registerSchools.add(schoolId);
         }
 
-        // missing/0 price rows
-        if (isMissingOrZeroPrice(r)) {
+        if (schoolId && isMissingOrZeroPrice(r)) {
           missingPriceRemaining += 1;
-          schoolSetMissingPrice.add(schoolId);
+          missingPriceSchools.add(schoolId);
         }
       }
 
-      // Schools with no camps = active sites schools with zero CampDemo rows
-      const schoolSetNoCamps = new Set();
-      for (const sid of activeSchoolIds) {
-        if (!schoolSetHasCamps.has(sid)) schoolSetNoCamps.add(sid);
+      // Schools with no camps = active sites whose school_id has no CampDemo
+      const noCampsSchools = new Set();
+      for (const s of sites) {
+        if (s.school_id && !schoolHasCamp.has(s.school_id)) noCampsSchools.add(s.school_id);
       }
 
-      // Any cleanup union
-      const schoolSetAnyCleanup = new Set();
-      for (const sid of schoolSetBadName) schoolSetAnyCleanup.add(sid);
-      for (const sid of schoolSetMissingPrice) schoolSetAnyCleanup.add(sid);
-      for (const sid of schoolSetNoCamps) schoolSetAnyCleanup.add(sid);
+      const anyCleanupSchools = new Set([...registerSchools, ...missingPriceSchools, ...noCampsSchools]);
 
-      const next = {
-        badNameRemaining,
+      setQualitySchoolSets({
+        register: registerSchools,
+        missingPrice: missingPriceSchools,
+        noCamps: noCampsSchools,
+        any: anyCleanupSchools,
+      });
+
+      const schoolsWithNoCamps = noCampsSchools.size;
+
+      const improvedThisRun =
+        typeof improvedThisRunOverride === "number"
+          ? improvedThisRunOverride
+          : qualityCounters.improvedThisRun || 0;
+
+      setQualityCounters({
+        registerNamesRemaining,
         missingPriceRemaining,
-        schoolsNoCamps: schoolSetNoCamps.size,
-        improvedThisRun: 0, // set during run; not here
-        schoolsBadName: schoolSetBadName.size,
-        schoolsMissingPrice: schoolSetMissingPrice.size,
-        schoolsAnyCleanup: schoolSetAnyCleanup.size,
-        _schoolSetBadName: schoolSetBadName,
-        _schoolSetMissingPrice: schoolSetMissingPrice,
-        _schoolSetNoCamps: schoolSetNoCamps,
-        _schoolSetAnyCleanup: schoolSetAnyCleanup,
-      };
-
-      setQualityCounters(next);
+        schoolsWithNoCamps,
+        improvedThisRun,
+        schoolsNeedingRegisterFix: registerSchools.size,
+        schoolsNeedingPriceFix: missingPriceSchools.size,
+        schoolsNeedingAnyCleanup: anyCleanupSchools.size,
+      });
 
       appendLog(
         "quality",
-        `[Quality] Refreshed @ ${nowIso} | BadNameRemaining=${badNameRemaining} MissingPriceRemaining=${missingPriceRemaining} SchoolsNoCamps=${schoolSetNoCamps.size} | Schools(badName)=${schoolSetBadName.size} Schools(missingPrice)=${schoolSetMissingPrice.size} Schools(anyCleanup)=${schoolSetAnyCleanup.size}`
+        `[Quality] Refreshed @ ${nowIso} | RegisterRemaining=${registerNamesRemaining} | MissingPriceRemaining=${missingPriceRemaining} | SchoolsNoCamps=${schoolsWithNoCamps} | Schools(Register)=${registerSchools.size} | Schools(Price)=${missingPriceSchools.size} | Schools(Any)=${anyCleanupSchools.size}`
       );
     } catch (e) {
-      appendLog("quality", `[Quality] ERROR: ${String(e && e.message ? e.message : e)}`);
+      appendLog("quality", `[Quality] ERROR: ${String(e?.message || e)}`);
     } finally {
       setQualityWorking(false);
     }
   }
 
   /* ----------------------------
-     Reset crawl-state (only if you truly need it)
+     Reset crawl-state for sport
+     - Use this when you WANT everything to be due/ready again.
+     - Do NOT use during cleanup targeting unless you intentionally want to force full refresh.
   ----------------------------- */
   async function resetCrawlStateForSport() {
     const runIso = new Date().toISOString();
@@ -629,9 +576,7 @@ export default function AdminImport() {
 
     try {
       if (!selectedSportId) return appendLog("counters", "[Counters] ERROR: Select a sport first.");
-      if (!SchoolSportSiteEntity || !SchoolSportSiteEntity.update) {
-        return appendLog("counters", "[Counters] ERROR: SchoolSportSite update not available.");
-      }
+      if (!SchoolSportSiteEntity?.update) return appendLog("counters", "[Counters] ERROR: SchoolSportSite update not available.");
 
       const rows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
       const sites = rows.map(normalizeSiteRow).filter((x) => x.id);
@@ -662,50 +607,28 @@ export default function AdminImport() {
 
       appendLog("counters", `[Counters] Reset done. updated=${updated} errors=${errors}`);
       await refreshCrawlCounters();
-      await refreshQualityCounters();
     } finally {
       setResetWorking(false);
     }
   }
 
   /* ----------------------------
-     Positions manager
-  ----------------------------- */
-  const [positions, setPositions] = useState([]);
-  const [positionsLoading, setPositionsLoading] = useState(false);
-  const [positionsEdit, setPositionsEdit] = useState({});
-  const [positionAddCode, setPositionAddCode] = useState("");
-  const [positionAddName, setPositionAddName] = useState("");
-  const [positionAddWorking, setPositionAddWorking] = useState(false);
-  const [positionSaveWorking, setPositionSaveWorking] = useState(false);
-  const [positionDeleteWorking, setPositionDeleteWorking] = useState("");
-
-  const seedListForSelectedSport = useMemo(() => {
-    const name = String(selectedSportName || "").trim();
-    if (!name) return [];
-    return DEFAULT_POSITION_SEEDS[name] || [];
-  }, [selectedSportName]);
-
-  /* ----------------------------
      Load Sports
   ----------------------------- */
   async function loadSports() {
     setSportsLoading(true);
-
     try {
-      if (!SportEntity) throw new Error("Sport entity is not available. (base44.entities.Sport missing)");
+      if (!SportEntity) throw new Error("Sport entity not available.");
 
       const rows = await entityList(SportEntity, {});
       const normalized = asArray(rows)
         .map((r) => ({
-          id: r && r.id ? String(r.id) : "",
-          name: normalizeSportNameFromRow(r),
-          active: readActiveFlag(r),
-          raw: r,
+          id: r?.id ? String(r.id) : "",
+          name: String(r?.sport_name || r?.name || r?.sportName || "").trim(),
         }))
-        .filter((r) => r.id && r.name);
+        .filter((r) => r.id && r.name)
+        .sort((a, b) => a.name.localeCompare(b.name));
 
-      normalized.sort((a, b) => a.name.localeCompare(b.name));
       setSports(normalized);
 
       if (!selectedSportId && normalized.length) {
@@ -715,36 +638,22 @@ export default function AdminImport() {
         const hit = normalized.find((sx) => sx.id === selectedSportId);
         if (hit) setSelectedSportName(hit.name);
       }
-
-      if (!normalized.length) {
-        appendLog("sportsusa", `[AdminImport] NOTE: Sport query returned 0 rows @ ${new Date().toISOString()}`);
-      }
     } catch (e) {
       setSports([]);
       setSelectedSportId("");
       setSelectedSportName("");
-
-      appendLog("sportsusa", `[AdminImport] ERROR loading sports @ ${new Date().toISOString()}`);
-      appendLog("sportsusa", `[AdminImport] ${String(e && e.message ? e.message : e)}`);
-      appendLog("sportsusa", `[AdminImport] Tip: confirm the Sport table exists and has rows, and base44.entities.Sport is correct.`);
+      appendLog("sportsusa", `[AdminImport] ERROR loading sports: ${String(e?.message || e)}`);
     } finally {
       setSportsLoading(false);
     }
   }
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      await loadSports();
-      if (cancelled) return;
-    })();
-    return () => {
-      cancelled = true;
-    };
+    loadSports();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // auto-fill SportsUSA directory for sport
+  // Auto-fill directory for sport
   useEffect(() => {
     const guess = SPORTSUSA_DIRECTORY_BY_SPORTNAME[String(selectedSportName || "").trim()];
     if (guess) setSportsUSASiteUrl(guess);
@@ -754,232 +663,17 @@ export default function AdminImport() {
   useEffect(() => {
     if (!selectedSportId) return;
     refreshCrawlCounters();
-    refreshQualityCounters();
+    refreshQualityCounters({ improvedThisRunOverride: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSportId]);
 
   /* ----------------------------
-     Positions: load per sport
-  ----------------------------- */
-  async function loadPositionsForSport(sportId) {
-    if (!PositionEntity || !sportId) {
-      setPositions([]);
-      setPositionsEdit({});
-      return;
-    }
-
-    setPositionsLoading(true);
-    try {
-      const rows = await entityList(PositionEntity, { sport_id: sportId });
-      const normalized = asArray(rows)
-        .map((r) => ({
-          id: r && r.id ? String(r.id) : "",
-          code: String(r && r.position_code ? r.position_code : "").trim(),
-          name: String(r && r.position_name ? r.position_name : "").trim(),
-          raw: r,
-        }))
-        .filter((p) => p.id);
-
-      normalized.sort((a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || ""));
-
-      setPositions(normalized);
-
-      const nextEdit = {};
-      for (const p of normalized) nextEdit[p.id] = { code: p.code, name: p.name };
-      setPositionsEdit(nextEdit);
-    } catch {
-      setPositions([]);
-      setPositionsEdit({});
-    } finally {
-      setPositionsLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!selectedSportId) return;
-      await loadPositionsForSport(selectedSportId);
-      if (cancelled) return;
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSportId]);
-
-  async function upsertPositionBySportAndCode({ sportId, code, name }) {
-    if (!PositionEntity || !PositionEntity.create || !PositionEntity.update) {
-      throw new Error("Position entity not available (expected entities.Position).");
-    }
-
-    const position_code = String(code || "").trim().toUpperCase();
-    const position_name = String(name || "").trim();
-
-    if (!sportId) throw new Error("Missing sport_id for Position upsert.");
-    if (!position_code) throw new Error("Missing position_code for Position upsert.");
-    if (!position_name) throw new Error("Missing position_name for Position upsert.");
-
-    let existing = [];
-    try {
-      existing = await entityList(PositionEntity, { sport_id: sportId });
-    } catch {
-      existing = [];
-    }
-
-    const hit = asArray(existing).find((r) => String(r && r.position_code ? r.position_code : "").trim().toUpperCase() === position_code);
-
-    const payload = { sport_id: sportId, position_code, position_name };
-
-    if (hit && hit.id) {
-      await PositionEntity.update(String(hit.id), payload);
-      return "updated";
-    }
-
-    await PositionEntity.create(payload);
-    return "created";
-  }
-
-  async function seedPositionsForSport() {
-    const runIso = new Date().toISOString();
-    setSeedWorking(true);
-    appendLog("positions", `[Positions] Starting: Seed Positions (${selectedSportName}) @ ${runIso}`);
-
-    try {
-      if (!selectedSportId) {
-        appendLog("positions", "[Positions] ERROR: Select a sport first.");
-        return;
-      }
-
-      const list = seedListForSelectedSport;
-      if (!list.length) {
-        appendLog("positions", `[Positions] ERROR: No default seed list for "${selectedSportName}".`);
-        return;
-      }
-
-      appendLog("positions", `[Positions] Seed rows: ${list.length}`);
-
-      let created = 0;
-      let updated = 0;
-      let errors = 0;
-
-      for (let i = 0; i < list.length; i++) {
-        const row = list[i];
-        try {
-          const result = await upsertPositionBySportAndCode({
-            sportId: selectedSportId,
-            code: row.position_code,
-            name: row.position_name,
-          });
-          if (result === "created") created += 1;
-          if (result === "updated") updated += 1;
-        } catch (e) {
-          errors += 1;
-          appendLog("positions", `[Positions] ERROR #${i + 1}: ${String(e && e.message ? e.message : e)}`);
-        }
-        if ((i + 1) % 10 === 0) appendLog("positions", `[Positions] Progress: ${i + 1}/${list.length}`);
-        await sleep(25);
-      }
-
-      appendLog("positions", `[Positions] Done. created=${created} updated=${updated} errors=${errors}`);
-      await loadPositionsForSport(selectedSportId);
-    } finally {
-      setSeedWorking(false);
-    }
-  }
-
-  async function addPosition() {
-    if (!PositionEntity || !PositionEntity.create) {
-      appendLog("positions", "[Positions] ERROR: Position entity not available for create.");
-      return;
-    }
-    if (!selectedSportId) return appendLog("positions", "[Positions] ERROR: Select a sport first.");
-
-    const code = safeString(positionAddCode);
-    const name = safeString(positionAddName);
-
-    if (!code) return appendLog("positions", "[Positions] ERROR: Position code is required.");
-    if (!name) return appendLog("positions", "[Positions] ERROR: Position name is required.");
-
-    setPositionAddWorking(true);
-    try {
-      const result = await upsertPositionBySportAndCode({
-        sportId: selectedSportId,
-        code: code.toUpperCase(),
-        name: name,
-      });
-      appendLog("positions", result === "created" ? `[Positions] Created ${code.toUpperCase()}` : `[Positions] Updated ${code.toUpperCase()}`);
-      setPositionAddCode("");
-      setPositionAddName("");
-      await loadPositionsForSport(selectedSportId);
-    } catch (e) {
-      appendLog("positions", `[Positions] ERROR add: ${String(e && e.message ? e.message : e)}`);
-    } finally {
-      setPositionAddWorking(false);
-    }
-  }
-
-  async function savePositionRow(positionId) {
-    if (!PositionEntity || !PositionEntity.update) {
-      appendLog("positions", "[Positions] ERROR: Position entity not available for update.");
-      return;
-    }
-
-    const row = positionsEdit && positionsEdit[positionId] ? positionsEdit[positionId] : null;
-    if (!row) return;
-
-    const code = safeString(row.code);
-    const name = safeString(row.name);
-
-    if (!selectedSportId) return appendLog("positions", "[Positions] ERROR: Select a sport first.");
-    if (!code) return appendLog("positions", "[Positions] ERROR: Position code is required.");
-    if (!name) return appendLog("positions", "[Positions] ERROR: Position name is required.");
-
-    setPositionSaveWorking(true);
-    try {
-      await PositionEntity.update(String(positionId), {
-        sport_id: selectedSportId,
-        position_code: code.toUpperCase(),
-        position_name: name,
-      });
-      appendLog("positions", `[Positions] Saved: ${code.toUpperCase()}`);
-      await loadPositionsForSport(selectedSportId);
-    } catch (e) {
-      appendLog("positions", `[Positions] FAILED save: ${String(e && e.message ? e.message : e)}`);
-    } finally {
-      setPositionSaveWorking(false);
-    }
-  }
-
-  async function deletePosition(positionId) {
-    if (!positionId) return;
-    if (!PositionEntity) {
-      appendLog("positions", "[Positions] ERROR: Position entity missing.");
-      return;
-    }
-
-    setPositionDeleteWorking(positionId);
-    try {
-      const ok = await tryDelete(PositionEntity, positionId);
-      appendLog("positions", ok ? `[Positions] Deleted: ${positionId}` : `[Positions] FAILED delete: ${positionId}`);
-      await loadPositionsForSport(selectedSportId);
-    } finally {
-      setPositionDeleteWorking("");
-    }
-  }
-
-  /* ----------------------------
-     SportsUSA Seed Schools (same pattern as before)
-     (left unchanged to keep this focused on cleanup)
+     Seed Schools
   ----------------------------- */
   async function upsertSchoolBySourceKey({ school_name, logo_url, source_key, source_school_url }) {
-    if (!SchoolEntity || !SchoolEntity.create || !SchoolEntity.update) {
-      throw new Error("School entity not available (expected entities.School).");
-    }
-
+    if (!SchoolEntity?.create || !SchoolEntity?.update) throw new Error("School entity not available.");
     const key = safeString(source_key);
     const name = safeString(school_name);
-
     if (!name) throw new Error("Missing school_name");
     if (!key) throw new Error("Missing source_key");
 
@@ -1010,20 +704,17 @@ export default function AdminImport() {
       last_seen_at: new Date().toISOString(),
     };
 
-    if (existing.length && existing[0] && existing[0].id) {
+    if (existing.length && existing[0]?.id) {
       await SchoolEntity.update(String(existing[0].id), payload);
       return { id: String(existing[0].id), mode: "updated" };
     }
 
     const created = await SchoolEntity.create(payload);
-    const newId = created && created.id ? String(created.id) : null;
-    return { id: newId, mode: "created" };
+    return { id: created?.id ? String(created.id) : null, mode: "created" };
   }
 
   async function upsertSchoolSportSiteByKey({ school_id, sport_id, camp_site_url, logo_url, source_key }) {
-    if (!SchoolSportSiteEntity || !SchoolSportSiteEntity.create || !SchoolSportSiteEntity.update) {
-      throw new Error("SchoolSportSite entity not available (expected entities.SchoolSportSite).");
-    }
+    if (!SchoolSportSiteEntity?.create || !SchoolSportSiteEntity?.update) throw new Error("SchoolSportSite entity not available.");
 
     const key = safeString(source_key);
     if (!key) throw new Error("Missing source_key for SchoolSportSite");
@@ -1045,6 +736,7 @@ export default function AdminImport() {
       active: true,
       needs_review: false,
       last_seen_at: new Date().toISOString(),
+
       crawl_status: "ready",
       crawl_error: null,
       last_crawled_at: null,
@@ -1052,14 +744,13 @@ export default function AdminImport() {
       last_crawl_run_id: null,
     };
 
-    if (existing.length && existing[0] && existing[0].id) {
+    if (existing.length && existing[0]?.id) {
       await SchoolSportSiteEntity.update(String(existing[0].id), payload);
       return { id: String(existing[0].id), mode: "updated" };
     }
 
     const created = await SchoolSportSiteEntity.create(payload);
-    const newId = created && created.id ? String(created.id) : null;
-    return { id: newId, mode: "created" };
+    return { id: created?.id ? String(created.id) : null, mode: "created" };
   }
 
   async function runSportsUSASeedSchools() {
@@ -1067,27 +758,14 @@ export default function AdminImport() {
     setSportsUSAWorking(true);
     setLogSportsUSA("");
 
-    appendLog("sportsusa", `[SportsUSA] Starting: SportsUSA School Seed (${selectedSportName}) @ ${runIso}`);
+    appendLog("sportsusa", `[SportsUSA] Starting: School Seed (${selectedSportName}) @ ${runIso}`);
     appendLog("sportsusa", `[SportsUSA] DryRun=${sportsUSADryRun ? "true" : "false"} | Limit=${sportsUSALimit}`);
 
     try {
-      if (!selectedSportId) {
-        appendLog("sportsusa", "[SportsUSA] ERROR: Select a sport first.");
-        return;
-      }
+      if (!selectedSportId) return appendLog("sportsusa", "[SportsUSA] ERROR: Select a sport first.");
       const siteUrl = safeString(sportsUSASiteUrl);
-      if (!siteUrl) {
-        appendLog("sportsusa", "[SportsUSA] ERROR: Missing SportsUSA directory site URL.");
-        return;
-      }
-      if (!SchoolEntity) {
-        appendLog("sportsusa", "[SportsUSA] ERROR: School entity not available.");
-        return;
-      }
-      if (!SchoolSportSiteEntity) {
-        appendLog("sportsusa", "[SportsUSA] ERROR: SchoolSportSite entity not available.");
-        return;
-      }
+      if (!siteUrl) return appendLog("sportsusa", "[SportsUSA] ERROR: Missing SportsUSA directory URL.");
+      if (!SchoolEntity || !SchoolSportSiteEntity) return appendLog("sportsusa", "[SportsUSA] ERROR: Entities missing.");
 
       const res = await fetch("/functions/sportsUSASeedSchools", {
         method: "POST",
@@ -1095,7 +773,7 @@ export default function AdminImport() {
         body: JSON.stringify({
           sportId: selectedSportId,
           sportName: selectedSportName,
-          siteUrl: siteUrl,
+          siteUrl,
           limit: Number(sportsUSALimit || 300),
           dryRun: !!sportsUSADryRun,
         }),
@@ -1110,27 +788,19 @@ export default function AdminImport() {
       }
 
       if (!res.ok) {
-        appendLog("sportsusa", `[SportsUSA] SportsUSA function ERROR (HTTP ${res.status})`);
+        appendLog("sportsusa", `[SportsUSA] Function ERROR (HTTP ${res.status})`);
         if (data) appendLog("sportsusa", JSON.stringify(data || {}, null, 2));
-        if (!data && rawText) appendLog("sportsusa", `[SportsUSA] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
+        if (!data && rawText) appendLog("sportsusa", truncate(rawText, 600));
         return;
       }
 
-      if (!data) {
-        appendLog("sportsusa", `[SportsUSA] WARNING: Response was not JSON. HTTP ${res.status}`);
-        if (rawText) appendLog("sportsusa", `[SportsUSA] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
-        return;
-      }
-
-      const schools = asArray(data && data.schools ? data.schools : []);
-      appendLog("sportsusa", `[SportsUSA] SportsUSA fetched: schools_found=${schools.length}`);
+      const schools = asArray(data?.schools || []);
+      appendLog("sportsusa", `[SportsUSA] schools_found=${schools.length}`);
 
       if (sportsUSADryRun) {
-        appendLog("sportsusa", "[SportsUSA] DryRun=true: no School / SchoolSportSite writes performed.");
+        appendLog("sportsusa", `[SportsUSA] DryRun=true: no writes.`);
         return;
       }
-
-      appendLog("sportsusa", `[SportsUSA] Writing ${schools.length} rows to School + SchoolSportSite…`);
 
       let schoolsCreated = 0;
       let schoolsUpdated = 0;
@@ -1160,7 +830,6 @@ export default function AdminImport() {
             source_key: sourceKeySchool,
             source_school_url: viewSiteUrl,
           });
-
           if (upSchool.mode === "created") schoolsCreated += 1;
           if (upSchool.mode === "updated") schoolsUpdated += 1;
 
@@ -1171,12 +840,11 @@ export default function AdminImport() {
             logo_url: logoUrl,
             source_key: sourceKeySite,
           });
-
           if (upSite.mode === "created") sitesCreated += 1;
           if (upSite.mode === "updated") sitesUpdated += 1;
         } catch (e) {
           errors += 1;
-          appendLog("sportsusa", `[SportsUSA] ERROR row #${i + 1}: ${String(e && e.message ? e.message : e)}`);
+          appendLog("sportsusa", `[SportsUSA] ERROR row #${i + 1}: ${String(e?.message || e)}`);
         }
 
         if ((i + 1) % 10 === 0) {
@@ -1190,21 +858,69 @@ export default function AdminImport() {
 
       appendLog(
         "sportsusa",
-        `[SportsUSA] Writes done. Schools: created=${schoolsCreated} updated=${schoolsUpdated} | Sites: created=${sitesCreated} updated=${sitesUpdated} | skipped=${skipped} errors=${errors}`
+        `[SportsUSA] Done. Schools created=${schoolsCreated} updated=${schoolsUpdated} | Sites created=${sitesCreated} updated=${sitesUpdated} | skipped=${skipped} errors=${errors}`
       );
 
       await refreshCrawlCounters();
-      await refreshQualityCounters();
+      await refreshQualityCounters({ improvedThisRunOverride: 0 });
     } catch (e) {
-      appendLog("sportsusa", `[SportsUSA] ERROR: ${String(e && e.message ? e.message : e)}`);
+      appendLog("sportsusa", `[SportsUSA] ERROR: ${String(e?.message || e)}`);
     } finally {
       setSportsUSAWorking(false);
     }
   }
 
   /* ----------------------------
-     Camps ingest helpers
+     Camps ingest plumbing
   ----------------------------- */
+  function pickSitesByRerunMode(sites) {
+    const arr = asArray(sites);
+    if (rerunMode === "all") return arr;
+    if (rerunMode === "error") return arr.filter((s) => statusOf(s) === "error");
+    if (rerunMode === "no_events") return arr.filter((s) => statusOf(s) === "no_events");
+    if (rerunMode === "ok") return arr.filter((s) => statusOf(s) === "ok");
+    if (rerunMode === "ready") return arr.filter((s) => statusOf(s) === "ready");
+    return arr.filter((s) => isDueNow(s));
+  }
+
+  function pickSitesByQualityMode(sites) {
+    // Quality filters target by school_id sets, not crawl_status
+    if (qualityMode === "none") return sites;
+
+    const pickSet =
+      qualityMode === "register_only"
+        ? qualitySchoolSets.register
+        : qualityMode === "missing_price_only"
+        ? qualitySchoolSets.missingPrice
+        : qualityMode === "no_camps_only"
+        ? qualitySchoolSets.noCamps
+        : qualityMode === "any_cleanup"
+        ? qualitySchoolSets.any
+        : null;
+
+    if (!pickSet || pickSet.size === 0) return [];
+
+    return asArray(sites).filter((s) => s.school_id && pickSet.has(s.school_id));
+  }
+
+  async function updateCrawlStateForSites(siteIds, patch) {
+    if (!SchoolSportSiteEntity?.update) return { updated: 0, errors: 0 };
+    const ids = asArray(siteIds).filter(Boolean);
+    let updated = 0;
+    let errors = 0;
+
+    for (let i = 0; i < ids.length; i++) {
+      try {
+        await SchoolSportSiteEntity.update(String(ids[i]), patch);
+        updated += 1;
+      } catch {
+        errors += 1;
+      }
+      if ((i + 1) % 50 === 0) await sleep(5);
+    }
+    return { updated, errors };
+  }
+
   function normalizeAcceptedRowToFlat(a) {
     if (!a) return {};
     if (a.event && typeof a.event === "object") {
@@ -1238,7 +954,6 @@ export default function AdminImport() {
         registration_url: safeString(e.link_url),
       };
     }
-
     return {
       school_id: safeString(a.school_id),
       sport_id: safeString(a.sport_id),
@@ -1269,120 +984,329 @@ export default function AdminImport() {
     };
   }
 
-  async function updateCrawlStateForSites(siteIds, patch) {
-    if (!SchoolSportSiteEntity || !SchoolSportSiteEntity.update) return { updated: 0, errors: 0 };
-    const ids = asArray(siteIds).filter((x) => !!x);
-    let updated = 0;
-    let errors = 0;
-
-    for (let i = 0; i < ids.length; i++) {
-      try {
-        await SchoolSportSiteEntity.update(String(ids[i]), patch);
-        updated += 1;
-      } catch {
-        errors += 1;
-      }
-      if ((i + 1) % 50 === 0) await sleep(5);
-    }
-    return { updated, errors };
-  }
-
-  function pickSitesByRerunMode(sites) {
-    const arr = asArray(sites);
-    if (rerunMode === "all") return arr;
-    if (rerunMode === "error") return arr.filter((s) => statusOf(s) === "error");
-    if (rerunMode === "no_events") return arr.filter((s) => statusOf(s) === "no_events");
-    if (rerunMode === "ok") return arr.filter((s) => statusOf(s) === "ok");
-    if (rerunMode === "ready") return arr.filter((s) => statusOf(s) === "ready");
-    return arr.filter((s) => isDueNow(s));
-  }
-
-  function pickSitesByQualityMode(sites) {
-    const arr = asArray(sites);
-
-    if (qualityMode === "none") return arr;
-
-    const setBad = qualityCounters._schoolSetBadName || new Set();
-    const setMiss = qualityCounters._schoolSetMissingPrice || new Set();
-    const setNoCamps = qualityCounters._schoolSetNoCamps || new Set();
-    const setAny = qualityCounters._schoolSetAnyCleanup || new Set();
-
-    if (qualityMode === "bad_name") return arr.filter((s) => s.school_id && setBad.has(String(s.school_id)));
-    if (qualityMode === "missing_price") return arr.filter((s) => s.school_id && setMiss.has(String(s.school_id)));
-    if (qualityMode === "no_camps") return arr.filter((s) => s.school_id && setNoCamps.has(String(s.school_id)));
-    if (qualityMode === "any_cleanup") return arr.filter((s) => s.school_id && setAny.has(String(s.school_id)));
-
-    return arr;
-  }
-
-  async function upsertCampDemoByEventKey(payload) {
-    if (!CampDemoEntity || !CampDemoEntity.create || !CampDemoEntity.update) {
-      throw new Error("CampDemo entity not available (expected entities.CampDemo).");
-    }
-    const key = payload && payload.event_key ? payload.event_key : null;
+  async function upsertCampDemoByEventKeyWithRetry(payload, maxAttempts = 4) {
+    if (!CampDemoEntity?.create || !CampDemoEntity?.update) throw new Error("CampDemo entity not available.");
+    const key = payload?.event_key ? payload.event_key : null;
     if (!key) throw new Error("Missing event_key for CampDemo upsert");
 
-    // retry wrapper for rate limits / transient
-    async function attemptOnce() {
-      let existing = [];
+    // Look up existing once per attempt (Base44 rate limits sometimes hit on write, not read)
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        existing = await entityList(CampDemoEntity, { event_key: key });
-      } catch {
-        existing = [];
-      }
+        let existing = [];
+        try {
+          existing = await entityList(CampDemoEntity, { event_key: key });
+        } catch {
+          existing = [];
+        }
 
-      const arr = asArray(existing);
-      if (arr.length > 0 && arr[0] && arr[0].id) {
-        await CampDemoEntity.update(arr[0].id, payload);
-        return "updated";
-      }
+        const arr = asArray(existing);
+        if (arr.length > 0 && arr[0]?.id) {
+          await CampDemoEntity.update(arr[0].id, payload);
+          return "updated";
+        }
 
-      await CampDemoEntity.create(payload);
-      return "created";
-    }
-
-    const tries = 3;
-    let lastErr = null;
-    for (let i = 0; i < tries; i++) {
-      try {
-        return await attemptOnce();
+        await CampDemoEntity.create(payload);
+        return "created";
       } catch (e) {
-        lastErr = e;
-        const msg = String(e && e.message ? e.message : e);
+        const msg = String(e?.message || e);
         const isRate = msg.toLowerCase().includes("rate limit");
-        const isNet = msg.toLowerCase().includes("network");
-        if (!isRate && !isNet) throw e;
+        const isNetwork = msg.toLowerCase().includes("network");
+        if (attempt === maxAttempts || (!isRate && !isNetwork)) throw e;
 
-        // backoff
-        await sleep(400 + i * 600);
+        // Backoff
+        const wait = 250 + attempt * 250;
+        await sleep(wait);
       }
     }
-    throw lastErr || new Error("Upsert failed after retries");
+
+    // Should never hit
+    return "updated";
   }
 
   /* ----------------------------
-     Camps ingest runner (quality-targeted + batched)
+     Ingest runner (single batch call)
+     Returns: { accepted, improvedCount, created, updated, errors }
+  ----------------------------- */
+  async function runOneBatch(batchSites, { runIso, runId }) {
+    // Guard
+    if (!batchSites.length) return { accepted: [], improvedCount: 0, created: 0, updated: 0, errors: 0 };
+
+    const tUrl = safeString(testSiteUrl);
+    const tSchool = safeString(testSchoolId);
+
+    if (tUrl && !campsDryRun && !tSchool) {
+      appendLog("camps", "[Camps] ERROR: For non-dry-run with Test Site URL, you must provide Test School ID.");
+      return { accepted: [], improvedCount: 0, created: 0, updated: 0, errors: 1 };
+    }
+
+    const sitesToSend = tUrl
+      ? []
+      : batchSites.map((r) => ({
+          id: r.id,
+          school_id: r.school_id,
+          sport_id: r.sport_id,
+          camp_site_url: r.camp_site_url,
+        }));
+
+    appendLog(
+      "camps",
+      `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesToSend.length}, testSiteUrl=${tUrl ? tUrl : "no"})`
+    );
+
+    const res = await fetch("/functions/sportsUSAIngestCamps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sportId: selectedSportId,
+        sportName: selectedSportName,
+        dryRun: !!campsDryRun,
+        maxSites: Number(campsMaxSites || 25),
+        maxRegsPerSite: Number(campsMaxRegsPerSite || 10),
+        maxEvents: Number(campsMaxEvents || 300),
+        fastMode: !!fastMode,
+        sites: sitesToSend,
+        testSiteUrl: tUrl || null,
+        testSchoolId: tSchool || null,
+      }),
+    });
+
+    let data = null;
+    let rawText = null;
+    try {
+      data = await res.json();
+    } catch {
+      rawText = await res.text().catch(() => null);
+    }
+
+    if (!res.ok || !data) {
+      appendLog("camps", `[Camps] Function ERROR (HTTP ${res.status})`);
+      if (data) appendLog("camps", JSON.stringify(data || {}, null, 2));
+      if (!data && rawText) appendLog("camps", truncate(rawText, 600));
+      return { accepted: [], improvedCount: 0, created: 0, updated: 0, errors: 1 };
+    }
+
+    appendLog("camps", `[Camps] Function version: ${data?.version || "MISSING"}`);
+    appendLog(
+      "camps",
+      `[Camps] Function stats: processedSites=${data?.stats?.processedSites || 0} processedRegs=${data?.stats?.processedRegs || 0} accepted=${
+        data?.stats?.accepted || 0
+      } rejected=${data?.stats?.rejected || 0} errors=${data?.stats?.errors || 0}`
+    );
+
+    if (data?.debug?.kpi) {
+      const k = data.debug.kpi;
+      appendLog("camps", `[Camps] Date KPI: listing=${k.datesParsedFromListing || 0} detail=${k.datesParsedFromDetail || 0} missing=${k.datesMissing || 0}`);
+      appendLog(
+        "camps",
+        `[Camps] Name KPI: listing=${k.namesFromListing || 0} detail=${k.namesFromDetail || 0} missing=${k.namesMissing || 0} qualityReject=${k.namesRejectedByQualityGate || 0}`
+      );
+      if (k.pricesFromDetail != null) appendLog("camps", `[Camps] Price KPI: detail=${k.pricesFromDetail || 0} missing=${k.pricesMissing || 0}`);
+    }
+
+    const acceptedRaw = asArray(data?.accepted || []);
+    const accepted = acceptedRaw.map((x) => normalizeAcceptedRowToFlat(x));
+
+    appendLog("camps", `[Camps] Accepted events returned: ${accepted.length}`);
+    if (accepted.length) {
+      appendLog("camps", `[Camps] Sample (first 5):`);
+      for (let i = 0; i < Math.min(5, accepted.length); i++) {
+        const a = accepted[i] || {};
+        appendLog("camps", `- camp="${a.camp_name || ""}" start=${a.start_date || "n/a"} price=${a.price != null ? a.price : "n/a"} url=${a.link_url || a.registration_url || ""}`);
+      }
+    }
+
+    // Crawl-state patch
+    if (!tUrl && !campsDryRun) {
+      const outcome = accepted.length ? "ok" : "no_events";
+      const patch = {
+        crawl_status: outcome,
+        crawl_error: null,
+        last_crawled_at: runIso,
+        // push next crawl out for normal operations (weekly/periodic)
+        next_crawl_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // ✅ weekly cadence default
+        last_crawl_run_id: runId,
+        last_seen_at: runIso,
+      };
+      const ids = batchSites.map((b) => b.id).filter(Boolean);
+      const upd = await updateCrawlStateForSites(ids, patch);
+      appendLog("camps", `[Camps] Updated crawl-state for batch sites: ${upd.updated} (${outcome}) errors=${upd.errors}`);
+    } else if (tUrl) {
+      appendLog("camps", `[Camps] Test mode: not updating SchoolSportSite crawl-state.`);
+    } else {
+      appendLog("camps", `[Camps] DryRun=true: would update crawl-state for batch sites: ${batchSites.length} (skipped)`);
+    }
+
+    // Writes (CampDemo)
+    if (campsDryRun) {
+      appendLog("camps", `[Camps] DryRun=true: no CampDemo writes.`);
+      return { accepted, improvedCount: 0, created: 0, updated: 0, errors: 0 };
+    }
+
+    if (!accepted.length) {
+      appendLog("camps", `[Camps] No accepted events to write.`);
+      return { accepted, improvedCount: 0, created: 0, updated: 0, errors: 0 };
+    }
+
+    // To compute “improved this run”, we consider an event “improved” if:
+    // - prior state (existing) had registerish camp_name OR missing/0 price
+    // - new payload has a better camp_name and non-missing price
+    // We'll check existing row by event_key before upsert.
+    let created = 0;
+    let updated = 0;
+    let errors = 0;
+    let improvedCount = 0;
+
+    for (let i = 0; i < accepted.length; i++) {
+      const a = accepted[i] || {};
+
+      const school_id = safeString(a.school_id) || (tUrl ? safeString(testSchoolId) : null);
+      const sport_id = selectedSportId;
+      const camp_name = safeString(a.camp_name);
+
+      const start_date = toISODate(a.start_date);
+      const end_date = toISODate(a.end_date);
+
+      const link_url = safeString(a.link_url) || safeString(a.registration_url) || safeString(a.source_url);
+      if (!school_id || !sport_id || !camp_name || !start_date) {
+        continue;
+      }
+
+      const season_year = safeNumber(a.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
+      if (season_year == null) continue;
+
+      const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
+      const source_platform = safeString(a.source_platform) || "sportsusa";
+      const source_url = safeString(a.source_url) || link_url;
+
+      const event_key =
+        safeString(a.event_key) ||
+        buildEventKey({
+          source_platform,
+          program_id,
+          start_date,
+          link_url,
+          source_url,
+        });
+
+      const content_hash =
+        safeString(a.content_hash) ||
+        simpleHash({
+          school_id,
+          sport_id,
+          camp_name,
+          start_date,
+          end_date,
+          link_url,
+          source_platform,
+          program_id,
+          event_dates_raw: safeString(a.event_dates_raw),
+          notes: safeString(a.notes),
+          price: safeNumber(a.price),
+          price_min: safeNumber(a.price_min),
+          price_max: safeNumber(a.price_max),
+          price_raw: safeString(a.price_raw),
+        });
+
+      const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
+
+      const payload = {
+        school_id,
+        sport_id,
+        camp_name,
+        start_date,
+        end_date: end_date || null,
+        city: safeString(a.city) || null,
+        state: safeString(a.state) || null,
+        position_ids: normalizeStringArray(a.position_ids),
+        price: price_best,
+        link_url: link_url || null,
+        notes: safeString(a.notes) || null,
+        season_year,
+        program_id,
+        event_key,
+        source_platform,
+        source_url: source_url || null,
+        last_seen_at: runIso,
+        content_hash,
+        event_dates_raw: safeString(a.event_dates_raw) || null,
+        grades_raw: safeString(a.grades_raw) || null,
+        register_by_raw: safeString(a.register_by_raw) || null,
+        price_raw: safeString(a.price_raw) || null,
+        price_min: safeNumber(a.price_min),
+        price_max: safeNumber(a.price_max),
+        sections_json: safeObject(a.sections_json) || null,
+      };
+
+      try {
+        // improvement check: fetch existing by event_key
+        let before = null;
+        try {
+          const ex = await entityList(CampDemoEntity, { event_key });
+          if (ex && ex[0]) before = ex[0];
+        } catch {
+          before = null;
+        }
+
+        const beforeBadName = before ? isRegisterishName(before?.camp_name) : false;
+        const beforeBadPrice = before ? isMissingOrZeroPrice(before) : false;
+
+        const afterBadName = isRegisterishName(payload.camp_name);
+        const afterBadPrice = isMissingOrZeroPrice(payload);
+
+        const r = await upsertCampDemoByEventKeyWithRetry(payload, 4);
+        if (r === "created") created += 1;
+        if (r === "updated") updated += 1;
+
+        if ((beforeBadName || beforeBadPrice) && !afterBadName && !afterBadPrice) {
+          improvedCount += 1;
+        }
+      } catch (e) {
+        errors += 1;
+        appendLog("camps", `[Camps] WRITE ERROR #${i + 1}: ${String(e?.message || e)}`);
+      }
+
+      if ((i + 1) % 25 === 0) appendLog("camps", `[Camps] Write progress: ${i + 1}/${accepted.length}`);
+      await sleep(Math.max(0, Number(writeDelayMs || 0)));
+    }
+
+    appendLog("camps", `[Camps] Batch writes done. created=${created} updated=${updated} errors=${errors} improved=${improvedCount}`);
+    return { accepted, improvedCount, created, updated, errors };
+  }
+
+  /* ----------------------------
+     Main Camps Ingest: supports multi-batch per click
   ----------------------------- */
   async function runSportsUSACampsIngest() {
     const runIso = new Date().toISOString();
     const runId = `run_${runIso.replace(/[:.]/g, "").slice(0, 15)}`;
+
     setCampsWorking(true);
     setLogCamps("");
+    // reset improved this run for the click
+    let improvedTotal = 0;
+    let createdTotal = 0;
+    let updatedTotal = 0;
+    let errorsTotal = 0;
 
     appendLog("camps", `[Camps] Starting: SportsUSA Camps Ingest (${selectedSportName}) @ ${runIso}`);
     appendLog(
       "camps",
       `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${campsMaxSites} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents} | fastMode=${fastMode ? "true" : "false"}`
     );
-    appendLog("camps", `[Camps] QualityMode=${qualityMode} | RerunMode=${rerunMode} | BatchRunner=${runMultipleBatches ? "ON" : "OFF"} maxBatches=${maxBatchesPerClick}`);
+    appendLog("camps", `[Camps] QualityMode=${qualityMode} | RerunMode=${rerunMode} | BatchRunner=${batchRunnerOn ? "ON" : "OFF"} maxBatches=${maxBatchesPerClick}`);
 
     try {
-      if (!selectedSportId) return appendLog("camps", "[Camps] ERROR: Select a sport first.");
-      if (!SchoolSportSiteEntity) return appendLog("camps", "[Camps] ERROR: SchoolSportSite entity not available.");
-      if (!CampDemoEntity) return appendLog("camps", "[Camps] ERROR: CampDemo entity not available.");
+      if (!selectedSportId) {
+        appendLog("camps", "[Camps] ERROR: Select a sport first.");
+        return;
+      }
+      if (!SchoolSportSiteEntity || !CampDemoEntity) {
+        appendLog("camps", "[Camps] ERROR: Required entities missing (SchoolSportSite/CampDemo).");
+        return;
+      }
 
-      // Make sure quality sets are current before we pick targets
-      await refreshQualityCounters();
+      // Always refresh quality counters before targeting runs so the school sets are current
+      await refreshQualityCounters({ improvedThisRunOverride: 0 });
 
       const siteRowsRaw = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
       const siteRows = siteRowsRaw.map(normalizeSiteRow);
@@ -1395,312 +1319,77 @@ export default function AdminImport() {
       const qualityFiltered = pickSitesByQualityMode(rerunFiltered);
       appendLog("camps", `[Camps] Quality filtered sites: ${qualityFiltered.length}`);
 
-      if (!qualityFiltered.length) {
-        appendLog("camps", `[Camps] Nothing matches this QualityMode+RerunMode right now.`);
-        appendLog("camps", `[Camps] Tip: For cleanup runs, keep RerunMode=All. For weekly recrawl, use Due only.`);
+      const allTargets = qualityFiltered; // final list
+      if (!allTargets.length) {
+        appendLog("camps", `[Camps] Nothing to do for current (RerunMode + QualityMode).`);
+        appendLog("camps", `[Camps] Stop rule: if your Quality counters are already low/0 for this mode, you are done.`);
         await refreshCrawlCounters();
-        await refreshQualityCounters();
+        await refreshQualityCounters({ improvedThisRunOverride: 0 });
         return;
       }
 
-      // Snapshot starting counters so we can compute "improved this run"
-      const startBad = qualityCounters.badNameRemaining;
-      const startMiss = qualityCounters.missingPriceRemaining;
-      const startNoCamps = qualityCounters.schoolsNoCamps;
-
+      // If testSiteUrl is set, ignore allTargets and just run one batch (function handles it)
       const tUrl = safeString(testSiteUrl);
-      const tSchool = safeString(testSchoolId);
-      if (tUrl && !campsDryRun && !tSchool) {
-        appendLog("camps", "[Camps] ERROR: For non-dry-run with Test Site URL, you must provide Test School ID.");
-        return;
-      }
+      const doBatchRunner = !tUrl && batchRunnerOn;
 
-      // Batch loop
-      const totalTargets = qualityFiltered.length;
+      const maxBatches = doBatchRunner ? Math.max(1, Number(maxBatchesPerClick || 1)) : 1;
+      const perBatch = Math.max(1, Number(campsMaxSites || 25));
+
       let cursor = 0;
 
-      const batchesToRun = runMultipleBatches ? Math.max(1, Number(maxBatchesPerClick || 1)) : 1;
+      for (let b = 1; b <= maxBatches; b++) {
+        const remaining = allTargets.length - cursor;
+        if (!tUrl && remaining <= 0) break;
 
-      let totalCreated = 0;
-      let totalUpdated = 0;
-      let totalSkipped = 0;
-      let totalErrors = 0;
-
-      for (let b = 0; b < batchesToRun; b++) {
-        if (cursor >= totalTargets) break;
-
-        const remaining = totalTargets - cursor;
-        const batch = qualityFiltered.slice(cursor, cursor + Number(campsMaxSites || 25));
-        cursor += batch.length;
+        const batch = tUrl ? allTargets.slice(0, perBatch) : allTargets.slice(cursor, cursor + perBatch);
 
         appendLog("camps", ``);
-        appendLog("camps", `[Camps] ---- Batch ${b + 1} ----`);
-        appendLog("camps", `[Camps] Batch size=${batch.length} | remainingAfterThis=${Math.max(0, totalTargets - cursor)}`);
+        appendLog("camps", `[Camps] ---- Batch ${b} ----`);
+        appendLog("camps", `[Camps] Batch size=${batch.length} | remainingAfterThis=${Math.max(0, remaining - perBatch)}`);
 
-        // If testSiteUrl set, do NOT send batch list
-        const sitesToSend = tUrl
-          ? []
-          : batch.map((r) => ({
-              id: r.id,
-              school_id: r.school_id,
-              sport_id: r.sport_id,
-              camp_site_url: r.camp_site_url,
-            }));
+        const result = await runOneBatch(batch, { runIso, runId });
 
-        appendLog("camps", `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesToSend.length}, testSiteUrl=${tUrl ? tUrl : "no"})`);
+        improvedTotal += result.improvedCount || 0;
+        createdTotal += result.created || 0;
+        updatedTotal += result.updated || 0;
+        errorsTotal += result.errors || 0;
 
-        const res = await fetch("/functions/sportsUSAIngestCamps", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sportId: selectedSportId,
-            sportName: selectedSportName,
-            dryRun: !!campsDryRun,
-            maxSites: Number(campsMaxSites || 25),
-            maxRegsPerSite: Number(campsMaxRegsPerSite || 10),
-            maxEvents: Number(campsMaxEvents || 300),
-            fastMode: !!fastMode,
-            sites: sitesToSend,
-            testSiteUrl: tUrl || null,
-            testSchoolId: tSchool || null,
-          }),
-        });
+        // Advance cursor if not test mode
+        if (!tUrl) cursor += perBatch;
 
-        let data = null;
-        let rawText = null;
-        try {
-          data = await res.json();
-        } catch {
-          rawText = await res.text().catch(() => null);
+        // Batch delay
+        if (doBatchRunner && b < maxBatches) {
+          await sleep(Math.max(0, Number(batchDelayMs || 0)));
         }
 
-        if (!res.ok) {
-          appendLog("camps", `[Camps] Function ERROR (HTTP ${res.status})`);
-          if (data) appendLog("camps", JSON.stringify(data || {}, null, 2));
-          if (!data && rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
-          totalErrors += 1;
-          await sleep(batchDelayMs);
-          continue;
-        }
-
-        if (!data) {
-          appendLog("camps", `[Camps] WARNING: Response was not JSON. HTTP ${res.status}`);
-          if (rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
-          totalErrors += 1;
-          await sleep(batchDelayMs);
-          continue;
-        }
-
-        appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
-        appendLog(
-          "camps",
-          `[Camps] Function stats: processedSites=${data?.stats?.processedSites ?? 0} processedRegs=${data?.stats?.processedRegs ?? 0} accepted=${data?.stats?.accepted ?? 0} rejected=${data?.stats?.rejected ?? 0} errors=${data?.stats?.errors ?? 0}`
-        );
-
-        if (data && data.debug && data.debug.kpi) {
-          const k = data.debug.kpi;
-          appendLog("camps", `[Camps] Date KPI: listing=${k.datesParsedFromListing || 0} detail=${k.datesParsedFromDetail || 0} missing=${k.datesMissing || 0}`);
-          appendLog(
-            "camps",
-            `[Camps] Name KPI: listing=${k.namesFromListing || 0} detail=${k.namesFromDetail || 0} missing=${k.namesMissing || 0} qualityReject=${k.namesRejectedByQualityGate || 0}`
-          );
-          appendLog("camps", `[Camps] Price KPI: detail=${k.pricesFromDetail || 0} missing=${k.pricesMissing || 0}`);
-        }
-
-        const acceptedRaw = asArray(data && data.accepted ? data.accepted : []);
-        const accepted = acceptedRaw.map((x) => normalizeAcceptedRowToFlat(x));
-
-        appendLog("camps", `[Camps] Accepted events returned: ${accepted.length}`);
-        if (accepted.length) {
-          appendLog("camps", `[Camps] Sample (first 5):`);
-          for (let i = 0; i < Math.min(5, accepted.length); i++) {
-            const a = accepted[i] || {};
-            appendLog("camps", `- camp="${a.camp_name || ""}" start=${a.start_date || "n/a"} price=${a.price != null ? a.price : "n/a"} url=${a.link_url || a.registration_url || ""}`);
-          }
-        }
-
-        // Update crawl-state for batch sites (non-test only)
-        if (!tUrl && !campsDryRun) {
-          const outcome = accepted.length ? "ok" : "no_events";
-          const patch = {
-            crawl_status: outcome,
-            crawl_error: null,
-            last_crawled_at: runIso,
-            // weekly recrawl uses next_crawl_at; cleanup runs don't rely on it, but we keep it sane:
-            next_crawl_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-            last_crawl_run_id: runId,
-            last_seen_at: runIso,
-          };
-          const ids = batch.map((b2) => b2.id).filter(Boolean);
-          const upd = await updateCrawlStateForSites(ids, patch);
-          appendLog("camps", `[Camps] Updated crawl-state for batch sites: ${upd.updated} (${outcome}) errors=${upd.errors}`);
-        } else if (tUrl) {
-          appendLog("camps", `[Camps] Test mode: not updating SchoolSportSite crawl-state (no site ids).`);
-        } else {
-          appendLog("camps", `[Camps] DryRun=true: crawl-state update skipped.`);
-        }
-
-        if (campsDryRun) {
-          appendLog("camps", `[Camps] DryRun=true: no CampDemo writes performed.`);
-          await sleep(batchDelayMs);
-          continue;
-        }
-
-        // Writes
-        let created = 0;
-        let updated = 0;
-        let skipped = 0;
-        let errors = 0;
-
-        for (let i = 0; i < accepted.length; i++) {
-          const a = accepted[i] || {};
-
-          const school_id = safeString(a.school_id) || (tUrl ? safeString(tSchool) : null);
-          const sport_id = selectedSportId;
-          const camp_name = safeString(a.camp_name);
-
-          const start_date = toISODate(a.start_date);
-          const end_date = toISODate(a.end_date);
-
-          const link_url = safeString(a.link_url) || safeString(a.registration_url) || safeString(a.source_url);
-
-          if (!school_id || !sport_id || !camp_name || !start_date) {
-            skipped += 1;
-            continue;
-          }
-
-          const season_year = safeNumber(a.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
-          if (season_year == null) {
-            skipped += 1;
-            continue;
-          }
-
-          const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
-          const source_platform = safeString(a.source_platform) || "sportsusa";
-          const source_url = safeString(a.source_url) || link_url;
-
-          const event_key =
-            safeString(a.event_key) ||
-            buildEventKey({
-              source_platform,
-              program_id,
-              start_date,
-              link_url,
-              source_url,
-            });
-
-          const content_hash =
-            safeString(a.content_hash) ||
-            simpleHash({
-              school_id,
-              sport_id,
-              camp_name,
-              start_date,
-              end_date,
-              link_url,
-              source_platform,
-              program_id,
-              event_dates_raw: safeString(a.event_dates_raw),
-              notes: safeString(a.notes),
-              price: safeNumber(a.price),
-              price_min: safeNumber(a.price_min),
-              price_max: safeNumber(a.price_max),
-              price_raw: safeString(a.price_raw),
-            });
-
-          const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
-
-          const payload = {
-            school_id,
-            sport_id,
-            camp_name,
-            start_date,
-            end_date: end_date || null,
-            city: safeString(a.city) || null,
-            state: safeString(a.state) || null,
-            position_ids: normalizeStringArray(a.position_ids),
-            price: price_best,
-            link_url: link_url || null,
-            notes: safeString(a.notes) || null,
-            season_year,
-            program_id,
-            event_key,
-            source_platform,
-            source_url: source_url || null,
-            last_seen_at: runIso,
-            content_hash,
-            event_dates_raw: safeString(a.event_dates_raw) || null,
-            grades_raw: safeString(a.grades_raw) || null,
-            register_by_raw: safeString(a.register_by_raw) || null,
-            price_raw: safeString(a.price_raw) || null,
-            price_min: safeNumber(a.price_min),
-            price_max: safeNumber(a.price_max),
-            sections_json: safeObject(a.sections_json) || null,
-          };
-
-          try {
-            const r = await upsertCampDemoByEventKey(payload);
-            if (r === "created") created += 1;
-            if (r === "updated") updated += 1;
-          } catch (e) {
-            errors += 1;
-            appendLog("camps", `[Camps] WRITE ERROR #${i + 1}: ${String(e && e.message ? e.message : e)}`);
-          }
-
-          if ((i + 1) % 25 === 0) appendLog("camps", `[Camps] Write progress: ${i + 1}/${accepted.length}`);
-          await sleep(Number(writeDelayMs || 125));
-        }
-
-        appendLog("camps", `[Camps] Batch ${b + 1} writes done. created=${created} updated=${updated} skipped=${skipped} errors=${errors}`);
-
-        totalCreated += created;
-        totalUpdated += updated;
-        totalSkipped += skipped;
-        totalErrors += errors;
-
-        // Small pause between batches
-        await sleep(Number(batchDelayMs || 750));
+        // If we’re not doing batch runner, break after 1
+        if (!doBatchRunner) break;
       }
 
-      // Refresh quality + compute improvement
-      await refreshQualityCounters();
-      const endBad = qualityCounters.badNameRemaining;
-      const endMiss = qualityCounters.missingPriceRemaining;
-      const endNoCamps = qualityCounters.schoolsNoCamps;
-
-      const improved =
-        Math.max(0, startBad - endBad) +
-        Math.max(0, startMiss - endMiss) +
-        Math.max(0, startNoCamps - endNoCamps);
-
-      setQualityCounters((prev) => ({ ...prev, improvedThisRun: improved }));
-
+      appendLog("camps", ``);
       appendLog(
         "camps",
-        `[Camps] DONE (this click). totals: created=${totalCreated} updated=${totalUpdated} skipped=${totalSkipped} errors=${totalErrors} improved=${improved}`
-      );
-      appendLog(
-        "camps",
-        `[Camps] Stop rule: When your target Remaining counter stops dropping for 2 clicks, you’re done for that mode.`
+        `[Camps] DONE (this click). totals: created=${createdTotal} updated=${updatedTotal} errors=${errorsTotal} improved=${improvedTotal}`
       );
 
+      // Refresh counters and quality (with improvedThisRun)
       await refreshCrawlCounters();
+      await refreshQualityCounters({ improvedThisRunOverride: improvedTotal });
+
+      appendLog("camps", `[Camps] Tip: Stop when your selected QualityMode’s remaining counters are ~0 (or close enough to accept).`);
     } catch (e) {
-      appendLog("camps", `[Camps] ERROR: ${String(e && e.message ? e.message : e)}`);
+      appendLog("camps", `[Camps] ERROR: ${String(e?.message || e)}`);
     } finally {
       setCampsWorking(false);
     }
   }
 
   /* ----------------------------
-     Promote CampDemo -> Camp (kept)
+     Promote CampDemo -> Camp
   ----------------------------- */
   async function upsertCampByEventKey(payload) {
-    if (!CampEntity || !CampEntity.create || !CampEntity.update) {
-      throw new Error("Camp entity not available (base44.entities.Camp missing or not exported).");
-    }
-
-    const key = payload && payload.event_key ? payload.event_key : null;
+    if (!CampEntity?.create || !CampEntity?.update) throw new Error("Camp entity not available.");
+    const key = payload?.event_key ? payload.event_key : null;
     if (!key) throw new Error("Missing event_key for upsert");
 
     let existing = [];
@@ -1711,7 +1400,7 @@ export default function AdminImport() {
     }
 
     const arr = asArray(existing);
-    if (arr.length > 0 && arr[0] && arr[0].id) {
+    if (arr.length > 0 && arr[0]?.id) {
       await CampEntity.update(arr[0].id, payload);
       return "updated";
     }
@@ -1721,30 +1410,28 @@ export default function AdminImport() {
   }
 
   function buildSafeCampPayloadFromDemoRow(r, runIso) {
-    const school_id = safeString(r && r.school_id);
-    const sport_id = safeString(r && r.sport_id);
-    const camp_name = safeString(r && (r.camp_name || r.name));
-    const start_date = toISODate(r && r.start_date);
-    const end_date = toISODate(r && r.end_date);
+    const school_id = safeString(r?.school_id);
+    const sport_id = safeString(r?.sport_id);
+    const camp_name = safeString(r?.camp_name || r?.name);
+    const start_date = toISODate(r?.start_date);
+    const end_date = toISODate(r?.end_date);
 
-    if (!school_id || !sport_id || !camp_name || !start_date) {
-      return { error: "Missing required fields (school_id, sport_id, camp_name, start_date)" };
-    }
+    if (!school_id || !sport_id || !camp_name || !start_date) return { error: "Missing required fields" };
 
-    const city = safeString(r && r.city);
-    const state = safeString(r && r.state);
-    const position_ids = normalizeStringArray(r && r.position_ids);
+    const city = safeString(r?.city);
+    const state = safeString(r?.state);
+    const position_ids = normalizeStringArray(r?.position_ids);
 
-    const price = safeNumber(r && r.price) ?? safeNumber(r && r.price_max) ?? safeNumber(r && r.price_min);
-    const link_url = safeString(r && (r.link_url || r.url));
-    const source_url = safeString(r && r.source_url) || link_url;
+    const price = safeNumber(r?.price) ?? safeNumber(r?.price_max) ?? safeNumber(r?.price_min);
+    const link_url = safeString(r?.link_url || r?.url);
+    const source_url = safeString(r?.source_url) || link_url;
 
-    const season_year = safeNumber(r && r.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
-    const source_platform = safeString(r && r.source_platform) || "seed";
-    const program_id = safeString(r && r.program_id) || `seed:${String(school_id)}:${slugify(camp_name)}`;
+    const season_year = safeNumber(r?.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
+    const source_platform = safeString(r?.source_platform) || "seed";
+    const program_id = safeString(r?.program_id) || `seed:${String(school_id)}:${slugify(camp_name)}`;
 
     const event_key =
-      safeString(r && r.event_key) ||
+      safeString(r?.event_key) ||
       buildEventKey({
         source_platform,
         program_id,
@@ -1754,7 +1441,7 @@ export default function AdminImport() {
       });
 
     const content_hash =
-      safeString(r && r.content_hash) ||
+      safeString(r?.content_hash) ||
       simpleHash({
         school_id,
         sport_id,
@@ -1766,7 +1453,7 @@ export default function AdminImport() {
         position_ids,
         price,
         link_url,
-        notes: safeString(r && r.notes),
+        notes: safeString(r?.notes),
       });
 
     return {
@@ -1781,7 +1468,7 @@ export default function AdminImport() {
         position_ids,
         price: price != null ? price : null,
         link_url: link_url || null,
-        notes: safeString(r && r.notes) || null,
+        notes: safeString(r?.notes) || null,
         season_year: season_year != null ? season_year : null,
         program_id,
         event_key,
@@ -1789,13 +1476,13 @@ export default function AdminImport() {
         source_url: source_url || null,
         last_seen_at: runIso,
         content_hash,
-        event_dates_raw: safeString(r && r.event_dates_raw) || null,
-        grades_raw: safeString(r && r.grades_raw) || null,
-        register_by_raw: safeString(r && r.register_by_raw) || null,
-        price_raw: safeString(r && r.price_raw) || null,
-        price_min: safeNumber(r && r.price_min),
-        price_max: safeNumber(r && r.price_max),
-        sections_json: safeObject(tryParseJson(r && r.sections_json)) || null,
+        event_dates_raw: safeString(r?.event_dates_raw) || null,
+        grades_raw: safeString(r?.grades_raw) || null,
+        register_by_raw: safeString(r?.register_by_raw) || null,
+        price_raw: safeString(r?.price_raw) || null,
+        price_min: safeNumber(r?.price_min),
+        price_max: safeNumber(r?.price_max),
+        sections_json: safeObject(tryParseJson(r?.sections_json)) || null,
       },
     };
   }
@@ -1804,74 +1491,72 @@ export default function AdminImport() {
     const runIso = new Date().toISOString();
     setPromoteWorking(true);
     setLogPromote("");
-
     appendLog("promote", `[Promote] Starting: Promote CampDemo → Camp @ ${runIso}`);
 
-    if (!CampDemoEntity) {
-      appendLog("promote", "[Promote] ERROR: CampDemo entity not available.");
-      setPromoteWorking(false);
-      return;
-    }
-
-    if (!CampEntity) {
-      appendLog("promote", "[Promote] ERROR: Camp entity not available (base44.entities.Camp missing).");
-      setPromoteWorking(false);
-      return;
-    }
-
-    let demoRows = [];
     try {
-      demoRows = await entityList(CampDemoEntity, { sport_id: selectedSportId });
-    } catch (e) {
-      appendLog("promote", `[Promote] ERROR reading CampDemo: ${String(e && e.message ? e.message : e)}`);
-      setPromoteWorking(false);
-      return;
-    }
+      if (!selectedSportId) return appendLog("promote", "[Promote] ERROR: Select a sport first.");
+      if (!CampDemoEntity) return appendLog("promote", "[Promote] ERROR: CampDemo entity missing.");
+      if (!CampEntity) return appendLog("promote", "[Promote] ERROR: Camp entity missing.");
 
-    appendLog("promote", `[Promote] Found CampDemo rows for sport: ${demoRows.length}`);
-
-    let created = 0;
-    let updated = 0;
-    let skipped = 0;
-    let errors = 0;
-
-    for (let i = 0; i < demoRows.length; i++) {
-      const r = demoRows[i];
-
+      let demoRows = [];
       try {
-        const built = buildSafeCampPayloadFromDemoRow(r, runIso);
-        if (built.error) {
-          skipped += 1;
-          continue;
-        }
-
-        const result = await upsertCampByEventKey(built.payload);
-        if (result === "created") created += 1;
-        if (result === "updated") updated += 1;
-
-        if ((i + 1) % 20 === 0) appendLog("promote", `[Promote] Progress: ${i + 1}/${demoRows.length}`);
-        await sleep(35);
+        demoRows = await entityList(CampDemoEntity, { sport_id: selectedSportId });
       } catch (e) {
-        errors += 1;
-        appendLog("promote", `[Promote] ERROR #${i + 1}: ${String(e && e.message ? e.message : e)}`);
+        appendLog("promote", `[Promote] ERROR reading CampDemo: ${String(e?.message || e)}`);
+        return;
       }
-    }
 
-    appendLog("promote", `[Promote] Done. created=${created} updated=${updated} skipped=${skipped} errors=${errors}`);
-    setPromoteWorking(false);
+      appendLog("promote", `[Promote] Found CampDemo rows: ${demoRows.length}`);
+
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      for (let i = 0; i < demoRows.length; i++) {
+        const r = demoRows[i];
+        try {
+          const built = buildSafeCampPayloadFromDemoRow(r, runIso);
+          if (built.error) {
+            skipped += 1;
+            continue;
+          }
+          const result = await upsertCampByEventKey(built.payload);
+          if (result === "created") created += 1;
+          if (result === "updated") updated += 1;
+        } catch (e) {
+          errors += 1;
+          appendLog("promote", `[Promote] ERROR #${i + 1}: ${String(e?.message || e)}`);
+        }
+        if ((i + 1) % 50 === 0) appendLog("promote", `[Promote] Progress: ${i + 1}/${demoRows.length}`);
+        await sleep(25);
+      }
+
+      appendLog("promote", `[Promote] Done. created=${created} updated=${updated} skipped=${skipped} errors=${errors}`);
+    } finally {
+      setPromoteWorking(false);
+    }
   }
 
   /* ----------------------------
      UI
   ----------------------------- */
+  const stopSignalText = useMemo(() => {
+    if (qualityMode === "register_only") return "Stop when Register names remaining reaches ~0.";
+    if (qualityMode === "missing_price_only") return "Stop when Missing price remaining reaches ~0.";
+    if (qualityMode === "no_camps_only") return "Stop when Schools with no camps reaches ~0.";
+    if (qualityMode === "any_cleanup") return "Stop when Register + Missing price + No camps are all acceptable (or you hit diminishing returns).";
+    return "With no quality filter, use crawl counters + your own spot checks.";
+  }, [qualityMode]);
+
   return (
     <div className="min-h-screen bg-slate-50 p-4">
-      <div className="max-w-4xl mx-auto space-y-4">
+      <div className="max-w-5xl mx-auto space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-2xl font-bold text-deep-navy">Admin Import</div>
-            <div className="text-sm text-slate-600">SportsUSA seeding + quality-targeted camp cleanup + promotion.</div>
+            <div className="text-2xl font-bold">Admin Import</div>
+            <div className="text-sm text-slate-600">SportsUSA seeding + camp ingestion + promotion + cleanup targeting.</div>
           </div>
 
           <Button variant="outline" onClick={() => nav(ROUTES.Workspace)}>
@@ -1879,10 +1564,9 @@ export default function AdminImport() {
           </Button>
         </div>
 
-        {/* Global Sport Selector */}
+        {/* Sport Selector */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">1) Select Sport</div>
-          <div className="text-sm text-slate-600 mt-1">Selection drives counters, cleanup targeting, ingest, and promotion.</div>
+          <div className="font-semibold">1) Select Sport</div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -1894,42 +1578,38 @@ export default function AdminImport() {
                   const id = e.target.value;
                   const hit = sports.find((x) => x.id === id) || null;
                   setSelectedSportId(id);
-                  setSelectedSportName(hit && hit.name ? hit.name : "");
+                  setSelectedSportName(hit?.name || "");
                 }}
-                disabled={sportsLoading || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}
+                disabled={sportsLoading || sportsUSAWorking || campsWorking || promoteWorking}
               >
                 <option value="">Select…</option>
                 {sports.map((sx) => (
                   <option key={sx.id} value={sx.id}>
-                    {sx.name} {sx.active ? "" : "(Inactive)"}
+                    {sx.name}
                   </option>
                 ))}
               </select>
-              <div className="mt-1 text-[11px] text-slate-500">
-                {sportsLoading ? "Loading sports…" : selectedSportName ? `Selected: ${selectedSportName}` : "Choose a sport"}
-              </div>
+              <div className="mt-1 text-[11px] text-slate-500">{sportsLoading ? "Loading sports…" : selectedSportName ? `Selected: ${selectedSportName}` : "Choose a sport"}</div>
             </div>
 
             <div className="flex items-end gap-2">
-              <Button variant="outline" onClick={() => loadSports()} disabled={sportsLoading}>
+              <Button variant="outline" onClick={loadSports} disabled={sportsLoading}>
                 {sportsLoading ? "Refreshing…" : "Refresh Sports"}
               </Button>
-              <Button variant="outline" onClick={() => refreshCrawlCounters()} disabled={countersWorking || !selectedSportId}>
+              <Button variant="outline" onClick={refreshCrawlCounters} disabled={countersWorking || !selectedSportId}>
                 {countersWorking ? "Refreshing…" : "Refresh Counters"}
               </Button>
-              <Button variant="outline" onClick={() => refreshQualityCounters()} disabled={qualityWorking || !selectedSportId}>
+              <Button variant="outline" onClick={() => refreshQualityCounters({ improvedThisRunOverride: qualityCounters.improvedThisRun })} disabled={qualityWorking || !selectedSportId}>
                 {qualityWorking ? "Refreshing…" : "Refresh Quality"}
               </Button>
             </div>
           </div>
         </Card>
 
-        {/* Crawl Counters Panel */}
+        {/* Crawl Counters */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">Crawl Counters (site state)</div>
-          <div className="text-sm text-slate-600 mt-1">
-            These show <b>crawl status</b>. They do <b>not</b> tell you if names/prices are fixed. Use <b>Quality Counters</b> to know when to stop.
-          </div>
+          <div className="font-semibold">Crawl Counters (site state)</div>
+          <div className="text-sm text-slate-600 mt-1">These are site crawl states. They do not tell you if Register/prices got fixed.</div>
 
           <div className="mt-3 grid grid-cols-2 md:grid-cols-7 gap-2 text-sm">
             {[
@@ -1963,51 +1643,43 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* Quality Counters Panel */}
+        {/* Quality Counters */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">Quality Counters (your STOP signals)</div>
-          <div className="text-sm text-slate-600 mt-1">
-            These are the “what’s left” numbers. For cleanup, you keep running batches until your selected remaining counter stops dropping.
-          </div>
+          <div className="font-semibold">Quality Counters (your STOP signals)</div>
+          <div className="text-sm text-slate-600 mt-1">This is what tells you when to stop cleanup. These should trend down as data improves.</div>
 
           <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Bad camp names remaining</div>
-              <div className="font-semibold">{qualityCounters.badNameRemaining}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Missing/0 price remaining</div>
-              <div className="font-semibold">{qualityCounters.missingPriceRemaining}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Schools with no camps</div>
-              <div className="font-semibold">{qualityCounters.schoolsNoCamps}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Improved this run</div>
-              <div className="font-semibold">{qualityCounters.improvedThisRun}</div>
-            </div>
+            {[
+              ["Register names remaining", qualityCounters.registerNamesRemaining],
+              ["Missing price remaining", qualityCounters.missingPriceRemaining],
+              ["Schools with no camps", qualityCounters.schoolsWithNoCamps],
+              ["Improved this run", qualityCounters.improvedThisRun],
+            ].map(([label, val]) => (
+              <div key={label} className="rounded-lg bg-white border border-slate-200 p-2">
+                <div className="text-[11px] text-slate-500">{label}</div>
+                <div className="font-semibold">{val}</div>
+              </div>
+            ))}
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Schools needing bad name fix</div>
-              <div className="font-semibold">{qualityCounters.schoolsBadName}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Schools needing price fix</div>
-              <div className="font-semibold">{qualityCounters.schoolsMissingPrice}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">Schools needing any cleanup</div>
-              <div className="font-semibold">{qualityCounters.schoolsAnyCleanup}</div>
-            </div>
+            {[
+              ["Schools needing Register fix", qualityCounters.schoolsNeedingRegisterFix],
+              ["Schools needing price fix", qualityCounters.schoolsNeedingPriceFix],
+              ["Schools needing any cleanup", qualityCounters.schoolsNeedingAnyCleanup],
+            ].map(([label, val]) => (
+              <div key={label} className="rounded-lg bg-white border border-slate-200 p-2">
+                <div className="text-[11px] text-slate-500">{label}</div>
+                <div className="font-semibold">{val}</div>
+              </div>
+            ))}
           </div>
 
           <div className="mt-3 flex gap-2">
             <Button variant="outline" onClick={() => setLogQuality("")} disabled={qualityWorking}>
               Clear Quality Log
             </Button>
+            <div className="text-sm text-slate-600 self-center">{stopSignalText}</div>
           </div>
 
           <div className="mt-3">
@@ -2016,11 +1688,65 @@ export default function AdminImport() {
           </div>
         </Card>
 
+        {/* Seed Schools */}
+        <Card className="p-4">
+          <div className="font-semibold">2) Seed Schools from SportsUSA (School + SchoolSportSite)</div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">SportsUSA directory URL</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={sportsUSASiteUrl}
+                onChange={(e) => setSportsUSASiteUrl(e.target.value)}
+                placeholder="https://www.footballcampsusa.com/"
+                disabled={sportsUSAWorking}
+              />
+              <div className="mt-1 text-[11px] text-slate-500">Auto-fills by sport; override if needed.</div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Limit</label>
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  type="number"
+                  value={sportsUSALimit}
+                  onChange={(e) => setSportsUSALimit(Number(e.target.value || 0))}
+                  min={50}
+                  max={2000}
+                  disabled={sportsUSAWorking}
+                />
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={sportsUSADryRun} onChange={(e) => setSportsUSADryRun(e.target.checked)} disabled={sportsUSAWorking} />
+                  Dry Run
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <Button onClick={runSportsUSASeedSchools} disabled={!selectedSportId || sportsUSAWorking || campsWorking || promoteWorking}>
+              {sportsUSAWorking ? "Running…" : sportsUSADryRun ? "Run Seed (Dry Run)" : "Run Seed → Write School + Site"}
+            </Button>
+            <Button variant="outline" onClick={() => setLogSportsUSA("")} disabled={sportsUSAWorking}>
+              Clear Log
+            </Button>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-xs text-slate-500 mb-1">SportsUSA Log</div>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{logSportsUSA || "—"}</pre>
+          </div>
+        </Card>
+
         {/* Camps ingest */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">2) Ingest Camps (SchoolSportSite → CampDemo)</div>
+          <div className="font-semibold">3) Ingest Camps (SchoolSportSite → CampDemo)</div>
           <div className="text-sm text-slate-600 mt-1">
-            This runs <b>batches through only the schools that match your quality filter</b> so you’re not blindly rerunning.
+            Use <b>Quality Mode</b> to target cleanup so you are not blindly rerunning.
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -2033,9 +1759,7 @@ export default function AdminImport() {
                   </option>
                 ))}
               </select>
-              <div className="mt-1 text-[11px] text-slate-500">
-                Use this for cleanup. Weekly monitoring is “No quality filter” + “Due only”.
-              </div>
+              <div className="mt-1 text-[11px] text-slate-500">This determines which schools get batched. The STOP signals are in Quality Counters above.</div>
             </div>
 
             <div>
@@ -2047,15 +1771,13 @@ export default function AdminImport() {
                   </option>
                 ))}
               </select>
-              <div className="mt-1 text-[11px] text-slate-500">
-                Cleanup runs: <b>Force recrawl ALL</b>. Weekly runs: <b>Due only</b>.
-              </div>
+              <div className="mt-1 text-[11px] text-slate-500">For cleanup, most runs can be “Due only” + a quality mode. Use “Force recrawl ALL” when you intentionally want a refresh sweep.</div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Max sites/batch</label>
               <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={campsMaxSites} onChange={(e) => setCampsMaxSites(Number(e.target.value || 0))} min={1} max={500} disabled={campsWorking} />
-              <div className="mt-1 text-[11px] text-slate-500">If you see rate limits, drop this to 10–15.</div>
+              <div className="mt-1 text-[11px] text-slate-500">If rate limits hit, reduce to 10–15.</div>
             </div>
           </div>
 
@@ -2068,23 +1790,23 @@ export default function AdminImport() {
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Max events/call</label>
               <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={campsMaxEvents} onChange={(e) => setCampsMaxEvents(Number(e.target.value || 0))} min={25} max={5000} disabled={campsWorking} />
-              <div className="mt-1 text-[11px] text-slate-500">For cleanup: 100–300. Bigger = more writes = more rate limits.</div>
+              <div className="mt-1 text-[11px] text-slate-500">Suggested: 150–300 for cleanup.</div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Write delay (ms)</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={writeDelayMs} onChange={(e) => setWriteDelayMs(Number(e.target.value || 0))} min={25} max={1000} disabled={campsWorking} />
-              <div className="mt-1 text-[11px] text-slate-500">If rate limited: 150–250ms.</div>
+              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={writeDelayMs} onChange={(e) => setWriteDelayMs(Number(e.target.value || 0))} min={0} max={2000} disabled={campsWorking} />
+              <div className="mt-1 text-[11px] text-slate-500">Raise to 200–350ms if “Rate limit exceeded”.</div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Batch delay (ms)</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={batchDelayMs} onChange={(e) => setBatchDelayMs(Number(e.target.value || 0))} min={0} max={5000} disabled={campsWorking} />
-              <div className="mt-1 text-[11px] text-slate-500">If network errors: 750–1500ms.</div>
+              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={batchDelayMs} onChange={(e) => setBatchDelayMs(Number(e.target.value || 0))} min={0} max={10000} disabled={campsWorking} />
+              <div className="mt-1 text-[11px] text-slate-500">Pause between batches.</div>
             </div>
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-6 items-center">
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={campsDryRun} onChange={(e) => setCampsDryRun(e.target.checked)} disabled={campsWorking} />
               Dry Run
@@ -2095,31 +1817,42 @@ export default function AdminImport() {
               fastMode (fewer detail fetches)
             </label>
 
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={runMultipleBatches} onChange={(e) => setRunMultipleBatches(e.target.checked)} disabled={campsWorking} />
-              Run multiple batches per click
-            </label>
-
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-700">Max batches/click</label>
-              <input className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={maxBatchesPerClick} onChange={(e) => setMaxBatchesPerClick(Number(e.target.value || 0))} min={1} max={50} disabled={campsWorking || !runMultipleBatches} />
+            <div className="text-[11px] text-slate-500">
+              For cleanup runs, keep <b>fastMode OFF</b>.
             </div>
           </div>
 
-          {/* Test Mode */}
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={batchRunnerOn} onChange={(e) => setBatchRunnerOn(e.target.checked)} disabled={campsWorking} />
+              Run multiple batches per click
+            </label>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Max batches per click</label>
+              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={maxBatchesPerClick} onChange={(e) => setMaxBatchesPerClick(Number(e.target.value || 0))} min={1} max={50} disabled={campsWorking} />
+            </div>
+
+            <div className="text-[11px] text-slate-500">
+              Suggested cleanup run: MaxSites=10–25, MaxEvents=150–300, WriteDelay=150–250ms, Batches=10.
+            </div>
+          </div>
+
+          {/* Test mode */}
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Test Site URL (optional)</label>
               <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={testSiteUrl} onChange={(e) => setTestSiteUrl(e.target.value)} placeholder="https://www.hardingfootballcamps.com/" disabled={campsWorking} />
+              <div className="mt-1 text-[11px] text-slate-500">If set, runs single-site mode and does not touch SchoolSportSite state.</div>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Test School ID (required for writes)</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={testSchoolId} onChange={(e) => setTestSchoolId(e.target.value)} placeholder="Paste School.id (only needed when DryRun=false)" disabled={campsWorking} />
+              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={testSchoolId} onChange={(e) => setTestSchoolId(e.target.value)} placeholder="Paste School.id (needed when DryRun=false)" disabled={campsWorking} />
             </div>
           </div>
 
           <div className="mt-3 flex gap-2">
-            <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || campsWorking || sportsUSAWorking || promoteWorking || seedWorking}>
+            <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || campsWorking || sportsUSAWorking || promoteWorking}>
               {campsWorking ? "Running…" : campsDryRun ? "Run Camps Ingest (Dry Run)" : "Run Camps Ingest → Write CampDemo"}
             </Button>
 
@@ -2134,57 +1867,15 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* SportsUSA Seed Schools */}
-        <Card className="p-4">
-          <div className="font-semibold text-deep-navy">3) Seed Schools from SportsUSA (School + SchoolSportSite)</div>
-          <div className="text-sm text-slate-600 mt-1">Seeds universities and per-sport camp site URLs.</div>
-
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">SportsUSA directory URL</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={sportsUSASiteUrl} onChange={(e) => setSportsUSASiteUrl(e.target.value)} placeholder="https://www.footballcampsusa.com/" disabled={sportsUSAWorking} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Limit</label>
-                <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" type="number" value={sportsUSALimit} onChange={(e) => setSportsUSALimit(Number(e.target.value || 0))} min={50} max={2000} disabled={sportsUSAWorking} />
-              </div>
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={sportsUSADryRun} onChange={(e) => setSportsUSADryRun(e.target.checked)} disabled={sportsUSAWorking} />
-                  Dry Run
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-3 flex gap-2">
-            <Button onClick={runSportsUSASeedSchools} disabled={!selectedSportId || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}>
-              {sportsUSAWorking ? "Running…" : sportsUSADryRun ? "Run Seed (Dry Run)" : "Run Seed → Write School + Site"}
-            </Button>
-
-            <Button variant="outline" onClick={() => setLogSportsUSA("")} disabled={sportsUSAWorking}>
-              Clear Log
-            </Button>
-          </div>
-
-          <div className="mt-4">
-            <div className="text-xs text-slate-500 mb-1">SportsUSA Log</div>
-            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{logSportsUSA || "—"}</pre>
-          </div>
-        </Card>
-
         {/* Promote */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">4) Promote CampDemo → Camp</div>
-          <div className="text-sm text-slate-600 mt-1">Upserts by event_key for the selected sport.</div>
+          <div className="font-semibold">4) Promote CampDemo → Camp</div>
+          <div className="text-sm text-slate-600 mt-1">Upserts by event_key. (Runs for the selected sport.)</div>
 
           <div className="mt-3 flex gap-2">
-            <Button onClick={promoteCampDemoToCamp} disabled={!selectedSportId || promoteWorking || sportsUSAWorking || campsWorking || seedWorking}>
+            <Button onClick={promoteCampDemoToCamp} disabled={!selectedSportId || promoteWorking || sportsUSAWorking || campsWorking}>
               {promoteWorking ? "Running…" : "Run Promotion"}
             </Button>
-
             <Button variant="outline" onClick={() => setLogPromote("")} disabled={promoteWorking}>
               Clear Log
             </Button>
@@ -2196,124 +1887,8 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* Positions */}
-        <Card className="p-4">
-          <div className="font-semibold text-deep-navy">Positions (optional)</div>
-          <div className="text-sm text-slate-600 mt-1">Auto-seed or manage positions per sport.</div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button onClick={seedPositionsForSport} disabled={!selectedSportId || seedWorking || sportsUSAWorking || campsWorking || promoteWorking}>
-              {seedWorking ? "Seeding…" : "Auto-seed positions"}
-            </Button>
-
-            <Button variant="outline" onClick={() => loadPositionsForSport(selectedSportId)} disabled={!selectedSportId || positionsLoading}>
-              {positionsLoading ? "Refreshing…" : "Refresh"}
-            </Button>
-
-            <Button variant="outline" onClick={() => setLogPositions("")} disabled={seedWorking}>
-              Clear Log
-            </Button>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Code</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={positionAddCode} onChange={(e) => setPositionAddCode(e.target.value)} placeholder="e.g., QB" disabled={!selectedSportId} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Name</label>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={positionAddName} onChange={(e) => setPositionAddName(e.target.value)} placeholder="e.g., Quarterback" disabled={!selectedSportId} />
-            </div>
-            <div className="flex items-end">
-              <Button onClick={addPosition} disabled={!selectedSportId || positionAddWorking}>
-                {positionAddWorking ? "Saving…" : "Add / Upsert"}
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <div className="text-xs text-slate-500 mb-2">Positions</div>
-
-            <div className="rounded-lg border border-slate-200 bg-white overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr className="text-left">
-                    <th className="p-2 border-b border-slate-200 w-28">Code</th>
-                    <th className="p-2 border-b border-slate-200">Name</th>
-                    <th className="p-2 border-b border-slate-200 w-44">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {positions.length ? (
-                    positions.map((p) => {
-                      const edit = positionsEdit[p.id] || { code: p.code, name: p.name };
-                      return (
-                        <tr key={p.id} className="border-b border-slate-100">
-                          <td className="p-2">
-                            <input
-                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
-                              value={edit.code ?? ""}
-                              onChange={(e) =>
-                                setPositionsEdit((prev) => ({
-                                  ...prev,
-                                  [p.id]: {
-                                    ...(prev[p.id] || {}),
-                                    code: e.target.value,
-                                    name: prev[p.id] && prev[p.id].name != null ? prev[p.id].name : p.name,
-                                  },
-                                }))
-                              }
-                            />
-                          </td>
-                          <td className="p-2">
-                            <input
-                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
-                              value={edit.name ?? ""}
-                              onChange={(e) =>
-                                setPositionsEdit((prev) => ({
-                                  ...prev,
-                                  [p.id]: {
-                                    ...(prev[p.id] || {}),
-                                    name: e.target.value,
-                                    code: prev[p.id] && prev[p.id].code != null ? prev[p.id].code : p.code,
-                                  },
-                                }))
-                              }
-                            />
-                          </td>
-                          <td className="p-2">
-                            <div className="flex gap-2">
-                              <Button variant="outline" onClick={() => savePositionRow(p.id)} disabled={positionSaveWorking}>
-                                Save
-                              </Button>
-                              <Button variant="outline" onClick={() => deletePosition(p.id)} disabled={positionDeleteWorking === p.id}>
-                                {positionDeleteWorking === p.id ? "Deleting…" : "Delete"}
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan={3} className="p-3 text-slate-500">
-                        {selectedSportId ? (positionsLoading ? "Loading…" : "No positions found for this sport.") : "Select a sport first."}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-4">
-              <div className="text-xs text-slate-500 mb-1">Positions Log</div>
-              <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-56">{logPositions || "—"}</pre>
-            </div>
-          </div>
-        </Card>
-
         <div className="text-center">
-          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={sportsUSAWorking || campsWorking || promoteWorking || seedWorking}>
+          <Button variant="outline" onClick={() => nav(ROUTES.Home)} disabled={sportsUSAWorking || campsWorking || promoteWorking}>
             Go to Home
           </Button>
         </div>
