@@ -1,5 +1,5 @@
 // src/pages/AdminImport.jsx
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "../api/base44Client";
 import { Card } from "../components/ui/card";
@@ -322,49 +322,27 @@ function normalizeSiteRow(r) {
 }
 
 /* ----------------------------
-   ✅ Rate limit handling
+   ✅ Quality helpers
 ----------------------------- */
-function isRateLimitError(err) {
-  const msg = String(err && (err.message || err) ? (err.message || err) : "").toLowerCase();
-  return msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("429");
+function isRegisterName(name) {
+  const t = lc(name);
+  return t === "register";
 }
 
-async function withRetry(fn, opts) {
-  const {
-    tries = 6,
-    baseDelayMs = 600,
-    maxDelayMs = 8000,
-    jitterMs = 250,
-    onRetry,
-    classifyRateLimit = isRateLimitError,
-  } = opts || {};
+function isMissingPrice(price) {
+  return price == null || (typeof price === "number" && !Number.isFinite(price));
+}
 
-  let lastErr = null;
+function getBestPrice(row) {
+  const p = safeNumber(row && row.price);
+  const pmax = safeNumber(row && row.price_max);
+  const pmin = safeNumber(row && row.price_min);
+  return p ?? pmax ?? pmin ?? null;
+}
 
-  for (let attempt = 1; attempt <= tries; attempt++) {
-    try {
-      return await fn();
-    } catch (e) {
-      lastErr = e;
-
-      const isRL = classifyRateLimit(e);
-      // If it's NOT rate limit, still retry a couple times for transient failures
-      const shouldRetry = isRL || attempt < Math.min(3, tries);
-
-      if (!shouldRetry || attempt === tries) break;
-
-      const expo = baseDelayMs * Math.pow(2, attempt - 1);
-      const delay = Math.min(maxDelayMs, expo) + Math.floor(Math.random() * jitterMs);
-
-      if (typeof onRetry === "function") {
-        onRetry({ attempt, tries, delay, isRateLimit: isRL, error: e });
-      }
-
-      await sleep(delay);
-    }
-  }
-
-  throw lastErr;
+function looksRateLimitError(e) {
+  const msg = String(e && e.message ? e.message : e || "");
+  return msg.toLowerCase().includes("rate limit");
 }
 
 export default function AdminImport() {
@@ -396,6 +374,7 @@ export default function AdminImport() {
   const [logPromote, setLogPromote] = useState("");
   const [logPositions, setLogPositions] = useState("");
   const [logCounters, setLogCounters] = useState("");
+  const [logQuality, setLogQuality] = useState("");
 
   function appendLog(which, line) {
     const add = (prev) => (prev ? prev + "\n" + line : line);
@@ -404,6 +383,7 @@ export default function AdminImport() {
     if (which === "promote") setLogPromote(add);
     if (which === "positions") setLogPositions(add);
     if (which === "counters") setLogCounters(add);
+    if (which === "quality") setLogQuality(add);
   }
 
   /* ----------------------------
@@ -414,6 +394,7 @@ export default function AdminImport() {
   const [promoteWorking, setPromoteWorking] = useState(false);
   const [seedWorking, setSeedWorking] = useState(false);
   const [countersWorking, setCountersWorking] = useState(false);
+  const [qualityWorking, setQualityWorking] = useState(false);
   const [resetWorking, setResetWorking] = useState(false);
 
   /* ----------------------------
@@ -427,12 +408,21 @@ export default function AdminImport() {
      Camps ingest controls
   ----------------------------- */
   const [campsDryRun, setCampsDryRun] = useState(true);
-  const [campsMaxSites, setCampsMaxSites] = useState(5);
-  const [campsMaxRegsPerSite, setCampsMaxRegsPerSite] = useState(5);
-  const [campsMaxEvents, setCampsMaxEvents] = useState(25);
+  const [campsMaxSites, setCampsMaxSites] = useState(25);
+  const [campsMaxRegsPerSite, setCampsMaxRegsPerSite] = useState(10);
+  const [campsMaxEvents, setCampsMaxEvents] = useState(300);
+
   const [fastMode, setFastMode] = useState(false);
 
-  // Rerun mode
+  // ✅ batch runner controls (multi-batch in one click)
+  const [runBatchesEnabled, setRunBatchesEnabled] = useState(true);
+  const [maxBatchesPerClick, setMaxBatchesPerClick] = useState(10);
+
+  // ✅ write throttling controls (reduce rate limit)
+  const [writeDelayMs, setWriteDelayMs] = useState(75);
+  const [batchDelayMs, setBatchDelayMs] = useState(400);
+
+  // Rerun mode (crawl-state based)
   const RERUN_MODES = [
     { id: "due", label: "Due only (normal)" },
     { id: "all", label: "Force recrawl ALL active" },
@@ -443,12 +433,22 @@ export default function AdminImport() {
   ];
   const [rerunMode, setRerunMode] = useState("due");
 
+  // ✅ NEW: Quality-targeted modes (CampDemo-driven)
+  const QUALITY_MODES = [
+    { id: "none", label: "No quality filter (use rerun mode only)" },
+    { id: "register", label: 'Only schools with camp_name="Register"' },
+    { id: "missing_price", label: "Only schools with missing price" },
+    { id: "no_camps", label: "Only schools with NO camps" },
+    { id: "any_cleanup", label: "Schools needing cleanup (Register OR missing price OR no camps)" },
+  ];
+  const [qualityMode, setQualityMode] = useState("any_cleanup");
+
   // Test mode
   const [testSiteUrl, setTestSiteUrl] = useState("");
   const [testSchoolId, setTestSchoolId] = useState("");
 
   /* ----------------------------
-     Crawl Counters
+     Crawl Counters (crawl-state)
   ----------------------------- */
   const [siteCounters, setSiteCounters] = useState({
     active: 0,
@@ -509,9 +509,135 @@ export default function AdminImport() {
     }
   }
 
+  /* ----------------------------
+     ✅ Quality Counters (CampDemo-based)
+  ----------------------------- */
+  const [qualityCounters, setQualityCounters] = useState({
+    registerRemaining: 0,
+    missingPriceRemaining: 0,
+    schoolsNoCamps: 0,
+    improvedThisRun: 0, // run-scoped
+    schoolsTargetRegister: 0,
+    schoolsTargetMissingPrice: 0,
+    schoolsTargetAnyCleanup: 0,
+  });
+
+  // Sets used for selecting SchoolSportSite rows
+  const [qualitySets, setQualitySets] = useState({
+    schoolsWithRegister: new Set(),
+    schoolsWithMissingPrice: new Set(),
+    schoolsWithAnyCamps: new Set(),
+  });
+
+  async function refreshQualityCounters() {
+    const nowIso = new Date().toISOString();
+    setQualityWorking(true);
+
+    try {
+      if (!selectedSportId) {
+        appendLog("quality", `[Quality] Select a sport first.`);
+        return;
+      }
+      if (!CampDemoEntity) {
+        appendLog("quality", `[Quality] ERROR: CampDemo entity not available.`);
+        return;
+      }
+      if (!SchoolSportSiteEntity) {
+        appendLog("quality", `[Quality] ERROR: SchoolSportSite entity not available.`);
+        return;
+      }
+
+      // Pull all CampDemo for sport (usually manageable; if it grows huge we can optimize later)
+      const demoRows = await entityList(CampDemoEntity, { sport_id: selectedSportId });
+      const demos = asArray(demoRows);
+
+      let registerRemaining = 0;
+      let missingPriceRemaining = 0;
+
+      const schoolsWithRegister = new Set();
+      const schoolsWithMissingPrice = new Set();
+      const schoolsWithAnyCamps = new Set();
+
+      for (const r of demos) {
+        const schoolId = safeString(r && r.school_id);
+        if (schoolId) schoolsWithAnyCamps.add(schoolId);
+
+        const name = safeString(r && r.camp_name);
+        if (schoolId && name && isRegisterName(name)) {
+          registerRemaining += 1;
+          schoolsWithRegister.add(schoolId);
+        }
+
+        const bestPrice = getBestPrice(r);
+        if (schoolId && isMissingPrice(bestPrice)) {
+          missingPriceRemaining += 1;
+          schoolsWithMissingPrice.add(schoolId);
+        }
+      }
+
+      // Schools with no camps: based on SchoolSportSite active schools not appearing in CampDemo
+      const siteRows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
+      const sites = siteRows.map(normalizeSiteRow);
+
+      const activeSchoolSet = new Set();
+      for (const s of sites) {
+        if (s.school_id) activeSchoolSet.add(s.school_id);
+      }
+
+      let schoolsNoCamps = 0;
+      for (const schoolId of activeSchoolSet) {
+        if (!schoolsWithAnyCamps.has(schoolId)) schoolsNoCamps += 1;
+      }
+
+      const schoolsTargetRegister = schoolsWithRegister.size;
+      const schoolsTargetMissingPrice = schoolsWithMissingPrice.size;
+
+      // any cleanup: register OR missing price OR no camps
+      const schoolsAnyCleanup = new Set();
+      for (const s of schoolsWithRegister) schoolsAnyCleanup.add(s);
+      for (const s of schoolsWithMissingPrice) schoolsAnyCleanup.add(s);
+
+      // add no-camps schools
+      for (const schoolId of activeSchoolSet) {
+        if (!schoolsWithAnyCamps.has(schoolId)) schoolsAnyCleanup.add(schoolId);
+      }
+
+      const schoolsTargetAnyCleanup = schoolsAnyCleanup.size;
+
+      setQualitySets({
+        schoolsWithRegister,
+        schoolsWithMissingPrice,
+        schoolsWithAnyCamps,
+      });
+
+      setQualityCounters((prev) => ({
+        ...prev,
+        registerRemaining,
+        missingPriceRemaining,
+        schoolsNoCamps,
+        schoolsTargetRegister,
+        schoolsTargetMissingPrice,
+        schoolsTargetAnyCleanup,
+      }));
+
+      appendLog(
+        "quality",
+        `[Quality] Refreshed @ ${nowIso} | RegisterRemaining=${registerRemaining} | MissingPriceRemaining=${missingPriceRemaining} | SchoolsNoCamps=${schoolsNoCamps} | Schools(Register)=${schoolsTargetRegister} | Schools(MissingPrice)=${schoolsTargetMissingPrice} | Schools(AnyCleanup)=${schoolsTargetAnyCleanup}`
+      );
+    } catch (e) {
+      appendLog("quality", `[Quality] ERROR: ${String(e && e.message ? e.message : e)}`);
+    } finally {
+      setQualityWorking(false);
+    }
+  }
+
+  /* ----------------------------
+     Next crawl-state refresh triggers
+  ----------------------------- */
   useEffect(() => {
     if (!selectedSportId) return;
     refreshCrawlCounters();
+    refreshQualityCounters();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSportId]);
 
@@ -561,7 +687,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Positions manager (unchanged)
+     Positions manager
   ----------------------------- */
   const [positions, setPositions] = useState([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
@@ -578,6 +704,9 @@ export default function AdminImport() {
     return DEFAULT_POSITION_SEEDS[name] || [];
   }, [selectedSportName]);
 
+  /* ----------------------------
+     Load Sports
+  ----------------------------- */
   async function loadSports() {
     setSportsLoading(true);
 
@@ -633,11 +762,15 @@ export default function AdminImport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // auto-fill SportsUSA directory for sport
   useEffect(() => {
     const guess = SPORTSUSA_DIRECTORY_BY_SPORTNAME[String(selectedSportName || "").trim()];
     if (guess) setSportsUSASiteUrl(guess);
   }, [selectedSportName]);
 
+  /* ----------------------------
+     Positions: load per sport
+  ----------------------------- */
   async function loadPositionsForSport(sportId) {
     if (!PositionEntity || !sportId) {
       setPositions([]);
@@ -921,6 +1054,7 @@ export default function AdminImport() {
       active: true,
       needs_review: false,
       last_seen_at: new Date().toISOString(),
+      // crawl state defaults (safe if table has these cols)
       crawl_status: "ready",
       crawl_error: null,
       last_crawled_at: null,
@@ -1085,6 +1219,7 @@ export default function AdminImport() {
       );
 
       await refreshCrawlCounters();
+      await refreshQualityCounters();
     } catch (e) {
       appendLog("sportsusa", `[SportsUSA] ERROR: ${String(e && e.message ? e.message : e)}`);
     } finally {
@@ -1093,62 +1228,12 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Camps ingest: Rate-limit safe writes
+     Camps ingest: SchoolSportSite -> CampDemo
+     ✅ Updated: quality-targeted site selection + multi-batch runner + improvedThisRun + rate-limit backoff
   ----------------------------- */
 
-  // ✅ In-run cache to avoid extra reads for keys we already touched this run
-  const seenEventKeysRef = useRef(new Set());
-
-  async function upsertCampDemoByEventKey_RateSafe(payload, logPrefix) {
-    if (!CampDemoEntity || !CampDemoEntity.create || !CampDemoEntity.update) {
-      throw new Error("CampDemo entity not available (expected entities.CampDemo).");
-    }
-
-    const key = payload && payload.event_key ? payload.event_key : null;
-    if (!key) throw new Error("Missing event_key for CampDemo upsert");
-
-    // If we already wrote this key in this run, skip the pre-read and just do an update attempt
-    const alreadyTouched = seenEventKeysRef.current.has(key);
-
-    return await withRetry(
-      async () => {
-        // Strategy:
-        // - If already touched: try update via lookup (still needs read to get id) -> we do a minimal read
-        // - Else: do the existing "find then update/create" but wrapped in retry
-        let existing = [];
-        if (!alreadyTouched) {
-          existing = await entityList(CampDemoEntity, { event_key: key });
-        } else {
-          // minimal read (still necessary unless Base44 supports updateByWhere)
-          existing = await entityList(CampDemoEntity, { event_key: key });
-        }
-
-        const arr = asArray(existing);
-        if (arr.length > 0 && arr[0] && arr[0].id) {
-          await CampDemoEntity.update(arr[0].id, payload);
-          seenEventKeysRef.current.add(key);
-          return "updated";
-        }
-
-        await CampDemoEntity.create(payload);
-        seenEventKeysRef.current.add(key);
-        return "created";
-      },
-      {
-        tries: 6,
-        baseDelayMs: 700,
-        maxDelayMs: 9000,
-        jitterMs: 350,
-        onRetry: ({ attempt, tries, delay, isRateLimit }) => {
-          if (isRateLimit) {
-            appendLog("camps", `${logPrefix} Rate limit hit. retry ${attempt}/${tries} in ${delay}ms`);
-          } else {
-            appendLog("camps", `${logPrefix} Transient error. retry ${attempt}/${tries} in ${delay}ms`);
-          }
-        },
-      }
-    );
-  }
+  // run-scoped improvements counter
+  const [improvedThisRun, setImprovedThisRun] = useState(0);
 
   function normalizeAcceptedRowToFlat(a) {
     if (!a) return {};
@@ -1244,20 +1329,183 @@ export default function AdminImport() {
     return arr.filter((s) => isDueNow(s));
   }
 
+  function applyQualityModeToSites(sites) {
+    const arr = asArray(sites);
+    if (qualityMode === "none") return arr;
+
+    const schoolsWithRegister = qualitySets.schoolsWithRegister || new Set();
+    const schoolsWithMissingPrice = qualitySets.schoolsWithMissingPrice || new Set();
+    const schoolsWithAnyCamps = qualitySets.schoolsWithAnyCamps || new Set();
+
+    if (qualityMode === "register") return arr.filter((s) => s.school_id && schoolsWithRegister.has(s.school_id));
+    if (qualityMode === "missing_price") return arr.filter((s) => s.school_id && schoolsWithMissingPrice.has(s.school_id));
+    if (qualityMode === "no_camps") return arr.filter((s) => s.school_id && !schoolsWithAnyCamps.has(s.school_id));
+
+    // any_cleanup
+    return arr.filter((s) => {
+      if (!s.school_id) return false;
+      if (schoolsWithRegister.has(s.school_id)) return true;
+      if (schoolsWithMissingPrice.has(s.school_id)) return true;
+      if (!schoolsWithAnyCamps.has(s.school_id)) return true;
+      return false;
+    });
+  }
+
+  // ✅ upsert with “improvement detection” + rate limit backoff
+  async function upsertCampDemoByEventKeyWithImprove(payload) {
+    if (!CampDemoEntity || !CampDemoEntity.create || !CampDemoEntity.update) {
+      throw new Error("CampDemo entity not available (expected entities.CampDemo).");
+    }
+    const key = payload && payload.event_key ? payload.event_key : null;
+    if (!key) throw new Error("Missing event_key for CampDemo upsert");
+
+    let existing = [];
+    try {
+      existing = await entityList(CampDemoEntity, { event_key: key });
+    } catch {
+      existing = [];
+    }
+
+    const arr = asArray(existing);
+    if (arr.length > 0 && arr[0] && arr[0].id) {
+      const prev = arr[0];
+
+      const prevName = safeString(prev && prev.camp_name);
+      const prevPrice = getBestPrice(prev);
+
+      const nextName = safeString(payload && payload.camp_name);
+      const nextPrice = safeNumber(payload && payload.price) ?? safeNumber(payload && payload.price_max) ?? safeNumber(payload && payload.price_min);
+
+      const improvedName = prevName && isRegisterName(prevName) && nextName && !isRegisterName(nextName);
+      const improvedPrice = isMissingPrice(prevPrice) && !isMissingPrice(nextPrice);
+
+      await CampDemoEntity.update(arr[0].id, payload);
+
+      return { mode: "updated", improved: improvedName || improvedPrice };
+    }
+
+    await CampDemoEntity.create(payload);
+    return { mode: "created", improved: false };
+  }
+
+  async function upsertWithRetry(payload, maxAttempts) {
+    const attempts = Math.max(1, Number(maxAttempts || 5));
+    let lastErr = null;
+
+    for (let a = 1; a <= attempts; a++) {
+      try {
+        return await upsertCampDemoByEventKeyWithImprove(payload);
+      } catch (e) {
+        lastErr = e;
+        if (!looksRateLimitError(e)) throw e;
+
+        // backoff
+        const backoff = Math.min(2500, 250 * a * a);
+        await sleep(backoff);
+      }
+    }
+    throw lastErr || new Error("Rate limit retries exhausted");
+  }
+
+  async function callIngestFunctionOnce({ batch, tUrl, tSchool }) {
+    const sitesToSend = tUrl
+      ? []
+      : batch.map((r) => ({
+          id: r.id,
+          school_id: r.school_id,
+          sport_id: r.sport_id,
+          camp_site_url: r.camp_site_url,
+        }));
+
+    appendLog("camps", `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesToSend.length}, testSiteUrl=${tUrl ? tUrl : "no"})`);
+
+    const res = await fetch("/functions/sportsUSAIngestCamps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sportId: selectedSportId,
+        sportName: selectedSportName,
+        dryRun: !!campsDryRun,
+        maxSites: Number(campsMaxSites || 25),
+        maxRegsPerSite: Number(campsMaxRegsPerSite || 10),
+        maxEvents: Number(campsMaxEvents || 300),
+        fastMode: !!fastMode,
+        sites: sitesToSend,
+        testSiteUrl: tUrl || null,
+        testSchoolId: tSchool || null,
+      }),
+    });
+
+    let data = null;
+    let rawText = null;
+    try {
+      data = await res.json();
+    } catch {
+      rawText = await res.text().catch(() => null);
+    }
+
+    if (!res.ok) {
+      appendLog("camps", `[Camps] Function ERROR (HTTP ${res.status})`);
+      if (data) appendLog("camps", JSON.stringify(data || {}, null, 2));
+      if (!data && rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
+      return { ok: false, data: null };
+    }
+
+    if (!data) {
+      appendLog("camps", `[Camps] WARNING: Response was not JSON. HTTP ${res.status}`);
+      if (rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
+      return { ok: false, data: null };
+    }
+
+    appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
+    appendLog(
+      "camps",
+      `[Camps] Function stats: processedSites=${data && data.stats ? data.stats.processedSites : 0} processedRegs=${data && data.stats ? data.stats.processedRegs : 0} accepted=${data && data.stats ? data.stats.accepted : 0} rejected=${data && data.stats ? data.stats.rejected : 0} errors=${data && data.stats ? data.stats.errors : 0}`
+    );
+
+    if (data && data.debug && data.debug.kpi) {
+      const k = data.debug.kpi;
+      appendLog("camps", `[Camps] Date KPI: listing=${k.datesParsedFromListing || 0} detail=${k.datesParsedFromDetail || 0} missing=${k.datesMissing || 0}`);
+      if (k.namesFromListing != null || k.namesFromDetail != null || k.namesMissing != null) {
+        appendLog(
+          "camps",
+          `[Camps] Name KPI: listing=${k.namesFromListing || 0} detail=${k.namesFromDetail || 0} missing=${k.namesMissing || 0} qualityReject=${k.namesRejectedByQualityGate || 0}`
+        );
+      }
+      if (k.pricesFromDetail != null) {
+        appendLog("camps", `[Camps] Price KPI: detail=${k.pricesFromDetail || 0} missing=${k.pricesMissing || 0}`);
+      }
+    }
+
+    const acceptedRaw = asArray(data && data.accepted ? data.accepted : []);
+    const accepted = acceptedRaw.map((x) => normalizeAcceptedRowToFlat(x));
+
+    appendLog("camps", `[Camps] Accepted events returned: ${accepted.length}`);
+    if (accepted.length) {
+      appendLog("camps", `[Camps] Sample (first 5):`);
+      for (let i = 0; i < Math.min(5, accepted.length); i++) {
+        const a = accepted[i] || {};
+        appendLog("camps", `- camp="${a.camp_name || ""}" start=${a.start_date || "n/a"} price=${a.price != null ? a.price : "n/a"} url=${a.link_url || a.registration_url || ""}`);
+      }
+    }
+
+    return { ok: true, data, accepted };
+  }
+
   async function runSportsUSACampsIngest() {
     const runIso = new Date().toISOString();
     const runId = `run_${runIso.replace(/[:.]/g, "").slice(0, 15)}`;
     setCampsWorking(true);
     setLogCamps("");
-
-    // ✅ reset in-run cache per run
-    seenEventKeysRef.current = new Set();
+    setImprovedThisRun(0);
+    setQualityCounters((prev) => ({ ...prev, improvedThisRun: 0 }));
 
     appendLog("camps", `[Camps] Starting: SportsUSA Camps Ingest (${selectedSportName}) @ ${runIso}`);
     appendLog(
       "camps",
       `[Camps] DryRun=${campsDryRun ? "true" : "false"} | MaxSites=${campsMaxSites} | MaxRegsPerSite=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents} | fastMode=${fastMode ? "true" : "false"}`
     );
+    appendLog("camps", `[Camps] QualityMode=${qualityMode} | RerunMode=${rerunMode} | BatchRunner=${runBatchesEnabled ? "ON" : "OFF"} maxBatches=${maxBatchesPerClick}`);
 
     try {
       if (!selectedSportId) {
@@ -1273,24 +1521,21 @@ export default function AdminImport() {
         return;
       }
 
+      // refresh quality sets first (so selection matches current reality)
+      await refreshQualityCounters();
+
       const siteRowsRaw = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
-      const siteRows = siteRowsRaw.map(normalizeSiteRow);
+      const allSites = siteRowsRaw.map(normalizeSiteRow);
+      appendLog("camps", `[Camps] Loaded SchoolSportSite rows: ${allSites.length} (active)`);
 
-      appendLog("camps", `[Camps] Loaded SchoolSportSite rows: ${siteRows.length} (active)`);
+      // 1) crawl-state selection
+      const rerunFiltered = pickSitesByRerunMode(allSites);
 
-      const filtered = pickSitesByRerunMode(siteRows);
-      appendLog("camps", `[Camps] Rerun mode: ${rerunMode}`);
-      appendLog("camps", `[Camps] Due sites (per mode): ${filtered.length}`);
+      // 2) quality selection
+      const qualityFiltered = applyQualityModeToSites(rerunFiltered);
 
-      const batch = filtered.slice(0, Number(campsMaxSites || 5));
-      appendLog("camps", `[Camps] Batch size: ${batch.length} (MaxSites=${campsMaxSites})`);
-
-      if (!batch.length) {
-        appendLog("camps", `[Camps] Nothing to do for rerunMode="${rerunMode}".`);
-        appendLog("camps", `[Camps] Tip: choose a different rerun mode (e.g., Force recrawl ALL) or Reset crawl state.`);
-        await refreshCrawlCounters();
-        return;
-      }
+      appendLog("camps", `[Camps] Rerun filtered sites: ${rerunFiltered.length}`);
+      appendLog("camps", `[Camps] Quality filtered sites: ${qualityFiltered.length}`);
 
       const tUrl = safeString(testSiteUrl);
       const tSchool = safeString(testSchoolId);
@@ -1300,239 +1545,331 @@ export default function AdminImport() {
         return;
       }
 
-      const sitesToSend = tUrl
-        ? []
-        : batch.map((r) => ({
-            id: r.id,
-            school_id: r.school_id,
-            sport_id: r.sport_id,
-            camp_site_url: r.camp_site_url,
-          }));
-
-      appendLog("camps", `[Camps] Calling /functions/sportsUSAIngestCamps (payload: sites=${sitesToSend.length}, testSiteUrl=${tUrl ? tUrl : "no"})`);
-
-      const res = await fetch("/functions/sportsUSAIngestCamps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sportId: selectedSportId,
-          sportName: selectedSportName,
-          dryRun: !!campsDryRun,
-          maxSites: Number(campsMaxSites || 5),
-          maxRegsPerSite: Number(campsMaxRegsPerSite || 5),
-          maxEvents: Number(campsMaxEvents || 25),
-          fastMode: !!fastMode,
-          sites: sitesToSend,
-          testSiteUrl: tUrl || null,
-          testSchoolId: tSchool || null,
-        }),
-      });
-
-      let data = null;
-      let rawText = null;
-
-      try {
-        data = await res.json();
-      } catch {
-        rawText = await res.text().catch(() => null);
-      }
-
-      if (!res.ok) {
-        appendLog("camps", `[Camps] Function ERROR (HTTP ${res.status})`);
-        if (data) appendLog("camps", JSON.stringify(data || {}, null, 2));
-        if (!data && rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
-        return;
-      }
-
-      if (!data) {
-        appendLog("camps", `[Camps] WARNING: Response was not JSON. HTTP ${res.status}`);
-        if (rawText) appendLog("camps", `[Camps] Raw response (first 500 chars): ${truncate(rawText, 500)}`);
-        return;
-      }
-
-      appendLog("camps", `[Camps] Function version: ${data && data.version ? data.version : "MISSING"}`);
-      appendLog(
-        "camps",
-        `[Camps] Function stats: processedSites=${data && data.stats ? data.stats.processedSites : 0} processedRegs=${data && data.stats ? data.stats.processedRegs : 0} accepted=${data && data.stats ? data.stats.accepted : 0} rejected=${data && data.stats ? data.stats.rejected : 0} errors=${data && data.stats ? data.stats.errors : 0}`
-      );
-
-      if (data && data.debug && data.debug.kpi) {
-        const k = data.debug.kpi;
-        appendLog("camps", `[Camps] Date KPI: listing=${k.datesParsedFromListing || 0} detail=${k.datesParsedFromDetail || 0} missing=${k.datesMissing || 0}`);
-        if (k.namesFromListing != null || k.namesFromDetail != null || k.namesMissing != null) {
-          appendLog(
-            "camps",
-            `[Camps] Name KPI: listing=${k.namesFromListing || 0} detail=${k.namesFromDetail || 0} missing=${k.namesMissing || 0} qualityReject=${k.namesRejectedByQualityGate || 0}`
-          );
-        }
-        if (k.pricesFromDetail != null) {
-          appendLog("camps", `[Camps] Price KPI: detail=${k.pricesFromDetail || 0} missing=${k.pricesMissing || 0}`);
-        }
-      }
-
-      const acceptedRaw = asArray(data && data.accepted ? data.accepted : []);
-      const accepted = acceptedRaw.map((x) => normalizeAcceptedRowToFlat(x));
-
-      appendLog("camps", `[Camps] Accepted events returned: ${accepted.length}`);
-      if (accepted.length) {
-        appendLog("camps", `[Camps] Sample (first 5):`);
-        for (let i = 0; i < Math.min(5, accepted.length); i++) {
-          const a = accepted[i] || {};
-          appendLog("camps", `- camp="${a.camp_name || ""}" start=${a.start_date || "n/a"} price=${a.price != null ? a.price : "n/a"} url=${a.link_url || a.registration_url || ""}`);
-        }
-      }
-
-      // Crawl-state update
+      // Single call (no batch loop) if test mode is set
       if (tUrl) {
-        appendLog("camps", `[Camps] Test mode: not updating SchoolSportSite crawl-state (no site ids).`);
-      } else if (campsDryRun) {
-        appendLog("camps", `[Camps] DryRun=true: would update crawl-state for batch sites: ${batch.length} (skipped)`);
-      } else {
-        const outcome = accepted.length ? "ok" : "no_events";
-        const patch = {
-          crawl_status: outcome,
-          crawl_error: null,
-          last_crawled_at: runIso,
-          next_crawl_at: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
-          last_crawl_run_id: runId,
-          last_seen_at: runIso,
-        };
-        const ids = batch.map((b) => b.id).filter(Boolean);
-        const upd = await updateCrawlStateForSites(ids, patch);
-        appendLog("camps", `[Camps] Updated crawl-state for batch sites: ${upd.updated} (${outcome}) errors=${upd.errors}`);
-      }
+        const { ok, accepted } = await callIngestFunctionOnce({ batch: [], tUrl, tSchool });
+        if (!ok) return;
 
-      if (campsDryRun) {
-        appendLog("camps", "[Camps] DryRun=true: no CampDemo writes performed.");
+        if (!campsDryRun && accepted && accepted.length) {
+          let created = 0;
+          let updated = 0;
+          let skipped = 0;
+          let errors = 0;
+          let improved = 0;
+
+          for (let i = 0; i < accepted.length; i++) {
+            const a = accepted[i] || {};
+            const school_id = safeString(a.school_id) || safeString(tSchool);
+            const sport_id = selectedSportId;
+            const camp_name = safeString(a.camp_name);
+            const start_date = toISODate(a.start_date);
+            const end_date = toISODate(a.end_date);
+            const link_url = safeString(a.link_url) || safeString(a.registration_url) || safeString(a.source_url);
+
+            if (!school_id || !sport_id || !camp_name || !start_date) {
+              skipped += 1;
+              continue;
+            }
+
+            const season_year = safeNumber(a.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
+            if (season_year == null) {
+              skipped += 1;
+              continue;
+            }
+
+            const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
+            const source_platform = safeString(a.source_platform) || "sportsusa";
+            const source_url = safeString(a.source_url) || link_url;
+
+            const event_key =
+              safeString(a.event_key) ||
+              buildEventKey({
+                source_platform,
+                program_id,
+                start_date,
+                link_url,
+                source_url,
+              });
+
+            const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
+
+            const content_hash =
+              safeString(a.content_hash) ||
+              simpleHash({
+                school_id,
+                sport_id,
+                camp_name,
+                start_date,
+                end_date,
+                link_url,
+                source_platform,
+                program_id,
+                event_dates_raw: safeString(a.event_dates_raw),
+                notes: safeString(a.notes),
+                price: price_best,
+                price_min: safeNumber(a.price_min),
+                price_max: safeNumber(a.price_max),
+                price_raw: safeString(a.price_raw),
+              });
+
+            const payload = {
+              school_id,
+              sport_id,
+              camp_name,
+              start_date,
+              end_date: end_date || null,
+              city: safeString(a.city) || null,
+              state: safeString(a.state) || null,
+              position_ids: normalizeStringArray(a.position_ids),
+              price: price_best,
+              link_url: link_url || null,
+              notes: safeString(a.notes) || null,
+              season_year,
+              program_id,
+              event_key,
+              source_platform,
+              source_url: source_url || null,
+              last_seen_at: runIso,
+              content_hash,
+              event_dates_raw: safeString(a.event_dates_raw) || null,
+              grades_raw: safeString(a.grades_raw) || null,
+              register_by_raw: safeString(a.register_by_raw) || null,
+              price_raw: safeString(a.price_raw) || null,
+              price_min: safeNumber(a.price_min),
+              price_max: safeNumber(a.price_max),
+              sections_json: safeObject(a.sections_json) || null,
+            };
+
+            try {
+              const r = await upsertWithRetry(payload, 5);
+              if (r.mode === "created") created += 1;
+              if (r.mode === "updated") updated += 1;
+              if (r.improved) improved += 1;
+            } catch (e) {
+              errors += 1;
+              appendLog("camps", `[Camps] WRITE ERROR #${i + 1}: ${String(e && e.message ? e.message : e)}`);
+            }
+
+            if ((i + 1) % 25 === 0) appendLog("camps", `[Camps] Write progress: ${i + 1}/${accepted.length}`);
+            await sleep(Number(writeDelayMs || 0));
+          }
+
+          setImprovedThisRun(improved);
+          setQualityCounters((prev) => ({ ...prev, improvedThisRun: improved }));
+
+          appendLog("camps", `[Camps] CampDemo writes done. created=${created} updated=${updated} skipped=${skipped} errors=${errors} improved=${improved}`);
+        }
+
+        await refreshQualityCounters();
         await refreshCrawlCounters();
         return;
       }
 
-      if (!accepted.length) {
-        appendLog("camps", "[Camps] No accepted events returned from function.");
+      // ---- Batch runner mode ----
+      if (!qualityFiltered.length) {
+        appendLog("camps", `[Camps] Nothing to do for current filters.`);
+        appendLog("camps", `[Camps] Tip: change Quality Mode or Rerun Mode, or Refresh Quality Counters.`);
+        await refreshQualityCounters();
         await refreshCrawlCounters();
         return;
       }
 
-      let created = 0;
-      let updated = 0;
-      let skipped = 0;
-      let errors = 0;
+      const maxBatches = runBatchesEnabled ? Math.max(1, Number(maxBatchesPerClick || 1)) : 1;
 
-      // ✅ batch-level rate limit signal
-      let rateLimitHits = 0;
+      let totalCreated = 0;
+      let totalUpdated = 0;
+      let totalSkipped = 0;
+      let totalErrors = 0;
+      let totalImproved = 0;
 
-      for (let i = 0; i < accepted.length; i++) {
-        const a = accepted[i] || {};
+      let remainingSites = [...qualityFiltered];
 
-        const school_id = safeString(a.school_id) || (tUrl ? safeString(tSchool) : null);
-        const sport_id = selectedSportId;
-        const camp_name = safeString(a.camp_name);
+      for (let batchIndex = 1; batchIndex <= maxBatches; batchIndex++) {
+        // take next batch chunk
+        const batch = remainingSites.slice(0, Number(campsMaxSites || 25));
+        remainingSites = remainingSites.slice(batch.length);
 
-        const start_date = toISODate(a.start_date);
-        const end_date = toISODate(a.end_date);
+        if (!batch.length) break;
 
-        const link_url = safeString(a.link_url) || safeString(a.registration_url) || safeString(a.source_url);
+        appendLog("camps", `\n[Camps] ---- Batch ${batchIndex} ----`);
+        appendLog("camps", `[Camps] Batch size=${batch.length} | remainingAfterThis=${remainingSites.length}`);
 
-        if (!school_id || !sport_id || !camp_name || !start_date) {
-          skipped += 1;
+        const { ok, accepted } = await callIngestFunctionOnce({ batch, tUrl: null, tSchool: null });
+        if (!ok) {
+          appendLog("camps", `[Camps] Stopping: function call failed in Batch ${batchIndex}.`);
+          break;
+        }
+
+        // Update crawl-state for batch sites
+        if (!campsDryRun) {
+          const outcome = accepted && accepted.length ? "ok" : "no_events";
+          const patch = {
+            crawl_status: outcome,
+            crawl_error: null,
+            last_crawled_at: runIso,
+            next_crawl_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // weekly revisit default
+            last_crawl_run_id: runId,
+            last_seen_at: runIso,
+          };
+          const ids = batch.map((b) => b.id).filter(Boolean);
+          const upd = await updateCrawlStateForSites(ids, patch);
+          appendLog("camps", `[Camps] Updated crawl-state for batch sites: ${upd.updated} (${outcome}) errors=${upd.errors}`);
+        } else {
+          appendLog("camps", `[Camps] DryRun=true: no crawl-state update performed.`);
+        }
+
+        if (campsDryRun) {
+          appendLog("camps", `[Camps] DryRun=true: no CampDemo writes performed for Batch ${batchIndex}.`);
+          await sleep(Number(batchDelayMs || 0));
           continue;
         }
 
-        const season_year = safeNumber(a.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
-        if (season_year == null) {
-          skipped += 1;
+        if (!accepted || !accepted.length) {
+          appendLog("camps", `[Camps] No accepted events returned in Batch ${batchIndex}.`);
+          await sleep(Number(batchDelayMs || 0));
           continue;
         }
 
-        const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
+        let created = 0;
+        let updated = 0;
+        let skipped = 0;
+        let errors = 0;
+        let improved = 0;
 
-        const source_platform = safeString(a.source_platform) || "sportsusa";
-        const source_url = safeString(a.source_url) || link_url;
+        for (let i = 0; i < accepted.length; i++) {
+          const a = accepted[i] || {};
 
-        const event_key =
-          safeString(a.event_key) ||
-          buildEventKey({
-            source_platform,
-            program_id,
-            start_date,
-            link_url,
-            source_url,
-          });
+          const school_id = safeString(a.school_id);
+          const sport_id = selectedSportId;
+          const camp_name = safeString(a.camp_name);
 
-        const content_hash =
-          safeString(a.content_hash) ||
-          simpleHash({
+          const start_date = toISODate(a.start_date);
+          const end_date = toISODate(a.end_date);
+
+          const link_url = safeString(a.link_url) || safeString(a.registration_url) || safeString(a.source_url);
+
+          if (!school_id || !sport_id || !camp_name || !start_date) {
+            skipped += 1;
+            continue;
+          }
+
+          const season_year = safeNumber(a.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
+          if (season_year == null) {
+            skipped += 1;
+            continue;
+          }
+
+          const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
+
+          const source_platform = safeString(a.source_platform) || "sportsusa";
+          const source_url = safeString(a.source_url) || link_url;
+
+          const event_key =
+            safeString(a.event_key) ||
+            buildEventKey({
+              source_platform,
+              program_id,
+              start_date,
+              link_url,
+              source_url,
+            });
+
+          const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
+
+          const content_hash =
+            safeString(a.content_hash) ||
+            simpleHash({
+              school_id,
+              sport_id,
+              camp_name,
+              start_date,
+              end_date,
+              link_url,
+              source_platform,
+              program_id,
+              event_dates_raw: safeString(a.event_dates_raw),
+              notes: safeString(a.notes),
+              price: price_best,
+              price_min: safeNumber(a.price_min),
+              price_max: safeNumber(a.price_max),
+              price_raw: safeString(a.price_raw),
+            });
+
+          const payload = {
             school_id,
             sport_id,
             camp_name,
             start_date,
-            end_date,
-            link_url,
-            source_platform,
+            end_date: end_date || null,
+            city: safeString(a.city) || null,
+            state: safeString(a.state) || null,
+            position_ids: normalizeStringArray(a.position_ids),
+            price: price_best,
+            link_url: link_url || null,
+            notes: safeString(a.notes) || null,
+            season_year,
             program_id,
-            event_dates_raw: safeString(a.event_dates_raw),
-            notes: safeString(a.notes),
-            price: safeNumber(a.price),
+            event_key,
+            source_platform,
+            source_url: source_url || null,
+            last_seen_at: runIso,
+            content_hash,
+            event_dates_raw: safeString(a.event_dates_raw) || null,
+            grades_raw: safeString(a.grades_raw) || null,
+            register_by_raw: safeString(a.register_by_raw) || null,
+            price_raw: safeString(a.price_raw) || null,
             price_min: safeNumber(a.price_min),
             price_max: safeNumber(a.price_max),
-            price_raw: safeString(a.price_raw),
-          });
+            sections_json: safeObject(a.sections_json) || null,
+          };
 
-        const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
+          try {
+            const r = await upsertWithRetry(payload, 5);
+            if (r.mode === "created") created += 1;
+            if (r.mode === "updated") updated += 1;
+            if (r.improved) improved += 1;
+          } catch (e) {
+            errors += 1;
+            appendLog("camps", `[Camps] WRITE ERROR #${i + 1}: ${String(e && e.message ? e.message : e)}`);
+          }
 
-        const payload = {
-          school_id,
-          sport_id,
-          camp_name,
-          start_date,
-          end_date: end_date || null,
-          city: safeString(a.city) || null,
-          state: safeString(a.state) || null,
-          position_ids: normalizeStringArray(a.position_ids),
-          price: price_best,
-          link_url: link_url || null,
-          notes: safeString(a.notes) || null,
-          season_year,
-          program_id,
-          event_key,
-          source_platform,
-          source_url: source_url || null,
-          last_seen_at: runIso,
-          content_hash,
-          event_dates_raw: safeString(a.event_dates_raw) || null,
-          grades_raw: safeString(a.grades_raw) || null,
-          register_by_raw: safeString(a.register_by_raw) || null,
-          price_raw: safeString(a.price_raw) || null,
-          price_min: safeNumber(a.price_min),
-          price_max: safeNumber(a.price_max),
-          sections_json: safeObject(a.sections_json) || null,
-        };
-
-        try {
-          const result = await upsertCampDemoByEventKey_RateSafe(payload, `[Camps] WRITE #${i + 1}/${accepted.length}:`);
-          if (result === "created") created += 1;
-          if (result === "updated") updated += 1;
-        } catch (e) {
-          errors += 1;
-          if (isRateLimitError(e)) rateLimitHits += 1;
-          appendLog("camps", `[Camps] WRITE ERROR #${i + 1}: ${String(e && e.message ? e.message : e)}`);
+          if ((i + 1) % 25 === 0) appendLog("camps", `[Camps] Write progress: ${i + 1}/${accepted.length}`);
+          await sleep(Number(writeDelayMs || 0));
         }
 
-        // ✅ If we’re hitting rate limit repeatedly, cool down the batch
-        if (rateLimitHits > 0 && rateLimitHits % 3 === 0) {
-          appendLog("camps", `[Camps] Cooldown: pausing 5000ms after ${rateLimitHits} rate-limit hits…`);
-          await sleep(5000);
+        totalCreated += created;
+        totalUpdated += updated;
+        totalSkipped += skipped;
+        totalErrors += errors;
+        totalImproved += improved;
+
+        setImprovedThisRun((prev) => prev + improved);
+        setQualityCounters((prev) => ({ ...prev, improvedThisRun: (prev.improvedThisRun || 0) + improved }));
+
+        appendLog(
+          "camps",
+          `[Camps] Batch ${batchIndex} writes done. created=${created} updated=${updated} skipped=${skipped} errors=${errors} improved=${improved}`
+        );
+
+        // Refresh quality counters after each batch so your “stop” indicators move
+        await refreshQualityCounters();
+
+        // Stop early if you’re in quality cleanup and there’s nothing left
+        if (qualityMode !== "none") {
+          const qc = qualityCounters;
+          // (qualityCounters state may lag a render; logs are the primary indicator)
+          appendLog("camps", `[Camps] Tip: watch Quality Counters log for RegisterRemaining / MissingPriceRemaining trending down.`);
         }
 
-        if ((i + 1) % 25 === 0) appendLog("camps", `[Camps] Write progress: ${i + 1}/${accepted.length}`);
-
-        // ✅ slow base cadence (was 20ms)
-        await sleep(175);
+        await sleep(Number(batchDelayMs || 0));
       }
 
-      appendLog("camps", `[Camps] CampDemo writes done. created=${created} updated=${updated} skipped=${skipped} errors=${errors}`);
+      appendLog(
+        "camps",
+        `\n[Camps] DONE (this click). totals: created=${totalCreated} updated=${totalUpdated} skipped=${totalSkipped} errors=${totalErrors} improved=${totalImproved}`
+      );
 
+      await refreshQualityCounters();
       await refreshCrawlCounters();
     } catch (e) {
       appendLog("camps", `[Camps] ERROR: ${String(e && e.message ? e.message : e)}`);
@@ -1542,7 +1879,7 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     Promote CampDemo -> Camp (unchanged from your version)
+     Promote CampDemo -> Camp (left as-is)
   ----------------------------- */
   async function upsertCampByEventKey(payload) {
     if (!CampEntity || !CampEntity.create || !CampEntity.update) {
@@ -1716,11 +2053,11 @@ export default function AdminImport() {
   }
 
   /* ----------------------------
-     UI (same as your version)
+     UI
   ----------------------------- */
   return (
     <div className="min-h-screen bg-slate-50 p-4">
-      <div className="max-w-4xl mx-auto space-y-4">
+      <div className="max-w-5xl mx-auto space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -1769,16 +2106,21 @@ export default function AdminImport() {
                 {sportsLoading ? "Refreshing…" : "Refresh Sports"}
               </Button>
               <Button variant="outline" onClick={() => refreshCrawlCounters()} disabled={countersWorking || !selectedSportId}>
-                {countersWorking ? "Refreshing…" : "Refresh Counters"}
+                {countersWorking ? "Refreshing…" : "Refresh Crawl Counters"}
+              </Button>
+              <Button variant="outline" onClick={() => refreshQualityCounters()} disabled={qualityWorking || !selectedSportId}>
+                {qualityWorking ? "Refreshing…" : "Refresh Quality Counters"}
               </Button>
             </div>
           </div>
         </Card>
 
-        {/* Counters Panel */}
+        {/* Crawl Counters Panel */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">Crawl Counters</div>
-          <div className="text-sm text-slate-600 mt-1">This is your “countdown.” It tells you what’s left and what reruns will do.</div>
+          <div className="font-semibold text-deep-navy">Crawl Counters (site state)</div>
+          <div className="text-sm text-slate-600 mt-1">
+            These show crawl status. They do <b>not</b> tell you if Register/prices got fixed.
+          </div>
 
           <div className="mt-3 grid grid-cols-2 md:grid-cols-7 gap-2 text-sm">
             {[
@@ -1802,82 +2144,98 @@ export default function AdminImport() {
               {resetWorking ? "Resetting…" : "Reset crawl state (READY for all)"}
             </Button>
             <Button variant="outline" onClick={() => setLogCounters("")} disabled={countersWorking}>
-              Clear Counters Log
+              Clear Crawl Log
             </Button>
           </div>
 
           <div className="mt-3">
-            <div className="text-xs text-slate-500 mb-1">Counters Log</div>
+            <div className="text-xs text-slate-500 mb-1">Crawl Counters Log</div>
             <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-56">{logCounters || "—"}</pre>
           </div>
         </Card>
 
-        {/* Seed Schools */}
+        {/* ✅ Quality Counters Panel */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">2) Seed Schools from SportsUSA (School + SchoolSportSite)</div>
-          <div className="text-sm text-slate-600 mt-1">Pulls the sport directory and seeds universities + their per-sport camp site URL.</div>
+          <div className="font-semibold text-deep-navy">Quality Counters (your STOP signals)</div>
+          <div className="text-sm text-slate-600 mt-1">
+            These are what you use to know when to stop cleanup. They should trend down as data improves.
+          </div>
 
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">SportsUSA directory URL</label>
-              <input
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={sportsUSASiteUrl}
-                onChange={(e) => setSportsUSASiteUrl(e.target.value)}
-                placeholder="https://www.footballcampsusa.com/"
-                disabled={sportsUSAWorking}
-              />
-              <div className="mt-1 text-[11px] text-slate-500">Default auto-fills based on sport. You can override if needed.</div>
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Register names remaining</div>
+              <div className="font-semibold">{qualityCounters.registerRemaining}</div>
             </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Missing price remaining</div>
+              <div className="font-semibold">{qualityCounters.missingPriceRemaining}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Schools with no camps</div>
+              <div className="font-semibold">{qualityCounters.schoolsNoCamps}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Improved this run</div>
+              <div className="font-semibold">{qualityCounters.improvedThisRun || 0}</div>
+            </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Limit</label>
-                <input
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  type="number"
-                  value={sportsUSALimit}
-                  onChange={(e) => setSportsUSALimit(Number(e.target.value || 0))}
-                  min={50}
-                  max={2000}
-                  disabled={sportsUSAWorking}
-                />
-              </div>
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={sportsUSADryRun} onChange={(e) => setSportsUSADryRun(e.target.checked)} disabled={sportsUSAWorking} />
-                  Dry Run
-                </label>
-              </div>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Schools needing Register fix</div>
+              <div className="font-semibold">{qualityCounters.schoolsTargetRegister}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Schools needing price fix</div>
+              <div className="font-semibold">{qualityCounters.schoolsTargetMissingPrice}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">Schools needing any cleanup</div>
+              <div className="font-semibold">{qualityCounters.schoolsTargetAnyCleanup}</div>
             </div>
           </div>
 
           <div className="mt-3 flex gap-2">
-            <Button onClick={runSportsUSASeedSchools} disabled={!selectedSportId || sportsUSAWorking || campsWorking || promoteWorking || seedWorking}>
-              {sportsUSAWorking ? "Running…" : sportsUSADryRun ? "Run Seed (Dry Run)" : "Run Seed → Write School + Site"}
-            </Button>
-
-            <Button variant="outline" onClick={() => setLogSportsUSA("")} disabled={sportsUSAWorking}>
-              Clear Log
+            <Button variant="outline" onClick={() => setLogQuality("")} disabled={qualityWorking}>
+              Clear Quality Log
             </Button>
           </div>
 
-          <div className="mt-4">
-            <div className="text-xs text-slate-500 mb-1">SportsUSA Log</div>
-            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{logSportsUSA || "—"}</pre>
+          <div className="mt-3">
+            <div className="text-xs text-slate-500 mb-1">Quality Log</div>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-56">{logQuality || "—"}</pre>
           </div>
         </Card>
 
         {/* Camps ingest */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">3) Ingest Camps (SchoolSportSite → CampDemo)</div>
+          <div className="font-semibold text-deep-navy">2) Ingest Camps (SchoolSportSite → CampDemo)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Crawls per-school camp sites and discovers registration pages. Writes accepted occurrences into <b>CampDemo</b>.
+            Batches through sites based on your <b>quality filters</b> so you’re not blindly rerunning.
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Rerun mode</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Quality Mode (cleanup targeting)</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                value={qualityMode}
+                onChange={(e) => setQualityMode(e.target.value)}
+                disabled={campsWorking}
+              >
+                {QUALITY_MODES.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-1 text-[11px] text-slate-500">
+                Use this to run only schools that still need cleanup. This is your “smart batch.”
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Rerun mode (crawl-state)</label>
               <select
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
                 value={rerunMode}
@@ -1891,20 +2249,20 @@ export default function AdminImport() {
                 ))}
               </select>
               <div className="mt-1 text-[11px] text-slate-500">
-                If you see <b>Due sites: 0</b>, you’re “done” for that mode. Switch mode or reset crawl-state.
+                For cleanup: most people use <b>Recrawl OK only</b> + QualityMode=AnyCleanup.
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Max sites</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Max sites/batch</label>
                 <input
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   type="number"
                   value={campsMaxSites}
                   onChange={(e) => setCampsMaxSites(Number(e.target.value || 0))}
                   min={1}
-                  max={500}
+                  max={200}
                   disabled={campsWorking}
                 />
               </div>
@@ -1916,7 +2274,9 @@ export default function AdminImport() {
                 </label>
               </div>
             </div>
+          </div>
 
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Max regs/site</label>
@@ -1932,17 +2292,45 @@ export default function AdminImport() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Max events</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Max events/call</label>
                 <input
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   type="number"
                   value={campsMaxEvents}
                   onChange={(e) => setCampsMaxEvents(Number(e.target.value || 0))}
-                  min={5}
-                  max={5000}
+                  min={25}
+                  max={2000}
                   disabled={campsWorking}
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Write delay (ms)</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={writeDelayMs}
+                onChange={(e) => setWriteDelayMs(Number(e.target.value || 0))}
+                min={0}
+                max={1000}
+                disabled={campsWorking}
+              />
+              <div className="mt-1 text-[11px] text-slate-500">Raise this if you see rate limits. Try 100–150ms.</div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Batch delay (ms)</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={batchDelayMs}
+                onChange={(e) => setBatchDelayMs(Number(e.target.value || 0))}
+                min={0}
+                max={5000}
+                disabled={campsWorking}
+              />
+              <div className="mt-1 text-[11px] text-slate-500">Pause between batches.</div>
             </div>
           </div>
 
@@ -1952,7 +2340,36 @@ export default function AdminImport() {
               fastMode (fewer detail fetches; faster but can miss deep fields)
             </label>
             <div className="mt-1 text-[11px] text-slate-500">
-              Recommendation: keep <b>fastMode OFF</b> for high-quality ingest. Use smaller MaxSites.
+              For cleanup: keep <b>fastMode OFF</b>.
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={runBatchesEnabled}
+                onChange={(e) => setRunBatchesEnabled(e.target.checked)}
+                disabled={campsWorking}
+              />
+              <div className="text-sm text-slate-700">Run multiple batches per click</div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Max batches per click</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={maxBatchesPerClick}
+                onChange={(e) => setMaxBatchesPerClick(Number(e.target.value || 0))}
+                min={1}
+                max={200}
+                disabled={campsWorking || !runBatchesEnabled}
+              />
+            </div>
+
+            <div className="text-[11px] text-slate-500 flex items-end">
+              Suggested cleanup run: MaxSites=25, MaxEvents=300, WriteDelay=100ms, Batches=10.
             </div>
           </div>
 
@@ -1993,13 +2410,13 @@ export default function AdminImport() {
 
           <div className="mt-4">
             <div className="text-xs text-slate-500 mb-1">Camps Log</div>
-            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-80">{logCamps || "—"}</pre>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-[28rem]">{logCamps || "—"}</pre>
           </div>
         </Card>
 
         {/* Promote */}
         <Card className="p-4">
-          <div className="font-semibold text-deep-navy">4) Promote CampDemo → Camp</div>
+          <div className="font-semibold text-deep-navy">3) Promote CampDemo → Camp</div>
           <div className="text-sm text-slate-600 mt-1">Upserts by <b>event_key</b>. (Runs for the currently selected sport.)</div>
 
           <div className="mt-3 flex gap-2">
@@ -2018,7 +2435,7 @@ export default function AdminImport() {
           </div>
         </Card>
 
-        {/* Positions (optional) */}
+        {/* Positions */}
         <Card className="p-4">
           <div className="font-semibold text-deep-navy">Positions (optional)</div>
           <div className="text-sm text-slate-600 mt-1">Auto-seed a default set, or manually add/edit/delete positions per sport.</div>
