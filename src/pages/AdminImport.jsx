@@ -1,593 +1,527 @@
 // src/pages/AdminImport.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+
 import { base44 } from "../api/base44Client";
 
-/* =========================================================
-   ErrorBoundary (so blank page becomes visible error)
-========================================================= */
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null, info: null };
-  }
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-  componentDidCatch(error, info) {
-    this.setState({ info });
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
-          <h2 style={{ margin: "0 0 8px 0" }}>AdminImport crashed</h2>
-          <div style={{ color: "#b91c1c", whiteSpace: "pre-wrap" }}>
-            {String(this.state.error?.message || this.state.error || "Unknown error")}
-          </div>
-          <details style={{ marginTop: 12 }}>
-            <summary>Stack / component info</summary>
-            <pre style={{ whiteSpace: "pre-wrap" }}>{String(this.state.error?.stack || "")}</pre>
-            <pre style={{ whiteSpace: "pre-wrap" }}>{String(this.state.info?.componentStack || "")}</pre>
-          </details>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
+function nowIso() {
+  return new Date().toISOString();
 }
 
-/* =========================================================
-   Helpers
-========================================================= */
 function safeString(x) {
-  if (x == null) return null;
-  const s = String(x).trim();
-  return s ? s : null;
-}
-function lc(x) {
-  return String(x || "").toLowerCase().trim();
-}
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
-}
-function safeNumber(x) {
-  if (x == null) return null;
-  if (typeof x === "string" && !x.trim()) return null;
-  const n = Number(x);
-  return Number.isFinite(n) ? n : null;
-}
-function toISODate(x) {
-  if (!x) return null;
-  const s = String(x).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (mdy) {
-    const mm = String(mdy[1]).padStart(2, "0");
-    const dd = String(mdy[2]).padStart(2, "0");
-    return `${mdy[3]}-${mm}-${dd}`;
-  }
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return null;
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  if (x === null || x === undefined) return "";
+  return String(x);
 }
 
-// Bad name rules (align with your ingest cleanup intent)
-function isMoneyLikeName(name) {
-  const t = safeString(name);
-  if (!t) return false;
-  return /^\s*\$\s*\d/.test(t) || /^\s*\d+\.\d{2}\s*$/.test(t);
-}
-function isBadName(name) {
-  const t = lc(name);
-  if (!t) return true;
-  if (t === "register") return true;
-  if (t === "details") return true;
-  if (t === "view details") return true;
-  if (t === "view detail") return true;
-  if (t === "register now") return true;
-  if (t === "camp") return true;
-  if (isMoneyLikeName(name)) return true;
-  return false;
-}
-function isMissingPriceRow(r) {
-  const p = safeNumber(r?.price);
-  const pmin = safeNumber(r?.price_min);
-  const pmax = safeNumber(r?.price_max);
-
-  const pZeroOrNull = p == null || p === 0;
-  const minZeroOrNull = pmin == null || pmin === 0;
-  const maxZeroOrNull = pmax == null || pmax === 0;
-
-  return pZeroOrNull && minZeroOrNull && maxZeroOrNull;
-}
-
-// Base44 entity list helper (works across common SDK shapes)
-async function entityList(Entity, whereObj) {
-  const where = whereObj || {};
-  if (!Entity) throw new Error("Entity is null/undefined.");
-
-  if (typeof Entity.filter === "function") return asArray(await Entity.filter(where));
-  if (typeof Entity.list === "function") {
-    try {
-      return asArray(await Entity.list({ where }));
-    } catch {
-      return asArray(await Entity.list(where));
-    }
-  }
-  if (typeof Entity.findMany === "function") {
-    try {
-      return asArray(await Entity.findMany({ where }));
-    } catch {
-      return asArray(await Entity.findMany(where));
-    }
-  }
-  if (typeof Entity.all === "function") return asArray(await Entity.all());
-
-  throw new Error("Entity has no supported list method (filter/list/findMany/all).");
-}
-
-function normalizeSportRow(r) {
-  return {
-    id: r?.id ? String(r.id) : "",
-    name: safeString(r?.sport_name || r?.name || r?.sportName) || "",
-    active:
-      typeof r?.active === "boolean"
-        ? r.active
-        : typeof r?.is_active === "boolean"
-          ? r.is_active
-          : true,
-  };
-}
-
-function normalizeCampDemoRow(r) {
-  return {
-    id: r?.id ? String(r.id) : "",
-    sport_id: safeString(r?.sport_id),
-    camp_name: safeString(r?.camp_name),
-    start_date: safeString(r?.start_date),
-    end_date: safeString(r?.end_date),
-    city: safeString(r?.city),
-    state: safeString(r?.state),
-    price: safeNumber(r?.price),
-    price_min: safeNumber(r?.price_min),
-    price_max: safeNumber(r?.price_max),
-    link_url: safeString(r?.link_url),
-    source_url: safeString(r?.source_url),
-    notes: safeString(r?.notes),
-  };
-}
-
-/* =========================================================
-   Main Page
-========================================================= */
-function AdminImportInner() {
-  const nav = useNavigate();
-
-  // Entities
-  const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
-  const CampDemoEntity = base44?.entities?.CampDemo || null;
-
-  // Sport selector
-  const [sportsLoading, setSportsLoading] = useState(false);
+function AdminImport() {
+  // -------------------------
+  // Sport selection (top-level)
+  // -------------------------
   const [sports, setSports] = useState([]);
   const [selectedSportId, setSelectedSportId] = useState("");
-  const [selectedSportName, setSelectedSportName] = useState("");
-
-  // Review controls
-  const [reviewMode, setReviewMode] = useState("bad_name"); // bad_name | missing_price | all
-  const [reviewSearch, setReviewSearch] = useState("");
-  const [reviewPageSize, setReviewPageSize] = useState(25);
-  const [reviewPage, setReviewPage] = useState(1);
-
-  // Review data
-  const [reviewWorking, setReviewWorking] = useState(false);
-  const [reviewRows, setReviewRows] = useState([]);
-  const [reviewEdit, setReviewEdit] = useState({});
-  const [saveWorkingId, setSaveWorkingId] = useState("");
-  const [log, setLog] = useState("");
-
-  function appendLog(line) {
-    setLog((prev) => (prev ? prev + "\n" + line : line));
-  }
-
-  async function loadSports() {
-    setSportsLoading(true);
-    setLog("");
-    try {
-      if (!SportEntity) throw new Error("base44.entities.Sport not found (Sport table/entity missing).");
-
-      const rows = await entityList(SportEntity, {});
-      const list = asArray(rows)
-        .map(normalizeSportRow)
-        .filter((s) => s.id && s.name)
-        .sort((a, b) => a.name.localeCompare(b.name));
-
-      setSports(list);
-
-      if (!selectedSportId && list.length) {
-        setSelectedSportId(list[0].id);
-        setSelectedSportName(list[0].name);
-      } else if (selectedSportId) {
-        const hit = list.find((x) => x.id === selectedSportId);
-        if (hit) setSelectedSportName(hit.name);
+  const selectedSport = useMemo(() => {
+    let s = null;
+    for (let i = 0; i < sports.length; i++) {
+      if (sports[i].id === selectedSportId) {
+        s = sports[i];
+        break;
       }
-
-      appendLog(`[Sports] Loaded ${list.length}`);
-    } catch (e) {
-      appendLog(`[Sports] ERROR: ${String(e?.message || e)}`);
-      setSports([]);
-      setSelectedSportId("");
-      setSelectedSportName("");
-    } finally {
-      setSportsLoading(false);
     }
+    return s;
+  }, [sports, selectedSportId]);
+
+  // -------------------------
+  // Logging (per section)
+  // -------------------------
+  const [logSportsUSA, setLogSportsUSA] = useState("");
+  const [logCamps, setLogCamps] = useState("");
+
+  function appendLog(setter, line) {
+    setter((prev) => prev + line + "\n");
   }
 
+  // -------------------------
+  // Controls
+  // -------------------------
+  const [dryRun, setDryRun] = useState(true);
+
+  // SportsUSA seed controls
+  const [seedLimit, setSeedLimit] = useState(300);
+
+  // Camps ingest controls
+  const [maxSites, setMaxSites] = useState(5);
+  const [maxRegsPerSite, setMaxRegsPerSite] = useState(10);
+  const [maxEvents, setMaxEvents] = useState(25);
+  const [testSiteUrl, setTestSiteUrl] = useState("");
+
+  // Load Sports
   useEffect(() => {
-    loadSports();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let mounted = true;
+    async function load() {
+      try {
+        const rows = await base44.entities.Sport.list();
+        if (!mounted) return;
+        setSports(rows || []);
+        if ((rows || []).length && !selectedSportId) {
+          setSelectedSportId(rows[0].id);
+        }
+      } catch (e) {
+        // If Sport load fails, user will see empty dropdown.
+      }
+    }
+    load();
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line
   }, []);
 
-  function matchesMode(r) {
-    if (reviewMode === "all") return true;
-    if (reviewMode === "bad_name") return isBadName(r?.camp_name);
-    if (reviewMode === "missing_price") return isMissingPriceRow(r);
-    return true;
-  }
-
-  function matchesSearch(r) {
-    const q = lc(reviewSearch);
-    if (!q) return true;
-    const name = lc(r?.camp_name);
-    const url = lc(r?.link_url || r?.source_url);
-    return (name && name.includes(q)) || (url && url.includes(q));
-  }
-
-  async function loadReview() {
-    const runIso = new Date().toISOString();
-    setReviewWorking(true);
-    setLog("");
-    try {
-      if (!selectedSportId) throw new Error("Select a sport first.");
-      if (!CampDemoEntity) throw new Error("base44.entities.CampDemo not found (CampDemo entity missing).");
-
-      appendLog(`[Review] Loading CampDemo for sport_id=${selectedSportId} @ ${runIso}`);
-
-      const rows = await entityList(CampDemoEntity, { sport_id: selectedSportId });
-      const normalized = asArray(rows).map(normalizeCampDemoRow).filter((x) => x.id);
-
-      const filtered = normalized.filter((r) => matchesMode(r) && matchesSearch(r));
-
-      filtered.sort((a, b) => {
-        const aBad = isBadName(a.camp_name) ? 0 : 1;
-        const bBad = isBadName(b.camp_name) ? 0 : 1;
-        if (aBad !== bBad) return aBad - bBad;
-        return String(a.start_date || "").localeCompare(String(b.start_date || ""));
-      });
-
-      setReviewRows(filtered);
-      setReviewPage(1);
-
-      const nextEdit = {};
-      for (const r of filtered) {
-        nextEdit[r.id] = {
-          camp_name: r.camp_name ?? "",
-          start_date: r.start_date ?? "",
-          end_date: r.end_date ?? "",
-          city: r.city ?? "",
-          state: r.state ?? "",
-          price: r.price ?? "",
-          price_min: r.price_min ?? "",
-          price_max: r.price_max ?? "",
-          link_url: r.link_url ?? "",
-          notes: r.notes ?? "",
-        };
-      }
-      setReviewEdit(nextEdit);
-
-      appendLog(`[Review] total=${normalized.length} filtered=${filtered.length} mode=${reviewMode} search="${reviewSearch || ""}"`);
-    } catch (e) {
-      appendLog(`[Review] ERROR: ${String(e?.message || e)}`);
-      setReviewRows([]);
-      setReviewEdit({});
-    } finally {
-      setReviewWorking(false);
-    }
-  }
-
-  const total = reviewRows.length;
-  const totalPages = Math.max(1, Math.ceil(total / Number(reviewPageSize || 25)));
-  const page = Math.min(Math.max(1, reviewPage), totalPages);
-
-  const pageRows = useMemo(() => {
-    const size = Number(reviewPageSize || 25);
-    const start = (page - 1) * size;
-    return reviewRows.slice(start, start + size);
-  }, [reviewRows, page, reviewPageSize]);
-
-  async function saveRow(id) {
-    const runIso = new Date().toISOString();
-    if (!id) return;
-    if (!CampDemoEntity?.update) {
-      appendLog(`[Save] ERROR: CampDemo.update not available`);
+  // -------------------------
+  // Actions: SportsUSA Seed
+  // -------------------------
+  async function runSportsUSASeed() {
+    setLogSportsUSA("");
+    if (!selectedSportId || !selectedSport) {
+      appendLog(setLogSportsUSA, `[SportsUSA] ERROR: Select a sport first.`);
       return;
     }
 
-    const ed = reviewEdit[id];
-    if (!ed) return;
+    appendLog(setLogSportsUSA, `[SportsUSA] Starting: SportsUSA School Seed (${selectedSport.sport_name}) @ ${nowIso()}`);
+    appendLog(setLogSportsUSA, `[SportsUSA] DryRun=${dryRun} | Limit=${seedLimit}`);
 
-    setSaveWorkingId(id);
     try {
+      // You must have /functions/sportsUSASeedSchools.js deployed.
+      // It requires: sportId, sportName, siteUrl, limit, dryRun
+      // We'll map sportName -> sports site URL by convention:
+      // football -> https://www.footballcampsusa.com
+      // soccer -> https://www.soccersportsusa.com  (adjust if your actual domains differ)
+      // baseball -> https://www.baseballcampsusa.com (etc)
+      //
+      // If you want this configurable later, store it in a table. For now, deterministic mapping.
+
+      const sportNameLc = safeString(selectedSport.sport_name).toLowerCase().trim();
+      let siteUrl = "";
+      if (sportNameLc === "football") siteUrl = "https://www.footballcampsusa.com/";
+      else if (sportNameLc === "baseball") siteUrl = "https://www.baseballcampsusa.com/";
+      else if (sportNameLc === "softball") siteUrl = "https://www.softballcampsusa.com/";
+      else if (sportNameLc === "soccer") siteUrl = "https://www.soccersportsusa.com/";
+      else if (sportNameLc === "volleyball") siteUrl = "https://www.volleyballcampsusa.com/";
+      else {
+        appendLog(setLogSportsUSA, `[SportsUSA] ERROR: No known SportsUSA site mapping for sport "${selectedSport.sport_name}".`);
+        appendLog(setLogSportsUSA, `[SportsUSA] Fix: add a mapping in code for this sport.`);
+        return;
+      }
+
       const payload = {
-        camp_name: safeString(ed.camp_name) || null,
-        start_date: toISODate(ed.start_date) || null,
-        end_date: toISODate(ed.end_date) || null,
-        city: safeString(ed.city) || null,
-        state: safeString(ed.state) || null,
-        price: safeNumber(ed.price),
-        price_min: safeNumber(ed.price_min),
-        price_max: safeNumber(ed.price_max),
-        link_url: safeString(ed.link_url) || null,
-        notes: safeString(ed.notes) || null,
-        last_seen_at: runIso,
+        sportId: selectedSportId,
+        sportName: selectedSport.sport_name,
+        siteUrl: siteUrl,
+        limit: Number(seedLimit || 300),
+        dryRun: !!dryRun
       };
 
-      // auto-fill: if price set and min empty, set min=price
-      if (payload.price != null && (payload.price_min == null || payload.price_min === 0)) {
-        payload.price_min = payload.price;
-      }
-      // sanity: if max < min, clear max
-      if (payload.price_max != null && payload.price_min != null && payload.price_max < payload.price_min) {
-        payload.price_max = null;
+      const result = await base44.functions.invoke('sportsUSASeedSchools', payload);
+      const resp = result.data;
+
+      if (!resp || !resp.stats) {
+        appendLog(setLogSportsUSA, `[SportsUSA] ERROR: No response or missing stats.`);
+        appendLog(setLogSportsUSA, JSON.stringify(resp || {}, null, 2));
+        return;
       }
 
-      await CampDemoEntity.update(String(id), payload);
-      appendLog(`[Save] OK id=${id}`);
+      appendLog(setLogSportsUSA, `[SportsUSA] SportsUSA fetched: schools_found=${resp.stats.schools_found} | http=${resp.stats.http}`);
 
-      // Reload so “remaining” decreases immediately
-      await loadReview();
+      if (resp.debug && resp.debug.sample && resp.debug.sample.length) {
+        appendLog(setLogSportsUSA, `[SportsUSA] SportsUSA sample (first ${Math.min(resp.debug.sample.length, 3)}):`);
+        for (let i = 0; i < Math.min(resp.debug.sample.length, 3); i++) {
+          const s = resp.debug.sample[i];
+          appendLog(setLogSportsUSA, `- name="${s.school_name}" | logo="${s.logo_url}" | view="${s.view_site_url}"`);
+        }
+      }
+
+      // Optional DB write (seed School + SchoolSportSite) should be done here.
+      // Based on your previous logs, you already have this part working in some version.
+      // Below is a safe upsert approach aligned with your schemas.
+
+      if (dryRun) {
+        appendLog(setLogSportsUSA, `[SportsUSA] DryRun=true: no School / SchoolSportSite writes performed.`);
+        return;
+      }
+
+      const schools = resp.schools || [];
+      appendLog(setLogSportsUSA, `[SportsUSA] Writing ${schools.length} rows to School + SchoolSportSite…`);
+
+      let schoolsCreated = 0;
+      let schoolsUpdated = 0;
+      let sitesCreated = 0;
+      let sitesUpdated = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      for (let i = 0; i < schools.length; i++) {
+        const row = schools[i];
+        const schoolName = row.school_name;
+        const logoUrl = row.logo_url || null;
+        const campSiteUrl = row.view_site_url || null;
+
+        if (!schoolName || !campSiteUrl) {
+          skipped += 1;
+          continue;
+        }
+
+        try {
+          // Upsert School by school_name
+          const existingSchools = await base44.entities.School.filter({ school_name: schoolName });
+
+          let schoolId = "";
+          if (!existingSchools || !existingSchools.length) {
+            const created = await base44.entities.School.create({
+              school_name: schoolName,
+              logo_url: logoUrl,
+              active: true,
+              school_type: "College/University",
+              source_platform: "sportsusa",
+              source_school_url: campSiteUrl,
+              source_key: row.source_key || null,
+              needs_review: false,
+              last_seen_at: nowIso()
+            });
+            schoolId = created.id;
+            schoolsCreated += 1;
+          } else {
+            const existing = existingSchools[0];
+            schoolId = existing.id;
+            await base44.entities.School.update(schoolId, {
+              logo_url: logoUrl || existing.logo_url || null,
+              source_platform: existing.source_platform || "sportsusa",
+              source_school_url: existing.source_school_url || campSiteUrl,
+              last_seen_at: nowIso()
+            });
+            schoolsUpdated += 1;
+          }
+
+          // Upsert SchoolSportSite by (school_id + sport_id)
+          const existingSites = await base44.entities.SchoolSportSite.filter({
+            school_id: schoolId,
+            sport_id: selectedSportId
+          });
+
+          const sourceKey = row.source_key || ("sportsusa:" + safeString(selectedSport.sport_name).toLowerCase() + ":" + safeString(campSiteUrl).toLowerCase());
+
+          if (!existingSites || !existingSites.length) {
+            await base44.entities.SchoolSportSite.create({
+              school_id: schoolId,
+              sport_id: selectedSportId,
+              camp_site_url: campSiteUrl,
+              logo_url: logoUrl,
+              source_platform: "sportsusa",
+              source_key: sourceKey,
+              active: true,
+              needs_review: false,
+              last_seen_at: nowIso()
+            });
+            sitesCreated += 1;
+          } else {
+            const existingSite = existingSites[0];
+            await base44.entities.SchoolSportSite.update(existingSite.id, {
+              camp_site_url: campSiteUrl,
+              logo_url: logoUrl || existingSite.logo_url || null,
+              source_platform: existingSite.source_platform || "sportsusa",
+              source_key: existingSite.source_key || sourceKey,
+              active: true,
+              last_seen_at: nowIso()
+            });
+            sitesUpdated += 1;
+          }
+
+          if ((i + 1) % 10 === 0) {
+            appendLog(setLogSportsUSA, `[SportsUSA] Progress ${i + 1}/${schools.length} | Schools c/u=${schoolsCreated}/${schoolsUpdated} | Sites c/u=${sitesCreated}/${sitesUpdated} | skipped=${skipped} errors=${errors}`);
+          }
+        } catch (e) {
+          errors += 1;
+          appendLog(setLogSportsUSA, `[SportsUSA] ERROR row ${i + 1}: ${safeString((e && e.message) || e)}`);
+        }
+      }
+
+      appendLog(setLogSportsUSA, `[SportsUSA] Writes done. Schools: created=${schoolsCreated} updated=${schoolsUpdated} | Sites: created=${sitesCreated} updated=${sitesUpdated} | skipped=${skipped} errors=${errors}`);
     } catch (e) {
-      appendLog(`[Save] ERROR id=${id}: ${String(e?.message || e)}`);
-    } finally {
-      setSaveWorkingId("");
+      appendLog(setLogSportsUSA, `[SportsUSA] ERROR: ${safeString((e && e.message) || e)}`);
     }
   }
 
-  const pageStyle = { padding: 16, fontFamily: "system-ui, sans-serif" };
-  const box = { border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#fff" };
-  const label = { fontSize: 12, fontWeight: 600, marginBottom: 6, color: "#374151" };
-  const input = { width: "100%", padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 8 };
-  const btn = { padding: "8px 12px", borderRadius: 10, border: "1px solid #d1d5db", background: "#fff", cursor: "pointer" };
-  const btnPrimary = { ...btn, background: "#111827", color: "#fff", border: "1px solid #111827" };
+  // -------------------------
+  // Actions: Camps ingest -> CampDemo
+  // -------------------------
+  async function runCampsIngest() {
+    setLogCamps("");
+    if (!selectedSportId || !selectedSport) {
+      appendLog(setLogCamps, `[Camps] ERROR: Select a sport first.`);
+      return;
+    }
 
+    appendLog(setLogCamps, `[Camps] Starting: SportsUSA Camps Ingest (${selectedSport.sport_name}) @ ${nowIso()}`);
+    appendLog(setLogCamps, `[Camps] DryRun=${dryRun} | MaxSites=${maxSites} | MaxRegsPerSite=${maxRegsPerSite} | MaxEvents=${maxEvents}`);
+
+    try {
+      // Load active SchoolSportSite rows for this sport
+      const sites = await base44.entities.SchoolSportSite.filter({
+        sport_id: selectedSportId,
+        active: true
+      });
+
+      appendLog(setLogCamps, `[Camps] Loaded SchoolSportSite rows: ${(sites || []).length} (active)`);
+
+      const urls = [];
+      for (let i = 0; i < (sites || []).length; i++) {
+        const u = sites[i].camp_site_url;
+        if (u) urls.push(u);
+      }
+
+      const payload = {
+        sportId: selectedSportId,
+        sportName: selectedSport.sport_name,
+        dryRun: !!dryRun,
+        maxSites: Number(maxSites || 5),
+        maxRegsPerSite: Number(maxRegsPerSite || 10),
+        maxEvents: Number(maxEvents || 25),
+        testSiteUrl: safeString(testSiteUrl).trim() ? safeString(testSiteUrl).trim() : null,
+        siteUrls: safeString(testSiteUrl).trim() ? null : urls
+      };
+
+      const result = await base44.functions.invoke('sportsUSAIngestCamps', payload);
+      const resp = result.data;
+
+      // ✅ Always print version reliably
+      const fnVersion = (resp && (resp.version || (resp.debug && resp.debug.version))) || "MISSING";
+      appendLog(setLogCamps, `[Camps] Function version: ${fnVersion}`);
+
+      // ✅ Stats
+      if (resp && resp.stats) {
+        appendLog(
+          setLogCamps,
+          `[Camps] Function stats: processedSites=${resp.stats.processedSites} processedRegs=${resp.stats.processedRegs} accepted=${resp.stats.accepted} rejected=${resp.stats.rejected} errors=${resp.stats.errors}`
+        );
+      } else {
+        appendLog(setLogCamps, `[Camps] ERROR: Missing resp.stats`);
+      }
+
+      // ✅ Errors (first 3)
+      if (resp && resp.errors && resp.errors.length) {
+        appendLog(setLogCamps, `[Camps] Function errors (first ${Math.min(resp.errors.length, 3)}):`);
+        for (let i = 0; i < Math.min(resp.errors.length, 3); i++) {
+          appendLog(setLogCamps, `- ${JSON.stringify(resp.errors[i])}`);
+        }
+      }
+
+      // ✅ Per-site debug (first 1)
+      if (resp && resp.debug && resp.debug.siteDebug && resp.debug.siteDebug.length) {
+        const s0 = resp.debug.siteDebug[0];
+        appendLog(setLogCamps, `[Camps] Site debug (first 1):`);
+        appendLog(
+          setLogCamps,
+          `- url=${s0.siteUrl || ""} http=${s0.http || ""} htmlType=${s0.htmlType || ""} regLinks=${s0.regLinks || 0} sample=${s0.sample || ""} notes=${s0.notes || ""}`
+        );
+      }
+
+      // ✅ HTML snippet (only useful when regLinks=0 or errors>0)
+      if (resp && resp.debug && resp.debug.firstSiteHtmlSnippet) {
+        appendLog(setLogCamps, `[Camps] First site HTML snippet (debug):`);
+        appendLog(setLogCamps, resp.debug.firstSiteHtmlSnippet);
+      }
+
+      // If nothing accepted, show rejects
+      if (resp && resp.accepted && resp.accepted.length) {
+        appendLog(setLogCamps, `[Camps] Accepted events returned: ${resp.accepted.length}`);
+        appendLog(setLogCamps, `[Camps] Sample (first 3):`);
+        for (let i = 0; i < Math.min(resp.accepted.length, 3); i++) {
+          const a = resp.accepted[i];
+          const ev = a.event || {};
+          appendLog(setLogCamps, `- camp="${ev.camp_name}" start=${ev.start_date || "n/a"} url=${ev.link_url || ""}`);
+        }
+      } else {
+        if (resp && resp.rejected_samples && resp.rejected_samples.length) {
+          appendLog(setLogCamps, `[Camps] Rejected samples (first ${Math.min(resp.rejected_samples.length, 5)}):`);
+          for (let i = 0; i < Math.min(resp.rejected_samples.length, 5); i++) {
+            const rj = resp.rejected_samples[i];
+            appendLog(setLogCamps, `- reason=${rj.reason} title="${rj.title || ""}" url=${rj.registrationUrl || ""} datesLine=${rj.event_dates_line || ""}`);
+          }
+        }
+        appendLog(setLogCamps, `[Camps] No accepted events returned from function.`);
+        if (dryRun) appendLog(setLogCamps, `[Camps] DryRun=true: no CampDemo writes performed.`);
+        return;
+      }
+
+      if (dryRun) {
+        appendLog(setLogCamps, `[Camps] DryRun=true: no CampDemo writes performed.`);
+        return;
+      }
+
+      // Write to CampDemo
+      let wrote = 0;
+      let writeErrors = 0;
+      const accepted = resp.accepted || [];
+
+      for (let i = 0; i < accepted.length; i++) {
+        const a = accepted[i];
+        const ev = a.event || {};
+        const dr = a.derived || {};
+
+        // We need a school_id. Since testSiteUrl may not map to a known school,
+        // we only write when we can resolve a SchoolSportSite row by matching camp_site_url.
+        let schoolId = null;
+
+        // Try match by site_url (derived)
+        const siteUrl = dr.site_url || null;
+        if (siteUrl) {
+          const siteRows = await base44.entities.SchoolSportSite.filter({ camp_site_url: siteUrl });
+          if (siteRows && siteRows.length) schoolId = siteRows[0].school_id;
+        }
+
+        if (!schoolId) {
+          // If we can't resolve school_id, skip write
+          writeErrors += 1;
+          appendLog(setLogCamps, `[Camps] SKIP: Could not resolve school_id for camp "${ev.camp_name}" (site_url missing or not found in SchoolSportSite).`);
+          continue;
+        }
+
+        try {
+          await base44.entities.CampDemo.create({
+            school_id: schoolId,
+            sport_id: selectedSportId,
+            camp_name: ev.camp_name,
+            start_date: ev.start_date,
+            end_date: ev.end_date || null,
+            city: ev.city || null,
+            state: ev.state || null,
+            price: ev.price || null,
+            link_url: ev.link_url,
+            notes: ev.notes || null,
+
+            season_year: new Date(ev.start_date).getFullYear(),
+            program_id: dr.program_id,
+            event_key: dr.event_key,
+            source_platform: ev.source_platform || "sportsusa",
+            source_url: ev.source_url || ev.link_url,
+            last_seen_at: nowIso(),
+            content_hash: null,
+
+            event_dates_raw: ev.event_dates_raw || null,
+            grades_raw: null,
+            register_by_raw: null,
+            price_raw: null,
+            price_min: null,
+            price_max: null,
+            sections_json: null
+          });
+          wrote += 1;
+        } catch (e) {
+          writeErrors += 1;
+          appendLog(setLogCamps, `[Camps] ERROR writing CampDemo: ${safeString((e && e.message) || e)}`);
+        }
+      }
+
+      appendLog(setLogCamps, `[Camps] CampDemo writes complete. wrote=${wrote} errors=${writeErrors}`);
+    } catch (e) {
+      appendLog(setLogCamps, `[Camps] ERROR: ${safeString((e && e.message) || e)}`);
+    }
+  }
+
+  // -------------------------
+  // UI
+  // -------------------------
   return (
-    <div style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+    <div style={{ padding: 16, maxWidth: 1100 }}>
+      <h2>Admin Import</h2>
+
+      {/* Top-level sport selector */}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>Admin Import</div>
-          <div style={{ fontSize: 13, color: "#6b7280" }}>Safe-mode UI: Camps Review (edit CampDemo directly)</div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>Sport</div>
+          <select
+            value={selectedSportId}
+            onChange={(e) => setSelectedSportId(e.target.value)}
+            style={{ padding: 8, minWidth: 260 }}
+          >
+            {sports.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.sport_name}
+              </option>
+            ))}
+          </select>
         </div>
-        <button style={btn} onClick={() => nav("/Workspace")}>Back</button>
+
+        <div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>Dry Run</div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
+            <span>{dryRun ? "On" : "Off"}</span>
+          </label>
+        </div>
       </div>
 
-      {/* Sport selector */}
-      <div style={{ ...box, marginBottom: 12 }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>1) Select sport</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 180px", gap: 10, alignItems: "end" }}>
+      {/* Section 1: Seed schools */}
+      <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 14, marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>[SportsUSA] Seed Schools</h3>
+
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <div>
-            <div style={label}>Sport</div>
-            <select
-              style={{ ...input, background: "#fff" }}
-              value={selectedSportId}
-              onChange={(e) => {
-                const id = e.target.value;
-                const hit = sports.find((x) => x.id === id);
-                setSelectedSportId(id);
-                setSelectedSportName(hit?.name || "");
-              }}
-              disabled={sportsLoading || reviewWorking}
-            >
-              <option value="">Select…</option>
-              {sports.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}{s.active ? "" : " (inactive)"}
-                </option>
-              ))}
-            </select>
-            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
-              {selectedSportName ? `Selected: ${selectedSportName}` : "Choose a sport"}
-            </div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Limit</div>
+            <input
+              type="number"
+              value={seedLimit}
+              onChange={(e) => setSeedLimit(Number(e.target.value))}
+              style={{ padding: 8, width: 120 }}
+            />
           </div>
-          <button style={btn} onClick={loadSports} disabled={sportsLoading}>
-            {sportsLoading ? "Refreshing…" : "Refresh sports"}
+
+          <button onClick={runSportsUSASeed} style={{ padding: "10px 14px" }}>
+            Run Seed
           </button>
         </div>
+
+        <pre style={{ marginTop: 12, background: "#111", color: "#0f0", padding: 12, borderRadius: 8, overflow: "auto" }}>
+          {logSportsUSA}
+        </pre>
       </div>
 
-      {/* Review */}
-      <div style={box}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>2) Camps Review (edit CampDemo inline)</div>
+      {/* Section 2: Ingest camps */}
+      <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 14 }}>
+        <h3 style={{ marginTop: 0 }}>[Camps] Ingest Camps → CampDemo</h3>
 
-        <div style={{ display: "grid", gridTemplateColumns: "220px 1fr 160px 160px", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <div>
-            <div style={label}>Mode</div>
-            <select style={{ ...input, background: "#fff" }} value={reviewMode} onChange={(e) => setReviewMode(e.target.value)} disabled={reviewWorking}>
-              <option value="bad_name">Bad names</option>
-              <option value="missing_price">Missing price</option>
-              <option value="all">All</option>
-            </select>
-            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
-              Bad name includes Register/Details/Camp and money-as-name like “$475.00”.
-            </div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Max Sites</div>
+            <input type="number" value={maxSites} onChange={(e) => setMaxSites(Number(e.target.value))} style={{ padding: 8, width: 120 }} />
           </div>
-
           <div>
-            <div style={label}>Search (name or URL)</div>
-            <input style={input} value={reviewSearch} onChange={(e) => setReviewSearch(e.target.value)} placeholder='e.g. "ryzer" or "prospect"' />
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Max Reg Links / Site</div>
+            <input type="number" value={maxRegsPerSite} onChange={(e) => setMaxRegsPerSite(Number(e.target.value))} style={{ padding: 8, width: 160 }} />
           </div>
-
           <div>
-            <div style={label}>Page size</div>
-            <select
-              style={{ ...input, background: "#fff" }}
-              value={reviewPageSize}
-              onChange={(e) => setReviewPageSize(Number(e.target.value))}
-              disabled={reviewWorking}
-            >
-              {[10, 25, 50, 100].map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Max Events</div>
+            <input type="number" value={maxEvents} onChange={(e) => setMaxEvents(Number(e.target.value))} style={{ padding: 8, width: 120 }} />
           </div>
 
-          <div style={{ display: "flex", gap: 8, alignItems: "end", justifyContent: "flex-end" }}>
-            <button style={btnPrimary} onClick={loadReview} disabled={!selectedSportId || reviewWorking}>
-              {reviewWorking ? "Loading…" : "Load / Refresh"}
-            </button>
-            <button style={btn} onClick={() => setLog("")} disabled={reviewWorking}>Clear log</button>
+          <div style={{ flex: 1, minWidth: 320 }}>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Test Site URL (optional)</div>
+            <input
+              value={testSiteUrl}
+              onChange={(e) => setTestSiteUrl(e.target.value)}
+              placeholder="https://www.hardingfootballcamps.com/"
+              style={{ padding: 8, width: "100%" }}
+            />
           </div>
+
+          <button onClick={runCampsIngest} style={{ padding: "10px 14px" }}>
+            Run Camps Ingest
+          </button>
         </div>
 
-        {/* Pager */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0 10px 0", color: "#374151" }}>
-          <div>
-            Showing <b>{total ? (page - 1) * reviewPageSize + 1 : 0}</b>–<b>{Math.min(total, page * reviewPageSize)}</b> of <b>{total}</b>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button style={btn} onClick={() => setReviewPage(1)} disabled={reviewWorking || page <= 1}>First</button>
-            <button style={btn} onClick={() => setReviewPage((p) => Math.max(1, p - 1))} disabled={reviewWorking || page <= 1}>Prev</button>
-            <div style={{ fontSize: 12, color: "#6b7280" }}>
-              Page <b>{page}</b> / <b>{totalPages}</b>
-            </div>
-            <button style={btn} onClick={() => setReviewPage((p) => Math.min(totalPages, p + 1))} disabled={reviewWorking || page >= totalPages}>Next</button>
-            <button style={btn} onClick={() => setReviewPage(totalPages)} disabled={reviewWorking || page >= totalPages}>Last</button>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 10 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead style={{ background: "#f9fafb" }}>
-              <tr>
-                {["Save", "Camp name", "Start", "End", "City", "State", "Price", "Min", "Max", "Link"].map((h) => (
-                  <th key={h} style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.length ? (
-                pageRows.map((r) => {
-                  const ed = reviewEdit[r.id] || {};
-                  const bad = isBadName(ed.camp_name || r.camp_name);
-                  const missPrice = isMissingPriceRow({ price: ed.price, price_min: ed.price_min, price_max: ed.price_max });
-
-                  const cell = { padding: 8, borderBottom: "1px solid #f3f4f6", verticalAlign: "top" };
-                  const small = { fontSize: 11, color: "#6b7280", marginTop: 4, wordBreak: "break-all" };
-
-                  return (
-                    <tr key={r.id}>
-                      <td style={cell}>
-                        <button style={btnPrimary} onClick={() => saveRow(r.id)} disabled={saveWorkingId === r.id || reviewWorking}>
-                          {saveWorkingId === r.id ? "Saving…" : "Save"}
-                        </button>
-                        <div style={small}>
-                          {bad ? "Bad name" : "—"}{missPrice ? " • Missing price" : ""}
-                        </div>
-                      </td>
-
-                      <td style={cell}>
-                        <input
-                          style={{ ...input, borderColor: bad ? "#f59e0b" : "#e5e7eb" }}
-                          value={ed.camp_name ?? ""}
-                          onChange={(e) => setReviewEdit((p) => ({ ...p, [r.id]: { ...(p[r.id] || {}), camp_name: e.target.value } }))}
-                        />
-                        <textarea
-                          style={{ ...input, marginTop: 8, fontSize: 12 }}
-                          rows={2}
-                          value={ed.notes ?? ""}
-                          onChange={(e) => setReviewEdit((p) => ({ ...p, [r.id]: { ...(p[r.id] || {}), notes: e.target.value } }))}
-                          placeholder="Notes (optional)"
-                        />
-                        <div style={small}>id: {r.id}</div>
-                      </td>
-
-                      <td style={cell}>
-                        <input style={input} value={ed.start_date ?? ""} onChange={(e) => setReviewEdit((p) => ({ ...p, [r.id]: { ...(p[r.id] || {}), start_date: e.target.value } }))} placeholder="YYYY-MM-DD" />
-                      </td>
-
-                      <td style={cell}>
-                        <input style={input} value={ed.end_date ?? ""} onChange={(e) => setReviewEdit((p) => ({ ...p, [r.id]: { ...(p[r.id] || {}), end_date: e.target.value } }))} placeholder="YYYY-MM-DD" />
-                      </td>
-
-                      <td style={cell}>
-                        <input style={input} value={ed.city ?? ""} onChange={(e) => setReviewEdit((p) => ({ ...p, [r.id]: { ...(p[r.id] || {}), city: e.target.value } }))} placeholder="City" />
-                      </td>
-
-                      <td style={cell}>
-                        <input style={input} value={ed.state ?? ""} onChange={(e) => setReviewEdit((p) => ({ ...p, [r.id]: { ...(p[r.id] || {}), state: e.target.value } }))} placeholder="ST" />
-                      </td>
-
-                      <td style={cell}>
-                        <input
-                          style={{ ...input, borderColor: missPrice ? "#ef4444" : "#e5e7eb" }}
-                          value={ed.price ?? ""}
-                          onChange={(e) => setReviewEdit((p) => ({ ...p, [r.id]: { ...(p[r.id] || {}), price: e.target.value } }))}
-                          placeholder="e.g. 199"
-                        />
-                      </td>
-
-                      <td style={cell}>
-                        <input style={input} value={ed.price_min ?? ""} onChange={(e) => setReviewEdit((p) => ({ ...p, [r.id]: { ...(p[r.id] || {}), price_min: e.target.value } }))} placeholder="min" />
-                      </td>
-
-                      <td style={cell}>
-                        <input style={input} value={ed.price_max ?? ""} onChange={(e) => setReviewEdit((p) => ({ ...p, [r.id]: { ...(p[r.id] || {}), price_max: e.target.value } }))} placeholder="max" />
-                      </td>
-
-                      <td style={cell}>
-                        <input style={input} value={ed.link_url ?? ""} onChange={(e) => setReviewEdit((p) => ({ ...p, [r.id]: { ...(p[r.id] || {}), link_url: e.target.value } }))} placeholder="https://..." />
-                        <div style={small}>
-                          {(ed.link_url || "").trim() ? (
-                            <a href={ed.link_url} target="_blank" rel="noreferrer">Open</a>
-                          ) : (
-                            "—"
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={10} style={{ padding: 12, color: "#6b7280" }}>
-                    {selectedSportId ? (reviewWorking ? "Loading…" : "No rows. Click Load / Refresh.") : "Select a sport first."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Log */}
-        <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: "#374151" }}>Log</div>
-          <pre style={{ background: "#0b1220", color: "#e5e7eb", padding: 12, borderRadius: 10, overflow: "auto", maxHeight: 240 }}>
-            {log || "—"}
-          </pre>
-        </div>
+        <pre style={{ marginTop: 12, background: "#111", color: "#0f0", padding: 12, borderRadius: 8, overflow: "auto" }}>
+          {logCamps}
+        </pre>
       </div>
     </div>
   );
 }
 
-export default function AdminImport() {
-  return (
-    <ErrorBoundary>
-      <AdminImportInner />
-    </ErrorBoundary>
-  );
-}
+export default AdminImport;
