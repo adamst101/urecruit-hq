@@ -229,7 +229,8 @@ function normalizeSiteRow(r) {
     school_id: r && r.school_id ? String(r.school_id) : null,
     sport_id: r && r.sport_id ? String(r.sport_id) : null,
     camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : null,
-    active: typeof r && typeof r.active === "boolean" ? r.active : !!(r && r.active),
+    // ✅ bugfix: ensure boolean detection works
+    active: typeof r?.active === "boolean" ? r.active : !!r?.active,
     crawl_status: statusOf(r),
     last_crawled_at: safeString(r && r.last_crawled_at),
     next_crawl_at: safeString(r && r.next_crawl_at),
@@ -386,7 +387,9 @@ function AdminImportInner() {
   // Entities
   const SportEntity = base44?.entities ? (base44.entities.Sport || base44.entities.Sports) : null;
   const SchoolEntity = base44?.entities ? (base44.entities.School || base44.entities.Schools) : null;
-  const SchoolSportSiteEntity = base44?.entities ? (base44.entities.SchoolSportSite || base44.entities.SchoolSportSites) : null;
+  const SchoolSportSiteEntity = base44?.entities
+    ? (base44.entities.SchoolSportSite || base44.entities.SchoolSportSites)
+    : null;
   const CampDemoEntity = base44?.entities ? base44.entities.CampDemo : null;
   const CampEntity = base44?.entities ? base44.entities.Camp : null;
 
@@ -712,7 +715,8 @@ function AdminImportInner() {
 
     try {
       if (!selectedSportId) return appendLog("counters", "[Counters] ERROR: Select a sport first.");
-      if (!SchoolSportSiteEntity?.update) return appendLog("counters", "[Counters] ERROR: SchoolSportSite update not available.");
+      if (!SchoolSportSiteEntity?.update)
+        return appendLog("counters", "[Counters] ERROR: SchoolSportSite update not available.");
 
       const rows = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
       const sites = rows.map(normalizeSiteRow).filter((x) => x.id);
@@ -1144,26 +1148,70 @@ function AdminImportInner() {
     return arr.filter((s) => s.school_id && pickSet.has(String(s.school_id)));
   }
 
-  async function upsertCampDemoByEventKey(payload) {
+  /* =========================================================
+     ✅ IMPORTANT UPDATE:
+     Smart upsert for CampDemo to prevent “cleanup creates duplicates”
+     - Primary match: event_key
+     - Fallback match: school_id + sport_id + start_date + (link_url OR source_url)
+     - Preserves existing event_key if it exists (prevents identity drift)
+  ========================================================= */
+  async function upsertCampDemoSmart(payload) {
     if (!CampDemoEntity?.create || !CampDemoEntity?.update) throw new Error("CampDemo entity not available.");
-    const key = payload?.event_key ? String(payload.event_key) : null;
-    if (!key) throw new Error("Missing event_key for CampDemo upsert");
 
-    let existing = [];
-    try {
-      existing = await entityList(CampDemoEntity, { event_key: key });
-    } catch {
-      existing = [];
+    const key = payload?.event_key ? String(payload.event_key) : null;
+
+    // 1) Primary match: event_key
+    if (key) {
+      let existing = [];
+      try {
+        existing = await entityList(CampDemoEntity, { event_key: key });
+      } catch {
+        existing = [];
+      }
+      const arr = asArray(existing);
+      if (arr.length && arr[0]?.id) {
+        const finalPayload = withActiveDefault(payload, arr[0]);
+        await CampDemoEntity.update(String(arr[0].id), finalPayload);
+        return "updated";
+      }
     }
 
-    const arr = asArray(existing);
-    if (arr.length > 0 && arr[0]?.id) {
-      const finalPayload = withActiveDefault(payload, arr[0]); // ✅ preserve active on update
-      await CampDemoEntity.update(String(arr[0].id), finalPayload);
+    // 2) Fallback match: stable identity (school + sport + start_date + discUrl)
+    const school_id = safeString(payload?.school_id);
+    const sport_id = safeString(payload?.sport_id);
+    const start_date = safeString(payload?.start_date);
+    const disc = safeString(payload?.link_url) || safeString(payload?.source_url);
+
+    if (!school_id || !sport_id || !start_date || !disc) {
+      const finalPayload = withActiveDefault(payload, null);
+      await CampDemoEntity.create(finalPayload);
+      return "created";
+    }
+
+    let candidates = [];
+    try {
+      candidates = await entityList(CampDemoEntity, { school_id, sport_id, start_date });
+    } catch {
+      candidates = [];
+    }
+
+    const hit =
+      asArray(candidates).find((r) => safeString(r?.link_url) === disc || safeString(r?.source_url) === disc) || null;
+
+    if (hit?.id) {
+      const finalPayload = withActiveDefault(
+        {
+          ...payload,
+          // preserve existing event_key if present to avoid identity drift
+          event_key: safeString(hit?.event_key) || payload.event_key,
+        },
+        hit
+      );
+      await CampDemoEntity.update(String(hit.id), finalPayload);
       return "updated";
     }
 
-    const finalPayload = withActiveDefault(payload, null); // ✅ default active=true on create
+    const finalPayload = withActiveDefault(payload, null);
     await CampDemoEntity.create(finalPayload);
     return "created";
   }
@@ -1438,6 +1486,7 @@ function AdminImportInner() {
       const source_platform = safeString(a.source_platform) || "sportsusa";
       const source_url = safeString(a.source_url) || link_url;
 
+      // Keep event_key derivation, but smart-upsert prevents duplicates if it changes
       const event_key =
         safeString(a.event_key) ||
         buildEventKey({
@@ -1499,6 +1548,7 @@ function AdminImportInner() {
       };
 
       try {
+        // detect prior hash via best-effort event_key lookup (for improved metric only)
         let existing = [];
         try {
           existing = await entityList(CampDemoEntity, { event_key });
@@ -1507,7 +1557,9 @@ function AdminImportInner() {
         }
         const prevHash = existing?.[0]?.content_hash ? String(existing[0].content_hash) : null;
 
-        const result = await writeWithRetry(() => upsertCampDemoByEventKey(payload), { maxRetries: 5 });
+        // ✅ use smart upsert (prevents duplicates in “cleanup” runs)
+        const result = await writeWithRetry(() => upsertCampDemoSmart(payload), { maxRetries: 5 });
+
         if (result === "created") created += 1;
         if (result === "updated") updated += 1;
 
@@ -1741,7 +1793,9 @@ function AdminImportInner() {
       if (editorFilter === "name_format") rows = rows.filter((r) => needsPipeOrParenOrHtmlCleanup(r?.camp_name));
       if (editorFilter === "missing_price") rows = rows.filter((r) => isMissingPrice(r));
       if (editorFilter === "any_cleanup")
-        rows = rows.filter((r) => isBadCampName(r?.camp_name) || needsPipeOrParenOrHtmlCleanup(r?.camp_name) || isMissingPrice(r));
+        rows = rows.filter(
+          (r) => isBadCampName(r?.camp_name) || needsPipeOrParenOrHtmlCleanup(r?.camp_name) || isMissingPrice(r)
+        );
 
       if (editorFilter === "inactive") rows = rows.filter((r) => readCampActiveFlag(r) === false);
       if (editorFilter === "active_only") rows = rows.filter((r) => readCampActiveFlag(r) === true);
@@ -1994,9 +2048,7 @@ function AdminImportInner() {
         {/* 4) SportsUSA Seed Schools */}
         <Card className="p-4">
           <div className="font-semibold text-slate-900">4) Seed Schools (SportsUSA)</div>
-          <div className="text-sm text-slate-600 mt-1">
-            Creates/updates School + SchoolSportSite for the selected sport.
-          </div>
+          <div className="text-sm text-slate-600 mt-1">Creates/updates School + SchoolSportSite for the selected sport.</div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="md:col-span-2">
@@ -2243,9 +2295,7 @@ function AdminImportInner() {
         {/* 6) Promote CampDemo -> Camp */}
         <Card className="p-4">
           <div className="font-semibold text-slate-900">6) Promote CampDemo → Camp</div>
-          <div className="text-sm text-slate-600 mt-1">
-            Copies rows into Camp table (and carries Active flag). Upsert by event_key.
-          </div>
+          <div className="text-sm text-slate-600 mt-1">Copies rows into Camp table (and carries Active flag). Upsert by event_key.</div>
 
           <div className="mt-3 flex gap-2 flex-wrap">
             <Button onClick={promoteCampDemoToCamp} disabled={!selectedSportId || promoteWorking}>
@@ -2365,7 +2415,11 @@ function AdminImportInner() {
                   ) : (
                     <tr>
                       <td colSpan={5} className="p-3 text-slate-500">
-                        {selectedSportId ? (editorWorking ? "Loading…" : "No schools currently in No Camps Remaining. Click Load.") : "Select a sport first."}
+                        {selectedSportId
+                          ? editorWorking
+                            ? "Loading…"
+                            : "No schools currently in No Camps Remaining. Click Load."
+                          : "Select a sport first."}
                       </td>
                     </tr>
                   )}
