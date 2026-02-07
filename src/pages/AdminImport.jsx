@@ -142,11 +142,20 @@ function simpleHash(obj) {
   }
   return `h${Math.abs(h)}`;
 }
-function buildEventKey({ source_platform, program_id, start_date, link_url, source_url }) {
-  const platform = source_platform || "seed";
-  const disc = link_url || source_url || "na";
-  return `${platform}:${program_id}:${start_date || "na"}:${disc}`;
+
+/* =========================================================
+   ✅ IMPORTANT FIX: event_key must be STABLE across name cleanup
+   - do NOT derive event_key from camp_name/program_id based on camp_name
+   - use platform + school_id + start_date + destination URL
+========================================================= */
+function buildEventKeyStable({ source_platform, school_id, start_date, link_url, source_url }) {
+  const platform = safeString(source_platform) || "seed";
+  const sid = safeString(school_id) || "na";
+  const dt = safeString(start_date) || "na";
+  const dest = safeString(link_url) || safeString(source_url) || "na";
+  return `${platform}:${sid}:${dt}:${dest}`;
 }
+
 function normalizeSportNameFromRow(r) {
   return String(r && (r.sport_name || r.name || r.sportName) ? (r.sport_name || r.name || r.sportName) : "").trim();
 }
@@ -343,6 +352,7 @@ function withActiveDefault(payload, existingRow) {
 
 /* =========================================================
    ✅ Quality vocabulary (single source of truth)
+   MUST match the Quality Counters naming exactly
 ========================================================= */
 const QUALITY_VOCAB = {
   bad_name: "Bad Name Remaining",
@@ -354,6 +364,7 @@ const QUALITY_VOCAB = {
 
 const QUALITY_MODES = [
   { id: "none", label: "No quality filter (use rerun mode only)" },
+
   { id: "bad_name", label: "Schools: Bad Name" },
   { id: "name_format", label: "Schools: Name Format" },
   { id: "missing_price", label: "Schools: Missing Price" },
@@ -402,7 +413,6 @@ function AdminImportInner() {
   const [logCounters, setLogCounters] = useState("");
   const [logQuality, setLogQuality] = useState("");
   const [logEditor, setLogEditor] = useState("");
-  const [logDedupe, setLogDedupe] = useState("");
 
   function appendLog(which, line) {
     const add = (prev) => (prev ? prev + "\n" + line : line);
@@ -412,7 +422,6 @@ function AdminImportInner() {
     if (which === "counters") setLogCounters(add);
     if (which === "quality") setLogQuality(add);
     if (which === "editor") setLogEditor(add);
-    if (which === "dedupe") setLogDedupe(add);
   }
 
   /* ----------------------------
@@ -425,7 +434,6 @@ function AdminImportInner() {
   const [qualityWorking, setQualityWorking] = useState(false);
   const [resetWorking, setResetWorking] = useState(false);
   const [editorWorking, setEditorWorking] = useState(false);
-  const [dedupeWorking, setDedupeWorking] = useState(false);
 
   /* ----------------------------
      Seed Schools controls
@@ -448,8 +456,8 @@ function AdminImportInner() {
   const [maxBatches, setMaxBatches] = useState(10);
 
   // Rate-limit protection for writes
-  const [writeDelayMs, setWriteDelayMs] = useState(100);
-  const [batchDelayMs, setBatchDelayMs] = useState(400);
+  const [writeDelayMs, setWriteDelayMs] = useState(500); // ✅ default slower to avoid rate limits
+  const [batchDelayMs, setBatchDelayMs] = useState(2000); // ✅ default slower to avoid rate limits
 
   // Rerun mode (crawl-state targeting)
   const RERUN_MODES = [
@@ -543,8 +551,6 @@ function AdminImportInner() {
     schoolsNeedingNameFormatFix: 0,
     schoolsNeedingPriceFix: 0,
     schoolsNeedingAnyCleanup: 0,
-    duplicateEventKeys: 0,
-    duplicateRows: 0,
   });
 
   const lastQualitySnapshotRef = useRef(null);
@@ -618,24 +624,6 @@ function AdminImportInner() {
     };
   }
 
-  function computeDuplicateStats(rows) {
-    const map = new Map();
-    for (const r of asArray(rows)) {
-      const k = safeString(r?.event_key);
-      if (!k) continue;
-      map.set(k, (map.get(k) || 0) + 1);
-    }
-    let dupKeys = 0;
-    let dupRows = 0;
-    for (const [k, n] of map.entries()) {
-      if (n > 1) {
-        dupKeys += 1;
-        dupRows += (n - 1);
-      }
-    }
-    return { duplicateEventKeys: dupKeys, duplicateRows: dupRows };
-  }
-
   async function refreshQualityCounters({ improvedThisRun = null } = {}) {
     const nowIso = new Date().toISOString();
     setQualityWorking(true);
@@ -652,8 +640,6 @@ function AdminImportInner() {
           schoolsNeedingNameFormatFix: 0,
           schoolsNeedingPriceFix: 0,
           schoolsNeedingAnyCleanup: 0,
-          duplicateEventKeys: 0,
-          duplicateRows: 0,
         });
         appendLog("quality", `[Quality] Select a sport first.`);
         return;
@@ -669,17 +655,16 @@ function AdminImportInner() {
       let nameFormatRemaining = 0;
       let missingPriceRemaining = 0;
 
-      const allDemoRows = await entityList(CampDemoEntity, { sport_id: selectedSportId });
-      for (const r of asArray(allDemoRows)) {
-        if (isBadCampName(r?.camp_name)) badNameRemaining += 1;
-        if (needsPipeOrParenOrHtmlCleanup(r?.camp_name)) nameFormatRemaining += 1;
-        if (isMissingPrice(r)) missingPriceRemaining += 1;
+      for (const rows of sets.bySchool.values()) {
+        for (const r of rows) {
+          if (isBadCampName(r?.camp_name)) badNameRemaining += 1;
+          if (needsPipeOrParenOrHtmlCleanup(r?.camp_name)) nameFormatRemaining += 1;
+          if (isMissingPrice(r)) missingPriceRemaining += 1;
+        }
       }
 
       const noCampsRemaining = sets.noCampSchools.size;
       const improved = improvedThisRun != null ? improvedThisRun : 0;
-
-      const dup = computeDuplicateStats(allDemoRows);
 
       setQualityCounters({
         badNameRemaining,
@@ -691,8 +676,6 @@ function AdminImportInner() {
         schoolsNeedingNameFormatFix: sets.nameFormatSchools.size,
         schoolsNeedingPriceFix: sets.missingPriceSchools.size,
         schoolsNeedingAnyCleanup: sets.anyCleanupSchools.size,
-        duplicateEventKeys: dup.duplicateEventKeys,
-        duplicateRows: dup.duplicateRows,
       });
 
       lastQualitySnapshotRef.current = {
@@ -704,118 +687,16 @@ function AdminImportInner() {
         schoolsNeedingNameFormatFix: sets.nameFormatSchools.size,
         schoolsNeedingPriceFix: sets.missingPriceSchools.size,
         schoolsNeedingAnyCleanup: sets.anyCleanupSchools.size,
-        duplicateEventKeys: dup.duplicateEventKeys,
-        duplicateRows: dup.duplicateRows,
       };
 
       appendLog(
         "quality",
-        `[Quality] Refreshed @ ${nowIso} | ${QUALITY_VOCAB.bad_name}=${badNameRemaining} | ${QUALITY_VOCAB.name_format}=${nameFormatRemaining} | ${QUALITY_VOCAB.missing_price}=${missingPriceRemaining} | ${QUALITY_VOCAB.no_camps}=${noCampsRemaining} | Schools: Bad Name=${sets.badNameSchools.size} | Schools: Name Format=${sets.nameFormatSchools.size} | Schools: Missing Price=${sets.missingPriceSchools.size} | Schools: Any Cleanup=${sets.anyCleanupSchools.size} | Duplicates: keys=${dup.duplicateEventKeys} extraRows=${dup.duplicateRows} | ImprovedThisRun=${improved}`
+        `[Quality] Refreshed @ ${nowIso} | ${QUALITY_VOCAB.bad_name}=${badNameRemaining} | ${QUALITY_VOCAB.name_format}=${nameFormatRemaining} | ${QUALITY_VOCAB.missing_price}=${missingPriceRemaining} | ${QUALITY_VOCAB.no_camps}=${noCampsRemaining} | Schools: Bad Name=${sets.badNameSchools.size} | Schools: Name Format=${sets.nameFormatSchools.size} | Schools: Missing Price=${sets.missingPriceSchools.size} | Schools: Any Cleanup=${sets.anyCleanupSchools.size} | ImprovedThisRun=${improved}`
       );
     } catch (e) {
       appendLog("quality", `[Quality] ERROR: ${String(e?.message || e)}`);
     } finally {
       setQualityWorking(false);
-    }
-  }
-
-  /* ----------------------------
-     ✅ DEDUPE by event_key (non-destructive)
-     - keeps one canonical row per event_key
-     - marks extras inactive and tags notes
-  ----------------------------- */
-  function pickCanonicalRow(rows) {
-    const arr = asArray(rows).filter((r) => r && r.id);
-    if (!arr.length) return null;
-
-    // Prefer active rows
-    const active = arr.filter((r) => readCampActiveFlag(r) === true);
-    const pool = active.length ? active : arr;
-
-    // Prefer latest last_seen_at
-    pool.sort((a, b) => {
-      const da = parseIsoOrNull(a?.last_seen_at)?.getTime?.() || 0;
-      const db = parseIsoOrNull(b?.last_seen_at)?.getTime?.() || 0;
-      return db - da;
-    });
-
-    return pool[0];
-  }
-
-  async function dedupeCampDemoByEventKey({ limitKeys = 5000 } = {}) {
-    const runIso = new Date().toISOString();
-    setDedupeWorking(true);
-    setLogDedupe("");
-
-    try {
-      if (!selectedSportId) return appendLog("dedupe", "[Dedupe] ERROR: Select a sport first.");
-      if (!CampDemoEntity?.update) return appendLog("dedupe", "[Dedupe] ERROR: CampDemo.update not available.");
-      if (!CampDemoEntity) return appendLog("dedupe", "[Dedupe] ERROR: CampDemo entity not available.");
-
-      appendLog("dedupe", `[Dedupe] Starting @ ${runIso} (sport=${selectedSportName})`);
-
-      const all = await entityList(CampDemoEntity, { sport_id: selectedSportId });
-      const rows = asArray(all);
-
-      const map = new Map();
-      for (const r of rows) {
-        const k = safeString(r?.event_key);
-        if (!k) continue;
-        if (!map.has(k)) map.set(k, []);
-        map.get(k).push(r);
-      }
-
-      const dupKeys = [];
-      for (const [k, list] of map.entries()) {
-        if (list.length > 1) dupKeys.push([k, list]);
-      }
-
-      dupKeys.sort((a, b) => (b[1]?.length || 0) - (a[1]?.length || 0));
-      const slice = dupKeys.slice(0, Math.max(1, Number(limitKeys || 5000)));
-
-      appendLog("dedupe", `[Dedupe] Found duplicate event_keys=${dupKeys.length}. Processing=${slice.length}`);
-
-      let keysProcessed = 0;
-      let rowsInactivated = 0;
-      let errors = 0;
-
-      for (let i = 0; i < slice.length; i++) {
-        const [eventKey, list] = slice[i];
-        const canonical = pickCanonicalRow(list);
-        if (!canonical?.id) continue;
-
-        const canonicalId = String(canonical.id);
-        const extras = list.filter((r) => r?.id && String(r.id) !== canonicalId);
-
-        for (const ex of extras) {
-          const exId = String(ex.id);
-          try {
-            const prevNotes = safeString(ex?.notes) || "";
-            const tag = `[DUPLICATE event_key] merged_into=${canonicalId} at ${runIso}`;
-            const nextNotes = prevNotes ? `${prevNotes}\n${tag}` : tag;
-
-            await CampDemoEntity.update(exId, {
-              active: false,
-              notes: nextNotes,
-              last_seen_at: runIso,
-            });
-            rowsInactivated += 1;
-          } catch {
-            errors += 1;
-          }
-          await sleep(5);
-        }
-
-        keysProcessed += 1;
-        if ((i + 1) % 50 === 0) {
-          appendLog("dedupe", `[Dedupe] Progress: keys=${i + 1}/${slice.length} rowsInactivated=${rowsInactivated} errors=${errors}`);
-        }
-      }
-
-      appendLog("dedupe", `[Dedupe] Done. keysProcessed=${keysProcessed} rowsInactivated=${rowsInactivated} errors=${errors}`);
-      await refreshQualityCounters();
-    } finally {
-      setDedupeWorking(false);
     }
   }
 
@@ -1254,30 +1135,69 @@ function AdminImportInner() {
   function qualityFilterSites(sites, sets) {
     const arr = asArray(sites);
     if (qualityMode === "none") return arr;
+
     const pickSet = qualityPickSet(sets);
     if (!pickSet) return arr;
+
     return arr.filter((s) => s.school_id && pickSet.has(String(s.school_id)));
   }
 
-  async function writeWithRetry(fn, { maxRetries = 5 } = {}) {
+  /* =========================================================
+     ✅ Write Reliability Fix (Rate limit resilience)
+     - stronger exponential backoff w/ jitter
+     - higher retry budget
+  ========================================================= */
+  async function writeWithRetry(fn, { maxRetries = 12 } = {}) {
     let attempt = 0;
     while (true) {
       try {
         return await fn();
       } catch (e) {
         const msg = String(e?.message || e);
-        const isRate = msg.toLowerCase().includes("rate limit");
-        const isNet = msg.toLowerCase().includes("network");
+        const lower = msg.toLowerCase();
+        const isRate =
+          lower.includes("rate limit") ||
+          lower.includes("too many requests") ||
+          lower.includes("429");
+        const isNet =
+          lower.includes("network") ||
+          lower.includes("fetch") ||
+          lower.includes("timeout");
+
         if (!isRate && !isNet) throw e;
+
         attempt += 1;
         if (attempt > maxRetries) throw e;
-        const wait = Math.min(2000, 200 * attempt * attempt);
-        await sleep(wait);
+
+        const base = Math.min(15000, 300 * Math.pow(2, attempt));
+        const jitter = Math.floor(Math.random() * 250);
+        await sleep(base + jitter);
       }
     }
   }
 
-  // ✅ Upsert that ALSO neutralizes duplicates if they exist
+  /* =========================================================
+     ✅ Dedupe Guardrail
+     If duplicates exist for the same event_key, keep the oldest
+     and delete the rest (prevents table “getting messed up”).
+  ========================================================= */
+  async function dedupeEventKeyRows(Entity, rows, keepId) {
+    const arr = asArray(rows);
+    if (arr.length <= 1) return { deleted: 0 };
+
+    const toDelete = arr
+      .filter((r) => String(r?.id || "") && String(r.id) !== String(keepId))
+      .map((r) => String(r.id));
+
+    let deleted = 0;
+    for (const id of toDelete) {
+      const ok = await tryDelete(Entity, id);
+      if (ok) deleted += 1;
+      await sleep(10);
+    }
+    return { deleted };
+  }
+
   async function upsertCampDemoByEventKey(payload) {
     if (!CampDemoEntity?.create || !CampDemoEntity?.update) throw new Error("CampDemo entity not available.");
     const key = payload?.event_key ? String(payload.event_key) : null;
@@ -1290,30 +1210,18 @@ function AdminImportInner() {
       existing = [];
     }
 
-    const arr = asArray(existing).filter((r) => r && r.id);
+    const arr = asArray(existing);
 
-    if (arr.length > 0) {
-      const canonical = pickCanonicalRow(arr);
-      if (!canonical?.id) throw new Error("Could not pick canonical row for duplicate event_key");
+    if (arr.length > 0 && arr[0]?.id) {
+      const keepId = String(arr[0].id);
+      const finalPayload = withActiveDefault(payload, arr[0]); // preserve active
+      await CampDemoEntity.update(keepId, finalPayload);
 
-      const canonicalId = String(canonical.id);
-      const finalPayload = withActiveDefault(payload, canonical);
-      await CampDemoEntity.update(canonicalId, finalPayload);
-
-      // ✅ If duplicates exist, mark extras inactive (ONLY because duplicate)
-      const extras = arr.filter((r) => String(r.id) !== canonicalId);
-      if (extras.length) {
-        const runIso = new Date().toISOString();
-        for (const ex of extras) {
-          try {
-            const prevNotes = safeString(ex?.notes) || "";
-            const tag = `[DUPLICATE event_key] merged_into=${canonicalId} at ${runIso}`;
-            const nextNotes = prevNotes ? `${prevNotes}\n${tag}` : tag;
-            await CampDemoEntity.update(String(ex.id), { active: false, notes: nextNotes, last_seen_at: runIso });
-          } catch {
-            // ignore extra failures; canonical is what matters
-          }
-          await sleep(5);
+      // ✅ if duplicates exist, delete extras
+      if (arr.length > 1) {
+        const d = await dedupeEventKeyRows(CampDemoEntity, arr, keepId);
+        if (d.deleted) {
+          appendLog("camps", `[Camps] Deduped event_key=${truncate(key, 80)} deleted=${d.deleted}`);
         }
       }
 
@@ -1512,6 +1420,7 @@ function AdminImportInner() {
     const accepted = acceptedRaw.map((x) => normalizeAcceptedRowToFlat(x));
     appendLog("camps", `[Camps] Accepted events returned: ${accepted.length}`);
 
+    // Update crawl-state for batch sites (only in non-dry-run, non-test)
     if (!testSiteUrl) {
       if (campsDryRun) {
         appendLog("camps", `[Camps] DryRun=true: crawl-state update skipped.`);
@@ -1526,7 +1435,23 @@ function AdminImportInner() {
           last_seen_at: runIso,
         };
         const ids = batch.map((b) => b.id).filter(Boolean);
-        const upd = await updateCrawlStateForSites(ids, patch);
+
+        const upd = await (async () => {
+          if (!SchoolSportSiteEntity?.update) return { updated: 0, errors: 0 };
+          let updated = 0;
+          let errors = 0;
+          for (let i = 0; i < ids.length; i++) {
+            try {
+              await SchoolSportSiteEntity.update(String(ids[i]), patch);
+              updated += 1;
+            } catch {
+              errors += 1;
+            }
+            if ((i + 1) % 50 === 0) await sleep(5);
+          }
+          return { updated, errors };
+        })();
+
         appendLog("camps", `[Camps] Updated crawl-state for batch sites: ${upd.updated} (${outcome}) errors=${upd.errors}`);
       }
     }
@@ -1553,7 +1478,9 @@ function AdminImportInner() {
       const school_id = safeString(a.school_id) || null;
       const sport_id = selectedSportId;
 
+      // enforce pipe + parentheses cleanup (prevents reintroducing)
       const camp_name = sanitizeCampNameForWrite(a.camp_name);
+
       const start_date = toISODate(a.start_date);
       const end_date = toISODate(a.end_date);
 
@@ -1570,15 +1497,20 @@ function AdminImportInner() {
         continue;
       }
 
-      const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
       const source_platform = safeString(a.source_platform) || "sportsusa";
       const source_url = safeString(a.source_url) || link_url;
 
+      // ✅ program_id fallback must NOT depend on camp_name
+      const program_id =
+        safeString(a.program_id) ||
+        `sportsusa:${school_id}:${simpleHash(String(link_url || source_url || "na"))}`;
+
+      // ✅ STABLE event_key (not affected by camp_name cleanup)
       const event_key =
         safeString(a.event_key) ||
-        buildEventKey({
+        buildEventKeyStable({
           source_platform,
-          program_id,
+          school_id,
           start_date,
           link_url,
           source_url,
@@ -1601,6 +1533,8 @@ function AdminImportInner() {
           price_min: safeNumber(a.price_min),
           price_max: safeNumber(a.price_max),
           price_raw: safeString(a.price_raw),
+          city: safeString(a.city),
+          state: safeString(a.state),
         });
 
       const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
@@ -1634,24 +1568,49 @@ function AdminImportInner() {
         ...(typeof a.active === "boolean" ? { active: a.active } : {}),
       };
 
-      try {
-        let existing = [];
+      // ✅ Rate-limit safe: retry the SAME record instead of failing the row
+      let wrote = false;
+      let localAttempts = 0;
+
+      while (!wrote) {
         try {
-          existing = await entityList(CampDemoEntity, { event_key });
-        } catch {
-          existing = [];
+          let existing = [];
+          try {
+            existing = await entityList(CampDemoEntity, { event_key });
+          } catch {
+            existing = [];
+          }
+          const prevHash = existing?.[0]?.content_hash ? String(existing[0].content_hash) : null;
+
+          const result = await writeWithRetry(() => upsertCampDemoByEventKey(payload), { maxRetries: 12 });
+
+          if (result === "created") created += 1;
+          if (result === "updated") updated += 1;
+
+          if (prevHash && prevHash !== content_hash) improved += 1;
+          if (!prevHash && result === "created") improved += 1;
+
+          wrote = true;
+        } catch (e) {
+          const msg = String(e?.message || e);
+          const lower = msg.toLowerCase();
+          const isRate =
+            lower.includes("rate limit") ||
+            lower.includes("too many requests") ||
+            lower.includes("429");
+
+          localAttempts += 1;
+
+          if (isRate && localAttempts <= 6) {
+            appendLog("camps", `[Camps] Rate limited on item #${i + 1}. Pausing and retrying…`);
+            await sleep(5000);
+            continue; // retry SAME record
+          }
+
+          errors += 1;
+          appendLog("camps", `[Camps] WRITE ERROR #${i + 1}: ${msg}`);
+          wrote = true; // stop trying this record
         }
-        const prevHash = existing?.[0]?.content_hash ? String(existing[0].content_hash) : null;
-
-        const result = await writeWithRetry(() => upsertCampDemoByEventKey(payload), { maxRetries: 5 });
-        if (result === "created") created += 1;
-        if (result === "updated") updated += 1;
-
-        if (prevHash && prevHash !== content_hash) improved += 1;
-        if (!prevHash && result === "created") improved += 1;
-      } catch (e) {
-        errors += 1;
-        appendLog("camps", `[Camps] WRITE ERROR #${i + 1}: ${String(e?.message || e)}`);
       }
 
       if ((i + 1) % 25 === 0) appendLog("camps", `[Camps] Write progress: ${i + 1}/${accepted.length}`);
@@ -1678,8 +1637,15 @@ function AdminImportInner() {
 
     const arr = asArray(existing);
     if (arr.length > 0 && arr[0]?.id) {
+      const keepId = String(arr[0].id);
       const finalPayload = withActiveDefault(payload, arr[0]);
-      await CampEntity.update(String(arr[0].id), finalPayload);
+      await CampEntity.update(keepId, finalPayload);
+
+      if (arr.length > 1) {
+        const d = await dedupeEventKeyRows(CampEntity, arr, keepId);
+        if (d.deleted) appendLog("promote", `[Promote] Deduped event_key=${truncate(key, 80)} deleted=${d.deleted}`);
+      }
+
       return "updated";
     }
 
@@ -1708,13 +1674,16 @@ function AdminImportInner() {
 
     const season_year = safeNumber(r?.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
     const source_platform = safeString(r?.source_platform) || "seed";
-    const program_id = safeString(r?.program_id) || `seed:${String(school_id)}:${slugify(camp_name)}`;
+
+    const program_id =
+      safeString(r?.program_id) ||
+      `seed:${school_id}:${simpleHash(String(link_url || source_url || "na"))}`;
 
     const event_key =
       safeString(r?.event_key) ||
-      buildEventKey({
+      buildEventKeyStable({
         source_platform,
-        program_id,
+        school_id,
         start_date,
         link_url,
         source_url,
@@ -1816,7 +1785,7 @@ function AdminImportInner() {
   }
 
   /* ----------------------------
-     ✅ Camp Editor (add registration link)
+     ✅ Camp Editor (aligned naming + Registration link)
   ----------------------------- */
   const [editorFilter, setEditorFilter] = useState("name_format");
   const [editorSearch, setEditorSearch] = useState("");
@@ -1882,13 +1851,7 @@ function AdminImportInner() {
       const q = lc(editorSearch);
       if (q) {
         rows = rows.filter((r) => {
-          const hay = [
-            safeString(r?.camp_name),
-            safeString(r?.school_id),
-            safeString(r?.event_key),
-            safeString(r?.link_url),
-            safeString(r?.source_url),
-          ]
+          const hay = [safeString(r?.camp_name), safeString(r?.school_id), safeString(r?.event_key), safeString(r?.link_url)]
             .filter(Boolean)
             .join(" ");
           return lc(hay).includes(q);
@@ -1933,13 +1896,13 @@ function AdminImportInner() {
         state: safeString(patch.state) || null,
         start_date: toISODate(patch.start_date),
         end_date: toISODate(patch.end_date),
-        link_url: safeString(patch.link_url) || null,
+        link_url: safeString(patch.link_url) || null, // ✅ registration link field
         notes: safeString(patch.notes) || null,
         last_seen_at: new Date().toISOString(),
         active: typeof patch.active === "boolean" ? patch.active : true,
       };
 
-      await writeWithRetry(() => CampDemoEntity.update(String(id), payload), { maxRetries: 5 });
+      await writeWithRetry(() => CampDemoEntity.update(String(id), payload), { maxRetries: 12 });
 
       appendLog("editor", `[Editor] Saved ${id} (active=${payload.active ? "true" : "false"})`);
       await refreshQualityCounters();
@@ -1975,6 +1938,9 @@ function AdminImportInner() {
             <div className="text-sm text-slate-600">
               Seed → Ingest (targeted batches) → Promote → Direct cleanup editor (includes Active toggle).
             </div>
+            <div className="text-xs text-slate-500 mt-1">
+              Important: event_key is now stable across camp-name cleanup, and duplicates are auto-deduped on upsert.
+            </div>
           </div>
           <div className="flex gap-2">
             <Button onClick={() => nav("/Workspace")}>Back to Workspace</Button>
@@ -1999,7 +1965,7 @@ function AdminImportInner() {
                   setSelectedSportId(id);
                   setSelectedSportName(hit?.name ? hit.name : "");
                 }}
-                disabled={sportsLoading || sportsUSAWorking || campsWorking || promoteWorking || dedupeWorking}
+                disabled={sportsLoading || sportsUSAWorking || campsWorking || promoteWorking}
               >
                 <option value="">Select…</option>
                 {sports.map((sx) => (
@@ -2116,24 +2082,6 @@ function AdminImportInner() {
               </div>
             </div>
 
-            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-              <div className="rounded-lg border border-slate-200 p-2">
-                <div className="text-xs text-slate-500">Duplicates (event_key)</div>
-                <div className="text-lg font-semibold">
-                  keys={qualityCounters.duplicateEventKeys} • extraRows={qualityCounters.duplicateRows}
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-200 p-2 flex items-center justify-between">
-                <div>
-                  <div className="text-xs text-slate-500">Dedupe by event_key</div>
-                  <div className="text-[11px] text-slate-500">Marks duplicate rows inactive (no deletes)</div>
-                </div>
-                <Button onClick={() => dedupeCampDemoByEventKey()} disabled={dedupeWorking || !selectedSportId}>
-                  {dedupeWorking ? "Deduping…" : "Run Dedupe"}
-                </Button>
-              </div>
-            </div>
-
             <div className="mt-2 rounded-lg border border-slate-200 p-2">
               <div className="text-xs text-slate-500">Improved This Run (computed after ingest)</div>
               <div className="text-lg font-semibold">{qualityCounters.improvedThisRun}</div>
@@ -2145,20 +2093,15 @@ function AdminImportInner() {
                 {logQuality || "—"}
               </pre>
             </div>
-
-            <div className="mt-3">
-              <div className="text-xs text-slate-500 mb-1">Dedupe Log</div>
-              <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-44">
-                {logDedupe || "—"}
-              </pre>
-            </div>
           </Card>
         </div>
 
-        {/* 4) Seed Schools */}
+        {/* 4) SportsUSA Seed Schools */}
         <Card className="p-4">
           <div className="font-semibold text-slate-900">4) Seed Schools (SportsUSA)</div>
-          <div className="text-sm text-slate-600 mt-1">Creates/updates School + SchoolSportSite for the selected sport.</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Creates/updates School + SchoolSportSite for the selected sport.
+          </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="md:col-span-2">
@@ -2212,14 +2155,11 @@ function AdminImportInner() {
           </div>
         </Card>
 
-        {/* 5) Ingest Camps */}
+        {/* 5) SportsUSA Camps Ingest */}
         <Card className="p-4">
           <div className="font-semibold text-slate-900">5) Ingest Camps (SportsUSA)</div>
           <div className="text-sm text-slate-600 mt-1">
             Runs targeted batches using <b>Rerun Mode</b> + <b>Quality Mode</b>. Camp name cleanup (pipe + parentheses) is enforced on write.
-            <div className="text-[11px] text-slate-500 mt-1">
-              Important: duplicates are now automatically neutralized during upsert (extras marked inactive).
-            </div>
           </div>
 
           <div className="mt-3 grid grid-cols-1 lg:grid-cols-6 gap-3">
@@ -2389,7 +2329,7 @@ function AdminImportInner() {
           </div>
 
           <div className="mt-3 flex gap-2 flex-wrap">
-            <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || campsWorking || dedupeWorking}>
+            <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || campsWorking}>
               {campsWorking ? "Running…" : "Run Ingest"}
             </Button>
             <Button onClick={() => setLogCamps("")} disabled={campsWorking}>
@@ -2405,11 +2345,11 @@ function AdminImportInner() {
           </div>
         </Card>
 
-        {/* 6) Promote */}
+        {/* 6) Promote CampDemo -> Camp */}
         <Card className="p-4">
           <div className="font-semibold text-slate-900">6) Promote CampDemo → Camp</div>
           <div className="text-sm text-slate-600 mt-1">
-            Copies rows into Camp table (and carries Active flag). Upsert by event_key.
+            Copies rows into Camp table (and carries Active flag). Upsert by event_key (with dedupe).
           </div>
 
           <div className="mt-3 flex gap-2 flex-wrap">
@@ -2499,7 +2439,7 @@ function AdminImportInner() {
             </div>
           </div>
 
-          {/* No Camps Remaining view (schools/sites) */}
+          {/* No Camps Remaining view */}
           {editorFilter === "no_camps" ? (
             <div className="mt-3 rounded-lg border border-slate-200 bg-white overflow-auto">
               <table className="w-full text-sm">
@@ -2647,23 +2587,30 @@ function AdminImportInner() {
                             />
                           </td>
 
-                          <td className="p-2 min-w-[280px]">
-                            <div className="text-[11px] text-slate-500 mb-1">
-                              {edit.link_url ? (
-                                <a className="text-blue-600 underline" href={edit.link_url} target="_blank" rel="noreferrer">
-                                  Open
-                                </a>
-                              ) : (
-                                "—"
-                              )}
+                          <td className="p-2 min-w-[320px]">
+                            <div className="flex gap-2 items-center">
+                              <input
+                                className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                                value={edit.link_url ?? ""}
+                                onChange={(e) =>
+                                  setCampEdit((prev) => ({
+                                    ...prev,
+                                    [id]: { ...(prev[id] || edit), link_url: e.target.value },
+                                  }))
+                                }
+                                placeholder="https://register.ryzer.com/…"
+                              />
+                              <Button
+                                className="text-sm"
+                                onClick={() => {
+                                  const u = safeString(edit.link_url);
+                                  if (u) window.open(u, "_blank", "noopener,noreferrer");
+                                }}
+                                disabled={!safeString(edit.link_url)}
+                              >
+                                Open
+                              </Button>
                             </div>
-                            <input
-                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
-                              value={edit.link_url ?? ""}
-                              onChange={(e) =>
-                                setCampEdit((prev) => ({ ...prev, [id]: { ...(prev[id] || edit), link_url: e.target.value } }))
-                              }
-                            />
                           </td>
 
                           <td className="p-2">
