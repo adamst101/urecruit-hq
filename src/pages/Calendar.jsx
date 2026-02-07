@@ -38,6 +38,11 @@ function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
+function safeNumber(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
 function getUrlParams(search) {
   try {
     const sp = new URLSearchParams(search || "");
@@ -50,6 +55,17 @@ function getUrlParams(search) {
   } catch {
     return { mode: null, seasonYear: null };
   }
+}
+
+function readActiveFlag(row) {
+  if (typeof row?.active === "boolean") return row.active;
+  if (typeof row?.is_active === "boolean") return row.is_active;
+  if (typeof row?.isActive === "boolean") return row.isActive;
+
+  const st = String(row?.status || "").toLowerCase().trim();
+  if (st === "inactive") return false;
+  if (st === "active") return true;
+  return true; // default to shown
 }
 
 /* -------------------------
@@ -70,14 +86,14 @@ export default function Calendar() {
   // ---- effective mode (URL ?mode=demo always wins) ----
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const forceDemo = url.mode === "demo";
-  const effectiveMode = forceDemo ? "demo" : season.mode; // "demo" | "paid"
+  const effectiveMode = forceDemo ? "demo" : season?.mode; // "demo" | "paid"
   const isPaid = effectiveMode === "paid";
 
   // Demo seasonYear can be overridden by URL ?season=
   const seasonYear = useMemo(() => {
     if (forceDemo && url.seasonYear) return url.seasonYear;
-    return season.seasonYear;
-  }, [forceDemo, url.seasonYear, season.seasonYear]);
+    return season?.seasonYear;
+  }, [forceDemo, url.seasonYear, season?.seasonYear]);
 
   // ---- filters (FilterSheet contract) ----
   const [filterOpen, setFilterOpen] = useState(false);
@@ -101,6 +117,42 @@ export default function Calendar() {
     });
   };
 
+  // ✅ Paid Calendar: lock sport to athlete profile sport_id
+  const athleteId = useMemo(() => {
+    if (!isPaid) return null;
+    const id = athleteProfile?.id ?? athleteProfile?._id ?? athleteProfile?.uuid ?? null;
+    return id ? String(id) : null;
+  }, [isPaid, athleteProfile]);
+
+  const athleteSportId = useMemo(() => {
+    const sid = athleteProfile?.sport_id ?? athleteProfile?.sportId ?? null;
+    return sid != null ? String(sid) : "";
+  }, [athleteProfile]);
+
+  const paidMissingSport = useMemo(() => {
+    return isPaid && !!athleteId && !athleteSportId;
+  }, [isPaid, athleteId, athleteSportId]);
+
+  // ✅ HARD ENFORCE sport in paid mode (prevents localStorage / stale filter drift)
+  useEffect(() => {
+    if (!isPaid) return;
+    if (!athleteSportId) return;
+
+    const cur = String(filters?.sport || "");
+    if (cur !== athleteSportId) {
+      setFilters((prev) => ({ ...prev, sport: athleteSportId }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPaid, athleteSportId]);
+
+  const openFiltersOrProfile = () => {
+    if (paidMissingSport) {
+      nav(ROUTES.Profile);
+      return;
+    }
+    setFilterOpen(true);
+  };
+
   // ---- load filter picklists: sports + positions ----
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
@@ -111,11 +163,11 @@ export default function Calendar() {
     (async () => {
       // Sports
       try {
-        const rows = await base44.entities.Sport?.list?.();
+        const rows = await base44?.entities?.Sport?.list?.();
         if (mounted) setSports(Array.isArray(rows) ? rows : []);
       } catch {
         try {
-          const rows2 = await base44.entities.Sport?.filter?.({});
+          const rows2 = await base44?.entities?.Sport?.filter?.({});
           if (mounted) setSports(Array.isArray(rows2) ? rows2 : []);
         } catch {
           if (mounted) setSports([]);
@@ -124,11 +176,11 @@ export default function Calendar() {
 
       // Positions
       try {
-        const rows = await base44.entities.Position?.list?.();
+        const rows = await base44?.entities?.Position?.list?.();
         if (mounted) setPositions(Array.isArray(rows) ? rows : []);
       } catch {
         try {
-          const rows2 = await base44.entities.Position?.filter?.({});
+          const rows2 = await base44?.entities?.Position?.filter?.({});
           if (mounted) setPositions(Array.isArray(rows2) ? rows2 : []);
         } catch {
           if (mounted) setPositions([]);
@@ -155,68 +207,68 @@ export default function Calendar() {
   const nf = useMemo(() => normalizeFilters(filters), [filters]);
 
   // ---- data source: paid vs demo ----
-  const athleteId = isPaid ? (athleteProfile?.id ? String(athleteProfile.id) : null) : null;
-
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId || undefined,
-    sportId: nf.sportId || undefined,
+    sportId: nf?.sportId || undefined,
     enabled: isPaid && !!athleteId,
   });
 
   // Demo query can still take server-side filters where supported
   const demoQuery = usePublicCampSummariesClient({
     seasonYear,
-    sportId: nf.sportId || null,
-    state: nf.state || null,
+    sportId: nf?.sportId || null,
+    state: nf?.state || null,
     // keep passing one division if the server only supports one, but enforce multi-select client-side
-    division: nf.division || null,
-    positionIds: nf.positionIds || [],
+    division: nf?.division || null,
+    positionIds: nf?.positionIds || [],
     enabled: !isPaid,
   });
 
   const loading =
-    season.isLoading ||
+    !!season?.isLoading ||
     (isPaid && identityLoading) ||
-    (isPaid ? paidQuery.isLoading : demoQuery.isLoading);
+    (isPaid ? !!paidQuery?.isLoading : !!demoQuery?.isLoading);
 
   // ---- apply filters client-side (source-agnostic) ----
   const rows = useMemo(() => {
-    const base = isPaid ? asArray(paidQuery.data) : asArray(demoQuery.data);
+    const base = isPaid ? asArray(paidQuery?.data) : asArray(demoQuery?.data);
 
-    const wantedState = nf.state ? String(nf.state) : null;
-    const wantedDivisions = asArray(nf.divisions).map(String).filter(Boolean);
-    const wantedPositions = asArray(nf.positionIds).map(String).filter(Boolean);
+    const wantedState = nf?.state ? String(nf.state) : null;
+    const wantedDivisions = asArray(nf?.divisions).map(String).filter(Boolean);
+    const wantedPositions = asArray(nf?.positionIds).map(String).filter(Boolean);
 
-    return base.filter((c) => {
-      // --- State ---
-      if (wantedState) {
-        const campState =
-          normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
-        if (campState !== wantedState) return false;
-      }
+    return base
+      .filter((c) => readActiveFlag(c) === true) // ✅ hide inactive camps everywhere in Calendar
+      .filter((c) => {
+        // --- State ---
+        if (wantedState) {
+          const campState =
+            normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
+          if (campState !== wantedState) return false;
+        }
 
-      // --- Division (multi-select) ---
-      if (wantedDivisions.length) {
-        const div = c?.school_division || c?.division || null;
-        const divStr = div ? String(div) : "";
-        if (!divStr || !wantedDivisions.includes(divStr)) return false;
-      }
+        // --- Division (multi-select) ---
+        if (wantedDivisions.length) {
+          const div = c?.school_division || c?.division || null;
+          const divStr = div ? String(div) : "";
+          if (!divStr || !wantedDivisions.includes(divStr)) return false;
+        }
 
-      // --- Positions ---
-      if (wantedPositions.length) {
-        const campPos = asArray(c?.position_ids).map(String);
-        const hasAny = wantedPositions.some((pid) => campPos.includes(pid));
-        if (!hasAny) return false;
-      }
+        // --- Positions ---
+        if (wantedPositions.length) {
+          const campPos = asArray(c?.position_ids).map(String);
+          const hasAny = wantedPositions.some((pid) => campPos.includes(pid));
+          if (!hasAny) return false;
+        }
 
-      // --- Date range overlap (handles multi-day camps) ---
-      const campStart = c?.start_date || null;
-      const campEnd = c?.end_date || null;
-      if (!withinDateRange(campStart, nf.startDate || "", nf.endDate || "", campEnd)) return false;
+        // --- Date range overlap (handles multi-day camps) ---
+        const campStart = c?.start_date || null;
+        const campEnd = c?.end_date || null;
+        if (!withinDateRange(campStart, nf?.startDate || "", nf?.endDate || "", campEnd)) return false;
 
-      return true;
-    });
-  }, [isPaid, paidQuery.data, demoQuery.data, nf]);
+        return true;
+      });
+  }, [isPaid, paidQuery?.data, demoQuery?.data, nf]);
 
   const title = "Calendar";
 
@@ -238,6 +290,21 @@ export default function Calendar() {
       );
     }
 
+    // ✅ Paid mode: athlete exists but sport missing
+    if (paidMissingSport) {
+      return (
+        <Card className="p-5 border-slate-200">
+          <div className="text-lg font-semibold text-deep-navy">Complete your profile</div>
+          <div className="mt-1 text-sm text-slate-600">
+            Add your sport so Calendar can lock results to the right camps.
+          </div>
+          <div className="mt-4">
+            <Button onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
+          </div>
+        </Card>
+      );
+    }
+
     if (!rows.length) {
       return (
         <Card className="p-5 border-slate-200">
@@ -250,9 +317,9 @@ export default function Calendar() {
               <XCircle className="w-4 h-4 mr-2" />
               Clear filters
             </Button>
-            <Button onClick={() => setFilterOpen(true)}>
+            <Button onClick={openFiltersOrProfile}>
               <SlidersHorizontal className="w-4 h-4 mr-2" />
-              Edit filters
+              {paidMissingSport ? "Complete Profile" : "Edit filters"}
             </Button>
           </div>
         </Card>
@@ -335,43 +402,43 @@ export default function Calendar() {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setFilterOpen(true)}>
+            <Button variant="outline" onClick={openFiltersOrProfile}>
               <SlidersHorizontal className="w-4 h-4 mr-2" />
-              Filter
+              {paidMissingSport ? "Complete Profile" : "Filter"}
             </Button>
           </div>
         </div>
 
         {/* Active filter summary */}
         <div className="mb-4 flex flex-wrap gap-2">
-          {(nf.sportId ||
-            nf.state ||
-            (nf.divisions || []).length ||
-            (nf.positionIds || []).length ||
-            nf.startDate ||
-            nf.endDate) ? (
+          {(nf?.sportId ||
+            nf?.state ||
+            (nf?.divisions || []).length ||
+            (nf?.positionIds || []).length ||
+            nf?.startDate ||
+            nf?.endDate) ? (
             <>
               <span className="text-xs text-slate-500">Active filters:</span>
 
-              {nf.state && (
+              {nf?.state && (
                 <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
                   State: {nf.state}
                 </span>
               )}
 
-              {(nf.divisions || []).length > 0 && (
+              {(nf?.divisions || []).length > 0 && (
                 <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
                   Divisions: {nf.divisions.length}
                 </span>
               )}
 
-              {(nf.positionIds || []).length > 0 && (
+              {(nf?.positionIds || []).length > 0 && (
                 <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
                   Positions: {nf.positionIds.length}
                 </span>
               )}
 
-              {(nf.startDate || nf.endDate) && (
+              {(nf?.startDate || nf?.endDate) && (
                 <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
                   Dates: {nf.startDate || "…"} → {nf.endDate || "…"}
                 </span>
@@ -404,6 +471,8 @@ export default function Calendar() {
             clearFilters();
             setFilterOpen(false);
           }}
+          // ✅ Paid: hide sport dropdown + force sport from athlete profile
+          lockSportId={isPaid && athleteSportId ? athleteSportId : ""}
         />
       </div>
 
