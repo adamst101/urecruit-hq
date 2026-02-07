@@ -229,7 +229,8 @@ function normalizeSiteRow(r) {
     school_id: r && r.school_id ? String(r.school_id) : null,
     sport_id: r && r.sport_id ? String(r.sport_id) : null,
     camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : null,
-    active: typeof r && typeof r.active === "boolean" ? r.active : !!(r && r.active),
+    // ✅ FIX: correct boolean handling (prior code had typeof r && ...)
+    active: typeof r?.active === "boolean" ? r.active : !!(r && r.active),
     crawl_status: statusOf(r),
     last_crawled_at: safeString(r && r.last_crawled_at),
     next_crawl_at: safeString(r && r.next_crawl_at),
@@ -266,6 +267,7 @@ function sanitizeCampNameForWrite(name) {
 
   let s = looksLikeHtmlOrTableJunk(raw) ? stripHtmlish(raw) : raw;
 
+  // If junk tokens appear, truncate left of them
   const junkTokens = ['valign="', "valign='", "data-th=", "data-th:"];
   for (const tok of junkTokens) {
     const idx = lc(s).indexOf(tok);
@@ -275,8 +277,10 @@ function sanitizeCampNameForWrite(name) {
     }
   }
 
+  // ✅ Pipe cleanup
   if (s.includes("|")) s = s.split("|")[0].trim();
 
+  // ✅ Parentheses cleanup
   const parenIdx = s.indexOf("(");
   if (parenIdx > 0) s = s.slice(0, parenIdx).trim();
 
@@ -319,6 +323,8 @@ function isMissingPrice(row) {
 
 /* =========================================================
    ✅ Active flag helpers for Camp/CampDemo
+   - default active=true
+   - preserve active=false on updates
 ========================================================= */
 function readCampActiveFlag(row) {
   if (typeof row?.active === "boolean") return row.active;
@@ -361,7 +367,9 @@ function AdminImportInner() {
   // Entities
   const SportEntity = base44?.entities ? (base44.entities.Sport || base44.entities.Sports) : null;
   const SchoolEntity = base44?.entities ? (base44.entities.School || base44.entities.Schools) : null;
-  const SchoolSportSiteEntity = base44?.entities ? (base44.entities.SchoolSportSite || base44.entities.SchoolSportSites) : null;
+  const SchoolSportSiteEntity = base44?.entities
+    ? base44.entities.SchoolSportSite || base44.entities.SchoolSportSites
+    : null;
   const CampDemoEntity = base44?.entities ? base44.entities.CampDemo : null;
   const CampEntity = base44?.entities ? base44.entities.Camp : null;
 
@@ -619,7 +627,6 @@ function AdminImportInner() {
       }
 
       const anyCleanupSchools = new Set([...badNameSchools, ...nameFormatSchools, ...missingPriceSchools, ...noCampSchools]);
-
       const improved = improvedThisRun != null ? improvedThisRun : 0;
 
       setQualityCounters({
@@ -1167,7 +1174,7 @@ function AdminImportInner() {
 
     const arr = asArray(existing);
     if (arr.length > 0 && arr[0]?.id) {
-      const finalPayload = withActiveDefault(payload, arr[0]); // ✅ preserve active on update
+      const finalPayload = withActiveDefault(payload, arr[0]); // ✅ preserve active=false on update
       await CampDemoEntity.update(String(arr[0].id), finalPayload);
       return "updated";
     }
@@ -1424,7 +1431,7 @@ function AdminImportInner() {
       const school_id = safeString(a.school_id) || null;
       const sport_id = selectedSportId;
 
-      // ✅ enforce pipe + parentheses cleanup (prevents reintroducing)
+      // ✅ enforce pipe + parentheses + html junk cleanup (prevents reintroducing)
       const camp_name = sanitizeCampNameForWrite(a.camp_name);
 
       const start_date = toISODate(a.start_date);
@@ -1541,7 +1548,8 @@ function AdminImportInner() {
      Promote CampDemo -> Camp
   ----------------------------- */
   async function upsertCampByEventKey(payload) {
-    if (!CampEntity?.create || !CampEntity?.update) throw new Error("Camp entity not available (base44.entities.Camp missing).");
+    if (!CampEntity?.create || !CampEntity?.update)
+      throw new Error("Camp entity not available (base44.entities.Camp missing).");
     const key = payload?.event_key ? String(payload.event_key) : null;
     if (!key) throw new Error("Missing event_key for Camp upsert");
 
@@ -1554,7 +1562,7 @@ function AdminImportInner() {
 
     const arr = asArray(existing);
     if (arr.length > 0 && arr[0]?.id) {
-      const finalPayload = withActiveDefault(payload, arr[0]); // ✅ preserve active on update
+      const finalPayload = withActiveDefault(payload, arr[0]); // ✅ preserve active=false on update
       await CampEntity.update(String(arr[0].id), finalPayload);
       return "updated";
     }
@@ -1612,7 +1620,7 @@ function AdminImportInner() {
         notes: safeString(r?.notes),
       });
 
-    const active = readCampActiveFlag(r); // ✅ carry active flag
+    const active = readCampActiveFlag(r); // ✅ carry active flag from CampDemo row
 
     const payload = {
       school_id,
@@ -1643,7 +1651,7 @@ function AdminImportInner() {
       price_max: safeNumber(r?.price_max),
       sections_json: tryParseJson(r?.sections_json) || null,
 
-      active, // ✅ ensure Camp table has active too
+      active, // ✅ Camp.active
     };
 
     return { payload };
@@ -1737,6 +1745,7 @@ function AdminImportInner() {
       if (editorFilter === "missing_price") rows = rows.filter((r) => isMissingPrice(r));
       if (editorFilter === "inactive") rows = rows.filter((r) => readCampActiveFlag(r) === false);
       if (editorFilter === "active_only") rows = rows.filter((r) => readCampActiveFlag(r) === true);
+      // editorFilter === "all" => no filter
 
       const q = lc(editorSearch);
       if (q) {
