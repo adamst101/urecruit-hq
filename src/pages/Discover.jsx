@@ -107,9 +107,20 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
+function readActiveFlag(row) {
+  if (typeof row?.active === "boolean") return row.active;
+  if (typeof row?.is_active === "boolean") return row.is_active;
+  if (typeof row?.isActive === "boolean") return row.isActive;
+
+  const st = String(row?.status || "").toLowerCase().trim();
+  if (st === "inactive") return false;
+  if (st === "active") return true;
+  return true; // default to shown
+}
+
 function trackEvent(payload) {
   try {
-    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+    base44?.entities?.Event?.create?.({ ...payload, ts: new Date().toISOString() });
   } catch {}
 }
 
@@ -176,9 +187,7 @@ export default function Discover() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPaid, athleteSportId]);
 
-  // ✅ UX polish flag:
-  // In paid mode, if athlete exists but sport isn't set, show "Complete Profile"
-  // and route to /Profile on click (instead of opening filters).
+  // ✅ UX polish: paid mode + athlete exists but sport missing
   const paidMissingSport = useMemo(() => {
     return isPaid && !!athleteId && !athleteSportId;
   }, [isPaid, athleteId, athleteSportId]);
@@ -223,11 +232,11 @@ export default function Discover() {
     (async () => {
       // Sports
       try {
-        const rows = await base44.entities.Sport?.list?.();
+        const rows = await base44?.entities?.Sport?.list?.();
         if (mounted) setSports(Array.isArray(rows) ? rows : []);
       } catch {
         try {
-          const rows2 = await base44.entities.Sport?.filter?.({});
+          const rows2 = await base44?.entities?.Sport?.filter?.({});
           if (mounted) setSports(Array.isArray(rows2) ? rows2 : []);
         } catch {
           if (mounted) setSports([]);
@@ -236,11 +245,11 @@ export default function Discover() {
 
       // Positions
       try {
-        const rows = await base44.entities.Position?.list?.();
+        const rows = await base44?.entities?.Position?.list?.();
         if (mounted) setPositions(Array.isArray(rows) ? rows : []);
       } catch {
         try {
-          const rows2 = await base44.entities.Position?.filter?.({});
+          const rows2 = await base44?.entities?.Position?.filter?.({});
           if (mounted) setPositions(Array.isArray(rows2) ? rows2 : []);
         } catch {
           if (mounted) setPositions([]);
@@ -266,11 +275,14 @@ export default function Discover() {
       setRawCamps([]);
 
       try {
+        const CampEntity = base44?.entities?.Camp;
+        if (!CampEntity?.filter) throw new Error("Camp entity not available.");
+
         let byYear = [];
         let allRows = [];
 
         try {
-          byYear = asArray(await base44.entities.Camp.filter({ season_year: seasonYear }));
+          byYear = asArray(await CampEntity.filter({ season_year: seasonYear }));
         } catch {
           byYear = [];
         }
@@ -280,7 +292,7 @@ export default function Discover() {
           return;
         }
 
-        allRows = asArray(await base44.entities.Camp.filter({}));
+        allRows = asArray(await CampEntity.filter({}));
 
         const filtered = allRows.filter((r) => {
           const sy = safeNumber(r?.season_year);
@@ -322,14 +334,16 @@ export default function Discover() {
         ? nf.sports
         : [];
 
-    return src.filter((r) => {
-      if (!matchesDivision(r, nf.divisions)) return false;
-      if (!matchesSport(r, effectiveSports)) return false;
-      if (!matchesPositions(r, nf.positions)) return false;
-      if (!matchesState(r, nf.state)) return false;
-      if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
-      return true;
-    });
+    return src
+      .filter((r) => readActiveFlag(r) === true) // ✅ hide inactive camps everywhere in Discover
+      .filter((r) => {
+        if (!matchesDivision(r, nf.divisions)) return false;
+        if (!matchesSport(r, effectiveSports)) return false;
+        if (!matchesPositions(r, nf.positions)) return false;
+        if (!matchesState(r, nf.state)) return false;
+        if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
+        return true;
+      });
   }, [rawCamps, nf, isPaid, athleteSportId]);
 
   const loading = season?.isLoading || identityLoading || loadingCamps;
@@ -400,7 +414,6 @@ export default function Discover() {
               Clear filters
             </Button>
 
-            {/* ✅ UX polish: if paid + missing sport, show Complete Profile and route */}
             <Button onClick={openFiltersOrProfile}>
               {paidMissingSport ? "Complete Profile" : "Edit filters"}
             </Button>
@@ -486,7 +499,6 @@ export default function Discover() {
             </div>
           </div>
 
-          {/* ✅ UX polish: label changes + routes to /Profile when needed */}
           <Button variant="outline" onClick={openFiltersOrProfile}>
             <SlidersHorizontal className="w-4 h-4 mr-2" />
             {paidMissingSport ? "Complete Profile" : "Filter"}
