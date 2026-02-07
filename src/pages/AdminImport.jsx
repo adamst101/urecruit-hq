@@ -1,5 +1,5 @@
 // src/pages/AdminImport.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "../api/base44Client";
 
@@ -49,7 +49,9 @@ class ErrorBoundary extends React.Component {
               <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 mt-3 overflow-auto">
                 {this.state.message}
               </pre>
-              <div className="text-xs text-slate-500 mt-3">Open DevTools Console for full stack trace.</div>
+              <div className="text-xs text-slate-500 mt-3">
+                Open DevTools Console for full stack trace.
+              </div>
             </Card>
           </div>
         </div>
@@ -259,13 +261,12 @@ function statusOf(site) {
 }
 
 function normalizeSiteRow(r) {
-  // ✅ FIX: robust active parsing; no “typeof r && typeof r.active” issues
   return {
     id: r && r.id ? String(r.id) : "",
     school_id: r && r.school_id ? String(r.school_id) : null,
     sport_id: r && r.sport_id ? String(r.sport_id) : null,
     camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : null,
-    active: readActiveFlag(r),
+    active: typeof r && typeof r.active === "boolean" ? r.active : !!(r && r.active),
     crawl_status: statusOf(r),
     last_crawled_at: safeString(r && r.last_crawled_at),
     next_crawl_at: safeString(r && r.next_crawl_at),
@@ -273,6 +274,90 @@ function normalizeSiteRow(r) {
     last_crawl_run_id: safeString(r && r.last_crawl_run_id),
     raw: r,
   };
+}
+
+/* =========================================================
+   ✅ Camp name cleanup (pipe + parentheses + HTML-ish junk)
+========================================================= */
+function looksLikeHtmlOrTableJunk(s) {
+  const t = lc(s || "");
+  if (!t) return false;
+
+  // Real HTML tags or encoded tag fragments
+  if (t.includes("<") || t.includes(">")) return true;
+
+  // The specific pattern you reported (attributes leaking into name)
+  if (t.includes('valign="') || t.includes("valign='")) return true;
+  if (t.includes('data-th="') || t.includes("data-th='") || t.includes("data-th=")) return true;
+
+  // Often shows up like: d valign="middle" data-th="DATES: "
+  if (t.startsWith("d valign=") || t.startsWith("td valign=") || t.startsWith("tr ")) return true;
+
+  return false;
+}
+
+function stripHtmlish(s) {
+  if (!s) return "";
+  let x = String(s);
+
+  // remove scripts/styles quickly (rare for names, but safe)
+  x = x.replace(/<script[\s\S]*?<\/script>/gi, " ");
+  x = x.replace(/<style[\s\S]*?<\/style>/gi, " ");
+
+  // strip tags
+  x = x.replace(/<\/?[^>]+>/g, " ");
+
+  // collapse whitespace
+  x = x.replace(/\s+/g, " ").trim();
+  return x;
+}
+
+/**
+ * sanitizeCampNameForWrite:
+ * - strips HTML-ish fragments
+ * - keeps text left of first pipe "|"
+ * - keeps text left of first "("
+ * - trims/collapses spaces
+ */
+function sanitizeCampNameForWrite(name) {
+  const raw = safeString(name);
+  if (!raw) return null;
+
+  // If it looks like HTML/table junk, strip tags first
+  let s = looksLikeHtmlOrTableJunk(raw) ? stripHtmlish(raw) : raw;
+
+  // If the junk is not tag-based but attribute-based leaked text, cut it off
+  // Example: 'd valign="middle" data-th="DATES: " ...'
+  const junkTokens = ['valign="', "valign='", "data-th=", "data-th:"];
+  for (const tok of junkTokens) {
+    const idx = lc(s).indexOf(tok);
+    if (idx > 0) {
+      s = s.slice(0, idx).trim();
+      break;
+    }
+  }
+
+  // Pipe: keep left side
+  if (s.includes("|")) s = s.split("|")[0].trim();
+
+  // Parentheses: keep left side
+  const parenIdx = s.indexOf("(");
+  if (parenIdx > 0) s = s.slice(0, parenIdx).trim();
+
+  // Final normalize
+  s = s.replace(/\s+/g, " ").trim();
+  return s || null;
+}
+
+function needsPipeOrParenOrHtmlCleanup(name) {
+  const raw = safeString(name);
+  if (!raw) return false;
+  const t = lc(raw);
+  if (t.includes("|")) return true;
+  if (t.includes("(")) return true;
+  if (looksLikeHtmlOrTableJunk(raw)) return true;
+  if (t.includes('valign="') || t.includes("data-th=")) return true;
+  return false;
 }
 
 /* =========================================================
@@ -289,6 +374,10 @@ function isBadCampName(name) {
   if (/^\$?\s*\d{1,5}(\.\d{2})?\s*$/.test(String(name || "").trim())) return true;
   // obvious junk
   if (t.includes("as of fall")) return true;
+
+  // HTML-ish junk should be considered bad too
+  if (looksLikeHtmlOrTableJunk(name)) return true;
+
   return false;
 }
 
@@ -402,13 +491,14 @@ function AdminImportInner() {
   ];
   const [rerunMode, setRerunMode] = useState("due");
 
-  // Quality mode (data cleanup targeting)
+  // ✅ Quality mode (data cleanup targeting) — add combined pipe+paren+html junk mode
   const QUALITY_MODES = [
     { id: "none", label: "No quality filter (use rerun mode only)" },
     { id: "bad_name", label: 'Only schools with bad camp names ("Register" / money / junk)' },
+    { id: "name_format", label: 'Only schools with camp names needing cleanup (pipe "|" OR parentheses "(...)" OR HTML junk)' },
     { id: "missing_price", label: "Only schools with missing/zero price" },
     { id: "no_camps", label: "Only schools with no camps (0 CampDemo rows)" },
-    { id: "any_cleanup", label: "Schools needing cleanup (bad name OR missing price OR no camps)" },
+    { id: "any_cleanup", label: "Schools needing cleanup (bad name OR name format OR missing price OR no camps)" },
   ];
   const [qualityMode, setQualityMode] = useState("any_cleanup");
 
@@ -482,10 +572,12 @@ function AdminImportInner() {
   ----------------------------- */
   const [qualityCounters, setQualityCounters] = useState({
     registerNamesRemaining: 0,
+    nameFormatRemaining: 0, // ✅ NEW
     missingPriceRemaining: 0,
     noCampsRemaining: 0,
     improvedThisRun: 0,
     schoolsNeedingBadNameFix: 0,
+    schoolsNeedingNameFormatFix: 0, // ✅ NEW
     schoolsNeedingPriceFix: 0,
     schoolsNeedingAnyCleanup: 0,
   });
@@ -500,10 +592,12 @@ function AdminImportInner() {
       if (!selectedSportId) {
         setQualityCounters({
           registerNamesRemaining: 0,
+          nameFormatRemaining: 0,
           missingPriceRemaining: 0,
           noCampsRemaining: 0,
           improvedThisRun: 0,
           schoolsNeedingBadNameFix: 0,
+          schoolsNeedingNameFormatFix: 0,
           schoolsNeedingPriceFix: 0,
           schoolsNeedingAnyCleanup: 0,
         });
@@ -535,20 +629,28 @@ function AdminImportInner() {
 
       // Calculate totals
       let registerNamesRemaining = 0;
+      let nameFormatRemaining = 0;
       let missingPriceRemaining = 0;
 
+      // Per-school flags
       const badNameSchools = new Set();
+      const nameFormatSchools = new Set();
       const missingPriceSchools = new Set();
       const schoolsWithAnyCamp = new Set(bySchool.keys());
 
       for (const [sid, rows] of bySchool.entries()) {
         let schoolHasBad = false;
+        let schoolHasNameFormat = false;
         let schoolHasMissingPrice = false;
 
         for (const r of rows) {
           if (isBadCampName(r?.camp_name)) {
             registerNamesRemaining += 1;
             schoolHasBad = true;
+          }
+          if (needsPipeOrParenOrHtmlCleanup(r?.camp_name)) {
+            nameFormatRemaining += 1;
+            schoolHasNameFormat = true;
           }
           if (isMissingPrice(r)) {
             missingPriceRemaining += 1;
@@ -557,8 +659,13 @@ function AdminImportInner() {
         }
 
         if (schoolHasBad) badNameSchools.add(sid);
+        if (schoolHasNameFormat) nameFormatSchools.add(sid);
         if (schoolHasMissingPrice) missingPriceSchools.add(sid);
       }
+
+      const schoolsNeedingBadNameFix = badNameSchools.size;
+      const schoolsNeedingNameFormatFix = nameFormatSchools.size;
+      const schoolsNeedingPriceFix = missingPriceSchools.size;
 
       // NoCampsRemaining = active schools with 0 CampDemo rows
       let noCampsRemaining = 0;
@@ -570,31 +677,42 @@ function AdminImportInner() {
         }
       }
 
-      const anyCleanupSchools = new Set([...badNameSchools, ...missingPriceSchools, ...noCampSchools]);
+      const anyCleanupSchools = new Set([
+        ...badNameSchools,
+        ...nameFormatSchools,
+        ...missingPriceSchools,
+        ...noCampSchools,
+      ]);
+      const schoolsNeedingAnyCleanup = anyCleanupSchools.size;
+
       const improved = improvedThisRun != null ? improvedThisRun : 0;
 
       setQualityCounters({
         registerNamesRemaining,
+        nameFormatRemaining,
         missingPriceRemaining,
         noCampsRemaining,
         improvedThisRun: improved,
-        schoolsNeedingBadNameFix: badNameSchools.size,
-        schoolsNeedingPriceFix: missingPriceSchools.size,
-        schoolsNeedingAnyCleanup: anyCleanupSchools.size,
+        schoolsNeedingBadNameFix,
+        schoolsNeedingNameFormatFix,
+        schoolsNeedingPriceFix,
+        schoolsNeedingAnyCleanup,
       });
 
       lastQualitySnapshotRef.current = {
         registerNamesRemaining,
+        nameFormatRemaining,
         missingPriceRemaining,
         noCampsRemaining,
-        schoolsNeedingBadNameFix: badNameSchools.size,
-        schoolsNeedingPriceFix: missingPriceSchools.size,
-        schoolsNeedingAnyCleanup: anyCleanupSchools.size,
+        schoolsNeedingBadNameFix,
+        schoolsNeedingNameFormatFix,
+        schoolsNeedingPriceFix,
+        schoolsNeedingAnyCleanup,
       };
 
       appendLog(
         "quality",
-        `[Quality] Refreshed @ ${nowIso} | RegisterRemaining=${registerNamesRemaining} | MissingPriceRemaining=${missingPriceRemaining} | NoCampsRemaining=${noCampsRemaining} | SchoolsBadName=${badNameSchools.size} | SchoolsMissingPrice=${missingPriceSchools.size} | SchoolsAnyCleanup=${anyCleanupSchools.size} | ImprovedThisRun=${improved}`
+        `[Quality] Refreshed @ ${nowIso} | BadNameRemaining=${registerNamesRemaining} | NameFormatRemaining=${nameFormatRemaining} | MissingPriceRemaining=${missingPriceRemaining} | NoCampsRemaining=${noCampsRemaining} | SchoolsBadName=${schoolsNeedingBadNameFix} | SchoolsNameFormat=${schoolsNeedingNameFormatFix} | SchoolsMissingPrice=${schoolsNeedingPriceFix} | SchoolsAnyCleanup=${schoolsNeedingAnyCleanup} | ImprovedThisRun=${improved}`
       );
     } catch (e) {
       appendLog("quality", `[Quality] ERROR: ${String(e?.message || e)}`);
@@ -1021,8 +1139,16 @@ function AdminImportInner() {
   }
 
   async function getQualitySchoolSets() {
+    // returns sets of school_ids for each quality category
     if (!selectedSportId || !SchoolSportSiteEntity || !CampDemoEntity) {
-      return { allSchools: new Set(), badNameSchools: new Set(), missingPriceSchools: new Set(), noCampSchools: new Set(), anyCleanupSchools: new Set() };
+      return {
+        allSchools: new Set(),
+        badNameSchools: new Set(),
+        nameFormatSchools: new Set(),
+        missingPriceSchools: new Set(),
+        noCampSchools: new Set(),
+        anyCleanupSchools: new Set(),
+      };
     }
 
     const siteRowsRaw = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
@@ -1041,17 +1167,21 @@ function AdminImportInner() {
     }
 
     const badNameSchools = new Set();
+    const nameFormatSchools = new Set();
     const missingPriceSchools = new Set();
     const schoolsWithAnyCamp = new Set(bySchool.keys());
 
     for (const [sid, rows] of bySchool.entries()) {
       let hasBad = false;
+      let hasNameFormat = false;
       let hasMissingPrice = false;
       for (const r of rows) {
         if (isBadCampName(r?.camp_name)) hasBad = true;
+        if (needsPipeOrParenOrHtmlCleanup(r?.camp_name)) hasNameFormat = true;
         if (isMissingPrice(r)) hasMissingPrice = true;
       }
       if (hasBad) badNameSchools.add(sid);
+      if (hasNameFormat) nameFormatSchools.add(sid);
       if (hasMissingPrice) missingPriceSchools.add(sid);
     }
 
@@ -1060,9 +1190,9 @@ function AdminImportInner() {
       if (!schoolsWithAnyCamp.has(sid)) noCampSchools.add(sid);
     }
 
-    const anyCleanupSchools = new Set([...badNameSchools, ...missingPriceSchools, ...noCampSchools]);
+    const anyCleanupSchools = new Set([...badNameSchools, ...nameFormatSchools, ...missingPriceSchools, ...noCampSchools]);
 
-    return { allSchools, badNameSchools, missingPriceSchools, noCampSchools, anyCleanupSchools };
+    return { allSchools, badNameSchools, nameFormatSchools, missingPriceSchools, noCampSchools, anyCleanupSchools };
   }
 
   function qualityFilterSites(sites, sets) {
@@ -1072,11 +1202,13 @@ function AdminImportInner() {
     const pickSet =
       qualityMode === "bad_name"
         ? sets.badNameSchools
+        : qualityMode === "name_format"
+        ? sets.nameFormatSchools
         : qualityMode === "missing_price"
-          ? sets.missingPriceSchools
-          : qualityMode === "no_camps"
-            ? sets.noCampSchools
-            : sets.anyCleanupSchools;
+        ? sets.missingPriceSchools
+        : qualityMode === "no_camps"
+        ? sets.noCampSchools
+        : sets.anyCleanupSchools;
 
     return arr.filter((s) => s.school_id && pickSet.has(String(s.school_id)));
   }
@@ -1117,6 +1249,7 @@ function AdminImportInner() {
         attempt += 1;
         if (attempt > maxRetries) throw e;
 
+        // exponential-ish backoff
         const wait = Math.min(2000, 200 * attempt * attempt);
         await sleep(wait);
       }
@@ -1144,16 +1277,20 @@ function AdminImportInner() {
       if (!SchoolSportSiteEntity) return appendLog("camps", "[Camps] ERROR: SchoolSportSite entity not available.");
       if (!CampDemoEntity) return appendLog("camps", "[Camps] ERROR: CampDemo entity not available.");
 
-      if (!lastQualitySnapshotRef.current) await refreshQualityCounters();
+      // Take pre-run snapshot (only matters if writing)
+      const preSnap = lastQualitySnapshotRef.current;
+      if (!preSnap) await refreshQualityCounters();
 
       const siteRowsRaw = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
       const allSites = siteRowsRaw.map(normalizeSiteRow);
 
       appendLog("camps", `[Camps] Loaded SchoolSportSite rows: ${allSites.length} (active)`);
 
+      // Rerun filter
       const rerunFiltered = pickSitesByRerunMode(allSites);
       appendLog("camps", `[Camps] Rerun filtered sites: ${rerunFiltered.length}`);
 
+      // Quality filter
       const sets = await getQualitySchoolSets();
       const qualityFiltered = qualityFilterSites(rerunFiltered, sets);
       appendLog("camps", `[Camps] Quality filtered sites: ${qualityFiltered.length}`);
@@ -1174,6 +1311,7 @@ function AdminImportInner() {
         return;
       }
 
+      // Single-call test mode (no batches)
       if (tUrl) {
         appendLog("camps", `[Camps] Test mode enabled: ${tUrl}`);
         await runOneIngestCall({
@@ -1188,6 +1326,7 @@ function AdminImportInner() {
         return;
       }
 
+      // Batch runner across qualityFiltered
       const maxSitesPerBatch = Math.max(1, Number(campsMaxSites || 25));
       const maxBatchCount = runBatches ? Math.max(1, Number(maxBatches || 1)) : 1;
 
@@ -1234,8 +1373,10 @@ function AdminImportInner() {
 
       appendLog("camps", `[Camps] DONE (this click). totals: created=${totalCreated} updated=${totalUpdated} skipped=${totalSkipped} errors=${totalErrors} improved=${improvedTotal}`);
 
+      // Refresh counters after run
       await refreshCrawlCounters();
 
+      // Compute “improved this run” using quality snapshot deltas (only meaningful when DryRun=false)
       if (!campsDryRun) {
         const before = lastQualitySnapshotRef.current;
         await refreshQualityCounters();
@@ -1243,11 +1384,12 @@ function AdminImportInner() {
 
         if (before && after) {
           const d1 = Math.max(0, before.registerNamesRemaining - after.registerNamesRemaining);
+          const dFmt = Math.max(0, (before.nameFormatRemaining || 0) - (after.nameFormatRemaining || 0));
           const d2 = Math.max(0, before.missingPriceRemaining - after.missingPriceRemaining);
           const d3 = Math.max(0, before.noCampsRemaining - after.noCampsRemaining);
-          improvedTotal = d1 + d2 + d3;
+          improvedTotal = d1 + dFmt + d2 + d3;
           setQualityCounters((prev) => ({ ...prev, improvedThisRun: improvedTotal }));
-          appendLog("quality", `[Quality] ImprovedThisRun computed: ${improvedTotal} (Register -${d1}, Price -${d2}, NoCamps -${d3})`);
+          appendLog("quality", `[Quality] ImprovedThisRun computed: ${improvedTotal} (BadName -${d1}, NameFormat -${dFmt}, Price -${d2}, NoCamps -${d3})`);
         }
       } else {
         await refreshQualityCounters({ improvedThisRun: 0 });
@@ -1262,6 +1404,7 @@ function AdminImportInner() {
   }
 
   async function runOneIngestCall({ runIso, runId, batchSites, testSiteUrl, testSchoolId }) {
+    // returns write stats + “improved” estimate (from content_hash changes)
     const batch = asArray(batchSites);
 
     appendLog(
@@ -1283,11 +1426,11 @@ function AdminImportInner() {
         sites: testSiteUrl
           ? []
           : batch.map((r) => ({
-            id: r.id,
-            school_id: r.school_id,
-            sport_id: r.sport_id,
-            camp_site_url: r.camp_site_url,
-          })),
+              id: r.id,
+              school_id: r.school_id,
+              sport_id: r.sport_id,
+              camp_site_url: r.camp_site_url,
+            })),
         testSiteUrl: testSiteUrl || null,
         testSchoolId: testSchoolId || null,
       }),
@@ -1342,6 +1485,7 @@ function AdminImportInner() {
       }
     }
 
+    // Update crawl-state for batch sites (only in non-dry-run, non-test)
     if (!testSiteUrl) {
       if (campsDryRun) {
         appendLog("camps", `[Camps] DryRun=true: crawl-state update skipped.`);
@@ -1351,7 +1495,7 @@ function AdminImportInner() {
           crawl_status: outcome,
           crawl_error: null,
           last_crawled_at: runIso,
-          next_crawl_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+          next_crawl_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days default
           last_crawl_run_id: runId,
           last_seen_at: runIso,
         };
@@ -1375,6 +1519,8 @@ function AdminImportInner() {
     let updated = 0;
     let skipped = 0;
     let errors = 0;
+
+    // “improved” proxy: count rows where content_hash changes compared to existing (event_key match)
     let improved = 0;
 
     for (let i = 0; i < accepted.length; i++) {
@@ -1382,7 +1528,10 @@ function AdminImportInner() {
 
       const school_id = safeString(a.school_id) || null;
       const sport_id = selectedSportId;
-      const camp_name = safeString(a.camp_name);
+
+      // ✅ Ensure new crawls never reintroduce pipe/paren/html junk:
+      // Always sanitize camp_name on write.
+      const camp_name = sanitizeCampNameForWrite(a.camp_name);
 
       const start_date = toISODate(a.start_date);
       const end_date = toISODate(a.end_date);
@@ -1464,6 +1613,7 @@ function AdminImportInner() {
       };
 
       try {
+        // check existing hash quickly
         let existing = [];
         try {
           existing = await entityList(CampDemoEntity, { event_key });
@@ -1519,7 +1669,10 @@ function AdminImportInner() {
   function buildSafeCampPayloadFromDemoRow(r, runIso) {
     const school_id = safeString(r?.school_id);
     const sport_id = safeString(r?.sport_id);
-    const camp_name = safeString(r?.camp_name);
+
+    // ✅ sanitize on promotion too (belt + suspenders)
+    const camp_name = sanitizeCampNameForWrite(r?.camp_name);
+
     const start_date = toISODate(r?.start_date);
     const end_date = toISODate(r?.end_date);
 
@@ -1646,7 +1799,7 @@ function AdminImportInner() {
   /* ----------------------------
      Camp Editor (direct row updates)
   ----------------------------- */
-  const [editorFilter, setEditorFilter] = useState("bad_name"); // bad_name | missing_price | all
+  const [editorFilter, setEditorFilter] = useState("name_format"); // ✅ default to your new cleanup
   const [editorSearch, setEditorSearch] = useState("");
   const [editorLimit, setEditorLimit] = useState(200);
   const [campRows, setCampRows] = useState([]);
@@ -1676,23 +1829,31 @@ function AdminImportInner() {
     try {
       if (!selectedSportId) return appendLog("editor", `[Editor] Select a sport first.`);
       if (!CampDemoEntity) return appendLog("editor", `[Editor] CampDemo entity not available.`);
-
       const all = await entityList(CampDemoEntity, { sport_id: selectedSportId });
       let rows = asArray(all);
 
+      // Apply filter
       if (editorFilter === "bad_name") rows = rows.filter((r) => isBadCampName(r?.camp_name));
+      if (editorFilter === "name_format") rows = rows.filter((r) => needsPipeOrParenOrHtmlCleanup(r?.camp_name));
       if (editorFilter === "missing_price") rows = rows.filter((r) => isMissingPrice(r));
 
+      // Apply search
       const q = lc(editorSearch);
       if (q) {
         rows = rows.filter((r) => {
-          const hay = [safeString(r?.camp_name), safeString(r?.school_id), safeString(r?.event_key), safeString(r?.link_url)]
+          const hay = [
+            safeString(r?.camp_name),
+            safeString(r?.school_id),
+            safeString(r?.event_key),
+            safeString(r?.link_url),
+          ]
             .filter(Boolean)
             .join(" ");
           return lc(hay).includes(q);
         });
       }
 
+      // Limit
       rows = rows.slice(0, Math.max(10, Number(editorLimit || 200)));
 
       setCampRows(rows);
@@ -1703,6 +1864,7 @@ function AdminImportInner() {
 
       appendLog("editor", `[Editor] Loaded @ ${nowIso} | rows=${rows.length} filter=${editorFilter} search="${editorSearch}" limit=${editorLimit}`);
       appendLog("editor", `[Editor] Tip: edit fields inline and click Save per row.`);
+      appendLog("editor", `[Editor] Tip: for name cleanup, you can paste full text; Save will auto-trim to left of "|" and left of "(".`);
     } catch (e) {
       appendLog("editor", `[Editor] ERROR: ${String(e?.message || e)}`);
     } finally {
@@ -1720,8 +1882,11 @@ function AdminImportInner() {
     setCampSavingId(id);
 
     try {
+      // ✅ enforce cleanup on manual edits too
+      const cleanedName = sanitizeCampNameForWrite(patch.camp_name);
+
       const payload = {
-        camp_name: safeString(patch.camp_name) || null,
+        camp_name: cleanedName,
         price: safeNumber(patch.price),
         price_min: safeNumber(patch.price_min),
         price_max: safeNumber(patch.price_max),
@@ -1736,7 +1901,8 @@ function AdminImportInner() {
 
       await writeWithRetry(() => CampDemoEntity.update(String(id), payload), { maxRetries: 5 });
 
-      appendLog("editor", `[Editor] Saved ${id}`);
+      appendLog("editor", `[Editor] Saved ${id} (camp_name="${cleanedName || ""}")`);
+      // refresh counters after a save
       await refreshQualityCounters();
     } catch (e) {
       appendLog("editor", `[Editor] SAVE FAILED ${id}: ${String(e?.message || e)}`);
@@ -1854,9 +2020,10 @@ function AdminImportInner() {
             These are the counters you use to know when to stop cleanup. They should trend down as data improves.
           </div>
 
-          <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
             {[
-              ["Register names remaining", qualityCounters.registerNamesRemaining],
+              ["Bad names remaining", qualityCounters.registerNamesRemaining],
+              ['Name format remaining (| / ( / HTML junk)', qualityCounters.nameFormatRemaining],
               ["Missing price remaining", qualityCounters.missingPriceRemaining],
               ["Schools with no camps", qualityCounters.noCampsRemaining],
               ["Improved this run", qualityCounters.improvedThisRun],
@@ -1868,9 +2035,10 @@ function AdminImportInner() {
             ))}
           </div>
 
-          <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+          <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
             {[
-              ["Schools needing Register fix", qualityCounters.schoolsNeedingBadNameFix],
+              ["Schools needing bad-name fix", qualityCounters.schoolsNeedingBadNameFix],
+              ["Schools needing name-format fix", qualityCounters.schoolsNeedingNameFormatFix],
               ["Schools needing price fix", qualityCounters.schoolsNeedingPriceFix],
               ["Schools needing any cleanup", qualityCounters.schoolsNeedingAnyCleanup],
             ].map(([label, val]) => (
@@ -1896,7 +2064,7 @@ function AdminImportInner() {
           </div>
 
           <div className="text-[11px] text-slate-500 mt-3">
-            <b>Stop rule:</b> Pick one Quality Mode target (bad names / missing price / no camps). When its “Remaining” stops dropping for 2 clicks, you’re done for that mode.
+            <b>Stop rule:</b> Pick one Quality Mode target (bad names / name format / missing price / no camps). When its “Remaining” stops dropping for 2 clicks, you’re done for that mode.
           </div>
         </Card>
 
@@ -2107,7 +2275,7 @@ function AdminImportInner() {
             </div>
 
             <span className="text-[11px] text-slate-500">
-              Example: QualityFilteredSites=50 and MaxSites=25 ⇒ 2 batches (that’s correct).
+              If QualityFilteredSites = 50 and MaxSites=25, you’ll get 2 batches. That’s correct.
             </span>
           </div>
 
@@ -2177,7 +2345,7 @@ function AdminImportInner() {
         <Card className="p-4">
           <div className="font-semibold text-slate-900">5) Camp Editor (direct cleanup)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Pull CampDemo rows needing cleanup and update them inline (fix the last 13 bad names, missing prices, etc).
+            Pull CampDemo rows needing cleanup and update them inline (pipe/paren/junk names, missing prices, etc).
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -2189,6 +2357,7 @@ function AdminImportInner() {
                 onChange={(e) => setEditorFilter(e.target.value)}
                 disabled={editorWorking}
               >
+                <option value="name_format">Name format (| / ( / HTML junk)</option>
                 <option value="bad_name">Bad camp names</option>
                 <option value="missing_price">Missing/zero price</option>
                 <option value="all">All (sport)</option>
@@ -2240,8 +2409,7 @@ function AdminImportInner() {
                   <th className="p-2 border-b border-slate-200 w-28">City</th>
                   <th className="p-2 border-b border-slate-200 w-20">State</th>
                   <th className="p-2 border-b border-slate-200 w-32">Start</th>
-                  <th className="p-2 border-b border-slate-200 w-32">End</th>
-                  <th className="p-2 border-b border-slate-200 w-52">Actions</th>
+                  <th className="p-2 border-b border-slate-200 w-44">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -2249,7 +2417,6 @@ function AdminImportInner() {
                   campRows.map((r) => {
                     const id = String(r.id);
                     const edit = campEdit?.[id] || buildEditRowDefaults(r);
-                    const original = buildEditRowDefaults(r);
 
                     return (
                       <tr key={id} className="border-b border-slate-100">
@@ -2267,10 +2434,15 @@ function AdminImportInner() {
                               }))
                             }
                           />
-                          <div className="text-[11px] text-slate-500 mt-1">
+                          <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
                             <a className="underline" href={r.link_url || "#"} target="_blank" rel="noreferrer">
                               Open registration
                             </a>
+                            {needsPipeOrParenOrHtmlCleanup(edit.camp_name) ? (
+                              <span className="text-amber-700">will auto-trim on Save</span>
+                            ) : (
+                              <span className="text-slate-400">clean</span>
+                            )}
                           </div>
                         </td>
 
@@ -2320,33 +2492,14 @@ function AdminImportInner() {
                         </td>
 
                         <td className="p-2">
-                          <input
-                            className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
-                            value={edit.end_date ?? ""}
-                            onChange={(e) => setCampEdit((prev) => ({ ...prev, [id]: { ...(prev[id] || edit), end_date: e.target.value } }))}
-                          />
-                        </td>
-
-                        <td className="p-2">
-                          <div className="flex gap-2 flex-wrap">
-                            <Button className="text-sm" onClick={() => saveCampRow(id)} disabled={campSavingId === id || editorWorking}>
+                          <div className="flex gap-2">
+                            <Button
+                              className="text-sm"
+                              onClick={() => saveCampRow(id)}
+                              disabled={campSavingId === id || editorWorking}
+                            >
                               {campSavingId === id ? "Saving…" : "Save"}
                             </Button>
-
-                            <Button
-                              variant="outline"
-                              className="text-sm"
-                              onClick={() =>
-                                setCampEdit((prev) => ({
-                                  ...prev,
-                                  [id]: original,
-                                }))
-                              }
-                              disabled={editorWorking}
-                            >
-                              Reset
-                            </Button>
-
                             <Button
                               variant="outline"
                               className="text-sm"
@@ -2369,7 +2522,7 @@ function AdminImportInner() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={10} className="p-3 text-slate-500">
+                    <td colSpan={8} className="p-3 text-slate-500">
                       {selectedSportId ? (editorWorking ? "Loading…" : "No rows loaded. Click Load Camps.") : "Select a sport first."}
                     </td>
                   </tr>
