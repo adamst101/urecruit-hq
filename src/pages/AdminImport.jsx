@@ -355,7 +355,6 @@ const QUALITY_VOCAB = {
   schools_name_format: "Schools: Name Format",
   schools_missing_price: "Schools: Missing Price",
   schools_any_cleanup: "Schools: Any Cleanup",
-  missing_event_key: "Missing event_key",
 };
 
 const QUALITY_MODES = [
@@ -1387,6 +1386,138 @@ function AdminImportInner() {
     }
   }
 
+  // Shared writer: takes "accepted" (already normalized) and upserts into CampDemo by event_key.
+  async function writeAcceptedEventsToCampDemo(accepted, runIso) {
+    if (!CampDemoEntity) return { created: 0, updated: 0, skipped: 0, errors: 1, improved: 0 };
+    const list = asArray(accepted || []);
+    if (!list.length) return { created: 0, updated: 0, skipped: 0, errors: 0, improved: 0 };
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    let errors = 0;
+    let improved = 0;
+
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i] || {};
+
+      const school_id = safeString(a.school_id) || null;
+      const sport_id = selectedSportId;
+
+      // enforce pipe + parentheses cleanup on write (prevents reintroducing)
+      const camp_name = sanitizeCampNameForWrite(a.camp_name);
+
+      const start_date = toISODate(a.start_date);
+      const end_date = toISODate(a.end_date);
+
+      const link_url = safeString(a.link_url) || safeString(a.registration_url) || safeString(a.source_url);
+
+      if (!school_id || !sport_id || !camp_name || !start_date) {
+        skipped += 1;
+        continue;
+      }
+
+      const season_year = safeNumber(a.season_year) ?? safeNumber(computeSeasonYearFootball(start_date));
+      if (season_year == null) {
+        skipped += 1;
+        continue;
+      }
+
+      // IMPORTANT: If function provides program_id / event_key, use it (prevents new keys).
+      const source_platform = safeString(a.source_platform) || "sportsusa";
+      const program_id = safeString(a.program_id) || `sportsusa:${slugify(camp_name)}`;
+      const source_url = safeString(a.source_url) || link_url;
+
+      const event_key =
+        safeString(a.event_key) ||
+        buildEventKey({
+          source_platform,
+          program_id,
+          start_date,
+          link_url,
+          source_url,
+        });
+
+      const content_hash =
+        safeString(a.content_hash) ||
+        simpleHash({
+          school_id,
+          sport_id,
+          camp_name,
+          start_date,
+          end_date,
+          link_url,
+          source_platform,
+          program_id,
+          event_dates_raw: safeString(a.event_dates_raw),
+          notes: safeString(a.notes),
+          price: safeNumber(a.price),
+          price_min: safeNumber(a.price_min),
+          price_max: safeNumber(a.price_max),
+          price_raw: safeString(a.price_raw),
+          city: safeString(a.city),
+          state: safeString(a.state),
+        });
+
+      const price_best = safeNumber(a.price) ?? safeNumber(a.price_max) ?? safeNumber(a.price_min);
+
+      const payload = {
+        school_id,
+        sport_id,
+        camp_name,
+        start_date,
+        end_date: end_date || null,
+        city: safeString(a.city) || null,
+        state: safeString(a.state) || null,
+        position_ids: normalizeStringArray(a.position_ids),
+        price: price_best,
+        link_url: link_url || null,
+        notes: safeString(a.notes) || null,
+        season_year,
+        program_id,
+        event_key,
+        source_platform,
+        source_url: source_url || null,
+        last_seen_at: runIso,
+        content_hash,
+        event_dates_raw: safeString(a.event_dates_raw) || null,
+        grades_raw: safeString(a.grades_raw) || null,
+        register_by_raw: safeString(a.register_by_raw) || null,
+        price_raw: safeString(a.price_raw) || null,
+        price_min: safeNumber(a.price_min),
+        price_max: safeNumber(a.price_max),
+        sections_json: a.sections_json != null ? a.sections_json : null,
+        ...(typeof a.active === "boolean" ? { active: a.active } : {}),
+      };
+
+      try {
+        let existing = [];
+        try {
+          existing = await entityList(CampDemoEntity, { event_key });
+        } catch {
+          existing = [];
+        }
+        const prevHash = existing?.[0]?.content_hash ? String(existing[0].content_hash) : null;
+
+        const result = await writeWithRetry(() => upsertCampDemoByEventKey(payload), { maxRetries: 7 });
+        if (result === "created") created += 1;
+        if (result === "updated") updated += 1;
+
+        // Improved = created OR content hash changed
+        if (prevHash && prevHash !== content_hash) improved += 1;
+        if (!prevHash && result === "created") improved += 1;
+      } catch (e) {
+        errors += 1;
+        appendLog("camps", `[Camps] WRITE ERROR #${i + 1}: ${String(e?.message || e)}`);
+      }
+
+      if ((i + 1) % 25 === 0) appendLog("camps", `[Camps] Write progress: ${i + 1}/${list.length}`);
+      await sleep(Math.max(0, Number(writeDelayMs || 0)));
+    }
+
+    return { created, updated, skipped, errors, improved };
+  }
+
   async function runOneIngestCall({ runIso, runId, batchSites, testSiteUrl, testSchoolId }) {
     const batch = asArray(batchSites);
 
@@ -1842,6 +1973,15 @@ function AdminImportInner() {
   const [campSavingId, setCampSavingId] = useState("");
   const [noCampSites, setNoCampSites] = useState([]);
 
+  // SchoolSportSite fix workflow (from Camp Editor rows)
+  const [fixPanelOpen, setFixPanelOpen] = useState(false);
+  const [fixSchoolId, setFixSchoolId] = useState("");
+  const [fixRowId, setFixRowId] = useState("");
+  const [fixSiteRow, setFixSiteRow] = useState(null);
+  const [fixCampSiteUrl, setFixCampSiteUrl] = useState("");
+  const [fixDryRun, setFixDryRun] = useState(true);
+  const [fixWorking, setFixWorking] = useState(false);
+
   function buildEditRowDefaults(r) {
     return {
       camp_name: r?.camp_name ?? "",
@@ -1856,6 +1996,182 @@ function AdminImportInner() {
       notes: r?.notes ?? "",
       active: readCampActiveFlag(r),
     };
+  }
+
+  async function openFixPanelForRow(row) {
+    const sid = safeString(row?.school_id);
+    if (!sid) {
+      appendLog("editor", `[Fix] Cannot open fix panel: row missing school_id.`);
+      return;
+    }
+    if (!selectedSportId) {
+      appendLog("editor", `[Fix] Select a sport first.`);
+      return;
+    }
+    if (!SchoolSportSiteEntity) {
+      appendLog("editor", `[Fix] SchoolSportSite entity not available.`);
+      return;
+    }
+
+    setFixPanelOpen(true);
+    setFixSchoolId(String(sid));
+    setFixRowId(String(row?.id || ""));
+    setFixSiteRow(null);
+    setFixCampSiteUrl("");
+
+    try {
+      // Prefer active site record for this school+sport
+      let sites = [];
+      try {
+        sites = await entityList(SchoolSportSiteEntity, { school_id: String(sid), sport_id: selectedSportId });
+      } catch {
+        sites = [];
+      }
+      const activeFirst = asArray(sites).sort((a, b) => (readActiveFlag(b) ? 1 : 0) - (readActiveFlag(a) ? 1 : 0));
+      const hit = activeFirst[0] || null;
+      setFixSiteRow(hit);
+      setFixCampSiteUrl(safeString(hit?.camp_site_url) || "");
+      appendLog(
+        "editor",
+        `[Fix] Loaded SchoolSportSite for school_id=${sid} sport_id=${selectedSportId}: ${hit?.id ? `site_id=${hit.id}` : "NOT FOUND"}`
+      );
+    } catch (e) {
+      appendLog("editor", `[Fix] ERROR loading SchoolSportSite: ${String(e?.message || e)}`);
+    }
+  }
+
+  async function saveFixCampSiteUrlOnly() {
+    if (!fixSiteRow?.id) {
+      appendLog("editor", `[Fix] Cannot save: SchoolSportSite record not loaded.`);
+      return;
+    }
+    if (!SchoolSportSiteEntity?.update) {
+      appendLog("editor", `[Fix] SchoolSportSite.update not available.`);
+      return;
+    }
+    const url = safeString(fixCampSiteUrl);
+    if (!url) {
+      appendLog("editor", `[Fix] Provide a camp_site_url first.`);
+      return;
+    }
+
+    setFixWorking(true);
+    try {
+      await writeWithRetry(() => SchoolSportSiteEntity.update(String(fixSiteRow.id), { camp_site_url: url }), { maxRetries: 7 });
+      appendLog("editor", `[Fix] Saved camp_site_url for site_id=${fixSiteRow.id}`);
+    } catch (e) {
+      appendLog("editor", `[Fix] SAVE FAILED: ${String(e?.message || e)}`);
+    } finally {
+      setFixWorking(false);
+    }
+  }
+
+  async function cleanupCampDemoForFixSchool({ dryRun }) {
+    const sid = safeString(fixSchoolId);
+    if (!sid) return { wouldDelete: 0, deleted: 0 };
+    if (!CampDemoEntity) return { wouldDelete: 0, deleted: 0 };
+
+    const rows = asArray(await entityList(CampDemoEntity, { school_id: String(sid), sport_id: selectedSportId }));
+    const wouldDelete = rows.length;
+    if (dryRun) {
+      appendLog("editor", `[Fix] DryRun: would delete CampDemo rows for school_id=${sid} sport_id=${selectedSportId}: ${wouldDelete}`);
+      return { wouldDelete, deleted: 0 };
+    }
+
+    let deleted = 0;
+    for (const r of rows) {
+      const ok = await writeWithRetry(() => tryDelete(CampDemoEntity, String(r.id)), { maxRetries: 7 }).catch(() => false);
+      if (ok) deleted += 1;
+      await sleep(Math.max(0, Number(writeDelayMs || 0)));
+    }
+    appendLog("editor", `[Fix] Deleted CampDemo rows for school_id=${sid}: ${deleted}/${wouldDelete}`);
+    return { wouldDelete, deleted };
+  }
+
+  async function runTestIngestForFixSchool({ testSiteUrl, testSchoolId, dryRun }) {
+    const runIso = new Date().toISOString();
+    const runId = `fix_${runIso.replace(/[:.]/g, "").slice(0, 15)}`;
+
+    appendLog(
+      "editor",
+      `[Fix] Re-ingest start. dryRun=${dryRun ? "true" : "false"} testSchoolId=${testSchoolId} testSiteUrl=${testSiteUrl}`
+    );
+
+    const res = await fetch("/functions/sportsUSAIngestCamps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sportId: selectedSportId,
+        sportName: selectedSportName,
+        dryRun: !!dryRun,
+        maxSites: 1,
+        maxRegsPerSite: Number(campsMaxRegsPerSite || 10),
+        maxEvents: Number(campsMaxEvents || 300),
+        fastMode: !!fastMode,
+        sites: [],
+        testSiteUrl,
+        testSchoolId,
+        runId,
+      }),
+    });
+
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      const t = await res.text().catch(() => null);
+      appendLog("editor", `[Fix] Function returned non-JSON. HTTP ${res.status} ${truncate(t || "", 300)}`);
+      return { created: 0, updated: 0, skipped: 0, errors: 1, improved: 0 };
+    }
+
+    if (!res.ok) {
+      appendLog("editor", `[Fix] Function ERROR (HTTP ${res.status})`);
+      appendLog("editor", truncate(JSON.stringify(data || {}, null, 2), 800));
+      return { created: 0, updated: 0, skipped: 0, errors: 1, improved: 0 };
+    }
+
+    const accepted = asArray(data?.accepted || []).map((x) => normalizeAcceptedRowToFlat(x));
+    appendLog("editor", `[Fix] Accepted events returned: ${accepted.length}`);
+
+    if (dryRun) {
+      appendLog("editor", `[Fix] DryRun=true: no CampDemo writes performed.`);
+      return { created: 0, updated: 0, skipped: 0, errors: 0, improved: 0 };
+    }
+
+    const wr = await writeAcceptedEventsToCampDemo(accepted, runIso);
+    appendLog("editor", `[Fix] Re-ingest writes done. created=${wr.created} updated=${wr.updated} skipped=${wr.skipped} errors=${wr.errors} improved=${wr.improved}`);
+    return wr;
+  }
+
+  async function fixSchoolSiteThenCleanThenReingest() {
+    const sid = safeString(fixSchoolId);
+    const url = safeString(fixCampSiteUrl);
+    if (!sid || !url) {
+      appendLog("editor", `[Fix] Missing school_id or camp_site_url.`);
+      return;
+    }
+
+    setFixWorking(true);
+    try {
+      // 1) Save camp_site_url
+      await saveFixCampSiteUrlOnly();
+
+      // 2) Cleanup CampDemo rows for that school+sport
+      await cleanupCampDemoForFixSchool({ dryRun: !!fixDryRun });
+
+      // 3) Re-ingest from corrected camp page
+      await runTestIngestForFixSchool({ testSiteUrl: url, testSchoolId: sid, dryRun: !!fixDryRun });
+
+      // 4) Refresh editor view + counters
+      if (!fixDryRun) {
+        await refreshQualityCounters({ improvedThisRun: 0 });
+        await loadCampRowsForEditor();
+      }
+    } catch (e) {
+      appendLog("editor", `[Fix] ERROR: ${String(e?.message || e)}`);
+    } finally {
+      setFixWorking(false);
+    }
   }
 
   async function loadCampRowsForEditor() {
@@ -1959,6 +2275,19 @@ function AdminImportInner() {
     try {
       const cleanedName = sanitizeCampNameForWrite(patch.camp_name);
 
+      const current = campRows.find((x) => String(x.id) === String(id)) || null;
+
+      // If event_key is missing, generate it once we have a usable link_url + start_date.
+      const existingEventKey = safeString(current?.event_key);
+      const maybeStart = toISODate(patch.start_date) || toISODate(current?.start_date);
+      const maybeLink = safeString(patch.link_url) || safeString(current?.link_url) || safeString(current?.source_url);
+      const maybeProgram = safeString(current?.program_id) || (safeString(patch.camp_name) ? `sportsusa:${slugify(patch.camp_name)}` : null);
+      const maybePlatform = safeString(current?.source_platform) || "sportsusa";
+      const maybeSourceUrl = safeString(current?.source_url) || maybeLink;
+      const generatedEventKey = !existingEventKey && maybeProgram && maybeStart
+        ? buildEventKey({ source_platform: maybePlatform, program_id: maybeProgram, start_date: maybeStart, link_url: maybeLink, source_url: maybeSourceUrl })
+        : null;
+
       const payload = {
         camp_name: cleanedName,
         price: safeNumber(patch.price),
@@ -1972,11 +2301,15 @@ function AdminImportInner() {
         notes: safeString(patch.notes) || null,
         last_seen_at: new Date().toISOString(),
         active: typeof patch.active === "boolean" ? patch.active : true,
+        ...(generatedEventKey ? { event_key: generatedEventKey } : {}),
       };
 
       await writeWithRetry(() => CampDemoEntity.update(String(id), payload), { maxRetries: 7 });
 
-      appendLog("editor", `[Editor] Saved ${id} (active=${payload.active ? "true" : "false"})`);
+      appendLog(
+        "editor",
+        `[Editor] Saved ${id} (active=${payload.active ? "true" : "false"}${generatedEventKey ? `, event_key=generated` : ""})`
+      );
       await refreshQualityCounters();
     } catch (e) {
       appendLog("editor", `[Editor] SAVE FAILED ${id}: ${String(e?.message || e)}`);
@@ -2507,7 +2840,7 @@ function AdminImportInner() {
                 <option value="bad_name">{QUALITY_VOCAB.bad_name}</option>
                 <option value="name_format">{QUALITY_VOCAB.name_format}</option>
                 <option value="missing_price">{QUALITY_VOCAB.missing_price}</option>
-                <option value="missing_event_key">{QUALITY_VOCAB.missing_event_key}</option>
+                <option value="missing_event_key">Missing event_key</option>
                 <option value="no_camps">{QUALITY_VOCAB.no_camps}</option>
 
                 <option value="schools_bad_name">{QUALITY_VOCAB.schools_bad_name}</option>
@@ -2607,7 +2940,7 @@ function AdminImportInner() {
                 <thead className="bg-slate-50">
                   <tr className="text-left">
                     <th className="p-2 border-b border-slate-200">Camp Name</th>
-                    <th className="p-2 border-b border-slate-200 w-[360px]">Event Key</th>
+                    <th className="p-2 border-b border-slate-200">Event Key</th>
                     <th className="p-2 border-b border-slate-200 w-24">Active</th>
                     <th className="p-2 border-b border-slate-200 w-28">Price</th>
                     <th className="p-2 border-b border-slate-200 w-28">Min</th>
@@ -2643,31 +2976,30 @@ function AdminImportInner() {
                             />
                           </td>
 
-                          <td className="p-2 w-[360px]">
-                            <div className="flex items-start gap-2">
-                              <div className="flex-1">
-                                <div className="font-mono text-xs text-slate-800 break-all" data-testid="event-key">
-                                  {String(r.event_key || "")}
-                                </div>
-                                {String(r.event_key || "") ? null : (
-                                  <div className="text-[11px] text-amber-700 mt-1">Missing event_key (not dedup/upsert-safe)</div>
-                                )}
+                          {/* Event Key: full + copy */}
+                          <td className="p-2 min-w-[220px]">
+                            {safeString(r?.event_key) ? (
+                              <div className="flex items-center gap-2">
+                                <div className="text-xs text-slate-700 break-all">{String(r.event_key)}</div>
+                                <Button
+                                  className="text-xs"
+                                  onClick={async () => {
+                                    try {
+                                      await navigator.clipboard.writeText(String(r.event_key));
+                                      appendLog("editor", `[Editor] Copied event_key for ${id}`);
+                                    } catch {
+                                      appendLog("editor", `[Editor] Copy failed (browser blocked).`);
+                                    }
+                                  }}
+                                >
+                                  Copy
+                                </Button>
                               </div>
-                              <Button
-                                className="px-2 py-1 text-xs"
-                                disabled={!String(r.event_key || "")}
-                                onClick={async () => {
-                                  try {
-                                    await navigator.clipboard.writeText(String(r.event_key || ""));
-                                    appendLog("editor", `[Editor] Copied event_key for row ${id}`);
-                                  } catch (e) {
-                                    appendLog("editor", `[Editor] Copy failed for row ${id}: ${String(e?.message || e)}`);
-                                  }
-                                }}
-                              >
-                                Copy
-                              </Button>
-                            </div>
+                            ) : (
+                              <div className="text-xs text-amber-700">
+                                Missing event_key <span className="text-[11px] text-slate-500">(not dedup/upsert-safe)</span>
+                              </div>
+                            )}
                           </td>
 
                           <td className="p-2">
@@ -2768,6 +3100,9 @@ function AdminImportInner() {
                               <Button className="text-sm" onClick={() => saveCampRow(id)} disabled={campSavingId === id || editorWorking}>
                                 {campSavingId === id ? "Saving…" : "Save"}
                               </Button>
+                              <Button className="text-sm" onClick={() => openFixPanelForRow(r)} disabled={editorWorking || fixWorking}>
+                                Fix camp_site_url
+                              </Button>
                               <Button
                                 className="text-sm"
                                 onClick={async () => {
@@ -2800,7 +3135,7 @@ function AdminImportInner() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={9} className="p-3 text-slate-500">
+                      <td colSpan={10} className="p-3 text-slate-500">
                         {selectedSportId ? (editorWorking ? "Loading…" : "No rows loaded. Click Load.") : "Select a sport first."}
                       </td>
                     </tr>
@@ -2809,6 +3144,88 @@ function AdminImportInner() {
               </table>
             </div>
           )}
+
+          {/* Fix SchoolSportSite.camp_site_url → cleanup → re-ingest (from Camp Editor rows) */}
+          {fixPanelOpen && editorFilter !== "no_camps" ? (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div className="font-semibold text-slate-900">Fix School Camp Page (SchoolSportSite)</div>
+                  <div className="text-xs text-slate-600 mt-1">
+                    This updates <b>camp_site_url</b> for the school+sport, deletes that school’s CampDemo rows, then re-ingests from the corrected page.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    className="text-sm"
+                    onClick={() => {
+                      setFixPanelOpen(false);
+                      setFixSiteRow(null);
+                      setFixCampSiteUrl("");
+                      setFixSchoolId("");
+                      setFixRowId("");
+                    }}
+                    disabled={fixWorking}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-slate-700">school_id</div>
+                  <div className="text-sm text-slate-800">{fixSchoolId || "—"}</div>
+                  <div className="text-xs text-slate-500 mt-1">row_id={fixRowId || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-slate-700">SchoolSportSite id</div>
+                  <div className="text-sm text-slate-800">{fixSiteRow?.id ? String(fixSiteRow.id) : "—"}</div>
+                  <div className="text-xs text-slate-500 mt-1">sport_id={selectedSportId || "—"}</div>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">camp_site_url (school camp page)</label>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    value={fixCampSiteUrl}
+                    onChange={(e) => setFixCampSiteUrl(e.target.value)}
+                    placeholder="https://..."
+                    disabled={fixWorking}
+                  />
+                  {safeString(fixCampSiteUrl) ? (
+                    <a className="text-xs text-blue-600 underline break-all" href={fixCampSiteUrl} target="_blank" rel="noreferrer">
+                      Open camp_site_url
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={!!fixDryRun} onChange={(e) => setFixDryRun(e.target.checked)} disabled={fixWorking} />
+                  Dry Run (preview only)
+                </label>
+
+                <Button onClick={saveFixCampSiteUrlOnly} disabled={fixWorking || !fixSiteRow?.id || !safeString(fixCampSiteUrl)}>
+                  Save camp_site_url
+                </Button>
+                <Button onClick={() => cleanupCampDemoForFixSchool({ dryRun: true })} disabled={fixWorking || !fixSchoolId}>
+                  Preview Cleanup
+                </Button>
+                <Button
+                  className="border-slate-900"
+                  onClick={fixSchoolSiteThenCleanThenReingest}
+                  disabled={fixWorking || !fixSchoolId || !safeString(fixCampSiteUrl)}
+                >
+                  {fixWorking ? "Working…" : "Fix + Clean + Re-ingest"}
+                </Button>
+              </div>
+
+              <div className="mt-2 text-xs text-slate-500">
+                Tip: Start with Dry Run. When preview looks right, uncheck Dry Run and run the full fix.
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-3">
             <div className="text-xs text-slate-500 mb-1">Editor Log</div>
