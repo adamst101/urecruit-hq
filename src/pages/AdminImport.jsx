@@ -398,6 +398,43 @@ function AdminImportInner() {
   const CampEntity = base44?.entities ? base44.entities.Camp : null;
 
   /* ----------------------------
+     School name index (for triage tables)
+  ----------------------------- */
+  const [schoolNameById, setSchoolNameById] = useState({});
+  const [schoolIndexLoading, setSchoolIndexLoading] = useState(false);
+
+  function readSchoolName(r) {
+    return safeString(r?.school_name) || safeString(r?.name) || safeString(r?.schoolName) || null;
+  }
+
+  async function loadSchoolIndex() {
+    if (!SchoolEntity) return;
+    setSchoolIndexLoading(true);
+    try {
+      // Base44 does not guarantee "get by ids" semantics, so we load once and cache.
+      const rows = await entityList(SchoolEntity, {});
+      const map = {};
+      for (const r of asArray(rows)) {
+        const id = safeString(r?.id);
+        const nm = readSchoolName(r);
+        if (id && nm) map[String(id)] = nm;
+      }
+      setSchoolNameById(map);
+    } catch (e) {
+      appendLog("editor", `[SchoolIndex] ERROR: ${String(e?.message || e)}`);
+    } finally {
+      setSchoolIndexLoading(false);
+    }
+  }
+
+  function schoolLabel(schoolId) {
+    const id = safeString(schoolId);
+    if (!id) return "";
+    return schoolNameById[String(id)] || "";
+  }
+
+
+  /* ----------------------------
      Sport selector
   ----------------------------- */
   const [sports, setSports] = useState([]);
@@ -817,6 +854,7 @@ function AdminImportInner() {
 
   useEffect(() => {
     if (!selectedSportId) return;
+    loadSchoolIndex();
     refreshCrawlCounters();
     refreshQualityCounters();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2937,6 +2975,7 @@ async function openFixPanelForRow(row) {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50">
                   <tr className="text-left">
+                    <th className="p-2 border-b border-slate-200">School</th>
                     <th className="p-2 border-b border-slate-200">school_id</th>
                     <th className="p-2 border-b border-slate-200">site_id</th>
                     <th className="p-2 border-b border-slate-200">camp_site_url</th>
@@ -2949,6 +2988,7 @@ async function openFixPanelForRow(row) {
                   {noCampSites.length ? (
                     noCampSites.map((s) => (
                       <tr key={String(s.id)} className="border-b border-slate-100">
+                        <td className="p-2">{schoolLabel(s.school_id) || "—"}</td>
                         <td className="p-2">{String(s.school_id || "")}</td>
                         <td className="p-2">{String(s.id || "")}</td>
                         <td className="p-2">
@@ -2967,7 +3007,7 @@ async function openFixPanelForRow(row) {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} className="p-3 text-slate-500">
+                      <td colSpan={7} className="p-3 text-slate-500">
                         {selectedSportId ? (editorWorking ? "Loading…" : "No schools currently in No Camps Remaining. Click Load.") : "Select a sport first."}
                       </td>
                     </tr>
@@ -3003,7 +3043,7 @@ async function openFixPanelForRow(row) {
                         <tr key={id} className="border-b border-slate-100">
                           <td className="p-2 min-w-[320px]">
                             <div className="text-[11px] text-slate-500 mb-1">
-                              school_id={String(r.school_id || "")} • event_key={truncate(String(r.event_key || ""), 52)}
+                              school={schoolLabel(r.school_id) || "—"} • school_id={String(r.school_id || "")} • event_key={truncate(String(r.event_key || ""), 52)}
                             </div>
                             <input
                               className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
@@ -3216,7 +3256,7 @@ async function openFixPanelForRow(row) {
               <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
                   <div className="text-xs font-semibold text-slate-700">school_id</div>
-                  <div className="text-sm text-slate-800">{fixSchoolId || "—"}</div>
+                  <div className="text-sm text-slate-800">{fixSchoolId ? `${schoolLabel(fixSchoolId) || "—"} (${fixSchoolId})` : "—"}</div>
                   <div className="text-xs text-slate-500 mt-1">row_id={fixRowId || "—"}</div>
                 </div>
                 <div>
