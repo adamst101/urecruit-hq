@@ -355,6 +355,7 @@ const QUALITY_VOCAB = {
   schools_name_format: "Schools: Name Format",
   schools_missing_price: "Schools: Missing Price",
   schools_any_cleanup: "Schools: Any Cleanup",
+  missing_event_key: "Missing event_key",
 };
 
 const QUALITY_MODES = [
@@ -1909,6 +1910,7 @@ function AdminImportInner() {
         if (editorFilter === "bad_name") rows = rows.filter((r) => isBadCampName(r?.camp_name));
         if (editorFilter === "name_format") rows = rows.filter((r) => needsPipeOrParenOrHtmlCleanup(r?.camp_name));
         if (editorFilter === "missing_price") rows = rows.filter((r) => isMissingPrice(r));
+        if (editorFilter === "missing_event_key") rows = rows.filter((r) => !safeString(r?.event_key));
       }
 
       if (editorFilter === "any_cleanup") {
@@ -2505,6 +2507,7 @@ function AdminImportInner() {
                 <option value="bad_name">{QUALITY_VOCAB.bad_name}</option>
                 <option value="name_format">{QUALITY_VOCAB.name_format}</option>
                 <option value="missing_price">{QUALITY_VOCAB.missing_price}</option>
+                <option value="missing_event_key">{QUALITY_VOCAB.missing_event_key}</option>
                 <option value="no_camps">{QUALITY_VOCAB.no_camps}</option>
 
                 <option value="schools_bad_name">{QUALITY_VOCAB.schools_bad_name}</option>
@@ -2604,6 +2607,7 @@ function AdminImportInner() {
                 <thead className="bg-slate-50">
                   <tr className="text-left">
                     <th className="p-2 border-b border-slate-200">Camp Name</th>
+                    <th className="p-2 border-b border-slate-200 w-[360px]">Event Key</th>
                     <th className="p-2 border-b border-slate-200 w-24">Active</th>
                     <th className="p-2 border-b border-slate-200 w-28">Price</th>
                     <th className="p-2 border-b border-slate-200 w-28">Min</th>
@@ -2637,6 +2641,33 @@ function AdminImportInner() {
                                 }))
                               }
                             />
+                          </td>
+
+                          <td className="p-2 w-[360px]">
+                            <div className="flex items-start gap-2">
+                              <div className="flex-1">
+                                <div className="font-mono text-xs text-slate-800 break-all" data-testid="event-key">
+                                  {String(r.event_key || "")}
+                                </div>
+                                {String(r.event_key || "") ? null : (
+                                  <div className="text-[11px] text-amber-700 mt-1">Missing event_key (not dedup/upsert-safe)</div>
+                                )}
+                              </div>
+                              <Button
+                                className="px-2 py-1 text-xs"
+                                disabled={!String(r.event_key || "")}
+                                onClick={async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(String(r.event_key || ""));
+                                    appendLog("editor", `[Editor] Copied event_key for row ${id}`);
+                                  } catch (e) {
+                                    appendLog("editor", `[Editor] Copy failed for row ${id}: ${String(e?.message || e)}`);
+                                  }
+                                }}
+                              >
+                                Copy
+                              </Button>
+                            </div>
                           </td>
 
                           <td className="p-2">
