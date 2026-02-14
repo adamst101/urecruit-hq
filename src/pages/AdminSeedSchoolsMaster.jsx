@@ -63,7 +63,10 @@ async function upsertSchoolBySourceKey(sourceKey, payload, dryRun) {
   const existing = Array.isArray(rows) && rows.length ? rows[0] : null;
 
   if (dryRun) {
-    return { mode: existing && existing.id ? "would_update" : "would_create", id: existing && existing.id ? String(existing.id) : null };
+    return {
+      mode: existing && existing.id ? "would_update" : "would_create",
+      id: existing && existing.id ? String(existing.id) : null,
+    };
   }
 
   if (existing && existing.id) {
@@ -172,11 +175,15 @@ export default function AdminSeedSchoolsMaster() {
 
       if (dryRun) {
         push(`✅ DryRun complete. Sample:\n${safeJson(sample)}`);
-        push(`Flip DryRun off to write these rows.`);
+        push(`Next: switch DryRun off to write these rows.`);
       } else {
         push(`✅ Upsert complete. Created=${created} Updated=${updated} Skipped=${skipped}`);
         push(`Sample:\n${safeJson(sample)}`);
       }
+
+      push(
+        `Ramp plan: Run maxPages=1 → 5 → 20. Increase page by +maxPages each run (page 0, 20, 40...).`
+      );
     } catch (e) {
       const d = diagnoseAxiosError(e);
       push(`❌ ERROR: ${d.message}`);
@@ -193,7 +200,7 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master (Scorecard)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Backend fetches Scorecard rows; this page upserts into School using the frontend SDK.
+            Backend fetches Scorecard rows; this page upserts into School via the frontend SDK.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
@@ -244,7 +251,7 @@ export default function AdminSeedSchoolsMaster() {
           </div>
 
           <div className="mt-2 text-xs text-slate-500">
-            Ramp plan: DryRun=true (page 0, maxPages 1) → DryRun=false same → then maxPages 5.
+            Start with DryRun=true and maxPages=1. Once stable, DryRun=false and ramp maxPages upward.
           </div>
         </Card>
 
