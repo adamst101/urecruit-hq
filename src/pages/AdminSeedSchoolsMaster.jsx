@@ -1,7 +1,6 @@
 // src/pages/AdminSeedSchoolsMaster.jsx
 import React, { useMemo, useRef, useState } from "react";
 import { base44 } from "../api/base44Client";
-import { School } from "../api/entities";
 
 const Card = ({ children }) => (
   <div className="rounded-xl border border-slate-200 bg-white p-4">{children}</div>
@@ -57,13 +56,20 @@ function detectEnv() {
     dataEnv: hasProdDataEnv ? "prod data env" : "default data env",
   };
 }
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function upsertSchoolBySourceKey(sourceKey, payload, dryRun) {
-  const rows = await School.filter({ source_key: sourceKey });
+function resolveEntity(nameA, nameB) {
+  const e = base44?.entities;
+  if (!e) return null;
+  if (e[nameA]) return { key: nameA, entity: e[nameA] };
+  if (e[nameB]) return { key: nameB, entity: e[nameB] };
+  return null;
+}
+
+async function upsertBySourceKey(Entity, sourceKey, payload, dryRun) {
+  const rows = await Entity.filter({ source_key: sourceKey });
   const existing = Array.isArray(rows) && rows.length ? rows[0] : null;
 
   if (dryRun) {
@@ -74,17 +80,30 @@ async function upsertSchoolBySourceKey(sourceKey, payload, dryRun) {
   }
 
   if (existing && existing.id) {
-    await School.update(String(existing.id), payload);
+    await Entity.update(String(existing.id), payload);
     return { mode: "updated", id: String(existing.id) };
   }
 
-  const created = await School.create(payload);
+  const created = await Entity.create(payload);
   return { mode: "created", id: created && created.id ? String(created.id) : null };
 }
 
 export default function AdminSeedSchoolsMaster() {
   const env = useMemo(() => detectEnv(), []);
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
+
+  const entityKeys = useMemo(() => {
+    try {
+      return Object.keys(base44?.entities || {}).sort();
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const schoolResolved = useMemo(() => resolveEntity("School", "Schools"), []);
+  const eventResolved = useMemo(() => resolveEntity("Event", "Events"), []);
+
+  const SchoolEntity = schoolResolved?.entity || null;
 
   const [working, setWorking] = useState(false);
   const [running, setRunning] = useState(false);
@@ -98,9 +117,9 @@ export default function AdminSeedSchoolsMaster() {
   // Batch controls
   const [startPage, setStartPage] = useState(0);
   const [perPage, setPerPage] = useState(100);
-  const [pagesPerBatch, setPagesPerBatch] = useState(5); // 5 pages = up to 500 rows per batch
+  const [pagesPerBatch, setPagesPerBatch] = useState(5);
   const [delayMs, setDelayMs] = useState(500);
-  const [maxBatches, setMaxBatches] = useState(250); // safety stop
+  const [maxBatches, setMaxBatches] = useState(250);
 
   // Progress
   const [progress, setProgress] = useState({
@@ -162,7 +181,7 @@ export default function AdminSeedSchoolsMaster() {
     return { rows, debug };
   };
 
-  const upsertRows = async (rows) => {
+  const upsertRowsToSchool = async (rows) => {
     let created = 0;
     let updated = 0;
     let skipped = 0;
@@ -178,34 +197,27 @@ export default function AdminSeedSchoolsMaster() {
         continue;
       }
 
-      // Schema-aligned payload (ONLY fields that exist in School entity)
+      // ONLY fields in your School schema
       const payload = {
         school_name: name,
         normalized_name: r.normalized_name || null,
-
         city: r.city || null,
         state: r.state || null,
         country: "US",
-
         division: null,
         subdivision: null,
         conference: null,
-
         logo_url: null,
         website_url: r.website_url || null,
-
         unitid: unitid || null,
-
-        // NOTE: You may want to add "scorecard" to your source_platform description list.
         source_platform: "scorecard",
         source_key: source_key,
         source_school_url: null,
-
         active: true,
         last_seen_at: new Date().toISOString(),
       };
 
-      const res = await upsertSchoolBySourceKey(source_key, payload, dryRun);
+      const res = await upsertBySourceKey(SchoolEntity, source_key, payload, dryRun);
       if (res.mode === "created") created += 1;
       else if (res.mode === "updated") updated += 1;
 
@@ -218,8 +230,14 @@ export default function AdminSeedSchoolsMaster() {
   const startAutoRun = async () => {
     if (!canRun) return;
 
-    if (!School || !School.filter || !School.create || !School.update) {
-      setLog([`❌ ERROR: School entity is not available in src/api/entities.js`]);
+    // Hard stop: if SchoolEntity is not found, do NOT proceed.
+    if (!SchoolEntity || !SchoolEntity.filter || !SchoolEntity.create || !SchoolEntity.update) {
+      setLog([
+        `❌ ERROR: Could not resolve School entity from base44.entities.`,
+        `Resolved School key: ${schoolResolved?.key || "NONE"}`,
+        ` "School"/"Schools" must exist in base44.entities to write schools.`,
+        `Available entities (first 40): ${entityKeys.slice(0, 40).join(", ")}`
+      ]);
       return;
     }
 
@@ -236,6 +254,7 @@ export default function AdminSeedSchoolsMaster() {
 
     push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
     push(`URL: ${env.href}`);
+    push(`Resolved entity: School=${schoolResolved?.key || "NONE"} Event=${eventResolved?.key || "NONE"}`);
     push(`Auto-run start @ ${new Date().toISOString()}`);
     push(
       `DryRun=${dryRun} startPage=${page0} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay} maxBatches=${maxB}`
@@ -263,7 +282,6 @@ export default function AdminSeedSchoolsMaster() {
         let rows = [];
         let debug = null;
 
-        // One retry for transient failures
         try {
           const out = await runOneBatch(currentPage, per, ppb);
           rows = out.rows;
@@ -296,7 +314,7 @@ export default function AdminSeedSchoolsMaster() {
         }
 
         push(dryRun ? `DryRun is ON: simulating upserts...` : `Writing upserts to School...`);
-        const up = await upsertRows(rows);
+        const up = await upsertRowsToSchool(rows);
 
         if (dryRun) {
           push(`✅ DryRun batch complete.`);
@@ -316,7 +334,6 @@ export default function AdminSeedSchoolsMaster() {
         }));
         currentPage = currentPage + ppb;
 
-        // Completion heuristic: partial block = end of dataset
         if (rows.length < expectedMax) {
           push(`🏁 Fetched fewer than ${expectedMax}. Treating as complete.`);
           setProgress((p) => ({ ...p, done: true }));
@@ -341,57 +358,27 @@ export default function AdminSeedSchoolsMaster() {
     }
   };
 
-  const runSingle = async () => {
-    if (!canRun) return;
-
-    if (!School || !School.filter || !School.create || !School.update) {
-      setLog([`❌ ERROR: School entity is not available in src/api/entities.js`]);
-      return;
-    }
-
-    setWorking(true);
-    setLog([]);
-    try {
-      push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
-      push(`URL: ${env.href}`);
-      push(`Single batch start @ ${new Date().toISOString()}`);
-      push(`DryRun=${dryRun} page=${startPage} perPage=${perPage} maxPages=${pagesPerBatch}`);
-
-      const out = await runOneBatch(Number(startPage || 0), Number(perPage || 100), Number(pagesPerBatch || 1));
-      const rows = out.rows || [];
-      push(`✅ Fetched rows: ${rows.length}`);
-      if (out.debug && out.debug.pageCalls) push(`PageCalls:\n${safeJson(out.debug.pageCalls)}`);
-
-      if (!rows.length) {
-        push(`No rows returned.`);
-        return;
-      }
-
-      push(dryRun ? `DryRun ON: not writing.` : `Writing to School...`);
-      const up = await upsertRows(rows);
-
-      if (dryRun) push(`✅ DryRun complete.`);
-      else push(`✅ Upsert complete. Created=${up.created} Updated=${up.updated} Skipped=${up.skipped}`);
-    } catch (e) {
-      const d = diagnoseAxiosError(e);
-      push(`❌ ERROR: ${d.message}`);
-      if (d.status) push(`HTTP ${d.status} ${d.statusText || ""}`.trim());
-      if (d.data) push(`Response data:\n${safeJson(d.data)}`);
-    } finally {
-      setWorking(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-4xl mx-auto space-y-3">
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master (Auto-run)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Runs Scorecard fetch + School upsert in batches until complete. Uses stable source_key for idempotent upserts.
+            This page resolves the School entity directly from base44.entities to prevent accidental writes to Event.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
+          </div>
+        </Card>
+
+        <Card>
+          <div className="text-lg font-semibold text-slate-900">Entity Diagnostics</div>
+          <div className="mt-2 text-sm text-slate-700">
+            <div>Resolved School entity: <span className="font-mono">{schoolResolved?.key || "NONE"}</span></div>
+            <div>Resolved Event entity: <span className="font-mono">{eventResolved?.key || "NONE"}</span></div>
+            <div className="mt-2 text-xs text-slate-500">
+              Entities (first 40): {entityKeys.slice(0, 40).join(", ")}
+            </div>
           </div>
         </Card>
 
@@ -456,9 +443,6 @@ export default function AdminSeedSchoolsMaster() {
           </div>
 
           <div className="mt-4 flex gap-2">
-            <Button disabled={working || running} onClick={runSingle} variant="outline">
-              Run single batch
-            </Button>
             <Button disabled={working || running} onClick={startAutoRun}>
               Run until complete
             </Button>
@@ -469,26 +453,6 @@ export default function AdminSeedSchoolsMaster() {
 
           <div className="mt-3 text-xs text-slate-500">
             Start: perPage=100, pagesPerBatch=5, delayMs=500. DryRun=true first. Then DryRun=false.
-          </div>
-        </Card>
-
-        <Card>
-          <div className="text-lg font-semibold text-slate-900">Progress</div>
-          <div className="mt-2 text-sm text-slate-700">
-            <div>Batches: {progress.batches}</div>
-            <div>Pages processed: {progress.pagesProcessed}</div>
-            <div>Rows fetched: {progress.rowsFetched}</div>
-            {!dryRun && (
-              <>
-                <div>Created: {progress.created}</div>
-                <div>Updated: {progress.updated}</div>
-                <div>Skipped: {progress.skipped}</div>
-              </>
-            )}
-            <div>Last page start: {progress.lastPageStart === null ? "-" : progress.lastPageStart}</div>
-            <div>Last batch rows: {progress.lastBatchRows}</div>
-            <div>Status: {progress.done ? "DONE" : progress.stopped ? "STOPPED" : running ? "RUNNING" : "IDLE"}</div>
-            {progress.lastError ? <div className="text-red-600">Last error: {progress.lastError}</div> : null}
           </div>
         </Card>
 
