@@ -48,7 +48,9 @@
  * The mainPage value must match a key in the PAGES object exactly.
  */
 import AdminBackfill from './pages/AdminBackfill';
+import AdminFactoryReset from './pages/AdminFactoryReset';
 import AdminImport from './pages/AdminImport';
+import AdminSeedSchoolsMaster from './pages/AdminSeedSchoolsMaster';
 import AuthRedirect from './pages/AuthRedirect';
 import Calendar from './pages/Calendar';
 import CampDetail from './pages/CampDetail';
@@ -66,14 +68,14 @@ import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
-import AdminFactoryReset from './pages/AdminFactoryReset';
-import AdminSeedSchoolsMaster from './pages/AdminSeedSchoolsMaster';
 import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
     "AdminBackfill": AdminBackfill,
+    "AdminFactoryReset": AdminFactoryReset,
     "AdminImport": AdminImport,
+    "AdminSeedSchoolsMaster": AdminSeedSchoolsMaster,
     "AuthRedirect": AuthRedirect,
     "Calendar": Calendar,
     "CampDetail": CampDetail,
@@ -91,8 +93,6 @@ export const PAGES = {
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
-    "AdminFactoryReset": AdminFactoryReset,
-    "AdminSeedSchoolsMaster": AdminSeedSchoolsMaster,
 }
 
 export const pagesConfig = {

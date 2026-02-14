@@ -68,7 +68,7 @@ export default function AdminSeedSchoolsMaster() {
   const [log, setLog] = useState([]);
 
   const [scorecardSeedFunctionName, setScorecardSeedFunctionName] = useState(
-    "seedSchoolsMaster_scorecard_v2"
+    "seedSchoolsMaster_scorecard"
   );
   const [scorecardSeedDryRun, setScorecardSeedDryRun] = useState(true);
   const [scorecardSeedPage, setScorecardSeedPage] = useState(0);
