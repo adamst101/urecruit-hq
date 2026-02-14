@@ -26,15 +26,31 @@ function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
+function unwrapBase44(raw) {
+  // Base44 functions often return { data: ..., status, headers, ... }
+  // Normalize so callers can always read resp.stats/resp.debug/etc.
+  return raw?.data ?? raw;
+}
+
+function safeJson(obj) {
+  try {
+    return JSON.stringify(obj, null, 2);
+  } catch {
+    return String(obj);
+  }
+}
+
 export default function AdminSeedSchoolsMaster() {
   const [working, setWorking] = useState(false);
   const [log, setLog] = useState([]);
 
+  // Membership seed controls
   const [dryRun, setDryRun] = useState(true);
   const [includeNCAA, setIncludeNCAA] = useState(true);
   const [includeNAIA, setIncludeNAIA] = useState(true);
   const [includeNJCAA, setIncludeNJCAA] = useState(true);
 
+  // Scorecard enrich controls
   const [scorecardBatchLimit, setScorecardBatchLimit] = useState(75);
   const [scorecardDryRun, setScorecardDryRun] = useState(true);
 
@@ -51,19 +67,29 @@ export default function AdminSeedSchoolsMaster() {
       push(`Membership seed start @ ${new Date().toISOString()}`);
       push(`DryRun=${dryRun} NCAA=${includeNCAA} NAIA=${includeNAIA} NJCAA=${includeNJCAA}`);
 
-      const resp = await base44.functions.invoke("seedSchoolsMaster_membership", {
+      const raw = await base44.functions.invoke("seedSchoolsMaster_membership", {
         dryRun,
         includeNCAA,
         includeNAIA,
         includeNJCAA,
       });
+      const resp = unwrapBase44(raw);
+
+      // If you're still getting unexpected wrapper shapes, this line helps
+      if (resp === raw && raw?.data) {
+        push(`(note) response was wrapped; using raw.data`);
+      }
 
       push(
         `✅ Done. Created=${resp?.stats?.created ?? "?"} Updated=${resp?.stats?.updated ?? "?"} Skipped=${resp?.stats?.skipped ?? "?"}`
       );
-      if (resp?.debug?.pages) push(`Pages: ${JSON.stringify(resp.debug.pages, null, 2)}`);
+
+      if (resp?.debug?.pages) push(`Pages:\n${safeJson(resp.debug.pages)}`);
+      if (resp?.debug?.notes?.length) push(`Notes:\n${safeJson(resp.debug.notes)}`);
+      if (resp?.debug?.errors?.length) push(`Errors:\n${safeJson(resp.debug.errors)}`);
+
       if (Array.isArray(resp?.sample) && resp.sample.length) {
-        push(`Sample:\n${JSON.stringify(resp.sample, null, 2)}`);
+        push(`Sample:\n${safeJson(resp.sample)}`);
       }
     } catch (e) {
       push(`❌ ERROR: ${String(e?.message || e)}`);
@@ -81,12 +107,12 @@ export default function AdminSeedSchoolsMaster() {
       push(`Scorecard enrich start @ ${new Date().toISOString()}`);
       push(`DryRun=${scorecardDryRun} BatchLimit=${scorecardBatchLimit}`);
 
-      const resp = await base44.functions.invoke("enrichSchoolsMaster_scorecard", {
+      const raw = await base44.functions.invoke("enrichSchoolsMaster_scorecard", {
         dryRun: scorecardDryRun,
         batchLimit: Number(scorecardBatchLimit || 75),
       });
+      const resp = unwrapBase44(raw);
 
-      // Your backend returns stats+debug; these fields are reliable
       push(
         `✅ Done. Matched=${resp?.stats?.matched ?? "?"} Updated=${resp?.stats?.updated ?? "?"} NoMatch=${resp?.stats?.noMatch ?? "?"} Errors=${resp?.stats?.errors ?? "?"}`
       );
@@ -94,12 +120,17 @@ export default function AdminSeedSchoolsMaster() {
         `API key present? ${resp?.stats?.apiKeyPresent ? "YES" : "NO"} (where=${resp?.stats?.apiKeyWhere ?? "unknown"})`
       );
 
-      if (resp?.debug?.errors?.length) push(`Debug errors: ${JSON.stringify(resp.debug.errors, null, 2)}`);
-      if (resp?.debug?.notes?.length) push(`Debug notes: ${JSON.stringify(resp.debug.notes, null, 2)}`);
-      if (resp?.debug?.secretTries) push(`Secret tries: ${JSON.stringify(resp.debug.secretTries, null, 2)}`);
+      if (resp?.stats?.candidates != null) push(`Candidates evaluated: ${resp.stats.candidates}`);
 
-      if (resp?.debug?.scorecard) push(`Scorecard probe: ${JSON.stringify(resp.debug.scorecard, null, 2)}`);
-      if (Array.isArray(resp?.sample) && resp.sample.length) push(`Sample:\n${JSON.stringify(resp.sample, null, 2)}`);
+      if (resp?.debug?.errors?.length) push(`Debug errors:\n${safeJson(resp.debug.errors)}`);
+      if (resp?.debug?.notes?.length) push(`Debug notes:\n${safeJson(resp.debug.notes)}`);
+      if (resp?.debug?.secretTries) push(`Secret tries:\n${safeJson(resp.debug.secretTries)}`);
+
+      if (resp?.debug?.scorecard) push(`Scorecard probe:\n${safeJson(resp.debug.scorecard)}`);
+
+      if (Array.isArray(resp?.sample) && resp.sample.length) {
+        push(`Sample:\n${safeJson(resp.sample)}`);
+      }
     } catch (e) {
       push(`❌ ERROR: ${String(e?.message || e)}`);
     } finally {
@@ -114,8 +145,11 @@ export default function AdminSeedSchoolsMaster() {
     setLog([]);
     try {
       push(`Debug secrets start @ ${new Date().toISOString()}`);
-      const resp = await base44.functions.invoke("debugSecrets", {});
-      push(`✅ debugSecrets response:\n${JSON.stringify(resp, null, 2)}`);
+
+      const raw = await base44.functions.invoke("debugSecrets", {});
+      const resp = unwrapBase44(raw);
+
+      push(`✅ debugSecrets response:\n${safeJson(resp)}`);
     } catch (e) {
       push(`❌ ERROR: ${String(e?.message || e)}`);
     } finally {
@@ -163,6 +197,10 @@ export default function AdminSeedSchoolsMaster() {
 
         <Card>
           <div className="text-lg font-semibold text-slate-900">Enrich via College Scorecard</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Uses SCORECARD_API_KEY from backend secrets. This will log whether the key is visible and whether Scorecard
+            requests are succeeding.
+          </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm">
