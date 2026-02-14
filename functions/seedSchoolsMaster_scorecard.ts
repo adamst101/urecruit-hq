@@ -6,7 +6,7 @@
 //
 // Body: { page?: number, perPage?: number, maxPages?: number }
 
-const VERSION = "seedSchoolsMaster_scorecard_2026-02-14_v1_fetch_only_editor_safe";
+const VERSION = "seedSchoolsMaster_scorecard_2026-02-14_v2_fetch_only_redact_key";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -40,6 +40,14 @@ function makeUrl(apiKey, page, perPage) {
   return "https://api.data.gov/ed/collegescorecard/v1/schools?" + qs;
 }
 
+function redactApiKey(url) {
+  try {
+    return String(url || "").replace(/api_key=[^&]+/i, "api_key=REDACTED");
+  } catch {
+    return "REDACTED_URL";
+  }
+}
+
 async function fetchScorecard(apiKey, page, perPage) {
   var url = makeUrl(apiKey, page, perPage);
 
@@ -47,8 +55,8 @@ async function fetchScorecard(apiKey, page, perPage) {
     method: "GET",
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-      Accept: "application/json"
-    }
+      Accept: "application/json",
+    },
   });
 
   var txt = "";
@@ -74,14 +82,14 @@ Deno.serve(async (req) => {
     startedAt: new Date().toISOString(),
     step: "init",
     pageCalls: [],
-    errors: []
+    errors: [],
   };
 
   try {
     if (req.method !== "POST") {
       return new Response(JSON.stringify({ error: "Method not allowed", debug: debug }), {
         status: 405,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -104,7 +112,7 @@ Deno.serve(async (req) => {
       debug.errors.push("Missing SCORECARD_API_KEY in Deno.env.get");
       return new Response(JSON.stringify({ error: "Missing SCORECARD_API_KEY", debug: debug }), {
         status: 200,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -115,14 +123,16 @@ Deno.serve(async (req) => {
       debug.step = "fetch_page_" + p;
 
       var resp = await fetchScorecard(apiKey, p, perPage);
-      debug.pageCalls.push({ page: p, http: resp.http, url: resp.url });
+
+      // IMPORTANT: never log the raw url (it contains api_key)
+      debug.pageCalls.push({ page: p, http: resp.http, url: redactApiKey(resp.url) });
 
       if (resp.http >= 400) {
         debug.errors.push("Scorecard HTTP " + resp.http + " page=" + p);
         debug.errors.push(resp.txt ? resp.txt.slice(0, 220) : "no body");
         return new Response(JSON.stringify({ error: "Scorecard HTTP " + resp.http, debug: debug }), {
           status: 200,
-          headers: { "Content-Type": "application/json" }
+          headers: { "Content-Type": "application/json" },
         });
       }
 
@@ -148,7 +158,7 @@ Deno.serve(async (req) => {
           state: state,
           website_url: website,
           source_platform: "scorecard",
-          source_key: "scorecard:" + unitid
+          source_key: "scorecard:" + unitid,
         });
       }
     }
@@ -156,13 +166,13 @@ Deno.serve(async (req) => {
     debug.step = "done";
     return new Response(JSON.stringify({ rows: rows, debug: debug }), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   } catch (e3) {
-    debug.errors.push(String((e3 && e3.message) ? e3.message : e3));
-    return new Response(JSON.stringify({ error: String((e3 && e3.message) ? e3.message : e3), debug: debug }), {
+    debug.errors.push(String(e3 && e3.message ? e3.message : e3));
+    return new Response(JSON.stringify({ error: String(e3 && e3.message ? e3.message : e3), debug: debug }), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   }
 });
