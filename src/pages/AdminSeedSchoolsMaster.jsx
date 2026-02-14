@@ -58,8 +58,10 @@ export default function AdminSeedSchoolsMaster() {
         includeNJCAA,
       });
 
-      push(`✅ Done. Created=${resp?.stats?.created ?? "?"} Updated=${resp?.stats?.updated ?? "?"} Skipped=${resp?.stats?.skipped ?? "?"}`);
-      push(`Notes: ${resp?.stats?.notes ?? 0}`);
+      push(
+        `✅ Done. Created=${resp?.stats?.created ?? "?"} Updated=${resp?.stats?.updated ?? "?"} Skipped=${resp?.stats?.skipped ?? "?"}`
+      );
+      if (resp?.debug?.pages) push(`Pages: ${JSON.stringify(resp.debug.pages, null, 2)}`);
       if (Array.isArray(resp?.sample) && resp.sample.length) {
         push(`Sample:\n${JSON.stringify(resp.sample, null, 2)}`);
       }
@@ -84,13 +86,36 @@ export default function AdminSeedSchoolsMaster() {
         batchLimit: Number(scorecardBatchLimit || 75),
       });
 
+      // Your backend returns stats+debug; these fields are reliable
       push(
         `✅ Done. Matched=${resp?.stats?.matched ?? "?"} Updated=${resp?.stats?.updated ?? "?"} NoMatch=${resp?.stats?.noMatch ?? "?"} Errors=${resp?.stats?.errors ?? "?"}`
       );
-      push(`API key present? ${resp?.stats?.apiKeyPresent ? "YES" : "NO"}`);
-      if (Array.isArray(resp?.sample) && resp.sample.length) {
-        push(`Sample:\n${JSON.stringify(resp.sample, null, 2)}`);
-      }
+      push(
+        `API key present? ${resp?.stats?.apiKeyPresent ? "YES" : "NO"} (where=${resp?.stats?.apiKeyWhere ?? "unknown"})`
+      );
+
+      if (resp?.debug?.errors?.length) push(`Debug errors: ${JSON.stringify(resp.debug.errors, null, 2)}`);
+      if (resp?.debug?.notes?.length) push(`Debug notes: ${JSON.stringify(resp.debug.notes, null, 2)}`);
+      if (resp?.debug?.secretTries) push(`Secret tries: ${JSON.stringify(resp.debug.secretTries, null, 2)}`);
+
+      if (resp?.debug?.scorecard) push(`Scorecard probe: ${JSON.stringify(resp.debug.scorecard, null, 2)}`);
+      if (Array.isArray(resp?.sample) && resp.sample.length) push(`Sample:\n${JSON.stringify(resp.sample, null, 2)}`);
+    } catch (e) {
+      push(`❌ ERROR: ${String(e?.message || e)}`);
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const runDebugSecrets = async () => {
+    if (!canRun) return;
+
+    setWorking(true);
+    setLog([]);
+    try {
+      push(`Debug secrets start @ ${new Date().toISOString()}`);
+      const resp = await base44.functions.invoke("debugSecrets", {});
+      push(`✅ debugSecrets response:\n${JSON.stringify(resp, null, 2)}`);
     } catch (e) {
       push(`❌ ERROR: ${String(e?.message || e)}`);
     } finally {
@@ -126,18 +151,18 @@ export default function AdminSeedSchoolsMaster() {
             </label>
           </div>
 
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             <Button disabled={working} onClick={runMembershipSeed}>
               {working ? "Working…" : "Run membership seed"}
+            </Button>
+            <Button disabled={working} onClick={runDebugSecrets} variant="outline">
+              {working ? "Working…" : "Debug secrets"}
             </Button>
           </div>
         </Card>
 
         <Card>
           <div className="text-lg font-semibold text-slate-900">Enrich via College Scorecard</div>
-          <div className="text-sm text-slate-600 mt-1">
-            Requires SCORECARD_API_KEY in Base44 function secrets. If not present, it will report "API key present? NO".
-          </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm">
