@@ -84,7 +84,7 @@ function parseNcaaOrg(html: string): AnyRec[] {
     if (!school) continue;
 
     // best-effort mapping by known column names: last cell often State
-    const state = s(tds[tds.length - 3]) || s(tds[tds.length - 2]) || s(tds[tds.length - 1]) || null;
+    const state = s(tds[tds.length - 1]) || s(tds[tds.length - 2]) || null;
 
     // division often second cell
     const division = s(tds[1]) || null;
