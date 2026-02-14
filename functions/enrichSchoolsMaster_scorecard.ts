@@ -113,6 +113,7 @@ Deno.serve(async (req) => {
   const stats: AnyRec = {
     apiKeyPresent: false,
     apiKeyPrefix: null,
+    apiKeyWhere: null,
     candidates: 0,
     matched: 0,
     updated: 0,
@@ -125,6 +126,7 @@ Deno.serve(async (req) => {
     notes: [],
     errors: [],
     samples: [],
+    secretTries: {},
     scorecard: { last_http: null, last_url: null, last_body_snippet: null },
   };
 
@@ -135,7 +137,46 @@ Deno.serve(async (req) => {
     const dryRun = !!body?.dryRun;
     const batchLimit = Number(body?.batchLimit || 75);
 
-    const apiKey = s((globalThis as any)?.Deno?.env?.get?.("SCORECARD_API_KEY")) || null;
+    // Try multiple secret sources
+    let apiKey: string | null = null;
+    
+    try {
+      const denoKey = (globalThis as any)?.Deno?.env?.get?.("SCORECARD_API_KEY");
+      debug.secretTries.deno = !!denoKey;
+      if (denoKey) {
+        apiKey = s(denoKey);
+        stats.apiKeyWhere = "Deno.env.get";
+      }
+    } catch {
+      debug.secretTries.deno = "error";
+    }
+
+    if (!apiKey) {
+      try {
+        const procKey = (globalThis as any)?.process?.env?.SCORECARD_API_KEY;
+        debug.secretTries.process = !!procKey;
+        if (procKey) {
+          apiKey = s(procKey);
+          stats.apiKeyWhere = "process.env";
+        }
+      } catch {
+        debug.secretTries.process = "error";
+      }
+    }
+
+    if (!apiKey) {
+      try {
+        const base44Key = (globalThis as any)?.base44?.secrets?.SCORECARD_API_KEY;
+        debug.secretTries.base44Secrets = !!base44Key;
+        if (base44Key) {
+          apiKey = s(base44Key);
+          stats.apiKeyWhere = "base44.secrets";
+        }
+      } catch {
+        debug.secretTries.base44Secrets = "error";
+      }
+    }
+
     stats.apiKeyPresent = !!apiKey;
     stats.apiKeyPrefix = apiKey ? String(apiKey).slice(0, 6) + "…" : null;
 
