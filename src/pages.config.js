@@ -67,6 +67,7 @@ import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
 import AdminFactoryReset from './pages/AdminFactoryReset';
+import AdminSeedSchoolsMaster from './pages/AdminSeedSchoolsMaster';
 import __Layout from './Layout.jsx';
 
 
@@ -91,6 +92,7 @@ export const PAGES = {
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
     "AdminFactoryReset": AdminFactoryReset,
+    "AdminSeedSchoolsMaster": AdminSeedSchoolsMaster,
 }
 
 export const pagesConfig = {
