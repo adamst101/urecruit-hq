@@ -36,14 +36,6 @@ function safeJson(x) {
 function unwrapInvokeResponse(resp) {
   return resp?.data ?? resp ?? null;
 }
-function diagnoseAxiosError(e) {
-  return {
-    message: String(e?.message || e),
-    status: e?.response?.status ?? null,
-    statusText: e?.response?.statusText ?? null,
-    data: e?.response?.data ?? null,
-  };
-}
 function detectEnv() {
   const href = typeof window !== "undefined" ? window.location.href : "";
   const host = typeof window !== "undefined" ? window.location.host : "";
@@ -56,8 +48,14 @@ function detectEnv() {
     dataEnv: hasProdDataEnv ? "prod data env" : "default data env",
   };
 }
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRateLimitError(e) {
+  const msg = String(e?.message || e || "").toLowerCase();
+  return msg.includes("rate limit") || msg.includes("too many") || msg.includes("429");
 }
 
 function resolveEntity(nameA, nameB) {
@@ -68,24 +66,35 @@ function resolveEntity(nameA, nameB) {
   return null;
 }
 
-async function upsertBySourceKey(Entity, sourceKey, payload, dryRun) {
-  const rows = await Entity.filter({ source_key: sourceKey });
-  const existing = Array.isArray(rows) && rows.length ? rows[0] : null;
+async function retryable(fn, opts) {
+  const {
+    tries = 5,
+    baseDelayMs = 500,
+    maxDelayMs = 5000,
+    jitterMs = 200,
+    onRetry = null,
+    shouldRetry = isRateLimitError,
+  } = opts || {};
 
-  if (dryRun) {
-    return {
-      mode: existing && existing.id ? "would_update" : "would_create",
-      id: existing && existing.id ? String(existing.id) : null,
-    };
+  let lastErr = null;
+
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const retry = shouldRetry(e) && i < tries - 1;
+      if (!retry) throw e;
+
+      const backoff = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, i));
+      const jitter = Math.floor(Math.random() * (jitterMs + 1));
+      const wait = backoff + jitter;
+      if (onRetry) onRetry(e, i + 1, wait);
+      await sleep(wait);
+    }
   }
 
-  if (existing && existing.id) {
-    await Entity.update(String(existing.id), payload);
-    return { mode: "updated", id: String(existing.id) };
-  }
-
-  const created = await Entity.create(payload);
-  return { mode: "created", id: created && created.id ? String(created.id) : null };
+  throw lastErr;
 }
 
 export default function AdminSeedSchoolsMaster() {
@@ -118,8 +127,12 @@ export default function AdminSeedSchoolsMaster() {
   const [startPage, setStartPage] = useState(0);
   const [perPage, setPerPage] = useState(100);
   const [pagesPerBatch, setPagesPerBatch] = useState(5);
-  const [delayMs, setDelayMs] = useState(500);
+  const [delayMs, setDelayMs] = useState(750);
   const [maxBatches, setMaxBatches] = useState(250);
+
+  // Write throttling
+  const [writeEveryN, setWriteEveryN] = useState(1); // keep =1, we throttle via perOpDelayMs
+  const [perOpDelayMs, setPerOpDelayMs] = useState(35); // 25–75ms is typical safe range
 
   // Progress
   const [progress, setProgress] = useState({
@@ -171,14 +184,51 @@ export default function AdminSeedSchoolsMaster() {
 
     const resp = unwrapInvokeResponse(raw);
     if (resp && resp.error) {
-      const err = new Error(String(resp.error));
-      err._payload = resp;
-      throw err;
+      throw new Error(String(resp.error));
     }
 
     const rows = resp && Array.isArray(resp.rows) ? resp.rows : [];
     const debug = resp && resp.debug ? resp.debug : null;
     return { rows, debug };
+  };
+
+  const upsertRow = async (r) => {
+    const source_key = r && r.source_key ? String(r.source_key) : null;
+    const unitid = r && r.unitid ? String(r.unitid) : null;
+    const name = r && r.school_name ? String(r.school_name) : null;
+
+    if (!source_key || !name) return { mode: "skipped" };
+
+    const payload = {
+      school_name: name,
+      normalized_name: r.normalized_name || null,
+      city: r.city || null,
+      state: r.state || null,
+      country: "US",
+      division: null,
+      subdivision: null,
+      conference: null,
+      logo_url: null,
+      website_url: r.website_url || null,
+      unitid: unitid || null,
+      source_platform: "scorecard",
+      source_key: source_key,
+      source_school_url: null,
+      active: true,
+      last_seen_at: new Date().toISOString(),
+    };
+
+    // Existence check (1 read) + write (1 write)
+    const existingRows = await SchoolEntity.filter({ source_key: source_key });
+    const existing = Array.isArray(existingRows) && existingRows.length ? existingRows[0] : null;
+
+    if (existing && existing.id) {
+      await SchoolEntity.update(String(existing.id), payload);
+      return { mode: "updated" };
+    }
+
+    await SchoolEntity.create(payload);
+    return { mode: "created" };
   };
 
   const upsertRowsToSchool = async (rows) => {
@@ -187,41 +237,43 @@ export default function AdminSeedSchoolsMaster() {
     let skipped = 0;
 
     for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      const source_key = r && r.source_key ? String(r.source_key) : null;
-      const unitid = r && r.unitid ? String(r.unitid) : null;
-      const name = r && r.school_name ? String(r.school_name) : null;
+      if (cancelRef.current) break;
 
-      if (!source_key || !name) {
-        skipped += 1;
+      const r = rows[i];
+
+      // DryRun: ZERO DB calls
+      if (dryRun) {
         continue;
       }
 
-      // ONLY fields in your School schema
-      const payload = {
-        school_name: name,
-        normalized_name: r.normalized_name || null,
-        city: r.city || null,
-        state: r.state || null,
-        country: "US",
-        division: null,
-        subdivision: null,
-        conference: null,
-        logo_url: null,
-        website_url: r.website_url || null,
-        unitid: unitid || null,
-        source_platform: "scorecard",
-        source_key: source_key,
-        source_school_url: null,
-        active: true,
-        last_seen_at: new Date().toISOString(),
-      };
+      // Throttle + retry on rate limiting
+      const res = await retryable(
+        async () => {
+          const out = await upsertRow(r);
+          return out;
+        },
+        {
+          tries: 6,
+          baseDelayMs: 600,
+          maxDelayMs: 6000,
+          jitterMs: 250,
+          onRetry: (e, attempt, wait) => {
+            push(`⚠️ Rate limit hit. Retry attempt ${attempt} in ${wait}ms`);
+          },
+        }
+      );
 
-      const res = await upsertBySourceKey(SchoolEntity, source_key, payload, dryRun);
       if (res.mode === "created") created += 1;
       else if (res.mode === "updated") updated += 1;
+      else skipped += 1;
 
-      if (i > 0 && i % 200 === 0) await sleep(0);
+      // light throttle (prevents burst)
+      if (perOpDelayMs > 0 && (i % writeEveryN === 0)) {
+        await sleep(perOpDelayMs);
+      }
+
+      // yield occasionally
+      if (i > 0 && i % 100 === 0) await sleep(0);
     }
 
     return { created, updated, skipped };
@@ -230,13 +282,11 @@ export default function AdminSeedSchoolsMaster() {
   const startAutoRun = async () => {
     if (!canRun) return;
 
-    // Hard stop: if SchoolEntity is not found, do NOT proceed.
     if (!SchoolEntity || !SchoolEntity.filter || !SchoolEntity.create || !SchoolEntity.update) {
       setLog([
         `❌ ERROR: Could not resolve School entity from base44.entities.`,
         `Resolved School key: ${schoolResolved?.key || "NONE"}`,
-        ` "School"/"Schools" must exist in base44.entities to write schools.`,
-        `Available entities (first 40): ${entityKeys.slice(0, 40).join(", ")}`
+        `Available entities (first 40): ${entityKeys.slice(0, 40).join(", ")}`,
       ]);
       return;
     }
@@ -259,6 +309,11 @@ export default function AdminSeedSchoolsMaster() {
     push(
       `DryRun=${dryRun} startPage=${page0} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay} maxBatches=${maxB}`
     );
+    if (!dryRun) {
+      push(`Write throttle: perOpDelayMs=${perOpDelayMs} (raise this if you still hit limits)`);
+    } else {
+      push(`DryRun: no DB reads/writes will occur (prevents rate limit).`);
+    }
 
     let currentPage = page0;
 
@@ -282,20 +337,26 @@ export default function AdminSeedSchoolsMaster() {
         let rows = [];
         let debug = null;
 
-        try {
-          const out = await runOneBatch(currentPage, per, ppb);
-          rows = out.rows;
-          debug = out.debug;
-        } catch (e1) {
-          const d1 = diagnoseAxiosError(e1);
-          push(`⚠️ Batch fetch failed: ${d1.message}${d1.status ? ` (HTTP ${d1.status})` : ""}`);
-          push(`Retrying once after 1500ms...`);
-          await sleep(1500);
+        // retry fetch once if needed
+        const out = await retryable(
+          async () => runOneBatch(currentPage, per, ppb),
+          {
+            tries: 2,
+            baseDelayMs: 1200,
+            maxDelayMs: 1200,
+            jitterMs: 200,
+            onRetry: (e, attempt, wait) => {
+              push(`⚠️ Fetch failed. Retry attempt ${attempt} in ${wait}ms`);
+            },
+            shouldRetry: (e) => {
+              const msg = String(e?.message || e).toLowerCase();
+              return msg.includes("timeout") || msg.includes("network") || msg.includes("429") || msg.includes("rate");
+            },
+          }
+        );
 
-          const out2 = await runOneBatch(currentPage, per, ppb);
-          rows = out2.rows;
-          debug = out2.debug;
-        }
+        rows = out.rows;
+        debug = out.debug;
 
         const expectedMax = per * ppb;
         push(`✅ Fetched rows: ${rows.length} (expected up to ${expectedMax})`);
@@ -313,12 +374,11 @@ export default function AdminSeedSchoolsMaster() {
           break;
         }
 
-        push(dryRun ? `DryRun is ON: simulating upserts...` : `Writing upserts to School...`);
-        const up = await upsertRowsToSchool(rows);
-
         if (dryRun) {
-          push(`✅ DryRun batch complete.`);
+          push(`DryRun complete for batch. WouldUpsert=${rows.length}`);
         } else {
+          push(`Writing upserts to School...`);
+          const up = await upsertRowsToSchool(rows);
           push(`✅ Upsert batch complete. Created=${up.created} Updated=${up.updated} Skipped=${up.skipped}`);
           setProgress((p) => ({
             ...p,
@@ -346,11 +406,9 @@ export default function AdminSeedSchoolsMaster() {
         }
       }
     } catch (e) {
-      const d = diagnoseAxiosError(e);
-      push(`❌ ERROR: ${d.message}`);
-      if (d.status) push(`HTTP ${d.status} ${d.statusText || ""}`.trim());
-      if (d.data) push(`Response data:\n${safeJson(d.data)}`);
-      setProgress((p) => ({ ...p, lastError: d.message }));
+      const msg = String(e?.message || e);
+      push(`❌ ERROR: ${msg}`);
+      setProgress((p) => ({ ...p, lastError: msg }));
     } finally {
       setWorking(false);
       setRunning(false);
@@ -364,7 +422,7 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master (Auto-run)</div>
           <div className="text-sm text-slate-600 mt-1">
-            This page resolves the School entity directly from base44.entities to prevent accidental writes to Event.
+            Fetches Scorecard in batches and upserts into School. DryRun uses zero DB calls to avoid rate limit.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
@@ -374,8 +432,12 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-lg font-semibold text-slate-900">Entity Diagnostics</div>
           <div className="mt-2 text-sm text-slate-700">
-            <div>Resolved School entity: <span className="font-mono">{schoolResolved?.key || "NONE"}</span></div>
-            <div>Resolved Event entity: <span className="font-mono">{eventResolved?.key || "NONE"}</span></div>
+            <div>
+              Resolved School entity: <span className="font-mono">{schoolResolved?.key || "NONE"}</span>
+            </div>
+            <div>
+              Resolved Event entity: <span className="font-mono">{eventResolved?.key || "NONE"}</span>
+            </div>
             <div className="mt-2 text-xs text-slate-500">
               Entities (first 40): {entityKeys.slice(0, 40).join(", ")}
             </div>
@@ -442,6 +504,23 @@ export default function AdminSeedSchoolsMaster() {
             </label>
           </div>
 
+          {!dryRun && (
+            <div className="mt-3 flex flex-wrap items-center gap-4">
+              <label className="text-sm">
+                Per-op delay (ms){" "}
+                <input
+                  className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
+                  value={perOpDelayMs}
+                  onChange={(e) => setPerOpDelayMs(e.target.value)}
+                  disabled={running}
+                />
+              </label>
+              <div className="text-xs text-slate-500">
+                If you still hit rate limits, raise this to 75–150ms.
+              </div>
+            </div>
+          )}
+
           <div className="mt-4 flex gap-2">
             <Button disabled={working || running} onClick={startAutoRun}>
               Run until complete
@@ -452,7 +531,7 @@ export default function AdminSeedSchoolsMaster() {
           </div>
 
           <div className="mt-3 text-xs text-slate-500">
-            Start: perPage=100, pagesPerBatch=5, delayMs=500. DryRun=true first. Then DryRun=false.
+            Recommended: DryRun=true to validate fetch. Then DryRun=false with perOpDelayMs=35–75.
           </div>
         </Card>
 
