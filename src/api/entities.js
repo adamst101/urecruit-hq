@@ -1,64 +1,77 @@
 // src/api/entities.js
 import { base44 } from "./base44Client";
 
-/**
- * Entities: Single source of truth for Base44 tables used in this app.
- * Keep this file STRICT: export only tables that exist in Base44 for this project.
- *
- * Current Base44 entities (confirmed in UI):
- * Camp, UserCamp, Sport, Position, School, Favorite, Registration,
- * AthleteProfile, CampIntent, CampIntentHistory, TargetSchool
- */
-
-// Helper: some Base44 projects use plural entity names (Camps, Sports, etc.)
+// Robust entity picker: prefer exact match, then common pluralization.
 function pickEntity(...names) {
-  const e = base44 && base44.entities ? base44.entities : null;
+  const e = base44?.entities;
   if (!e) return undefined;
 
-  for (let i = 0; i < names.length; i++) {
-    const n = names[i];
+  for (const n of names) {
     if (e[n]) return e[n];
   }
+
+  // Extra safety: common pluralization fallbacks
+  for (const n of names) {
+    const plural = `${n}s`;
+    if (e[plural]) return e[plural];
+  }
+
   return undefined;
 }
 
 // --- Entities (tables) ---
 export const AthleteProfile = pickEntity("AthleteProfile", "AthleteProfiles");
+export const BudgetConstraint = pickEntity("BudgetConstraint", "BudgetConstraints");
+export const CalendarConstraint = pickEntity("CalendarConstraint", "CalendarConstraints");
 
 export const Camp = pickEntity("Camp", "Camps");
+export const CampDecisionScore = pickEntity("CampDecisionScore", "CampDecisionScores");
+export const CampDemo = pickEntity("CampDemo", "CampDemos");
 export const CampIntent = pickEntity("CampIntent", "CampIntents");
 export const CampIntentHistory = pickEntity("CampIntentHistory", "CampIntentHistories");
+
+export const Entitlement = pickEntity("Entitlement", "Entitlements");
+export const Event = pickEntity("Event", "Events");
 
 export const Favorite = pickEntity("Favorite", "Favorites");
 export const Position = pickEntity("Position", "Positions");
 export const Registration = pickEntity("Registration", "Registrations");
 
+export const Scenario = pickEntity("Scenario", "Scenarios");
+export const ScenarioCamp = pickEntity("ScenarioCamp", "ScenarioCamps");
+
+// IMPORTANT: ensure School resolves correctly
 export const School = pickEntity("School", "Schools");
+export const SchoolSportSite = pickEntity("SchoolSportSite", "SchoolSportSites");
 export const Sport = pickEntity("Sport", "Sports");
 
 export const TargetSchool = pickEntity("TargetSchool", "TargetSchools");
+export const TargetSchoolHistory = pickEntity("TargetSchoolHistory", "TargetSchoolHistories");
+
+export const TravelConstraint = pickEntity("TravelConstraint", "TravelConstraints");
 export const UserCamp = pickEntity("UserCamp", "UserCamps");
 
-// --- Auth SDK ---
-export const User = base44 && base44.auth ? base44.auth : undefined;
+// Optional: keep Query if you’re using it
+export const Query = pickEntity("Query", "Queries");
 
-// Optional: quick sanity check you can call from anywhere
+// --- Auth SDK ---
+export const User = base44?.auth;
+
+// Debug helper: quickly verify key bindings from anywhere
 export function _entitiesSanity() {
+  const keys = Object.keys(base44?.entities || {});
   return {
     hasBase44: !!base44,
-    hasEntities: !!(base44 && base44.entities),
-    entitiesFound: {
-      AthleteProfile: !!AthleteProfile,
-      Camp: !!Camp,
-      CampIntent: !!CampIntent,
-      CampIntentHistory: !!CampIntentHistory,
-      Favorite: !!Favorite,
-      Position: !!Position,
-      Registration: !!Registration,
+    hasEntities: !!base44?.entities,
+    entityKeysCount: keys.length,
+    hasSchool: !!(base44?.entities?.School || base44?.entities?.Schools),
+    hasEvent: !!(base44?.entities?.Event || base44?.entities?.Events),
+    picked: {
       School: !!School,
-      Sport: !!Sport,
-      TargetSchool: !!TargetSchool,
-      UserCamp: !!UserCamp,
+      Event: !!Event,
+      Camp: !!Camp,
+      CampDemo: !!CampDemo,
+      SchoolSportSite: !!SchoolSportSite,
     },
   };
 }
