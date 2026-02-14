@@ -124,6 +124,37 @@ function trackEvent(payload) {
   } catch {}
 }
 
+async function fetchByIds(entity, ids) {
+  const clean = Array.from(new Set(asArray(ids).filter(Boolean).map(String)));
+  if (!entity || clean.length === 0) return [];
+
+  // Try a few common "IN" patterns across Base44 backends.
+  const tries = [
+    { id: { in: clean } },
+    { id: { $in: clean } },
+    { _id: { in: clean } },
+    { _id: { $in: clean } },
+  ];
+
+  for (const q of tries) {
+    try {
+      const rows = asArray(await entity.filter(q));
+      if (rows.length) return rows;
+    } catch {
+      // keep trying
+    }
+  }
+
+  // Fallback: list everything and filter client-side.
+  try {
+    const all = asArray((await entity.list?.()) ?? (await entity.filter?.({})));
+    const set = new Set(clean);
+    return all.filter((r) => set.has(String(r?.id ?? r?._id ?? "")));
+  } catch {
+    return [];
+  }
+}
+
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
@@ -266,6 +297,9 @@ export default function Discover() {
   const [loadingCamps, setLoadingCamps] = useState(true);
   const [campErr, setCampErr] = useState("");
 
+  const [schoolById, setSchoolById] = useState({});
+  const [sportById, setSportById] = useState({});
+
   useEffect(() => {
     let cancelled = false;
 
@@ -321,6 +355,50 @@ export default function Discover() {
       cancelled = true;
     };
   }, [season?.isLoading, seasonYear]);
+
+  // Enrich: schools + sports (so Discover doesn't depend on Camp denormalized fields)
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const ids = asArray(rawCamps)
+        .map((r) => normId(r?.school_id))
+        .filter(Boolean);
+      const sportIds = asArray(rawCamps)
+        .map((r) => normId(r?.sport_id))
+        .filter(Boolean);
+
+      try {
+        const rows = await fetchByIds(base44?.entities?.School, ids);
+        const map = {};
+        for (const s of asArray(rows)) {
+          const id = String(normId(s?.id ?? s?._id) || "");
+          if (!id) continue;
+          map[id] = s;
+        }
+        if (!cancelled) setSchoolById(map);
+      } catch {
+        if (!cancelled) setSchoolById({});
+      }
+
+      try {
+        const rows = await fetchByIds(base44?.entities?.Sport, sportIds);
+        const map = {};
+        for (const sp of asArray(rows)) {
+          const id = String(normId(sp?.id ?? sp?._id) || "");
+          if (!id) continue;
+          map[id] = sp;
+        }
+        if (!cancelled) setSportById(map);
+      } catch {
+        if (!cancelled) setSportById({});
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rawCamps]);
 
   const rows = useMemo(() => {
     const src = asArray(rawCamps);
@@ -426,8 +504,22 @@ export default function Discover() {
       <div className="space-y-3">
         {rows.map((r) => {
           const campId = String(r?.id ?? "");
-          const schoolId = String(r?.school_id ?? "");
+          const schoolId = String(normId(r?.school_id) ?? "");
           const sportId = String(r?.sport_id ?? "");
+
+          const srow = schoolById[schoolId] || null;
+          const sprow = sportById[sportId] || null;
+
+          const schoolName =
+            srow?.school_name || srow?.name || r?.school_name || r?.school || "Unknown School";
+          const schoolCity = srow?.city || r?.city || null;
+          const schoolState = srow?.state || r?.state || null;
+          const schoolDivision =
+            srow?.division || srow?.school_division || r?.division || r?.school_division || null;
+          const schoolLogo =
+            srow?.logo_url || srow?.school_logo_url || srow?.logo || srow?.image_url || null;
+
+          const sportName = sprow?.sport_name || sprow?.name || r?.sport_name || r?.sport || "Sport";
 
           const camp = {
             id: campId,
@@ -440,18 +532,25 @@ export default function Discover() {
             url: r?.link_url ?? r?.source_url ?? null,
             link_url: r?.link_url ?? null,
             notes: r?.notes ?? null,
+            // location: prefer camp-specific fields if present, else fall back to school
+            city: r?.city ?? schoolCity,
+            state: r?.state ?? schoolState,
           };
 
           const school = {
             id: schoolId,
-            name: r?.school_name ?? "Unknown School",
-            city: r?.city ?? null,
-            state: r?.state ?? null,
+            name: schoolName,
+            school_name: schoolName,
+            city: schoolCity,
+            state: schoolState,
+            division: schoolDivision,
+            logo_url: schoolLogo,
           };
 
           const sport = {
             id: sportId,
-            name: r?.sport_name ?? "Sport",
+            name: sportName,
+            sport_name: sportName,
           };
 
           const posObjs = asArray(r?.position_ids).map((pid) => ({
@@ -469,17 +568,23 @@ export default function Discover() {
               isFavorite={false}
               isRegistered={false}
               mode={isPaid ? "paid" : "demo"}
-              onToggleFavorite={async () => {
+              onClick={() => {
+                try {
+                  // Keep the first-click experience identical for paid + demo.
+                  // Paid goes to the full detail page; demo stays in demo detail.
+                  nav(
+                    isPaid
+                      ? `/CampDetail?id=${encodeURIComponent(campId)}`
+                      : `/CampDetailDemo?id=${encodeURIComponent(campId)}`
+                  );
+                } catch {}
+              }}
+              disabledFavorite={!isPaid}
+              onFavoriteToggle={async () => {
                 if (!isPaid) return;
                 const ok = await (writeGate?.ensure ? writeGate.ensure("favorite") : true);
                 if (!ok) return;
                 trackEvent({ event_name: "favorite_toggle", source: "discover", camp_id: campId });
-              }}
-              onToggleRegistered={async () => {
-                if (!isPaid) return;
-                const ok = await (writeGate?.ensure ? writeGate.ensure("registered") : true);
-                if (!ok) return;
-                trackEvent({ event_name: "registered_toggle", source: "discover", camp_id: campId });
               }}
             />
           );
