@@ -1,6 +1,7 @@
 // src/pages/AdminSeedSchoolsMaster.jsx
 import React, { useMemo, useState } from "react";
 import { base44 } from "../api/base44Client";
+import { School } from "../api/entities";
 
 const Card = ({ children }) => (
   <div className="rounded-xl border border-slate-200 bg-white p-4">{children}</div>
@@ -26,11 +27,6 @@ const Button = ({ children, disabled, onClick, variant = "solid" }) => {
 function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
-
-function unwrapInvokeResponse(resp) {
-  return resp?.data ?? resp ?? null;
-}
-
 function safeJson(x) {
   try {
     return JSON.stringify(x, null, 2);
@@ -38,7 +34,9 @@ function safeJson(x) {
     return String(x);
   }
 }
-
+function unwrapInvokeResponse(resp) {
+  return resp?.data ?? resp ?? null;
+}
 function diagnoseAxiosError(e) {
   return {
     message: String(e?.message || e),
@@ -47,7 +45,6 @@ function diagnoseAxiosError(e) {
     data: e?.response?.data ?? null,
   };
 }
-
 function detectEnv() {
   const href = typeof window !== "undefined" ? window.location.href : "";
   const host = typeof window !== "undefined" ? window.location.host : "";
@@ -55,36 +52,48 @@ function detectEnv() {
   const hasProdDataEnv = href.includes("base44_data_env=prod");
   return {
     host,
-    isPreviewHost,
-    hasProdDataEnv,
     href,
     label: isPreviewHost ? "PREVIEW HOST" : "PROD HOST",
     dataEnv: hasProdDataEnv ? "prod data env" : "default data env",
   };
 }
 
+async function upsertSchoolBySourceKey(sourceKey, payload, dryRun) {
+  const rows = await School.filter({ source_key: sourceKey });
+  const existing = Array.isArray(rows) && rows.length ? rows[0] : null;
+
+  if (dryRun) {
+    return { mode: existing && existing.id ? "would_update" : "would_create", id: existing && existing.id ? String(existing.id) : null };
+  }
+
+  if (existing && existing.id) {
+    await School.update(String(existing.id), payload);
+    return { mode: "updated", id: String(existing.id) };
+  }
+
+  const created = await School.create(payload);
+  return { mode: "created", id: created && created.id ? String(created.id) : null };
+}
+
 export default function AdminSeedSchoolsMaster() {
   const [working, setWorking] = useState(false);
   const [log, setLog] = useState([]);
 
-  const [scorecardSeedFunctionName, setScorecardSeedFunctionName] = useState(
-    "seedSchoolsMaster_scorecard"
-  );
-  const [scorecardSeedDryRun, setScorecardSeedDryRun] = useState(true);
-  const [scorecardSeedPage, setScorecardSeedPage] = useState(0);
-  const [scorecardSeedPerPage, setScorecardSeedPerPage] = useState(100);
-  const [scorecardSeedMaxPages, setScorecardSeedMaxPages] = useState(1);
+  const env = useMemo(() => detectEnv(), []);
+  const canRun = useMemo(() => !!base44?.functions?.invoke, []);
+
+  const [dryRun, setDryRun] = useState(true);
+  const [page, setPage] = useState(0);
+  const [perPage, setPerPage] = useState(100);
+  const [maxPages, setMaxPages] = useState(1);
 
   const push = (m) => setLog((x) => [...x, m]);
-  const canRun = useMemo(() => !!base44?.functions?.invoke, []);
-  const env = useMemo(() => detectEnv(), []);
 
-  const runScorecardSeed = async () => {
+  const runScorecardFetchAndUpsert = async () => {
     if (!canRun) return;
 
-    const fn = String(scorecardSeedFunctionName || "").trim();
-    if (!fn) {
-      setLog([`❌ ERROR: Function name is blank.`]);
+    if (!School || !School.filter || !School.create || !School.update) {
+      setLog([`❌ ERROR: School entity is not available in src/api/entities.js`]);
       return;
     }
 
@@ -93,22 +102,81 @@ export default function AdminSeedSchoolsMaster() {
     try {
       push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
       push(`URL: ${env.href}`);
-      push(`Scorecard seed start @ ${new Date().toISOString()}`);
-      push(`Function=${fn}`);
-      push(
-        `DryRun=${scorecardSeedDryRun} page=${scorecardSeedPage} perPage=${scorecardSeedPerPage} maxPages=${scorecardSeedMaxPages}`
-      );
+      push(`Scorecard fetch start @ ${new Date().toISOString()}`);
+      push(`DryRun=${dryRun} page=${page} perPage=${perPage} maxPages=${maxPages}`);
 
-      const raw = await base44.functions.invoke(fn, {
-        dryRun: !!scorecardSeedDryRun,
-        page: Number(scorecardSeedPage || 0),
-        perPage: Number(scorecardSeedPerPage || 100),
-        maxPages: Number(scorecardSeedMaxPages || 1),
+      const raw = await base44.functions.invoke("seedSchoolsMaster_scorecard", {
+        page: Number(page || 0),
+        perPage: Number(perPage || 100),
+        maxPages: Number(maxPages || 1),
       });
 
       const resp = unwrapInvokeResponse(raw);
-      if (resp?.error) push(`❌ ERROR: ${resp.error}`);
-      push(`✅ Done:\n${safeJson(resp)}`);
+
+      if (resp && resp.error) {
+        push(`❌ ERROR: ${resp.error}`);
+        if (resp.debug) push(`Debug:\n${safeJson(resp.debug)}`);
+        return;
+      }
+
+      const rows = resp && Array.isArray(resp.rows) ? resp.rows : [];
+      push(`✅ Fetched rows: ${rows.length}`);
+      if (resp && resp.debug && resp.debug.pageCalls) push(`PageCalls:\n${safeJson(resp.debug.pageCalls)}`);
+
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+      const sample = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const source_key = r && r.source_key ? String(r.source_key) : null;
+        const unitid = r && r.unitid ? String(r.unitid) : null;
+        const name = r && r.school_name ? String(r.school_name) : null;
+
+        if (!source_key || !unitid || !name) {
+          skipped += 1;
+          continue;
+        }
+
+        const payload = {
+          school_name: name,
+          normalized_name: r.normalized_name || null,
+
+          source_platform: "scorecard",
+          source_key: source_key,
+          unitid: unitid,
+          active: true,
+
+          city: r.city || null,
+          state: r.state || null,
+          website_url: r.website_url || null,
+
+          division: null,
+          subdivision: null,
+          conference: null,
+          school_type: "College/University",
+          country: "US",
+
+          logo_url: null,
+          last_seen_at: new Date().toISOString(),
+        };
+
+        const res = await upsertSchoolBySourceKey(source_key, payload, dryRun);
+
+        if (res.mode === "created") created += 1;
+        else if (res.mode === "updated") updated += 1;
+
+        if (sample.length < 10) sample.push({ mode: res.mode, source_key, unitid, name });
+      }
+
+      if (dryRun) {
+        push(`✅ DryRun complete. Sample:\n${safeJson(sample)}`);
+        push(`Flip DryRun off to write these rows.`);
+      } else {
+        push(`✅ Upsert complete. Created=${created} Updated=${updated} Skipped=${skipped}`);
+        push(`Sample:\n${safeJson(sample)}`);
+      }
     } catch (e) {
       const d = diagnoseAxiosError(e);
       push(`❌ ERROR: ${d.message}`);
@@ -123,9 +191,9 @@ export default function AdminSeedSchoolsMaster() {
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-3xl mx-auto space-y-3">
         <Card>
-          <div className="text-xl font-bold text-slate-900">Seed School Master</div>
+          <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master (Scorecard)</div>
           <div className="text-sm text-slate-600 mt-1">
-            This page will print host + URL so you can confirm whether you are calling preview functions or prod.
+            Backend fetches Scorecard rows; this page upserts into School using the frontend SDK.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
@@ -133,62 +201,50 @@ export default function AdminSeedSchoolsMaster() {
         </Card>
 
         <Card>
-          <div className="text-lg font-semibold text-slate-900">Scorecard seed (v2)</div>
+          <div className="text-lg font-semibold text-slate-900">Run</div>
 
-          <div className="mt-4 grid grid-cols-1 gap-3">
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
+              Dry run (no writes)
+            </label>
+
             <label className="text-sm">
-              Function name
+              Page{" "}
               <input
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
-                value={scorecardSeedFunctionName}
-                onChange={(e) => setScorecardSeedFunctionName(e.target.value)}
-                placeholder="seedSchoolsMaster_scorecard_v2"
+                className="ml-2 w-20 rounded border border-slate-300 px-2 py-1"
+                value={page}
+                onChange={(e) => setPage(e.target.value)}
               />
             </label>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={scorecardSeedDryRun}
-                  onChange={(e) => setScorecardSeedDryRun(e.target.checked)}
-                />
-                Dry run
-              </label>
+            <label className="text-sm">
+              Per page{" "}
+              <input
+                className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
+                value={perPage}
+                onChange={(e) => setPerPage(e.target.value)}
+              />
+            </label>
 
-              <label className="text-sm">
-                Page{" "}
-                <input
-                  className="ml-2 w-20 rounded border border-slate-300 px-2 py-1"
-                  value={scorecardSeedPage}
-                  onChange={(e) => setScorecardSeedPage(e.target.value)}
-                />
-              </label>
+            <label className="text-sm">
+              Max pages{" "}
+              <input
+                className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
+                value={maxPages}
+                onChange={(e) => setMaxPages(e.target.value)}
+              />
+            </label>
+          </div>
 
-              <label className="text-sm">
-                Per page{" "}
-                <input
-                  className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
-                  value={scorecardSeedPerPage}
-                  onChange={(e) => setScorecardSeedPerPage(e.target.value)}
-                />
-              </label>
+          <div className="mt-3 flex gap-2">
+            <Button disabled={working} onClick={runScorecardFetchAndUpsert}>
+              {working ? "Working…" : "Fetch + Upsert"}
+            </Button>
+          </div>
 
-              <label className="text-sm">
-                Max pages{" "}
-                <input
-                  className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
-                  value={scorecardSeedMaxPages}
-                  onChange={(e) => setScorecardSeedMaxPages(e.target.value)}
-                />
-              </label>
-            </div>
-
-            <div className="flex gap-2">
-              <Button disabled={working} onClick={runScorecardSeed}>
-                {working ? "Working…" : "Run"}
-              </Button>
-            </div>
+          <div className="mt-2 text-xs text-slate-500">
+            Ramp plan: DryRun=true (page 0, maxPages 1) → DryRun=false same → then maxPages 5.
           </div>
         </Card>
 
