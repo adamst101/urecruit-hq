@@ -28,7 +28,6 @@ function asArray(x) {
 }
 
 function unwrapInvokeResponse(resp) {
-  // Base44 function invocations sometimes return { data: ... }.
   return resp?.data ?? resp ?? null;
 }
 
@@ -41,8 +40,7 @@ function safeJson(x) {
 }
 
 function diagnoseAxiosError(e) {
-  // Axios-style errors usually have response/status/data.
-  const out = {
+  return {
     message: String(e?.message || e),
     name: e?.name || null,
     code: e?.code || null,
@@ -51,7 +49,6 @@ function diagnoseAxiosError(e) {
     data: e?.response?.data ?? null,
     headers: e?.response?.headers ?? null,
   };
-  return out;
 }
 
 export default function AdminSeedSchoolsMaster() {
@@ -65,6 +62,9 @@ export default function AdminSeedSchoolsMaster() {
   const [includeNJCAA, setIncludeNJCAA] = useState(true);
 
   // Scorecard seed (primary)
+  const [scorecardSeedFunctionName, setScorecardSeedFunctionName] = useState(
+    "seedSchoolsMaster_scorecard"
+  );
   const [scorecardSeedDryRun, setScorecardSeedDryRun] = useState(true);
   const [scorecardSeedPage, setScorecardSeedPage] = useState(0);
   const [scorecardSeedPerPage, setScorecardSeedPerPage] = useState(100);
@@ -75,7 +75,6 @@ export default function AdminSeedSchoolsMaster() {
   const [scorecardDryRun, setScorecardDryRun] = useState(true);
 
   const push = (m) => setLog((x) => [...x, m]);
-
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
 
   const runMembershipSeed = async () => {
@@ -106,12 +105,8 @@ export default function AdminSeedSchoolsMaster() {
 
       push(`Pages:\n${safeJson(resp?.debug?.pages ?? [])}`);
 
-      if (asArray(resp?.debug?.errors).length) {
-        push(`Debug errors:\n${safeJson(resp.debug.errors)}`);
-      }
-      if (asArray(resp?.sample).length) {
-        push(`Sample:\n${safeJson(resp.sample)}`);
-      }
+      if (asArray(resp?.debug?.errors).length) push(`Debug errors:\n${safeJson(resp.debug.errors)}`);
+      if (asArray(resp?.sample).length) push(`Sample:\n${safeJson(resp.sample)}`);
     } catch (e) {
       const d = diagnoseAxiosError(e);
       push(`❌ ERROR: ${d.message}`);
@@ -125,15 +120,22 @@ export default function AdminSeedSchoolsMaster() {
   const runScorecardSeed = async () => {
     if (!canRun) return;
 
+    const fn = String(scorecardSeedFunctionName || "").trim();
+    if (!fn) {
+      setLog([`❌ ERROR: Scorecard function name is blank.`]);
+      return;
+    }
+
     setWorking(true);
     setLog([]);
     try {
       push(`Scorecard seed start @ ${new Date().toISOString()}`);
+      push(`Function=${fn}`);
       push(
         `DryRun=${scorecardSeedDryRun} page=${scorecardSeedPage} perPage=${scorecardSeedPerPage} maxPages=${scorecardSeedMaxPages}`
       );
 
-      const raw = await base44.functions.invoke("seedSchoolsMaster_scorecard", {
+      const raw = await base44.functions.invoke(fn, {
         dryRun: !!scorecardSeedDryRun,
         page: Number(scorecardSeedPage || 0),
         perPage: Number(scorecardSeedPerPage || 100),
@@ -151,15 +153,10 @@ export default function AdminSeedSchoolsMaster() {
       );
 
       if (resp?.debug?.step) push(`Step: ${resp.debug.step}`);
-
       push(`PageCalls:\n${safeJson(resp?.debug?.pageCalls ?? [])}`);
 
-      if (asArray(resp?.debug?.errors).length) {
-        push(`Debug errors:\n${safeJson(resp.debug.errors)}`);
-      }
-      if (asArray(resp?.debug?.sample).length) {
-        push(`Sample:\n${safeJson(resp.debug.sample)}`);
-      }
+      if (asArray(resp?.debug?.errors).length) push(`Debug errors:\n${safeJson(resp.debug.errors)}`);
+      if (asArray(resp?.debug?.sample).length) push(`Sample:\n${safeJson(resp.debug.sample)}`);
     } catch (e) {
       const d = diagnoseAxiosError(e);
       push(`❌ ERROR: ${d.message}`);
@@ -200,18 +197,10 @@ export default function AdminSeedSchoolsMaster() {
         if (resp?.stats?.apiKeyWhere) push(`API key where: ${resp.stats.apiKeyWhere}`);
       }
 
-      if (asArray(resp?.debug?.secretTries).length) {
-        push(`Secret tries:\n${safeJson(resp.debug.secretTries)}`);
-      }
-      if (asArray(resp?.debug?.errors).length) {
-        push(`Debug errors:\n${safeJson(resp.debug.errors)}`);
-      }
-      if (asArray(resp?.sample).length) {
-        push(`Sample:\n${safeJson(resp.sample)}`);
-      }
-      if (resp?.debug?.scorecard) {
-        push(`Scorecard probe:\n${safeJson(resp.debug.scorecard)}`);
-      }
+      if (asArray(resp?.debug?.secretTries).length) push(`Secret tries:\n${safeJson(resp.debug.secretTries)}`);
+      if (asArray(resp?.debug?.errors).length) push(`Debug errors:\n${safeJson(resp.debug.errors)}`);
+      if (asArray(resp?.sample).length) push(`Sample:\n${safeJson(resp.sample)}`);
+      if (resp?.debug?.scorecard) push(`Scorecard probe:\n${safeJson(resp.debug.scorecard)}`);
     } catch (e) {
       const d = diagnoseAxiosError(e);
       push(`❌ ERROR: ${d.message}`);
@@ -228,58 +217,73 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Seed School Master (Option A)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Primary path is Scorecard seed (stable master list). Membership seed is legacy / diagnostic.
+            Primary path is Scorecard seed (stable master list). If a function name mismatch exists, override it below.
           </div>
         </Card>
 
         <Card>
           <div className="text-lg font-semibold text-slate-900">1) Seed via College Scorecard (Primary)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Runs <code>seedSchoolsMaster_scorecard</code>. Start with DryRun and page 0.
+            Runs the function name you specify. If you published a different filename/function name, change it here.
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={scorecardSeedDryRun}
-                onChange={(e) => setScorecardSeedDryRun(e.target.checked)}
-              />
-              Dry run (seed)
-            </label>
-
+          <div className="mt-4 grid grid-cols-1 gap-3">
             <label className="text-sm">
-              Page{" "}
+              Scorecard seed function name
               <input
-                className="ml-2 w-20 rounded border border-slate-300 px-2 py-1"
-                value={scorecardSeedPage}
-                onChange={(e) => setScorecardSeedPage(e.target.value)}
+                className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+                value={scorecardSeedFunctionName}
+                onChange={(e) => setScorecardSeedFunctionName(e.target.value)}
+                placeholder="seedSchoolsMaster_scorecard"
               />
+              <div className="mt-1 text-xs text-slate-500">
+                Must match the deployed backend function name exactly.
+              </div>
             </label>
 
-            <label className="text-sm">
-              Per page{" "}
-              <input
-                className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
-                value={scorecardSeedPerPage}
-                onChange={(e) => setScorecardSeedPerPage(e.target.value)}
-              />
-            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={scorecardSeedDryRun}
+                  onChange={(e) => setScorecardSeedDryRun(e.target.checked)}
+                />
+                Dry run (seed)
+              </label>
 
-            <label className="text-sm">
-              Max pages{" "}
-              <input
-                className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
-                value={scorecardSeedMaxPages}
-                onChange={(e) => setScorecardSeedMaxPages(e.target.value)}
-              />
-            </label>
-          </div>
+              <label className="text-sm">
+                Page{" "}
+                <input
+                  className="ml-2 w-20 rounded border border-slate-300 px-2 py-1"
+                  value={scorecardSeedPage}
+                  onChange={(e) => setScorecardSeedPage(e.target.value)}
+                />
+              </label>
 
-          <div className="mt-3 flex gap-2">
-            <Button disabled={working} onClick={runScorecardSeed}>
-              {working ? "Working…" : "Run Scorecard seed"}
-            </Button>
+              <label className="text-sm">
+                Per page{" "}
+                <input
+                  className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
+                  value={scorecardSeedPerPage}
+                  onChange={(e) => setScorecardSeedPerPage(e.target.value)}
+                />
+              </label>
+
+              <label className="text-sm">
+                Max pages{" "}
+                <input
+                  className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
+                  value={scorecardSeedMaxPages}
+                  onChange={(e) => setScorecardSeedMaxPages(e.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="flex gap-2">
+              <Button disabled={working} onClick={runScorecardSeed}>
+                {working ? "Working…" : "Run Scorecard seed"}
+              </Button>
+            </div>
           </div>
         </Card>
 
