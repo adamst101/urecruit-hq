@@ -28,28 +28,49 @@ function asArray(x) {
 }
 
 function unwrapInvokeResponse(resp) {
-  // Some Base44 function invocations return { data: ... }.
-  // Others return the payload directly.
+  // Base44 function invocations sometimes return { data: ... }.
   return resp?.data ?? resp ?? null;
+}
+
+function safeJson(x) {
+  try {
+    return JSON.stringify(x, null, 2);
+  } catch (e) {
+    return String(x);
+  }
+}
+
+function diagnoseAxiosError(e) {
+  // Axios-style errors usually have response/status/data.
+  const out = {
+    message: String(e?.message || e),
+    name: e?.name || null,
+    code: e?.code || null,
+    status: e?.response?.status ?? null,
+    statusText: e?.response?.statusText ?? null,
+    data: e?.response?.data ?? null,
+    headers: e?.response?.headers ?? null,
+  };
+  return out;
 }
 
 export default function AdminSeedSchoolsMaster() {
   const [working, setWorking] = useState(false);
   const [log, setLog] = useState([]);
 
-  // Membership seed (legacy path)
+  // Membership seed (legacy)
   const [dryRun, setDryRun] = useState(true);
   const [includeNCAA, setIncludeNCAA] = useState(true);
   const [includeNAIA, setIncludeNAIA] = useState(true);
   const [includeNJCAA, setIncludeNJCAA] = useState(true);
 
-  // NEW: Scorecard seed (primary path)
+  // Scorecard seed (primary)
   const [scorecardSeedDryRun, setScorecardSeedDryRun] = useState(true);
   const [scorecardSeedPage, setScorecardSeedPage] = useState(0);
   const [scorecardSeedPerPage, setScorecardSeedPerPage] = useState(100);
   const [scorecardSeedMaxPages, setScorecardSeedMaxPages] = useState(1);
 
-  // Enrich (existing)
+  // Enrich (secondary)
   const [scorecardBatchLimit, setScorecardBatchLimit] = useState(75);
   const [scorecardDryRun, setScorecardDryRun] = useState(true);
 
@@ -75,39 +96,32 @@ export default function AdminSeedSchoolsMaster() {
 
       const resp = unwrapInvokeResponse(raw);
 
-      if (resp?.error) {
-        push(`❌ ERROR: ${resp.error}`);
-      }
+      if (resp?.error) push(`❌ ERROR: ${resp.error}`);
 
       push(
         `✅ Done. Created=${resp?.stats?.created ?? "?"} Updated=${resp?.stats?.updated ?? "?"} Skipped=${
           resp?.stats?.skipped ?? "?"
         }`
       );
-      push(`Notes: ${resp?.stats?.notes ?? 0}`);
 
-      // Show debug.pages explicitly so we can see whether the function ever fetched sources
-      if (Array.isArray(resp?.debug?.pages)) {
-        push(`Pages:\n${JSON.stringify(resp.debug.pages, null, 2)}`);
-      } else {
-        push(`Pages:\n[]`);
+      push(`Pages:\n${safeJson(resp?.debug?.pages ?? [])}`);
+
+      if (asArray(resp?.debug?.errors).length) {
+        push(`Debug errors:\n${safeJson(resp.debug.errors)}`);
       }
-
-      if (Array.isArray(resp?.debug?.errors) && resp.debug.errors.length) {
-        push(`Debug errors:\n${JSON.stringify(resp.debug.errors, null, 2)}`);
-      }
-
-      if (Array.isArray(resp?.sample) && resp.sample.length) {
-        push(`Sample:\n${JSON.stringify(resp.sample, null, 2)}`);
+      if (asArray(resp?.sample).length) {
+        push(`Sample:\n${safeJson(resp.sample)}`);
       }
     } catch (e) {
-      push(`❌ ERROR: ${String(e?.message || e)}`);
+      const d = diagnoseAxiosError(e);
+      push(`❌ ERROR: ${d.message}`);
+      if (d.status) push(`HTTP ${d.status} ${d.statusText || ""}`.trim());
+      if (d.data) push(`Response data:\n${safeJson(d.data)}`);
     } finally {
       setWorking(false);
     }
   };
 
-  // NEW: Scorecard seed (primary)
   const runScorecardSeed = async () => {
     if (!canRun) return;
 
@@ -128,9 +142,7 @@ export default function AdminSeedSchoolsMaster() {
 
       const resp = unwrapInvokeResponse(raw);
 
-      if (resp?.error) {
-        push(`❌ ERROR: ${resp.error}`);
-      }
+      if (resp?.error) push(`❌ ERROR: ${resp.error}`);
 
       push(
         `✅ Done. Created=${resp?.stats?.created ?? 0} Updated=${resp?.stats?.updated ?? 0} Skipped=${
@@ -138,19 +150,22 @@ export default function AdminSeedSchoolsMaster() {
         } Pages=${resp?.stats?.pages ?? 0}`
       );
 
-      if (Array.isArray(resp?.debug?.pageCalls)) {
-        push(`PageCalls:\n${JSON.stringify(resp.debug.pageCalls, null, 2)}`);
-      }
+      if (resp?.debug?.step) push(`Step: ${resp.debug.step}`);
 
-      if (Array.isArray(resp?.debug?.errors) && resp.debug.errors.length) {
-        push(`Debug errors:\n${JSON.stringify(resp.debug.errors, null, 2)}`);
-      }
+      push(`PageCalls:\n${safeJson(resp?.debug?.pageCalls ?? [])}`);
 
-      if (Array.isArray(resp?.debug?.sample) && resp.debug.sample.length) {
-        push(`Sample:\n${JSON.stringify(resp.debug.sample, null, 2)}`);
+      if (asArray(resp?.debug?.errors).length) {
+        push(`Debug errors:\n${safeJson(resp.debug.errors)}`);
+      }
+      if (asArray(resp?.debug?.sample).length) {
+        push(`Sample:\n${safeJson(resp.debug.sample)}`);
       }
     } catch (e) {
-      push(`❌ ERROR: ${String(e?.message || e)}`);
+      const d = diagnoseAxiosError(e);
+      push(`❌ ERROR: ${d.message}`);
+      if (d.status) push(`HTTP ${d.status} ${d.statusText || ""}`.trim());
+      if (d.data) push(`Response data:\n${safeJson(d.data)}`);
+      if (!d.data) push(`No response body returned (platform-level 500).`);
     } finally {
       setWorking(false);
     }
@@ -172,9 +187,7 @@ export default function AdminSeedSchoolsMaster() {
 
       const resp = unwrapInvokeResponse(raw);
 
-      if (resp?.error) {
-        push(`❌ ERROR: ${resp.error}`);
-      }
+      if (resp?.error) push(`❌ ERROR: ${resp.error}`);
 
       push(
         `✅ Done. Matched=${resp?.stats?.matched ?? "?"} Updated=${resp?.stats?.updated ?? "?"} NoMatch=${
@@ -182,29 +195,28 @@ export default function AdminSeedSchoolsMaster() {
         } Errors=${resp?.stats?.errors ?? "?"}`
       );
 
-      // These fields exist in your enrich function output now
       if (resp?.stats) {
         push(`API key present? ${resp?.stats?.apiKeyPresent ? "YES" : "NO"}`);
         if (resp?.stats?.apiKeyWhere) push(`API key where: ${resp.stats.apiKeyWhere}`);
       }
 
-      if (Array.isArray(resp?.debug?.secretTries) && resp.debug.secretTries.length) {
-        push(`Secret tries:\n${JSON.stringify(resp.debug.secretTries, null, 2)}`);
+      if (asArray(resp?.debug?.secretTries).length) {
+        push(`Secret tries:\n${safeJson(resp.debug.secretTries)}`);
       }
-
-      if (Array.isArray(resp?.debug?.errors) && resp.debug.errors.length) {
-        push(`Debug errors:\n${JSON.stringify(resp.debug.errors, null, 2)}`);
+      if (asArray(resp?.debug?.errors).length) {
+        push(`Debug errors:\n${safeJson(resp.debug.errors)}`);
       }
-
-      if (Array.isArray(resp?.sample) && resp.sample.length) {
-        push(`Sample:\n${JSON.stringify(resp.sample, null, 2)}`);
+      if (asArray(resp?.sample).length) {
+        push(`Sample:\n${safeJson(resp.sample)}`);
       }
-
       if (resp?.debug?.scorecard) {
-        push(`Scorecard probe:\n${JSON.stringify(resp.debug.scorecard, null, 2)}`);
+        push(`Scorecard probe:\n${safeJson(resp.debug.scorecard)}`);
       }
     } catch (e) {
-      push(`❌ ERROR: ${String(e?.message || e)}`);
+      const d = diagnoseAxiosError(e);
+      push(`❌ ERROR: ${d.message}`);
+      if (d.status) push(`HTTP ${d.status} ${d.statusText || ""}`.trim());
+      if (d.data) push(`Response data:\n${safeJson(d.data)}`);
     } finally {
       setWorking(false);
     }
@@ -216,17 +228,14 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Seed School Master (Option A)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Recommended flow: (1) Seed Schools via College Scorecard (stable master list with city/state/website/unitid),
-            then (2) optionally enrich/overlay athletics membership (NCAA/NAIA/NJCAA) later, then (3) logo enrichment.
+            Primary path is Scorecard seed (stable master list). Membership seed is legacy / diagnostic.
           </div>
         </Card>
 
-        {/* Primary seed: Scorecard */}
         <Card>
           <div className="text-lg font-semibold text-slate-900">1) Seed via College Scorecard (Primary)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Uses your published <code>seedSchoolsMaster_scorecard</code> function. Requires SCORECARD_API_KEY in
-            secrets. Start with DryRun and small pages.
+            Runs <code>seedSchoolsMaster_scorecard</code>. Start with DryRun and page 0.
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -272,25 +281,18 @@ export default function AdminSeedSchoolsMaster() {
               {working ? "Working…" : "Run Scorecard seed"}
             </Button>
           </div>
-
-          <div className="mt-2 text-xs text-slate-500">
-            Safe ramp: DryRun=true page=0 maxPages=1 → DryRun=false page=0 maxPages=1 → then increase maxPages in small
-            blocks (5–10).
-          </div>
         </Card>
 
-        {/* Legacy membership seed (kept for now) */}
         <Card>
-          <div className="text-lg font-semibold text-slate-900">2) Membership seed (Legacy / troubleshooting)</div>
+          <div className="text-lg font-semibold text-slate-900">2) Membership seed (Legacy / diagnostic)</div>
           <div className="text-sm text-slate-600 mt-1">
-            This runs <code>seedSchoolsMaster_membership</code>. If it shows Pages: [], it is returning before fetch
-            (usually entity access or deployment model). Use logs below to diagnose.
+            Runs <code>seedSchoolsMaster_membership</code>. If Pages is empty, the function returned early.
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
-              Dry run (membership seed)
+              Dry run (membership)
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={includeNCAA} onChange={(e) => setIncludeNCAA(e.target.checked)} />
@@ -313,12 +315,10 @@ export default function AdminSeedSchoolsMaster() {
           </div>
         </Card>
 
-        {/* Existing enrich */}
         <Card>
-          <div className="text-lg font-semibold text-slate-900">3) Enrich via College Scorecard (Secondary pass)</div>
+          <div className="text-lg font-semibold text-slate-900">3) Enrich via College Scorecard (Secondary)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Runs <code>enrichSchoolsMaster_scorecard</code> (best when you already have Schools and want to fill missing
-            fields). Requires SCORECARD_API_KEY in secrets.
+            Runs <code>enrichSchoolsMaster_scorecard</code>.
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
