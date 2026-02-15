@@ -8,30 +8,17 @@ import * as Entities from "../api/entities";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
-// ----------------------------
-// Admin mode gate
-// ----------------------------
+// Admin mode gate (shared with Profile)
 const ADMIN_MODE_KEY = "campapp_admin_enabled_v1";
 
-// ----------------------------
-// Routes (no createPageUrl dependency)
-// ----------------------------
 const ROUTES = {
   Workspace: "/Workspace",
-  Discover: "/Discover",
   Profile: "/Profile",
-  AdminSeedSchoolsMaster: "/AdminSeedSchoolsMaster",
-  AdminFactoryReset: "/AdminFactoryReset",
-  AdminImport: "/AdminImport",
   AdminOps: "/AdminOps",
 };
 
 function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
+  return new Promise((r) => setTimeout(r, Math.max(0, Number(ms || 0))));
 }
 
 function safeStr(x) {
@@ -42,65 +29,29 @@ function lc(x) {
   return safeStr(x).toLowerCase().trim();
 }
 
-function pickEntityFromSDK(name) {
-  // Prefer explicit exports from src/api/entities.js (handles pluralization)
-  const direct = Entities?.[name];
-  if (direct) return direct;
-
-  // Fallback direct Base44 client
-  const e = base44?.entities;
-  if (e?.[name]) return e[name];
-  // Common plurals
-  if (e?.[`${name}s`]) return e[`${name}s`];
-  return null;
-}
-
 function getId(r) {
-  if (!r) return null;
-  if (typeof r.id === "string" || typeof r.id === "number") return String(r.id);
-  if (typeof r._id === "string" || typeof r._id === "number") return String(r._id);
-  if (typeof r.uuid === "string" || typeof r.uuid === "number") return String(r.uuid);
-  return null;
+  return r?.id || r?._id || r?.uuid || null;
 }
 
-function scoreSchoolRow(r) {
-  // Higher score = "keep this one"
-  // Prefer records with more "real" data
-  let s = 0;
-  if (safeStr(r?.unitid).trim()) s += 2;
-  if (safeStr(r?.city).trim()) s += 2;
-  if (safeStr(r?.state).trim()) s += 2;
-  if (safeStr(r?.website_url).trim()) s += 1;
-  if (safeStr(r?.logo_url).trim()) s += 2;
-  if (safeStr(r?.division).trim()) s += 1;
-  if (safeStr(r?.subdivision).trim()) s += 1;
-  if (safeStr(r?.conference).trim()) s += 1;
-
-  // Prefer active
-  if (r?.active === true) s += 1;
-
-  // Prefer most recently seen
-  const t = Date.parse(r?.last_seen_at || "");
-  if (Number.isFinite(t)) s += Math.min(3, Math.floor((t / 1000) % 3)); // tiny tie-breaker
-
-  return s;
+function asArray(x) {
+  return Array.isArray(x) ? x : [];
 }
 
 async function withRetries(fn, { tries = 6, baseDelayMs = 350, onRetry } = {}) {
-  let lastErr = null;
+  let last = null;
   for (let i = 0; i < tries; i++) {
     try {
       return await fn();
     } catch (e) {
-      lastErr = e;
+      last = e;
       const msg = safeStr(e?.message || e);
       const status = e?.raw?.status || e?.status;
-      const isRate = status === 429 || lc(msg).includes("rate limit");
-      const isNet = lc(msg).includes("network");
+      const isRate = status === 429 || lc(msg).includes("rate") || lc(msg).includes("429");
+      const isNet = lc(msg).includes("network") || lc(msg).includes("timeout");
       const is500 = status >= 500 && status <= 599;
 
       if (i < tries - 1 && (isRate || isNet || is500)) {
-        const delay = baseDelayMs * Math.pow(2, i);
+        const delay = Math.min(15_000, Math.floor(baseDelayMs * Math.pow(2, i) + Math.random() * 250));
         onRetry?.({ attempt: i + 1, tries, delayMs: delay, err: e });
         await sleep(delay);
         continue;
@@ -108,89 +59,231 @@ async function withRetries(fn, { tries = 6, baseDelayMs = 350, onRetry } = {}) {
       throw e;
     }
   }
-  throw lastErr;
+  throw last;
 }
 
-async function listAll(Entity, { where = null } = {}) {
+async function listAll(Entity) {
   if (!Entity?.list) return [];
-  // Base44 list() in your project appears to accept either:
-  // - list()
-  // - list({ where })
-  // - list(where)
   try {
-    if (!where) return asArray(await Entity.list());
-    return asArray(await Entity.list({ where }));
+    return asArray(await Entity.list());
   } catch {
     try {
-      if (!where) return asArray(await Entity.list({}));
-      return asArray(await Entity.list(where));
+      return asArray(await Entity.list({}));
     } catch {
       return [];
     }
   }
 }
 
-async function deleteById(Entity, id) {
-  if (!Entity?.delete) throw new Error("Entity.delete not available");
-  await Entity.delete(String(id));
+async function filterAll(Entity, where) {
+  if (!Entity?.filter) return [];
+  try {
+    return asArray(await Entity.filter(where || {}));
+  } catch {
+    return [];
+  }
+}
+
+function normName(x) {
+  return lc(x)
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scoreSchoolRow(r) {
+  // Higher score = keep
+  let s = 0;
+  if (safeStr(r?.unitid).trim()) s += 3;
+  if (safeStr(r?.source_key).trim()) s += 2;
+
+  if (safeStr(r?.city).trim()) s += 2;
+  if (safeStr(r?.state).trim()) s += 2;
+  if (safeStr(r?.website_url).trim()) s += 1;
+
+  if (safeStr(r?.logo_url).trim()) s += 2;
+  if (safeStr(r?.division).trim()) s += 1;
+  if (safeStr(r?.subdivision).trim()) s += 1;
+  if (safeStr(r?.conference).trim()) s += 1;
+
+  if (r?.active === true) s += 1;
+
+  // Prefer "scorecard" platform if present
+  if (lc(r?.source_platform) === "scorecard") s += 1;
+
+  return s;
+}
+
+function pickEntity(name) {
+  // Prefer explicit exports from src/api/entities.js
+  const direct = Entities?.[name];
+  if (direct) return direct;
+  const e = base44?.entities;
+  if (e?.[name]) return e[name];
+  if (e?.[`${name}s`]) return e[`${name}s`];
+  return null;
+}
+
+function unwrapInvokeResponse(raw) {
+  // Base44 sometimes wraps responses
+  if (!raw) return raw;
+  if (raw.data !== undefined) return raw.data;
+  if (raw.result !== undefined) return raw.result;
+  return raw;
+}
+
+async function logAdminEvent(payload) {
+  try {
+    const Event = base44?.entities?.Event || base44?.entities?.Events;
+    if (!Event?.create) return;
+    await Event.create({ event_name: "admin_ops_run", ts: new Date().toISOString(), ...payload });
+  } catch {
+    // non-blocking
+  }
+}
+
+function buildGroups(rows, mode) {
+  // mode: source_key | unitid | name_state
+  const groups = new Map();
+  for (const r of rows) {
+    const id = getId(r);
+    if (!id) continue;
+
+    let key = "";
+    if (mode === "source_key") key = safeStr(r?.source_key).trim();
+    else if (mode === "unitid") key = safeStr(r?.unitid).trim();
+    else if (mode === "name_state") {
+      const n = normName(r?.school_name || r?.name || "");
+      const st = lc(r?.state || "");
+      // if no state, still group by name (but mark lower confidence)
+      key = st ? `${n}::${st}` : `${n}::(no_state)`;
+    }
+
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  return groups;
+}
+
+async function repointForeignKeys({
+  pushLog,
+  dryRun,
+  keepSchoolId,
+  deleteSchoolId,
+  delayMs,
+}) {
+  // Update related tables to point to keepSchoolId before deleting the dup school.
+  const tables = [
+    { name: "Camp", fk: "school_id" },
+    { name: "CampDemo", fk: "school_id" },
+    { name: "SchoolSportSite", fk: "school_id" },
+    { name: "SchoolSport", fk: "school_id" },
+  ];
+
+  const results = [];
+  for (const t of tables) {
+    const E = pickEntity(t.name);
+    if (!E?.filter || !E?.update) {
+      pushLog(`⚠️ ${t.name}: missing filter/update. Skipping repoint.`);
+      results.push({ table: t.name, updated: 0, skipped: true });
+      continue;
+    }
+
+    const rows = await filterAll(E, { [t.fk]: String(deleteSchoolId) });
+    if (!rows.length) {
+      results.push({ table: t.name, updated: 0 });
+      continue;
+    }
+
+    pushLog(`↳ Repoint ${t.name}.${t.fk}: ${rows.length} rows ${dryRun ? "(dry)" : ""}`);
+
+    let updated = 0;
+    for (const r of rows) {
+      const id = getId(r);
+      if (!id) continue;
+      if (!dryRun) {
+        await withRetries(() => E.update(String(id), { [t.fk]: String(keepSchoolId) }), {
+          tries: 6,
+          baseDelayMs: 450,
+        });
+        await sleep(delayMs);
+      }
+      updated += 1;
+    }
+
+    results.push({ table: t.name, updated });
+  }
+
+  return results;
 }
 
 export default function AdminOps() {
   const nav = useNavigate();
 
   const [adminEnabled, setAdminEnabled] = useState(false);
-  const [tab, setTab] = useState("overview"); // overview | dataops | dedupe | diagnostics
+  const [tab, setTab] = useState("pipelines"); // pipelines | purge | dedupe | diagnostics
 
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState([]);
   const logRef = useRef(null);
 
-  // Purge controls
+  // Purge/reset controls (kept, but you can ignore)
   const [purgeSelection, setPurgeSelection] = useState(() => ({
     School: false,
+    SchoolSport: false,
     SchoolSportSite: false,
     Sport: false,
     CampDemo: false,
     Camp: false,
     Event: false,
     Favorite: false,
-    Registration: false,
-    UserCamp: false,
     CampIntent: false,
-    CampIntentHistory: false,
-    CampDecisionScore: false,
-    Scenario: false,
-    ScenarioCamp: false,
-    TargetSchool: false,
-    TargetSchoolHistory: false,
-    AthleteProfile: false,
-    Position: false,
-    BudgetConstraint: false,
-    CalendarConstraint: false,
-    TravelConstraint: false,
-    Entitlement: false,
+    UserCamp: false,
+    Registration: false,
   }));
-
+  const [purgeDryRun, setPurgeDryRun] = useState(true);
   const [purgeConfirmText, setPurgeConfirmText] = useState("");
   const [purgePerDeleteDelayMs, setPurgePerDeleteDelayMs] = useState(125);
-  const [purgeBetweenEntitiesDelayMs, setPurgeBetweenEntitiesDelayMs] = useState(750);
-  const [purgeDryRun, setPurgeDryRun] = useState(true);
+  const [purgeBetweenEntitiesDelayMs, setPurgeBetweenEntitiesDelayMs] = useState(650);
 
-  // Dedupe controls (School)
+  // Dedupe controls
   const [dedupeDryRun, setDedupeDryRun] = useState(true);
   const [dedupeDeleteDelayMs, setDedupeDeleteDelayMs] = useState(150);
-  const [dedupeMinDuplicateGroup, setDedupeMinDuplicateGroup] = useState(2);
+  const [dedupeUpdateDelayMs, setDedupeUpdateDelayMs] = useState(120);
 
-  // Diagnostics
-  const [diagExpanded, setDiagExpanded] = useState(false);
+  const [dedupeMode, setDedupeMode] = useState("name_state"); // source_key | unitid | name_state
+  const [dedupeMinGroupSize, setDedupeMinGroupSize] = useState(2);
+  const [dedupeLimitGroups, setDedupeLimitGroups] = useState(250); // safety cap per run
+  const [dedupeSkipNoState, setDedupeSkipNoState] = useState(true); // for name_state mode
+
+  // Pipelines controls (kept)
+  const [pipeDryRun, setPipeDryRun] = useState(true);
+  const [autoRun, setAutoRun] = useState(true);
+  const [seedPerPage, setSeedPerPage] = useState(100);
+  const [seedPagesPerCall, setSeedPagesPerCall] = useState(2);
+  const [seedMaxUpserts, setSeedMaxUpserts] = useState(400);
+  const [seedWriteDelayMs, setSeedWriteDelayMs] = useState(120);
+
+  const [memberOrgs, setMemberOrgs] = useState(() => ({ NCAA: true, NAIA: true, NJCAA: true }));
+  const [memberMaxUpdates, setMemberMaxUpdates] = useState(250);
+  const [memberWriteDelayMs, setMemberWriteDelayMs] = useState(150);
+
+  const [sportsOnlyMissing, setSportsOnlyMissing] = useState(true);
+
+  const [schoolSportsOrg, setSchoolSportsOrg] = useState("CAMP");
+  const [schoolSportsMaxCreates, setSchoolSportsMaxCreates] = useState(400);
+  const [schoolSportsWriteDelayMs, setSchoolSportsWriteDelayMs] = useState(100);
+
+  const [logosMaxUpdates, setLogosMaxUpdates] = useState(500);
+  const [logosWriteDelayMs, setLogosWriteDelayMs] = useState(120);
 
   useEffect(() => {
-    const v = localStorage.getItem(ADMIN_MODE_KEY) === "true";
-    setAdminEnabled(v);
+    setAdminEnabled(localStorage.getItem(ADMIN_MODE_KEY) === "true");
   }, []);
 
   useEffect(() => {
-    // auto-scroll
     if (!logRef.current) return;
     logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [log]);
@@ -199,11 +292,10 @@ export default function AdminOps() {
     setLog((prev) => [...prev, `[${new Date().toISOString()}] ${line}`]);
   }
 
-  const hostInfo = useMemo(() => {
-    const host = safeStr(window?.location?.host);
-    const isPreview = host.includes("preview");
-    return { host, isPreview };
-  }, []);
+  const selectedEntities = useMemo(
+    () => Object.entries(purgeSelection).filter(([, v]) => !!v).map(([k]) => k),
+    [purgeSelection]
+  );
 
   const entityKeys = useMemo(() => {
     const keys = Object.keys(base44?.entities || {});
@@ -211,501 +303,880 @@ export default function AdminOps() {
     return keys;
   }, []);
 
-  const selectedEntities = useMemo(() => {
-    return Object.entries(purgeSelection)
-      .filter(([, v]) => !!v)
-      .map(([k]) => k);
-  }, [purgeSelection]);
-
-  function toggleAdminMode() {
-    const next = !adminEnabled;
-    localStorage.setItem(ADMIN_MODE_KEY, next ? "true" : "false");
-    setAdminEnabled(next);
-    pushLog(`Admin Mode ${next ? "ENABLED" : "DISABLED"}`);
+  function requireAdminOrLog() {
+    if (adminEnabled) return true;
+    pushLog("❌ Blocked: Admin Mode is OFF. Enable it in Profile → Admin.");
+    return false;
   }
 
   async function runPurge() {
-    if (!adminEnabled) {
-      pushLog("❌ Blocked: Admin Mode is OFF.");
-      return;
-    }
-    if (!selectedEntities.length) {
-      pushLog("❌ Nothing selected to purge.");
-      return;
-    }
-    if (purgeConfirmText.trim() !== "DELETE") {
-      pushLog('❌ Confirmation required. Type "DELETE" to run purge.');
-      return;
-    }
+    if (!requireAdminOrLog()) return;
+    if (!selectedEntities.length) return pushLog("❌ Nothing selected.");
+    if (purgeConfirmText.trim() !== "DELETE") return pushLog('❌ Type "DELETE" to confirm.');
 
     setBusy(true);
+    const startedAt = new Date().toISOString();
+
     try {
       pushLog(
-        `Purge start. DryRun=${purgeDryRun} Entities=${selectedEntities.join(
-          ", "
-        )} perDeleteDelayMs=${purgePerDeleteDelayMs}`
+        `Purge start. DryRun=${purgeDryRun} Entities=${selectedEntities.join(", ")}`
       );
 
+      const countsBefore = {};
       for (const name of selectedEntities) {
-        const Entity = pickEntityFromSDK(name);
-        if (!Entity?.list || !Entity?.delete) {
-          pushLog(`⚠️ Skipping ${name}: Entity.list or Entity.delete not available.`);
+        const Entity = pickEntity(name);
+        const rows = await listAll(Entity);
+        countsBefore[name] = rows.length;
+      }
+      pushLog(`Counts before: ${JSON.stringify(countsBefore)}`);
+
+      let deletedTotal = 0;
+      const deletedByEntity = {};
+
+      for (const name of selectedEntities) {
+        const Entity = pickEntity(name);
+        if (!Entity?.delete) {
+          pushLog(`⚠️ Skipping ${name}: delete not available.`);
           continue;
         }
 
-        pushLog(`--- Purge ${name} ---`);
-        const rows = await withRetries(() => listAll(Entity), {
-          tries: 6,
-          baseDelayMs: 450,
-          onRetry: ({ attempt, delayMs, err }) =>
-            pushLog(`⚠️ listAll retry ${attempt} (${delayMs}ms): ${safeStr(err?.message || err)}`),
-        });
-
-        pushLog(`Found ${rows.length} rows in ${name}.`);
-        if (purgeDryRun) {
-          pushLog(`DryRun ON: would delete ${rows.length} rows from ${name}.`);
-          await sleep(purgeBetweenEntitiesDelayMs);
-          continue;
-        }
+        const rows = await listAll(Entity);
+        pushLog(`--- ${name}: ${rows.length} rows ---`);
 
         let deleted = 0;
-        let failed = 0;
-
-        for (let i = 0; i < rows.length; i++) {
-          const id = getId(rows[i]);
-          if (!id) {
-            failed += 1;
+        for (const r of rows) {
+          const id = getId(r);
+          if (!id) continue;
+          if (purgeDryRun) {
+            deleted += 1;
             continue;
           }
 
-          try {
-            await withRetries(() => deleteById(Entity, id), {
-              tries: 8,
-              baseDelayMs: 400,
-              onRetry: ({ attempt, delayMs, err }) =>
-                pushLog(
-                  `⚠️ delete retry ${attempt} (${delayMs}ms) ${name} id=${id}: ${safeStr(
-                    err?.message || err
-                  )}`
-                ),
-            });
-            deleted += 1;
-          } catch (e) {
-            failed += 1;
-            pushLog(`❌ Delete failed ${name} id=${id}: ${safeStr(e?.message || e)}`);
-          }
-
-          if (purgePerDeleteDelayMs > 0) await sleep(purgePerDeleteDelayMs);
+          await withRetries(() => Entity.delete(String(id)), {
+            tries: 6,
+            baseDelayMs: 450,
+            onRetry: ({ attempt, delayMs, err }) =>
+              pushLog(`↻ delete retry ${attempt} (${name}) wait=${delayMs}ms err=${safeStr(err?.message || err)}`),
+          });
+          deleted += 1;
+          deletedTotal += 1;
+          await sleep(purgePerDeleteDelayMs);
         }
 
-        pushLog(`✅ Purge ${name} complete. Deleted=${deleted} Failed=${failed}`);
-        if (purgeBetweenEntitiesDelayMs > 0) await sleep(purgeBetweenEntitiesDelayMs);
+        deletedByEntity[name] = deleted;
+        pushLog(`✅ ${name}: ${purgeDryRun ? "would delete" : "deleted"} ${deleted}`);
+        await sleep(purgeBetweenEntitiesDelayMs);
       }
 
-      pushLog("🏁 Purge finished.");
+      const finishedAt = new Date().toISOString();
+      await logAdminEvent({
+        operation: "purge",
+        dry_run: purgeDryRun,
+        entities: selectedEntities,
+        started_at: startedAt,
+        finished_at: finishedAt,
+        counts_before_json: JSON.stringify(countsBefore),
+        deleted_by_entity_json: JSON.stringify(deletedByEntity),
+        deleted_total: deletedTotal,
+      });
+
+      pushLog(`Purge complete. ${purgeDryRun ? "Dry run." : "Deleted."}`);
+    } catch (e) {
+      pushLog(`❌ Purge failed: ${safeStr(e?.message || e)}`);
     } finally {
       setBusy(false);
     }
   }
 
   async function runSchoolDedupe() {
-    if (!adminEnabled) {
-      pushLog("❌ Blocked: Admin Mode is OFF.");
-      return;
-    }
-
-    const School = pickEntityFromSDK("School");
-    if (!School?.list || !School?.delete) {
-      pushLog("❌ School entity is missing list/delete.");
-      return;
+    if (!requireAdminOrLog()) return;
+    const School = pickEntity("School");
+    if (!School?.filter || !School?.delete || !School?.update) {
+      return pushLog("❌ School entity missing filter/update/delete.");
     }
 
     setBusy(true);
+    const startedAt = new Date().toISOString();
+
     try {
-      pushLog(
-        `School dedupe start. DryRun=${dedupeDryRun} deleteDelayMs=${dedupeDeleteDelayMs} minGroup=${dedupeMinDuplicateGroup}`
-      );
+      pushLog(`School dedupe start. Mode=${dedupeMode} DryRun=${dedupeDryRun}`);
 
-      const rows = await withRetries(() => listAll(School), {
-        tries: 6,
-        baseDelayMs: 450,
-        onRetry: ({ attempt, delayMs, err }) =>
-          pushLog(`⚠️ listAll retry ${attempt} (${delayMs}ms): ${safeStr(err?.message || err)}`),
-      });
+      const all = await filterAll(School, {});
+      pushLog(`Loaded School rows: ${all.length}`);
 
-      pushLog(`Loaded School rows: ${rows.length}`);
+      const groups = buildGroups(all, dedupeMode);
+      let entries = [...groups.entries()].filter(([, rows]) => rows.length >= dedupeMinGroupSize);
 
-      // Group by source_key first (best signal)
-      const groups = new Map();
-      for (const r of rows) {
-        const k = safeStr(r?.source_key).trim();
-        if (!k) continue;
-        if (!groups.has(k)) groups.set(k, []);
-        groups.get(k).push(r);
+      if (dedupeMode === "name_state" && dedupeSkipNoState) {
+        entries = entries.filter(([k]) => !k.endsWith("::(no_state)"));
       }
 
-      const dupKeys = Array.from(groups.keys()).filter((k) => groups.get(k).length >= dedupeMinDuplicateGroup);
-      pushLog(`Duplicate source_key groups: ${dupKeys.length}`);
+      // Focus on true duplicates: same key with >1 rows
+      entries = entries.filter(([, rows]) => rows.length > 1);
+      entries.sort((a, b) => b[1].length - a[1].length);
 
-      let keepCount = 0;
-      let deleteCount = 0;
-      let failCount = 0;
+      const totalGroups = entries.length;
+      pushLog(`Duplicate groups: ${totalGroups}`);
 
-      for (const k of dupKeys) {
-        const arr = groups.get(k) || [];
-        // Sort by score desc, then deterministic by id
-        const sorted = [...arr].sort((a, b) => {
-          const sa = scoreSchoolRow(a);
-          const sb = scoreSchoolRow(b);
-          if (sb !== sa) return sb - sa;
-          return safeStr(getId(a)).localeCompare(safeStr(getId(b)));
-        });
+      if (!totalGroups) {
+        pushLog("✅ No duplicates found for selected mode.");
+        return;
+      }
 
+      const limited = entries.slice(0, Math.max(1, Number(dedupeLimitGroups || 1)));
+      if (limited.length < entries.length) {
+        pushLog(`⚠️ Limiting to first ${limited.length} groups (safety cap). Re-run to continue.`);
+      }
+
+      let deletedSchools = 0;
+      let keptSchools = 0;
+      let repointedRowsTotal = 0;
+
+      const sample = [];
+
+      for (const [key, rows] of limited) {
+        const sorted = [...rows].sort((a, b) => scoreSchoolRow(b) - scoreSchoolRow(a));
         const keep = sorted[0];
         const keepId = getId(keep);
-        keepCount += 1;
+        if (!keepId) continue;
 
-        const toDelete = sorted.slice(1).map((r) => ({ id: getId(r), score: scoreSchoolRow(r) }));
-        pushLog(
-          `Dedupe group source_key="${k}" keepId=${keepId} delete=${toDelete
-            .map((x) => x.id)
-            .filter(Boolean)
-            .join(", ")}`
-        );
+        const toDelete = sorted.slice(1).filter((r) => !!getId(r));
+        if (!toDelete.length) continue;
 
-        if (dedupeDryRun) continue;
-
-        for (const d of toDelete) {
-          if (!d?.id) continue;
-          try {
-            await withRetries(() => deleteById(School, d.id), {
-              tries: 8,
-              baseDelayMs: 400,
-              onRetry: ({ attempt, delayMs, err }) =>
-                pushLog(
-                  `⚠️ delete retry ${attempt} (${delayMs}ms) School id=${d.id}: ${safeStr(
-                    err?.message || err
-                  )}`
-                ),
-            });
-            deleteCount += 1;
-          } catch (e) {
-            failCount += 1;
-            pushLog(`❌ Delete failed School id=${d.id}: ${safeStr(e?.message || e)}`);
+        // Optional: if grouping by name_state, confirm names are really close (guardrail)
+        if (dedupeMode === "name_state") {
+          const kn = normName(keep?.school_name || "");
+          for (const d of toDelete) {
+            const dn = normName(d?.school_name || "");
+            // If normalization differs a lot, still proceed, but log it
+            if (kn && dn && kn !== dn) {
+              pushLog(`⚠️ name_state group mismatch inside group key=${key}: keep="${keep?.school_name}" del="${d?.school_name}"`);
+            }
           }
-          if (dedupeDeleteDelayMs > 0) await sleep(dedupeDeleteDelayMs);
+        }
+
+        keptSchools += 1;
+
+        if (sample.length < 25) {
+          sample.push({
+            mode: dedupeMode,
+            group_key: key,
+            keep_id: keepId,
+            keep_name: keep?.school_name,
+            delete_ids: toDelete.map(getId),
+            delete_names: toDelete.map((r) => r?.school_name),
+          });
+        }
+
+        // For each dup: repoint foreign keys then delete
+        for (const d of toDelete) {
+          const delId = getId(d);
+          if (!delId) continue;
+
+          // 1) repoint child rows
+          const repointRes = await repointForeignKeys({
+            pushLog,
+            dryRun: dedupeDryRun,
+            keepSchoolId: keepId,
+            deleteSchoolId: delId,
+            delayMs: dedupeUpdateDelayMs,
+          });
+
+          const repointed = repointRes.reduce((acc, x) => acc + (x?.updated || 0), 0);
+          repointedRowsTotal += repointed;
+
+          // 2) delete the dup school
+          if (!dedupeDryRun) {
+            await withRetries(() => School.delete(String(delId)), { tries: 6, baseDelayMs: 450 });
+            await sleep(dedupeDeleteDelayMs);
+          }
+          deletedSchools += 1;
+
+          pushLog(
+            `✅ ${dedupeDryRun ? "Would merge+delete" : "Merged+deleted"} dup school id=${delId} into keep id=${keepId} (repointed=${repointed})`
+          );
         }
       }
 
+      await logAdminEvent({
+        operation: "school_dedupe_merge",
+        mode: dedupeMode,
+        dry_run: dedupeDryRun,
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        groups_seen: totalGroups,
+        groups_processed: limited.length,
+        kept_schools: keptSchools,
+        deleted_schools: deletedSchools,
+        repointed_rows: repointedRowsTotal,
+        sample_json: JSON.stringify(sample),
+      });
+
       pushLog(
-        `✅ School dedupe finished. Groups=${dupKeys.length} Keep=${keepCount} Deleted=${deleteCount} Failed=${failCount}`
+        `✅ Dedupe complete. GroupsProcessed=${limited.length} Kept=${keptSchools} ${dedupeDryRun ? "Would delete" : "Deleted"}Schools=${deletedSchools} RepointedRows=${repointedRowsTotal}`
       );
+    } catch (e) {
+      pushLog(`❌ Dedupe failed: ${safeStr(e?.message || e)}`);
     } finally {
       setBusy(false);
     }
   }
 
-  return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Admin Ops</h1>
-          <div className="text-sm text-gray-600">
-            Host: <span className="font-mono">{hostInfo.host}</span>{" "}
-            <span className="ml-2 px-2 py-0.5 rounded border text-xs">
-              {hostInfo.isPreview ? "PREVIEW" : "PROD"}
-            </span>
-          </div>
-        </div>
+  async function runDiagnostics() {
+    setBusy(true);
+    try {
+      pushLog("Diagnostics start");
+      pushLog(`Entities available: ${entityKeys.length}`);
+      pushLog(entityKeys.join(", "));
 
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => nav(ROUTES.Profile)}>
-            Profile
-          </Button>
-          <Button variant="outline" onClick={() => nav(ROUTES.Workspace)}>
+      const checks = [
+        { name: "School", fields: ["school_name", "city", "state", "website_url", "logo_url", "division", "source_key"] },
+        { name: "Camp", fields: ["name", "start_date", "school_id", "sport_id", "registration_url"] },
+        { name: "CampDemo", fields: ["name", "start_date", "school_id", "sport_id", "registration_url"] },
+        { name: "SchoolSport", fields: ["school_id", "sport_id", "org"] },
+        { name: "SchoolSportSite", fields: ["school_id", "sport_id", "url"] },
+      ];
+
+      for (const c of checks) {
+        const E = pickEntity(c.name);
+        if (!E?.filter) {
+          pushLog(`- ${c.name}: filter not available`);
+          continue;
+        }
+        const rows = await filterAll(E, {});
+        pushLog(`\n${c.name}: ${rows.length} rows`);
+        for (const f of c.fields) {
+          const missing = rows.filter((r) => r?.[f] === null || r?.[f] === undefined || safeStr(r?.[f]).trim() === "").length;
+          const pct = rows.length ? Math.round((missing / rows.length) * 100) : 0;
+          pushLog(`  - missing ${f}: ${missing} (${pct}%)`);
+        }
+      }
+
+      // Discover fix check: camps with missing school_id
+      const Camp = pickEntity("Camp");
+      if (Camp?.filter) {
+        const camps = await filterAll(Camp, {});
+        const missingSchool = camps.filter((c) => !safeStr(c?.school_id).trim()).length;
+        pushLog(`\nDiscover Fix Check: Camps missing school_id: ${missingSchool}`);
+      }
+    } catch (e) {
+      pushLog(`❌ Diagnostics failed: ${safeStr(e?.message || e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function invokePipeline(fnName, payload, { auto = false, untilDone = false } = {}) {
+    if (!requireAdminOrLog()) return;
+    setBusy(true);
+    const startedAt = new Date().toISOString();
+    const opId = `op_${fnName}_${Date.now()}`;
+
+    try {
+      pushLog(`▶ ${fnName} start (dryRun=${!!payload?.dryRun}) opId=${opId}`);
+
+      let loops = 0;
+      let last = null;
+      do {
+        loops += 1;
+        if (loops > 40) {
+          pushLog("Stopping auto-run after 40 loops (safety). Re-run to continue.");
+          break;
+        }
+
+        const raw = await withRetries(
+          () => base44.functions.invoke(fnName, payload),
+          {
+            tries: 6,
+            baseDelayMs: 650,
+            onRetry: ({ attempt, delayMs, err }) =>
+              pushLog(`↻ invoke retry ${attempt} wait=${delayMs}ms err=${safeStr(err?.message || err)}`),
+          }
+        );
+        const resp = unwrapInvokeResponse(raw);
+        last = resp;
+
+        if (resp?.error) {
+          pushLog(`❌ ${fnName} error: ${safeStr(resp.error)}`);
+          break;
+        }
+
+        pushLog(`↳ ${fnName} resp: ${safeStr(JSON.stringify({ stats: resp?.stats, done: resp?.done, cursor: resp?.cursor, pageNext: resp?.pageNext }))}`);
+
+        if (untilDone && resp?.done === true) break;
+
+        if (auto && untilDone) {
+          await sleep(900);
+        } else {
+          break;
+        }
+      } while (auto && untilDone);
+
+      await logAdminEvent({
+        operation: fnName,
+        dry_run: !!payload?.dryRun,
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        op_id: opId,
+        request_json: JSON.stringify(payload || {}),
+        response_json: JSON.stringify(last || {}),
+      });
+
+      pushLog(`✅ ${fnName} complete.`);
+    } catch (e) {
+      pushLog(`❌ ${fnName} failed: ${safeStr(e?.message || e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // --- UI ---
+  const TabBtn = ({ id, children }) => (
+    <Button
+      variant={tab === id ? "default" : "outline"}
+      onClick={() => setTab(id)}
+      disabled={busy}
+    >
+      {children}
+    </Button>
+  );
+
+  return (
+    <div className="max-w-6xl mx-auto p-4 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-2xl font-semibold">Admin Ops</div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => nav(ROUTES.Workspace)} disabled={busy}>
             Workspace
           </Button>
-          <Button onClick={toggleAdminMode} className={adminEnabled ? "" : "opacity-80"}>
-            Admin Mode: {adminEnabled ? "ON" : "OFF"}
+          <Button variant="outline" onClick={() => nav(ROUTES.Profile)} disabled={busy}>
+            Profile
           </Button>
         </div>
       </div>
 
-      {!adminEnabled && (
-        <Card className="p-4 border border-amber-300 bg-amber-50">
-          <div className="font-medium">Admin Mode is OFF</div>
-          <div className="text-sm text-gray-700 mt-1">
-            Turn it on to enable destructive actions (purge/dedupe). This is stored locally in your browser.
+      <Card className="p-4 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="font-semibold">Safety gate</div>
+          <div className={`text-sm ${adminEnabled ? "text-green-700" : "text-red-700"}`}>
+            Admin Mode: {adminEnabled ? "ON" : "OFF"}
           </div>
-        </Card>
-      )}
-
-      <Card className="p-2">
-        <div className="flex flex-wrap gap-2">
-          <Button variant={tab === "overview" ? "default" : "outline"} onClick={() => setTab("overview")}>
-            Overview
-          </Button>
-          <Button variant={tab === "dataops" ? "default" : "outline"} onClick={() => setTab("dataops")}>
-            Data Ops
-          </Button>
-          <Button variant={tab === "dedupe" ? "default" : "outline"} onClick={() => setTab("dedupe")}>
-            Dedupe
-          </Button>
-          <Button variant={tab === "diagnostics" ? "default" : "outline"} onClick={() => setTab("diagnostics")}>
-            Diagnostics
-          </Button>
+        </div>
+        <div className="text-sm text-gray-700">
+          Destructive actions are blocked unless Admin Mode is enabled (Profile → Admin).
         </div>
       </Card>
 
-      {tab === "overview" && (
-        <div className="space-y-4">
-          <Card className="p-4">
-            <div className="text-lg font-semibold">Quick actions</div>
-            <div className="text-sm text-gray-600 mt-1">
-              Use these to jump into the specialized admin pages you already have.
+      <div className="flex flex-wrap gap-2">
+        <TabBtn id="pipelines">Pipelines</TabBtn>
+        <TabBtn id="purge">Purge / Reset</TabBtn>
+        <TabBtn id="dedupe">Dedupe</TabBtn>
+        <TabBtn id="diagnostics">Diagnostics</TabBtn>
+      </div>
+
+      {tab === "pipelines" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card className="p-4 space-y-3">
+            <div className="text-lg font-semibold">Phase 1: Seed Schools (Scorecard)</div>
+            <div className="text-sm text-gray-700">
+              Canonical institution master. Restart-safe checkpoint stored server-side.
             </div>
 
-            <div className="flex flex-wrap gap-2 mt-3">
-              <Button variant="outline" onClick={() => nav(ROUTES.AdminSeedSchoolsMaster)}>
-                Seed Schools (Scorecard)
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <label className="space-y-1">
+                <div className="text-gray-600">Per page</div>
+                <input
+                  className="w-full border rounded px-2 py-1"
+                  type="number"
+                  value={seedPerPage}
+                  onChange={(e) => setSeedPerPage(Number(e.target.value || 0))}
+                />
+              </label>
+              <label className="space-y-1">
+                <div className="text-gray-600">Pages per call</div>
+                <input
+                  className="w-full border rounded px-2 py-1"
+                  type="number"
+                  value={seedPagesPerCall}
+                  onChange={(e) => setSeedPagesPerCall(Number(e.target.value || 0))}
+                />
+              </label>
+              <label className="space-y-1">
+                <div className="text-gray-600">Max upserts per call</div>
+                <input
+                  className="w-full border rounded px-2 py-1"
+                  type="number"
+                  value={seedMaxUpserts}
+                  onChange={(e) => setSeedMaxUpserts(Number(e.target.value || 0))}
+                />
+              </label>
+              <label className="space-y-1">
+                <div className="text-gray-600">Write delay (ms)</div>
+                <input
+                  className="w-full border rounded px-2 py-1"
+                  type="number"
+                  value={seedWriteDelayMs}
+                  onChange={(e) => setSeedWriteDelayMs(Number(e.target.value || 0))}
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={pipeDryRun ? "default" : "outline"}
+                onClick={() => setPipeDryRun(true)}
+                disabled={busy}
+              >
+                Dry run
               </Button>
-              <Button variant="outline" onClick={() => nav(ROUTES.AdminImport)}>
-                Admin Import
+              <Button
+                variant={!pipeDryRun ? "default" : "outline"}
+                onClick={() => setPipeDryRun(false)}
+                disabled={busy}
+              >
+                Write
               </Button>
-              <Button variant="outline" onClick={() => nav(ROUTES.AdminFactoryReset)}>
-                Factory Reset
-              </Button>
-              <Button variant="outline" onClick={() => nav(ROUTES.Discover)}>
-                Discover
+
+              <Button
+                variant={autoRun ? "default" : "outline"}
+                onClick={() => setAutoRun((v) => !v)}
+                disabled={busy}
+              >
+                Auto-run: {autoRun ? "ON" : "OFF"}
               </Button>
             </div>
 
-            <div className="mt-4 text-sm text-gray-700">
-              <div className="font-medium">What this control plane solves</div>
-              <ul className="list-disc pl-5 mt-1 space-y-1">
-                <li>Mass purge across multiple entities with retries and throttling</li>
-                <li>Dedupe School by source_key so Discover stops showing "Unknown school" artifacts</li>
-                <li>Diagnostics to quickly confirm what entities exist on this host/env</li>
-              </ul>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() =>
+                  invokePipeline(
+                    "seedSchoolsMaster_scorecard",
+                    {
+                      dryRun: pipeDryRun,
+                      resume: true,
+                      perPage: seedPerPage,
+                      maxPages: seedPagesPerCall,
+                      maxUpserts: seedMaxUpserts,
+                      writeDelayMs: seedWriteDelayMs,
+                    },
+                    { auto: autoRun, untilDone: true }
+                  )
+                }
+                disabled={busy}
+              >
+                Run Scorecard seed
+              </Button>
             </div>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-lg font-semibold">Operational guardrails</div>
-            <ul className="list-disc pl-5 mt-2 text-sm text-gray-700 space-y-1">
-              <li>Destructive actions require Admin Mode + typing DELETE</li>
-              <li>Retry logic backs off on rate limits and transient network failures</li>
-              <li>Throttles writes to reduce Base44 429s</li>
-            </ul>
-          </Card>
-        </div>
-      )}
-
-      {tab === "dataops" && (
-        <div className="space-y-4">
-          <Card className="p-4">
-            <div className="text-lg font-semibold">Bulk purge (multi-entity)</div>
-            <div className="text-sm text-gray-600 mt-1">
-              This is your "Option A" style control: select entities and wipe them safely with retries + throttling.
+          <Card className="p-4 space-y-3">
+            <div className="text-lg font-semibold">Phase 2: Athletics membership enrich</div>
+            <div className="text-sm text-gray-700">
+              Fills division/subdivision/conference where available. Conservative matching.
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
-              {Object.keys(purgeSelection).map((k) => (
-                <label key={k} className="flex items-center gap-2 text-sm">
+            <div className="flex flex-wrap gap-2 text-sm">
+              {Object.keys(memberOrgs).map((k) => (
+                <label key={k} className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={!!purgeSelection[k]}
-                    onChange={(e) => setPurgeSelection((p) => ({ ...p, [k]: e.target.checked }))}
+                    checked={!!memberOrgs[k]}
+                    onChange={(e) => setMemberOrgs((p) => ({ ...p, [k]: e.target.checked }))}
+                    disabled={busy}
                   />
-                  <span className="font-mono">{k}</span>
+                  {k}
                 </label>
               ))}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
-              <label className="text-sm">
-                <div className="text-gray-700">Dry run</div>
-                <select
-                  className="mt-1 w-full border rounded px-2 py-1"
-                  value={purgeDryRun ? "true" : "false"}
-                  onChange={(e) => setPurgeDryRun(e.target.value === "true")}
-                >
-                  <option value="true">true (no deletes)</option>
-                  <option value="false">false (delete)</option>
-                </select>
-              </label>
-
-              <label className="text-sm">
-                <div className="text-gray-700">per delete delay (ms)</div>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <label className="space-y-1">
+                <div className="text-gray-600">Max updates per call</div>
                 <input
-                  className="mt-1 w-full border rounded px-2 py-1"
+                  className="w-full border rounded px-2 py-1"
                   type="number"
-                  min={0}
-                  value={purgePerDeleteDelayMs}
-                  onChange={(e) => setPurgePerDeleteDelayMs(Number(e.target.value || 0))}
+                  value={memberMaxUpdates}
+                  onChange={(e) => setMemberMaxUpdates(Number(e.target.value || 0))}
                 />
               </label>
-
-              <label className="text-sm">
-                <div className="text-gray-700">between entities delay (ms)</div>
+              <label className="space-y-1">
+                <div className="text-gray-600">Write delay (ms)</div>
                 <input
-                  className="mt-1 w-full border rounded px-2 py-1"
+                  className="w-full border rounded px-2 py-1"
                   type="number"
-                  min={0}
-                  value={purgeBetweenEntitiesDelayMs}
-                  onChange={(e) => setPurgeBetweenEntitiesDelayMs(Number(e.target.value || 0))}
+                  value={memberWriteDelayMs}
+                  onChange={(e) => setMemberWriteDelayMs(Number(e.target.value || 0))}
                 />
               </label>
             </div>
 
-            <div className="mt-4 flex flex-col md:flex-row gap-2 md:items-center">
-              <label className="text-sm flex-1">
-                <div className="text-gray-700">Type DELETE to confirm</div>
-                <input
-                  className="mt-1 w-full border rounded px-2 py-1 font-mono"
-                  value={purgeConfirmText}
-                  onChange={(e) => setPurgeConfirmText(e.target.value)}
-                  placeholder="DELETE"
-                />
-              </label>
-
-              <Button onClick={runPurge} disabled={busy}>
-                {busy ? "Working..." : "Run purge"}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() =>
+                  invokePipeline(
+                    "enrichSchools_athleticsMembership",
+                    {
+                      dryRun: pipeDryRun,
+                      resume: true,
+                      orgs: Object.entries(memberOrgs)
+                        .filter(([, v]) => !!v)
+                        .map(([k]) => k),
+                      maxUpdates: memberMaxUpdates,
+                      writeDelayMs: memberWriteDelayMs,
+                    },
+                    { auto: autoRun, untilDone: true }
+                  )
+                }
+                disabled={busy}
+              >
+                Run membership enrich
               </Button>
             </div>
+          </Card>
 
-            <div className="mt-3 text-xs text-gray-600">
-              Note: This uses entity.list() then entity.delete() per row. If Base44 returns 429, it backs off and retries.
+          <Card className="p-4 space-y-3">
+            <div className="text-lg font-semibold">Phase 3: Sports catalog</div>
+            <div className="text-sm text-gray-700">Seeds stable Sport rows (idempotent).</div>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={sportsOnlyMissing}
+                onChange={(e) => setSportsOnlyMissing(e.target.checked)}
+                disabled={busy}
+              />
+              Only create missing sports
+            </label>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() =>
+                  invokePipeline(
+                    "seedSportsCatalog",
+                    {
+                      dryRun: pipeDryRun,
+                      onlyMissing: sportsOnlyMissing,
+                    },
+                    { auto: false, untilDone: false }
+                  )
+                }
+                disabled={busy}
+              >
+                Seed Sports
+              </Button>
+            </div>
+          </Card>
+
+          <Card className="p-4 space-y-3">
+            <div className="text-lg font-semibold">Phase 3: SchoolSports from Camps</div>
+            <div className="text-sm text-gray-700">
+              Camp-driven membership so Discover filters can work fast.
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <label className="space-y-1">
+                <div className="text-gray-600">Org</div>
+                <input
+                  className="w-full border rounded px-2 py-1"
+                  value={schoolSportsOrg}
+                  onChange={(e) => setSchoolSportsOrg(e.target.value)}
+                  disabled={busy}
+                />
+              </label>
+              <label className="space-y-1">
+                <div className="text-gray-600">Max creates per call</div>
+                <input
+                  className="w-full border rounded px-2 py-1"
+                  type="number"
+                  value={schoolSportsMaxCreates}
+                  onChange={(e) => setSchoolSportsMaxCreates(Number(e.target.value || 0))}
+                  disabled={busy}
+                />
+              </label>
+              <label className="space-y-1">
+                <div className="text-gray-600">Write delay (ms)</div>
+                <input
+                  className="w-full border rounded px-2 py-1"
+                  type="number"
+                  value={schoolSportsWriteDelayMs}
+                  onChange={(e) => setSchoolSportsWriteDelayMs(Number(e.target.value || 0))}
+                  disabled={busy}
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() =>
+                  invokePipeline(
+                    "enrichSchoolSportsFromCamps",
+                    {
+                      dryRun: pipeDryRun,
+                      resume: true,
+                      org: schoolSportsOrg,
+                      maxCreates: schoolSportsMaxCreates,
+                      writeDelayMs: schoolSportsWriteDelayMs,
+                    },
+                    { auto: autoRun, untilDone: true }
+                  )
+                }
+                disabled={busy}
+              >
+                Build SchoolSports
+              </Button>
+            </div>
+          </Card>
+
+          <Card className="p-4 space-y-3">
+            <div className="text-lg font-semibold">Phase 4: Logo backfill from domain</div>
+            <div className="text-sm text-gray-700">
+              Sets <code className="bg-gray-100 px-1 rounded">logo_url</code> using the school website domain.
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <label className="space-y-1">
+                <div className="text-gray-600">Max updates per call</div>
+                <input
+                  className="w-full border rounded px-2 py-1"
+                  type="number"
+                  value={logosMaxUpdates}
+                  onChange={(e) => setLogosMaxUpdates(Number(e.target.value || 0))}
+                  disabled={busy}
+                />
+              </label>
+              <label className="space-y-1">
+                <div className="text-gray-600">Write delay (ms)</div>
+                <input
+                  className="w-full border rounded px-2 py-1"
+                  type="number"
+                  value={logosWriteDelayMs}
+                  onChange={(e) => setLogosWriteDelayMs(Number(e.target.value || 0))}
+                  disabled={busy}
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() =>
+                  invokePipeline(
+                    "enrichSchools_logosFromDomain",
+                    {
+                      dryRun: pipeDryRun,
+                      resume: true,
+                      maxUpdates: logosMaxUpdates,
+                      writeDelayMs: logosWriteDelayMs,
+                    },
+                    { auto: autoRun, untilDone: true }
+                  )
+                }
+                disabled={busy}
+              >
+                Run logo backfill
+              </Button>
             </div>
           </Card>
         </div>
+      )}
+
+      {tab === "purge" && (
+        <Card className="p-4 space-y-3">
+          <div className="text-lg font-semibold">Purge / Reset</div>
+          <div className="text-sm text-gray-700">
+            Select entities to wipe. This is destructive. Use Dry run first.
+          </div>
+
+          <div className="flex flex-wrap gap-3 text-sm">
+            {Object.keys(purgeSelection).map((k) => (
+              <label key={k} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={!!purgeSelection[k]}
+                  onChange={(e) => setPurgeSelection((p) => ({ ...p, [k]: e.target.checked }))}
+                  disabled={busy}
+                />
+                {k}
+              </label>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+            <label className="space-y-1">
+              <div className="text-gray-600">Confirm</div>
+              <input
+                className="w-full border rounded px-2 py-1"
+                placeholder='Type DELETE'
+                value={purgeConfirmText}
+                onChange={(e) => setPurgeConfirmText(e.target.value)}
+                disabled={busy}
+              />
+            </label>
+            <label className="space-y-1">
+              <div className="text-gray-600">Delay per delete (ms)</div>
+              <input
+                className="w-full border rounded px-2 py-1"
+                type="number"
+                value={purgePerDeleteDelayMs}
+                onChange={(e) => setPurgePerDeleteDelayMs(Number(e.target.value || 0))}
+                disabled={busy}
+              />
+            </label>
+            <label className="space-y-1">
+              <div className="text-gray-600">Delay between entities (ms)</div>
+              <input
+                className="w-full border rounded px-2 py-1"
+                type="number"
+                value={purgeBetweenEntitiesDelayMs}
+                onChange={(e) => setPurgeBetweenEntitiesDelayMs(Number(e.target.value || 0))}
+                disabled={busy}
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={purgeDryRun ? "default" : "outline"}
+              onClick={() => setPurgeDryRun(true)}
+              disabled={busy}
+            >
+              Dry run
+            </Button>
+            <Button
+              variant={!purgeDryRun ? "default" : "outline"}
+              onClick={() => setPurgeDryRun(false)}
+              disabled={busy}
+            >
+              Delete
+            </Button>
+            <Button onClick={runPurge} disabled={busy}>
+              Run purge
+            </Button>
+          </div>
+
+          <div className="text-xs text-gray-600">
+            You said you will not reset again. Leave this tab alone unless you explicitly decide to.
+          </div>
+        </Card>
       )}
 
       {tab === "dedupe" && (
-        <div className="space-y-4">
-          <Card className="p-4">
-            <div className="text-lg font-semibold">School dedupe</div>
-            <div className="text-sm text-gray-600 mt-1">
-              Removes duplicate School rows that share the same <span className="font-mono">source_key</span>.
-              Keeps the "best" row (more complete data, logo, division, active).
-            </div>
+        <Card className="p-4 space-y-3">
+          <div className="text-lg font-semibold">School Dedupe (with merge)</div>
+          <div className="text-sm text-gray-700">
+            This dedupe will <b>repoint</b> Camp/CampDemo/SchoolSport/SchoolSportSite to the kept School before deleting the dup School.
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
-              <label className="text-sm">
-                <div className="text-gray-700">Dry run</div>
-                <select
-                  className="mt-1 w-full border rounded px-2 py-1"
-                  value={dedupeDryRun ? "true" : "false"}
-                  onChange={(e) => setDedupeDryRun(e.target.value === "true")}
-                >
-                  <option value="true">true (no deletes)</option>
-                  <option value="false">false (delete)</option>
-                </select>
-              </label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+            <label className="space-y-1">
+              <div className="text-gray-600">Mode</div>
+              <select
+                className="w-full border rounded px-2 py-1"
+                value={dedupeMode}
+                onChange={(e) => setDedupeMode(e.target.value)}
+                disabled={busy}
+              >
+                <option value="name_state">name + state (recommended for your case)</option>
+                <option value="source_key">source_key</option>
+                <option value="unitid">unitid</option>
+              </select>
+            </label>
 
-              <label className="text-sm">
-                <div className="text-gray-700">delete delay (ms)</div>
-                <input
-                  className="mt-1 w-full border rounded px-2 py-1"
-                  type="number"
-                  min={0}
-                  value={dedupeDeleteDelayMs}
-                  onChange={(e) => setDedupeDeleteDelayMs(Number(e.target.value || 0))}
-                />
-              </label>
+            <label className="space-y-1">
+              <div className="text-gray-600">Group limit per run</div>
+              <input
+                className="w-full border rounded px-2 py-1"
+                type="number"
+                value={dedupeLimitGroups}
+                onChange={(e) => setDedupeLimitGroups(Number(e.target.value || 0))}
+                disabled={busy}
+              />
+            </label>
 
-              <label className="text-sm">
-                <div className="text-gray-700">min group size</div>
-                <input
-                  className="mt-1 w-full border rounded px-2 py-1"
-                  type="number"
-                  min={2}
-                  value={dedupeMinDuplicateGroup}
-                  onChange={(e) => setDedupeMinDuplicateGroup(Number(e.target.value || 2))}
-                />
-              </label>
-            </div>
+            <label className="space-y-1">
+              <div className="text-gray-600">Skip groups with no state</div>
+              <select
+                className="w-full border rounded px-2 py-1"
+                value={dedupeSkipNoState ? "yes" : "no"}
+                onChange={(e) => setDedupeSkipNoState(e.target.value === "yes")}
+                disabled={busy}
+              >
+                <option value="yes">Yes (safer)</option>
+                <option value="no">No (more aggressive)</option>
+              </select>
+            </label>
 
-            <div className="mt-4 flex gap-2">
-              <Button onClick={runSchoolDedupe} disabled={busy}>
-                {busy ? "Working..." : "Run School dedupe"}
-              </Button>
+            <label className="space-y-1">
+              <div className="text-gray-600">Update delay (ms)</div>
+              <input
+                className="w-full border rounded px-2 py-1"
+                type="number"
+                value={dedupeUpdateDelayMs}
+                onChange={(e) => setDedupeUpdateDelayMs(Number(e.target.value || 0))}
+                disabled={busy}
+              />
+            </label>
 
-              <Button variant="outline" onClick={() => nav(ROUTES.AdminSeedSchoolsMaster)}>
-                Go to Seed Schools
-              </Button>
-            </div>
+            <label className="space-y-1">
+              <div className="text-gray-600">Delete delay (ms)</div>
+              <input
+                className="w-full border rounded px-2 py-1"
+                type="number"
+                value={dedupeDeleteDelayMs}
+                onChange={(e) => setDedupeDeleteDelayMs(Number(e.target.value || 0))}
+                disabled={busy}
+              />
+            </label>
+          </div>
 
-            <div className="mt-3 text-xs text-gray-600">
-              If you had earlier partial failures, the safe play is to re-run seeding on the earlier pages. Dedupe makes
-              that painless.
-            </div>
-          </Card>
-        </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={dedupeDryRun ? "default" : "outline"}
+              onClick={() => setDedupeDryRun(true)}
+              disabled={busy}
+            >
+              Dry run
+            </Button>
+            <Button
+              variant={!dedupeDryRun ? "default" : "outline"}
+              onClick={() => setDedupeDryRun(false)}
+              disabled={busy}
+            >
+              Merge + delete
+            </Button>
+            <Button onClick={runSchoolDedupe} disabled={busy}>
+              Run School dedupe
+            </Button>
+          </div>
+
+          <div className="text-xs text-gray-600">
+            Recommended run: Mode = name + state, Dry run first, then Merge + delete.
+          </div>
+        </Card>
       )}
 
       {tab === "diagnostics" && (
-        <div className="space-y-4">
-          <Card className="p-4">
-            <div className="text-lg font-semibold">Entity diagnostics</div>
-            <div className="text-sm text-gray-600 mt-1">
-              Confirms what Base44 entities exist in this environment, and what your entity exports resolve to.
-            </div>
-
-            <div className="mt-3 text-sm">
-              <div>
-                Export sanity:{" "}
-                <span className="font-mono">
-                  Camp={Entities?.Camp ? "ok" : "missing"} Sport={Entities?.Sport ? "ok" : "missing"} School=
-                  {Entities?.School ? "ok" : "missing"}
-                </span>
-              </div>
-              <div className="mt-1">
-                base44.entities keys: <span className="font-mono">{entityKeys.length}</span>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <Button variant="outline" onClick={() => setDiagExpanded((v) => !v)}>
-                {diagExpanded ? "Hide keys" : "Show keys"}
-              </Button>
-            </div>
-
-            {diagExpanded && (
-              <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-                {entityKeys.map((k) => (
-                  <div key={k} className="border rounded px-2 py-1 font-mono bg-white">
-                    {k}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
+        <Card className="p-4 space-y-3">
+          <div className="text-lg font-semibold">Diagnostics</div>
+          <div className="text-sm text-gray-700">Quick health checks and entity inventory.</div>
+          <Button onClick={runDiagnostics} disabled={busy}>
+            Run diagnostics
+          </Button>
+        </Card>
       )}
 
       <Card className="p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="font-semibold">Run log</div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setLog([])} disabled={busy}>
-              Clear
-            </Button>
-            <Button variant="outline" onClick={() => pushLog("Manual note")} disabled={busy}>
-              Add note
-            </Button>
-          </div>
+          <Button variant="outline" onClick={() => setLog([])} disabled={busy}>
+            Clear
+          </Button>
         </div>
-
         <div
           ref={logRef}
-          className="mt-3 h-64 overflow-auto border rounded bg-black text-green-200 font-mono text-xs p-2"
+          className="mt-3 bg-black text-green-200 rounded p-3 text-xs overflow-auto"
+          style={{ maxHeight: 320 }}
         >
-          {log.length === 0 ? (
-            <div className="text-green-300/70">No log yet.</div>
-          ) : (
-            log.map((l, idx) => <div key={idx}>{l}</div>)
-          )}
+          {log.length ? log.map((l, i) => <div key={i}>{l}</div>) : <div>(no logs yet)</div>}
         </div>
       </Card>
     </div>
