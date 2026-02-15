@@ -61,7 +61,6 @@ function isRateLimitError(e) {
 }
 function isNetworkError(e) {
   const msg = String(e?.message || e || "").toLowerCase();
-  // Base44 client often surfaces transient issues as "Network Error"
   return msg.includes("network error") || msg.includes("failed to fetch");
 }
 function isScorecardTransient(e) {
@@ -126,11 +125,14 @@ export default function AdminSeedSchoolsMaster() {
   const [perPage, setPerPage] = useState(100);
   const [pagesPerBatch, setPagesPerBatch] = useState(1);
   const [delayMs, setDelayMs] = useState(2000);
-  const [perOpDelayMs, setPerOpDelayMs] = useState(250);
+  const [perOpDelayMs, setPerOpDelayMs] = useState(300);
   const [scorecardFetchTries, setScorecardFetchTries] = useState(8);
 
   // Adaptive delay grows on 429/network, shrinks slowly when stable
-  const adaptiveDelayRef = useRef(250);
+  const adaptiveDelayRef = useRef(300);
+
+  // Function resolution
+  const [scorecardFn, setScorecardFn] = useState(null);
 
   // Checkpoint
   const [checkpoint, setCheckpoint] = useState({ loaded: false, pageNext: 0 });
@@ -145,29 +147,77 @@ export default function AdminSeedSchoolsMaster() {
     push(`⏹️ Stop requested @ ${new Date().toISOString()}`);
   };
 
-  const probeScorecard = async () => {
+  async function tryInvoke(name) {
+    const raw = await base44.functions.invoke(name, { page: 0, perPage: 1, maxPages: 1 });
+    const resp = unwrapInvokeResponse(raw);
+    // If function exists but returns {error}, still counts as "exists" (not 404). We just need non-404.
+    return resp;
+  }
+
+  // IMPORTANT: autodiscover correct deployed function name in prod
+  const resolveScorecardFunction = async () => {
+    if (!canRun) return null;
+
+    const candidates = [
+      "seedSchoolsMaster_scorecard",
+      "seedSchoolsMaster_scorecard_v2",
+      "scorecardSeedSchoolsMaster",
+      "scorecardProbe",
+      "probeScorecard",
+      "probeMinimal",
+    ];
+
+    push(`Resolving scorecard function on ${env.host} (${env.label})...`);
+
+    for (const name of candidates) {
+      try {
+        await tryInvoke(name);
+        push(`✅ Using function: ${name}`);
+        setScorecardFn(name);
+        return name;
+      } catch (e) {
+        const status = e?.raw?.status || e?.status;
+        const msg = String(e?.message || e);
+        // 404 means function not deployed under that name in this environment
+        if (status === 404 || msg.includes("status code 404")) {
+          push(`- Not found: ${name}`);
+          continue;
+        }
+        // Non-404 errors still mean the function name exists; pick it
+        push(`✅ Function exists (non-404): ${name} (error=${msg})`);
+        setScorecardFn(name);
+        return name;
+      }
+    }
+
+    push(`❌ Could not resolve a deployed scorecard function. Deploy one of the candidate names above.`);
+    setScorecardFn(null);
+    return null;
+  };
+
+  const probe = async () => {
     if (!canRun) return;
+
     push(`\nProbe start @ ${new Date().toISOString()}`);
+    const fn = scorecardFn || (await resolveScorecardFunction());
+    if (!fn) return;
+
     try {
-      const raw = await base44.functions.invoke("seedSchoolsMaster_scorecard", {
-        page: 0,
-        perPage: 5,
-        maxPages: 1,
-      });
-      push(`Probe unwrapped:\n${truncate(unwrapInvokeResponse(raw))}`);
+      const raw = await base44.functions.invoke(fn, { page: 0, perPage: 5, maxPages: 1 });
+      push(`Probe fn=${fn}\n${truncate(unwrapInvokeResponse(raw))}`);
     } catch (e) {
-      push(`Probe threw:\n${truncate({ message: e?.message, stack: e?.stack, raw: e })}`);
+      push(`Probe threw:\n${truncate({ message: e?.message, raw: e?.raw || e })}`);
     }
   };
 
-  async function fetchBatchWithRetry(page0, perPageNum, pagesInBatchNum) {
+  async function fetchBatchWithRetry(fnName, page0, perPageNum, pagesInBatchNum) {
     let last = null;
 
     for (let i = 0; i < scorecardFetchTries; i++) {
       if (cancelRef.current) throw new Error("Cancelled");
 
       try {
-        const raw = await base44.functions.invoke("seedSchoolsMaster_scorecard", {
+        const raw = await base44.functions.invoke(fnName, {
           page: Number(page0 || 0),
           perPage: Number(perPageNum || 100),
           maxPages: Number(pagesInBatchNum || 1),
@@ -190,6 +240,12 @@ export default function AdminSeedSchoolsMaster() {
         push(`⚠️ Fetch attempt ${i + 1}/${scorecardFetchTries} failed: ${msg}`);
         if (dbg) push(`Fetch debug:\n${truncate(dbg)}`);
 
+        // If it's a 404, the function name is wrong in this env. Stop immediately and re-resolve.
+        const status = e?.raw?.status || e?.status;
+        if (status === 404 || msg.includes("status code 404")) {
+          throw e;
+        }
+
         if (!isScorecardTransient(e) || i === scorecardFetchTries - 1) break;
 
         const wait = Math.min(20000, 2000 * Math.pow(2, i));
@@ -205,7 +261,6 @@ export default function AdminSeedSchoolsMaster() {
     try {
       return await fn();
     } catch (e) {
-      // bubble transient errors up to retry wrapper
       if (isRateLimitError(e) || isNetworkError(e)) throw e;
 
       push(`❌ Base44Error during ${label}`);
@@ -257,18 +312,14 @@ export default function AdminSeedSchoolsMaster() {
     const payload = buildPayload(r);
     if (!payload.source_key || !payload.school_name) return { mode: "skipped" };
 
-    // Create first
     try {
-      await safeEntityCall(
-        "School.create",
-        async () => await School.create(payload),
-        { source_key: payload.source_key, payloadSample: payload }
-      );
+      await safeEntityCall("School.create", async () => await School.create(payload), {
+        source_key: payload.source_key,
+      });
       return { mode: "created" };
     } catch (e) {
       if (isRateLimitError(e) || isNetworkError(e)) throw e;
 
-      // Duplicate: filter + update
       if (looksLikeDuplicateCreate(e)) {
         const existingRows = await safeEntityCall(
           "School.filter",
@@ -292,7 +343,6 @@ export default function AdminSeedSchoolsMaster() {
   };
 
   async function upsertOneWithRetries(row, rowIndex, page) {
-    // retries for transient DB errors only; after max retries, return fail but don't stop job
     for (let t = 0; t < 10; t++) {
       if (cancelRef.current) return { mode: "cancelled" };
 
@@ -355,18 +405,28 @@ export default function AdminSeedSchoolsMaster() {
       return;
     }
 
-    adaptiveDelayRef.current = Math.max(150, Number(perOpDelayMs || 250));
+    adaptiveDelayRef.current = Math.max(150, Number(perOpDelayMs || 300));
+
+    push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
+    push(`URL: ${env.href}`);
+    push(`School entity: using src/api/entities.js export`);
+    push(`Checkpoint (local): pageNext=${checkpoint.pageNext}`);
+
+    // Resolve function name each run (prod/preview mismatch-proof)
+    let fn = scorecardFn;
+    if (!fn) fn = await resolveScorecardFunction();
+    if (!fn) {
+      setRunning(false);
+      return;
+    }
 
     const per = Number(perPage || 100);
     const ppb = Math.max(1, Number(pagesPerBatch || 1));
     const delay = Math.max(0, Number(delayMs || 0));
     let currentPage = Number(startPage || 0);
 
-    push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
-    push(`URL: ${env.href}`);
-    push(`School entity: using src/api/entities.js export`);
-    push(`Checkpoint (local): pageNext=${checkpoint.pageNext}`);
     push(`Auto-run start @ ${new Date().toISOString()}`);
+    push(`Function=${fn}`);
     push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
     push(`Scorecard fetch tries=${scorecardFetchTries}`);
     if (!dryRun) push(`Write throttle: perOpDelayMs=${perOpDelayMs} (adaptive=${adaptiveDelayRef.current})`);
@@ -380,7 +440,21 @@ export default function AdminSeedSchoolsMaster() {
         push(`\n--- Batch ${b + 1} ---`);
         push(`Fetching page=${batchPage} maxPages=${ppb} perPage=${per} ...`);
 
-        const out = await fetchBatchWithRetry(batchPage, per, ppb);
+        let out;
+        try {
+          out = await fetchBatchWithRetry(fn, batchPage, per, ppb);
+        } catch (e) {
+          const msg = String(e?.message || e);
+          const status = e?.raw?.status || e?.status;
+          if (status === 404 || msg.includes("status code 404")) {
+            push(`❌ Fetch got 404. Re-resolving function name and retrying batch...`);
+            fn = await resolveScorecardFunction();
+            if (!fn) throw e;
+            out = await fetchBatchWithRetry(fn, batchPage, per, ppb);
+          } else {
+            throw e;
+          }
+        }
 
         const rows = out.rows || [];
         const debug = out.debug || null;
@@ -450,27 +524,35 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master</div>
           <div className="text-sm text-slate-600 mt-1">
-            Resilient seeding: retries 429 + Network Error and continues past bad rows. Local checkpoint.
+            Auto-resolves the deployed scorecard function name (prevents PROD 404).
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
+          </div>
+          <div className="mt-2 text-xs text-slate-500">
+            Resolved function: <span className="font-mono">{scorecardFn || "(not resolved yet)"}</span>
           </div>
         </Card>
 
         <Card>
           <div className="text-lg font-semibold text-slate-900">Checkpoint</div>
           <div className="mt-2 text-sm text-slate-700">
-            <div>Next page (local): <span className="font-mono">{checkpoint.pageNext}</span></div>
+            <div>
+              Next page (local): <span className="font-mono">{checkpoint.pageNext}</span>
+            </div>
           </div>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex gap-2 flex-wrap">
             <Button disabled={!checkpoint.loaded || running} onClick={resumeFromCheckpoint} variant="outline">
               Set Start Page to Checkpoint
             </Button>
             <Button disabled={running} onClick={clearCheckpoint} variant="outline">
               Clear Checkpoint
             </Button>
-            <Button disabled={running} onClick={probeScorecard} variant="outline">
-              Probe Scorecard
+            <Button disabled={running} onClick={resolveScorecardFunction} variant="outline">
+              Resolve Function Name
+            </Button>
+            <Button disabled={running} onClick={probe} variant="outline">
+              Probe
             </Button>
           </div>
         </Card>
