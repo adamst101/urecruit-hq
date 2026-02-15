@@ -58,7 +58,14 @@ function isRateLimitError(e) {
 }
 function isScorecardTransient(e) {
   const msg = String(e?.message || e || "").toLowerCase();
-  return msg.includes("scorecard http 500") || msg.includes("scorecard http 502") || msg.includes("scorecard http 503") || msg.includes("scorecard http 504") || msg.includes("timeout") || msg.includes("network");
+  return (
+    msg.includes("scorecard http 500") ||
+    msg.includes("scorecard http 502") ||
+    msg.includes("scorecard http 503") ||
+    msg.includes("scorecard http 504") ||
+    msg.includes("timeout") ||
+    msg.includes("network")
+  );
 }
 function resolveEntity(nameA, nameB) {
   const e = base44?.entities;
@@ -98,17 +105,42 @@ async function retryable(fn, opts) {
   throw lastErr;
 }
 
-const CHECKPOINT_KEY = "admin_seed_schools_master_v1";
+// Local checkpoint storage (no Query entity needed)
+const CHECKPOINT_STORAGE_KEY = "campapp_admin_seed_schools_master_pageNext_v1";
+
+function loadCheckpointFromStorage() {
+  try {
+    const raw = window.localStorage.getItem(CHECKPOINT_STORAGE_KEY);
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
+function saveCheckpointToStorage(pageNext) {
+  try {
+    window.localStorage.setItem(CHECKPOINT_STORAGE_KEY, String(Number(pageNext || 0)));
+  } catch {
+    // ignore
+  }
+}
+
+function clearCheckpointStorage() {
+  try {
+    window.localStorage.removeItem(CHECKPOINT_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 export default function AdminSeedSchoolsMaster() {
   const env = useMemo(() => detectEnv(), []);
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
 
   const schoolResolved = useMemo(() => resolveEntity("School", "Schools"), []);
-  const queryResolved = useMemo(() => resolveEntity("Query", "Queries"), []);
-
   const SchoolEntity = schoolResolved?.entity || null;
-  const QueryEntity = queryResolved?.entity || null;
 
   const [running, setRunning] = useState(false);
   const cancelRef = useRef(false);
@@ -123,54 +155,17 @@ export default function AdminSeedSchoolsMaster() {
   const [pagesPerBatch, setPagesPerBatch] = useState(1);
   const [delayMs, setDelayMs] = useState(2000);
   const [perOpDelayMs, setPerOpDelayMs] = useState(125);
-
-  // Scorecard fetch resilience
   const [scorecardFetchTries, setScorecardFetchTries] = useState(8);
 
-  // Checkpoint state
+  // Checkpoint
   const [checkpoint, setCheckpoint] = useState({
     loaded: false,
     pageNext: 0,
-    lastUpdatedAt: null,
   });
 
-  const loadCheckpoint = async () => {
-    if (!QueryEntity?.filter) {
-      setCheckpoint((c) => ({ ...c, loaded: true }));
-      return;
-    }
-    try {
-      const rows = await QueryEntity.filter({ key: CHECKPOINT_KEY });
-      const row = Array.isArray(rows) && rows.length ? rows[0] : null;
-      const pageNext = Number(row?.page_next ?? 0) || 0;
-      setCheckpoint({
-        loaded: true,
-        pageNext,
-        lastUpdatedAt: row?.last_updated_at || null,
-      });
-    } catch {
-      setCheckpoint((c) => ({ ...c, loaded: true }));
-    }
-  };
-
-  const saveCheckpoint = async (pageNext) => {
-    if (!QueryEntity?.filter || !QueryEntity?.create || !QueryEntity?.update) return;
-
-    const now = new Date().toISOString();
-    const rows = await QueryEntity.filter({ key: CHECKPOINT_KEY });
-    const existing = Array.isArray(rows) && rows.length ? rows[0] : null;
-
-    const payload = { key: CHECKPOINT_KEY, page_next: Number(pageNext || 0), last_updated_at: now };
-
-    if (existing?.id) await QueryEntity.update(String(existing.id), payload);
-    else await QueryEntity.create(payload);
-
-    setCheckpoint((c) => ({ ...c, pageNext: Number(pageNext || 0), lastUpdatedAt: now }));
-  };
-
   useEffect(() => {
-    loadCheckpoint();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const n = loadCheckpointFromStorage();
+    setCheckpoint({ loaded: true, pageNext: n });
   }, []);
 
   const stop = () => {
@@ -226,7 +221,7 @@ export default function AdminSeedSchoolsMaster() {
 
         if (!isScorecardTransient(e) || i === scorecardFetchTries - 1) break;
 
-        const wait = Math.min(20000, 2000 * Math.pow(2, i)); // 2s,4s,8s,16s,capped
+        const wait = Math.min(20000, 2000 * Math.pow(2, i));
         push(`Waiting ${wait}ms then retrying same page...`);
         await sleep(wait);
       }
@@ -318,7 +313,7 @@ export default function AdminSeedSchoolsMaster() {
     push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
     push(`URL: ${env.href}`);
     push(`Resolved entity: School=${schoolResolved?.key || "NONE"}`);
-    push(`Checkpoint: pageNext=${checkpoint.pageNext}`);
+    push(`Checkpoint (local): pageNext=${checkpoint.pageNext}`);
     push(`Auto-run start @ ${new Date().toISOString()}`);
     push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
     push(`Scorecard fetch tries=${scorecardFetchTries}`);
@@ -360,15 +355,19 @@ export default function AdminSeedSchoolsMaster() {
         const nextPage = currentPage + ppb;
 
         if (!dryRun) {
-          await saveCheckpoint(nextPage);
-          push(`💾 Checkpoint saved: nextPage=${nextPage}`);
+          saveCheckpointToStorage(nextPage);
+          setCheckpoint({ loaded: true, pageNext: nextPage });
+          push(`💾 Checkpoint saved (local): nextPage=${nextPage}`);
         }
 
         currentPage = nextPage;
 
         if (rows.length < expectedMax) {
           push(`🏁 Fetched fewer than ${expectedMax}. Treating as complete.`);
-          if (!dryRun) await saveCheckpoint(currentPage);
+          if (!dryRun) {
+            saveCheckpointToStorage(currentPage);
+            setCheckpoint({ loaded: true, pageNext: currentPage });
+          }
           break;
         }
 
@@ -387,7 +386,13 @@ export default function AdminSeedSchoolsMaster() {
 
   const resumeFromCheckpoint = () => {
     setStartPage(checkpoint.pageNext || 0);
-    push(`↩️ Start page set from checkpoint: ${checkpoint.pageNext || 0}`);
+    push(`↩️ Start page set from local checkpoint: ${checkpoint.pageNext || 0}`);
+  };
+
+  const clearCheckpoint = () => {
+    clearCheckpointStorage();
+    setCheckpoint({ loaded: true, pageNext: 0 });
+    push(`🧹 Local checkpoint cleared (pageNext=0)`);
   };
 
   return (
@@ -396,7 +401,7 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master</div>
           <div className="text-sm text-slate-600 mt-1">
-            Auto-retries transient Scorecard 500s and resumes safely via checkpoint.
+            Checkpoint stored locally (no Query table needed). Safe resume + retries for Scorecard 500s.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
@@ -406,12 +411,14 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-lg font-semibold text-slate-900">Checkpoint</div>
           <div className="mt-2 text-sm text-slate-700">
-            <div>Next page: <span className="font-mono">{checkpoint.pageNext}</span></div>
-            <div>Last updated: {checkpoint.lastUpdatedAt || "-"}</div>
+            <div>Next page (local): <span className="font-mono">{checkpoint.pageNext}</span></div>
           </div>
           <div className="mt-3 flex gap-2">
             <Button disabled={!checkpoint.loaded || running} onClick={resumeFromCheckpoint} variant="outline">
               Set Start Page to Checkpoint
+            </Button>
+            <Button disabled={running} onClick={clearCheckpoint} variant="outline">
+              Clear Checkpoint
             </Button>
             <Button disabled={running} onClick={probeScorecard} variant="outline">
               Probe Scorecard
