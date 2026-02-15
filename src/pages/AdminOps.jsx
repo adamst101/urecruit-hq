@@ -115,21 +115,6 @@ function pickEntityFromSDK(name) {
   return null;
 }
 
-/**
- * Base44 list() is NOT guaranteed to accept arbitrary pagination args.
- * In this project, passing unknown keys can cause list() to behave like a filter and return [].
- *
- * So we PROBE which paging mode works, then use only supported args.
- *
- * Modes we try:
- *  - "noargs": list()
- *  - "page_size": list({ page, page_size })
- *  - "per_page": list({ page, per_page })
- *  - "pageSize": list({ page, pageSize })
- *  - "limit_offset": list({ limit, offset })
- *
- * We also support filtered reads via Entity.filter(criteria), which is known-good in this app.
- */
 async function detectListMode(Entity, samplePageSize = 50) {
   const candidates = [
     { mode: "noargs", call: () => Entity.list() },
@@ -143,110 +128,22 @@ async function detectListMode(Entity, samplePageSize = 50) {
   for (const c of candidates) {
     try {
       const res = await c.call();
-      const rows = asArray(res);
-      // Accept ONLY if it returns any rows OR if we're confident the table may be empty.
-      // We can't know empty vs broken signature, so we also check for "res not array" issues.
-      if (Array.isArray(res)) {
-        // If it returns rows, it's a good mode.
-        if (rows.length > 0) return { mode: c.mode, ok: true };
-        // If it returns 0 rows, we keep probing because this could be signature-broken.
-        continue;
-      }
+      if (Array.isArray(res) && res.length > 0) return { mode: c.mode, ok: true };
     } catch {
-      // ignore and try next
+      // ignore
     }
   }
-
-  // If all probes failed to produce rows, fall back to noargs (it’s the safest).
   return { mode: "noargs", ok: false };
 }
 
 async function listPage(Entity, listMode, { page, pageSize }) {
-  if (listMode === "noargs") {
-    // noargs cannot page; caller handles single-shot behavior
-    return asArray(await Entity.list());
-  }
+  if (listMode === "noargs") return asArray(await Entity.list());
   if (listMode === "page_size") return asArray(await Entity.list({ page, page_size: pageSize }));
   if (listMode === "per_page") return asArray(await Entity.list({ page, per_page: pageSize }));
   if (listMode === "pageSize") return asArray(await Entity.list({ page, pageSize }));
   if (listMode === "limit_offset") return asArray(await Entity.list({ limit: pageSize, offset: (page - 1) * pageSize }));
   if (listMode === "emptyobj") return asArray(await Entity.list({}));
   return asArray(await Entity.list());
-}
-
-/**
- * listAllPaged:
- * - If whereObj is provided and non-empty, we use Entity.filter(whereObj) (known-good in your app).
- * - If no filter, we use list() paging mode detected by detectListMode.
- *
- * Note: If Base44 only supports list() with no args, we'll load once and stop.
- */
-async function listAllPaged(Entity, whereObj, { pageSize = 2000, maxPages = 200, onPage, onMode } = {}) {
-  if (!Entity?.list) return [];
-
-  const where = whereObj || {};
-  const hasWhere = where && Object.keys(where).length > 0;
-
-  // Filter path (use Base44 filter API, NOT list({where:...}) which is not supported here)
-  if (hasWhere && typeof Entity.filter === "function") {
-    const rows = await Entity.filter(where);
-    const arr = asArray(rows);
-    onMode?.({ mode: "filter", ok: true });
-    onPage?.({ page: 1, got: arr.length, newCount: arr.length, total: arr.length });
-    return arr;
-  }
-
-  // List path (no filter)
-  const { mode, ok } = await detectListMode(Entity, Math.min(100, pageSize));
-  onMode?.({ mode, ok });
-
-  const seen = new Set();
-  const out = [];
-
-  // If mode is noargs, we can only do one call.
-  if (mode === "noargs" || mode === "emptyobj") {
-    const rows = await listPage(Entity, mode, { page: 1, pageSize });
-    let newCount = 0;
-    for (const r of rows) {
-      const id = getId(r);
-      if (id && seen.has(id)) continue;
-      if (id) {
-        seen.add(id);
-        newCount += 1;
-      }
-      out.push(r);
-    }
-    onPage?.({ page: 1, got: rows.length, newCount, total: out.length });
-    return out;
-  }
-
-  for (let p = 1; p <= maxPages; p++) {
-    const rows = await listPage(Entity, mode, { page: p, pageSize });
-    if (!rows.length) {
-      onPage?.({ page: p, got: 0, newCount: 0, total: out.length });
-      break;
-    }
-
-    let newCount = 0;
-    for (const r of rows) {
-      const id = getId(r);
-      if (id && seen.has(id)) continue;
-      if (id) {
-        seen.add(id);
-        newCount += 1;
-      }
-      out.push(r);
-    }
-
-    onPage?.({ page: p, got: rows.length, newCount, total: out.length });
-
-    // Stop if we get a short page or no new IDs (prevents infinite loops on repeating pages)
-    if (rows.length < pageSize || newCount === 0) break;
-
-    await sleep(120);
-  }
-
-  return out;
 }
 
 async function deleteById(Entity, id) {
@@ -373,6 +270,117 @@ export default function AdminOps() {
     pushLog(`Preset applied: Derived tables selected. School/Sport left untouched.`);
   }
 
+  async function purgeEntityDrain(Entity, name, listMode) {
+    // Drain strategy:
+    // If listMode supports paging: do one pass over pages (best effort).
+    // If listMode is "noargs": loop list() -> delete -> list() until list() returns 0.
+    const MAX_DRAIN_CYCLES = 50;
+
+    if (purgeDryRun) {
+      // For dry-run we just report first visible chunk; draining would overcount.
+      const rows = await withRetries(() => listPage(Entity, listMode, { page: 1, pageSize }), {
+        tries: 7,
+        baseDelayMs: 600,
+        onRetry: ({ attempt, delayMs, err }) =>
+          pushLog(`⚠️ list retry ${attempt} (${delayMs}ms) ${name}: ${safeStr(err?.message || err)}`),
+      });
+
+      pushLog(`Loaded ${name}: page=1 got=${rows.length} (dry run sample)`);
+      pushLog(`Found ${rows.length} rows in ${name}.`);
+      pushLog(`DryRun ON: would delete at least ${rows.length} rows from ${name} (list cap may hide more).`);
+      return { deleted: 0, failed: 0 };
+    }
+
+    let deleted = 0;
+    let failed = 0;
+
+    // If paging works, we still prefer draining if we get repeating pages or caps.
+    if (listMode !== "noargs") {
+      // Best effort paged pass
+      for (let p = 1; p <= 300; p++) {
+        const rows = await withRetries(() => listPage(Entity, listMode, { page: p, pageSize }), {
+          tries: 7,
+          baseDelayMs: 600,
+          onRetry: ({ attempt, delayMs, err }) =>
+            pushLog(`⚠️ list retry ${attempt} (${delayMs}ms) ${name}: ${safeStr(err?.message || err)}`),
+        });
+
+        pushLog(`Loaded ${name}: page=${p} got=${rows.length}`);
+        if (!rows.length) break;
+
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          const id = getId(r);
+          if (!id) {
+            failed += 1;
+            continue;
+          }
+          try {
+            await withRetries(() => deleteById(Entity, id), {
+              tries: 10,
+              baseDelayMs: 500,
+              onRetry: ({ attempt, delayMs, err }) =>
+                pushLog(`⚠️ delete retry ${attempt} (${delayMs}ms) ${name} id=${id}: ${safeStr(err?.message || err)}`),
+            });
+            deleted += 1;
+            if (deleted % 50 === 0) pushLog(`… ${name} deleted so far: ${deleted}`);
+          } catch (e) {
+            failed += 1;
+            pushLog(`❌ Delete failed ${name} id=${id}: ${safeStr(e?.message || e)}`);
+          }
+          await sleep(purgePerDeleteDelayMs);
+        }
+
+        if (rows.length < pageSize) break;
+        await sleep(250);
+      }
+
+      return { deleted, failed };
+    }
+
+    // noargs drain loop (this is your School case)
+    pushLog(`Drain mode active for ${name} (list cap detected).`);
+    for (let cycle = 1; cycle <= MAX_DRAIN_CYCLES; cycle++) {
+      const rows = await withRetries(() => listPage(Entity, "noargs", { page: 1, pageSize }), {
+        tries: 7,
+        baseDelayMs: 600,
+        onRetry: ({ attempt, delayMs, err }) =>
+          pushLog(`⚠️ list retry ${attempt} (${delayMs}ms) ${name}: ${safeStr(err?.message || err)}`),
+      });
+
+      pushLog(`Loaded ${name}: cycle=${cycle} got=${rows.length}`);
+      if (!rows.length) break;
+
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const id = getId(r);
+        if (!id) {
+          failed += 1;
+          continue;
+        }
+        try {
+          await withRetries(() => deleteById(Entity, id), {
+            tries: 10,
+            baseDelayMs: 500,
+            onRetry: ({ attempt, delayMs, err }) =>
+              pushLog(`⚠️ delete retry ${attempt} (${delayMs}ms) ${name} id=${id}: ${safeStr(err?.message || err)}`),
+          });
+          deleted += 1;
+          if (deleted % 50 === 0) pushLog(`… ${name} deleted so far: ${deleted}`);
+        } catch (e) {
+          failed += 1;
+          pushLog(`❌ Delete failed ${name} id=${id}: ${safeStr(e?.message || e)}`);
+        }
+        await sleep(purgePerDeleteDelayMs);
+      }
+
+      // brief pause so the next list() reflects deletions
+      await sleep(600);
+    }
+
+    return { deleted, failed };
+  }
+
   async function runPurge() {
     if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
     if (!selectedEntities.length) return pushLog("❌ Nothing selected to purge.");
@@ -391,60 +399,15 @@ export default function AdminOps() {
 
         pushLog(`--- Purge ${name} ---`);
 
-        let modeLogged = false;
-        const rows = await withRetries(
-          () =>
-            listAllPaged(Entity, {}, {
-              pageSize,
-              maxPages: 300,
-              onMode: ({ mode, ok }) => {
-                if (modeLogged) return;
-                modeLogged = true;
-                pushLog(`List mode for ${name}: ${mode}${ok ? "" : " (probe had no rows)"} `);
-              },
-              onPage: ({ page, got, newCount, total }) =>
-                pushLog(`Loaded ${name}: page=${page} got=${got} new=${newCount} total=${total}`),
-            }),
-          {
-            tries: 7,
-            baseDelayMs: 600,
-            onRetry: ({ attempt, delayMs, err }) =>
-              pushLog(`⚠️ list retry ${attempt} (${delayMs}ms) ${name}: ${safeStr(err?.message || err)}`),
-          }
-        );
+        const { mode, ok } = await detectListMode(Entity, Math.min(100, pageSize));
+        pushLog(`List mode for ${name}: ${mode}${ok ? "" : " (probe had no rows)"}`);
 
-        pushLog(`Found ${rows.length} rows in ${name}.`);
-        if (purgeDryRun) {
-          pushLog(`DryRun ON: would delete ${rows.length} rows from ${name}.`);
-          await sleep(purgeBetweenEntitiesDelayMs);
-          continue;
+        const { deleted, failed } = await purgeEntityDrain(Entity, name, mode);
+
+        if (!purgeDryRun) {
+          pushLog(`✅ Purge ${name} complete. Deleted=${deleted} Failed=${failed}`);
         }
 
-        let deleted = 0;
-        let failed = 0;
-
-        for (const r of rows) {
-          const id = getId(r);
-          if (!id) {
-            failed += 1;
-            continue;
-          }
-          try {
-            await withRetries(() => deleteById(Entity, id), {
-              tries: 10,
-              baseDelayMs: 500,
-              onRetry: ({ attempt, delayMs, err }) =>
-                pushLog(`⚠️ delete retry ${attempt} (${delayMs}ms) ${name} id=${id}: ${safeStr(err?.message || err)}`),
-            });
-            deleted += 1;
-          } catch (e) {
-            failed += 1;
-            pushLog(`❌ Delete failed ${name} id=${id}: ${safeStr(e?.message || e)}`);
-          }
-          await sleep(purgePerDeleteDelayMs);
-        }
-
-        pushLog(`✅ Purge ${name} complete. Deleted=${deleted} Failed=${failed}`);
         await sleep(purgeBetweenEntitiesDelayMs);
       }
 
@@ -464,58 +427,65 @@ export default function AdminOps() {
     try {
       pushLog(`Delete non-scorecard Schools start. DryRun=${deleteNonScorecardDryRun} pageSize=${pageSize}`);
 
-      let modeLogged = false;
-      const rows = await withRetries(
-        () =>
-          listAllPaged(School, {}, {
-            pageSize,
-            maxPages: 300,
-            onMode: ({ mode, ok }) => {
-              if (modeLogged) return;
-              modeLogged = true;
-              pushLog(`List mode for School: ${mode}${ok ? "" : " (probe had no rows)"}`);
-            },
-            onPage: ({ page, got, newCount, total }) =>
-              pushLog(`Loaded School: page=${page} got=${got} new=${newCount} total=${total}`),
-          }),
-        {
-          tries: 7,
-          baseDelayMs: 600,
-          onRetry: ({ attempt, delayMs, err }) =>
-            pushLog(`⚠️ list retry ${attempt} (${delayMs}ms) School: ${safeStr(err?.message || err)}`),
-        }
-      );
-
-      const nonScorecard = rows.filter((r) => lc(r?.source_platform) !== "scorecard");
-      pushLog(`Loaded School rows: ${rows.length}. Non-scorecard rows: ${nonScorecard.length}`);
+      // No pagination supported, so we also use drain approach but only delete non-scorecard in each cycle.
+      const { mode } = await detectListMode(School, Math.min(100, pageSize));
+      pushLog(`List mode for School: ${mode}`);
 
       if (deleteNonScorecardDryRun) {
-        pushLog(`DryRun ON: would delete ${nonScorecard.length} non-scorecard School rows.`);
+        const rows = asArray(await School.list());
+        const nonScorecard = rows.filter((r) => lc(r?.source_platform) !== "scorecard");
+        pushLog(`Loaded School rows (sample): ${rows.length}. Non-scorecard in sample: ${nonScorecard.length}`);
+        pushLog(`DryRun ON: would delete at least ${nonScorecard.length} non-scorecard rows (list cap may hide more).`);
         return;
       }
 
       let deleted = 0;
       let failed = 0;
+      const MAX_CYCLES = 50;
 
-      for (const r of nonScorecard) {
-        const id = getId(r);
-        if (!id) {
-          failed += 1;
-          continue;
+      for (let cycle = 1; cycle <= MAX_CYCLES; cycle++) {
+        const rows = await withRetries(() => School.list(), {
+          tries: 7,
+          baseDelayMs: 600,
+          onRetry: ({ attempt, delayMs, err }) =>
+            pushLog(`⚠️ list retry ${attempt} (${delayMs}ms) School: ${safeStr(err?.message || err)}`),
+        });
+
+        const arr = asArray(rows);
+        pushLog(`Loaded School: cycle=${cycle} got=${arr.length}`);
+        if (!arr.length) break;
+
+        const targets = arr.filter((r) => lc(r?.source_platform) !== "scorecard");
+        if (!targets.length) {
+          // If the first page has no targets, we still need to keep draining because targets may exist later,
+          // but we don't want to delete scorecard rows here. Stop to avoid infinite loops.
+          pushLog(`No non-scorecard rows visible in current chunk. Stopping to avoid deleting scorecard rows.`);
+          break;
         }
-        try {
-          await withRetries(() => deleteById(School, id), {
-            tries: 10,
-            baseDelayMs: 500,
-            onRetry: ({ attempt, delayMs, err }) =>
-              pushLog(`⚠️ delete retry ${attempt} (${delayMs}ms) School id=${id}: ${safeStr(err?.message || err)}`),
-          });
-          deleted += 1;
-        } catch (e) {
-          failed += 1;
-          pushLog(`❌ Delete failed School id=${id}: ${safeStr(e?.message || e)}`);
+
+        for (const r of targets) {
+          const id = getId(r);
+          if (!id) {
+            failed += 1;
+            continue;
+          }
+          try {
+            await withRetries(() => deleteById(School, id), {
+              tries: 10,
+              baseDelayMs: 500,
+              onRetry: ({ attempt, delayMs, err }) =>
+                pushLog(`⚠️ delete retry ${attempt} (${delayMs}ms) School id=${id}: ${safeStr(err?.message || err)}`),
+            });
+            deleted += 1;
+            if (deleted % 50 === 0) pushLog(`… School non-scorecard deleted so far: ${deleted}`);
+          } catch (e) {
+            failed += 1;
+            pushLog(`❌ Delete failed School id=${id}: ${safeStr(e?.message || e)}`);
+          }
+          await sleep(deleteNonScorecardDelayMs);
         }
-        await sleep(deleteNonScorecardDelayMs);
+
+        await sleep(600);
       }
 
       pushLog(`✅ Delete non-scorecard complete. Deleted=${deleted} Failed=${failed}`);
@@ -536,27 +506,18 @@ export default function AdminOps() {
 
     pushLog(`School dedupe pass start. Mode=${mode} DryRun=${dedupeDryRun} pageSize=${pageSize}`);
 
-    let modeLogged = false;
-    const rows = await withRetries(
-      () =>
-        listAllPaged(School, {}, {
-          pageSize,
-          maxPages: 300,
-          onMode: ({ mode: m, ok }) => {
-            if (modeLogged) return;
-            modeLogged = true;
-            pushLog(`List mode for School: ${m}${ok ? "" : " (probe had no rows)"}`);
-          },
-          onPage: ({ page, got, newCount, total }) =>
-            pushLog(`Loaded School: page=${page} got=${got} new=${newCount} total=${total}`),
-        }),
-      {
+    // With list cap, dedupe across the whole table in UI is not reliable.
+    // We will warn and only dedupe the visible chunk (first page). The real fix is the backend idempotent writer.
+    const rows = asArray(
+      await withRetries(() => School.list(), {
         tries: 7,
         baseDelayMs: 600,
         onRetry: ({ attempt, delayMs, err }) =>
           pushLog(`⚠️ list retry ${attempt} (${delayMs}ms) School: ${safeStr(err?.message || err)}`),
-      }
+      })
     );
+
+    pushLog(`Loaded School (chunk): ${rows.length} (note: list cap may hide more)`);
 
     const scorecardRows = rows.filter((r) => lc(r?.source_platform) === "scorecard");
     const keyFn = getKeyFn(mode);
@@ -565,7 +526,7 @@ export default function AdminOps() {
     const dupKeys = Array.from(grouped.keys()).filter((k) => (grouped.get(k) || []).length >= 2);
 
     pushLog(
-      `Loaded School rows: ${rows.length} (scorecard=${scorecardRows.length}). Duplicate groups (mode=${mode}): ${dupKeys.length}`
+      `Chunk duplicates (mode=${mode}): ${dupKeys.length} (this only reflects the visible chunk, not the full table)`
     );
 
     let deleted = 0;
@@ -584,7 +545,9 @@ export default function AdminOps() {
       const keepId = getId(keep);
       const toDelete = sorted.slice(1).map((r) => getId(r)).filter(Boolean);
 
-      pushLog(`Group key="${k}" keepId=${keepId} delete=${toDelete.slice(0, 8).join(", ")}${toDelete.length > 8 ? "…" : ""}`);
+      pushLog(
+        `Group key="${k}" keepId=${keepId} delete=${toDelete.slice(0, 8).join(", ")}${toDelete.length > 8 ? "…" : ""}`
+      );
 
       if (dedupeDryRun) continue;
 
@@ -605,7 +568,8 @@ export default function AdminOps() {
       }
     }
 
-    pushLog(`✅ Dedupe pass finished. Mode=${mode} Groups=${dupKeys.length} Deleted=${deleted} Failed=${failed}`);
+    pushLog(`✅ Dedupe pass finished. Mode=${mode} Deleted=${deleted} Failed=${failed}`);
+    pushLog(`⚠️ For full-table dedupe, use the backend Scorecard writer/deduper (upsert by unitid).`);
   }
 
   async function runSchoolDedupe() {
@@ -628,6 +592,7 @@ export default function AdminOps() {
       await sleep(600);
       await runSchoolDedupePass("name_state");
       pushLog("🏁 All dedupe passes complete (unitid → source_key → name_state).");
+      pushLog("⚠️ These passes are chunk-scoped due to list cap. Backend dedupe is the authoritative fix.");
     } finally {
       setBusy(false);
     }
@@ -639,7 +604,7 @@ export default function AdminOps() {
         <div>
           <h1 className="text-2xl font-semibold">Admin Ops</h1>
           <div className="text-sm text-gray-600">
-            List-mode probing enabled. If list() paging args are unsupported, AdminOps will fall back safely.
+            Purge supports drain mode when list() is capped (noargs). Progress logs every 50 deletes.
           </div>
         </div>
 
@@ -698,9 +663,8 @@ export default function AdminOps() {
           <div className="text-lg font-semibold">Option A workflow</div>
           <ol className="list-decimal pl-5 mt-2 text-sm text-gray-700 space-y-1">
             <li>Purge derived tables (Camp/CampDemo/Event/SchoolSportSite + artifacts)</li>
-            <li>Delete non-scorecard Schools</li>
-            <li>Dedupe Scorecard Schools (unitid → source_key → name_state)</li>
-            <li>Run Scorecard seed again; School count should not increase</li>
+            <li>Purge School (drain mode will remove all rows even with list cap)</li>
+            <li>Run Scorecard seed once (idempotent writer)</li>
           </ol>
 
           <div className="flex flex-wrap gap-2 mt-4">
@@ -723,7 +687,7 @@ export default function AdminOps() {
       {tab === "purge" && (
         <Card className="p-4 space-y-3">
           <div className="text-lg font-semibold">Purge</div>
-          <div className="text-sm text-gray-600">Preset keeps School/Sport intact. Type DELETE to run.</div>
+          <div className="text-sm text-gray-600">Type DELETE to run purge. Drain mode activates when list is capped.</div>
 
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={applyPurgePresetDerived} disabled={busy}>
@@ -796,7 +760,7 @@ export default function AdminOps() {
         <div className="space-y-4">
           <Card className="p-4 space-y-3">
             <div className="text-lg font-semibold">Delete non-scorecard Schools</div>
-            <div className="text-sm text-gray-600">Deletes School rows where source_platform != "scorecard" (including blank).</div>
+            <div className="text-sm text-gray-600">Drain-safe delete for source_platform != scorecard (best effort with list cap).</div>
 
             <div className="flex flex-wrap gap-2 items-center">
               <Button
@@ -833,7 +797,9 @@ export default function AdminOps() {
 
           <Card className="p-4 space-y-3">
             <div className="text-lg font-semibold">Dedupe Scorecard Schools</div>
-            <div className="text-sm text-gray-600">Run all passes after deleting non-scorecard schools.</div>
+            <div className="text-sm text-gray-600">
+              Note: UI dedupe is chunk-scoped due to list cap. The authoritative fix is the backend idempotent scorecard writer (upsert by unitid).
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
               <label className="space-y-1">
@@ -906,3 +872,4 @@ export default function AdminOps() {
     </div>
   );
 }
+
