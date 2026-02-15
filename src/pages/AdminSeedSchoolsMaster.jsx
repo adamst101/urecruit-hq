@@ -59,6 +59,11 @@ function isRateLimitError(e) {
   const msg = String(e?.message || e || "").toLowerCase();
   return msg.includes("rate limit") || msg.includes("429");
 }
+function isNetworkError(e) {
+  const msg = String(e?.message || e || "").toLowerCase();
+  // Base44 client often surfaces transient issues as "Network Error"
+  return msg.includes("network error") || msg.includes("failed to fetch");
+}
 function isScorecardTransient(e) {
   const msg = String(e?.message || e || "").toLowerCase();
   return (
@@ -72,13 +77,12 @@ function isScorecardTransient(e) {
 }
 function looksLikeDuplicateCreate(e) {
   const msg = String(e?.message || e || "").toLowerCase();
-  // Generic heuristics: Base44 duplicate/unique constraint messages vary
   return (
     msg.includes("duplicate") ||
     msg.includes("already exists") ||
     msg.includes("unique") ||
     msg.includes("conflict") ||
-    (e?.raw?.status === 409)
+    e?.raw?.status === 409
   );
 }
 
@@ -108,8 +112,6 @@ function clearCheckpointStorage() {
 export default function AdminSeedSchoolsMaster() {
   const env = useMemo(() => detectEnv(), []);
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
-
-  // Canonical School export
   const School = SchoolEntityFromApi || null;
 
   const [running, setRunning] = useState(false);
@@ -124,13 +126,10 @@ export default function AdminSeedSchoolsMaster() {
   const [perPage, setPerPage] = useState(100);
   const [pagesPerBatch, setPagesPerBatch] = useState(1);
   const [delayMs, setDelayMs] = useState(2000);
-
-  // IMPORTANT: increase default throttle to reduce 429s
   const [perOpDelayMs, setPerOpDelayMs] = useState(250);
-
   const [scorecardFetchTries, setScorecardFetchTries] = useState(8);
 
-  // Adaptive throttle state: increases when we see 429, slowly decreases when stable
+  // Adaptive delay grows on 429/network, shrinks slowly when stable
   const adaptiveDelayRef = useRef(250);
 
   // Checkpoint
@@ -206,8 +205,8 @@ export default function AdminSeedSchoolsMaster() {
     try {
       return await fn();
     } catch (e) {
-      // Bubble rate limit so caller can adapt
-      if (isRateLimitError(e)) throw e;
+      // bubble transient errors up to retry wrapper
+      if (isRateLimitError(e) || isNetworkError(e)) throw e;
 
       push(`❌ Base44Error during ${label}`);
       push(`Context: ${truncate(context)}`);
@@ -217,14 +216,11 @@ export default function AdminSeedSchoolsMaster() {
   }
 
   function bumpAdaptiveDelay() {
-    // Increase delay quickly when throttled
-    adaptiveDelayRef.current = Math.min(2000, Math.floor(adaptiveDelayRef.current * 1.6 + 50));
+    adaptiveDelayRef.current = Math.min(2500, Math.floor(adaptiveDelayRef.current * 1.5 + 75));
   }
   function relaxAdaptiveDelay() {
-    // Slowly relax when stable
-    adaptiveDelayRef.current = Math.max(150, Math.floor(adaptiveDelayRef.current * 0.95));
+    adaptiveDelayRef.current = Math.max(150, Math.floor(adaptiveDelayRef.current * 0.96));
   }
-
   async function waitAfterDbOp() {
     const base = Math.max(0, Number(perOpDelayMs || 0));
     const adaptive = adaptiveDelayRef.current;
@@ -257,25 +253,22 @@ export default function AdminSeedSchoolsMaster() {
     };
   };
 
-  // KEY CHANGE: Create-first strategy to avoid per-row filter
   const upsertRowCreateFirst = async (r) => {
     const payload = buildPayload(r);
-
     if (!payload.source_key || !payload.school_name) return { mode: "skipped" };
 
-    // Try create first (1 DB call)
+    // Create first
     try {
       await safeEntityCall(
         "School.create",
         async () => await School.create(payload),
-        { payloadKeys: Object.keys(payload), source_key: payload.source_key }
+        { source_key: payload.source_key, payloadSample: payload }
       );
       return { mode: "created" };
     } catch (e) {
-      // If rate limit, bubble up to retry wrapper
-      if (isRateLimitError(e)) throw e;
+      if (isRateLimitError(e) || isNetworkError(e)) throw e;
 
-      // If duplicate, then do filter+update (2 more DB calls but only for existing rows)
+      // Duplicate: filter + update
       if (looksLikeDuplicateCreate(e)) {
         const existingRows = await safeEntityCall(
           "School.filter",
@@ -294,49 +287,59 @@ export default function AdminSeedSchoolsMaster() {
         }
       }
 
-      // Not duplicate; treat as real error
       throw e;
     }
   };
 
-  const upsertRowsToSchool = async (rows) => {
-    let created = 0;
-    let updated = 0;
-    let skipped = 0;
-
-    for (let i = 0; i < rows.length; i++) {
-      if (cancelRef.current) break;
-      if (dryRun) continue;
+  async function upsertOneWithRetries(row, rowIndex, page) {
+    // retries for transient DB errors only; after max retries, return fail but don't stop job
+    for (let t = 0; t < 10; t++) {
+      if (cancelRef.current) return { mode: "cancelled" };
 
       try {
-        const res = await (async () => {
-          // Retry only for 429, with backoff and adaptive delay increase
-          for (let t = 0; t < 8; t++) {
-            try {
-              return await upsertRowCreateFirst(rows[i]);
-            } catch (e) {
-              if (!isRateLimitError(e) || t === 7) throw e;
-
-              bumpAdaptiveDelay();
-              const wait = Math.min(15000, 1000 * Math.pow(2, t));
-              push(`⚠️ DB rate limit. Backing off ${wait}ms (adaptiveDelay=${adaptiveDelayRef.current}ms)`);
-              await sleep(wait);
-            }
-          }
-          return { mode: "skipped" };
-        })();
-
-        if (res.mode === "created") created += 1;
-        else if (res.mode === "updated") updated += 1;
-        else skipped += 1;
-
+        const res = await upsertRowCreateFirst(row);
         relaxAdaptiveDelay();
+        return res;
+      } catch (e) {
+        const transient = isRateLimitError(e) || isNetworkError(e);
+        if (!transient || t === 9) {
+          push(`❌ Row failed (page=${page}, idx=${rowIndex}) after ${t + 1} tries: ${String(e?.message || e)}`);
+          push(`Row fail detail:\n${truncate({ message: e?.message, raw: e?.raw || e })}`);
+          return { mode: "failed" };
+        }
+
+        bumpAdaptiveDelay();
+        const wait = Math.min(20000, 800 * Math.pow(2, t));
+        push(
+          `⚠️ Transient DB error (${isRateLimitError(e) ? "429" : "network"}). Backoff ${wait}ms (adaptiveDelay=${adaptiveDelayRef.current}ms)`
+        );
+        await sleep(wait);
       } finally {
         await waitAfterDbOp();
       }
     }
 
-    return { created, updated, skipped };
+    return { mode: "failed" };
+  }
+
+  const upsertRowsToSchool = async (rows, page) => {
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      if (cancelRef.current) break;
+      if (dryRun) continue;
+
+      const res = await upsertOneWithRetries(rows[i], i, page);
+      if (res.mode === "created") created += 1;
+      else if (res.mode === "updated") updated += 1;
+      else if (res.mode === "failed") failed += 1;
+      else skipped += 1;
+    }
+
+    return { created, updated, skipped, failed };
   };
 
   const startAutoRun = async () => {
@@ -366,16 +369,18 @@ export default function AdminSeedSchoolsMaster() {
     push(`Auto-run start @ ${new Date().toISOString()}`);
     push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
     push(`Scorecard fetch tries=${scorecardFetchTries}`);
-    if (!dryRun) push(`Write throttle: perOpDelayMs=${perOpDelayMs} (adaptive starting at ${adaptiveDelayRef.current})`);
+    if (!dryRun) push(`Write throttle: perOpDelayMs=${perOpDelayMs} (adaptive=${adaptiveDelayRef.current})`);
 
     try {
       for (let b = 0; b < 5000; b++) {
         if (cancelRef.current) break;
 
-        push(`\n--- Batch ${b + 1} ---`);
-        push(`Fetching page=${currentPage} maxPages=${ppb} perPage=${per} ...`);
+        const batchPage = currentPage;
 
-        const out = await fetchBatchWithRetry(currentPage, per, ppb);
+        push(`\n--- Batch ${b + 1} ---`);
+        push(`Fetching page=${batchPage} maxPages=${ppb} perPage=${per} ...`);
+
+        const out = await fetchBatchWithRetry(batchPage, per, ppb);
 
         const rows = out.rows || [];
         const debug = out.debug || null;
@@ -392,12 +397,14 @@ export default function AdminSeedSchoolsMaster() {
         if (dryRun) {
           push(`DryRun: WouldUpsert=${rows.length}`);
         } else {
-          push(`Writing upserts to School (create-first strategy)...`);
-          const up = await upsertRowsToSchool(rows);
-          push(`✅ Upsert complete. Created=${up.created} Updated=${up.updated} Skipped=${up.skipped}`);
+          push(`Writing upserts to School (create-first + retry + continue on failure)...`);
+          const up = await upsertRowsToSchool(rows, batchPage);
+          push(
+            `✅ Upsert complete. Created=${up.created} Updated=${up.updated} Skipped=${up.skipped} Failed=${up.failed}`
+          );
         }
 
-        const nextPage = currentPage + ppb;
+        const nextPage = batchPage + ppb;
 
         if (!dryRun) {
           saveCheckpointToStorage(nextPage);
@@ -443,7 +450,7 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master</div>
           <div className="text-sm text-slate-600 mt-1">
-            Create-first upsert to cut DB calls and reduce rate limits. Local checkpoint.
+            Resilient seeding: retries 429 + Network Error and continues past bad rows. Local checkpoint.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
