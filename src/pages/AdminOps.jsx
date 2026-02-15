@@ -8,7 +8,6 @@ import * as Entities from "../api/entities";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
-// Admin mode gate (shared with Profile)
 const ADMIN_MODE_KEY = "campapp_admin_enabled_v1";
 
 const ROUTES = {
@@ -36,7 +35,7 @@ function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
-async function withRetries(fn, { tries = 6, baseDelayMs = 350, onRetry } = {}) {
+async function withRetries(fn, { tries = 6, baseDelayMs = 400, onRetry } = {}) {
   let last = null;
   for (let i = 0; i < tries; i++) {
     try {
@@ -45,14 +44,15 @@ async function withRetries(fn, { tries = 6, baseDelayMs = 350, onRetry } = {}) {
       last = e;
       const msg = safeStr(e?.message || e);
       const status = e?.raw?.status || e?.status;
-      const isRate = status === 429 || lc(msg).includes("rate") || lc(msg).includes("429");
-      const isNet = lc(msg).includes("network") || lc(msg).includes("timeout");
-      const is500 = status >= 500 && status <= 599;
 
-      if (i < tries - 1 && (isRate || isNet || is500)) {
+      const is429 = status === 429 || lc(msg).includes("rate limit") || lc(msg).includes("429");
+      const isNet = lc(msg).includes("network") || lc(msg).includes("timeout");
+      const is5xx = status >= 500 && status <= 599;
+
+      if (i < tries - 1 && (is429 || isNet || is5xx)) {
         const delay = Math.min(
-          15_000,
-          Math.floor(baseDelayMs * Math.pow(2, i) + Math.random() * 250)
+          20_000,
+          Math.floor(baseDelayMs * Math.pow(2, i) + Math.random() * 300)
         );
         onRetry?.({ attempt: i + 1, tries, delayMs: delay, err: e });
         await sleep(delay);
@@ -64,10 +64,6 @@ async function withRetries(fn, { tries = 6, baseDelayMs = 350, onRetry } = {}) {
   throw last;
 }
 
-/**
- * Read helpers that DO NOT swallow errors.
- * Return { rows, error } so callers can log and decide.
- */
 async function tryList(Entity) {
   if (!Entity?.list) return { rows: [], error: null, method: "list:missing" };
   try {
@@ -98,15 +94,21 @@ async function getAllRows(Entity, { prefer = "list" } = {}) {
     const f = await tryFilter(Entity, {});
     if (f.error) return f;
     if (f.rows.length) return f;
-    const l = await tryList(Entity);
-    return l;
-  } else {
-    const l = await tryList(Entity);
-    if (l.error) return l;
-    if (l.rows.length) return l;
-    const f = await tryFilter(Entity, {});
-    return f;
+    return await tryList(Entity);
   }
+  const l = await tryList(Entity);
+  if (l.error) return l;
+  if (l.rows.length) return l;
+  return await tryFilter(Entity, {});
+}
+
+function pickEntity(name) {
+  const direct = Entities?.[name];
+  if (direct) return direct;
+  const e = base44?.entities;
+  if (e?.[name]) return e[name];
+  if (e?.[`${name}s`]) return e[`${name}s`];
+  return null;
 }
 
 function normName(x) {
@@ -118,7 +120,6 @@ function normName(x) {
 }
 
 function scoreSchoolRow(r) {
-  // Higher score = keep
   let s = 0;
   if (safeStr(r?.unitid).trim()) s += 3;
   if (safeStr(r?.source_key).trim()) s += 2;
@@ -133,32 +134,11 @@ function scoreSchoolRow(r) {
   if (safeStr(r?.conference).trim()) s += 1;
 
   if (r?.active === true) s += 1;
-
   if (lc(r?.source_platform) === "scorecard") s += 1;
   return s;
 }
 
-function pickEntity(name) {
-  const direct = Entities?.[name];
-  if (direct) return direct;
-  const e = base44?.entities;
-  if (e?.[name]) return e[name];
-  if (e?.[`${name}s`]) return e[`${name}s`];
-  return null;
-}
-
-async function logAdminEvent(payload) {
-  try {
-    const Event = base44?.entities?.Event || base44?.entities?.Events;
-    if (!Event?.create) return;
-    await Event.create({ event_name: "admin_ops_run", ts: new Date().toISOString(), ...payload });
-  } catch {
-    // non-blocking
-  }
-}
-
 function buildGroups(rows, mode) {
-  // mode: source_key | unitid | name_state
   const groups = new Map();
   for (const r of rows) {
     const id = getId(r);
@@ -181,11 +161,11 @@ function buildGroups(rows, mode) {
 }
 
 async function repointForeignKeys({ pushLog, dryRun, keepSchoolId, deleteSchoolId, delayMs }) {
+  // NOTE: SchoolSport removed (does not exist in your app)
   const tables = [
     { name: "Camp", fk: "school_id" },
     { name: "CampDemo", fk: "school_id" },
     { name: "SchoolSportSite", fk: "school_id" },
-    { name: "SchoolSport", fk: "school_id" },
   ];
 
   const results = [];
@@ -197,7 +177,14 @@ async function repointForeignKeys({ pushLog, dryRun, keepSchoolId, deleteSchoolI
       continue;
     }
 
-    const f = await tryFilter(E, { [t.fk]: String(deleteSchoolId) });
+    // Retry the FILTER itself on 429 instead of skipping
+    const f = await withRetries(() => tryFilter(E, { [t.fk]: String(deleteSchoolId) }), {
+      tries: 6,
+      baseDelayMs: 550,
+      onRetry: ({ attempt, delayMs, err }) =>
+        pushLog(`↻ ${t.name}.filter retry ${attempt} wait=${delayMs}ms err=${safeStr(err?.message || err)}`),
+    });
+
     if (f.error) {
       pushLog(`⚠️ ${t.name}: filter failed (${safeStr(f.error?.message || f.error)}). Skipping repoint.`);
       results.push({ table: t.name, updated: 0, error: true });
@@ -219,7 +206,9 @@ async function repointForeignKeys({ pushLog, dryRun, keepSchoolId, deleteSchoolI
       if (!dryRun) {
         await withRetries(() => E.update(String(id), { [t.fk]: String(keepSchoolId) }), {
           tries: 6,
-          baseDelayMs: 450,
+          baseDelayMs: 550,
+          onRetry: ({ attempt, delayMs, err }) =>
+            pushLog(`↻ ${t.name}.update retry ${attempt} wait=${delayMs}ms err=${safeStr(err?.message || err)}`),
         });
         await sleep(delayMs);
       }
@@ -232,24 +221,51 @@ async function repointForeignKeys({ pushLog, dryRun, keepSchoolId, deleteSchoolI
   return results;
 }
 
+function parseIdPairs(text) {
+  // Accept lines:
+  // delId,keepId
+  // delId -> keepId
+  // delId keepId
+  const pairs = [];
+  const lines = safeStr(text).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const cleaned = line.replace(/["'`]/g, "");
+    const parts = cleaned.split(/->|,|\s+/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      const delId = parts[0];
+      const keepId = parts[1];
+      if (delId && keepId && delId !== keepId) pairs.push({ delId, keepId });
+    }
+  }
+  // de-dupe identical pairs
+  const key = (p) => `${p.delId}::${p.keepId}`;
+  const uniq = new Map();
+  for (const p of pairs) uniq.set(key(p), p);
+  return [...uniq.values()];
+}
+
 export default function AdminOps() {
   const nav = useNavigate();
 
   const [adminEnabled, setAdminEnabled] = useState(false);
-  const [tab, setTab] = useState("dedupe"); // you said: focus on dedupe
-
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState([]);
   const logRef = useRef(null);
 
+  const [tab, setTab] = useState("dedupe"); // dedupe | repair | check
+
   // Dedupe controls
   const [dedupeDryRun, setDedupeDryRun] = useState(true);
-  const [dedupeDeleteDelayMs, setDedupeDeleteDelayMs] = useState(150);
-  const [dedupeUpdateDelayMs, setDedupeUpdateDelayMs] = useState(120);
-
-  const [dedupeMode, setDedupeMode] = useState("name_state"); // source_key | unitid | name_state
+  const [dedupeMode, setDedupeMode] = useState("name_state");
   const [dedupeLimitGroups, setDedupeLimitGroups] = useState(250);
   const [dedupeSkipNoState, setDedupeSkipNoState] = useState(true);
+  const [dedupeUpdateDelayMs, setDedupeUpdateDelayMs] = useState(250);
+  const [dedupeDeleteDelayMs, setDedupeDeleteDelayMs] = useState(350);
+
+  // Repair controls
+  const [repairDryRun, setRepairDryRun] = useState(true);
+  const [repairDelayMs, setRepairDelayMs] = useState(200);
+  const [repairPairsText, setRepairPairsText] = useState("");
 
   useEffect(() => {
     setAdminEnabled(localStorage.getItem(ADMIN_MODE_KEY) === "true");
@@ -270,21 +286,105 @@ export default function AdminOps() {
     return false;
   }
 
+  async function runOrphanCheck() {
+    if (!requireAdminOrLog()) return;
+    setBusy(true);
+    try {
+      const School = pickEntity("School");
+      const Camp = pickEntity("Camp");
+      const CampDemo = pickEntity("CampDemo");
+
+      const schoolsRes = await getAllRows(School, { prefer: "list" });
+      if (schoolsRes.error) {
+        pushLog(`❌ School read failed: ${safeStr(schoolsRes.error?.message || schoolsRes.error)}`);
+        return;
+      }
+      const schoolIds = new Set(schoolsRes.rows.map(getId).filter(Boolean).map(String));
+      pushLog(`Loaded Schools: ${schoolIds.size}`);
+
+      const campsRes = await getAllRows(Camp, { prefer: "list" });
+      if (campsRes.error) pushLog(`⚠️ Camp read failed: ${safeStr(campsRes.error?.message || campsRes.error)}`);
+
+      const campDemoRes = await getAllRows(CampDemo, { prefer: "list" });
+      if (campDemoRes.error) pushLog(`⚠️ CampDemo read failed: ${safeStr(campDemoRes.error?.message || campDemoRes.error)}`);
+
+      const camps = campsRes.error ? [] : campsRes.rows;
+      const campDemos = campDemoRes.error ? [] : campDemoRes.rows;
+
+      const orphanCamps = camps.filter((c) => {
+        const sid = safeStr(c?.school_id).trim();
+        return sid && !schoolIds.has(sid);
+      });
+
+      const orphanCampDemos = campDemos.filter((c) => {
+        const sid = safeStr(c?.school_id).trim();
+        return sid && !schoolIds.has(sid);
+      });
+
+      pushLog(`Orphan check results:`);
+      pushLog(`- Camp rows: ${camps.length} | orphan school_id: ${orphanCamps.length}`);
+      pushLog(`- CampDemo rows: ${campDemos.length} | orphan school_id: ${orphanCampDemos.length}`);
+
+      if (orphanCamps.length) pushLog(`⚠️ Camps are pointing to deleted School ids. Use Repair tab.`);
+      if (orphanCampDemos.length) pushLog(`⚠️ CampDemos are pointing to deleted School ids. Use Repair tab.`);
+      if (!orphanCamps.length && !orphanCampDemos.length) pushLog(`✅ No orphaned Camp/CampDemo school_id detected.`);
+    } catch (e) {
+      pushLog(`❌ Orphan check failed: ${safeStr(e?.message || e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runRepairFromPairs() {
+    if (!requireAdminOrLog()) return;
+
+    const pairs = parseIdPairs(repairPairsText);
+    if (!pairs.length) {
+      pushLog("❌ No valid id pairs found. Paste lines like: deletedId,keepId");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      pushLog(`Repair start. DryRun=${repairDryRun} pairs=${pairs.length}`);
+      let totalRepointed = 0;
+
+      for (const p of pairs) {
+        pushLog(`Processing del=${p.delId} -> keep=${p.keepId}`);
+        const res = await repointForeignKeys({
+          pushLog,
+          dryRun: repairDryRun,
+          keepSchoolId: p.keepId,
+          deleteSchoolId: p.delId,
+          delayMs: repairDelayMs,
+        });
+        const repointed = res.reduce((acc, x) => acc + (x?.updated || 0), 0);
+        totalRepointed += repointed;
+        pushLog(`✅ ${repairDryRun ? "Would repoint" : "Repointed"} rows=${repointed} for del=${p.delId}`);
+        await sleep(300);
+      }
+
+      pushLog(`✅ Repair complete. ${repairDryRun ? "Dry run." : "Write."} Total repointed rows=${totalRepointed}`);
+    } catch (e) {
+      pushLog(`❌ Repair failed: ${safeStr(e?.message || e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runSchoolDedupe() {
     if (!requireAdminOrLog()) return;
 
     const School = pickEntity("School");
     if (!School?.delete || !School?.update) {
-      return pushLog("❌ School entity missing delete/update.");
+      pushLog("❌ School entity missing delete/update.");
+      return;
     }
 
     setBusy(true);
-    const startedAt = new Date().toISOString();
-
     try {
       pushLog(`School dedupe start. Mode=${dedupeMode} DryRun=${dedupeDryRun}`);
 
-      // IMPORTANT: prefer list() for School reads (your failure was likely filter())
       const allRes = await withRetries(() => getAllRows(School, { prefer: "list" }), {
         tries: 3,
         baseDelayMs: 450,
@@ -292,16 +392,13 @@ export default function AdminOps() {
 
       if (allRes.error) {
         pushLog(`❌ Failed to read School rows via ${allRes.method}: ${safeStr(allRes.error?.message || allRes.error)}`);
-        pushLog("Stop. This must be fixed before any write dedupe can run.");
         return;
       }
 
       const all = allRes.rows;
       pushLog(`Loaded School rows: ${all.length} (via ${allRes.method})`);
-
       if (!all.length) {
-        pushLog("⚠️ Zero Schools returned. This is not a dedupe result; it is a read failure or permission issue.");
-        pushLog("Try: hard refresh, re-login, then run again. If it persists, the School list API is blocked in this environment.");
+        pushLog("⚠️ Zero Schools returned. Stop.");
         return;
       }
 
@@ -313,18 +410,16 @@ export default function AdminOps() {
       }
 
       entries.sort((a, b) => b[1].length - a[1].length);
+      pushLog(`Duplicate groups: ${entries.length}`);
 
-      const totalGroups = entries.length;
-      pushLog(`Duplicate groups: ${totalGroups}`);
-
-      if (!totalGroups) {
-        pushLog("✅ No duplicates found for selected mode.");
+      if (!entries.length) {
+        pushLog("✅ No duplicates found.");
         return;
       }
 
       const limited = entries.slice(0, Math.max(1, Number(dedupeLimitGroups || 1)));
       if (limited.length < entries.length) {
-        pushLog(`⚠️ Limiting to first ${limited.length} groups (safety cap). Re-run to continue.`);
+        pushLog(`⚠️ Limiting to first ${limited.length} groups. Re-run to continue.`);
       }
 
       let deletedSchools = 0;
@@ -358,33 +453,26 @@ export default function AdminOps() {
           repointedRowsTotal += repointed;
 
           if (!dedupeDryRun) {
-            await withRetries(() => School.delete(String(delId)), { tries: 6, baseDelayMs: 450 });
+            await withRetries(() => School.delete(String(delId)), {
+              tries: 6,
+              baseDelayMs: 650,
+              onRetry: ({ attempt, delayMs, err }) =>
+                pushLog(`↻ School.delete retry ${attempt} wait=${delayMs}ms err=${safeStr(err?.message || err)}`),
+            });
             await sleep(dedupeDeleteDelayMs);
           }
-          deletedSchools += 1;
 
+          deletedSchools += 1;
           pushLog(
             `✅ ${dedupeDryRun ? "Would merge+delete" : "Merged+deleted"} dup school id=${delId} into keep id=${keepId} (repointed=${repointed})`
           );
         }
       }
 
-      await logAdminEvent({
-        operation: "school_dedupe_merge",
-        mode: dedupeMode,
-        dry_run: dedupeDryRun,
-        started_at: startedAt,
-        finished_at: new Date().toISOString(),
-        groups_seen: totalGroups,
-        groups_processed: limited.length,
-        kept_schools: keptSchools,
-        deleted_schools: deletedSchools,
-        repointed_rows: repointedRowsTotal,
-      });
-
       pushLog(
         `✅ Dedupe complete. GroupsProcessed=${limited.length} Kept=${keptSchools} ${dedupeDryRun ? "Would delete" : "Deleted"}Schools=${deletedSchools} RepointedRows=${repointedRowsTotal}`
       );
+      pushLog("Next: run Orphan Check tab to confirm joins are intact.");
     } catch (e) {
       pushLog(`❌ Dedupe failed: ${safeStr(e?.message || e)}`);
     } finally {
@@ -393,7 +481,11 @@ export default function AdminOps() {
   }
 
   const TabBtn = ({ id, children }) => (
-    <Button variant={tab === id ? "default" : "outline"} onClick={() => setTab(id)} disabled={busy}>
+    <Button
+      variant={tab === id ? "default" : "outline"}
+      onClick={() => setTab(id)}
+      disabled={busy}
+    >
       {children}
     </Button>
   );
@@ -420,26 +512,102 @@ export default function AdminOps() {
           </div>
         </div>
         <div className="text-sm text-gray-700">
-          Your last run showed write-mode reading 0 Schools. This version logs read failures instead of hiding them.
+          You already deduped Schools. Now we verify no orphaned Camp → School joins and repair if needed.
         </div>
       </Card>
 
       <div className="flex flex-wrap gap-2">
         <TabBtn id="dedupe">Dedupe</TabBtn>
+        <TabBtn id="check">Orphan Check</TabBtn>
+        <TabBtn id="repair">Repair School References</TabBtn>
       </div>
+
+      {tab === "check" && (
+        <Card className="p-4 space-y-3">
+          <div className="text-lg font-semibold">Orphan Check</div>
+          <div className="text-sm text-gray-700">
+            Finds Camps/CampDemos whose <code className="bg-gray-100 px-1 rounded">school_id</code> points to a deleted School.
+          </div>
+          <Button onClick={runOrphanCheck} disabled={busy}>
+            Run orphan check
+          </Button>
+        </Card>
+      )}
+
+      {tab === "repair" && (
+        <Card className="p-4 space-y-3">
+          <div className="text-lg font-semibold">Repair School References</div>
+          <div className="text-sm text-gray-700">
+            Paste mapping pairs from your dedupe log: <b>deletedId,keepId</b> (one per line). This will repoint
+            Camp/CampDemo/SchoolSportSite off deleted School ids.
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={repairDryRun ? "default" : "outline"}
+              onClick={() => setRepairDryRun(true)}
+              disabled={busy}
+            >
+              Dry run
+            </Button>
+            <Button
+              variant={!repairDryRun ? "default" : "outline"}
+              onClick={() => setRepairDryRun(false)}
+              disabled={busy}
+            >
+              Write
+            </Button>
+
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-gray-600">Delay per update (ms)</span>
+              <input
+                className="border rounded px-2 py-1 w-24"
+                type="number"
+                value={repairDelayMs}
+                onChange={(e) => setRepairDelayMs(Number(e.target.value || 0))}
+                disabled={busy}
+              />
+            </label>
+          </div>
+
+          <textarea
+            className="w-full border rounded p-2 text-sm"
+            rows={10}
+            placeholder={`Example:\n69920211bb44fc04366e585a,69920212339194772177de85\n6991ec9b5d5d6761d8e8eff7,69920212339194772177de85`}
+            value={repairPairsText}
+            onChange={(e) => setRepairPairsText(e.target.value)}
+            disabled={busy}
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={runRepairFromPairs} disabled={busy}>
+              Run repair
+            </Button>
+          </div>
+
+          <div className="text-xs text-gray-600">
+            Run Orphan Check after repair to confirm orphan counts drop to zero.
+          </div>
+        </Card>
+      )}
 
       {tab === "dedupe" && (
         <Card className="p-4 space-y-3">
           <div className="text-lg font-semibold">School Dedupe (with merge)</div>
           <div className="text-sm text-gray-700">
-            Repoints Camp/CampDemo/SchoolSport/SchoolSportSite to the kept School before deleting duplicates.
+            This is now hardened against 429s and no longer references the nonexistent SchoolSport entity.
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
             <label className="space-y-1">
               <div className="text-gray-600">Mode</div>
-              <select className="w-full border rounded px-2 py-1" value={dedupeMode} onChange={(e) => setDedupeMode(e.target.value)} disabled={busy}>
-                <option value="name_state">name + state (recommended)</option>
+              <select
+                className="w-full border rounded px-2 py-1"
+                value={dedupeMode}
+                onChange={(e) => setDedupeMode(e.target.value)}
+                disabled={busy}
+              >
+                <option value="name_state">name + state</option>
                 <option value="source_key">source_key</option>
                 <option value="unitid">unitid</option>
               </select>
@@ -447,33 +615,64 @@ export default function AdminOps() {
 
             <label className="space-y-1">
               <div className="text-gray-600">Group limit per run</div>
-              <input className="w-full border rounded px-2 py-1" type="number" value={dedupeLimitGroups} onChange={(e) => setDedupeLimitGroups(Number(e.target.value || 0))} disabled={busy} />
+              <input
+                className="w-full border rounded px-2 py-1"
+                type="number"
+                value={dedupeLimitGroups}
+                onChange={(e) => setDedupeLimitGroups(Number(e.target.value || 0))}
+                disabled={busy}
+              />
             </label>
 
             <label className="space-y-1">
               <div className="text-gray-600">Skip groups with no state</div>
-              <select className="w-full border rounded px-2 py-1" value={dedupeSkipNoState ? "yes" : "no"} onChange={(e) => setDedupeSkipNoState(e.target.value === "yes")} disabled={busy}>
+              <select
+                className="w-full border rounded px-2 py-1"
+                value={dedupeSkipNoState ? "yes" : "no"}
+                onChange={(e) => setDedupeSkipNoState(e.target.value === "yes")}
+                disabled={busy}
+              >
                 <option value="yes">Yes (safer)</option>
-                <option value="no">No (more aggressive)</option>
+                <option value="no">No</option>
               </select>
             </label>
 
             <label className="space-y-1">
               <div className="text-gray-600">Update delay (ms)</div>
-              <input className="w-full border rounded px-2 py-1" type="number" value={dedupeUpdateDelayMs} onChange={(e) => setDedupeUpdateDelayMs(Number(e.target.value || 0))} disabled={busy} />
+              <input
+                className="w-full border rounded px-2 py-1"
+                type="number"
+                value={dedupeUpdateDelayMs}
+                onChange={(e) => setDedupeUpdateDelayMs(Number(e.target.value || 0))}
+                disabled={busy}
+              />
             </label>
 
             <label className="space-y-1">
               <div className="text-gray-600">Delete delay (ms)</div>
-              <input className="w-full border rounded px-2 py-1" type="number" value={dedupeDeleteDelayMs} onChange={(e) => setDedupeDeleteDelayMs(Number(e.target.value || 0))} disabled={busy} />
+              <input
+                className="w-full border rounded px-2 py-1"
+                type="number"
+                value={dedupeDeleteDelayMs}
+                onChange={(e) => setDedupeDeleteDelayMs(Number(e.target.value || 0))}
+                disabled={busy}
+              />
             </label>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button variant={dedupeDryRun ? "default" : "outline"} onClick={() => setDedupeDryRun(true)} disabled={busy}>
+            <Button
+              variant={dedupeDryRun ? "default" : "outline"}
+              onClick={() => setDedupeDryRun(true)}
+              disabled={busy}
+            >
               Dry run
             </Button>
-            <Button variant={!dedupeDryRun ? "default" : "outline"} onClick={() => setDedupeDryRun(false)} disabled={busy}>
+            <Button
+              variant={!dedupeDryRun ? "default" : "outline"}
+              onClick={() => setDedupeDryRun(false)}
+              disabled={busy}
+            >
               Merge + delete
             </Button>
             <Button onClick={runSchoolDedupe} disabled={busy}>
@@ -490,7 +689,11 @@ export default function AdminOps() {
             Clear
           </Button>
         </div>
-        <div ref={logRef} className="mt-3 bg-black text-green-200 rounded p-3 text-xs overflow-auto" style={{ maxHeight: 320 }}>
+        <div
+          ref={logRef}
+          className="mt-3 bg-black text-green-200 rounded p-3 text-xs overflow-auto"
+          style={{ maxHeight: 360 }}
+        >
           {log.length ? log.map((l, i) => <div key={i}>{l}</div>) : <div>(no logs yet)</div>}
         </div>
       </Card>
