@@ -16,7 +16,7 @@ const Button = ({ children, disabled, onClick, variant = "solid" }) => {
     <button
       className={`${base} ${variant === "outline" ? outline : solid}`}
       disabled={disabled}
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
       type="button"
     >
       {children}
@@ -84,6 +84,17 @@ function looksLikeDuplicateCreate(e) {
     e?.raw?.status === 409
   );
 }
+function is404(e) {
+  const status = e?.raw?.status || e?.status;
+  const msg = String(e?.message || e || "");
+  return status === 404 || msg.includes("status code 404");
+}
+function is5xx(e) {
+  const status = e?.raw?.status || e?.status;
+  if (typeof status === "number" && status >= 500) return true;
+  const msg = String(e?.message || e || "").toLowerCase();
+  return msg.includes("status code 5");
+}
 
 // Local checkpoint storage
 const CHECKPOINT_STORAGE_KEY = "campapp_admin_seed_schools_master_pageNext_v1";
@@ -129,8 +140,6 @@ export default function AdminSeedSchoolsMaster() {
   const [scorecardFetchTries, setScorecardFetchTries] = useState(8);
 
   // Write strategy
-  // create_only: fastest for clean rebuilds (no DB reads; skips conflicts)
-  // create_then_update_on_conflict: safer for reruns but can hit 429 due to filter+update
   const [writeMode, setWriteMode] = useState("create_only");
 
   // Adaptive delay grows on 429/network, shrinks slowly when stable
@@ -153,24 +162,35 @@ export default function AdminSeedSchoolsMaster() {
   };
 
   async function tryInvoke(name) {
-    const raw = await base44.functions.invoke(name, { page: 0, perPage: 1, maxPages: 1 });
+    // Use a safe probe payload; never writes.
+    const raw = await base44.functions.invoke(name, {
+      page: 0,
+      perPage: 1,
+      maxPages: 1,
+      dryRun: true,
+      delayMs: 0,
+      deleteDelayMs: 0,
+      updateExisting: false,
+    });
     const resp = unwrapInvokeResponse(raw);
-    // If function exists but returns {error}, still counts as "exists" (not 404). We just need non-404.
     return resp;
   }
 
-  // IMPORTANT: autodiscover correct deployed function name in prod
+  // FIXED: prefer canonical function first, and do NOT select 5xx "exists but broken"
   const resolveScorecardFunction = async () => {
     if (!canRun) return null;
 
     const candidates = [
-      "seedSchoolsMaster_scorecard_v3",
+      // Prefer canonical first
       "seedSchoolsMaster_scorecard",
+      // Then older/alternate names
       "seedSchoolsMaster_scorecard_v2",
       "scorecardSeedSchoolsMaster",
       "scorecardProbe",
       "probeScorecard",
       "probeMinimal",
+      // Put v3 last because we've seen it exist-but-500
+      "seedSchoolsMaster_scorecard_v3",
     ];
 
     push(`Resolving scorecard function on ${env.host} (${env.label})...`);
@@ -184,19 +204,26 @@ export default function AdminSeedSchoolsMaster() {
       } catch (e) {
         const status = e?.raw?.status || e?.status;
         const msg = String(e?.message || e);
-        // 404 means function not deployed under that name in this environment
-        if (status === 404 || msg.includes("status code 404")) {
+
+        if (is404(e)) {
           push(`- Not found: ${name}`);
           continue;
         }
-        // Non-404 errors still mean the function name exists; pick it
-        push(`✅ Function exists (non-404): ${name} (error=${msg})`);
+
+        // NEW: treat 5xx as "broken", do not select it
+        if (is5xx(e)) {
+          push(`⚠️ Found but unhealthy (5xx). Skipping: ${name} (error=${msg})`);
+          continue;
+        }
+
+        // Non-404 and non-5xx means the name likely exists (e.g., auth/validation)
+        push(`✅ Function exists (non-404, non-5xx): ${name} (error=${msg})`);
         setScorecardFn(name);
         return name;
       }
     }
 
-    push(`❌ Could not resolve a deployed scorecard function. Deploy one of the candidate names above.`);
+    push(`❌ Could not resolve a healthy scorecard function. Deploy seedSchoolsMaster_scorecard.`);
     setScorecardFn(null);
     return null;
   };
@@ -209,7 +236,7 @@ export default function AdminSeedSchoolsMaster() {
     if (!fn) return;
 
     try {
-      const raw = await base44.functions.invoke(fn, { page: 0, perPage: 5, maxPages: 1 });
+      const raw = await base44.functions.invoke(fn, { page: 0, perPage: 5, maxPages: 1, dryRun: true });
       push(`Probe fn=${fn}\n${truncate(unwrapInvokeResponse(raw))}`);
     } catch (e) {
       push(`Probe threw:\n${truncate({ message: e?.message, raw: e?.raw || e })}`);
@@ -227,6 +254,7 @@ export default function AdminSeedSchoolsMaster() {
           page: Number(page0 || 0),
           perPage: Number(perPageNum || 100),
           maxPages: Number(pagesInBatchNum || 1),
+          dryRun: true, // fetch-only; function should ignore dryRun for fetch, but safe either way
         });
 
         const resp = unwrapInvokeResponse(raw);
@@ -246,11 +274,7 @@ export default function AdminSeedSchoolsMaster() {
         push(`⚠️ Fetch attempt ${i + 1}/${scorecardFetchTries} failed: ${msg}`);
         if (dbg) push(`Fetch debug:\n${truncate(dbg)}`);
 
-        // If it's a 404, the function name is wrong in this env. Stop immediately and re-resolve.
-        const status = e?.raw?.status || e?.status;
-        if (status === 404 || msg.includes("status code 404")) {
-          throw e;
-        }
+        if (is404(e)) throw e;
 
         if (!isScorecardTransient(e) || i === scorecardFetchTries - 1) break;
 
@@ -292,7 +316,6 @@ export default function AdminSeedSchoolsMaster() {
   const buildPayload = (r) => {
     const unitid = r?.unitid ? String(r.unitid) : null;
     const name = r?.school_name ? String(r.school_name) : null;
-    // Canonical key: scorecard:<unitid>. Avoid name/state keys entirely.
     const source_key = unitid ? `scorecard:${unitid}` : r?.source_key ? String(r.source_key) : null;
 
     return {
@@ -339,16 +362,13 @@ export default function AdminSeedSchoolsMaster() {
     if (!payload.source_key || !payload.school_name) return { mode: "skipped" };
 
     try {
-      await safeEntityCall(
-        "School.create",
-        async () => await School.create(payload),
-        { source_key: payload.source_key, unitid: payload.unitid }
-      );
+      await safeEntityCall("School.create", async () => await School.create(payload), {
+        source_key: payload.source_key,
+        unitid: payload.unitid,
+      });
       return { mode: "created" };
     } catch (e) {
       if (isRateLimitError(e) || isNetworkError(e)) throw e;
-
-      // Most likely duplicate create. Find existing row by source_key and update.
       if (!looksLikeDuplicateCreate(e)) throw e;
 
       const existing = await safeEntityCall(
@@ -360,11 +380,10 @@ export default function AdminSeedSchoolsMaster() {
       const ex = Array.isArray(existing) ? existing[0] : null;
       if (!ex?.id) return { mode: "skipped" };
 
-      await safeEntityCall(
-        "School.update",
-        async () => await School.update(ex.id, payload),
-        { id: ex.id, source_key: payload.source_key }
-      );
+      await safeEntityCall("School.update", async () => await School.update(ex.id, payload), {
+        id: ex.id,
+        source_key: payload.source_key,
+      });
       return { mode: "updated" };
     }
   };
@@ -418,7 +437,6 @@ export default function AdminSeedSchoolsMaster() {
         failed++;
         push(`❌ Upsert failed idx=${i} page=${page}: ${String(e?.message || e)}`);
         push(`Row: ${truncate(r, 900)}`);
-        // continue on failure
       }
 
       await waitAfterDbOp();
@@ -443,7 +461,7 @@ export default function AdminSeedSchoolsMaster() {
     push(`School entity: using src/api/entities.js export`);
     push(`Checkpoint (local): pageNext=${checkpoint.pageNext}`);
 
-    // Resolve function name each run (prod/preview mismatch-proof)
+    // Resolve function name each run
     let fn = scorecardFn;
     if (!fn) fn = await resolveScorecardFunction();
     if (!fn) {
@@ -460,6 +478,7 @@ export default function AdminSeedSchoolsMaster() {
     push(`Function=${fn}`);
     push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
     push(`Scorecard fetch tries=${scorecardFetchTries}`);
+
     if (!dryRun) {
       push(`Write throttle: perOpDelayMs=${perOpDelayMs} (adaptive=${adaptiveDelayRef.current})`);
       const cnt = await getSchoolCountBestEffort();
@@ -485,9 +504,7 @@ export default function AdminSeedSchoolsMaster() {
         try {
           out = await fetchBatchWithRetry(fn, batchPage, per, ppb);
         } catch (e) {
-          const msg = String(e?.message || e);
-          const status = e?.raw?.status || e?.status;
-          if (status === 404 || msg.includes("status code 404")) {
+          if (is404(e)) {
             push(`❌ Fetch got 404. Re-resolving function name and retrying batch...`);
             fn = await resolveScorecardFunction();
             if (!fn) throw e;
@@ -565,7 +582,7 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master</div>
           <div className="text-sm text-slate-600 mt-1">
-            Auto-resolves the deployed scorecard function name (prevents PROD 404).
+            Resolves a healthy deployed scorecard function name (prefers canonical, skips 5xx).
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
