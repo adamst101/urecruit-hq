@@ -23,15 +23,16 @@ const Button = ({ children, disabled, onClick, variant = "solid" }) => {
   );
 };
 
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
-}
 function safeJson(x) {
   try {
     return JSON.stringify(x, null, 2);
   } catch {
     return String(x);
   }
+}
+function truncate(x, n = 2000) {
+  const t = typeof x === "string" ? x : safeJson(x);
+  return t.length > n ? t.slice(0, n) + "\n...<truncated>..." : t;
 }
 function unwrapInvokeResponse(resp) {
   return resp?.data ?? resp ?? null;
@@ -99,14 +100,6 @@ export default function AdminSeedSchoolsMaster() {
   const env = useMemo(() => detectEnv(), []);
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
 
-  const entityKeys = useMemo(() => {
-    try {
-      return Object.keys(base44?.entities || {}).sort();
-    } catch {
-      return [];
-    }
-  }, []);
-
   const schoolResolved = useMemo(() => resolveEntity("School", "Schools"), []);
   const eventResolved = useMemo(() => resolveEntity("Event", "Events"), []);
   const queryResolved = useMemo(() => resolveEntity("Query", "Queries"), []);
@@ -114,7 +107,6 @@ export default function AdminSeedSchoolsMaster() {
   const SchoolEntity = schoolResolved?.entity || null;
   const QueryEntity = queryResolved?.entity || null;
 
-  const [working, setWorking] = useState(false);
   const [running, setRunning] = useState(false);
   const cancelRef = useRef(false);
 
@@ -125,7 +117,7 @@ export default function AdminSeedSchoolsMaster() {
   const [dryRun, setDryRun] = useState(true);
   const [startPage, setStartPage] = useState(0);
   const [perPage, setPerPage] = useState(100);
-  const [pagesPerBatch, setPagesPerBatch] = useState(2);
+  const [pagesPerBatch, setPagesPerBatch] = useState(1);
   const [delayMs, setDelayMs] = useState(750);
   const [perOpDelayMs, setPerOpDelayMs] = useState(75);
 
@@ -136,39 +128,6 @@ export default function AdminSeedSchoolsMaster() {
     lastUpdatedAt: null,
   });
 
-  // Progress
-  const [progress, setProgress] = useState({
-    batches: 0,
-    pagesProcessed: 0,
-    rowsFetched: 0,
-    created: 0,
-    updated: 0,
-    skipped: 0,
-    lastPageStart: null,
-    lastBatchRows: 0,
-    done: false,
-    stopped: false,
-    lastError: null,
-  });
-
-  const resetRunState = () => {
-    setLog([]);
-    setProgress({
-      batches: 0,
-      pagesProcessed: 0,
-      rowsFetched: 0,
-      created: 0,
-      updated: 0,
-      skipped: 0,
-      lastPageStart: null,
-      lastBatchRows: 0,
-      done: false,
-      stopped: false,
-      lastError: null,
-    });
-  };
-
-  // --- Checkpoint helpers ---
   const loadCheckpoint = async () => {
     if (!QueryEntity?.filter) {
       setCheckpoint((c) => ({ ...c, loaded: true }));
@@ -181,7 +140,7 @@ export default function AdminSeedSchoolsMaster() {
       setCheckpoint({
         loaded: true,
         pageNext,
-        lastUpdatedAt: row?.updated_at || row?.last_updated_at || null,
+        lastUpdatedAt: row?.last_updated_at || null,
       });
     } catch {
       setCheckpoint((c) => ({ ...c, loaded: true }));
@@ -195,17 +154,10 @@ export default function AdminSeedSchoolsMaster() {
     const rows = await QueryEntity.filter({ key: CHECKPOINT_KEY });
     const existing = Array.isArray(rows) && rows.length ? rows[0] : null;
 
-    const payload = {
-      key: CHECKPOINT_KEY,
-      page_next: Number(pageNext || 0),
-      last_updated_at: now,
-    };
+    const payload = { key: CHECKPOINT_KEY, page_next: Number(pageNext || 0), last_updated_at: now };
 
-    if (existing?.id) {
-      await QueryEntity.update(String(existing.id), payload);
-    } else {
-      await QueryEntity.create(payload);
-    }
+    if (existing?.id) await QueryEntity.update(String(existing.id), payload);
+    else await QueryEntity.create(payload);
 
     setCheckpoint((c) => ({ ...c, pageNext: Number(pageNext || 0), lastUpdatedAt: now }));
   };
@@ -218,19 +170,50 @@ export default function AdminSeedSchoolsMaster() {
   const stop = () => {
     cancelRef.current = true;
     setRunning(false);
-    setProgress((p) => ({ ...p, stopped: true }));
     push(`⏹️ Stop requested @ ${new Date().toISOString()}`);
   };
 
+  // --- PROBE: call the function once and print raw response ---
+  const probeScorecard = async () => {
+    if (!canRun) return;
+    push(`\nProbe start @ ${new Date().toISOString()}`);
+    try {
+      const raw = await base44.functions.invoke("seedSchoolsMaster_scorecard", {
+        page: 0,
+        perPage: 5,
+        maxPages: 1,
+      });
+      push(`Probe raw response:\n${truncate(raw)}`);
+      const resp = unwrapInvokeResponse(raw);
+      push(`Probe unwrapped:\n${truncate(resp)}`);
+    } catch (e) {
+      push(`Probe threw error:\n${truncate({ message: e?.message, stack: e?.stack, raw: e })}`);
+    }
+  };
+
   const runOneBatch = async (page0, perPageNum, pagesInBatchNum) => {
-    const raw = await base44.functions.invoke("seedSchoolsMaster_scorecard", {
-      page: Number(page0 || 0),
-      perPage: Number(perPageNum || 100),
-      maxPages: Number(pagesInBatchNum || 1),
-    });
+    let raw;
+    try {
+      raw = await base44.functions.invoke("seedSchoolsMaster_scorecard", {
+        page: Number(page0 || 0),
+        perPage: Number(perPageNum || 100),
+        maxPages: Number(pagesInBatchNum || 1),
+      });
+    } catch (e) {
+      // invoke itself failed
+      push(`Invoke threw error:\n${truncate({ message: e?.message, stack: e?.stack, raw: e })}`);
+      throw e;
+    }
 
     const resp = unwrapInvokeResponse(raw);
-    if (resp && resp.error) throw new Error(String(resp.error));
+
+    // Always log raw on failure
+    if (resp && resp.error) {
+      push(`Function returned error: ${String(resp.error)}`);
+      push(`Function raw response:\n${truncate(raw)}`);
+      push(`Function debug:\n${truncate(resp.debug || null)}`);
+      throw new Error(String(resp.error));
+    }
 
     const rows = resp && Array.isArray(resp.rows) ? resp.rows : [];
     const debug = resp && resp.debug ? resp.debug : null;
@@ -282,7 +265,6 @@ export default function AdminSeedSchoolsMaster() {
 
     for (let i = 0; i < rows.length; i++) {
       if (cancelRef.current) break;
-
       if (dryRun) continue;
 
       const res = await retryable(
@@ -292,8 +274,7 @@ export default function AdminSeedSchoolsMaster() {
           baseDelayMs: 600,
           maxDelayMs: 6000,
           jitterMs: 250,
-          onRetry: (e, attempt, wait) =>
-            push(`⚠️ Rate limit hit. Retry attempt ${attempt} in ${wait}ms`),
+          onRetry: (e, attempt, wait) => push(`⚠️ Rate limit hit. Retry attempt ${attempt} in ${wait}ms`),
         }
       );
 
@@ -311,118 +292,68 @@ export default function AdminSeedSchoolsMaster() {
   const startAutoRun = async () => {
     if (!canRun) return;
 
-    if (!SchoolEntity || !SchoolEntity.filter || !SchoolEntity.create || !SchoolEntity.update) {
-      setLog([`❌ ERROR: Could not resolve School entity from base44.entities.`]);
-      return;
-    }
-
+    setLog([]);
     cancelRef.current = false;
     setRunning(true);
-    setWorking(true);
-    resetRunState();
 
     const per = Number(perPage || 100);
     const ppb = Math.max(1, Number(pagesPerBatch || 1));
     const delay = Math.max(0, Number(delayMs || 0));
-
-    // Start page comes from UI field (user can override)
     let currentPage = Number(startPage || 0);
-
-    // Hidden safety cap
-    const SAFETY_MAX_BATCHES = 2000;
 
     push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
     push(`URL: ${env.href}`);
     push(`Resolved entity: School=${schoolResolved?.key || "NONE"} Event=${eventResolved?.key || "NONE"}`);
-    push(`Checkpoint: ${checkpoint.loaded ? `pageNext=${checkpoint.pageNext}` : "loading…"}`);
+    push(`Checkpoint: pageNext=${checkpoint.pageNext}`);
     push(`Auto-run start @ ${new Date().toISOString()}`);
     push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
     if (!dryRun) push(`Write throttle: perOpDelayMs=${perOpDelayMs}`);
-    else push(`DryRun: no DB reads/writes.`);
 
     try {
-      for (let b = 0; b < SAFETY_MAX_BATCHES; b++) {
-        if (cancelRef.current) {
-          setProgress((p) => ({ ...p, stopped: true }));
-          break;
-        }
-
-        setProgress((p) => ({
-          ...p,
-          batches: p.batches + 1,
-          lastPageStart: currentPage,
-          lastError: null,
-        }));
+      for (let b = 0; b < 2000; b++) {
+        if (cancelRef.current) break;
 
         push(`\n--- Batch ${b + 1} ---`);
         push(`Fetching page=${currentPage} maxPages=${ppb} perPage=${per} ...`);
 
-        const out = await retryable(
-          async () => runOneBatch(currentPage, per, ppb),
-          {
-            tries: 2,
-            baseDelayMs: 1200,
-            maxDelayMs: 1200,
-            jitterMs: 200,
-            onRetry: (e, attempt, wait) => push(`⚠️ Fetch failed. Retry ${attempt} in ${wait}ms`),
-            shouldRetry: (e) => {
-              const msg = String(e?.message || e).toLowerCase();
-              return msg.includes("timeout") || msg.includes("network") || msg.includes("429") || msg.includes("rate");
-            },
-          }
-        );
+        const out = await runOneBatch(currentPage, per, ppb);
 
         const rows = out.rows || [];
         const debug = out.debug || null;
         const expectedMax = per * ppb;
 
         push(`✅ Fetched rows: ${rows.length} (expected up to ${expectedMax})`);
-        if (debug && debug.pageCalls) push(`PageCalls:\n${safeJson(debug.pageCalls)}`);
+        if (debug) push(`Fetch debug:\n${truncate(debug)}`);
 
-        setProgress((p) => ({
-          ...p,
-          rowsFetched: p.rowsFetched + rows.length,
-          lastBatchRows: rows.length,
-        }));
-
-        // Completion condition: none
         if (!rows.length) {
           push(`🏁 No rows returned. Completed.`);
-          setProgress((p) => ({ ...p, done: true }));
           break;
         }
 
         if (dryRun) {
           push(`DryRun complete for batch. WouldUpsert=${rows.length}`);
         } else {
+          if (!SchoolEntity?.filter || !SchoolEntity?.create || !SchoolEntity?.update) {
+            push(`❌ ERROR: School entity not available for upserts.`);
+            break;
+          }
           push(`Writing upserts to School...`);
           const up = await upsertRowsToSchool(rows);
           push(`✅ Upsert batch complete. Created=${up.created} Updated=${up.updated} Skipped=${up.skipped}`);
-          setProgress((p) => ({
-            ...p,
-            created: p.created + up.created,
-            updated: p.updated + up.updated,
-            skipped: p.skipped + up.skipped,
-          }));
         }
 
-        // Advance page window
         const nextPage = currentPage + ppb;
 
-        // Save checkpoint AFTER successful batch (only for real writes)
         if (!dryRun) {
           await saveCheckpoint(nextPage);
           push(`💾 Checkpoint saved: nextPage=${nextPage}`);
         }
 
-        setProgress((p) => ({ ...p, pagesProcessed: p.pagesProcessed + ppb }));
         currentPage = nextPage;
 
-        // Completion condition: partial batch
         if (rows.length < expectedMax) {
           push(`🏁 Fetched fewer than ${expectedMax}. Treating as complete.`);
-          setProgress((p) => ({ ...p, done: true }));
-          if (!dryRun) await saveCheckpoint(currentPage); // final checkpoint
+          if (!dryRun) await saveCheckpoint(currentPage);
           break;
         }
 
@@ -432,11 +363,8 @@ export default function AdminSeedSchoolsMaster() {
         }
       }
     } catch (e) {
-      const msg = String(e?.message || e);
-      push(`❌ ERROR: ${msg}`);
-      setProgress((p) => ({ ...p, lastError: msg }));
+      push(`❌ ERROR: ${String(e?.message || e)}`);
     } finally {
-      setWorking(false);
       setRunning(false);
       push(`\nAuto-run finished @ ${new Date().toISOString()}`);
     }
@@ -451,9 +379,9 @@ export default function AdminSeedSchoolsMaster() {
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-4xl mx-auto space-y-3">
         <Card>
-          <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master (Resumable)</div>
+          <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master</div>
           <div className="text-sm text-slate-600 mt-1">
-            Safe stop/resume. Upserts prevent duplicates. Checkpoint stores the next page to fetch after each successful batch.
+            Added probe + raw error logging so Scorecard HTTP 500 becomes diagnosable.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
@@ -461,31 +389,18 @@ export default function AdminSeedSchoolsMaster() {
         </Card>
 
         <Card>
-          <div className="text-lg font-semibold text-slate-900">Entity Diagnostics</div>
-          <div className="mt-2 text-sm text-slate-700">
-            <div>Resolved School entity: <span className="font-mono">{schoolResolved?.key || "NONE"}</span></div>
-            <div>Resolved Event entity: <span className="font-mono">{eventResolved?.key || "NONE"}</span></div>
-            <div>Resolved Query entity: <span className="font-mono">{queryResolved?.key || "NONE"}</span></div>
-            <div className="mt-2 text-xs text-slate-500">
-              Entities (first 40): {entityKeys.slice(0, 40).join(", ")}
-            </div>
-          </div>
-        </Card>
-
-        <Card>
           <div className="text-lg font-semibold text-slate-900">Checkpoint</div>
           <div className="mt-2 text-sm text-slate-700">
-            <div>Loaded: {String(checkpoint.loaded)}</div>
             <div>Next page: <span className="font-mono">{checkpoint.pageNext}</span></div>
             <div>Last updated: {checkpoint.lastUpdatedAt || "-"}</div>
           </div>
-          <div className="mt-3">
+          <div className="mt-3 flex gap-2">
             <Button disabled={!checkpoint.loaded || running} onClick={resumeFromCheckpoint} variant="outline">
               Set Start Page to Checkpoint
             </Button>
-          </div>
-          <div className="mt-2 text-xs text-slate-500">
-            Note: Checkpoint updates only when DryRun=false (real writes). DryRun runs do not write checkpoints.
+            <Button disabled={running} onClick={probeScorecard} variant="outline">
+              Probe Scorecard
+            </Button>
           </div>
         </Card>
 
@@ -550,14 +465,11 @@ export default function AdminSeedSchoolsMaster() {
                   disabled={running}
                 />
               </label>
-              <div className="text-xs text-slate-500">
-                If you hit Base44 rate limits, raise to 100–200ms.
-              </div>
             </div>
           )}
 
           <div className="mt-4 flex gap-2">
-            <Button disabled={working || running} onClick={startAutoRun}>
+            <Button disabled={running} onClick={startAutoRun}>
               Run until complete
             </Button>
             <Button disabled={!running} onClick={stop} variant="outline">
@@ -568,7 +480,7 @@ export default function AdminSeedSchoolsMaster() {
 
         <Card>
           <div className="text-sm font-semibold text-slate-900">Log</div>
-          <pre className="mt-2 text-xs whitespace-pre-wrap">{asArray(log).join("\n")}</pre>
+          <pre className="mt-2 text-xs whitespace-pre-wrap">{log.join("\n")}</pre>
         </Card>
       </div>
     </div>
