@@ -1,25 +1,24 @@
-// functions/seedSchoolsMaster_scorecard.js
-// Deno + Base44 backend function (JS-only: no TS syntax)
-//
-// Two modes:
-// 1) Fetch-only (DEFAULT): returns normalized rows for UI to upsert (fast + restart-safe)
-//    - When dryRun=true OR serverWrite=false (default), NO DB calls are made.
-// 2) Server-write (optional): function performs DB upsert + dedupe (slower; can hit rate limits)
+// functions/seedSchoolsMaster_scorecard.ts
+// Deno + Base44 backend function (JS-only style; no TS syntax used)
+// PURPOSE (idempotent + self-healing):
+// - Fetch College Scorecard schools
+// - Upsert into School by unitid (canonical key)
+// - If duplicates already exist for a unitid, keep the “best” row and delete the rest
+// - Safe to run repeatedly: it will not create duplicates and will clean existing duplicates over time
 //
 // Request body:
 // {
-//   "page": 0,
-//   "perPage": 100,
-//   "maxPages": 1,
-//   "dryRun": true,
-//   "serverWrite": false,     // default false; set true ONLY if you want server-side upsert/dedupe
-//   "delayMs": 140,
-//   "deleteDelayMs": 160,
-//   "updateExisting": true
+//   "page": 0,               // starting page (0-based Scorecard API)
+//   "perPage": 100,          // 1..100
+//   "maxPages": 1,           // 1..25 (batch pages per call)
+//   "dryRun": true,          // if true: no writes
+//   "delayMs": 220,          // throttle between writes
+//   "deleteDelayMs": 260,    // throttle between deletes
+//   "updateExisting": true   // if false: only create missing + dedupe deletes (no updates)
 // }
 //
 // Response:
-// { ok, rows, stats, debug }
+// { ok, dryRun, stats, debug }
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 
@@ -28,9 +27,11 @@ function s(x) {
   const t = String(x).trim();
   return t ? t : null;
 }
+
 function lc(x) {
   return String(x || "").toLowerCase().trim();
 }
+
 function normName(x) {
   return lc(x)
     .replace(/&/g, "and")
@@ -38,16 +39,20 @@ function normName(x) {
     .replace(/\s+/g, " ")
     .trim();
 }
+
 function buildKeyFromUnitid(unitid) {
   const u = s(unitid);
   return u ? `scorecard:${u}` : null;
 }
+
 function isRetryableStatus(st) {
   return st === 429 || st === 500 || st === 502 || st === 503 || st === 504;
 }
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
+
 async function safeText(r) {
   try {
     return await r.text();
@@ -89,7 +94,7 @@ async function fetchJsonWithRetry(url, debug, tries) {
 
       try {
         return JSON.parse(text);
-      } catch (e) {
+      } catch {
         if (i < tries - 1) {
           const wait = Math.min(12000, 700 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
           debug.retries = (debug.retries || 0) + 1;
@@ -119,7 +124,6 @@ async function fetchJsonWithRetry(url, debug, tries) {
   throw lastErr || new Error("Scorecard fetch failed");
 }
 
-// OPTIONAL: server-write helpers (kept for later, not used in default fetch-only)
 async function withRetries(fn, debug, label, tries) {
   let lastErr = null;
   for (let i = 0; i < tries; i++) {
@@ -150,6 +154,7 @@ async function withRetries(fn, debug, label, tries) {
   throw lastErr;
 }
 
+// Higher score = “better completeness” for keeper selection
 function scoreSchoolRow(r) {
   let sc = 0;
   if (s(r?.unitid)) sc += 10;
@@ -162,6 +167,7 @@ function scoreSchoolRow(r) {
   if (s(r?.source_key)) sc += 1;
   return sc;
 }
+
 function pickKeepRow(rows) {
   const sorted = [...rows].sort((a, b) => {
     const sa = scoreSchoolRow(a);
@@ -173,6 +179,7 @@ function pickKeepRow(rows) {
   });
   return sorted[0] || null;
 }
+
 function getId(r) {
   const v = r?.id ?? r?._id ?? r?.uuid;
   return v === null || v === undefined ? null : String(v);
@@ -200,7 +207,9 @@ function desiredSchoolRowFromScorecard(r) {
 }
 
 function mergeForUpdate(existing, desired) {
+  // Policy: keep existing values if desired is null, otherwise overwrite with desired
   const out = { ...existing };
+
   const fields = [
     "unitid",
     "school_name",
@@ -211,11 +220,13 @@ function mergeForUpdate(existing, desired) {
     "source_platform",
     "source_key",
   ];
+
   for (const f of fields) {
     const v = desired[f];
     if (v !== null && v !== undefined && String(v).trim() !== "") out[f] = v;
     else if (out[f] === undefined) out[f] = null;
   }
+
   return out;
 }
 
@@ -229,7 +240,6 @@ function jsonResp(payload) {
 Deno.serve(async (req) => {
   const debug = {
     startedAt: new Date().toISOString(),
-    mode: null,
     retries: 0,
     retry_notes: [],
     last_http: null,
@@ -255,6 +265,11 @@ Deno.serve(async (req) => {
   try {
     if (req.method !== "POST") return jsonResp({ ok: false, error: "Method not allowed", stats, debug });
 
+    const base44 = createClientFromRequest(req);
+    const School = base44?.entities?.School || base44?.entities?.Schools;
+
+    if (!School) return jsonResp({ ok: false, error: "School entity not found in base44.entities", stats, debug });
+
     const body = await req.json().catch(() => ({}));
 
     const page = Number(body?.page ?? 0);
@@ -262,24 +277,15 @@ Deno.serve(async (req) => {
     const maxPages = Math.max(1, Math.min(25, Number(body?.maxPages ?? 1)));
 
     const dryRun = !!body?.dryRun;
-    const serverWrite = body?.serverWrite === true; // default false
-
-    const delayMs = Math.max(0, Number(body?.delayMs ?? 140));
-    const deleteDelayMs = Math.max(0, Number(body?.deleteDelayMs ?? 160));
+    const delayMs = Math.max(0, Number(body?.delayMs ?? 220));
+    const deleteDelayMs = Math.max(0, Number(body?.deleteDelayMs ?? 260));
     const updateExisting = body?.updateExisting === undefined ? true : !!body?.updateExisting;
 
     const apiKey = (Deno.env.get("SCORECARD_API_KEY") || "").trim();
     if (!apiKey) return jsonResp({ ok: false, error: "Missing SCORECARD_API_KEY", stats, debug });
 
-    // MODE: if dryRun OR serverWrite=false => fetch-only, no DB calls
-    if (dryRun || !serverWrite) debug.mode = "fetch_only_rows_for_client";
-    else debug.mode = "server_write_upsert_dedupe";
-
     const fields = ["id", "school.name", "school.city", "school.state", "school.school_url"].join(",");
 
-    const rowsOut = [];
-
-    // 1) Fetch + normalize rows
     for (let p = page; p < page + maxPages; p++) {
       const urlObj = new URL("https://api.data.gov/ed/collegescorecard/v1/schools");
       urlObj.searchParams.set("api_key", apiKey);
@@ -296,137 +302,137 @@ Deno.serve(async (req) => {
 
       for (const r of results) {
         const desired = desiredSchoolRowFromScorecard(r);
+
         if (!desired) {
           stats.skippedNoUnitidOrName += 1;
           continue;
         }
+
         stats.processed += 1;
-        rowsOut.push(desired);
-      }
 
-      if (results.length < perPage) break;
-    }
+        // Lookup by canonical key: unitid
+        let existing = [];
+        try {
+          existing = await withRetries(
+            () => School.filter({ unitid: desired.unitid }),
+            debug,
+            `School.filter(unitid=${desired.unitid})`,
+            8
+          );
+          if (!Array.isArray(existing)) existing = [];
+        } catch (e) {
+          stats.dbLookupErrors += 1;
+          debug.errors.push(`lookup failed unitid=${desired.unitid}: ${String(e?.message || e)}`);
 
-    // 2) Fetch-only path: return rows immediately (NO DB)
-    if (dryRun || !serverWrite) {
-      return jsonResp({
-        ok: true,
-        dryRun,
-        rows: rowsOut,
-        stats,
-        debug: {
-          startedAt: debug.startedAt,
-          mode: debug.mode,
-          pageCalls: debug.pageCalls,
-          retries: debug.retries,
-          retry_notes: debug.retry_notes,
-          last_http: debug.last_http,
-          last_body_snippet: debug.last_body_snippet,
-          samples: debug.samples,
-          errors: debug.errors.slice(0, 50),
-        },
-      });
-    }
-
-    // 3) Server-write path (optional): do DB upsert + dedupe
-    const base44 = createClientFromRequest(req);
-    const School = base44?.entities?.School || base44?.entities?.Schools;
-    if (!School) return jsonResp({ ok: false, error: "School entity not found in base44.entities", stats, debug });
-
-    for (const desired of rowsOut) {
-      // Lookup by unitid (canonical)
-      let existing = [];
-      try {
-        existing = await withRetries(
-          () => School.filter({ unitid: desired.unitid }),
-          debug,
-          `School.filter(unitid=${desired.unitid})`,
-          8
-        );
-        if (!Array.isArray(existing)) existing = [];
-      } catch (e) {
-        stats.dbLookupErrors += 1;
-        debug.errors.push(`lookup failed unitid=${desired.unitid}: ${String(e?.message || e)}`);
-        existing = [];
-      }
-
-      if (existing.length > 1) {
-        stats.dedupeGroups += 1;
-        const keep = pickKeepRow(existing);
-        const keepId = getId(keep);
-        const delIds = existing.map(getId).filter(Boolean).filter((id) => id !== keepId);
-
-        if (debug.samples.length < 8) {
-          debug.samples.push({
-            unitid: desired.unitid,
-            name: desired.school_name,
-            dupCount: existing.length,
-            keepId,
-            deleteIds: delIds.slice(0, 6),
-          });
+          // Fallback lookup by source_key (deterministic)
+          try {
+            existing = await withRetries(
+              () => School.filter({ source_key: desired.source_key }),
+              debug,
+              `School.filter(source_key=${desired.source_key})`,
+              6
+            );
+            if (!Array.isArray(existing)) existing = [];
+          } catch (e2) {
+            stats.dbLookupErrors += 1;
+            debug.errors.push(`fallback lookup failed key=${desired.source_key}: ${String(e2?.message || e2)}`);
+            existing = [];
+          }
         }
 
-        if (updateExisting && keepId) {
+        // If multiple rows already exist for same unitid, keep best and delete others
+        if (existing.length > 1) {
+          stats.dedupeGroups += 1;
+
+          const keep = pickKeepRow(existing);
+          const keepId = getId(keep);
+          const delIds = existing
+            .map(getId)
+            .filter(Boolean)
+            .filter((id) => id !== keepId);
+
+          if (debug.samples.length < 8) {
+            debug.samples.push({
+              unitid: desired.unitid,
+              name: desired.school_name,
+              dupCount: existing.length,
+              keepId,
+              deleteIds: delIds.slice(0, 6),
+            });
+          }
+
+          // Update keeper with canonical Scorecard values
+          if (!dryRun && updateExisting && keepId) {
+            try {
+              const merged = mergeForUpdate(keep, desired);
+              await withRetries(() => School.update(keepId, merged), debug, `School.update(keepId=${keepId})`, 8);
+              stats.updated += 1;
+            } catch (e) {
+              stats.dbWriteErrors += 1;
+              debug.errors.push(`update keeper failed keepId=${keepId}: ${String(e?.message || e)}`);
+            }
+            await sleep(delayMs);
+          }
+
+          // Delete duplicates
+          if (!dryRun) {
+            for (const id of delIds) {
+              try {
+                await withRetries(() => School.delete(id), debug, `School.delete(dupId=${id})`, 10);
+                stats.dedupeDeleted += 1;
+              } catch (e) {
+                stats.dbWriteErrors += 1;
+                debug.errors.push(`delete dup failed id=${id}: ${String(e?.message || e)}`);
+              }
+              await sleep(deleteDelayMs);
+            }
+          }
+
+          continue; // done with this unitid
+        }
+
+        // No existing: create
+        if (existing.length === 0) {
+          if (!dryRun) {
+            try {
+              await withRetries(() => School.create(desired), debug, `School.create(unitid=${desired.unitid})`, 8);
+              stats.created += 1;
+            } catch (e) {
+              stats.dbWriteErrors += 1;
+              debug.errors.push(`create failed unitid=${desired.unitid}: ${String(e?.message || e)}`);
+            }
+            await sleep(delayMs);
+          }
+          continue;
+        }
+
+        // Exactly one existing: update (optional)
+        const one = existing[0];
+        const oneId = getId(one);
+
+        if (!dryRun && updateExisting && oneId) {
           try {
-            const merged = mergeForUpdate(keep, desired);
-            await withRetries(() => School.update(keepId, merged), debug, `School.update(keepId=${keepId})`, 8);
+            const merged = mergeForUpdate(one, desired);
+            await withRetries(() => School.update(oneId, merged), debug, `School.update(id=${oneId})`, 8);
             stats.updated += 1;
           } catch (e) {
             stats.dbWriteErrors += 1;
-            debug.errors.push(`update keeper failed keepId=${keepId}: ${String(e?.message || e)}`);
+            debug.errors.push(`update failed id=${oneId} unitid=${desired.unitid}: ${String(e?.message || e)}`);
           }
           await sleep(delayMs);
         }
-
-        for (const id of delIds) {
-          try {
-            await withRetries(() => School.delete(id), debug, `School.delete(dupId=${id})`, 10);
-            stats.dedupeDeleted += 1;
-          } catch (e) {
-            stats.dbWriteErrors += 1;
-            debug.errors.push(`delete dup failed id=${id}: ${String(e?.message || e)}`);
-          }
-          await sleep(deleteDelayMs);
-        }
-
-        continue;
       }
 
-      if (existing.length === 0) {
-        try {
-          await withRetries(() => School.create(desired), debug, `School.create(unitid=${desired.unitid})`, 8);
-          stats.created += 1;
-        } catch (e) {
-          stats.dbWriteErrors += 1;
-          debug.errors.push(`create failed unitid=${desired.unitid}: ${String(e?.message || e)}`);
-        }
-        await sleep(delayMs);
-        continue;
-      }
-
-      const one = existing[0];
-      const oneId = getId(one);
-      if (updateExisting && oneId) {
-        try {
-          const merged = mergeForUpdate(one, desired);
-          await withRetries(() => School.update(oneId, merged), debug, `School.update(id=${oneId})`, 8);
-          stats.updated += 1;
-        } catch (e) {
-          stats.dbWriteErrors += 1;
-          debug.errors.push(`update failed id=${oneId} unitid=${desired.unitid}: ${String(e?.message || e)}`);
-        }
-        await sleep(delayMs);
-      }
+      // likely end-of-dataset
+      if (results.length < perPage) break;
     }
 
     return jsonResp({
       ok: true,
       dryRun,
-      rows: [],
       stats,
       debug: {
         startedAt: debug.startedAt,
-        mode: debug.mode,
         pageCalls: debug.pageCalls,
         retries: debug.retries,
         retry_notes: debug.retry_notes,
