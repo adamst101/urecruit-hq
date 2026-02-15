@@ -54,8 +54,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 function isRateLimitError(e) {
+  const status = e?.raw?.status || e?.status;
+  if (status === 429) return true;
   const msg = String(e?.message || e || "").toLowerCase();
-  return msg.includes("rate limit") || msg.includes("too many") || msg.includes("429");
+  return msg.includes("rate limit") || msg.includes("429");
 }
 function isScorecardTransient(e) {
   const msg = String(e?.message || e || "").toLowerCase();
@@ -68,40 +70,20 @@ function isScorecardTransient(e) {
     msg.includes("network")
   );
 }
-async function retryable(fn, opts) {
-  const {
-    tries = 5,
-    baseDelayMs = 500,
-    maxDelayMs = 5000,
-    jitterMs = 200,
-    onRetry = null,
-    shouldRetry = isRateLimitError,
-  } = opts || {};
-
-  let lastErr = null;
-
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (e) {
-      lastErr = e;
-      const retry = shouldRetry(e) && i < tries - 1;
-      if (!retry) throw e;
-
-      const backoff = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, i));
-      const jitter = Math.floor(Math.random() * (jitterMs + 1));
-      const wait = backoff + jitter;
-      if (onRetry) onRetry(e, i + 1, wait);
-      await sleep(wait);
-    }
-  }
-
-  throw lastErr;
+function looksLikeDuplicateCreate(e) {
+  const msg = String(e?.message || e || "").toLowerCase();
+  // Generic heuristics: Base44 duplicate/unique constraint messages vary
+  return (
+    msg.includes("duplicate") ||
+    msg.includes("already exists") ||
+    msg.includes("unique") ||
+    msg.includes("conflict") ||
+    (e?.raw?.status === 409)
+  );
 }
 
 // Local checkpoint storage
 const CHECKPOINT_STORAGE_KEY = "campapp_admin_seed_schools_master_pageNext_v1";
-
 function loadCheckpointFromStorage() {
   try {
     const raw = window.localStorage.getItem(CHECKPOINT_STORAGE_KEY);
@@ -112,28 +94,22 @@ function loadCheckpointFromStorage() {
     return 0;
   }
 }
-
 function saveCheckpointToStorage(pageNext) {
   try {
     window.localStorage.setItem(CHECKPOINT_STORAGE_KEY, String(Number(pageNext || 0)));
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
-
 function clearCheckpointStorage() {
   try {
     window.localStorage.removeItem(CHECKPOINT_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
 export default function AdminSeedSchoolsMaster() {
   const env = useMemo(() => detectEnv(), []);
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
 
-  // IMPORTANT: Use the canonical entity export from src/api/entities.js (pickEntity logic)
+  // Canonical School export
   const School = SchoolEntityFromApi || null;
 
   const [running, setRunning] = useState(false);
@@ -148,15 +124,17 @@ export default function AdminSeedSchoolsMaster() {
   const [perPage, setPerPage] = useState(100);
   const [pagesPerBatch, setPagesPerBatch] = useState(1);
   const [delayMs, setDelayMs] = useState(2000);
-  const [perOpDelayMs, setPerOpDelayMs] = useState(125);
+
+  // IMPORTANT: increase default throttle to reduce 429s
+  const [perOpDelayMs, setPerOpDelayMs] = useState(250);
+
   const [scorecardFetchTries, setScorecardFetchTries] = useState(8);
 
-  // Checkpoint
-  const [checkpoint, setCheckpoint] = useState({
-    loaded: false,
-    pageNext: 0,
-  });
+  // Adaptive throttle state: increases when we see 429, slowly decreases when stable
+  const adaptiveDelayRef = useRef(250);
 
+  // Checkpoint
+  const [checkpoint, setCheckpoint] = useState({ loaded: false, pageNext: 0 });
   useEffect(() => {
     const n = loadCheckpointFromStorage();
     setCheckpoint({ loaded: true, pageNext: n });
@@ -224,26 +202,42 @@ export default function AdminSeedSchoolsMaster() {
     throw last || new Error("Scorecard fetch failed");
   }
 
-  // Strong error logging wrapper around Base44 entity calls
-  async function safeEntityCall(fnName, fn, context) {
+  async function safeEntityCall(label, fn, context) {
     try {
       return await fn();
     } catch (e) {
-      push(`❌ Base44Error during ${fnName}`);
+      // Bubble rate limit so caller can adapt
+      if (isRateLimitError(e)) throw e;
+
+      push(`❌ Base44Error during ${label}`);
       push(`Context: ${truncate(context)}`);
-      push(`Error: ${truncate({ message: e?.message, stack: e?.stack, raw: e })}`);
+      push(`Error: ${truncate({ message: e?.message, raw: e?.raw || e })}`);
       throw e;
     }
   }
 
-  const upsertRow = async (r) => {
-    const source_key = r?.source_key ? String(r.source_key) : null;
+  function bumpAdaptiveDelay() {
+    // Increase delay quickly when throttled
+    adaptiveDelayRef.current = Math.min(2000, Math.floor(adaptiveDelayRef.current * 1.6 + 50));
+  }
+  function relaxAdaptiveDelay() {
+    // Slowly relax when stable
+    adaptiveDelayRef.current = Math.max(150, Math.floor(adaptiveDelayRef.current * 0.95));
+  }
+
+  async function waitAfterDbOp() {
+    const base = Math.max(0, Number(perOpDelayMs || 0));
+    const adaptive = adaptiveDelayRef.current;
+    const wait = Math.max(base, adaptive);
+    if (wait > 0) await sleep(wait);
+  }
+
+  const buildPayload = (r) => {
     const unitid = r?.unitid ? String(r.unitid) : null;
     const name = r?.school_name ? String(r.school_name) : null;
+    const source_key = r?.source_key ? String(r.source_key) : null;
 
-    if (!source_key || !name) return { mode: "skipped" };
-
-    const payload = {
+    return {
       school_name: name,
       normalized_name: r.normalized_name || null,
       city: r.city || null,
@@ -261,31 +255,48 @@ export default function AdminSeedSchoolsMaster() {
       active: true,
       last_seen_at: new Date().toISOString(),
     };
+  };
 
-    const existingRows = await safeEntityCall(
-      "School.filter",
-      async () => await School.filter({ source_key: source_key }),
-      { source_key }
-    );
+  // KEY CHANGE: Create-first strategy to avoid per-row filter
+  const upsertRowCreateFirst = async (r) => {
+    const payload = buildPayload(r);
 
-    const existing = Array.isArray(existingRows) && existingRows.length ? existingRows[0] : null;
+    if (!payload.source_key || !payload.school_name) return { mode: "skipped" };
 
-    if (existing?.id) {
+    // Try create first (1 DB call)
+    try {
       await safeEntityCall(
-        "School.update",
-        async () => await School.update(String(existing.id), payload),
-        { id: existing.id, payloadKeys: Object.keys(payload) }
+        "School.create",
+        async () => await School.create(payload),
+        { payloadKeys: Object.keys(payload), source_key: payload.source_key }
       );
-      return { mode: "updated" };
+      return { mode: "created" };
+    } catch (e) {
+      // If rate limit, bubble up to retry wrapper
+      if (isRateLimitError(e)) throw e;
+
+      // If duplicate, then do filter+update (2 more DB calls but only for existing rows)
+      if (looksLikeDuplicateCreate(e)) {
+        const existingRows = await safeEntityCall(
+          "School.filter",
+          async () => await School.filter({ source_key: payload.source_key }),
+          { source_key: payload.source_key }
+        );
+
+        const existing = Array.isArray(existingRows) && existingRows.length ? existingRows[0] : null;
+        if (existing?.id) {
+          await safeEntityCall(
+            "School.update",
+            async () => await School.update(String(existing.id), payload),
+            { id: existing.id, source_key: payload.source_key }
+          );
+          return { mode: "updated" };
+        }
+      }
+
+      // Not duplicate; treat as real error
+      throw e;
     }
-
-    await safeEntityCall(
-      "School.create",
-      async () => await School.create(payload),
-      { payloadKeys: Object.keys(payload), payloadSample: payload }
-    );
-
-    return { mode: "created" };
   };
 
   const upsertRowsToSchool = async (rows) => {
@@ -297,22 +308,32 @@ export default function AdminSeedSchoolsMaster() {
       if (cancelRef.current) break;
       if (dryRun) continue;
 
-      const res = await retryable(
-        async () => upsertRow(rows[i]),
-        {
-          tries: 6,
-          baseDelayMs: 600,
-          maxDelayMs: 6000,
-          jitterMs: 250,
-          onRetry: () => push(`⚠️ DB rate limit. Retrying...`),
-        }
-      );
+      try {
+        const res = await (async () => {
+          // Retry only for 429, with backoff and adaptive delay increase
+          for (let t = 0; t < 8; t++) {
+            try {
+              return await upsertRowCreateFirst(rows[i]);
+            } catch (e) {
+              if (!isRateLimitError(e) || t === 7) throw e;
 
-      if (res.mode === "created") created += 1;
-      else if (res.mode === "updated") updated += 1;
-      else skipped += 1;
+              bumpAdaptiveDelay();
+              const wait = Math.min(15000, 1000 * Math.pow(2, t));
+              push(`⚠️ DB rate limit. Backing off ${wait}ms (adaptiveDelay=${adaptiveDelayRef.current}ms)`);
+              await sleep(wait);
+            }
+          }
+          return { mode: "skipped" };
+        })();
 
-      if (perOpDelayMs > 0) await sleep(perOpDelayMs);
+        if (res.mode === "created") created += 1;
+        else if (res.mode === "updated") updated += 1;
+        else skipped += 1;
+
+        relaxAdaptiveDelay();
+      } finally {
+        await waitAfterDbOp();
+      }
     }
 
     return { created, updated, skipped };
@@ -325,12 +346,13 @@ export default function AdminSeedSchoolsMaster() {
     cancelRef.current = false;
     setRunning(true);
 
-    // Validate School entity is real
     if (!School?.create || !School?.update || !School?.filter) {
       push(`❌ ERROR: School entity not available. Check src/api/entities.js export for School/Schools.`);
       setRunning(false);
       return;
     }
+
+    adaptiveDelayRef.current = Math.max(150, Number(perOpDelayMs || 250));
 
     const per = Number(perPage || 100);
     const ppb = Math.max(1, Number(pagesPerBatch || 1));
@@ -344,7 +366,7 @@ export default function AdminSeedSchoolsMaster() {
     push(`Auto-run start @ ${new Date().toISOString()}`);
     push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
     push(`Scorecard fetch tries=${scorecardFetchTries}`);
-    if (!dryRun) push(`Write throttle: perOpDelayMs=${perOpDelayMs}`);
+    if (!dryRun) push(`Write throttle: perOpDelayMs=${perOpDelayMs} (adaptive starting at ${adaptiveDelayRef.current})`);
 
     try {
       for (let b = 0; b < 5000; b++) {
@@ -370,7 +392,7 @@ export default function AdminSeedSchoolsMaster() {
         if (dryRun) {
           push(`DryRun: WouldUpsert=${rows.length}`);
         } else {
-          push(`Writing upserts to School...`);
+          push(`Writing upserts to School (create-first strategy)...`);
           const up = await upsertRowsToSchool(rows);
           push(`✅ Upsert complete. Created=${up.created} Updated=${up.updated} Skipped=${up.skipped}`);
         }
@@ -397,6 +419,7 @@ export default function AdminSeedSchoolsMaster() {
       }
     } catch (e) {
       push(`❌ ERROR: ${String(e?.message || e)}`);
+      push(`Raw error:\n${truncate({ message: e?.message, raw: e?.raw || e })}`);
     } finally {
       setRunning(false);
       push(`\nAuto-run finished @ ${new Date().toISOString()}`);
@@ -420,7 +443,7 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master</div>
           <div className="text-sm text-slate-600 mt-1">
-            Uses canonical School entity export and logs exact Base44 validation errors per op.
+            Create-first upsert to cut DB calls and reduce rate limits. Local checkpoint.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
