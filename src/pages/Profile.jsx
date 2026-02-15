@@ -16,7 +16,11 @@ const ROUTES = {
   Workspace: "/Workspace",
   Discover: "/Discover",
   Home: "/Home",
+  AdminOps: "/AdminOps",
 };
+
+// Admin mode gate (shared with AdminOps page)
+const ADMIN_MODE_KEY = "campapp_admin_enabled_v1";
 
 // Height options
 const FEET_OPTIONS = [4, 5, 6, 7];
@@ -121,70 +125,26 @@ async function resolveFootballSportIdActiveOnly() {
       const n = getSportName(r).toLowerCase();
       return n === "football" || n.includes("football");
     });
-    return football?.id ? String(football.id) : null;
+    return football?.id || football?._id || football?.uuid || null;
   } catch {
     return null;
   }
 }
 
-function getAthleteEntity() {
-  return base44?.entities?.AthleteProfile || base44?.entities?.Athlete || base44?.entities?.AthleteIdentity || null;
-}
-
-async function upsertAthleteProfile({ athleteId, payloadFull, payloadFallback }) {
-  const Entity = getAthleteEntity();
-  if (!Entity) throw new Error("No athlete entity found (expected AthleteProfile/Athlete/AthleteIdentity).");
-
-  if (athleteId) {
-    try {
-      await Entity.update(athleteId, payloadFull);
-      return { mode: "updated_full" };
-    } catch (e1) {
-      await Entity.update(athleteId, payloadFallback);
-      return { mode: "updated_fallback", error: e1 };
-    }
-  }
-
-  try {
-    await Entity.create(payloadFull);
-    return { mode: "created_full" };
-  } catch (e1) {
-    await Entity.create(payloadFallback);
-    return { mode: "created_fallback", error: e1 };
-  }
-}
-
-function resolveAccountId({ season, athleteProfile }) {
-  const candidates = [
-    season?.accountId,
-    season?.account_id,
-    season?.account?.id,
-    season?.account?.account_id,
-
-    athleteProfile?.account_id,
-    athleteProfile?.accountId,
-    athleteProfile?.account?.id,
-  ];
-
-  for (const c of candidates) {
-    const v = c == null ? "" : String(c).trim();
-    if (v) return v;
-  }
-  return "";
-}
-
 export default function Profile() {
   const nav = useNavigate();
-  const season = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
-  const accountId = useMemo(() => resolveAccountId({ season, athleteProfile }), [season, athleteProfile]);
+  const { isPaidSeason, loading: seasonLoading } = useSeasonAccess();
+  const { identity, loading: identityLoading, saveIdentity } = useAthleteIdentity();
 
-  const GRAD_YEAR_OPTIONS = useMemo(() => {
-    const y = new Date().getFullYear();
-    return Array.from({ length: 11 }, (_, i) => y + i);
-  }, []);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("");
+
+  const [sports, setSports] = useState([]);
+  const [positions, setPositions] = useState([]);
+
+  const [sportId, setSportId] = useState("");
+  const [primaryPositionId, setPrimaryPositionId] = useState("");
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -193,438 +153,339 @@ export default function Profile() {
   const [heightIn, setHeightIn] = useState("");
   const [weight, setWeight] = useState("");
 
-  const [selectedSportId, setSelectedSportId] = useState("");
-  const [sports, setSports] = useState([]);
-  const [sportsLoading, setSportsLoading] = useState(false);
+  const [adminEnabled, setAdminEnabled] = useState(false);
 
-  const [positions, setPositions] = useState([]);
-  const [primaryPositionId, setPrimaryPositionId] = useState("");
-
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-  const [sportWarning, setSportWarning] = useState("");
-
-  const loading = !!season?.isLoading || !!identityLoading;
-
-  // Hydrate from existing profile
   useEffect(() => {
-    if (!athleteProfile) return;
+    setAdminEnabled(localStorage.getItem(ADMIN_MODE_KEY) === "true");
+  }, []);
 
-    const n = parseNameParts(athleteProfile);
-    const h = parseHeightParts(athleteProfile);
+  function toggleAdminMode() {
+    const next = !(localStorage.getItem(ADMIN_MODE_KEY) === "true");
+    localStorage.setItem(ADMIN_MODE_KEY, next ? "true" : "false");
+    setAdminEnabled(next);
+    setStatus(`Admin Mode ${next ? "enabled" : "disabled"} (local to this browser).`);
+    setTimeout(() => setStatus(""), 2500);
+  }
 
-    setFirstName(n.first || "");
-    setLastName(n.last || "");
-    setGradYear(parseGradYear(athleteProfile) || "");
-    setHeightFt(h.heightFt === "" ? "" : String(h.heightFt));
-    setHeightIn(h.heightIn === "" ? "" : String(h.heightIn));
-    setWeight(parseWeight(athleteProfile) === "" ? "" : String(parseWeight(athleteProfile)));
-
-    const existingSportId = athleteProfile?.sport_id ? String(athleteProfile.sport_id) : "";
-    if (existingSportId) setSelectedSportId(existingSportId);
-
-    const existingPosId = athleteProfile?.primary_position_id ? String(athleteProfile.primary_position_id) : "";
-    if (existingPosId) setPrimaryPositionId(existingPosId);
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [athleteId]);
-
-  // Load sports list (HIDE inactive completely)
   useEffect(() => {
-    let cancelled = false;
+    // hydrate from identity
+    const ap = identity?.athleteProfile || identity?.athlete_profile || identity || null;
+    const np = parseNameParts(ap);
+    setFirstName(np.first);
+    setLastName(np.last);
+    setGradYear(parseGradYear(ap));
 
-    (async () => {
-      const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
-      if (!SportEntity?.filter) return;
+    const hp = parseHeightParts(ap);
+    setHeightFt(hp.heightFt);
+    setHeightIn(hp.heightIn);
 
-      setSportsLoading(true);
+    setWeight(parseWeight(ap));
+
+    const sport = ap?.sport_id || ap?.sportId || ap?.sport || "";
+    setSportId(sport ? String(sport) : "");
+
+    const pos = ap?.primary_position_id || ap?.primaryPositionId || ap?.primary_position || "";
+    setPrimaryPositionId(pos ? String(pos) : "");
+  }, [identity]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function load() {
       try {
-        const rows = await SportEntity.filter({});
-        if (cancelled) return;
+        const SportEntity = base44?.entities?.Sport || base44?.entities?.Sports || null;
+        const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
 
-        const arr = Array.isArray(rows) ? rows : [];
-        const normalized = arr
-          .filter((r) => readActiveFlag(r) === true) // ✅ hide inactive completely
-          .map((r) => ({
-            id: r?.id ? String(r.id) : "",
-            name: getSportName(r),
-          }))
-          .filter((r) => r.id && r.name);
+        const [sportRows, positionRows] = await Promise.all([
+          SportEntity?.list ? SportEntity.list() : [],
+          PositionEntity?.list ? PositionEntity.list() : [],
+        ]);
 
-        normalized.sort((a, b) => a.name.localeCompare(b.name));
-        setSports(normalized);
+        if (!mounted) return;
+
+        const sportArr = Array.isArray(sportRows) ? sportRows : [];
+        const posArr = Array.isArray(positionRows) ? positionRows : [];
+
+        setSports(
+          sportArr
+            .filter((r) => readActiveFlag(r))
+            .sort((a, b) => getSportName(a).localeCompare(getSportName(b)))
+        );
+        setPositions(posArr);
       } catch {
-        // no-op
-      } finally {
-        if (!cancelled) setSportsLoading(false);
+        if (!mounted) return;
+        setSports([]);
+        setPositions([]);
       }
-    })();
+    }
 
+    load();
     return () => {
-      cancelled = true;
+      mounted = false;
     };
   }, []);
 
-  // If the selected sport becomes inactive/missing, force user back to Select Sport
-  useEffect(() => {
-    if (!sports.length) return;
+  const filteredPositions = useMemo(() => {
+    if (!sportId) return [];
+    const sId = String(sportId);
 
-    if (selectedSportId && !sports.some((s) => s.id === selectedSportId)) {
-      setSelectedSportId("");
-      setPrimaryPositionId("");
-      setPositions([]);
-      setSportWarning("Your previously selected sport is no longer available. Please select an active sport.");
-    } else {
-      setSportWarning("");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sports]);
+    const arr = Array.isArray(positions) ? positions : [];
+    const filtered = arr.filter((p) => {
+      const pid = normId(p?.sport_id || p?.sportId || p?.sport);
+      return pid && String(pid) === sId;
+    });
 
-  // Load positions for selected sport
-  useEffect(() => {
-    let cancelled = false;
+    filtered.sort((a, b) => {
+      const an = String(a?.position_name || a?.name || "").trim();
+      const bn = String(b?.position_name || b?.name || "").trim();
+      return an.localeCompare(bn);
+    });
 
-    (async () => {
-      const PositionEntity = base44?.entities?.Position || base44?.entities?.Positions || null;
-      if (!PositionEntity?.filter) {
-        setPositions([]);
-        return;
-      }
+    return filtered;
+  }, [positions, sportId]);
 
-      if (!selectedSportId) {
-        setPositions([]);
-        return;
-      }
-
-      try {
-        const rows = await PositionEntity.filter({ sport_id: selectedSportId });
-        if (cancelled) return;
-
-        const arr = Array.isArray(rows) ? rows : [];
-        const normalized = arr
-          .map((r) => ({
-            id: r?.id ? String(r.id) : "",
-            code: String(r?.position_code || "").trim(),
-            name: String(r?.position_name || "").trim(),
-          }))
-          .filter((p) => p.id);
-
-        normalized.sort(
-          (a, b) => (a.code || "").localeCompare(b.code || "") || (a.name || "").localeCompare(b.name || "")
-        );
-        setPositions(normalized);
-
-        // If the selected primary position isn't valid for this sport, clear it
-        if (primaryPositionId && !normalized.some((p) => p.id === primaryPositionId)) {
-          setPrimaryPositionId("");
-        }
-      } catch {
-        setPositions([]);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // NOTE: do NOT include primaryPositionId in deps to avoid refetch loops
-  }, [selectedSportId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const fullName = useMemo(() => `${safeStr(firstName).trim()} ${safeStr(lastName).trim()}`.trim(), [firstName, lastName]);
-
-  const heightString = useMemo(() => {
-    const f = Number(heightFt);
-    const i = Number(heightIn);
-    if (!Number.isFinite(f) || !Number.isFinite(i)) return "";
-    return `${f}'${i}"`;
-  }, [heightFt, heightIn]);
-
-  async function handleSave() {
-    setErr("");
-
-    if (!accountId) {
-      return setErr("Your account was not resolved. Please re-login (Home → Sign in) and try again.");
-    }
-
-    if (!safeStr(firstName).trim()) return setErr("First name is required.");
-    if (!safeStr(lastName).trim()) return setErr("Last name is required.");
-    if (!Number.isFinite(Number(gradYear))) return setErr("Grad year is required.");
-    if (!selectedSportId) return setErr("Sport is required.");
-    if (!primaryPositionId) return setErr("Primary position is required.");
-
-    const anyHeight = safeStr(heightFt).trim() || safeStr(heightIn).trim();
-    if (anyHeight) {
-      const f = Number(heightFt);
-      const i = Number(heightIn);
-      if (!Number.isFinite(f) || !Number.isFinite(i)) return setErr("Height must include feet and inches.");
-      if (!FEET_OPTIONS.includes(f)) return setErr("Height (feet) is out of range.");
-      if (!(i >= 0 && i <= 11)) return setErr("Height (inches) must be 0–11.");
-    }
-
-    const wNum = safeStr(weight).trim() ? Number(weight) : null;
-    if (wNum != null && !Number.isFinite(wNum)) return setErr("Weight is invalid.");
-
+  async function onSave() {
     setSaving(true);
+    setStatus("");
 
     try {
-      const payloadFull = {
-        account_id: accountId,
-        first_name: safeStr(firstName).trim(),
-        last_name: safeStr(lastName).trim(),
-        athlete_name: fullName,
+      // Basic validation
+      const fy = Number(gradYear);
+      if (gradYear !== "" && !Number.isFinite(fy)) throw new Error("Grad year must be a number.");
 
-        sport_id: selectedSportId,
-        grad_year: Number(gradYear),
-        primary_position_id: primaryPositionId,
+      const payload = {
+        athleteProfile: {
+          first_name: firstName.trim() || null,
+          last_name: lastName.trim() || null,
+          grad_year: gradYear === "" ? null : Number(gradYear),
 
-        height_ft: anyHeight ? Number(heightFt) : null,
-        height_in: anyHeight ? Number(heightIn) : null,
-        weight_lbs: wNum,
+          height_ft: heightFt === "" ? null : Number(heightFt),
+          height_in: heightIn === "" ? null : Number(heightIn),
+          weight_lbs: weight === "" ? null : Number(weight),
+
+          sport_id: sportId ? String(sportId) : null,
+          primary_position_id: primaryPositionId ? String(primaryPositionId) : null,
+        },
       };
 
-      const payloadFallback = {
-        account_id: accountId,
-        athlete_name: fullName,
-        sport_id: selectedSportId,
-        grad_year: Number(gradYear),
-        primary_position_id: primaryPositionId,
-      };
+      await saveIdentity(payload);
 
-      await upsertAthleteProfile({ athleteId, payloadFull, payloadFallback });
-      nav(ROUTES.Workspace);
+      setStatus("Saved.");
+      setTimeout(() => setStatus(""), 2500);
     } catch (e) {
-      setErr(String(e?.message || e));
+      setStatus(String(e?.message || e));
     } finally {
       setSaving(false);
     }
   }
 
-  if (loading) return <div className="min-h-screen bg-slate-50" />;
-
-  const saveDisabled = saving || !accountId;
+  async function onAutoSetFootball() {
+    setStatus("");
+    const id = await resolveFootballSportIdActiveOnly();
+    if (!id) {
+      setStatus("Could not resolve Football sport id. Check Sport table.");
+      return;
+    }
+    setSportId(String(id));
+    setPrimaryPositionId("");
+    setStatus("Football selected.");
+    setTimeout(() => setStatus(""), 2500);
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4">
-      <div className="max-w-lg mx-auto">
-        <Card className="p-6">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5">
-              <User className="w-5 h-5 text-slate-700" />
-            </div>
-            <div>
-              <div className="text-lg font-semibold text-deep-navy">Athlete Profile</div>
-              <div className="text-sm text-slate-600 mt-1">
-                This profile powers paid features (My Camps, Calendar overlays, and planning tools).
-              </div>
-            </div>
-          </div>
+    <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <User className="w-6 h-6" />
+          <h1 className="text-2xl font-semibold">Profile</h1>
+        </div>
 
-          {!accountId ? (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              We can’t detect your account yet. Use “Re-login” below, then come back and save your profile.
-            </div>
-          ) : null}
-
-          {sportWarning ? (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              {sportWarning}
-            </div>
-          ) : null}
-
-          {err ? (
-            <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
-              {err}
-            </div>
-          ) : null}
-
-          <div className="mt-5 space-y-4">
-            {/* First/Last */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">First name</label>
-                <input
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  placeholder="First"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Last name</label>
-                <input
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  placeholder="Last"
-                />
-              </div>
-            </div>
-
-            {/* Sport / Grad year */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Sport</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                  value={selectedSportId}
-                  onChange={(e) => {
-                    setSelectedSportId(e.target.value);
-                    setPrimaryPositionId("");
-                  }}
-                >
-                  <option value="">{sportsLoading ? "Loading…" : "Select Sport"}</option>
-                  {sports.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Grad year</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                  value={gradYear}
-                  onChange={(e) => setGradYear(e.target.value)}
-                >
-                  <option value="">Select…</option>
-                  {GRAD_YEAR_OPTIONS.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Primary position */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Primary position</label>
-              <select
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                value={primaryPositionId}
-                onChange={(e) => setPrimaryPositionId(e.target.value)}
-                disabled={!selectedSportId}
-              >
-                <option value="">{selectedSportId ? "Select…" : "Select sport first…"}</option>
-                {positions.map((p) => {
-                  const label = p.code && p.name ? `${p.code} — ${p.name}` : p.code || p.name || p.id;
-                  return (
-                    <option key={p.id} value={p.id}>
-                      {label}
-                    </option>
-                  );
-                })}
-              </select>
-              <div className="mt-1 text-[11px] text-slate-500">
-                {selectedSportId
-                  ? positions.length
-                    ? primaryPositionId
-                      ? "Position selected ✔"
-                      : "Select a position"
-                    : "No positions found for this sport (use Admin → Manage Positions → Auto-seed)."
-                  : "Select a sport"}
-              </div>
-            </div>
-
-            {/* Height */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Height</label>
-              <div className="grid grid-cols-2 gap-3">
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                  value={heightFt}
-                  onChange={(e) => setHeightFt(e.target.value)}
-                >
-                  <option value="">Feet</option>
-                  {FEET_OPTIONS.map((f) => (
-                    <option key={f} value={String(f)}>
-                      {f} ft
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                  value={heightIn}
-                  onChange={(e) => setHeightIn(e.target.value)}
-                >
-                  <option value="">Inches</option>
-                  {INCH_OPTIONS.map((i) => (
-                    <option key={i} value={String(i)}>
-                      {i} in
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="mt-1 text-xs text-slate-500">{heightString ? `Selected: ${heightString}` : "Optional"}</div>
-            </div>
-
-            {/* Weight */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Weight</label>
-              <select
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-              >
-                <option value="">Select…</option>
-                {WEIGHT_OPTIONS.map((w) => (
-                  <option key={w} value={String(w)}>
-                    {w} lbs
-                  </option>
-                ))}
-              </select>
-              <div className="mt-1 text-xs text-slate-500">Optional</div>
-            </div>
-
-            {/* Debug */}
-            <div className="text-[11px] text-slate-500">
-              <div>
-                <b>account_id:</b> {accountId || "—"}
-              </div>
-              <div>
-                <b>sport_id:</b> {selectedSportId || "—"}
-              </div>
-              <div>
-                <b>primary_position_id:</b> {primaryPositionId || "—"}
-              </div>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="mt-6 flex flex-col sm:flex-row gap-2">
-            <Button className="btn-brand sm:flex-1" onClick={handleSave} disabled={saveDisabled}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
-
-            {!accountId ? (
-              <Button
-                variant="outline"
-                className="sm:flex-1"
-                onClick={() => nav(`${ROUTES.Home}?signin=1&next=/Profile`)}
-                disabled={saving}
-              >
-                Re-login
-              </Button>
-            ) : (
-              <Button variant="outline" className="sm:flex-1" onClick={() => nav(ROUTES.Workspace)} disabled={saving}>
-                Back to Workspace
-              </Button>
-            )}
-          </div>
-        </Card>
-
-        <div className="mt-3 text-center">
-          <button
-            type="button"
-            className="text-xs text-slate-500 hover:text-slate-700 underline"
-            onClick={() => nav(ROUTES.Discover)}
-          >
-            Go to Discover
-          </button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => nav(ROUTES.Workspace)}>
+            Workspace
+          </Button>
+          <Button variant="outline" onClick={() => nav(ROUTES.Discover)}>
+            Discover
+          </Button>
         </div>
       </div>
+
+      {status ? (
+        <Card className="p-3 border">
+          <div className="text-sm">{status}</div>
+        </Card>
+      ) : null}
+
+      <Card className="p-4 space-y-3">
+        <div className="text-lg font-semibold">Athlete</div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="text-sm">
+            <div className="text-gray-700">First name</div>
+            <input
+              className="mt-1 w-full border rounded px-2 py-1"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="First"
+            />
+          </label>
+
+          <label className="text-sm">
+            <div className="text-gray-700">Last name</div>
+            <input
+              className="mt-1 w-full border rounded px-2 py-1"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="Last"
+            />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label className="text-sm">
+            <div className="text-gray-700">Grad year</div>
+            <input
+              className="mt-1 w-full border rounded px-2 py-1"
+              value={gradYear}
+              onChange={(e) => setGradYear(e.target.value)}
+              placeholder="2027"
+            />
+          </label>
+
+          <label className="text-sm">
+            <div className="text-gray-700">Height (ft)</div>
+            <select
+              className="mt-1 w-full border rounded px-2 py-1"
+              value={heightFt}
+              onChange={(e) => setHeightFt(e.target.value)}
+            >
+              <option value="">—</option>
+              {FEET_OPTIONS.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-sm">
+            <div className="text-gray-700">Height (in)</div>
+            <select
+              className="mt-1 w-full border rounded px-2 py-1"
+              value={heightIn}
+              onChange={(e) => setHeightIn(e.target.value)}
+            >
+              <option value="">—</option>
+              {INCH_OPTIONS.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <label className="text-sm">
+          <div className="text-gray-700">Weight (lbs)</div>
+          <select className="mt-1 w-full border rounded px-2 py-1" value={weight} onChange={(e) => setWeight(e.target.value)}>
+            <option value="">—</option>
+            {WEIGHT_OPTIONS.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="text-sm">
+            <div className="text-gray-700">Sport</div>
+            <select className="mt-1 w-full border rounded px-2 py-1" value={sportId} onChange={(e) => setSportId(e.target.value)}>
+              <option value="">—</option>
+              {sports.map((s) => {
+                const id = normId(s);
+                const name = getSportName(s) || "(Unnamed sport)";
+                return (
+                  <option key={id || name} value={id || ""}>
+                    {name}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+
+          <label className="text-sm">
+            <div className="text-gray-700">Primary position</div>
+            <select
+              className="mt-1 w-full border rounded px-2 py-1"
+              value={primaryPositionId}
+              onChange={(e) => setPrimaryPositionId(e.target.value)}
+              disabled={!sportId}
+            >
+              <option value="">
+                {!sportId
+                  ? "Select a sport first"
+                  : filteredPositions.length
+                  ? "—"
+                  : "No positions found for this sport (use Admin → Manage Positions → Auto-seed)."}
+              </option>
+              {filteredPositions.map((p) => {
+                const id = normId(p);
+                const name = String(p?.position_name || p?.name || "").trim() || "(Unnamed position)";
+                return (
+                  <option key={id || name} value={id || ""}>
+                    {name}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-2">
+          <Button onClick={onSave} disabled={saving || seasonLoading || identityLoading}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+
+          <Button variant="outline" onClick={onAutoSetFootball}>
+            Auto-select Football
+          </Button>
+
+          <Button variant="outline" onClick={() => nav(ROUTES.Home)}>
+            Home
+          </Button>
+        </div>
+      </Card>
+
+      <Card className="p-4 space-y-3">
+        <div className="text-lg font-semibold">Season access</div>
+        <div className="text-sm text-gray-700">
+          {seasonLoading ? "Checking access..." : isPaidSeason ? "Paid season access is active." : "Demo mode (limited)."}
+        </div>
+      </Card>
+
+      <Card className="p-4 space-y-3">
+        <div className="text-lg font-semibold">Admin</div>
+        <div className="text-sm text-gray-700">
+          Use Admin Ops for bulk purge, dedupe, and diagnostics. Admin Mode is stored locally per browser.
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button variant={adminEnabled ? "default" : "outline"} onClick={toggleAdminMode}>
+            Admin Mode: {adminEnabled ? "ON" : "OFF"}
+          </Button>
+
+          <Button variant="outline" onClick={() => nav(ROUTES.AdminOps)}>
+            Open Admin Ops
+          </Button>
+        </div>
+
+        {!adminEnabled && (
+          <div className="text-xs text-gray-600">
+            Admin actions are gated. Turn on Admin Mode before running destructive operations.
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
