@@ -66,22 +66,62 @@ export function useAthleteIdentity() {
     }
   });
 
+  async function saveIdentity(payload) {
+    if (!payload?.athleteProfile) throw new Error("athleteProfile is required in payload");
+
+    const ap = payload.athleteProfile;
+    if (!accountId) throw new Error("No account_id available");
+
+    const athleteName = `${String(ap?.first_name || "").trim()} ${String(ap?.last_name || "").trim()}`.trim();
+
+    const full = {
+      account_id: accountId,
+      first_name: ap.first_name || null,
+      last_name: ap.last_name || null,
+      athlete_name: athleteName || null,
+      sport_id: ap.sport_id || null,
+      grad_year: ap.grad_year || null,
+      primary_position_id: ap.primary_position_id || null,
+      height_ft: ap.height_ft ?? null,
+      height_in: ap.height_in ?? null,
+      weight_lbs: ap.weight_lbs ?? null,
+      active: true,
+    };
+
+    const AthleteProfile = base44?.entities?.AthleteProfile;
+    if (!AthleteProfile) throw new Error("AthleteProfile entity not available");
+
+    if (query.data?.id) {
+      await AthleteProfile.update(String(query.data.id), full);
+    } else {
+      await AthleteProfile.create(full);
+    }
+
+    await queryClient.invalidateQueries({ queryKey: ["athleteIdentity", accountId] });
+  }
+
   // Stable response shape
   return useMemo(() => {
     if (!isAuthed) {
       return {
+        identity: null,
         athleteProfile: null,
+        loading: false,
         isLoading: false,
         isError: false,
-        error: null
+        error: null,
+        saveIdentity
       };
     }
 
     return {
+      identity: query.data || null,
       athleteProfile: query.data || null,
+      loading: query.isLoading,
       isLoading: query.isLoading,
       isError: query.isError,
-      error: query.error
+      error: query.error,
+      saveIdentity
     };
-  }, [isAuthed, query.data, query.isLoading, query.isError, query.error]);
+  }, [isAuthed, query.data, query.isLoading, query.isError, query.error, accountId, queryClient]);
 }
