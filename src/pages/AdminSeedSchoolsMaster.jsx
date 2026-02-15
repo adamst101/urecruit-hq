@@ -111,7 +111,6 @@ export default function AdminSeedSchoolsMaster() {
 
   const schoolResolved = useMemo(() => resolveEntity("School", "Schools"), []);
   const eventResolved = useMemo(() => resolveEntity("Event", "Events"), []);
-
   const SchoolEntity = schoolResolved?.entity || null;
 
   const [working, setWorking] = useState(false);
@@ -126,13 +125,11 @@ export default function AdminSeedSchoolsMaster() {
   // Batch controls
   const [startPage, setStartPage] = useState(0);
   const [perPage, setPerPage] = useState(100);
-  const [pagesPerBatch, setPagesPerBatch] = useState(5);
+  const [pagesPerBatch, setPagesPerBatch] = useState(2);
   const [delayMs, setDelayMs] = useState(750);
-  const [maxBatches, setMaxBatches] = useState(250);
 
-  // Write throttling
-  const [writeEveryN, setWriteEveryN] = useState(1); // keep =1, we throttle via perOpDelayMs
-  const [perOpDelayMs, setPerOpDelayMs] = useState(35); // 25–75ms is typical safe range
+  // Write throttling (only used when dryRun=false)
+  const [perOpDelayMs, setPerOpDelayMs] = useState(75);
 
   // Progress
   const [progress, setProgress] = useState({
@@ -183,9 +180,7 @@ export default function AdminSeedSchoolsMaster() {
     });
 
     const resp = unwrapInvokeResponse(raw);
-    if (resp && resp.error) {
-      throw new Error(String(resp.error));
-    }
+    if (resp && resp.error) throw new Error(String(resp.error));
 
     const rows = resp && Array.isArray(resp.rows) ? resp.rows : [];
     const debug = resp && resp.debug ? resp.debug : null;
@@ -199,6 +194,7 @@ export default function AdminSeedSchoolsMaster() {
 
     if (!source_key || !name) return { mode: "skipped" };
 
+    // Schema-aligned payload ONLY
     const payload = {
       school_name: name,
       normalized_name: r.normalized_name || null,
@@ -218,7 +214,6 @@ export default function AdminSeedSchoolsMaster() {
       last_seen_at: new Date().toISOString(),
     };
 
-    // Existence check (1 read) + write (1 write)
     const existingRows = await SchoolEntity.filter({ source_key: source_key });
     const existing = Array.isArray(existingRows) && existingRows.length ? existingRows[0] : null;
 
@@ -241,16 +236,12 @@ export default function AdminSeedSchoolsMaster() {
 
       const r = rows[i];
 
-      // DryRun: ZERO DB calls
-      if (dryRun) {
-        continue;
-      }
+      // DryRun: no DB calls at all
+      if (dryRun) continue;
 
-      // Throttle + retry on rate limiting
       const res = await retryable(
         async () => {
-          const out = await upsertRow(r);
-          return out;
+          return await upsertRow(r);
         },
         {
           tries: 6,
@@ -267,12 +258,7 @@ export default function AdminSeedSchoolsMaster() {
       else if (res.mode === "updated") updated += 1;
       else skipped += 1;
 
-      // light throttle (prevents burst)
-      if (perOpDelayMs > 0 && (i % writeEveryN === 0)) {
-        await sleep(perOpDelayMs);
-      }
-
-      // yield occasionally
+      if (perOpDelayMs > 0) await sleep(perOpDelayMs);
       if (i > 0 && i % 100 === 0) await sleep(0);
     }
 
@@ -298,27 +284,24 @@ export default function AdminSeedSchoolsMaster() {
 
     const page0 = Number(startPage || 0);
     const per = Number(perPage || 100);
-    const ppb = Number(pagesPerBatch || 1);
-    const delay = Number(delayMs || 0);
-    const maxB = Number(maxBatches || 1);
+    const ppb = Math.max(1, Number(pagesPerBatch || 1));
+    const delay = Math.max(0, Number(delayMs || 0));
+
+    // Hidden safety cap only (not user-facing): prevents infinite loop if API repeats pages forever
+    const SAFETY_MAX_BATCHES = 2000;
 
     push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
     push(`URL: ${env.href}`);
     push(`Resolved entity: School=${schoolResolved?.key || "NONE"} Event=${eventResolved?.key || "NONE"}`);
     push(`Auto-run start @ ${new Date().toISOString()}`);
-    push(
-      `DryRun=${dryRun} startPage=${page0} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay} maxBatches=${maxB}`
-    );
-    if (!dryRun) {
-      push(`Write throttle: perOpDelayMs=${perOpDelayMs} (raise this if you still hit limits)`);
-    } else {
-      push(`DryRun: no DB reads/writes will occur (prevents rate limit).`);
-    }
+    push(`DryRun=${dryRun} startPage=${page0} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
+    if (!dryRun) push(`Write throttle: perOpDelayMs=${perOpDelayMs}`);
+    else push(`DryRun: no DB reads/writes (prevents Base44 rate limiting).`);
 
     let currentPage = page0;
 
     try {
-      for (let b = 0; b < maxB; b++) {
+      for (let b = 0; b < SAFETY_MAX_BATCHES; b++) {
         if (cancelRef.current) {
           setProgress((p) => ({ ...p, stopped: true }));
           break;
@@ -334,10 +317,6 @@ export default function AdminSeedSchoolsMaster() {
         push(`\n--- Batch ${b + 1} ---`);
         push(`Fetching page=${currentPage} maxPages=${ppb} perPage=${per} ...`);
 
-        let rows = [];
-        let debug = null;
-
-        // retry fetch once if needed
         const out = await retryable(
           async () => runOneBatch(currentPage, per, ppb),
           {
@@ -345,9 +324,7 @@ export default function AdminSeedSchoolsMaster() {
             baseDelayMs: 1200,
             maxDelayMs: 1200,
             jitterMs: 200,
-            onRetry: (e, attempt, wait) => {
-              push(`⚠️ Fetch failed. Retry attempt ${attempt} in ${wait}ms`);
-            },
+            onRetry: (e, attempt, wait) => push(`⚠️ Fetch failed. Retry ${attempt} in ${wait}ms`),
             shouldRetry: (e) => {
               const msg = String(e?.message || e).toLowerCase();
               return msg.includes("timeout") || msg.includes("network") || msg.includes("429") || msg.includes("rate");
@@ -355,10 +332,10 @@ export default function AdminSeedSchoolsMaster() {
           }
         );
 
-        rows = out.rows;
-        debug = out.debug;
-
+        const rows = out.rows || [];
+        const debug = out.debug || null;
         const expectedMax = per * ppb;
+
         push(`✅ Fetched rows: ${rows.length} (expected up to ${expectedMax})`);
         if (debug && debug.pageCalls) push(`PageCalls:\n${safeJson(debug.pageCalls)}`);
 
@@ -368,6 +345,7 @@ export default function AdminSeedSchoolsMaster() {
           lastBatchRows: rows.length,
         }));
 
+        // Completion condition 1: no rows
         if (!rows.length) {
           push(`🏁 No rows returned. Completed.`);
           setProgress((p) => ({ ...p, done: true }));
@@ -388,12 +366,10 @@ export default function AdminSeedSchoolsMaster() {
           }));
         }
 
-        setProgress((p) => ({
-          ...p,
-          pagesProcessed: p.pagesProcessed + ppb,
-        }));
+        setProgress((p) => ({ ...p, pagesProcessed: p.pagesProcessed + ppb }));
         currentPage = currentPage + ppb;
 
+        // Completion condition 2: partial block means end of dataset
         if (rows.length < expectedMax) {
           push(`🏁 Fetched fewer than ${expectedMax}. Treating as complete.`);
           setProgress((p) => ({ ...p, done: true }));
@@ -420,9 +396,9 @@ export default function AdminSeedSchoolsMaster() {
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-4xl mx-auto space-y-3">
         <Card>
-          <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master (Auto-run)</div>
+          <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master (Run to completion)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Fetches Scorecard in batches and upserts into School. DryRun uses zero DB calls to avoid rate limit.
+            Runs Scorecard fetch + upsert batches until the dataset ends. DryRun uses zero DB calls.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
@@ -492,16 +468,6 @@ export default function AdminSeedSchoolsMaster() {
                 disabled={running}
               />
             </label>
-
-            <label className="text-sm">
-              Max batches{" "}
-              <input
-                className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
-                value={maxBatches}
-                onChange={(e) => setMaxBatches(e.target.value)}
-                disabled={running}
-              />
-            </label>
           </div>
 
           {!dryRun && (
@@ -516,7 +482,7 @@ export default function AdminSeedSchoolsMaster() {
                 />
               </label>
               <div className="text-xs text-slate-500">
-                If you still hit rate limits, raise this to 75–150ms.
+                If you still hit Base44 rate limits, raise to 100–200ms.
               </div>
             </div>
           )}
@@ -531,7 +497,7 @@ export default function AdminSeedSchoolsMaster() {
           </div>
 
           <div className="mt-3 text-xs text-slate-500">
-            Recommended: DryRun=true to validate fetch. Then DryRun=false with perOpDelayMs=35–75.
+            Recommended write settings: pagesPerBatch=2, perOpDelayMs=75, delayMs=750.
           </div>
         </Card>
 
