@@ -50,6 +50,7 @@
 import AdminBackfill from './pages/AdminBackfill';
 import AdminFactoryReset from './pages/AdminFactoryReset';
 import AdminImport from './pages/AdminImport';
+import AdminOps from './pages/AdminOps';
 import AdminSeedSchoolsMaster from './pages/AdminSeedSchoolsMaster';
 import AuthRedirect from './pages/AuthRedirect';
 import Calendar from './pages/Calendar';
@@ -68,7 +69,6 @@ import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
-import AdminOps from './pages/AdminOps';
 import __Layout from './Layout.jsx';
 
 
@@ -76,6 +76,7 @@ export const PAGES = {
     "AdminBackfill": AdminBackfill,
     "AdminFactoryReset": AdminFactoryReset,
     "AdminImport": AdminImport,
+    "AdminOps": AdminOps,
     "AdminSeedSchoolsMaster": AdminSeedSchoolsMaster,
     "AuthRedirect": AuthRedirect,
     "Calendar": Calendar,
@@ -94,7 +95,6 @@ export const PAGES = {
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
-    "AdminOps": AdminOps,
 }
 
 export const pagesConfig = {

@@ -17,7 +17,10 @@ const LOGO_URL =
 
 function trackEvent(payload) {
   try {
-    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+    base44.analytics.track({
+      eventName: payload.event_name,
+      properties: payload
+    });
   } catch {}
 }
 
