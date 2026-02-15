@@ -128,6 +128,11 @@ export default function AdminSeedSchoolsMaster() {
   const [perOpDelayMs, setPerOpDelayMs] = useState(300);
   const [scorecardFetchTries, setScorecardFetchTries] = useState(8);
 
+  // Write strategy
+  // create_only: fastest for clean rebuilds (no DB reads; skips conflicts)
+  // create_then_update_on_conflict: safer for reruns but can hit 429 due to filter+update
+  const [writeMode, setWriteMode] = useState("create_only");
+
   // Adaptive delay grows on 429/network, shrinks slowly when stable
   const adaptiveDelayRef = useRef(300);
 
@@ -159,6 +164,7 @@ export default function AdminSeedSchoolsMaster() {
     if (!canRun) return null;
 
     const candidates = [
+      "seedSchoolsMaster_scorecard_v3",
       "seedSchoolsMaster_scorecard",
       "seedSchoolsMaster_scorecard_v2",
       "scorecardSeedSchoolsMaster",
@@ -286,29 +292,33 @@ export default function AdminSeedSchoolsMaster() {
   const buildPayload = (r) => {
     const unitid = r?.unitid ? String(r.unitid) : null;
     const name = r?.school_name ? String(r.school_name) : null;
-    const source_key = r?.source_key ? String(r.source_key) : null;
+    // Canonical key: scorecard:<unitid>. Avoid name/state keys entirely.
+    const source_key = unitid ? `scorecard:${unitid}` : r?.source_key ? String(r.source_key) : null;
 
     return {
       school_name: name,
       normalized_name: r.normalized_name || null,
       city: r.city || null,
       state: r.state || null,
-      country: "US",
-      division: null,
-      subdivision: null,
-      conference: null,
-      logo_url: null,
       website_url: r.website_url || null,
       unitid: unitid || null,
       source_platform: "scorecard",
       source_key: source_key,
-      source_school_url: null,
-      active: true,
-      last_seen_at: new Date().toISOString(),
     };
   };
 
-  const upsertRowCreateFirst = async (r) => {
+  async function getSchoolCountBestEffort() {
+    if (!School) return null;
+    try {
+      const rows = await safeEntityCall("School.list", async () => await School.list({}), {});
+      return Array.isArray(rows) ? rows.length : null;
+    } catch (e) {
+      push(`⚠️ School count probe failed (continuing): ${String(e?.message || e)}`);
+      return null;
+    }
+  }
+
+  const createOnly = async (r) => {
     const payload = buildPayload(r);
     if (!payload.source_key || !payload.school_name) return { mode: "skipped" };
 
@@ -319,60 +329,76 @@ export default function AdminSeedSchoolsMaster() {
       return { mode: "created" };
     } catch (e) {
       if (isRateLimitError(e) || isNetworkError(e)) throw e;
-
-      if (looksLikeDuplicateCreate(e)) {
-        const existingRows = await safeEntityCall(
-          "School.filter",
-          async () => await School.filter({ source_key: payload.source_key }),
-          { source_key: payload.source_key }
-        );
-
-        const existing = Array.isArray(existingRows) && existingRows.length ? existingRows[0] : null;
-        if (existing?.id) {
-          await safeEntityCall(
-            "School.update",
-            async () => await School.update(String(existing.id), payload),
-            { id: existing.id, source_key: payload.source_key }
-          );
-          return { mode: "updated" };
-        }
-      }
-
+      if (looksLikeDuplicateCreate(e)) return { mode: "skipped" };
       throw e;
     }
   };
 
+  const upsertRowCreateFirst = async (r) => {
+    const payload = buildPayload(r);
+    if (!payload.source_key || !payload.school_name) return { mode: "skipped" };
+
+    try {
+      await safeEntityCall(
+        "School.create",
+        async () => await School.create(payload),
+        { source_key: payload.source_key, unitid: payload.unitid }
+      );
+      return { mode: "created" };
+    } catch (e) {
+      if (isRateLimitError(e) || isNetworkError(e)) throw e;
+
+      // Most likely duplicate create. Find existing row by source_key and update.
+      if (!looksLikeDuplicateCreate(e)) throw e;
+
+      const existing = await safeEntityCall(
+        "School.filter",
+        async () => await School.filter({ source_key: payload.source_key }),
+        { source_key: payload.source_key }
+      );
+
+      const ex = Array.isArray(existing) ? existing[0] : null;
+      if (!ex?.id) return { mode: "skipped" };
+
+      await safeEntityCall(
+        "School.update",
+        async () => await School.update(ex.id, payload),
+        { id: ex.id, source_key: payload.source_key }
+      );
+      return { mode: "updated" };
+    }
+  };
+
   async function upsertOneWithRetries(row, rowIndex, page) {
-    for (let t = 0; t < 10; t++) {
-      if (cancelRef.current) return { mode: "cancelled" };
+    const label = `School upsert (page=${page} idx=${rowIndex})`;
+    let last = null;
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      if (cancelRef.current) throw new Error("Cancelled");
 
       try {
-        const res = await upsertRowCreateFirst(row);
+        const res =
+          writeMode === "create_then_update_on_conflict" ? await upsertRowCreateFirst(row) : await createOnly(row);
         relaxAdaptiveDelay();
         return res;
       } catch (e) {
-        const transient = isRateLimitError(e) || isNetworkError(e);
-        if (!transient || t === 9) {
-          push(`❌ Row failed (page=${page}, idx=${rowIndex}) after ${t + 1} tries: ${String(e?.message || e)}`);
-          push(`Row fail detail:\n${truncate({ message: e?.message, raw: e?.raw || e })}`);
-          return { mode: "failed" };
-        }
+        last = e;
+        const msg = String(e?.message || e);
+        const is429 = isRateLimitError(e) || isNetworkError(e);
+
+        if (!is429) throw e;
 
         bumpAdaptiveDelay();
-        const wait = Math.min(20000, 800 * Math.pow(2, t));
-        push(
-          `⚠️ Transient DB error (${isRateLimitError(e) ? "429" : "network"}). Backoff ${wait}ms (adaptiveDelay=${adaptiveDelayRef.current}ms)`
-        );
+        const wait = Math.min(20000, adaptiveDelayRef.current + 250 * attempt + Math.floor(Math.random() * 250));
+        push(`⚠️ ${label}: retry ${attempt + 1} (${wait}ms) due to: ${msg}`);
         await sleep(wait);
-      } finally {
-        await waitAfterDbOp();
       }
     }
 
-    return { mode: "failed" };
+    throw last || new Error("Upsert failed");
   }
 
-  const upsertRowsToSchool = async (rows, page) => {
+  async function upsertRowsToSchool(rows, page) {
     let created = 0;
     let updated = 0;
     let skipped = 0;
@@ -380,34 +406,39 @@ export default function AdminSeedSchoolsMaster() {
 
     for (let i = 0; i < rows.length; i++) {
       if (cancelRef.current) break;
-      if (dryRun) continue;
 
-      const res = await upsertOneWithRetries(rows[i], i, page);
-      if (res.mode === "created") created += 1;
-      else if (res.mode === "updated") updated += 1;
-      else if (res.mode === "failed") failed += 1;
-      else skipped += 1;
+      const r = rows[i];
+
+      try {
+        const res = await upsertOneWithRetries(r, i, page);
+        if (res.mode === "created") created++;
+        else if (res.mode === "updated") updated++;
+        else skipped++;
+      } catch (e) {
+        failed++;
+        push(`❌ Upsert failed idx=${i} page=${page}: ${String(e?.message || e)}`);
+        push(`Row: ${truncate(r, 900)}`);
+        // continue on failure
+      }
+
+      await waitAfterDbOp();
     }
 
     return { created, updated, skipped, failed };
-  };
+  }
 
   const startAutoRun = async () => {
     if (!canRun) return;
-
-    setLog([]);
-    cancelRef.current = false;
-    setRunning(true);
-
-    if (!School?.create || !School?.update || !School?.filter) {
-      push(`❌ ERROR: School entity not available. Check src/api/entities.js export for School/Schools.`);
-      setRunning(false);
+    if (!School && !dryRun) {
+      push(`❌ School entity not available via src/api/entities.js export`);
       return;
     }
 
+    setRunning(true);
+    cancelRef.current = false;
     adaptiveDelayRef.current = Math.max(150, Number(perOpDelayMs || 300));
 
-    push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
+    push(`\nHost: ${env.host} (${env.label}, ${env.dataEnv})`);
     push(`URL: ${env.href}`);
     push(`School entity: using src/api/entities.js export`);
     push(`Checkpoint (local): pageNext=${checkpoint.pageNext}`);
@@ -429,7 +460,17 @@ export default function AdminSeedSchoolsMaster() {
     push(`Function=${fn}`);
     push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
     push(`Scorecard fetch tries=${scorecardFetchTries}`);
-    if (!dryRun) push(`Write throttle: perOpDelayMs=${perOpDelayMs} (adaptive=${adaptiveDelayRef.current})`);
+    if (!dryRun) {
+      push(`Write throttle: perOpDelayMs=${perOpDelayMs} (adaptive=${adaptiveDelayRef.current})`);
+      const cnt = await getSchoolCountBestEffort();
+      if (cnt === 0 && writeMode !== "create_only") {
+        setWriteMode("create_only");
+        push(`ℹ️ School appears empty (count=0). Forcing writeMode=create_only to avoid 429.`);
+      } else if (typeof cnt === "number") {
+        push(`School count probe: ${cnt}`);
+      }
+      push(`WriteMode=${cnt === 0 ? "create_only" : writeMode}`);
+    }
 
     try {
       for (let b = 0; b < 5000; b++) {
@@ -609,6 +650,30 @@ export default function AdminSeedSchoolsMaster() {
 
           {!dryRun && (
             <div className="mt-3 flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-slate-700">Write mode</span>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="writeMode"
+                    checked={writeMode === "create_only"}
+                    onChange={() => setWriteMode("create_only")}
+                    disabled={running}
+                  />
+                  <span>Create only</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="writeMode"
+                    checked={writeMode === "create_then_update_on_conflict"}
+                    onChange={() => setWriteMode("create_then_update_on_conflict")}
+                    disabled={running}
+                  />
+                  <span>Create then update on conflict</span>
+                </label>
+              </div>
+
               <label className="text-sm">
                 Per-op delay (ms){" "}
                 <input
