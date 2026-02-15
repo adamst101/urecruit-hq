@@ -30,7 +30,7 @@ function safeJson(x) {
     return String(x);
   }
 }
-function truncate(x, n = 2000) {
+function truncate(x, n = 1800) {
   const t = typeof x === "string" ? x : safeJson(x);
   return t.length > n ? t.slice(0, n) + "\n...<truncated>..." : t;
 }
@@ -55,6 +55,10 @@ function sleep(ms) {
 function isRateLimitError(e) {
   const msg = String(e?.message || e || "").toLowerCase();
   return msg.includes("rate limit") || msg.includes("too many") || msg.includes("429");
+}
+function isScorecardTransient(e) {
+  const msg = String(e?.message || e || "").toLowerCase();
+  return msg.includes("scorecard http 500") || msg.includes("scorecard http 502") || msg.includes("scorecard http 503") || msg.includes("scorecard http 504") || msg.includes("timeout") || msg.includes("network");
 }
 function resolveEntity(nameA, nameB) {
   const e = base44?.entities;
@@ -101,7 +105,6 @@ export default function AdminSeedSchoolsMaster() {
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
 
   const schoolResolved = useMemo(() => resolveEntity("School", "Schools"), []);
-  const eventResolved = useMemo(() => resolveEntity("Event", "Events"), []);
   const queryResolved = useMemo(() => resolveEntity("Query", "Queries"), []);
 
   const SchoolEntity = schoolResolved?.entity || null;
@@ -118,8 +121,11 @@ export default function AdminSeedSchoolsMaster() {
   const [startPage, setStartPage] = useState(0);
   const [perPage, setPerPage] = useState(100);
   const [pagesPerBatch, setPagesPerBatch] = useState(1);
-  const [delayMs, setDelayMs] = useState(750);
-  const [perOpDelayMs, setPerOpDelayMs] = useState(75);
+  const [delayMs, setDelayMs] = useState(2000);
+  const [perOpDelayMs, setPerOpDelayMs] = useState(125);
+
+  // Scorecard fetch resilience
+  const [scorecardFetchTries, setScorecardFetchTries] = useState(8);
 
   // Checkpoint state
   const [checkpoint, setCheckpoint] = useState({
@@ -173,7 +179,6 @@ export default function AdminSeedSchoolsMaster() {
     push(`⏹️ Stop requested @ ${new Date().toISOString()}`);
   };
 
-  // --- PROBE: call the function once and print raw response ---
   const probeScorecard = async () => {
     if (!canRun) return;
     push(`\nProbe start @ ${new Date().toISOString()}`);
@@ -183,42 +188,52 @@ export default function AdminSeedSchoolsMaster() {
         perPage: 5,
         maxPages: 1,
       });
-      push(`Probe raw response:\n${truncate(raw)}`);
-      const resp = unwrapInvokeResponse(raw);
-      push(`Probe unwrapped:\n${truncate(resp)}`);
+      push(`Probe unwrapped:\n${truncate(unwrapInvokeResponse(raw))}`);
     } catch (e) {
-      push(`Probe threw error:\n${truncate({ message: e?.message, stack: e?.stack, raw: e })}`);
+      push(`Probe threw:\n${truncate({ message: e?.message, stack: e?.stack, raw: e })}`);
     }
   };
 
-  const runOneBatch = async (page0, perPageNum, pagesInBatchNum) => {
-    let raw;
-    try {
-      raw = await base44.functions.invoke("seedSchoolsMaster_scorecard", {
-        page: Number(page0 || 0),
-        perPage: Number(perPageNum || 100),
-        maxPages: Number(pagesInBatchNum || 1),
-      });
-    } catch (e) {
-      // invoke itself failed
-      push(`Invoke threw error:\n${truncate({ message: e?.message, stack: e?.stack, raw: e })}`);
-      throw e;
+  async function fetchBatchWithRetry(page0, perPageNum, pagesInBatchNum) {
+    let last = null;
+
+    for (let i = 0; i < scorecardFetchTries; i++) {
+      if (cancelRef.current) throw new Error("Cancelled");
+
+      try {
+        const raw = await base44.functions.invoke("seedSchoolsMaster_scorecard", {
+          page: Number(page0 || 0),
+          perPage: Number(perPageNum || 100),
+          maxPages: Number(pagesInBatchNum || 1),
+        });
+
+        const resp = unwrapInvokeResponse(raw);
+
+        if (resp && resp.error) {
+          const err = new Error(String(resp.error));
+          err._debug = resp.debug || null;
+          throw err;
+        }
+
+        return { rows: Array.isArray(resp?.rows) ? resp.rows : [], debug: resp?.debug || null };
+      } catch (e) {
+        last = e;
+        const msg = String(e?.message || e);
+        const dbg = e?._debug || null;
+
+        push(`⚠️ Fetch attempt ${i + 1}/${scorecardFetchTries} failed: ${msg}`);
+        if (dbg) push(`Fetch debug:\n${truncate(dbg)}`);
+
+        if (!isScorecardTransient(e) || i === scorecardFetchTries - 1) break;
+
+        const wait = Math.min(20000, 2000 * Math.pow(2, i)); // 2s,4s,8s,16s,capped
+        push(`Waiting ${wait}ms then retrying same page...`);
+        await sleep(wait);
+      }
     }
 
-    const resp = unwrapInvokeResponse(raw);
-
-    // Always log raw on failure
-    if (resp && resp.error) {
-      push(`Function returned error: ${String(resp.error)}`);
-      push(`Function raw response:\n${truncate(raw)}`);
-      push(`Function debug:\n${truncate(resp.debug || null)}`);
-      throw new Error(String(resp.error));
-    }
-
-    const rows = resp && Array.isArray(resp.rows) ? resp.rows : [];
-    const debug = resp && resp.debug ? resp.debug : null;
-    return { rows, debug };
-  };
+    throw last || new Error("Scorecard fetch failed");
+  }
 
   const upsertRow = async (r) => {
     const source_key = r && r.source_key ? String(r.source_key) : null;
@@ -274,7 +289,7 @@ export default function AdminSeedSchoolsMaster() {
           baseDelayMs: 600,
           maxDelayMs: 6000,
           jitterMs: 250,
-          onRetry: (e, attempt, wait) => push(`⚠️ Rate limit hit. Retry attempt ${attempt} in ${wait}ms`),
+          onRetry: (e, attempt, wait) => push(`⚠️ DB rate limit. Retry ${attempt} in ${wait}ms`),
         }
       );
 
@@ -283,7 +298,6 @@ export default function AdminSeedSchoolsMaster() {
       else skipped += 1;
 
       if (perOpDelayMs > 0) await sleep(perOpDelayMs);
-      if (i > 0 && i % 100 === 0) await sleep(0);
     }
 
     return { created, updated, skipped };
@@ -303,20 +317,21 @@ export default function AdminSeedSchoolsMaster() {
 
     push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
     push(`URL: ${env.href}`);
-    push(`Resolved entity: School=${schoolResolved?.key || "NONE"} Event=${eventResolved?.key || "NONE"}`);
+    push(`Resolved entity: School=${schoolResolved?.key || "NONE"}`);
     push(`Checkpoint: pageNext=${checkpoint.pageNext}`);
     push(`Auto-run start @ ${new Date().toISOString()}`);
     push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
+    push(`Scorecard fetch tries=${scorecardFetchTries}`);
     if (!dryRun) push(`Write throttle: perOpDelayMs=${perOpDelayMs}`);
 
     try {
-      for (let b = 0; b < 2000; b++) {
+      for (let b = 0; b < 5000; b++) {
         if (cancelRef.current) break;
 
         push(`\n--- Batch ${b + 1} ---`);
         push(`Fetching page=${currentPage} maxPages=${ppb} perPage=${per} ...`);
 
-        const out = await runOneBatch(currentPage, per, ppb);
+        const out = await fetchBatchWithRetry(currentPage, per, ppb);
 
         const rows = out.rows || [];
         const debug = out.debug || null;
@@ -331,7 +346,7 @@ export default function AdminSeedSchoolsMaster() {
         }
 
         if (dryRun) {
-          push(`DryRun complete for batch. WouldUpsert=${rows.length}`);
+          push(`DryRun: WouldUpsert=${rows.length}`);
         } else {
           if (!SchoolEntity?.filter || !SchoolEntity?.create || !SchoolEntity?.update) {
             push(`❌ ERROR: School entity not available for upserts.`);
@@ -339,7 +354,7 @@ export default function AdminSeedSchoolsMaster() {
           }
           push(`Writing upserts to School...`);
           const up = await upsertRowsToSchool(rows);
-          push(`✅ Upsert batch complete. Created=${up.created} Updated=${up.updated} Skipped=${up.skipped}`);
+          push(`✅ Upsert complete. Created=${up.created} Updated=${up.updated} Skipped=${up.skipped}`);
         }
 
         const nextPage = currentPage + ppb;
@@ -358,7 +373,7 @@ export default function AdminSeedSchoolsMaster() {
         }
 
         if (delay > 0) {
-          push(`Sleeping ${delay}ms to avoid throttling...`);
+          push(`Sleeping ${delay}ms...`);
           await sleep(delay);
         }
       }
@@ -381,7 +396,7 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master</div>
           <div className="text-sm text-slate-600 mt-1">
-            Added probe + raw error logging so Scorecard HTTP 500 becomes diagnosable.
+            Auto-retries transient Scorecard 500s and resumes safely via checkpoint.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
@@ -462,6 +477,16 @@ export default function AdminSeedSchoolsMaster() {
                   className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
                   value={perOpDelayMs}
                   onChange={(e) => setPerOpDelayMs(e.target.value)}
+                  disabled={running}
+                />
+              </label>
+
+              <label className="text-sm">
+                Scorecard fetch tries{" "}
+                <input
+                  className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
+                  value={scorecardFetchTries}
+                  onChange={(e) => setScorecardFetchTries(e.target.value)}
                   disabled={running}
                 />
               </label>
