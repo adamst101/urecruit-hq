@@ -1,6 +1,7 @@
 // src/pages/AdminSeedSchoolsMaster.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { base44 } from "../api/base44Client";
+import { School as SchoolEntityFromApi } from "../api/entities";
 
 const Card = ({ children }) => (
   <div className="rounded-xl border border-slate-200 bg-white p-4">{children}</div>
@@ -67,13 +68,6 @@ function isScorecardTransient(e) {
     msg.includes("network")
   );
 }
-function resolveEntity(nameA, nameB) {
-  const e = base44?.entities;
-  if (!e) return null;
-  if (e[nameA]) return { key: nameA, entity: e[nameA] };
-  if (e[nameB]) return { key: nameB, entity: e[nameB] };
-  return null;
-}
 async function retryable(fn, opts) {
   const {
     tries = 5,
@@ -105,7 +99,7 @@ async function retryable(fn, opts) {
   throw lastErr;
 }
 
-// Local checkpoint storage (no Query entity needed)
+// Local checkpoint storage
 const CHECKPOINT_STORAGE_KEY = "campapp_admin_seed_schools_master_pageNext_v1";
 
 function loadCheckpointFromStorage() {
@@ -139,8 +133,8 @@ export default function AdminSeedSchoolsMaster() {
   const env = useMemo(() => detectEnv(), []);
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
 
-  const schoolResolved = useMemo(() => resolveEntity("School", "Schools"), []);
-  const SchoolEntity = schoolResolved?.entity || null;
+  // IMPORTANT: Use the canonical entity export from src/api/entities.js (pickEntity logic)
+  const School = SchoolEntityFromApi || null;
 
   const [running, setRunning] = useState(false);
   const cancelRef = useRef(false);
@@ -230,10 +224,22 @@ export default function AdminSeedSchoolsMaster() {
     throw last || new Error("Scorecard fetch failed");
   }
 
+  // Strong error logging wrapper around Base44 entity calls
+  async function safeEntityCall(fnName, fn, context) {
+    try {
+      return await fn();
+    } catch (e) {
+      push(`❌ Base44Error during ${fnName}`);
+      push(`Context: ${truncate(context)}`);
+      push(`Error: ${truncate({ message: e?.message, stack: e?.stack, raw: e })}`);
+      throw e;
+    }
+  }
+
   const upsertRow = async (r) => {
-    const source_key = r && r.source_key ? String(r.source_key) : null;
-    const unitid = r && r.unitid ? String(r.unitid) : null;
-    const name = r && r.school_name ? String(r.school_name) : null;
+    const source_key = r?.source_key ? String(r.source_key) : null;
+    const unitid = r?.unitid ? String(r.unitid) : null;
+    const name = r?.school_name ? String(r.school_name) : null;
 
     if (!source_key || !name) return { mode: "skipped" };
 
@@ -256,15 +262,29 @@ export default function AdminSeedSchoolsMaster() {
       last_seen_at: new Date().toISOString(),
     };
 
-    const existingRows = await SchoolEntity.filter({ source_key: source_key });
+    const existingRows = await safeEntityCall(
+      "School.filter",
+      async () => await School.filter({ source_key: source_key }),
+      { source_key }
+    );
+
     const existing = Array.isArray(existingRows) && existingRows.length ? existingRows[0] : null;
 
-    if (existing && existing.id) {
-      await SchoolEntity.update(String(existing.id), payload);
+    if (existing?.id) {
+      await safeEntityCall(
+        "School.update",
+        async () => await School.update(String(existing.id), payload),
+        { id: existing.id, payloadKeys: Object.keys(payload) }
+      );
       return { mode: "updated" };
     }
 
-    await SchoolEntity.create(payload);
+    await safeEntityCall(
+      "School.create",
+      async () => await School.create(payload),
+      { payloadKeys: Object.keys(payload), payloadSample: payload }
+    );
+
     return { mode: "created" };
   };
 
@@ -284,7 +304,7 @@ export default function AdminSeedSchoolsMaster() {
           baseDelayMs: 600,
           maxDelayMs: 6000,
           jitterMs: 250,
-          onRetry: (e, attempt, wait) => push(`⚠️ DB rate limit. Retry ${attempt} in ${wait}ms`),
+          onRetry: () => push(`⚠️ DB rate limit. Retrying...`),
         }
       );
 
@@ -305,6 +325,13 @@ export default function AdminSeedSchoolsMaster() {
     cancelRef.current = false;
     setRunning(true);
 
+    // Validate School entity is real
+    if (!School?.create || !School?.update || !School?.filter) {
+      push(`❌ ERROR: School entity not available. Check src/api/entities.js export for School/Schools.`);
+      setRunning(false);
+      return;
+    }
+
     const per = Number(perPage || 100);
     const ppb = Math.max(1, Number(pagesPerBatch || 1));
     const delay = Math.max(0, Number(delayMs || 0));
@@ -312,7 +339,7 @@ export default function AdminSeedSchoolsMaster() {
 
     push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
     push(`URL: ${env.href}`);
-    push(`Resolved entity: School=${schoolResolved?.key || "NONE"}`);
+    push(`School entity: using src/api/entities.js export`);
     push(`Checkpoint (local): pageNext=${checkpoint.pageNext}`);
     push(`Auto-run start @ ${new Date().toISOString()}`);
     push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
@@ -343,10 +370,6 @@ export default function AdminSeedSchoolsMaster() {
         if (dryRun) {
           push(`DryRun: WouldUpsert=${rows.length}`);
         } else {
-          if (!SchoolEntity?.filter || !SchoolEntity?.create || !SchoolEntity?.update) {
-            push(`❌ ERROR: School entity not available for upserts.`);
-            break;
-          }
           push(`Writing upserts to School...`);
           const up = await upsertRowsToSchool(rows);
           push(`✅ Upsert complete. Created=${up.created} Updated=${up.updated} Skipped=${up.skipped}`);
@@ -364,10 +387,6 @@ export default function AdminSeedSchoolsMaster() {
 
         if (rows.length < expectedMax) {
           push(`🏁 Fetched fewer than ${expectedMax}. Treating as complete.`);
-          if (!dryRun) {
-            saveCheckpointToStorage(currentPage);
-            setCheckpoint({ loaded: true, pageNext: currentPage });
-          }
           break;
         }
 
@@ -401,7 +420,7 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master</div>
           <div className="text-sm text-slate-600 mt-1">
-            Checkpoint stored locally (no Query table needed). Safe resume + retries for Scorecard 500s.
+            Uses canonical School entity export and logs exact Base44 validation errors per op.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
