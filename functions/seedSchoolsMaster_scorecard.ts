@@ -6,15 +6,21 @@
 // - If duplicates already exist for a unitid, keep the “best” row and delete the rest
 // - Safe to run repeatedly: it will not create duplicates and will clean existing duplicates over time
 //
+// IMPORTANT: Fresh rebuild optimization
+// - If School table is empty, we skip per-row DB lookups (which cause 429 storms)
+// - We create only (guarded by a Set of seen unitids) and rely on deterministic unitid/source_key.
+//
 // Request body:
 // {
 //   "page": 0,               // starting page (0-based Scorecard API)
 //   "perPage": 100,          // 1..100
 //   "maxPages": 1,           // 1..25 (batch pages per call)
 //   "dryRun": true,          // if true: no writes
-//   "delayMs": 140,          // throttle between writes
-//   "deleteDelayMs": 160,    // throttle between deletes
-//   "updateExisting": true   // if false: only create missing + dedupe deletes (no updates)
+//   "delayMs": 250,          // throttle between creates/updates
+//   "filterDelayMs": 120,    // throttle before DB lookups (steady-state mode)
+//   "deleteDelayMs": 250,    // throttle between deletes
+//   "updateExisting": true,  // if false: only create missing + dedupe deletes (no updates)
+//   "forceSteadyState": false // if true: do not use fresh-rebuild optimization even if table seems empty
 // }
 //
 // Response:
@@ -78,11 +84,11 @@ async function fetchJsonWithRetry(url, debug, tries) {
       debug.last_url = url;
 
       const text = await safeText(r);
-      debug.last_body_snippet = text ? text.slice(0, 500) : null;
+      debug.last_body_snippet = text ? text.slice(0, 700) : null;
 
       if (!r.ok) {
         if (isRetryableStatus(r.status) && i < tries - 1) {
-          const wait = Math.min(12000, 700 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
+          const wait = Math.min(20000, 900 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
           debug.retries = (debug.retries || 0) + 1;
           debug.retry_notes = debug.retry_notes || [];
           debug.retry_notes.push({ attempt: i + 1, http: r.status, wait_ms: wait, kind: "http" });
@@ -96,7 +102,7 @@ async function fetchJsonWithRetry(url, debug, tries) {
         return JSON.parse(text);
       } catch (e) {
         if (i < tries - 1) {
-          const wait = Math.min(12000, 700 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
+          const wait = Math.min(20000, 900 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
           debug.retries = (debug.retries || 0) + 1;
           debug.retry_notes = debug.retry_notes || [];
           debug.retry_notes.push({ attempt: i + 1, http: r.status, wait_ms: wait, kind: "json_parse_failed" });
@@ -110,7 +116,7 @@ async function fetchJsonWithRetry(url, debug, tries) {
       const msg = String(e && e.message ? e.message : e);
 
       if (i < tries - 1) {
-        const wait = Math.min(12000, 700 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
+        const wait = Math.min(20000, 900 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
         debug.retries = (debug.retries || 0) + 1;
         debug.retry_notes = debug.retry_notes || [];
         debug.retry_notes.push({ attempt: i + 1, error: msg, wait_ms: wait, kind: "exception" });
@@ -126,13 +132,16 @@ async function fetchJsonWithRetry(url, debug, tries) {
 
 async function withRetries(fn, debug, label, tries) {
   let lastErr = null;
+
   for (let i = 0; i < tries; i++) {
     try {
       return await fn();
     } catch (e) {
       lastErr = e;
+
       const msg = String(e && e.message ? e.message : e);
       const status = e?.raw?.status || e?.status;
+
       const retryable =
         status === 429 ||
         (typeof status === "number" && status >= 500) ||
@@ -141,16 +150,21 @@ async function withRetries(fn, debug, label, tries) {
         lc(msg).includes("network");
 
       if (retryable && i < tries - 1) {
-        const wait = Math.min(20000, 500 * Math.pow(2, i)) + Math.floor(Math.random() * 200);
+        // Stronger backoff for 429
+        const base = status === 429 || lc(msg).includes("rate limit") ? 1500 : 700;
+        const wait = Math.min(30000, base * Math.pow(2, i)) + Math.floor(Math.random() * 250);
+
         debug.retries = (debug.retries || 0) + 1;
         debug.retry_notes = debug.retry_notes || [];
-        debug.retry_notes.push({ attempt: i + 1, label, wait_ms: wait, error: msg });
+        debug.retry_notes.push({ attempt: i + 1, label, wait_ms: wait, error: msg, status: status ?? null });
+
         await sleep(wait);
         continue;
       }
       throw e;
     }
   }
+
   throw lastErr;
 }
 
@@ -185,9 +199,7 @@ function getId(r) {
   return v === null || v === undefined ? null : String(v);
 }
 
-// IMPORTANT: this is the “seed guard”
-// - unitid is canonical
-// - source_key is also canonical and deterministic
+// canonical mapping from Scorecard result
 function desiredSchoolRowFromScorecard(r) {
   const unitid = s(r && r.id);
   const name = s(r && r["school.name"]);
@@ -205,15 +217,12 @@ function desiredSchoolRowFromScorecard(r) {
     state,
     website_url: site,
     source_platform: "scorecard",
-    source_key: buildKeyFromUnitid(unitid), // <-- changed from name/state to unitid (true uniqueness)
+    source_key: buildKeyFromUnitid(unitid), // canonical uniqueness
   };
 }
 
 function mergeForUpdate(existing, desired) {
-  // Policy: keep existing values if desired is null, otherwise overwrite with desired
-  // (Scorecard is canonical for these fields)
   const out = { ...existing };
-
   const fields = [
     "unitid",
     "school_name",
@@ -252,6 +261,7 @@ Deno.serve(async (req) => {
     pageCalls: [],
     samples: [],
     errors: [],
+    mode: null,
   };
 
   const stats = {
@@ -262,6 +272,7 @@ Deno.serve(async (req) => {
     dedupeGroups: 0,
     dedupeDeleted: 0,
     skippedNoUnitidOrName: 0,
+    skippedSeenUnitid: 0,
     dbLookupErrors: 0,
     dbWriteErrors: 0,
   };
@@ -281,14 +292,36 @@ Deno.serve(async (req) => {
     const maxPages = Math.max(1, Math.min(25, Number(body?.maxPages ?? 1)));
 
     const dryRun = !!body?.dryRun;
-    const delayMs = Math.max(0, Number(body?.delayMs ?? 140));
-    const deleteDelayMs = Math.max(0, Number(body?.deleteDelayMs ?? 160));
+    const delayMs = Math.max(0, Number(body?.delayMs ?? 250));
+    const filterDelayMs = Math.max(0, Number(body?.filterDelayMs ?? 120));
+    const deleteDelayMs = Math.max(0, Number(body?.deleteDelayMs ?? 250));
     const updateExisting = body?.updateExisting === undefined ? true : !!body?.updateExisting;
+    const forceSteadyState = !!body?.forceSteadyState;
 
     const apiKey = (Deno.env.get("SCORECARD_API_KEY") || "").trim();
     if (!apiKey) return jsonResp({ ok: false, error: "Missing SCORECARD_API_KEY", stats, debug });
 
+    // Determine mode: Fresh rebuild vs steady-state
+    // Fresh rebuild: School appears empty => skip per-row lookups to avoid 429 storms
+    let freshRebuildMode = false;
+
+    if (!forceSteadyState) {
+      try {
+        const probe = await withRetries(() => School.list({}), debug, "School.list()", 6);
+        const n = Array.isArray(probe) ? probe.length : 0;
+        freshRebuildMode = n === 0;
+      } catch (e) {
+        // If list fails, default to steady-state (safer)
+        debug.errors.push(`School.list probe failed; default steady-state: ${String(e?.message || e)}`);
+        freshRebuildMode = false;
+      }
+    }
+
+    debug.mode = freshRebuildMode ? "fresh_rebuild_create_only" : "steady_state_upsert_dedupe";
+
     const fields = ["id", "school.name", "school.city", "school.state", "school.school_url"].join(",");
+
+    const seenUnitids = new Set();
 
     for (let p = page; p < page + maxPages; p++) {
       const urlObj = new URL("https://api.data.gov/ed/collegescorecard/v1/schools");
@@ -299,7 +332,6 @@ Deno.serve(async (req) => {
       const url = urlObj.toString();
 
       const data = await fetchJsonWithRetry(url, debug, 5);
-
       debug.pageCalls.push({ page: p, http: debug.last_http });
 
       const results = Array.isArray(data && data.results) ? data.results : [];
@@ -313,16 +345,47 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // In-run guard against duplicates (especially important in fresh rebuild mode)
+        if (seenUnitids.has(desired.unitid)) {
+          stats.skippedSeenUnitid += 1;
+          continue;
+        }
+        seenUnitids.add(desired.unitid);
+
         stats.processed += 1;
 
-        // Lookup by canonical key: unitid
+        // === Fresh rebuild mode: CREATE ONLY, NO LOOKUPS ===
+        if (freshRebuildMode) {
+          if (!dryRun) {
+            try {
+              await withRetries(
+                () => School.create(desired),
+                debug,
+                `School.create(unitid=${desired.unitid})`,
+                10
+              );
+              stats.created += 1;
+            } catch (e) {
+              stats.dbWriteErrors += 1;
+              debug.errors.push(`create failed unitid=${desired.unitid}: ${String(e?.message || e)}`);
+            }
+            await sleep(delayMs);
+          }
+          continue;
+        }
+
+        // === Steady-state mode: LOOKUP -> DEDUPE -> UPSERT ===
+
+        // Throttle BEFORE filters to reduce 429 frequency
+        if (filterDelayMs > 0) await sleep(filterDelayMs);
+
         let existing = [];
         try {
           existing = await withRetries(
             () => School.filter({ unitid: desired.unitid }),
             debug,
             `School.filter(unitid=${desired.unitid})`,
-            8
+            10
           );
           if (!Array.isArray(existing)) existing = [];
         } catch (e) {
@@ -331,11 +394,12 @@ Deno.serve(async (req) => {
 
           // Fallback lookup by source_key (deterministic)
           try {
+            if (filterDelayMs > 0) await sleep(filterDelayMs);
             existing = await withRetries(
               () => School.filter({ source_key: desired.source_key }),
               debug,
               `School.filter(source_key=${desired.source_key})`,
-              6
+              8
             );
             if (!Array.isArray(existing)) existing = [];
           } catch (e2) {
@@ -356,13 +420,13 @@ Deno.serve(async (req) => {
             .filter(Boolean)
             .filter((id) => id !== keepId);
 
-          if (debug.samples.length < 8) {
+          if (debug.samples.length < 10) {
             debug.samples.push({
               unitid: desired.unitid,
               name: desired.school_name,
               dupCount: existing.length,
               keepId,
-              deleteIds: delIds.slice(0, 6),
+              deleteIds: delIds.slice(0, 8),
             });
           }
 
@@ -370,7 +434,7 @@ Deno.serve(async (req) => {
           if (!dryRun && updateExisting && keepId) {
             try {
               const merged = mergeForUpdate(keep, desired);
-              await withRetries(() => School.update(keepId, merged), debug, `School.update(keepId=${keepId})`, 8);
+              await withRetries(() => School.update(keepId, merged), debug, `School.update(keepId=${keepId})`, 10);
               stats.updated += 1;
             } catch (e) {
               stats.dbWriteErrors += 1;
@@ -383,7 +447,7 @@ Deno.serve(async (req) => {
           if (!dryRun) {
             for (const id of delIds) {
               try {
-                await withRetries(() => School.delete(id), debug, `School.delete(dupId=${id})`, 10);
+                await withRetries(() => School.delete(id), debug, `School.delete(dupId=${id})`, 12);
                 stats.dedupeDeleted += 1;
               } catch (e) {
                 stats.dbWriteErrors += 1;
@@ -393,14 +457,14 @@ Deno.serve(async (req) => {
             }
           }
 
-          continue; // done with this unitid
+          continue;
         }
 
         // No existing: create
         if (existing.length === 0) {
           if (!dryRun) {
             try {
-              await withRetries(() => School.create(desired), debug, `School.create(unitid=${desired.unitid})`, 8);
+              await withRetries(() => School.create(desired), debug, `School.create(unitid=${desired.unitid})`, 10);
               stats.created += 1;
             } catch (e) {
               stats.dbWriteErrors += 1;
@@ -418,7 +482,7 @@ Deno.serve(async (req) => {
         if (!dryRun && updateExisting && oneId) {
           try {
             const merged = mergeForUpdate(one, desired);
-            await withRetries(() => School.update(oneId, merged), debug, `School.update(id=${oneId})`, 8);
+            await withRetries(() => School.update(oneId, merged), debug, `School.update(id=${oneId})`, 10);
             stats.updated += 1;
           } catch (e) {
             stats.dbWriteErrors += 1;
@@ -438,13 +502,14 @@ Deno.serve(async (req) => {
       stats,
       debug: {
         startedAt: debug.startedAt,
+        mode: debug.mode,
         pageCalls: debug.pageCalls,
         retries: debug.retries,
         retry_notes: debug.retry_notes,
         last_http: debug.last_http,
         last_body_snippet: debug.last_body_snippet,
         samples: debug.samples,
-        errors: debug.errors.slice(0, 50),
+        errors: debug.errors.slice(0, 80),
       },
     });
   } catch (e) {
