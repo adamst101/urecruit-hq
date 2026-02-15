@@ -1,5 +1,5 @@
 // src/pages/AdminSeedSchoolsMaster.jsx
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { base44 } from "../api/base44Client";
 
 const Card = ({ children }) => (
@@ -48,16 +48,13 @@ function detectEnv() {
     dataEnv: hasProdDataEnv ? "prod data env" : "default data env",
   };
 }
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
 function isRateLimitError(e) {
   const msg = String(e?.message || e || "").toLowerCase();
   return msg.includes("rate limit") || msg.includes("too many") || msg.includes("429");
 }
-
 function resolveEntity(nameA, nameB) {
   const e = base44?.entities;
   if (!e) return null;
@@ -65,7 +62,6 @@ function resolveEntity(nameA, nameB) {
   if (e[nameB]) return { key: nameB, entity: e[nameB] };
   return null;
 }
-
 async function retryable(fn, opts) {
   const {
     tries = 5,
@@ -97,6 +93,8 @@ async function retryable(fn, opts) {
   throw lastErr;
 }
 
+const CHECKPOINT_KEY = "admin_seed_schools_master_v1";
+
 export default function AdminSeedSchoolsMaster() {
   const env = useMemo(() => detectEnv(), []);
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
@@ -111,25 +109,32 @@ export default function AdminSeedSchoolsMaster() {
 
   const schoolResolved = useMemo(() => resolveEntity("School", "Schools"), []);
   const eventResolved = useMemo(() => resolveEntity("Event", "Events"), []);
+  const queryResolved = useMemo(() => resolveEntity("Query", "Queries"), []);
+
   const SchoolEntity = schoolResolved?.entity || null;
+  const QueryEntity = queryResolved?.entity || null;
 
   const [working, setWorking] = useState(false);
   const [running, setRunning] = useState(false);
   const cancelRef = useRef(false);
 
   const [log, setLog] = useState([]);
+  const push = (m) => setLog((x) => [...x, m]);
 
   // Controls
   const [dryRun, setDryRun] = useState(true);
-
-  // Batch controls
   const [startPage, setStartPage] = useState(0);
   const [perPage, setPerPage] = useState(100);
   const [pagesPerBatch, setPagesPerBatch] = useState(2);
   const [delayMs, setDelayMs] = useState(750);
-
-  // Write throttling (only used when dryRun=false)
   const [perOpDelayMs, setPerOpDelayMs] = useState(75);
+
+  // Checkpoint state
+  const [checkpoint, setCheckpoint] = useState({
+    loaded: false,
+    pageNext: 0,
+    lastUpdatedAt: null,
+  });
 
   // Progress
   const [progress, setProgress] = useState({
@@ -145,8 +150,6 @@ export default function AdminSeedSchoolsMaster() {
     stopped: false,
     lastError: null,
   });
-
-  const push = (m) => setLog((x) => [...x, m]);
 
   const resetRunState = () => {
     setLog([]);
@@ -164,6 +167,53 @@ export default function AdminSeedSchoolsMaster() {
       lastError: null,
     });
   };
+
+  // --- Checkpoint helpers ---
+  const loadCheckpoint = async () => {
+    if (!QueryEntity?.filter) {
+      setCheckpoint((c) => ({ ...c, loaded: true }));
+      return;
+    }
+    try {
+      const rows = await QueryEntity.filter({ key: CHECKPOINT_KEY });
+      const row = Array.isArray(rows) && rows.length ? rows[0] : null;
+      const pageNext = Number(row?.page_next ?? 0) || 0;
+      setCheckpoint({
+        loaded: true,
+        pageNext,
+        lastUpdatedAt: row?.updated_at || row?.last_updated_at || null,
+      });
+    } catch {
+      setCheckpoint((c) => ({ ...c, loaded: true }));
+    }
+  };
+
+  const saveCheckpoint = async (pageNext) => {
+    if (!QueryEntity?.filter || !QueryEntity?.create || !QueryEntity?.update) return;
+
+    const now = new Date().toISOString();
+    const rows = await QueryEntity.filter({ key: CHECKPOINT_KEY });
+    const existing = Array.isArray(rows) && rows.length ? rows[0] : null;
+
+    const payload = {
+      key: CHECKPOINT_KEY,
+      page_next: Number(pageNext || 0),
+      last_updated_at: now,
+    };
+
+    if (existing?.id) {
+      await QueryEntity.update(String(existing.id), payload);
+    } else {
+      await QueryEntity.create(payload);
+    }
+
+    setCheckpoint((c) => ({ ...c, pageNext: Number(pageNext || 0), lastUpdatedAt: now }));
+  };
+
+  useEffect(() => {
+    loadCheckpoint();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const stop = () => {
     cancelRef.current = true;
@@ -194,7 +244,6 @@ export default function AdminSeedSchoolsMaster() {
 
     if (!source_key || !name) return { mode: "skipped" };
 
-    // Schema-aligned payload ONLY
     const payload = {
       school_name: name,
       normalized_name: r.normalized_name || null,
@@ -234,23 +283,17 @@ export default function AdminSeedSchoolsMaster() {
     for (let i = 0; i < rows.length; i++) {
       if (cancelRef.current) break;
 
-      const r = rows[i];
-
-      // DryRun: no DB calls at all
       if (dryRun) continue;
 
       const res = await retryable(
-        async () => {
-          return await upsertRow(r);
-        },
+        async () => upsertRow(rows[i]),
         {
           tries: 6,
           baseDelayMs: 600,
           maxDelayMs: 6000,
           jitterMs: 250,
-          onRetry: (e, attempt, wait) => {
-            push(`⚠️ Rate limit hit. Retry attempt ${attempt} in ${wait}ms`);
-          },
+          onRetry: (e, attempt, wait) =>
+            push(`⚠️ Rate limit hit. Retry attempt ${attempt} in ${wait}ms`),
         }
       );
 
@@ -269,11 +312,7 @@ export default function AdminSeedSchoolsMaster() {
     if (!canRun) return;
 
     if (!SchoolEntity || !SchoolEntity.filter || !SchoolEntity.create || !SchoolEntity.update) {
-      setLog([
-        `❌ ERROR: Could not resolve School entity from base44.entities.`,
-        `Resolved School key: ${schoolResolved?.key || "NONE"}`,
-        `Available entities (first 40): ${entityKeys.slice(0, 40).join(", ")}`,
-      ]);
+      setLog([`❌ ERROR: Could not resolve School entity from base44.entities.`]);
       return;
     }
 
@@ -282,23 +321,24 @@ export default function AdminSeedSchoolsMaster() {
     setWorking(true);
     resetRunState();
 
-    const page0 = Number(startPage || 0);
     const per = Number(perPage || 100);
     const ppb = Math.max(1, Number(pagesPerBatch || 1));
     const delay = Math.max(0, Number(delayMs || 0));
 
-    // Hidden safety cap only (not user-facing): prevents infinite loop if API repeats pages forever
+    // Start page comes from UI field (user can override)
+    let currentPage = Number(startPage || 0);
+
+    // Hidden safety cap
     const SAFETY_MAX_BATCHES = 2000;
 
     push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
     push(`URL: ${env.href}`);
     push(`Resolved entity: School=${schoolResolved?.key || "NONE"} Event=${eventResolved?.key || "NONE"}`);
+    push(`Checkpoint: ${checkpoint.loaded ? `pageNext=${checkpoint.pageNext}` : "loading…"}`);
     push(`Auto-run start @ ${new Date().toISOString()}`);
-    push(`DryRun=${dryRun} startPage=${page0} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
+    push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
     if (!dryRun) push(`Write throttle: perOpDelayMs=${perOpDelayMs}`);
-    else push(`DryRun: no DB reads/writes (prevents Base44 rate limiting).`);
-
-    let currentPage = page0;
+    else push(`DryRun: no DB reads/writes.`);
 
     try {
       for (let b = 0; b < SAFETY_MAX_BATCHES; b++) {
@@ -345,7 +385,7 @@ export default function AdminSeedSchoolsMaster() {
           lastBatchRows: rows.length,
         }));
 
-        // Completion condition 1: no rows
+        // Completion condition: none
         if (!rows.length) {
           push(`🏁 No rows returned. Completed.`);
           setProgress((p) => ({ ...p, done: true }));
@@ -366,13 +406,23 @@ export default function AdminSeedSchoolsMaster() {
           }));
         }
 
-        setProgress((p) => ({ ...p, pagesProcessed: p.pagesProcessed + ppb }));
-        currentPage = currentPage + ppb;
+        // Advance page window
+        const nextPage = currentPage + ppb;
 
-        // Completion condition 2: partial block means end of dataset
+        // Save checkpoint AFTER successful batch (only for real writes)
+        if (!dryRun) {
+          await saveCheckpoint(nextPage);
+          push(`💾 Checkpoint saved: nextPage=${nextPage}`);
+        }
+
+        setProgress((p) => ({ ...p, pagesProcessed: p.pagesProcessed + ppb }));
+        currentPage = nextPage;
+
+        // Completion condition: partial batch
         if (rows.length < expectedMax) {
           push(`🏁 Fetched fewer than ${expectedMax}. Treating as complete.`);
           setProgress((p) => ({ ...p, done: true }));
+          if (!dryRun) await saveCheckpoint(currentPage); // final checkpoint
           break;
         }
 
@@ -392,13 +442,18 @@ export default function AdminSeedSchoolsMaster() {
     }
   };
 
+  const resumeFromCheckpoint = () => {
+    setStartPage(checkpoint.pageNext || 0);
+    push(`↩️ Start page set from checkpoint: ${checkpoint.pageNext || 0}`);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-4xl mx-auto space-y-3">
         <Card>
-          <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master (Run to completion)</div>
+          <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master (Resumable)</div>
           <div className="text-sm text-slate-600 mt-1">
-            Runs Scorecard fetch + upsert batches until the dataset ends. DryRun uses zero DB calls.
+            Safe stop/resume. Upserts prevent duplicates. Checkpoint stores the next page to fetch after each successful batch.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
@@ -408,15 +463,29 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-lg font-semibold text-slate-900">Entity Diagnostics</div>
           <div className="mt-2 text-sm text-slate-700">
-            <div>
-              Resolved School entity: <span className="font-mono">{schoolResolved?.key || "NONE"}</span>
-            </div>
-            <div>
-              Resolved Event entity: <span className="font-mono">{eventResolved?.key || "NONE"}</span>
-            </div>
+            <div>Resolved School entity: <span className="font-mono">{schoolResolved?.key || "NONE"}</span></div>
+            <div>Resolved Event entity: <span className="font-mono">{eventResolved?.key || "NONE"}</span></div>
+            <div>Resolved Query entity: <span className="font-mono">{queryResolved?.key || "NONE"}</span></div>
             <div className="mt-2 text-xs text-slate-500">
               Entities (first 40): {entityKeys.slice(0, 40).join(", ")}
             </div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="text-lg font-semibold text-slate-900">Checkpoint</div>
+          <div className="mt-2 text-sm text-slate-700">
+            <div>Loaded: {String(checkpoint.loaded)}</div>
+            <div>Next page: <span className="font-mono">{checkpoint.pageNext}</span></div>
+            <div>Last updated: {checkpoint.lastUpdatedAt || "-"}</div>
+          </div>
+          <div className="mt-3">
+            <Button disabled={!checkpoint.loaded || running} onClick={resumeFromCheckpoint} variant="outline">
+              Set Start Page to Checkpoint
+            </Button>
+          </div>
+          <div className="mt-2 text-xs text-slate-500">
+            Note: Checkpoint updates only when DryRun=false (real writes). DryRun runs do not write checkpoints.
           </div>
         </Card>
 
@@ -482,7 +551,7 @@ export default function AdminSeedSchoolsMaster() {
                 />
               </label>
               <div className="text-xs text-slate-500">
-                If you still hit Base44 rate limits, raise to 100–200ms.
+                If you hit Base44 rate limits, raise to 100–200ms.
               </div>
             </div>
           )}
@@ -494,10 +563,6 @@ export default function AdminSeedSchoolsMaster() {
             <Button disabled={!running} onClick={stop} variant="outline">
               Stop
             </Button>
-          </div>
-
-          <div className="mt-3 text-xs text-slate-500">
-            Recommended write settings: pagesPerBatch=2, perOpDelayMs=75, delayMs=750.
           </div>
         </Card>
 
