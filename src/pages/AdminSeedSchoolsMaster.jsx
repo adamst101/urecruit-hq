@@ -1,7 +1,11 @@
 // src/pages/AdminSeedSchoolsMaster.jsx
+// Server-side seeding runner for the canonical School master (College Scorecard)
+// Key principle: do NOT write School rows from the browser.
+// Browser restarts (or mid-run 502/429) can re-run the same page and create duplicates.
+// Instead: call the backend function which is idempotent + self-healing (upsert + dedupe).
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { base44 } from "../api/base44Client";
-import { School as SchoolEntityFromApi } from "../api/entities";
 
 const Card = ({ children }) => (
   <div className="rounded-xl border border-slate-200 bg-white p-4">{children}</div>
@@ -16,7 +20,7 @@ const Button = ({ children, disabled, onClick, variant = "solid" }) => {
     <button
       className={`${base} ${variant === "outline" ? outline : solid}`}
       disabled={disabled}
-      onClick={disabled ? undefined : onClick}
+      onClick={onClick}
       type="button"
     >
       {children}
@@ -53,51 +57,16 @@ function detectEnv() {
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-function isRateLimitError(e) {
-  const status = e?.raw?.status || e?.status;
-  if (status === 429) return true;
-  const msg = String(e?.message || e || "").toLowerCase();
-  return msg.includes("rate limit") || msg.includes("429");
-}
-function isNetworkError(e) {
-  const msg = String(e?.message || e || "").toLowerCase();
-  return msg.includes("network error") || msg.includes("failed to fetch");
-}
 function isScorecardTransient(e) {
   const msg = String(e?.message || e || "").toLowerCase();
-  return (
-    msg.includes("scorecard http 500") ||
-    msg.includes("scorecard http 502") ||
-    msg.includes("scorecard http 503") ||
-    msg.includes("scorecard http 504") ||
-    msg.includes("timeout") ||
-    msg.includes("network")
-  );
-}
-function looksLikeDuplicateCreate(e) {
-  const msg = String(e?.message || e || "").toLowerCase();
-  return (
-    msg.includes("duplicate") ||
-    msg.includes("already exists") ||
-    msg.includes("unique") ||
-    msg.includes("conflict") ||
-    e?.raw?.status === 409
-  );
-}
-function is404(e) {
   const status = e?.raw?.status || e?.status;
-  const msg = String(e?.message || e || "");
-  return status === 404 || msg.includes("status code 404");
-}
-function is5xx(e) {
-  const status = e?.raw?.status || e?.status;
+  if (status === 429) return true;
   if (typeof status === "number" && status >= 500) return true;
-  const msg = String(e?.message || e || "").toLowerCase();
-  return msg.includes("status code 5");
+  return msg.includes("timeout") || msg.includes("network") || msg.includes("rate limit") || msg.includes("502");
 }
 
 // Local checkpoint storage
-const CHECKPOINT_STORAGE_KEY = "campapp_admin_seed_schools_master_pageNext_v1";
+const CHECKPOINT_STORAGE_KEY = "campapp_admin_seed_schools_master_pageNext_v2";
 function loadCheckpointFromStorage() {
   try {
     const raw = window.localStorage.getItem(CHECKPOINT_STORAGE_KEY);
@@ -122,7 +91,6 @@ function clearCheckpointStorage() {
 export default function AdminSeedSchoolsMaster() {
   const env = useMemo(() => detectEnv(), []);
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
-  const School = SchoolEntityFromApi || null;
 
   const [running, setRunning] = useState(false);
   const cancelRef = useRef(false);
@@ -136,14 +104,7 @@ export default function AdminSeedSchoolsMaster() {
   const [perPage, setPerPage] = useState(100);
   const [pagesPerBatch, setPagesPerBatch] = useState(1);
   const [delayMs, setDelayMs] = useState(2000);
-  const [perOpDelayMs, setPerOpDelayMs] = useState(300);
   const [scorecardFetchTries, setScorecardFetchTries] = useState(8);
-
-  // Write strategy
-  const [writeMode, setWriteMode] = useState("create_only");
-
-  // Adaptive delay grows on 429/network, shrinks slowly when stable
-  const adaptiveDelayRef = useRef(300);
 
   // Function resolution
   const [scorecardFn, setScorecardFn] = useState(null);
@@ -162,36 +123,15 @@ export default function AdminSeedSchoolsMaster() {
   };
 
   async function tryInvoke(name) {
-    // Use a safe probe payload; never writes.
-    const raw = await base44.functions.invoke(name, {
-      page: 0,
-      perPage: 1,
-      maxPages: 1,
-      dryRun: true,
-      delayMs: 0,
-      deleteDelayMs: 0,
-      updateExisting: false,
-    });
-    const resp = unwrapInvokeResponse(raw);
-    return resp;
+    const raw = await base44.functions.invoke(name, { page: 0, perPage: 1, maxPages: 1, dryRun: true });
+    return unwrapInvokeResponse(raw);
   }
 
-  // FIXED: prefer canonical function first, and do NOT select 5xx "exists but broken"
+  // Canonical function name only (prevents accidentally selecting broken variants)
   const resolveScorecardFunction = async () => {
     if (!canRun) return null;
 
-    const candidates = [
-      // Prefer canonical first
-      "seedSchoolsMaster_scorecard",
-      // Then older/alternate names
-      "seedSchoolsMaster_scorecard_v2",
-      "scorecardSeedSchoolsMaster",
-      "scorecardProbe",
-      "probeScorecard",
-      "probeMinimal",
-      // Put v3 last because we've seen it exist-but-500
-      "seedSchoolsMaster_scorecard_v3",
-    ];
+    const candidates = ["seedSchoolsMaster_scorecard"];
 
     push(`Resolving scorecard function on ${env.host} (${env.label})...`);
 
@@ -204,26 +144,17 @@ export default function AdminSeedSchoolsMaster() {
       } catch (e) {
         const status = e?.raw?.status || e?.status;
         const msg = String(e?.message || e);
-
-        if (is404(e)) {
+        if (status === 404 || msg.includes("status code 404")) {
           push(`- Not found: ${name}`);
           continue;
         }
-
-        // NEW: treat 5xx as "broken", do not select it
-        if (is5xx(e)) {
-          push(`⚠️ Found but unhealthy (5xx). Skipping: ${name} (error=${msg})`);
-          continue;
-        }
-
-        // Non-404 and non-5xx means the name likely exists (e.g., auth/validation)
-        push(`✅ Function exists (non-404, non-5xx): ${name} (error=${msg})`);
+        push(`✅ Function exists (non-404): ${name} (error=${msg})`);
         setScorecardFn(name);
         return name;
       }
     }
 
-    push(`❌ Could not resolve a healthy scorecard function. Deploy seedSchoolsMaster_scorecard.`);
+    push(`❌ Could not resolve a deployed scorecard function. Deploy: seedSchoolsMaster_scorecard`);
     setScorecardFn(null);
     return null;
   };
@@ -243,7 +174,7 @@ export default function AdminSeedSchoolsMaster() {
     }
   };
 
-  async function fetchBatchWithRetry(fnName, page0, perPageNum, pagesInBatchNum) {
+  async function runServerBatchWithRetry(fnName, page0, perPageNum, pagesInBatchNum, dryRunFlag) {
     let last = null;
 
     for (let i = 0; i < scorecardFetchTries; i++) {
@@ -254,7 +185,11 @@ export default function AdminSeedSchoolsMaster() {
           page: Number(page0 || 0),
           perPage: Number(perPageNum || 100),
           maxPages: Number(pagesInBatchNum || 1),
-          dryRun: true, // fetch-only; function should ignore dryRun for fetch, but safe either way
+          dryRun: !!dryRunFlag,
+          // Server-side throttles
+          delayMs: 220,
+          deleteDelayMs: 260,
+          updateExisting: true,
         });
 
         const resp = unwrapInvokeResponse(raw);
@@ -265,203 +200,41 @@ export default function AdminSeedSchoolsMaster() {
           throw err;
         }
 
-        return { rows: Array.isArray(resp?.rows) ? resp.rows : [], debug: resp?.debug || null };
+        return resp;
       } catch (e) {
         last = e;
         const msg = String(e?.message || e);
         const dbg = e?._debug || null;
 
-        push(`⚠️ Fetch attempt ${i + 1}/${scorecardFetchTries} failed: ${msg}`);
-        if (dbg) push(`Fetch debug:\n${truncate(dbg)}`);
+        push(`⚠️ Batch attempt ${i + 1}/${scorecardFetchTries} failed: ${msg}`);
+        if (dbg) push(`Server debug:\n${truncate(dbg)}`);
 
-        if (is404(e)) throw e;
+        const status = e?.raw?.status || e?.status;
+        if (status === 404 || msg.includes("status code 404")) throw e;
 
         if (!isScorecardTransient(e) || i === scorecardFetchTries - 1) break;
 
-        const wait = Math.min(20000, 2000 * Math.pow(2, i));
-        push(`Waiting ${wait}ms then retrying same page...`);
+        const wait = Math.min(20000, 2000 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
+        push(`Waiting ${wait}ms then retrying same batch...`);
         await sleep(wait);
       }
     }
 
-    throw last || new Error("Scorecard fetch failed");
-  }
-
-  async function safeEntityCall(label, fn, context) {
-    try {
-      return await fn();
-    } catch (e) {
-      if (isRateLimitError(e) || isNetworkError(e)) throw e;
-
-      push(`❌ Base44Error during ${label}`);
-      push(`Context: ${truncate(context)}`);
-      push(`Error: ${truncate({ message: e?.message, raw: e?.raw || e })}`);
-      throw e;
-    }
-  }
-
-  function bumpAdaptiveDelay() {
-    adaptiveDelayRef.current = Math.min(2500, Math.floor(adaptiveDelayRef.current * 1.5 + 75));
-  }
-  function relaxAdaptiveDelay() {
-    adaptiveDelayRef.current = Math.max(150, Math.floor(adaptiveDelayRef.current * 0.96));
-  }
-  async function waitAfterDbOp() {
-    const base = Math.max(0, Number(perOpDelayMs || 0));
-    const adaptive = adaptiveDelayRef.current;
-    const wait = Math.max(base, adaptive);
-    if (wait > 0) await sleep(wait);
-  }
-
-  const buildPayload = (r) => {
-    const unitid = r?.unitid ? String(r.unitid) : null;
-    const name = r?.school_name ? String(r.school_name) : null;
-    const source_key = unitid ? `scorecard:${unitid}` : r?.source_key ? String(r.source_key) : null;
-
-    return {
-      school_name: name,
-      normalized_name: r.normalized_name || null,
-      city: r.city || null,
-      state: r.state || null,
-      website_url: r.website_url || null,
-      unitid: unitid || null,
-      source_platform: "scorecard",
-      source_key: source_key,
-    };
-  };
-
-  async function getSchoolCountBestEffort() {
-    if (!School) return null;
-    try {
-      const rows = await safeEntityCall("School.list", async () => await School.list({}), {});
-      return Array.isArray(rows) ? rows.length : null;
-    } catch (e) {
-      push(`⚠️ School count probe failed (continuing): ${String(e?.message || e)}`);
-      return null;
-    }
-  }
-
-  const createOnly = async (r) => {
-    const payload = buildPayload(r);
-    if (!payload.source_key || !payload.school_name) return { mode: "skipped" };
-
-    try {
-      await safeEntityCall("School.create", async () => await School.create(payload), {
-        source_key: payload.source_key,
-      });
-      return { mode: "created" };
-    } catch (e) {
-      if (isRateLimitError(e) || isNetworkError(e)) throw e;
-      if (looksLikeDuplicateCreate(e)) return { mode: "skipped" };
-      throw e;
-    }
-  };
-
-  const upsertRowCreateFirst = async (r) => {
-    const payload = buildPayload(r);
-    if (!payload.source_key || !payload.school_name) return { mode: "skipped" };
-
-    try {
-      await safeEntityCall("School.create", async () => await School.create(payload), {
-        source_key: payload.source_key,
-        unitid: payload.unitid,
-      });
-      return { mode: "created" };
-    } catch (e) {
-      if (isRateLimitError(e) || isNetworkError(e)) throw e;
-      if (!looksLikeDuplicateCreate(e)) throw e;
-
-      const existing = await safeEntityCall(
-        "School.filter",
-        async () => await School.filter({ source_key: payload.source_key }),
-        { source_key: payload.source_key }
-      );
-
-      const ex = Array.isArray(existing) ? existing[0] : null;
-      if (!ex?.id) return { mode: "skipped" };
-
-      await safeEntityCall("School.update", async () => await School.update(ex.id, payload), {
-        id: ex.id,
-        source_key: payload.source_key,
-      });
-      return { mode: "updated" };
-    }
-  };
-
-  async function upsertOneWithRetries(row, rowIndex, page) {
-    const label = `School upsert (page=${page} idx=${rowIndex})`;
-    let last = null;
-
-    for (let attempt = 0; attempt < 10; attempt++) {
-      if (cancelRef.current) throw new Error("Cancelled");
-
-      try {
-        const res =
-          writeMode === "create_then_update_on_conflict" ? await upsertRowCreateFirst(row) : await createOnly(row);
-        relaxAdaptiveDelay();
-        return res;
-      } catch (e) {
-        last = e;
-        const msg = String(e?.message || e);
-        const is429 = isRateLimitError(e) || isNetworkError(e);
-
-        if (!is429) throw e;
-
-        bumpAdaptiveDelay();
-        const wait = Math.min(20000, adaptiveDelayRef.current + 250 * attempt + Math.floor(Math.random() * 250));
-        push(`⚠️ ${label}: retry ${attempt + 1} (${wait}ms) due to: ${msg}`);
-        await sleep(wait);
-      }
-    }
-
-    throw last || new Error("Upsert failed");
-  }
-
-  async function upsertRowsToSchool(rows, page) {
-    let created = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-
-    for (let i = 0; i < rows.length; i++) {
-      if (cancelRef.current) break;
-
-      const r = rows[i];
-
-      try {
-        const res = await upsertOneWithRetries(r, i, page);
-        if (res.mode === "created") created++;
-        else if (res.mode === "updated") updated++;
-        else skipped++;
-      } catch (e) {
-        failed++;
-        push(`❌ Upsert failed idx=${i} page=${page}: ${String(e?.message || e)}`);
-        push(`Row: ${truncate(r, 900)}`);
-      }
-
-      await waitAfterDbOp();
-    }
-
-    return { created, updated, skipped, failed };
+    throw last || new Error("Server batch failed");
   }
 
   const startAutoRun = async () => {
     if (!canRun) return;
-    if (!School && !dryRun) {
-      push(`❌ School entity not available via src/api/entities.js export`);
-      return;
-    }
 
+    setLog([]);
     setRunning(true);
     cancelRef.current = false;
-    adaptiveDelayRef.current = Math.max(150, Number(perOpDelayMs || 300));
 
-    push(`\nHost: ${env.host} (${env.label}, ${env.dataEnv})`);
+    push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
     push(`URL: ${env.href}`);
-    push(`School entity: using src/api/entities.js export`);
+    push(`Write path: server-side (seedSchoolsMaster_scorecard)`);
     push(`Checkpoint (local): pageNext=${checkpoint.pageNext}`);
 
-    // Resolve function name each run
     let fn = scorecardFn;
     if (!fn) fn = await resolveScorecardFunction();
     if (!fn) {
@@ -477,77 +250,61 @@ export default function AdminSeedSchoolsMaster() {
     push(`Auto-run start @ ${new Date().toISOString()}`);
     push(`Function=${fn}`);
     push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
-    push(`Scorecard fetch tries=${scorecardFetchTries}`);
-
-    if (!dryRun) {
-      push(`Write throttle: perOpDelayMs=${perOpDelayMs} (adaptive=${adaptiveDelayRef.current})`);
-      const cnt = await getSchoolCountBestEffort();
-      if (cnt === 0 && writeMode !== "create_only") {
-        setWriteMode("create_only");
-        push(`ℹ️ School appears empty (count=0). Forcing writeMode=create_only to avoid 429.`);
-      } else if (typeof cnt === "number") {
-        push(`School count probe: ${cnt}`);
-      }
-      push(`WriteMode=${cnt === 0 ? "create_only" : writeMode}`);
-    }
+    push(`Scorecard batch tries=${scorecardFetchTries}`);
+    push(`Server throttles: delayMs=220 deleteDelayMs=260`);
 
     try {
       for (let b = 0; b < 5000; b++) {
         if (cancelRef.current) break;
 
         const batchPage = currentPage;
+        const nextPage = batchPage + ppb;
+        const expectedMax = per * ppb;
 
         push(`\n--- Batch ${b + 1} ---`);
-        push(`Fetching page=${batchPage} maxPages=${ppb} perPage=${per} ...`);
+        push(`Running server batch page=${batchPage} maxPages=${ppb} perPage=${per} (nextPage=${nextPage}) ...`);
 
         let out;
         try {
-          out = await fetchBatchWithRetry(fn, batchPage, per, ppb);
+          out = await runServerBatchWithRetry(fn, batchPage, per, ppb, dryRun);
         } catch (e) {
-          if (is404(e)) {
-            push(`❌ Fetch got 404. Re-resolving function name and retrying batch...`);
+          const msg = String(e?.message || e);
+          const status = e?.raw?.status || e?.status;
+          if (status === 404 || msg.includes("status code 404")) {
+            push(`❌ Function name mismatch (404). Re-resolving then retrying batch...`);
             fn = await resolveScorecardFunction();
             if (!fn) throw e;
-            out = await fetchBatchWithRetry(fn, batchPage, per, ppb);
+            out = await runServerBatchWithRetry(fn, batchPage, per, ppb, dryRun);
           } else {
             throw e;
           }
         }
 
-        const rows = out.rows || [];
-        const debug = out.debug || null;
-        const expectedMax = per * ppb;
+        const fetched = Number(out?.stats?.fetched ?? 0);
+        const processed = Number(out?.stats?.processed ?? 0);
+        const created = Number(out?.stats?.created ?? 0);
+        const updated = Number(out?.stats?.updated ?? 0);
+        const dedupeGroups = Number(out?.stats?.dedupeGroups ?? 0);
+        const dedupeDeleted = Number(out?.stats?.dedupeDeleted ?? 0);
 
-        push(`✅ Fetched rows: ${rows.length} (expected up to ${expectedMax})`);
-        if (debug) push(`Fetch debug:\n${truncate(debug)}`);
+        push(
+          `✅ Server batch complete. fetched=${fetched} processed=${processed} created=${created} updated=${updated} dedupeGroups=${dedupeGroups} dedupeDeleted=${dedupeDeleted}`
+        );
+        if (out?.debug) push(`Debug:\n${truncate(out.debug)}`);
 
-        if (!rows.length) {
-          push(`🏁 No rows returned. Completed.`);
-          break;
-        }
-
-        if (dryRun) {
-          push(`DryRun: WouldUpsert=${rows.length}`);
-        } else {
-          push(`Writing upserts to School (create-first + retry + continue on failure)...`);
-          const up = await upsertRowsToSchool(rows, batchPage);
-          push(
-            `✅ Upsert complete. Created=${up.created} Updated=${up.updated} Skipped=${up.skipped} Failed=${up.failed}`
-          );
-        }
-
-        const nextPage = batchPage + ppb;
-
-        if (!dryRun) {
-          saveCheckpointToStorage(nextPage);
-          setCheckpoint({ loaded: true, pageNext: nextPage });
-          push(`💾 Checkpoint saved (local): nextPage=${nextPage}`);
-        }
+        // Save checkpoint after a successful server batch, even in dry-run.
+        saveCheckpointToStorage(nextPage);
+        setCheckpoint({ loaded: true, pageNext: nextPage });
+        push(`💾 Checkpoint saved (local): nextPage=${nextPage}`);
 
         currentPage = nextPage;
 
-        if (rows.length < expectedMax) {
-          push(`🏁 Fetched fewer than ${expectedMax}. Treating as complete.`);
+        if (!fetched) {
+          push(`🏁 fetched=0. Completed.`);
+          break;
+        }
+        if (fetched < expectedMax) {
+          push(`🏁 fetched fewer than ${expectedMax}. Treating as complete.`);
           break;
         }
 
@@ -581,9 +338,7 @@ export default function AdminSeedSchoolsMaster() {
       <div className="max-w-4xl mx-auto space-y-3">
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master</div>
-          <div className="text-sm text-slate-600 mt-1">
-            Resolves a healthy deployed scorecard function name (prefers canonical, skips 5xx).
-          </div>
+          <div className="text-sm text-slate-600 mt-1">Runs server-side upsert + dedupe by unitid.</div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
           </div>
@@ -667,40 +422,7 @@ export default function AdminSeedSchoolsMaster() {
 
           {!dryRun && (
             <div className="mt-3 flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-3 text-sm">
-                <span className="text-slate-700">Write mode</span>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="writeMode"
-                    checked={writeMode === "create_only"}
-                    onChange={() => setWriteMode("create_only")}
-                    disabled={running}
-                  />
-                  <span>Create only</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="writeMode"
-                    checked={writeMode === "create_then_update_on_conflict"}
-                    onChange={() => setWriteMode("create_then_update_on_conflict")}
-                    disabled={running}
-                  />
-                  <span>Create then update on conflict</span>
-                </label>
-              </div>
-
-              <label className="text-sm">
-                Per-op delay (ms){" "}
-                <input
-                  className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
-                  value={perOpDelayMs}
-                  onChange={(e) => setPerOpDelayMs(e.target.value)}
-                  disabled={running}
-                />
-              </label>
-
+              <div className="text-sm text-slate-700">Writes are performed server-side with dedupe by unitid.</div>
               <label className="text-sm">
                 Scorecard fetch tries{" "}
                 <input
