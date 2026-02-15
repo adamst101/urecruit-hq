@@ -116,79 +116,133 @@ function pickEntityFromSDK(name) {
 }
 
 /**
- * Robust listAll with pagination heuristics.
- * Why: Base44 list() appears to cap at 5000 rows.
- * Strategy:
- * - Try common pagination shapes:
- *   1) list({ limit, offset, where })
- *   2) list({ page_size, page, where })
- *   3) list({ first, skip, where })
- * - Stop when a page returns < limit OR returns no new ids.
+ * Base44 list() is NOT guaranteed to accept arbitrary pagination args.
+ * In this project, passing unknown keys can cause list() to behave like a filter and return [].
+ *
+ * So we PROBE which paging mode works, then use only supported args.
+ *
+ * Modes we try:
+ *  - "noargs": list()
+ *  - "page_size": list({ page, page_size })
+ *  - "per_page": list({ page, per_page })
+ *  - "pageSize": list({ page, pageSize })
+ *  - "limit_offset": list({ limit, offset })
+ *
+ * We also support filtered reads via Entity.filter(criteria), which is known-good in this app.
  */
-async function listAllPaged(Entity, whereObj, { pageSize = 2000, maxPages = 50, onPage } = {}) {
+async function detectListMode(Entity, samplePageSize = 50) {
+  const candidates = [
+    { mode: "noargs", call: () => Entity.list() },
+    { mode: "page_size", call: () => Entity.list({ page: 1, page_size: samplePageSize }) },
+    { mode: "per_page", call: () => Entity.list({ page: 1, per_page: samplePageSize }) },
+    { mode: "pageSize", call: () => Entity.list({ page: 1, pageSize: samplePageSize }) },
+    { mode: "limit_offset", call: () => Entity.list({ limit: samplePageSize, offset: 0 }) },
+    { mode: "emptyobj", call: () => Entity.list({}) },
+  ];
+
+  for (const c of candidates) {
+    try {
+      const res = await c.call();
+      const rows = asArray(res);
+      // Accept ONLY if it returns any rows OR if we're confident the table may be empty.
+      // We can't know empty vs broken signature, so we also check for "res not array" issues.
+      if (Array.isArray(res)) {
+        // If it returns rows, it's a good mode.
+        if (rows.length > 0) return { mode: c.mode, ok: true };
+        // If it returns 0 rows, we keep probing because this could be signature-broken.
+        continue;
+      }
+    } catch {
+      // ignore and try next
+    }
+  }
+
+  // If all probes failed to produce rows, fall back to noargs (it’s the safest).
+  return { mode: "noargs", ok: false };
+}
+
+async function listPage(Entity, listMode, { page, pageSize }) {
+  if (listMode === "noargs") {
+    // noargs cannot page; caller handles single-shot behavior
+    return asArray(await Entity.list());
+  }
+  if (listMode === "page_size") return asArray(await Entity.list({ page, page_size: pageSize }));
+  if (listMode === "per_page") return asArray(await Entity.list({ page, per_page: pageSize }));
+  if (listMode === "pageSize") return asArray(await Entity.list({ page, pageSize }));
+  if (listMode === "limit_offset") return asArray(await Entity.list({ limit: pageSize, offset: (page - 1) * pageSize }));
+  if (listMode === "emptyobj") return asArray(await Entity.list({}));
+  return asArray(await Entity.list());
+}
+
+/**
+ * listAllPaged:
+ * - If whereObj is provided and non-empty, we use Entity.filter(whereObj) (known-good in your app).
+ * - If no filter, we use list() paging mode detected by detectListMode.
+ *
+ * Note: If Base44 only supports list() with no args, we'll load once and stop.
+ */
+async function listAllPaged(Entity, whereObj, { pageSize = 2000, maxPages = 200, onPage, onMode } = {}) {
   if (!Entity?.list) return [];
+
   const where = whereObj || {};
+  const hasWhere = where && Object.keys(where).length > 0;
+
+  // Filter path (use Base44 filter API, NOT list({where:...}) which is not supported here)
+  if (hasWhere && typeof Entity.filter === "function") {
+    const rows = await Entity.filter(where);
+    const arr = asArray(rows);
+    onMode?.({ mode: "filter", ok: true });
+    onPage?.({ page: 1, got: arr.length, newCount: arr.length, total: arr.length });
+    return arr;
+  }
+
+  // List path (no filter)
+  const { mode, ok } = await detectListMode(Entity, Math.min(100, pageSize));
+  onMode?.({ mode, ok });
+
   const seen = new Set();
   const out = [];
 
-  const tryOne = async (args) => {
-    const res = await Entity.list(args);
-    return asArray(res);
-  };
-
-  for (let page = 0; page < maxPages; page++) {
-    let rows = [];
-    const offset = page * pageSize;
-
-    // Try (limit/offset)
-    try {
-      rows = await tryOne({ where, limit: pageSize, offset });
-    } catch {
-      // Try (page/page_size)
-      try {
-        rows = await tryOne({ where, page: page + 1, page_size: pageSize });
-      } catch {
-        // Try (first/skip)
-        try {
-          rows = await tryOne({ where, first: pageSize, skip: offset });
-        } catch {
-          // Final fallback: plain list({where}) once
-          if (page === 0) {
-            try {
-              rows = await tryOne({ where });
-            } catch {
-              rows = [];
-            }
-          } else {
-            rows = [];
-          }
-        }
+  // If mode is noargs, we can only do one call.
+  if (mode === "noargs" || mode === "emptyobj") {
+    const rows = await listPage(Entity, mode, { page: 1, pageSize });
+    let newCount = 0;
+    for (const r of rows) {
+      const id = getId(r);
+      if (id && seen.has(id)) continue;
+      if (id) {
+        seen.add(id);
+        newCount += 1;
       }
+      out.push(r);
     }
+    onPage?.({ page: 1, got: rows.length, newCount, total: out.length });
+    return out;
+  }
 
+  for (let p = 1; p <= maxPages; p++) {
+    const rows = await listPage(Entity, mode, { page: p, pageSize });
     if (!rows.length) {
-      onPage?.({ page, got: 0, total: out.length });
+      onPage?.({ page: p, got: 0, newCount: 0, total: out.length });
       break;
     }
 
     let newCount = 0;
     for (const r of rows) {
       const id = getId(r);
-      // If SDK omits id, still include but don't let it break loop logic.
+      if (id && seen.has(id)) continue;
       if (id) {
-        if (seen.has(id)) continue;
         seen.add(id);
         newCount += 1;
       }
       out.push(r);
     }
 
-    onPage?.({ page, got: rows.length, newCount, total: out.length });
+    onPage?.({ page: p, got: rows.length, newCount, total: out.length });
 
-    // Stop if we didn't get a full page, or the page had no new ids (safety against repeating pages)
+    // Stop if we get a short page or no new IDs (prevents infinite loops on repeating pages)
     if (rows.length < pageSize || newCount === 0) break;
 
-    // Small delay between pages to reduce 429
     await sleep(120);
   }
 
@@ -215,13 +269,12 @@ export default function AdminOps() {
   const nav = useNavigate();
 
   const [adminEnabled, setAdminEnabled] = useState(false);
-  const [tab, setTab] = useState("overview"); // overview | purge | schools | diagnostics
+  const [tab, setTab] = useState("overview");
 
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState([]);
   const logRef = useRef(null);
 
-  // Purge selection (Option A default)
   const [purgeSelection, setPurgeSelection] = useState(() => ({
     School: false,
     Sport: false,
@@ -254,15 +307,13 @@ export default function AdminOps() {
   const [purgeBetweenEntitiesDelayMs, setPurgeBetweenEntitiesDelayMs] = useState(1200);
   const [purgeDryRun, setPurgeDryRun] = useState(true);
 
-  // School ops
   const [deleteNonScorecardDryRun, setDeleteNonScorecardDryRun] = useState(true);
   const [deleteNonScorecardDelayMs, setDeleteNonScorecardDelayMs] = useState(220);
 
   const [dedupeDryRun, setDedupeDryRun] = useState(true);
   const [dedupeDeleteDelayMs, setDedupeDeleteDelayMs] = useState(220);
-  const [dedupeMode, setDedupeMode] = useState("unitid"); // unitid | source_key | name_state
+  const [dedupeMode, setDedupeMode] = useState("unitid");
 
-  // Pagination controls
   const [pageSize, setPageSize] = useState(2000);
 
   useEffect(() => {
@@ -315,7 +366,6 @@ export default function AdminOps() {
     ];
     for (const k of derived) if (k in next) next[k] = true;
 
-    // keep canonical OFF
     if ("School" in next) next.School = false;
     if ("Sport" in next) next.Sport = false;
 
@@ -340,13 +390,20 @@ export default function AdminOps() {
         }
 
         pushLog(`--- Purge ${name} ---`);
+
+        let modeLogged = false;
         const rows = await withRetries(
           () =>
             listAllPaged(Entity, {}, {
               pageSize,
-              maxPages: 80,
+              maxPages: 300,
+              onMode: ({ mode, ok }) => {
+                if (modeLogged) return;
+                modeLogged = true;
+                pushLog(`List mode for ${name}: ${mode}${ok ? "" : " (probe had no rows)"} `);
+              },
               onPage: ({ page, got, newCount, total }) =>
-                pushLog(`Loaded ${name}: page=${page + 1} got=${got} new=${newCount} total=${total}`),
+                pushLog(`Loaded ${name}: page=${page} got=${got} new=${newCount} total=${total}`),
             }),
           {
             tries: 7,
@@ -407,13 +464,19 @@ export default function AdminOps() {
     try {
       pushLog(`Delete non-scorecard Schools start. DryRun=${deleteNonScorecardDryRun} pageSize=${pageSize}`);
 
+      let modeLogged = false;
       const rows = await withRetries(
         () =>
           listAllPaged(School, {}, {
             pageSize,
-            maxPages: 80,
+            maxPages: 300,
+            onMode: ({ mode, ok }) => {
+              if (modeLogged) return;
+              modeLogged = true;
+              pushLog(`List mode for School: ${mode}${ok ? "" : " (probe had no rows)"}`);
+            },
             onPage: ({ page, got, newCount, total }) =>
-              pushLog(`Loaded School: page=${page + 1} got=${got} new=${newCount} total=${total}`),
+              pushLog(`Loaded School: page=${page} got=${got} new=${newCount} total=${total}`),
           }),
         {
           tries: 7,
@@ -473,13 +536,19 @@ export default function AdminOps() {
 
     pushLog(`School dedupe pass start. Mode=${mode} DryRun=${dedupeDryRun} pageSize=${pageSize}`);
 
+    let modeLogged = false;
     const rows = await withRetries(
       () =>
         listAllPaged(School, {}, {
           pageSize,
-          maxPages: 80,
+          maxPages: 300,
+          onMode: ({ mode: m, ok }) => {
+            if (modeLogged) return;
+            modeLogged = true;
+            pushLog(`List mode for School: ${m}${ok ? "" : " (probe had no rows)"}`);
+          },
           onPage: ({ page, got, newCount, total }) =>
-            pushLog(`Loaded School: page=${page + 1} got=${got} new=${newCount} total=${total}`),
+            pushLog(`Loaded School: page=${page} got=${got} new=${newCount} total=${total}`),
         }),
       {
         tries: 7,
@@ -495,7 +564,9 @@ export default function AdminOps() {
 
     const dupKeys = Array.from(grouped.keys()).filter((k) => (grouped.get(k) || []).length >= 2);
 
-    pushLog(`Loaded School rows: ${rows.length} (scorecard=${scorecardRows.length}). Duplicate groups (mode=${mode}): ${dupKeys.length}`);
+    pushLog(
+      `Loaded School rows: ${rows.length} (scorecard=${scorecardRows.length}). Duplicate groups (mode=${mode}): ${dupKeys.length}`
+    );
 
     let deleted = 0;
     let failed = 0;
@@ -513,7 +584,7 @@ export default function AdminOps() {
       const keepId = getId(keep);
       const toDelete = sorted.slice(1).map((r) => getId(r)).filter(Boolean);
 
-      pushLog(`Group key="${k}" keepId=${keepId} delete=${toDelete.join(", ")}`);
+      pushLog(`Group key="${k}" keepId=${keepId} delete=${toDelete.slice(0, 8).join(", ")}${toDelete.length > 8 ? "…" : ""}`);
 
       if (dedupeDryRun) continue;
 
@@ -568,7 +639,7 @@ export default function AdminOps() {
         <div>
           <h1 className="text-2xl font-semibold">Admin Ops</h1>
           <div className="text-sm text-gray-600">
-            Pagination safe. If your dataset is &gt; 5000, tools now read all pages.
+            List-mode probing enabled. If list() paging args are unsupported, AdminOps will fall back safely.
           </div>
         </div>
 
@@ -652,9 +723,7 @@ export default function AdminOps() {
       {tab === "purge" && (
         <Card className="p-4 space-y-3">
           <div className="text-lg font-semibold">Purge</div>
-          <div className="text-sm text-gray-600">
-            Preset keeps School/Sport intact. Type DELETE to run.
-          </div>
+          <div className="text-sm text-gray-600">Preset keeps School/Sport intact. Type DELETE to run.</div>
 
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={applyPurgePresetDerived} disabled={busy}>
@@ -727,9 +796,7 @@ export default function AdminOps() {
         <div className="space-y-4">
           <Card className="p-4 space-y-3">
             <div className="text-lg font-semibold">Delete non-scorecard Schools</div>
-            <div className="text-sm text-gray-600">
-              Deletes School rows where source_platform != "scorecard" (including blank).
-            </div>
+            <div className="text-sm text-gray-600">Deletes School rows where source_platform != "scorecard" (including blank).</div>
 
             <div className="flex flex-wrap gap-2 items-center">
               <Button
@@ -766,19 +833,12 @@ export default function AdminOps() {
 
           <Card className="p-4 space-y-3">
             <div className="text-lg font-semibold">Dedupe Scorecard Schools</div>
-            <div className="text-sm text-gray-600">
-              Run all passes after deleting non-scorecard schools.
-            </div>
+            <div className="text-sm text-gray-600">Run all passes after deleting non-scorecard schools.</div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
               <label className="space-y-1">
                 <div className="text-gray-600">Mode</div>
-                <select
-                  className="w-full border rounded px-2 py-1"
-                  value={dedupeMode}
-                  onChange={(e) => setDedupeMode(e.target.value)}
-                  disabled={busy}
-                >
+                <select className="w-full border rounded px-2 py-1" value={dedupeMode} onChange={(e) => setDedupeMode(e.target.value)} disabled={busy}>
                   <option value="unitid">unitid (best)</option>
                   <option value="source_key">source_key</option>
                   <option value="name_state">name + state (fallback)</option>
@@ -787,13 +847,7 @@ export default function AdminOps() {
 
               <label className="space-y-1">
                 <div className="text-gray-600">Delete delay (ms)</div>
-                <input
-                  className="w-full border rounded px-2 py-1"
-                  type="number"
-                  value={dedupeDeleteDelayMs}
-                  onChange={(e) => setDedupeDeleteDelayMs(Number(e.target.value || 0))}
-                  disabled={busy}
-                />
+                <input className="w-full border rounded px-2 py-1" type="number" value={dedupeDeleteDelayMs} onChange={(e) => setDedupeDeleteDelayMs(Number(e.target.value || 0))} disabled={busy} />
               </label>
 
               <div className="space-y-1">
@@ -852,4 +906,3 @@ export default function AdminOps() {
     </div>
   );
 }
-
