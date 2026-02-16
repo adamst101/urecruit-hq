@@ -65,8 +65,41 @@ function isScorecardTransient(e) {
   return msg.includes("timeout") || msg.includes("network") || msg.includes("rate limit") || msg.includes("502");
 }
 
+function clampInt(x, min, max, fallback) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return fallback;
+  const i = Math.floor(n);
+  return Math.max(min, Math.min(max, i));
+}
+function parseUrlParams() {
+  try {
+    const u = new URL(window.location.href);
+    const startPage = u.searchParams.get("startPage");
+    const perPage = u.searchParams.get("perPage");
+    const ppb = u.searchParams.get("ppb");
+    return {
+      startPage: startPage === null ? null : clampInt(startPage, 0, 999999, 0),
+      perPage: perPage === null ? null : clampInt(perPage, 1, 100, 100),
+      ppb: ppb === null ? null : clampInt(ppb, 1, 25, 1),
+    };
+  } catch {
+    return { startPage: null, perPage: null, ppb: null };
+  }
+}
+function writeUrlParams(next) {
+  try {
+    const u = new URL(window.location.href);
+    if (typeof next.startPage === "number") u.searchParams.set("startPage", String(next.startPage));
+    if (typeof next.perPage === "number") u.searchParams.set("perPage", String(next.perPage));
+    if (typeof next.ppb === "number") u.searchParams.set("ppb", String(next.ppb));
+    window.history.replaceState({}, "", u.toString());
+  } catch {}
+}
+
 // Local checkpoint storage
 const CHECKPOINT_STORAGE_KEY = "campapp_admin_seed_schools_master_pageNext_v2";
+const LASTRUN_STORAGE_KEY = "campapp_admin_seed_schools_master_lastRun_v1";
+
 function loadCheckpointFromStorage() {
   try {
     const raw = window.localStorage.getItem(CHECKPOINT_STORAGE_KEY);
@@ -85,6 +118,27 @@ function saveCheckpointToStorage(pageNext) {
 function clearCheckpointStorage() {
   try {
     window.localStorage.removeItem(CHECKPOINT_STORAGE_KEY);
+  } catch {}
+}
+
+function loadLastRunFromStorage() {
+  try {
+    const raw = window.localStorage.getItem(LASTRUN_STORAGE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" ? obj : null;
+  } catch {
+    return null;
+  }
+}
+function saveLastRunToStorage(obj) {
+  try {
+    window.localStorage.setItem(LASTRUN_STORAGE_KEY, JSON.stringify(obj || null));
+  } catch {}
+}
+function clearLastRunStorage() {
+  try {
+    window.localStorage.removeItem(LASTRUN_STORAGE_KEY);
   } catch {}
 }
 
@@ -111,15 +165,40 @@ export default function AdminSeedSchoolsMaster() {
 
   // Checkpoint
   const [checkpoint, setCheckpoint] = useState({ loaded: false, pageNext: 0 });
+
+  // Last run summary (survives refresh + log clear)
+  const [lastRun, setLastRun] = useState(() => loadLastRunFromStorage());
+
   useEffect(() => {
+    // Load checkpoint from localStorage
     const n = loadCheckpointFromStorage();
     setCheckpoint({ loaded: true, pageNext: n });
+
+    // Initialize controls from URL if present, else from checkpoint
+    const qp = parseUrlParams();
+    if (qp.perPage !== null) setPerPage(qp.perPage);
+    if (qp.ppb !== null) setPagesPerBatch(qp.ppb);
+
+    if (qp.startPage !== null) {
+      setStartPage(qp.startPage);
+    } else if (n > 0) {
+      // Auto restore start page from checkpoint if URL doesn't specify
+      setStartPage(n);
+    }
   }, []);
 
   const stop = () => {
     cancelRef.current = true;
     setRunning(false);
     push(`⏹️ Stop requested @ ${new Date().toISOString()}`);
+
+    const lr = {
+      ...(lastRun || {}),
+      stoppedAt: new Date().toISOString(),
+      status: "stopped",
+    };
+    setLastRun(lr);
+    saveLastRunToStorage(lr);
   };
 
   async function tryInvoke(name) {
@@ -226,7 +305,9 @@ export default function AdminSeedSchoolsMaster() {
   const startAutoRun = async () => {
     if (!canRun) return;
 
-    setLog([]);
+    // Do NOT wipe logs on run start; append a divider so refresh isn't the only way to clear context.
+    push(`\n================ RUN START ${new Date().toISOString()} ================\n`);
+
     setRunning(true);
     cancelRef.current = false;
 
@@ -235,9 +316,43 @@ export default function AdminSeedSchoolsMaster() {
     push(`Write path: server-side (seedSchoolsMaster_scorecard)`);
     push(`Checkpoint (local): pageNext=${checkpoint.pageNext}`);
 
+    // Persist controls into URL immediately so refresh keeps your intent
+    writeUrlParams({
+      startPage: Number(startPage || 0),
+      perPage: Number(perPage || 100),
+      ppb: Number(pagesPerBatch || 1),
+    });
+
+    const lr0 = {
+      startedAt: new Date().toISOString(),
+      status: "running",
+      env: { host: env.host, label: env.label, dataEnv: env.dataEnv },
+      params: {
+        dryRun: !!dryRun,
+        startPage: Number(startPage || 0),
+        perPage: Number(perPage || 100),
+        pagesPerBatch: Number(pagesPerBatch || 1),
+        delayMs: Number(delayMs || 0),
+        scorecardFetchTries: Number(scorecardFetchTries || 8),
+      },
+      progress: {
+        lastBatchPage: null,
+        nextPage: Number(startPage || 0),
+        batchesCompleted: 0,
+        totals: { fetched: 0, processed: 0, created: 0, updated: 0, dedupeGroups: 0, dedupeDeleted: 0 },
+      },
+      lastError: null,
+      finishedAt: null,
+    };
+    setLastRun(lr0);
+    saveLastRunToStorage(lr0);
+
     let fn = scorecardFn;
     if (!fn) fn = await resolveScorecardFunction();
     if (!fn) {
+      const lrFail = { ...lr0, status: "error", lastError: "Function not resolved", finishedAt: new Date().toISOString() };
+      setLastRun(lrFail);
+      saveLastRunToStorage(lrFail);
       setRunning(false);
       return;
     }
@@ -292,10 +407,38 @@ export default function AdminSeedSchoolsMaster() {
         );
         if (out?.debug) push(`Debug:\n${truncate(out.debug)}`);
 
-        // Save checkpoint after a successful server batch, even in dry-run.
+        // Save checkpoint after successful server batch (even in dry-run)
         saveCheckpointToStorage(nextPage);
         setCheckpoint({ loaded: true, pageNext: nextPage });
         push(`💾 Checkpoint saved (local): nextPage=${nextPage}`);
+
+        // Also persist progress in URL so refresh can continue with no thinking
+        writeUrlParams({ startPage: nextPage, perPage: per, ppb });
+
+        const lr = loadLastRunFromStorage() || lr0;
+        const totals = lr?.progress?.totals || lr0.progress.totals;
+        const updatedTotals = {
+          fetched: totals.fetched + fetched,
+          processed: totals.processed + processed,
+          created: totals.created + created,
+          updated: totals.updated + updated,
+          dedupeGroups: totals.dedupeGroups + dedupeGroups,
+          dedupeDeleted: totals.dedupeDeleted + dedupeDeleted,
+        };
+        const lr1 = {
+          ...lr,
+          status: "running",
+          progress: {
+            ...lr.progress,
+            lastBatchPage: batchPage,
+            nextPage,
+            batchesCompleted: (lr.progress?.batchesCompleted || 0) + 1,
+            totals: updatedTotals,
+          },
+          lastError: null,
+        };
+        setLastRun(lr1);
+        saveLastRunToStorage(lr1);
 
         currentPage = nextPage;
 
@@ -313,9 +456,20 @@ export default function AdminSeedSchoolsMaster() {
           await sleep(delay);
         }
       }
+
+      const lrDone = loadLastRunFromStorage() || lr0;
+      const lr2 = { ...lrDone, status: "complete", finishedAt: new Date().toISOString() };
+      setLastRun(lr2);
+      saveLastRunToStorage(lr2);
     } catch (e) {
-      push(`❌ ERROR: ${String(e?.message || e)}`);
+      const msg = String(e?.message || e);
+      push(`❌ ERROR: ${msg}`);
       push(`Raw error:\n${truncate({ message: e?.message, raw: e?.raw || e })}`);
+
+      const lrErr = loadLastRunFromStorage() || lr0;
+      const lr3 = { ...lrErr, status: "error", lastError: msg, finishedAt: new Date().toISOString() };
+      setLastRun(lr3);
+      saveLastRunToStorage(lr3);
     } finally {
       setRunning(false);
       push(`\nAuto-run finished @ ${new Date().toISOString()}`);
@@ -324,6 +478,11 @@ export default function AdminSeedSchoolsMaster() {
 
   const resumeFromCheckpoint = () => {
     setStartPage(checkpoint.pageNext || 0);
+    writeUrlParams({
+      startPage: Number(checkpoint.pageNext || 0),
+      perPage: Number(perPage || 100),
+      ppb: Number(pagesPerBatch || 1),
+    });
     push(`↩️ Start page set from local checkpoint: ${checkpoint.pageNext || 0}`);
   };
 
@@ -331,6 +490,12 @@ export default function AdminSeedSchoolsMaster() {
     clearCheckpointStorage();
     setCheckpoint({ loaded: true, pageNext: 0 });
     push(`🧹 Local checkpoint cleared (pageNext=0)`);
+  };
+
+  const clearLastRun = () => {
+    clearLastRunStorage();
+    setLastRun(null);
+    push(`🧹 LastRun cleared`);
   };
 
   return (
@@ -348,10 +513,53 @@ export default function AdminSeedSchoolsMaster() {
         </Card>
 
         <Card>
+          <div className="text-lg font-semibold text-slate-900">Run status</div>
+          {!lastRun ? (
+            <div className="mt-2 text-sm text-slate-700">No last run recorded yet.</div>
+          ) : (
+            <div className="mt-2 text-sm text-slate-700 space-y-1">
+              <div>
+                Status: <span className="font-mono">{lastRun.status}</span>
+              </div>
+              <div>
+                Started: <span className="font-mono">{lastRun.startedAt || "-"}</span>
+              </div>
+              <div>
+                Finished: <span className="font-mono">{lastRun.finishedAt || "-"}</span>
+              </div>
+              <div>
+                Last batch page: <span className="font-mono">{String(lastRun.progress?.lastBatchPage ?? "-")}</span>
+                {"  "}Next page: <span className="font-mono">{String(lastRun.progress?.nextPage ?? "-")}</span>
+                {"  "}Batches: <span className="font-mono">{String(lastRun.progress?.batchesCompleted ?? 0)}</span>
+              </div>
+              <div className="text-xs text-slate-600">
+                Totals: fetched={lastRun.progress?.totals?.fetched ?? 0} processed={lastRun.progress?.totals?.processed ?? 0} created=
+                {lastRun.progress?.totals?.created ?? 0} updated={lastRun.progress?.totals?.updated ?? 0} dedupeGroups=
+                {lastRun.progress?.totals?.dedupeGroups ?? 0} dedupeDeleted={lastRun.progress?.totals?.dedupeDeleted ?? 0}
+              </div>
+              {lastRun.lastError ? (
+                <div className="text-xs text-red-700">
+                  Last error: <span className="font-mono">{lastRun.lastError}</span>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <div className="mt-3 flex gap-2 flex-wrap">
+            <Button disabled={running} onClick={clearLastRun} variant="outline">
+              Clear LastRun
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
           <div className="text-lg font-semibold text-slate-900">Checkpoint</div>
           <div className="mt-2 text-sm text-slate-700">
             <div>
               Next page (local): <span className="font-mono">{checkpoint.pageNext}</span>
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Tip: checkpoint is also mirrored into the URL after each successful batch.
             </div>
           </div>
           <div className="mt-3 flex gap-2 flex-wrap">
