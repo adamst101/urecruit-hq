@@ -1,11 +1,9 @@
 // src/pages/AdminSeedSchoolsMaster.jsx
-// Option A + Option B (FULL FILE)
-// A) Auto-resume after refresh if a run was in-progress.
-// B) Bigger server batches (default pagesPerBatch=5) to reduce client loop count.
-// Notes:
-// - Writes are SERVER-SIDE via seedSchoolsMaster_scorecard (idempotent + self-healing).
-// - Checkpoint saved after every successful batch (even dryRun).
-// - URL params persist start/per/ppb so refresh restores intent.
+// OPTION A: Refresh-proof client runner that calls the SERVER seed function.
+// - All writes happen server-side (seedSchoolsMaster_scorecard is idempotent + dedupes)
+// - Client only orchestrates batches
+// - Checkpoint + totals persist to localStorage every successful batch
+// - On refresh, you can resume safely from nextPage
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { base44 } from "../api/base44Client";
@@ -60,7 +58,7 @@ function detectEnv() {
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-function isScorecardTransient(e) {
+function isTransient(e) {
   const msg = String(e?.message || e || "").toLowerCase();
   const status = e?.raw?.status || e?.status;
   if (status === 429) return true;
@@ -68,70 +66,16 @@ function isScorecardTransient(e) {
   return msg.includes("timeout") || msg.includes("network") || msg.includes("rate limit") || msg.includes("502");
 }
 
-// ---------------------------
-// URL param persistence
-// ---------------------------
-function getUrlParams() {
-  try {
-    const u = new URL(window.location.href);
-    const sp = u.searchParams;
-    const startPage = Number(sp.get("startPage") || "0");
-    const perPage = Number(sp.get("perPage") || "100");
-    const ppb = Number(sp.get("ppb") || "5");
-    const dry = sp.get("dryRun");
-    return {
-      startPage: Number.isFinite(startPage) && startPage >= 0 ? startPage : 0,
-      perPage: Number.isFinite(perPage) && perPage > 0 ? perPage : 100,
-      pagesPerBatch: Number.isFinite(ppb) && ppb > 0 ? ppb : 5,
-      dryRun: dry === null ? null : dry === "1" || dry === "true",
-    };
-  } catch {
-    return { startPage: 0, perPage: 100, pagesPerBatch: 5, dryRun: null };
-  }
-}
-function writeUrlParams({ startPage, perPage, ppb, dryRun }) {
-  try {
-    const u = new URL(window.location.href);
-    if (startPage !== undefined) u.searchParams.set("startPage", String(Number(startPage || 0)));
-    if (perPage !== undefined) u.searchParams.set("perPage", String(Number(perPage || 100)));
-    if (ppb !== undefined) u.searchParams.set("ppb", String(Number(ppb || 5)));
-    if (dryRun !== undefined && dryRun !== null) u.searchParams.set("dryRun", dryRun ? "1" : "0");
-    window.history.replaceState({}, "", u.toString());
-  } catch {}
-}
+// ----------------------------
+// Persisted run state
+// ----------------------------
+const STATE_KEY = "campapp_seedSchoolsMaster_state_v3";
+// We keep a separate “checkpoint” key for compatibility
+const CHECKPOINT_KEY = "campapp_admin_seed_schools_master_pageNext_v3";
 
-// ---------------------------
-// Local checkpoint storage
-// ---------------------------
-const CHECKPOINT_STORAGE_KEY = "campapp_admin_seed_schools_master_pageNext_v2";
-function loadCheckpointFromStorage() {
+function loadState() {
   try {
-    const raw = window.localStorage.getItem(CHECKPOINT_STORAGE_KEY);
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n < 0) return 0;
-    return n;
-  } catch {
-    return 0;
-  }
-}
-function saveCheckpointToStorage(pageNext) {
-  try {
-    window.localStorage.setItem(CHECKPOINT_STORAGE_KEY, String(Number(pageNext || 0)));
-  } catch {}
-}
-function clearCheckpointStorage() {
-  try {
-    window.localStorage.removeItem(CHECKPOINT_STORAGE_KEY);
-  } catch {}
-}
-
-// ---------------------------
-// Last-run persistence (Option A)
-// ---------------------------
-const LAST_RUN_STORAGE_KEY = "campapp_admin_seed_schools_master_lastRun_v1";
-function loadLastRunFromStorage() {
-  try {
-    const raw = window.localStorage.getItem(LAST_RUN_STORAGE_KEY);
+    const raw = window.localStorage.getItem(STATE_KEY);
     if (!raw) return null;
     const obj = JSON.parse(raw);
     return obj && typeof obj === "object" ? obj : null;
@@ -139,114 +83,137 @@ function loadLastRunFromStorage() {
     return null;
   }
 }
-function saveLastRunToStorage(obj) {
+function saveState(state) {
   try {
-    window.localStorage.setItem(LAST_RUN_STORAGE_KEY, JSON.stringify(obj || {}));
+    window.localStorage.setItem(STATE_KEY, JSON.stringify(state));
   } catch {}
 }
-
-const AUTO_RESUME_ENABLED = true;
-const AUTO_RESUME_DELAY_MS = 1200;
-
-function shouldAutoResume(lastRunObj) {
-  if (!AUTO_RESUME_ENABLED) return false;
-  if (!lastRunObj) return false;
-  if (lastRunObj.status !== "running") return false;
-  const next = Number(lastRunObj.progress?.nextPage ?? 0);
-  return Number.isFinite(next) && next > 0;
+function clearState() {
+  try {
+    window.localStorage.removeItem(STATE_KEY);
+  } catch {}
+}
+function loadCheckpoint() {
+  try {
+    const raw = window.localStorage.getItem(CHECKPOINT_KEY);
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+function saveCheckpoint(n) {
+  try {
+    window.localStorage.setItem(CHECKPOINT_KEY, String(Number(n || 0)));
+  } catch {}
+}
+function clearCheckpoint() {
+  try {
+    window.localStorage.removeItem(CHECKPOINT_KEY);
+  } catch {}
 }
 
 export default function AdminSeedSchoolsMaster() {
   const env = useMemo(() => detectEnv(), []);
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
 
-  const [running, setRunning] = useState(false);
   const cancelRef = useRef(false);
+  const [running, setRunning] = useState(false);
 
   const [log, setLog] = useState([]);
   const push = (m) => setLog((x) => [...x, m]);
 
-  // Controls (Option B defaults)
-  const urlInit = useMemo(() => getUrlParams(), []);
-  const [dryRun, setDryRun] = useState(urlInit.dryRun === null ? true : !!urlInit.dryRun);
-  const [startPage, setStartPage] = useState(urlInit.startPage ?? 0);
-  const [perPage, setPerPage] = useState(urlInit.perPage ?? 100);
-  const [pagesPerBatch, setPagesPerBatch] = useState(urlInit.pagesPerBatch ?? 5);
-  const [delayMs, setDelayMs] = useState(2500);
-  const [scorecardFetchTries, setScorecardFetchTries] = useState(8);
+  // Controls
+  const [dryRun, setDryRun] = useState(true);
+  const [startPage, setStartPage] = useState(0);
+  const [perPage, setPerPage] = useState(100);
+  const [pagesPerBatch, setPagesPerBatch] = useState(1);
+  const [delayMs, setDelayMs] = useState(1500);
+  const [tries, setTries] = useState(8);
 
-  // Function resolution
-  const [scorecardFn, setScorecardFn] = useState(null);
+  const [resolvedFn, setResolvedFn] = useState("seedSchoolsMaster_scorecard");
 
-  // Checkpoint
-  const [checkpoint, setCheckpoint] = useState({ loaded: false, pageNext: 0 });
+  // Hydrate from localStorage on mount
+  const [saved, setSaved] = useState(() => {
+    const st = loadState();
+    const cp = loadCheckpoint();
+    return {
+      state: st,
+      checkpoint: cp,
+    };
+  });
+
   useEffect(() => {
-    const n = loadCheckpointFromStorage();
-    setCheckpoint({ loaded: true, pageNext: n });
+    // If we have a saved state, show it in UI and allow resume
+    const st = loadState();
+    const cp = loadCheckpoint();
+    setSaved({ state: st, checkpoint: cp });
+
+    // If a run was in-flight and the page refreshed, we do NOT auto-restart silently.
+    // But we will set StartPage to the saved nextPage to make “Resume” one click.
+    if (st?.nextPage != null && Number.isFinite(Number(st.nextPage))) {
+      setStartPage(Number(st.nextPage));
+    } else if (cp) {
+      setStartPage(Number(cp));
+    }
   }, []);
 
-  // Keep URL params in sync with controls
+  // Warn on refresh while running (best-effort; some hosts still refresh)
   useEffect(() => {
-    writeUrlParams({ startPage, perPage, ppb: pagesPerBatch, dryRun });
-  }, [startPage, perPage, pagesPerBatch, dryRun]);
+    const handler = (e) => {
+      if (!running) return;
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [running]);
 
   const stop = () => {
     cancelRef.current = true;
     setRunning(false);
     push(`⏹️ Stop requested @ ${new Date().toISOString()}`);
 
-    const lr = loadLastRunFromStorage();
-    if (lr && lr.status === "running") {
-      saveLastRunToStorage({
-        ...lr,
-        status: "stopped",
-        stoppedAt: new Date().toISOString(),
-      });
-    }
+    // Persist “stopped” state
+    const st = loadState() || {};
+    saveState({ ...st, running: false, stoppedAt: new Date().toISOString() });
+    setSaved({ state: loadState(), checkpoint: loadCheckpoint() });
   };
 
-  async function tryInvoke(name) {
-    const raw = await base44.functions.invoke(name, { page: 0, perPage: 1, maxPages: 1, dryRun: true });
-    return unwrapInvokeResponse(raw);
-  }
-
-  // Canonical function name only (prevents accidentally selecting broken variants)
-  const resolveScorecardFunction = async () => {
+  async function resolveFunctionName() {
     if (!canRun) return null;
 
-    const candidates = ["seedSchoolsMaster_scorecard"];
-
+    // Canonical name only
+    const name = "seedSchoolsMaster_scorecard";
     push(`Resolving scorecard function on ${env.host} (${env.label})...`);
 
-    for (const name of candidates) {
-      try {
-        await tryInvoke(name);
-        push(`✅ Using function: ${name}`);
-        setScorecardFn(name);
-        return name;
-      } catch (e) {
-        const status = e?.raw?.status || e?.status;
-        const msg = String(e?.message || e);
-        if (status === 404 || msg.includes("status code 404")) {
-          push(`- Not found: ${name}`);
-          continue;
-        }
-        push(`✅ Function exists (non-404): ${name} (error=${msg})`);
-        setScorecardFn(name);
-        return name;
-      }
-    }
+    try {
+      await base44.functions.invoke(name, { page: 0, perPage: 1, maxPages: 1, dryRun: true });
+      push(`✅ Using function: ${name}`);
+      setResolvedFn(name);
+      return name;
+    } catch (e) {
+      const status = e?.raw?.status || e?.status;
+      const msg = String(e?.message || e);
 
-    push(`❌ Could not resolve a deployed scorecard function. Deploy: seedSchoolsMaster_scorecard`);
-    setScorecardFn(null);
-    return null;
-  };
+      if (status === 404 || msg.includes("status code 404")) {
+        push(`❌ Not found: ${name} (deploy functions/seedSchoolsMaster_scorecard.js)`);
+        return null;
+      }
+
+      // Non-404 means function exists but errored; still use it.
+      push(`✅ Function exists (non-404): ${name} (error=${msg})`);
+      setResolvedFn(name);
+      return name;
+    }
+  }
 
   const probe = async () => {
     if (!canRun) return;
-
     push(`\nProbe start @ ${new Date().toISOString()}`);
-    const fn = scorecardFn || (await resolveScorecardFunction());
+
+    const fn = await resolveFunctionName();
     if (!fn) return;
 
     try {
@@ -257,47 +224,45 @@ export default function AdminSeedSchoolsMaster() {
     }
   };
 
-  async function runServerBatchWithRetry(fnName, page0, perPageNum, pagesInBatchNum, dryRunFlag) {
+  async function runServerBatchWithRetry(fnName, page0, per, ppb, dry) {
     let last = null;
 
-    for (let i = 0; i < scorecardFetchTries; i++) {
+    for (let i = 0; i < tries; i++) {
       if (cancelRef.current) throw new Error("Cancelled");
 
       try {
         const raw = await base44.functions.invoke(fnName, {
           page: Number(page0 || 0),
-          perPage: Number(perPageNum || 100),
-          maxPages: Number(pagesInBatchNum || 1),
-          dryRun: !!dryRunFlag,
-          // Server-side throttles (tuned for Base44 429 reality)
-          delayMs: 260,
-          deleteDelayMs: 320,
+          perPage: Number(per || 100),
+          maxPages: Number(ppb || 1),
+          dryRun: !!dry,
+          // server throttles
+          delayMs: 220,
+          deleteDelayMs: 260,
           updateExisting: true,
         });
 
         const resp = unwrapInvokeResponse(raw);
-
-        if (resp && resp.error) {
+        if (resp?.error) {
           const err = new Error(String(resp.error));
           err._debug = resp.debug || null;
           throw err;
         }
-
         return resp;
       } catch (e) {
         last = e;
         const msg = String(e?.message || e);
         const dbg = e?._debug || null;
 
-        push(`⚠️ Batch attempt ${i + 1}/${scorecardFetchTries} failed: ${msg}`);
+        push(`⚠️ Batch attempt ${i + 1}/${tries} failed: ${msg}`);
         if (dbg) push(`Server debug:\n${truncate(dbg)}`);
 
         const status = e?.raw?.status || e?.status;
         if (status === 404 || msg.includes("status code 404")) throw e;
 
-        if (!isScorecardTransient(e) || i === scorecardFetchTries - 1) break;
+        if (!isTransient(e) || i === tries - 1) break;
 
-        const wait = Math.min(22000, 2000 * Math.pow(2, i)) + Math.floor(Math.random() * 300);
+        const wait = Math.min(20000, 2000 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
         push(`Waiting ${wait}ms then retrying same batch...`);
         await sleep(wait);
       }
@@ -306,168 +271,124 @@ export default function AdminSeedSchoolsMaster() {
     throw last || new Error("Server batch failed");
   }
 
+  function persistProgress(nextPage, totalsPatch = {}) {
+    const prev = loadState() || {};
+    const totals = { ...(prev.totals || {}), ...(totalsPatch || {}) };
+
+    const st = {
+      ...prev,
+      running: true,
+      envHost: env.host,
+      envHref: env.href,
+      fn: resolvedFn,
+      nextPage: Number(nextPage || 0),
+      perPage: Number(perPage || 100),
+      pagesPerBatch: Number(pagesPerBatch || 1),
+      dryRun: !!dryRun,
+      totals,
+      updatedAt: new Date().toISOString(),
+    };
+
+    saveState(st);
+    saveCheckpoint(Number(nextPage || 0));
+    setSaved({ state: st, checkpoint: Number(nextPage || 0) });
+  }
+
+  const clearAll = () => {
+    clearState();
+    clearCheckpoint();
+    setSaved({ state: null, checkpoint: 0 });
+    push(`🧹 Cleared local saved state + checkpoint`);
+  };
+
+  const resumeFromSaved = () => {
+    const st = loadState();
+    const cp = loadCheckpoint();
+    const n = Number(st?.nextPage ?? cp ?? 0);
+    setStartPage(n);
+    push(`↩️ StartPage set to saved nextPage=${n}`);
+  };
+
   const startAutoRun = async () => {
     if (!canRun) return;
 
+    // Do not nuke the log at start; refresh already clears it. Keep continuity if it stays alive.
     setRunning(true);
     cancelRef.current = false;
-
-    // Record run intent (Option A)
-    const initialNext = Number(startPage || 0);
-    saveLastRunToStorage({
-      status: "running",
-      startedAt: new Date().toISOString(),
-      env: { host: env.host, label: env.label, dataEnv: env.dataEnv },
-      params: {
-        dryRun: !!dryRun,
-        startPage: Number(startPage || 0),
-        perPage: Number(perPage || 100),
-        pagesPerBatch: Number(pagesPerBatch || 5),
-        delayMs: Number(delayMs || 0),
-      },
-      progress: { lastBatchPage: null, nextPage: initialNext, batches: 0 },
-      totals: { fetched: 0, processed: 0, created: 0, updated: 0, dedupeGroups: 0, dedupeDeleted: 0 },
-    });
 
     push(`Host: ${env.host} (${env.label}, ${env.dataEnv})`);
     push(`URL: ${env.href}`);
     push(`Write path: server-side (seedSchoolsMaster_scorecard)`);
-    push(`Checkpoint (local): pageNext=${checkpoint.pageNext}`);
+    push(`Saved checkpoint (local): ${loadCheckpoint()}`);
 
-    let fn = scorecardFn;
-    if (!fn) fn = await resolveScorecardFunction();
+    const fn = await resolveFunctionName();
     if (!fn) {
       setRunning(false);
-      const lr = loadLastRunFromStorage();
-      if (lr && lr.status === "running") saveLastRunToStorage({ ...lr, status: "error", error: "Function not found" });
       return;
     }
 
-    const per = Number(perPage || 100);
-    const ppb = Math.max(1, Number(pagesPerBatch || 5));
+    const per = Math.max(1, Math.min(100, Number(perPage || 100)));
+    const ppb = Math.max(1, Number(pagesPerBatch || 1));
     const delay = Math.max(0, Number(delayMs || 0));
-    let currentPage = Number(startPage || 0);
+    let current = Math.max(0, Number(startPage || 0));
 
+    // Initialize persisted state at start (so refresh mid-batch still shows “running” + page)
+    persistProgress(current, { fetched: 0, processed: 0, created: 0, updated: 0, dedupeGroups: 0, dedupeDeleted: 0 });
     push(`Auto-run start @ ${new Date().toISOString()}`);
     push(`Function=${fn}`);
-    push(`DryRun=${dryRun} startPage=${currentPage} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
-    push(`Scorecard batch tries=${scorecardFetchTries}`);
-    push(`Server throttles: delayMs=260 deleteDelayMs=320`);
+    push(`DryRun=${dryRun} startPage=${current} perPage=${per} pagesPerBatch=${ppb} delayMs=${delay}`);
+    push(`Server throttles: delayMs=220 deleteDelayMs=260`);
 
     try {
-      // Safety: if someone fat-fingers ppb huge, keep UI stable
-      const HARD_MAX_BATCHES = 5000;
-
-      // Totals for last-run persistence
-      let totalFetched = 0;
-      let totalProcessed = 0;
-      let totalCreated = 0;
-      let totalUpdated = 0;
-      let totalDedupeGroups = 0;
-      let totalDedupeDeleted = 0;
-
-      for (let b = 0; b < HARD_MAX_BATCHES; b++) {
+      for (let b = 0; b < 10000; b++) {
         if (cancelRef.current) break;
 
-        const batchPage = currentPage;
+        const batchPage = current;
         const nextPage = batchPage + ppb;
         const expectedMax = per * ppb;
 
         push(`\n--- Batch ${b + 1} ---`);
         push(`Running server batch page=${batchPage} maxPages=${ppb} perPage=${per} (nextPage=${nextPage}) ...`);
 
-        // Persist "about to run" progress so refresh can resume even if call hangs/crashes
-        {
-          const lr = loadLastRunFromStorage();
-          if (lr && lr.status === "running") {
-            saveLastRunToStorage({
-              ...lr,
-              progress: {
-                ...(lr.progress || {}),
-                lastBatchPage: batchPage,
-                nextPage,
-                batches: Number(lr.progress?.batches || 0) + 1,
-              },
-            });
-          }
-        }
+        // Persist intent before running (if refresh happens here, you still know where you were going)
+        persistProgress(batchPage);
 
-        let out;
-        try {
-          out = await runServerBatchWithRetry(fn, batchPage, per, ppb, dryRun);
-        } catch (e) {
-          const msg = String(e?.message || e);
-          const status = e?.raw?.status || e?.status;
-          if (status === 404 || msg.includes("status code 404")) {
-            push(`❌ Function name mismatch (404). Re-resolving then retrying batch...`);
-            fn = await resolveScorecardFunction();
-            if (!fn) throw e;
-            out = await runServerBatchWithRetry(fn, batchPage, per, ppb, dryRun);
-          } else {
-            throw e;
-          }
-        }
+        const out = await runServerBatchWithRetry(fn, batchPage, per, ppb, dryRun);
 
-        const fetched = Number(out?.stats?.fetched ?? 0);
-        const processed = Number(out?.stats?.processed ?? 0);
-        const created = Number(out?.stats?.created ?? 0);
-        const updated = Number(out?.stats?.updated ?? 0);
-        const dedupeGroups = Number(out?.stats?.dedupeGroups ?? 0);
-        const dedupeDeleted = Number(out?.stats?.dedupeDeleted ?? 0);
-
-        totalFetched += fetched;
-        totalProcessed += processed;
-        totalCreated += created;
-        totalUpdated += updated;
-        totalDedupeGroups += dedupeGroups;
-        totalDedupeDeleted += dedupeDeleted;
+        const s = out?.stats || {};
+        const fetched = Number(s.fetched ?? 0);
+        const processed = Number(s.processed ?? 0);
+        const created = Number(s.created ?? 0);
+        const updated = Number(s.updated ?? 0);
+        const dedupeGroups = Number(s.dedupeGroups ?? 0);
+        const dedupeDeleted = Number(s.dedupeDeleted ?? 0);
 
         push(
-          `✅ Server batch complete. fetched=${fetched} processed=${processed} created=${created} updated=${updated} dedupeGroups=${dedupeGroups} dedupeDeleted=${dedupeDeleted}`
+          `✅ Batch complete. fetched=${fetched} processed=${processed} created=${created} updated=${updated} dedupeGroups=${dedupeGroups} dedupeDeleted=${dedupeDeleted}`
         );
-        if (out?.debug) push(`Debug:\n${truncate(out.debug)}`);
 
-        // Save checkpoint after a successful server batch (even in dry-run)
-        saveCheckpointToStorage(nextPage);
-        setCheckpoint({ loaded: true, pageNext: nextPage });
+        // Persist checkpoint after success
+        const prevTotals = (loadState()?.totals) || {};
+        const newTotals = {
+          fetched: Number(prevTotals.fetched || 0) + fetched,
+          processed: Number(prevTotals.processed || 0) + processed,
+          created: Number(prevTotals.created || 0) + created,
+          updated: Number(prevTotals.updated || 0) + updated,
+          dedupeGroups: Number(prevTotals.dedupeGroups || 0) + dedupeGroups,
+          dedupeDeleted: Number(prevTotals.dedupeDeleted || 0) + dedupeDeleted,
+        };
+
+        persistProgress(nextPage, newTotals);
         push(`💾 Checkpoint saved (local): nextPage=${nextPage}`);
 
-        // Persist totals + progress (Option A)
-        {
-          const lr = loadLastRunFromStorage();
-          if (lr && lr.status === "running") {
-            saveLastRunToStorage({
-              ...lr,
-              progress: { ...(lr.progress || {}), lastBatchPage: batchPage, nextPage },
-              totals: {
-                fetched: totalFetched,
-                processed: totalProcessed,
-                created: totalCreated,
-                updated: totalUpdated,
-                dedupeGroups: totalDedupeGroups,
-                dedupeDeleted: totalDedupeDeleted,
-              },
-            });
-          }
-        }
-
-        currentPage = nextPage;
-        setStartPage(nextPage); // reflect progress in UI control + URL
+        current = nextPage;
 
         if (!fetched) {
           push(`🏁 fetched=0. Completed.`);
-          const lr = loadLastRunFromStorage();
-          if (lr && lr.status === "running") {
-            saveLastRunToStorage({ ...lr, status: "complete", completedAt: new Date().toISOString() });
-          }
           break;
         }
         if (fetched < expectedMax) {
           push(`🏁 fetched fewer than ${expectedMax}. Treating as complete.`);
-          const lr = loadLastRunFromStorage();
-          if (lr && lr.status === "running") {
-            saveLastRunToStorage({ ...lr, status: "complete", completedAt: new Date().toISOString() });
-          }
           break;
         }
 
@@ -476,90 +397,26 @@ export default function AdminSeedSchoolsMaster() {
           await sleep(delay);
         }
       }
-
-      if (cancelRef.current) {
-        const lr = loadLastRunFromStorage();
-        if (lr && lr.status === "running") {
-          saveLastRunToStorage({ ...lr, status: "stopped", stoppedAt: new Date().toISOString() });
-        }
-      }
     } catch (e) {
       push(`❌ ERROR: ${String(e?.message || e)}`);
       push(`Raw error:\n${truncate({ message: e?.message, raw: e?.raw || e })}`);
 
-      const lr = loadLastRunFromStorage();
-      if (lr && lr.status === "running") {
-        saveLastRunToStorage({
-          ...lr,
-          status: "error",
-          error: String(e?.message || e),
-          erroredAt: new Date().toISOString(),
-        });
-      }
+      // Mark state as not running
+      const st = loadState() || {};
+      saveState({ ...st, running: false, errorAt: new Date().toISOString(), lastError: String(e?.message || e) });
+      setSaved({ state: loadState(), checkpoint: loadCheckpoint() });
     } finally {
       setRunning(false);
+      // Mark state as not running if we naturally finish
+      const st = loadState() || {};
+      saveState({ ...st, running: false, finishedAt: new Date().toISOString() });
+      setSaved({ state: loadState(), checkpoint: loadCheckpoint() });
+
       push(`\nAuto-run finished @ ${new Date().toISOString()}`);
     }
   };
 
-  // Option A: auto-resume after refresh if a run was in-progress
-  useEffect(() => {
-    if (!canRun) return;
-    if (running) return;
-
-    const lr = loadLastRunFromStorage();
-    if (!shouldAutoResume(lr)) return;
-
-    const next = Number(lr.progress?.nextPage ?? 0);
-    const per = Number(lr.params?.perPage ?? 100);
-    const ppb = Number(lr.params?.pagesPerBatch ?? 5);
-    const dr = !!(lr.params?.dryRun ?? true);
-
-    // restore UI controls + URL
-    setDryRun(dr);
-    setPerPage(per);
-    setPagesPerBatch(ppb);
-    setStartPage(next);
-    writeUrlParams({ startPage: next, perPage: per, ppb, dryRun: dr });
-
-    setTimeout(() => {
-      const lr2 = loadLastRunFromStorage();
-      if (!shouldAutoResume(lr2)) return;
-
-      setLog((x) => [
-        ...x,
-        `\n🔁 Auto-resume after refresh. Continuing from page ${next} @ ${new Date().toISOString()}\n`,
-      ]);
-      startAutoRun();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, AUTO_RESUME_DELAY_MS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canRun, running]);
-
-  const resumeFromCheckpoint = () => {
-    const next = checkpoint.pageNext || 0;
-    setStartPage(next);
-    writeUrlParams({ startPage: next });
-    push(`↩️ Start page set from local checkpoint: ${next}`);
-  };
-
-  const clearCheckpoint = () => {
-    clearCheckpointStorage();
-    setCheckpoint({ loaded: true, pageNext: 0 });
-    push(`🧹 Local checkpoint cleared (pageNext=0)`);
-  };
-
-  const clearLastRun = () => {
-    try {
-      window.localStorage.removeItem(LAST_RUN_STORAGE_KEY);
-      push(`🧹 LastRun cleared (auto-resume disabled until a new run starts)`);
-    } catch {}
-  };
-
-  const showLastRun = () => {
-    const lr = loadLastRunFromStorage();
-    push(`\nLastRun:\n${truncate(lr || { empty: true })}`);
-  };
+  const savedState = saved?.state || null;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
@@ -567,46 +424,52 @@ export default function AdminSeedSchoolsMaster() {
         <Card>
           <div className="text-xl font-bold text-slate-900">Admin: Seed Schools Master</div>
           <div className="text-sm text-slate-600 mt-1">
-            Runs server-side upsert + dedupe by unitid. Auto-resumes after refresh.
+            Server-side upsert + dedupe by unitid. Client runner is refresh-proof via localStorage checkpoint.
           </div>
           <div className="mt-2 text-xs text-slate-500">
             Current: <span className="font-mono">{env.host}</span> ({env.label}, {env.dataEnv})
           </div>
           <div className="mt-2 text-xs text-slate-500">
-            Resolved function: <span className="font-mono">{scorecardFn || "(not resolved yet)"}</span>
+            Function: <span className="font-mono">{resolvedFn}</span>
           </div>
         </Card>
 
         <Card>
-          <div className="text-lg font-semibold text-slate-900">Checkpoint</div>
+          <div className="text-lg font-semibold text-slate-900">Saved State</div>
           <div className="mt-2 text-sm text-slate-700">
             <div>
-              Next page (local): <span className="font-mono">{checkpoint.pageNext}</span>
+              Checkpoint nextPage (local): <span className="font-mono">{saved?.checkpoint ?? 0}</span>
             </div>
+            <div className="mt-1">
+              Running flag (saved): <span className="font-mono">{String(!!savedState?.running)}</span>
+            </div>
+            {savedState?.totals && (
+              <div className="mt-2 text-xs text-slate-600">
+                Totals:{" "}
+                <span className="font-mono">
+                  {safeJson(savedState.totals)}
+                </span>
+              </div>
+            )}
+            {savedState?.lastError && (
+              <div className="mt-2 text-xs text-red-700">
+                Last error: <span className="font-mono">{savedState.lastError}</span>
+              </div>
+            )}
           </div>
           <div className="mt-3 flex gap-2 flex-wrap">
-            <Button disabled={!checkpoint.loaded || running} onClick={resumeFromCheckpoint} variant="outline">
-              Set Start Page to Checkpoint
+            <Button disabled={running} onClick={resumeFromSaved} variant="outline">
+              Set Start Page from Saved nextPage
             </Button>
-            <Button disabled={running} onClick={clearCheckpoint} variant="outline">
-              Clear Checkpoint
+            <Button disabled={running} onClick={clearAll} variant="outline">
+              Clear Saved State
             </Button>
-            <Button disabled={running} onClick={resolveScorecardFunction} variant="outline">
-              Resolve Function Name
+            <Button disabled={running} onClick={resolveFunctionName} variant="outline">
+              Resolve Function
             </Button>
             <Button disabled={running} onClick={probe} variant="outline">
               Probe
             </Button>
-            <Button disabled={running} onClick={showLastRun} variant="outline">
-              Show LastRun
-            </Button>
-            <Button disabled={running} onClick={clearLastRun} variant="outline">
-              Clear LastRun
-            </Button>
-          </div>
-          <div className="mt-2 text-xs text-slate-500">
-            Auto-resume: <span className="font-mono">{AUTO_RESUME_ENABLED ? "ON" : "OFF"}</span> (delay{" "}
-            {AUTO_RESUME_DELAY_MS}ms)
           </div>
         </Card>
 
@@ -658,22 +521,17 @@ export default function AdminSeedSchoolsMaster() {
                 disabled={running}
               />
             </label>
-          </div>
 
-          {!dryRun && (
-            <div className="mt-3 flex flex-wrap items-center gap-4">
-              <div className="text-sm text-slate-700">Writes are performed server-side with dedupe by unitid.</div>
-              <label className="text-sm">
-                Scorecard batch tries{" "}
-                <input
-                  className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
-                  value={scorecardFetchTries}
-                  onChange={(e) => setScorecardFetchTries(e.target.value)}
-                  disabled={running}
-                />
-              </label>
-            </div>
-          )}
+            <label className="text-sm">
+              Tries{" "}
+              <input
+                className="ml-2 w-24 rounded border border-slate-300 px-2 py-1"
+                value={tries}
+                onChange={(e) => setTries(e.target.value)}
+                disabled={running}
+              />
+            </label>
+          </div>
 
           <div className="mt-4 flex gap-2">
             <Button disabled={running} onClick={startAutoRun}>
@@ -682,11 +540,6 @@ export default function AdminSeedSchoolsMaster() {
             <Button disabled={!running} onClick={stop} variant="outline">
               Stop
             </Button>
-          </div>
-
-          <div className="mt-3 text-xs text-slate-500">
-            Tip: for fastest completion, use pagesPerBatch=5 and perPage=100 (500 rows/batch). Checkpoint persists even
-            if the page refreshes.
           </div>
         </Card>
 
