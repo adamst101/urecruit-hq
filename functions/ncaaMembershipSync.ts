@@ -1,20 +1,36 @@
 // functions/ncaaMembershipSync.ts
-// Idempotent enrichment: NCAA membership → AthleticsMembership (org=ncaa)
-// Never creates School rows (Scorecard remains canonical).
+// Deno + Base44 backend function (JS-only style; no TS type annotations)
+// PURPOSE (idempotent enrichment):
+// - Fetch NCAA schools index (adapter) and enrich existing Scorecard School rows
+// - Upsert AthleticsMembership by deterministic source_key = "ncaa:<school_id>:<season|current>"
+// - Never creates School rows
+// - Unmatched/ambiguous are written to UnmatchedAthleticsRow (if entity exists)
+//
+// Request body:
+// {
+//   "dryRun": true,
+//   "seasonYear": 2026,              // number or null
+//   "maxRows": 0,                    // 0 = all
+//   "confidenceThreshold": 0.92,     // 0..1
+//   "throttleMs": 80,                // delay between DB writes
+//   "sourcePlatform": "ncaa-api"
+// }
+//
+// Response: { ok, dryRun, stats, debug }
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 
-function s(x: any): string | null {
+function s(x) {
   if (x === null || x === undefined) return null;
   const t = String(x).trim();
   return t ? t : null;
 }
 
-function lc(x: any): string {
+function lc(x) {
   return String(x || "").toLowerCase().trim();
 }
 
-function normName(x: any): string {
+function normName(x) {
   return lc(x)
     .replace(/&/g, "and")
     .replace(/\buniv\b/g, "university")
@@ -23,7 +39,7 @@ function normName(x: any): string {
     .trim();
 }
 
-const STATE_TO_ABBR: Record<string, string> = {
+const STATE_TO_ABBR = {
   alabama: "AL",
   alaska: "AK",
   arizona: "AZ",
@@ -77,7 +93,7 @@ const STATE_TO_ABBR: Record<string, string> = {
   "district of columbia": "DC",
 };
 
-function normState(x: any): string {
+function normState(x) {
   const raw = s(x);
   if (!raw) return "";
   const t = raw.trim();
@@ -86,14 +102,14 @@ function normState(x: any): string {
   return a || t;
 }
 
-function normCity(x: any): string {
+function normCity(x) {
   return lc(x)
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function keyNameStateCity(name: string, state: string, city: string): string {
+function keyNameStateCity(name, state, city) {
   const n = normName(name);
   const st = normState(state);
   const c = normCity(city);
@@ -101,23 +117,23 @@ function keyNameStateCity(name: string, state: string, city: string): string {
   return `${n}::${st}::${c || ""}`;
 }
 
-function keyNameState(name: string, state: string): string {
+function keyNameState(name, state) {
   const n = normName(name);
   const st = normState(state);
   if (!n || !st) return "";
   return `${n}::${st}`;
 }
 
-function getId(r: any): string | null {
+function getId(r) {
   const v = r?.id ?? r?._id ?? r?.uuid;
   return v === null || v === undefined ? null : String(v);
 }
 
-function sleep(ms: number) {
+function sleep(ms) {
   return new Promise((r) => setTimeout(r, Math.max(0, Number(ms || 0))));
 }
 
-async function safeText(r: Response) {
+async function safeText(r) {
   try {
     return await r.text();
   } catch {
@@ -125,12 +141,13 @@ async function safeText(r: Response) {
   }
 }
 
-function isRetryableStatus(st: number) {
+function isRetryableStatus(st) {
   return st === 429 || st === 500 || st === 502 || st === 503 || st === 504;
 }
 
-async function fetchJsonWithRetry(url: string, debug: any, tries = 6) {
-  let lastErr: any = null;
+async function fetchJsonWithRetry(url, debug, tries) {
+  let lastErr = null;
+
   for (let i = 0; i < tries; i++) {
     try {
       const r = await fetch(url, {
@@ -185,10 +202,11 @@ async function fetchJsonWithRetry(url: string, debug: any, tries = 6) {
       throw lastErr;
     }
   }
+
   throw lastErr || new Error("NCAA fetch failed");
 }
 
-async function listAllSchools(School: any): Promise<any[]> {
+async function listAllSchools(School) {
   if (!School) return [];
   if (typeof School.filter === "function") {
     const rows = await School.filter({});
@@ -210,18 +228,18 @@ async function listAllSchools(School: any): Promise<any[]> {
   return [];
 }
 
-function extractSchoolRows(payload: any): any[] {
+function extractSchoolRows(payload) {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.schools)) return payload.schools;
   if (Array.isArray(payload?.data)) return payload.data;
 
-  const out: any[] = [];
+  const out = [];
   if (typeof payload === "object") {
     for (const v of Object.values(payload)) {
       if (Array.isArray(v)) out.push(...v);
       else if (v && typeof v === "object") {
-        for (const vv of Object.values(v as any)) {
+        for (const vv of Object.values(v)) {
           if (Array.isArray(vv)) out.push(...vv);
         }
       }
@@ -230,7 +248,7 @@ function extractSchoolRows(payload: any): any[] {
   return out;
 }
 
-function inferDivision(raw: any): string | null {
+function inferDivision(raw) {
   const d = lc(raw?.division || raw?.div || raw?.divisionName || raw?.ncaaDivision);
   if (!d) return null;
   if (d.includes("d1") || d.includes("division i") || d === "i") return "I";
@@ -239,7 +257,7 @@ function inferDivision(raw: any): string | null {
   return s(raw?.division || raw?.div || raw?.divisionName || raw?.ncaaDivision);
 }
 
-function inferSubdivision(raw: any): string | null {
+function inferSubdivision(raw) {
   const sub = lc(raw?.subdivision || raw?.sub || raw?.divisionSeo || raw?.classification);
   if (!sub) return null;
   if (sub.includes("fbs")) return "FBS";
@@ -247,12 +265,12 @@ function inferSubdivision(raw: any): string | null {
   return s(raw?.subdivision || raw?.sub || raw?.divisionSeo || raw?.classification);
 }
 
-function inferConference(raw: any): string | null {
+function inferConference(raw) {
   return s(raw?.conference || raw?.conferenceName || raw?.conf || raw?.conference_short);
 }
 
-function bestMatchCandidate(cands: any[], rawName: string, rawState: string, rawCity: string) {
-  if (!cands?.length) return { school: null, confidence: 0, reason: "no_match" };
+function bestMatchCandidate(cands, rawName, rawState, rawCity) {
+  if (!cands || !cands.length) return { school: null, confidence: 0, reason: "no_match" };
   if (cands.length === 1) return { school: cands[0], confidence: 0.99, reason: "exact_key" };
 
   const city = normCity(rawCity);
@@ -279,7 +297,7 @@ function bestMatchCandidate(cands: any[], rawName: string, rawState: string, raw
   return { school: top.r, confidence: Math.min(0.95, Math.max(0.7, top.score)), reason: "heuristic" };
 }
 
-function jsonResp(payload: any) {
+function jsonResp(payload) {
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: { "Content-Type": "application/json" },
@@ -287,7 +305,7 @@ function jsonResp(payload: any) {
 }
 
 Deno.serve(async (req) => {
-  const debug: any = {
+  const debug = {
     startedAt: new Date().toISOString(),
     retries: 0,
     retry_notes: [],
@@ -298,7 +316,7 @@ Deno.serve(async (req) => {
     errors: [],
   };
 
-  const stats: any = {
+  const stats = {
     fetched: 0,
     processed: 0,
     matched: 0,
@@ -312,7 +330,7 @@ Deno.serve(async (req) => {
   };
 
   try {
-    if (req.method !== "POST") return jsonResp({ error: "Method not allowed", stats, debug });
+    if (req.method !== "POST") return jsonResp({ ok: false, error: "Method not allowed", stats, debug });
 
     const body = await req.json().catch(() => ({}));
     const dryRun = !!body?.dryRun;
@@ -327,12 +345,12 @@ Deno.serve(async (req) => {
     const AthleticsMembership = client.entities.AthleticsMembership || client.entities.AthleticsMemberships;
     const Unmatched = client.entities.UnmatchedAthleticsRow || client.entities.UnmatchedAthleticsRows;
 
-    if (!School) return jsonResp({ error: "School entity not found", stats, debug });
-    if (!AthleticsMembership) return jsonResp({ error: "AthleticsMembership entity not found", stats, debug });
+    if (!School) return jsonResp({ ok: false, error: "School entity not found", stats, debug });
+    if (!AthleticsMembership) return jsonResp({ ok: false, error: "AthleticsMembership entity not found", stats, debug });
 
     const allSchools = await listAllSchools(School);
-    const byNameState = new Map<string, any[]>();
-    const byNameStateCity = new Map<string, any[]>();
+    const byNameState = new Map();
+    const byNameStateCity = new Map();
 
     for (const r of allSchools) {
       const name = s(r?.school_name || r?.name);
@@ -343,13 +361,13 @@ Deno.serve(async (req) => {
       const k1 = keyNameState(name, st);
       if (k1) {
         if (!byNameState.has(k1)) byNameState.set(k1, []);
-        byNameState.get(k1)!.push(r);
+        byNameState.get(k1).push(r);
       }
 
       const k2 = keyNameStateCity(name, st, city);
       if (k2) {
         if (!byNameStateCity.has(k2)) byNameStateCity.set(k2, []);
-        byNameStateCity.get(k2)!.push(r);
+        byNameStateCity.get(k2).push(r);
       }
     }
 
@@ -365,7 +383,7 @@ Deno.serve(async (req) => {
       stats.processed += 1;
 
       const rawName = s(raw?.name || raw?.school || raw?.title || raw?.schoolName || raw?.school_name);
-      const rawCity = s(raw?.city || raw?.schoolCity || raw?.school_city);
+      const rawCity = s(raw?.city || raw?.schoolCity || raw?.school_city) || "";
       const rawState = s(raw?.state || raw?.schoolState || raw?.school_state);
       const sourceUrl = s(raw?.url || raw?.href || raw?.schoolUrl || raw?.school_url);
 
@@ -374,14 +392,14 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const kExact = keyNameStateCity(rawName, rawState, rawCity || "");
-      const c1 = kExact ? byNameStateCity.get(kExact) || [] : [];
-      let match = bestMatchCandidate(c1, rawName, rawState, rawCity || "");
+      const kExact = keyNameStateCity(rawName, rawState, rawCity);
+      const c1 = kExact ? (byNameStateCity.get(kExact) || []) : [];
+      let match = bestMatchCandidate(c1, rawName, rawState, rawCity);
 
       if (!match.school) {
         const kLoose = keyNameState(rawName, rawState);
-        const c2 = kLoose ? byNameState.get(kLoose) || [] : [];
-        match = bestMatchCandidate(c2, rawName, rawState, rawCity || "");
+        const c2 = kLoose ? (byNameState.get(kLoose) || []) : [];
+        match = bestMatchCandidate(c2, rawName, rawState, rawCity);
       }
 
       if (!match.school || match.confidence < threshold) {
@@ -390,13 +408,13 @@ Deno.serve(async (req) => {
         else stats.unmatched += 1;
 
         if (Unmatched && !dryRun) {
-          const rawKey = `ncaa:${normName(rawName)}:${normState(rawState)}:${normCity(rawCity || "")}`;
+          const rawKey = `ncaa:${normName(rawName)}:${normState(rawState)}:${normCity(rawCity)}`;
           try {
             const existing = await Unmatched.filter({ raw_source_key: rawKey });
             const rec = {
               org: "ncaa",
               raw_school_name: rawName,
-              raw_city: rawCity,
+              raw_city: rawCity || null,
               raw_state: normState(rawState) || rawState,
               raw_source_key: rawKey,
               source_url: sourceUrl,
@@ -404,6 +422,7 @@ Deno.serve(async (req) => {
               attempted_match_notes: `confidence=${match.confidence.toFixed(2)} threshold=${threshold}`,
               created_at: new Date().toISOString(),
             };
+
             if (Array.isArray(existing) && existing.length) {
               const id = getId(existing[0]);
               if (id) await Unmatched.update(id, rec);
@@ -431,13 +450,13 @@ Deno.serve(async (req) => {
       const conference = inferConference(raw);
 
       const sourceKey = `ncaa:${schoolId}:${seasonYear || "current"}`;
-      const rec: any = {
+      const rec = {
         school_id: schoolId,
         org: "ncaa",
         member: true,
-        division,
-        subdivision,
-        conference,
+        division: division,
+        subdivision: subdivision,
+        conference: conference,
         season_year: seasonYear,
         source_platform: sourcePlatform,
         source_url: sourceUrl,
@@ -475,10 +494,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    return jsonResp({ ok: true, dryRun, stats, debug });
+    return jsonResp({ ok: true, dryRun: dryRun, stats, debug });
   } catch (e) {
-    stats.errors += 1;
     debug.errors.push({ step: "fatal", message: String(e?.message || e) });
-    return jsonResp({ error: String(e?.message || e), stats, debug });
+    return jsonResp({ ok: false, error: String(e?.message || e), stats, debug });
   }
 });
