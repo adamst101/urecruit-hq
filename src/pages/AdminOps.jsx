@@ -9,7 +9,12 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
 const ADMIN_MODE_KEY = "campapp_admin_enabled_v1";
-const NCAA_CURSOR_KEY_PREFIX = "adminops_ncaa_cursor_v1:";
+
+// Cursor persisted long-term (so you can pick up tomorrow)
+const NCAA_CURSOR_KEY_PREFIX = "adminops_ncaa_cursor_v2:";
+
+// Session-only persistence (survives refresh, clears when tab closes)
+const ADMINOPS_SESSION_STATE_KEY = "adminops_session_state_v2";
 
 const ROUTES = {
   Workspace: "/Workspace",
@@ -56,6 +61,22 @@ function pickEntityFromSDK(name) {
   return null;
 }
 
+function loadSessionState() {
+  try {
+    const raw = sessionStorage.getItem(ADMINOPS_SESSION_STATE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function saveSessionState(state) {
+  try {
+    sessionStorage.setItem(ADMINOPS_SESSION_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+}
+
 export default function AdminOps() {
   const nav = useNavigate();
 
@@ -66,13 +87,13 @@ export default function AdminOps() {
   const [log, setLog] = useState([]);
   const logRef = useRef(null);
 
-  // "stop" flag for run-until-done loop (must be ref to read inside async loop)
+  // "stop" flag for run-until-done loop (ref survives rerenders)
   const stopRunRef = useRef(false);
 
   // Athletics sync controls
   const [athleticsDryRun, setAthleticsDryRun] = useState(true);
   const [ncaaSeasonYear, setNcaaSeasonYear] = useState(new Date().getFullYear());
-  const [ncaaMaxRows, setNcaaMaxRows] = useState(250); // batch size
+  const [ncaaMaxRows, setNcaaMaxRows] = useState(250);
   const [ncaaConfidenceThreshold, setNcaaConfidenceThreshold] = useState(0.92);
   const [ncaaThrottleMs, setNcaaThrottleMs] = useState(2);
   const [ncaaTimeBudgetMs, setNcaaTimeBudgetMs] = useState(20000);
@@ -84,22 +105,100 @@ export default function AdminOps() {
   const cursorStorageKey = useMemo(() => `${NCAA_CURSOR_KEY_PREFIX}${ncaaSeasonYear}`, [ncaaSeasonYear]);
   const [ncaaStartAt, setNcaaStartAt] = useState(0);
 
+  // Recovery UX
+  const [hasRecoveredSession, setHasRecoveredSession] = useState(false);
+  const [showRecoverBanner, setShowRecoverBanner] = useState(false);
+
+  // Initial load: admin mode + restore session state (logs + settings)
   useEffect(() => {
     setAdminEnabled(localStorage.getItem(ADMIN_MODE_KEY) === "true");
-  }, []);
 
+    const ss = loadSessionState();
+    if (ss && !hasRecoveredSession) {
+      // Restore logs + settings
+      if (Array.isArray(ss.log)) setLog(ss.log);
+
+      if (typeof ss.tab === "string") setTab(ss.tab);
+
+      if (typeof ss.athleticsDryRun === "boolean") setAthleticsDryRun(ss.athleticsDryRun);
+      if (Number.isFinite(ss.ncaaSeasonYear)) setNcaaSeasonYear(ss.ncaaSeasonYear);
+      if (Number.isFinite(ss.ncaaMaxRows)) setNcaaMaxRows(ss.ncaaMaxRows);
+      if (Number.isFinite(ss.ncaaConfidenceThreshold)) setNcaaConfidenceThreshold(ss.ncaaConfidenceThreshold);
+      if (Number.isFinite(ss.ncaaThrottleMs)) setNcaaThrottleMs(ss.ncaaThrottleMs);
+      if (Number.isFinite(ss.ncaaTimeBudgetMs)) setNcaaTimeBudgetMs(ss.ncaaTimeBudgetMs);
+
+      if (Number.isFinite(ss.runUntilDoneMaxBatches)) setRunUntilDoneMaxBatches(ss.runUntilDoneMaxBatches);
+      if (Number.isFinite(ss.runUntilDonePauseMs)) setRunUntilDonePauseMs(ss.runUntilDonePauseMs);
+
+      // startAt is special: prefer cursor from localStorage per-season (source of truth),
+      // but if session had a newer manual edit, keep it.
+      if (Number.isFinite(ss.ncaaStartAt)) setNcaaStartAt(ss.ncaaStartAt);
+
+      setHasRecoveredSession(true);
+      setShowRecoverBanner(true);
+    }
+  }, [hasRecoveredSession]);
+
+  // Load cursor per season (localStorage is source of truth for resume)
   useEffect(() => {
     const saved = Number(localStorage.getItem(cursorStorageKey) || 0);
-    setNcaaStartAt(Number.isFinite(saved) ? saved : 0);
+    if (Number.isFinite(saved)) setNcaaStartAt(saved);
   }, [cursorStorageKey]);
 
+  // Persist session state on any meaningful change (logs + inputs)
+  useEffect(() => {
+    saveSessionState({
+      tab,
+      log,
+      athleticsDryRun,
+      ncaaSeasonYear,
+      ncaaMaxRows,
+      ncaaConfidenceThreshold,
+      ncaaThrottleMs,
+      ncaaTimeBudgetMs,
+      runUntilDoneMaxBatches,
+      runUntilDonePauseMs,
+      ncaaStartAt,
+      savedAt: new Date().toISOString(),
+    });
+  }, [
+    tab,
+    log,
+    athleticsDryRun,
+    ncaaSeasonYear,
+    ncaaMaxRows,
+    ncaaConfidenceThreshold,
+    ncaaThrottleMs,
+    ncaaTimeBudgetMs,
+    runUntilDoneMaxBatches,
+    runUntilDonePauseMs,
+    ncaaStartAt,
+  ]);
+
+  // Auto-scroll log view
   useEffect(() => {
     if (!logRef.current) return;
     logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [log]);
 
+  // Prevent accidental refresh/close while busy
+  useEffect(() => {
+    function onBeforeUnload(e) {
+      if (!busy) return;
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [busy]);
+
   function pushLog(line) {
-    setLog((prev) => [...prev, `[${new Date().toISOString()}] ${line}`]);
+    setLog((prev) => {
+      const next = [...prev, `[${new Date().toISOString()}] ${line}`];
+      // keep log bounded to avoid huge sessionStorage
+      if (next.length > 800) return next.slice(next.length - 800);
+      return next;
+    });
   }
 
   function toggleAdminMode() {
@@ -147,7 +246,6 @@ export default function AdminOps() {
     const raw = await base44.functions.invoke("ncaaMembershipSync", payload);
     const res = unwrapInvokeResponse(raw);
 
-    // Keep the payload log short; the next line summarizes the important bits.
     pushLog(`invoke data:\n${truncate(res, 1200)}`);
 
     if (res?.error) {
@@ -192,7 +290,7 @@ export default function AdminOps() {
     if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
     if (athleticsDryRun) return pushLog("❌ Run-until-done is disabled in DryRun. Switch to Write.");
 
-    // Basic sanity: make sure the function exists (helps catch env miswires)
+    // sanity: entity exists (optional)
     const AthleticsMembership = pickEntityFromSDK("AthleticsMembership");
     if (!AthleticsMembership) pushLog("⚠️ AthleticsMembership entity not found on client; function may still work, continuing.");
 
@@ -224,7 +322,6 @@ export default function AdminOps() {
 
         done = !!out.done;
 
-        // Pause between batches to reduce risk of rate limiting / gateway congestion
         if (!done && runUntilDonePauseMs > 0) {
           await sleep(runUntilDonePauseMs);
         }
@@ -249,6 +346,16 @@ export default function AdminOps() {
     pushLog("Stop requested. Will halt after current batch completes.");
   }
 
+  function clearLogs() {
+    setLog([]);
+    pushLog("Logs cleared.");
+  }
+
+  const lastSavedCursor = useMemo(() => {
+    const v = Number(localStorage.getItem(cursorStorageKey) || 0);
+    return Number.isFinite(v) ? v : 0;
+  }, [cursorStorageKey, ncaaStartAt]);
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -269,6 +376,22 @@ export default function AdminOps() {
           </Button>
         </div>
       </div>
+
+      {showRecoverBanner && (
+        <Card className="p-3 border border-blue-200 bg-blue-50">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="font-medium">Recovered Admin Ops state after refresh</div>
+              <div className="text-sm text-gray-700">
+                Cursor (season {ncaaSeasonYear}) last saved at <span className="font-mono">{lastSavedCursor}</span>. Logs and settings restored from session.
+              </div>
+            </div>
+            <Button variant="outline" onClick={() => setShowRecoverBanner(false)} disabled={busy}>
+              Dismiss
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {!adminEnabled && (
         <Card className="p-4 border border-amber-300 bg-amber-50">
@@ -332,12 +455,29 @@ export default function AdminOps() {
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">Season</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={ncaaSeasonYear} onChange={(e) => setNcaaSeasonYear(Number(e.target.value || 0))} disabled={busy} />
+                <input
+                  className="border rounded px-2 py-1 w-24"
+                  type="number"
+                  value={ncaaSeasonYear}
+                  onChange={(e) => setNcaaSeasonYear(Number(e.target.value || 0))}
+                  disabled={busy}
+                />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">startAt</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={ncaaStartAt} onChange={(e) => setNcaaStartAt(Number(e.target.value || 0))} disabled={busy} />
+                <input
+                  className="border rounded px-2 py-1 w-24"
+                  type="number"
+                  value={ncaaStartAt}
+                  onChange={(e) => {
+                    const v = Math.max(0, Number(e.target.value || 0));
+                    setNcaaStartAt(v);
+                    // persist manual edits immediately so refresh doesn’t lose them
+                    localStorage.setItem(cursorStorageKey, String(v));
+                  }}
+                  disabled={busy}
+                />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
@@ -347,7 +487,16 @@ export default function AdminOps() {
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">threshold</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" step="0.01" min="0" max="1" value={ncaaConfidenceThreshold} onChange={(e) => setNcaaConfidenceThreshold(Number(e.target.value || 0))} disabled={busy} />
+                <input
+                  className="border rounded px-2 py-1 w-24"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="1"
+                  value={ncaaConfidenceThreshold}
+                  onChange={(e) => setNcaaConfidenceThreshold(Number(e.target.value || 0))}
+                  disabled={busy}
+                />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
@@ -384,7 +533,7 @@ export default function AdminOps() {
                     type="number"
                     min="1"
                     value={runUntilDoneMaxBatches}
-                    onChange={(e) => setRunUntilDoneMaxBatches(Number(e.target.value || 1))}
+                    onChange={(e) => setRunUntilDoneMaxBatches(Math.max(1, Number(e.target.value || 1)))}
                     disabled={busy}
                   />
                 </label>
@@ -396,7 +545,7 @@ export default function AdminOps() {
                     type="number"
                     min="0"
                     value={runUntilDonePauseMs}
-                    onChange={(e) => setRunUntilDonePauseMs(Number(e.target.value || 0))}
+                    onChange={(e) => setRunUntilDonePauseMs(Math.max(0, Number(e.target.value || 0)))}
                     disabled={busy}
                   />
                 </label>
@@ -418,7 +567,7 @@ export default function AdminOps() {
             </div>
 
             <div className="text-xs text-gray-600">
-              Cursor key: <span className="font-mono">{cursorStorageKey}</span>
+              Cursor key: <span className="font-mono">{cursorStorageKey}</span> (persisted)
             </div>
           </Card>
         </div>
@@ -440,9 +589,14 @@ export default function AdminOps() {
       <Card className="p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="font-semibold">Run log</div>
-          <Button variant="outline" onClick={() => setLog([])} disabled={busy}>
-            Clear
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowRecoverBanner(true)} disabled={busy}>
+              Show recover info
+            </Button>
+            <Button variant="outline" onClick={clearLogs} disabled={busy}>
+              Clear
+            </Button>
+          </div>
         </div>
         <div ref={logRef} className="mt-3 bg-black text-green-200 rounded p-3 text-xs overflow-auto" style={{ maxHeight: 420 }}>
           {log.length ? log.map((l, i) => <div key={i}>{l}</div>) : <div>(no logs yet)</div>}
