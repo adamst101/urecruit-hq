@@ -657,7 +657,7 @@ export default function AdminOps() {
 
       const st = res?.stats || {};
       pushLog(
-        `✅ NCAA membership sync complete. fetched=${st.fetched} processed=${st.processed} matched=${st.matched} created=${st.created} updated=${st.updated} unmatched=${st.unmatched} ambiguous=${st.ambiguous} errors=${st.errors}`
+        `✅ NCAA membership sync complete. fetched=${st.fetched} processed=${st.processed} matched=${st.matched} created=${st.created} updated=${st.updated} nomatch=${st.unmatched} ambiguous=${st.ambiguous} errors=${st.errors}`
       );
 
       const samples = asArray(res?.debug?.samples).slice(0, 3);
