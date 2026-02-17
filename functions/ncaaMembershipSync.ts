@@ -1,8 +1,8 @@
 // functions/ncaaMembershipSync.ts
 // Batch-safe NCAA enrichment (name-only matching) with checkpointing + faster writes.
 //
-// Key improvements:
-// - Robust School pagination so the name index includes ALL schools (avoids false no_match)
+// Key improvements (v3):
+// - Robust School pagination that supports Base44 response shapes (array OR {data/items/... , next_cursor})
 // - Adds index telemetry: indexedSchools, indexMissingName, indexMissingSamples
 // - Defensive time budget checks
 // - Faster upsert: try CREATE first, on duplicate then UPDATE
@@ -149,7 +149,43 @@ function jsonResp(payload) {
   });
 }
 
-// Robust pagination for School.list
+// -------- Base44 list() response normalization --------
+function extractRowsFromListResponse(resp) {
+  if (!resp) return [];
+  if (Array.isArray(resp)) return resp;
+
+  // common shapes
+  const candidates = [
+    resp.data,
+    resp.items,
+    resp.records,
+    resp.results,
+    resp.rows,
+  ];
+
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c;
+  }
+
+  // some SDKs nest under "data.data"
+  if (resp.data && Array.isArray(resp.data.data)) return resp.data.data;
+
+  return [];
+}
+
+function extractCursorFromListResponse(resp) {
+  if (!resp || Array.isArray(resp)) return null;
+  return (
+    resp.next_cursor ??
+    resp.nextCursor ??
+    resp.next_page_token ??
+    resp.nextPageToken ??
+    resp.cursor_next ??
+    null
+  );
+}
+
+// Robust pagination for School.list that supports cursor pagination
 async function listAllSchoolsPaged(School, debug, timeBudgetMs, startedAtMs) {
   const out = [];
   const t0 = startedAtMs;
@@ -158,51 +194,89 @@ async function listAllSchoolsPaged(School, debug, timeBudgetMs, startedAtMs) {
   const outOfTime = () => elapsed() >= timeBudgetMs;
 
   const LIMIT = 1000;
-  let offset = 0;
 
+  // 1) Prefer list() with cursor if available
   if (School && typeof School.list === "function") {
+    let cursor = null;
+    let pages = 0;
+
     while (!outOfTime()) {
-      let page = [];
+      pages += 1;
+      let resp = null;
+
       try {
-        page = await School.list({ where: {}, limit: LIMIT, offset });
+        // Try cursor style first (most common in modern SDKs)
+        resp = await School.list({ where: {}, limit: LIMIT, cursor });
       } catch {
         try {
-          page = await School.list({ limit: LIMIT, offset });
+          // Try token naming variations
+          resp = await School.list({ where: {}, limit: LIMIT, next_cursor: cursor });
         } catch {
-          break;
+          try {
+            // Try offset style fallback
+            resp = await School.list({ where: {}, limit: LIMIT, offset: out.length });
+          } catch {
+            try {
+              resp = await School.list({ limit: LIMIT, offset: out.length });
+            } catch {
+              break;
+            }
+          }
         }
       }
 
-      if (!Array.isArray(page) || page.length === 0) break;
-      out.push(...page);
-      offset += page.length;
+      const page = extractRowsFromListResponse(resp);
+      const next = extractCursorFromListResponse(resp);
 
-      if (page.length < LIMIT) break;
+      if (!Array.isArray(page) || page.length === 0) {
+        break;
+      }
+
+      out.push(...page);
+
+      // stop conditions
+      if (next) {
+        cursor = next;
+      } else if (page.length < LIMIT) {
+        break;
+      } else {
+        // if no cursor provided but page is full, try offset on next loop
+        cursor = null;
+      }
+
+      // tiny yield
       await sleep(1);
+
+      // safety: don't loop forever
+      if (pages > 50) break;
     }
 
-    debug.notes.push(`School paging(list): rows=${out.length} offset=${offset} elapsedMs=${elapsed()}`);
-    return out;
+    debug.notes.push(`School paging(list): rows=${out.length} pages=${pages} elapsedMs=${elapsed()}`);
   }
 
-  // Fallbacks
-  if (School && typeof School.filter === "function") {
+  // 2) If list returned nothing, fallback to filter({})
+  if (out.length === 0 && School && typeof School.filter === "function") {
     try {
       const rows = await School.filter({});
-      const arr = Array.isArray(rows) ? rows : [];
-      debug.notes.push(`School fetch(filter): rows=${arr.length} (may be capped) elapsedMs=${elapsed()}`);
-      return arr;
+      const arr = Array.isArray(rows) ? rows : extractRowsFromListResponse(rows);
+      if (Array.isArray(arr) && arr.length) {
+        debug.notes.push(`School fetch(filter fallback): rows=${arr.length} elapsedMs=${elapsed()}`);
+        return arr;
+      }
     } catch {
       // ignore
     }
   }
 
-  if (School && typeof School.all === "function") {
+  // 3) Final fallback: all()
+  if (out.length === 0 && School && typeof School.all === "function") {
     try {
       const rows = await School.all();
-      const arr = Array.isArray(rows) ? rows : [];
-      debug.notes.push(`School fetch(all): rows=${arr.length} elapsedMs=${elapsed()}`);
-      return arr;
+      const arr = Array.isArray(rows) ? rows : extractRowsFromListResponse(rows);
+      if (Array.isArray(arr) && arr.length) {
+        debug.notes.push(`School fetch(all fallback): rows=${arr.length} elapsedMs=${elapsed()}`);
+        return arr;
+      }
     } catch {
       // ignore
     }
@@ -336,7 +410,7 @@ Deno.serve(async (req) => {
       if (outOfTime(timeBudgetMs)) {
         debug.stoppedEarly = true;
         debug.elapsedMs = elapsed();
-        nextStartAt = i; // resume
+        nextStartAt = i;
         done = false;
         break;
       }
@@ -451,7 +525,6 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Fast upsert:
       try {
         await AthleticsMembership.create(rec);
         stats.created += 1;
