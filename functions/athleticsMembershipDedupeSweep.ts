@@ -1,6 +1,10 @@
 // functions/athleticsMembershipDedupe.ts
 // Dedupe AthleticsMembership by source_key (keep best, delete rest).
-// TS-free syntax to avoid Base44 editor parse errors.
+// Fixes:
+// - In dryRun, DO NOT treat maxDelete as a limiter; compute wouldDelete instead.
+// - Always advance nextStartAtGroup to endAt (or time-budget stop), not last dup index.
+// - Adds stats.wouldDelete for audit visibility.
+// - Safer delete throttling + retry.
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 
@@ -60,7 +64,7 @@ async function deleteWithRetry(Entity, id, tries, debug, throttleMs) {
 }
 
 function pickBestRecord(records) {
-  // Prefer: higher confidence, then newest last_verified_at, then newest created_at.
+  // Prefer: higher confidence, then newest last_verified_at, then newest created_at, else stable.
   const scored = records.map((r) => {
     const conf = Number((r && r.confidence) ?? 0);
     const lv = Date.parse((r && (r.last_verified_at || r.lastVerifiedAt)) || "") || 0;
@@ -86,6 +90,7 @@ Deno.serve(async (req) => {
     notes: [],
     errors: [],
     elapsedMs: 0,
+    sampleDupKeys: [],
   };
 
   const stats = {
@@ -94,6 +99,7 @@ Deno.serve(async (req) => {
     dupGroups: 0,
     kept: 0,
     deleted: 0,
+    wouldDelete: 0, // dryRun-only (and also informative in write mode)
     errors: 0,
   };
 
@@ -122,7 +128,7 @@ Deno.serve(async (req) => {
     const startAtGroup = Math.max(0, toNum(body.startAtGroup, 0));
     const maxGroups = Math.max(1, toNum(body.maxGroups, 120));
     const maxDelete = Math.max(0, toNum(body.maxDelete, 200));
-    const throttleMs = Math.max(0, toNum(body.throttleMs, dryRun ? 0 : 120));
+    const throttleMs = Math.max(0, toNum(body.throttleMs, dryRun ? 0 : 150));
     const timeBudgetMs = Math.max(5000, toNum(body.timeBudgetMs, 22000));
     const tries = Math.max(1, toNum(body.tries, 6));
 
@@ -161,12 +167,6 @@ Deno.serve(async (req) => {
       return jsonResp({ ok: true, dryRun, stats, debug, nextStartAtGroup, done });
     }
 
-    if (outOfTime(timeBudgetMs)) {
-      debug.notes.push("out_of_time_before_grouping");
-      debug.elapsedMs = elapsed();
-      return jsonResp({ ok: true, dryRun, stats, debug, nextStartAtGroup, done });
-    }
-
     // Group by source_key
     const byKey = new Map();
     for (const r of rows) {
@@ -180,15 +180,16 @@ Deno.serve(async (req) => {
     stats.groups = keys.length;
 
     const endAt = Math.min(keys.length, startAtGroup + maxGroups);
+    // default cursor advance = endAt (we may reduce if we stop due to time budget)
     nextStartAtGroup = endAt;
     done = endAt >= keys.length;
 
-    let deleteBudget = maxDelete;
+    let deleteBudget = dryRun ? Number.MAX_SAFE_INTEGER : maxDelete;
 
     for (let gi = startAtGroup; gi < endAt; gi++) {
       if (outOfTime(timeBudgetMs)) {
         debug.notes.push(`stoppedEarly out_of_time gi=${gi}`);
-        nextStartAtGroup = gi;
+        nextStartAtGroup = gi; // resume here
         done = false;
         break;
       }
@@ -198,6 +199,7 @@ Deno.serve(async (req) => {
       if (group.length <= 1) continue;
 
       stats.dupGroups += 1;
+      if (debug.sampleDupKeys.length < 3) debug.sampleDupKeys.push(key);
 
       const keep = pickBestRecord(group);
       const keepId = getId(keep);
@@ -213,16 +215,18 @@ Deno.serve(async (req) => {
         return id && id !== keepId;
       });
 
+      // audit visibility (even in write mode)
+      stats.wouldDelete += toDelete.length;
+
       for (const r of toDelete) {
-        if (deleteBudget <= 0) {
+        if (!dryRun && deleteBudget <= 0) {
+          // Stop deleting, but do NOT rewind cursor; keep it progressing to endAt for this run window.
           debug.notes.push(`delete_budget_exhausted at gi=${gi}`);
-          nextStartAtGroup = gi;
-          done = false;
           break;
         }
         if (outOfTime(timeBudgetMs)) {
           debug.notes.push(`stoppedEarly out_of_time during delete gi=${gi}`);
-          nextStartAtGroup = gi;
+          nextStartAtGroup = gi; // resume
           done = false;
           break;
         }
@@ -231,8 +235,7 @@ Deno.serve(async (req) => {
         if (!id) continue;
 
         if (dryRun) {
-          stats.deleted += 1;
-          deleteBudget -= 1;
+          // In dryRun we report "wouldDelete" but we do not increment "deleted".
           continue;
         }
 
@@ -255,4 +258,3 @@ Deno.serve(async (req) => {
     return jsonResp({ ok: false, error: "Fatal dedupe error", stats, debug, nextStartAtGroup, done });
   }
 });
-
