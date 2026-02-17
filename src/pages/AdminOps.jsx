@@ -28,9 +28,6 @@ const ROUTES = {
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, Math.max(0, Number(ms || 0))));
 }
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
-}
 function safeStr(x) {
   return x == null ? "" : String(x);
 }
@@ -51,16 +48,6 @@ function truncate(x, n = 1800) {
 function unwrapInvokeResponse(resp) {
   return resp?.data ?? resp ?? null;
 }
-
-function pickEntityFromSDK(name) {
-  const direct = Entities?.[name];
-  if (direct) return direct;
-  const e = base44?.entities;
-  if (e?.[name]) return e[name];
-  if (e?.[`${name}s`]) return e[`${name}s`];
-  return null;
-}
-
 function loadSessionState() {
   try {
     const raw = sessionStorage.getItem(ADMINOPS_SESSION_STATE_KEY);
@@ -77,6 +64,44 @@ function saveSessionState(state) {
   }
 }
 
+function pickEntityFromSDK(name) {
+  const direct = Entities?.[name];
+  if (direct) return direct;
+  const e = base44?.entities;
+  if (e?.[name]) return e[name];
+  if (e?.[`${name}s`]) return e[`${name}s`];
+  return null;
+}
+
+function isRetryableInvokeError(e) {
+  const msg = lc(e?.message || e);
+  // Axios-style / Base44 proxy failures
+  if (msg.includes("status code 502")) return true;
+  if (msg.includes("status code 503")) return true;
+  if (msg.includes("status code 504")) return true;
+  if (msg.includes("status code 429")) return true;
+  if (msg.includes("rate limit")) return true;
+  return false;
+}
+
+async function invokeWithRetry(invokeFn, { tries = 5, baseDelayMs = 700, jitterMs = 250, onRetry } = {}) {
+  let lastErr = null;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await invokeFn();
+    } catch (e) {
+      lastErr = e;
+      const retryable = isRetryableInvokeError(e);
+      if (!retryable || i === tries - 1) throw e;
+
+      const backoff = Math.min(10_000, Math.floor(baseDelayMs * Math.pow(2, i) + Math.random() * jitterMs));
+      onRetry?.({ attempt: i + 1, tries, backoffMs: backoff, error: safeStr(e?.message || e) });
+      await sleep(backoff);
+    }
+  }
+  throw lastErr;
+}
+
 export default function AdminOps() {
   const nav = useNavigate();
 
@@ -87,7 +112,7 @@ export default function AdminOps() {
   const [log, setLog] = useState([]);
   const logRef = useRef(null);
 
-  // "stop" flag for run-until-done loop (ref survives rerenders)
+  // stop flag for run-until-done loop (ref survives rerenders)
   const stopRunRef = useRef(false);
 
   // Athletics sync controls
@@ -102,6 +127,9 @@ export default function AdminOps() {
   const [runUntilDoneMaxBatches, setRunUntilDoneMaxBatches] = useState(20);
   const [runUntilDonePauseMs, setRunUntilDonePauseMs] = useState(900);
 
+  // Safety: stop loop if server reports too many per-row errors in a batch
+  const [haltOnBatchErrorsOver, setHaltOnBatchErrorsOver] = useState(25);
+
   const cursorStorageKey = useMemo(() => `${NCAA_CURSOR_KEY_PREFIX}${ncaaSeasonYear}`, [ncaaSeasonYear]);
   const [ncaaStartAt, setNcaaStartAt] = useState(0);
 
@@ -109,15 +137,13 @@ export default function AdminOps() {
   const [hasRecoveredSession, setHasRecoveredSession] = useState(false);
   const [showRecoverBanner, setShowRecoverBanner] = useState(false);
 
-  // Initial load: admin mode + restore session state (logs + settings)
+  // Initial load: admin mode + restore session state
   useEffect(() => {
     setAdminEnabled(localStorage.getItem(ADMIN_MODE_KEY) === "true");
 
     const ss = loadSessionState();
     if (ss && !hasRecoveredSession) {
-      // Restore logs + settings
       if (Array.isArray(ss.log)) setLog(ss.log);
-
       if (typeof ss.tab === "string") setTab(ss.tab);
 
       if (typeof ss.athleticsDryRun === "boolean") setAthleticsDryRun(ss.athleticsDryRun);
@@ -129,9 +155,8 @@ export default function AdminOps() {
 
       if (Number.isFinite(ss.runUntilDoneMaxBatches)) setRunUntilDoneMaxBatches(ss.runUntilDoneMaxBatches);
       if (Number.isFinite(ss.runUntilDonePauseMs)) setRunUntilDonePauseMs(ss.runUntilDonePauseMs);
+      if (Number.isFinite(ss.haltOnBatchErrorsOver)) setHaltOnBatchErrorsOver(ss.haltOnBatchErrorsOver);
 
-      // startAt is special: prefer cursor from localStorage per-season (source of truth),
-      // but if session had a newer manual edit, keep it.
       if (Number.isFinite(ss.ncaaStartAt)) setNcaaStartAt(ss.ncaaStartAt);
 
       setHasRecoveredSession(true);
@@ -139,13 +164,13 @@ export default function AdminOps() {
     }
   }, [hasRecoveredSession]);
 
-  // Load cursor per season (localStorage is source of truth for resume)
+  // Load cursor per season (localStorage is source of truth)
   useEffect(() => {
     const saved = Number(localStorage.getItem(cursorStorageKey) || 0);
     if (Number.isFinite(saved)) setNcaaStartAt(saved);
   }, [cursorStorageKey]);
 
-  // Persist session state on any meaningful change (logs + inputs)
+  // Persist session state (logs + inputs)
   useEffect(() => {
     saveSessionState({
       tab,
@@ -158,6 +183,7 @@ export default function AdminOps() {
       ncaaTimeBudgetMs,
       runUntilDoneMaxBatches,
       runUntilDonePauseMs,
+      haltOnBatchErrorsOver,
       ncaaStartAt,
       savedAt: new Date().toISOString(),
     });
@@ -172,6 +198,7 @@ export default function AdminOps() {
     ncaaTimeBudgetMs,
     runUntilDoneMaxBatches,
     runUntilDonePauseMs,
+    haltOnBatchErrorsOver,
     ncaaStartAt,
   ]);
 
@@ -195,7 +222,7 @@ export default function AdminOps() {
   function pushLog(line) {
     setLog((prev) => {
       const next = [...prev, `[${new Date().toISOString()}] ${line}`];
-      // keep log bounded to avoid huge sessionStorage
+      // keep log bounded so sessionStorage doesn’t explode
       if (next.length > 800) return next.slice(next.length - 800);
       return next;
     });
@@ -243,7 +270,18 @@ export default function AdminOps() {
       `NCAA sync start. DryRun=${payload.dryRun} seasonYear=${payload.seasonYear} startAt=${payload.startAt} maxRows=${payload.maxRows} threshold=${payload.confidenceThreshold} throttleMs=${payload.throttleMs} timeBudgetMs=${payload.timeBudgetMs}`
     );
 
-    const raw = await base44.functions.invoke("ncaaMembershipSync", payload);
+    const raw = await invokeWithRetry(
+      () => base44.functions.invoke("ncaaMembershipSync", payload),
+      {
+        tries: 5,
+        baseDelayMs: 800,
+        jitterMs: 250,
+        onRetry: ({ attempt, tries, backoffMs, error }) => {
+          pushLog(`↻ invoke retry ${attempt}/${tries - 1} in ${backoffMs}ms (reason="${error}")`);
+        },
+      }
+    );
+
     const res = unwrapInvokeResponse(raw);
 
     pushLog(`invoke data:\n${truncate(res, 1200)}`);
@@ -267,7 +305,7 @@ export default function AdminOps() {
       `✅ NCAA sync complete. processed=${st.processed} matched=${st.matched} created=${st.created} updated=${st.updated} noMatch=${st.noMatch} ambiguous=${st.ambiguous} missingName=${st.missingName} errors=${st.errors} nextStartAt=${nextStartAt} done=${done} elapsedMs=${elapsedMs} stoppedEarly=${stoppedEarly}`
     );
 
-    // persist cursor for resume (dry run included so operator can iterate)
+    // persist cursor for resume
     saveCursor(nextStartAt);
 
     return { ok: true, res, nextStartAt, done, stats: st, elapsedMs, stoppedEarly };
@@ -290,7 +328,7 @@ export default function AdminOps() {
     if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
     if (athleticsDryRun) return pushLog("❌ Run-until-done is disabled in DryRun. Switch to Write.");
 
-    // sanity: entity exists (optional)
+    // optional sanity check
     const AthleticsMembership = pickEntityFromSDK("AthleticsMembership");
     if (!AthleticsMembership) pushLog("⚠️ AthleticsMembership entity not found on client; function may still work, continuing.");
 
@@ -298,8 +336,9 @@ export default function AdminOps() {
     stopRunRef.current = false;
 
     try {
+      let cursor = Math.max(0, Number(ncaaStartAt || 0)); // IMPORTANT: local cursor, not React state
       pushLog(
-        `▶ Run until done: maxBatches=${runUntilDoneMaxBatches} pauseMs=${runUntilDonePauseMs} startingCursor=${ncaaStartAt}`
+        `▶ Run until done: maxBatches=${runUntilDoneMaxBatches} pauseMs=${runUntilDonePauseMs} startingCursor=${cursor} haltOnBatchErrorsOver=${haltOnBatchErrorsOver}`
       );
 
       let batches = 0;
@@ -314,11 +353,24 @@ export default function AdminOps() {
         batches += 1;
         pushLog(`--- Batch ${batches} ---`);
 
-        const out = await invokeNcaaOnce();
+        const out = await invokeNcaaOnce({ startAtOverride: cursor });
         if (!out?.ok) {
           pushLog(`❌ Batch ${batches} failed. Halting run-until-done.`);
           break;
         }
+
+        // Guardrail: if server reports lots of per-row errors, stop and let operator inspect
+        const batchErrors = Number(out?.stats?.errors || 0);
+        if (Number.isFinite(batchErrors) && batchErrors > haltOnBatchErrorsOver) {
+          pushLog(
+            `🛑 Halting: batch reported errors=${batchErrors} which is > haltOnBatchErrorsOver=${haltOnBatchErrorsOver}. Reduce write rate or inspect server debug/errors.`
+          );
+          break;
+        }
+
+        // advance cursor deterministically
+        cursor = Math.max(cursor, Number(out.nextStartAt || cursor));
+        saveCursor(cursor);
 
         done = !!out.done;
 
@@ -331,7 +383,9 @@ export default function AdminOps() {
         pushLog("🏁 NCAA run-until-done complete: done=true");
         pushLog("Next: run once from startAt=0 to prove idempotency (created≈0, updated>0).");
       } else if (batches >= runUntilDoneMaxBatches) {
-        pushLog(`⏸ Reached maxBatches=${runUntilDoneMaxBatches}. Cursor saved at startAt=${ncaaStartAt}. Run again to continue.`);
+        pushLog(`⏸ Reached maxBatches=${runUntilDoneMaxBatches}. Cursor saved at startAt=${cursor}. Run again to continue.`);
+      } else {
+        pushLog(`⏸ Halted early. Cursor saved at startAt=${cursor}.`);
       }
     } catch (e) {
       pushLog(`❌ run-until-done exception: ${safeStr(e?.message || e)}`);
@@ -348,7 +402,7 @@ export default function AdminOps() {
 
   function clearLogs() {
     setLog([]);
-    pushLog("Logs cleared.");
+    // no pushLog here (would re-add a line immediately)
   }
 
   const lastSavedCursor = useMemo(() => {
@@ -473,8 +527,7 @@ export default function AdminOps() {
                   onChange={(e) => {
                     const v = Math.max(0, Number(e.target.value || 0));
                     setNcaaStartAt(v);
-                    // persist manual edits immediately so refresh doesn’t lose them
-                    localStorage.setItem(cursorStorageKey, String(v));
+                    localStorage.setItem(cursorStorageKey, String(v)); // persist manual edits immediately
                   }}
                   disabled={busy}
                 />
@@ -546,6 +599,18 @@ export default function AdminOps() {
                     min="0"
                     value={runUntilDonePauseMs}
                     onChange={(e) => setRunUntilDonePauseMs(Math.max(0, Number(e.target.value || 0)))}
+                    disabled={busy}
+                  />
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">halt if errors &gt;</span>
+                  <input
+                    className="border rounded px-2 py-1 w-20"
+                    type="number"
+                    min="0"
+                    value={haltOnBatchErrorsOver}
+                    onChange={(e) => setHaltOnBatchErrorsOver(Math.max(0, Number(e.target.value || 0)))}
                     disabled={busy}
                   />
                 </label>
