@@ -1,17 +1,11 @@
 // functions/ncaaMembershipSync.ts
-// NCAA Membership Sync — IDENTITY SAFE + IDEMPOTENT (upsert by source_key)
+// Batch-safe NCAA enrichment (name-only matching) with checkpointing + faster writes.
 //
-// Why this version:
-// - Base44 tables may NOT enforce uniqueness on source_key.
-// - Therefore, "create then update-on-dup" is NOT idempotent.
-// - This implementation does TRUE UPSERT:
-//   1) filter by source_key
-//   2) update if found, else create
-//
-// Also includes:
-// - checkpointing (startAt/nextStartAt/done)
-// - timeBudget checks
-// - retry for transient write failures
+// Key improvements:
+// - Robust School pagination so the name index includes ALL schools (avoids false no_match)
+// - Adds index telemetry: indexedSchools, indexMissingName, indexMissingSamples
+// - Defensive time budget checks
+// - Faster upsert: try CREATE first, on duplicate then UPDATE
 //
 // Request body:
 // {
@@ -20,7 +14,7 @@
 //   startAt: number,
 //   maxRows: number,                 // batch size (recommend 150-250). 0 = ALL (not recommended for write)
 //   confidenceThreshold: number,      // 0..1
-//   throttleMs: number,              // recommend 0-5
+//   throttleMs: number,              // recommend 0-8
 //   timeBudgetMs: number,            // recommend 18000-22000
 //   sourcePlatform: string
 // }
@@ -68,19 +62,14 @@ async function safeText(r) {
 function isRetryableStatus(st) {
   return st === 429 || st === 500 || st === 502 || st === 503 || st === 504;
 }
-function isRetryableWriteError(errMsg) {
+function looksLikeDuplicate(errMsg) {
   const m = lc(errMsg);
   return (
-    m.includes("status code 429") ||
-    m.includes("status code 500") ||
-    m.includes("status code 502") ||
-    m.includes("status code 503") ||
-    m.includes("status code 504") ||
-    m.includes("rate limit") ||
-    m.includes("timeout") ||
-    m.includes("gateway") ||
-    m.includes("temporarily") ||
-    m.includes("network")
+    m.includes("duplicate") ||
+    m.includes("unique") ||
+    m.includes("already exists") ||
+    m.includes("conflict") ||
+    m.includes("409")
   );
 }
 
@@ -145,28 +134,6 @@ async function fetchJsonWithRetry(url, debug, tries) {
   throw lastErr || new Error("NCAA fetch failed");
 }
 
-async function listAllSchools(School) {
-  if (!School) return [];
-  if (typeof School.filter === "function") {
-    const rows = await School.filter({});
-    return Array.isArray(rows) ? rows : [];
-  }
-  if (typeof School.list === "function") {
-    try {
-      const rows = await School.list({ where: {} });
-      return Array.isArray(rows) ? rows : [];
-    } catch {
-      const rows = await School.list({});
-      return Array.isArray(rows) ? rows : [];
-    }
-  }
-  if (typeof School.all === "function") {
-    const rows = await School.all();
-    return Array.isArray(rows) ? rows : [];
-  }
-  return [];
-}
-
 function extractSchoolRows(payload) {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
@@ -182,31 +149,66 @@ function jsonResp(payload) {
   });
 }
 
-async function writeWithRetry(fn, debug, stats, meta) {
-  const tries = 4;
-  let lastErr = null;
+// Robust pagination for School.list
+async function listAllSchoolsPaged(School, debug, timeBudgetMs, startedAtMs) {
+  const out = [];
+  const t0 = startedAtMs;
 
-  for (let i = 0; i < tries; i++) {
-    try {
-      await fn();
-      return;
-    } catch (e) {
-      lastErr = e;
-      const msg = String(e?.message || e);
-      if (!isRetryableWriteError(msg) || i === tries - 1) {
-        stats.errors += 1;
-        debug.errors.push({ step: meta?.step || "write", message: msg, ...meta });
-        return;
+  const elapsed = () => Date.now() - t0;
+  const outOfTime = () => elapsed() >= timeBudgetMs;
+
+  const LIMIT = 1000;
+  let offset = 0;
+
+  if (School && typeof School.list === "function") {
+    while (!outOfTime()) {
+      let page = [];
+      try {
+        page = await School.list({ where: {}, limit: LIMIT, offset });
+      } catch {
+        try {
+          page = await School.list({ limit: LIMIT, offset });
+        } catch {
+          break;
+        }
       }
-      const wait = Math.min(6000, 450 * Math.pow(2, i)) + Math.floor(Math.random() * 200);
-      debug.retry_notes = debug.retry_notes || [];
-      debug.retry_notes.push({ attempt: i + 1, wait_ms: wait, kind: "write_retry", message: msg, ...meta });
-      await sleep(wait);
+
+      if (!Array.isArray(page) || page.length === 0) break;
+      out.push(...page);
+      offset += page.length;
+
+      if (page.length < LIMIT) break;
+      await sleep(1);
+    }
+
+    debug.notes.push(`School paging(list): rows=${out.length} offset=${offset} elapsedMs=${elapsed()}`);
+    return out;
+  }
+
+  // Fallbacks
+  if (School && typeof School.filter === "function") {
+    try {
+      const rows = await School.filter({});
+      const arr = Array.isArray(rows) ? rows : [];
+      debug.notes.push(`School fetch(filter): rows=${arr.length} (may be capped) elapsedMs=${elapsed()}`);
+      return arr;
+    } catch {
+      // ignore
     }
   }
 
-  stats.errors += 1;
-  debug.errors.push({ step: meta?.step || "write_fatal", message: String(lastErr?.message || lastErr), ...meta });
+  if (School && typeof School.all === "function") {
+    try {
+      const rows = await School.all();
+      const arr = Array.isArray(rows) ? rows : [];
+      debug.notes.push(`School fetch(all): rows=${arr.length} elapsedMs=${elapsed()}`);
+      return arr;
+    } catch {
+      // ignore
+    }
+  }
+
+  return out;
 }
 
 Deno.serve(async (req) => {
@@ -224,6 +226,7 @@ Deno.serve(async (req) => {
     notes: [],
     stoppedEarly: false,
     elapsedMs: 0,
+    indexMissingSamples: [],
   };
 
   const stats = {
@@ -237,6 +240,9 @@ Deno.serve(async (req) => {
     skippedDryRun: 0,
     missingName: 0,
     errors: 0,
+
+    indexedSchools: 0,
+    indexMissingName: 0,
   };
 
   let nextStartAt = 0;
@@ -270,16 +276,32 @@ Deno.serve(async (req) => {
     if (!School) return jsonResp({ ok: false, error: "School entity not found", stats, debug, nextStartAt, done });
     if (!AthleticsMembership) return jsonResp({ ok: false, error: "AthleticsMembership entity not found", stats, debug, nextStartAt, done });
 
-    // Build name-only index
-    const allSchools = await listAllSchools(School);
+    // Build School name index (paged)
+    const allSchools = await listAllSchoolsPaged(School, debug, timeBudgetMs, t0);
+
     const byNormName = new Map();
     for (const r of allSchools) {
-      const nn = s(r?.normalized_name) || normName(r?.school_name || r?.name || "");
-      if (!nn) continue;
+      const rawName =
+        s(r?.school_name) ||
+        s(r?.name) ||
+        s(r?.institution_name) ||
+        s(r?.display_name) ||
+        null;
+
+      const nn = s(r?.normalized_name) || (rawName ? normName(rawName) : null);
+
+      if (!nn) {
+        stats.indexMissingName += 1;
+        if (debug.indexMissingSamples.length < 6) debug.indexMissingSamples.push({ id: getId(r), keys: Object.keys(r || {}).slice(0, 12) });
+        continue;
+      }
+
       if (!byNormName.has(nn)) byNormName.set(nn, []);
       byNormName.get(nn).push(r);
     }
-    debug.notes.push(`Indexed schools: keys=${byNormName.size} rows=${allSchools.length} elapsedMs=${elapsed()}`);
+
+    stats.indexedSchools = allSchools.length;
+    debug.notes.push(`Indexed schools: keys=${byNormName.size} rows=${allSchools.length} missingName=${stats.indexMissingName} elapsedMs=${elapsed()}`);
 
     if (outOfTime(timeBudgetMs)) {
       debug.stoppedEarly = true;
@@ -336,29 +358,27 @@ Deno.serve(async (req) => {
       if (!candidates.length) {
         stats.noMatch += 1;
 
-        // Optional unmatched staging (safe-ish: check then create)
         if (Unmatched && !dryRun) {
           const rawKey = `ncaa:${nkey || "no_name"}:${slug || "no_slug"}`;
-          await writeWithRetry(
-            async () => {
-              const existing = await Unmatched.filter({ raw_source_key: rawKey });
-              if (Array.isArray(existing) && existing.length) return;
-              await Unmatched.create({
-                org: "ncaa",
-                raw_school_name: rawName,
-                raw_city: null,
-                raw_state: null,
-                raw_source_key: rawKey,
-                source_url: slug ? `https://www.ncaa.com/schools/${slug}` : null,
-                reason: "no_match",
-                attempted_match_notes: `name_only; normalized="${nkey}"`,
-                created_at: new Date().toISOString(),
-              });
-            },
-            debug,
-            stats,
-            { step: "unmatched_upsert", raw: { rawName, slug }, rawKey }
-          );
+          try {
+            await Unmatched.create({
+              org: "ncaa",
+              raw_school_name: rawName,
+              raw_city: null,
+              raw_state: null,
+              raw_source_key: rawKey,
+              source_url: slug ? `https://www.ncaa.com/schools/${slug}` : null,
+              reason: "no_match",
+              attempted_match_notes: `name_only; normalized="${nkey}"; schoolIndexRows=${allSchools.length}; indexKeys=${byNormName.size}`,
+              created_at: new Date().toISOString(),
+            });
+          } catch (e) {
+            const msg = String(e?.message || e);
+            if (!looksLikeDuplicate(msg)) {
+              stats.errors += 1;
+              debug.errors.push({ step: "unmatched_create", message: msg, raw: { rawName, slug }, rawKey });
+            }
+          }
         }
 
         continue;
@@ -369,26 +389,25 @@ Deno.serve(async (req) => {
 
         if (Unmatched && !dryRun) {
           const rawKey = `ncaa:${nkey}:${slug || "no_slug"}`;
-          await writeWithRetry(
-            async () => {
-              const existing = await Unmatched.filter({ raw_source_key: rawKey });
-              if (Array.isArray(existing) && existing.length) return;
-              await Unmatched.create({
-                org: "ncaa",
-                raw_school_name: rawName,
-                raw_city: null,
-                raw_state: null,
-                raw_source_key: rawKey,
-                source_url: slug ? `https://www.ncaa.com/schools/${slug}` : null,
-                reason: "ambiguous",
-                attempted_match_notes: `name_only; candidates=${candidates.length}; normalized="${nkey}"`,
-                created_at: new Date().toISOString(),
-              });
-            },
-            debug,
-            stats,
-            { step: "unmatched_upsert_ambiguous", raw: { rawName, slug }, rawKey }
-          );
+          try {
+            await Unmatched.create({
+              org: "ncaa",
+              raw_school_name: rawName,
+              raw_city: null,
+              raw_state: null,
+              raw_source_key: rawKey,
+              source_url: slug ? `https://www.ncaa.com/schools/${slug}` : null,
+              reason: "ambiguous",
+              attempted_match_notes: `name_only; candidates=${candidates.length}; normalized="${nkey}"`,
+              created_at: new Date().toISOString(),
+            });
+          } catch (e) {
+            const msg = String(e?.message || e);
+            if (!looksLikeDuplicate(msg)) {
+              stats.errors += 1;
+              debug.errors.push({ step: "unmatched_create_ambiguous", message: msg, raw: { rawName, slug }, rawKey });
+            }
+          }
         }
 
         continue;
@@ -432,36 +451,68 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // TRUE UPSERT by source_key (idempotent even without DB uniqueness)
-      await writeWithRetry(
-        async () => {
-          const existing = await AthleticsMembership.filter({ source_key: sourceKey });
-          if (Array.isArray(existing) && existing.length) {
-            const id = getId(existing[0]);
-            if (id) {
-              await AthleticsMembership.update(id, rec);
-              stats.updated += 1;
-              return;
+      // Fast upsert:
+      try {
+        await AthleticsMembership.create(rec);
+        stats.created += 1;
+      } catch (e) {
+        const msg = String(e?.message || e);
+        if (!looksLikeDuplicate(msg)) {
+          stats.errors += 1;
+          debug.errors.push({ step: "membership_create", message: msg, raw: { rawName, slug }, sourceKey });
+        } else {
+          try {
+            const existing = await AthleticsMembership.filter({ source_key: sourceKey });
+            if (Array.isArray(existing) && existing.length) {
+              const id = getId(existing[0]);
+              if (id) {
+                await AthleticsMembership.update(id, rec);
+                stats.updated += 1;
+              } else {
+                await AthleticsMembership.create(rec);
+                stats.created += 1;
+              }
+            } else {
+              await AthleticsMembership.create(rec);
+              stats.created += 1;
             }
+          } catch (e2) {
+            stats.errors += 1;
+            debug.errors.push({
+              step: "membership_update_on_dup",
+              message: String(e2?.message || e2),
+              raw: { rawName, slug },
+              sourceKey,
+            });
           }
-          await AthleticsMembership.create(rec);
-          stats.created += 1;
-        },
-        debug,
-        stats,
-        { step: "membership_upsert", raw: { rawName, slug }, sourceKey }
-      );
+        }
+      }
 
       if (throttleMs > 0) await sleep(throttleMs);
     }
 
     debug.elapsedMs = elapsed();
 
-    return jsonResp({ ok: true, dryRun, stats, debug, nextStartAt, done });
+    return jsonResp({
+      ok: true,
+      dryRun,
+      stats,
+      debug,
+      nextStartAt,
+      done,
+    });
   } catch (e) {
     stats.errors += 1;
     debug.errors.push({ step: "fatal", message: String(e?.message || e) });
     debug.elapsedMs = Date.now() - t0;
-    return jsonResp({ ok: false, error: String(e?.message || e), stats, debug, nextStartAt, done });
+
+    return jsonResp({
+      ok: false,
+      error: String(e?.message || e),
+      stats,
+      debug,
+      nextStartAt,
+      done,
+    });
   }
 });
