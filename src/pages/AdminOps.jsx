@@ -64,6 +64,11 @@ function saveSessionState(state) {
   }
 }
 
+function getId(r) {
+  const v = r?.id ?? r?._id ?? r?.uuid;
+  return v == null ? null : String(v);
+}
+
 function pickEntityFromSDK(name) {
   const direct = Entities?.[name];
   if (direct) return direct;
@@ -75,7 +80,6 @@ function pickEntityFromSDK(name) {
 
 function isRetryableInvokeError(e) {
   const msg = lc(e?.message || e);
-  // Axios-style / Base44 proxy failures
   if (msg.includes("status code 502")) return true;
   if (msg.includes("status code 503")) return true;
   if (msg.includes("status code 504")) return true;
@@ -100,6 +104,31 @@ async function invokeWithRetry(invokeFn, { tries = 5, baseDelayMs = 700, jitterM
     }
   }
   throw lastErr;
+}
+
+function normSchoolName(x) {
+  const s = lc(x)
+    .replace(/&/g, "and")
+    .replace(/\buniv\.\b/g, "university")
+    .replace(/\buniv\b/g, "university")
+    .replace(/\ba&m\b/g, "am")
+    .replace(/\bst\.\b/g, "state")
+    .replace(/\bmt\.\b/g, "mount")
+    .replace(/\bthe\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return s;
+}
+
+function openMaybe(url) {
+  const u = safeStr(url).trim();
+  if (!u) return;
+  try {
+    window.open(u, "_blank", "noopener,noreferrer");
+  } catch {
+    // ignore
+  }
 }
 
 export default function AdminOps() {
@@ -137,6 +166,25 @@ export default function AdminOps() {
   const [hasRecoveredSession, setHasRecoveredSession] = useState(false);
   const [showRecoverBanner, setShowRecoverBanner] = useState(false);
 
+  // Unmatched Repair UI state
+  const [repairOrg, setRepairOrg] = useState("ncaa");
+  const [repairReason, setRepairReason] = useState("no_match"); // no_match | ambiguous | missing_fields | all
+  const [repairQuery, setRepairQuery] = useState("");
+  const [repairLimit, setRepairLimit] = useState(50);
+  const [repairRows, setRepairRows] = useState([]);
+  const [repairLoading, setRepairLoading] = useState(false);
+
+  const [schoolIndexLoading, setSchoolIndexLoading] = useState(false);
+  const [schoolIndex, setSchoolIndex] = useState([]); // array of School rows
+  const [schoolIndexByNorm, setSchoolIndexByNorm] = useState(new Map()); // norm -> [school]
+  const [schoolSearch, setSchoolSearch] = useState("");
+  const [schoolSearchResults, setSchoolSearchResults] = useState([]);
+  const [selectedSchoolByRowId, setSelectedSchoolByRowId] = useState({}); // rowId -> { id, name, unitid }
+
+  const Unmatched = useMemo(() => pickEntityFromSDK("UnmatchedAthleticsRow"), []);
+  const School = useMemo(() => pickEntityFromSDK("School"), []);
+  const AthleticsMembership = useMemo(() => pickEntityFromSDK("AthleticsMembership"), []);
+
   // Initial load: admin mode + restore session state
   useEffect(() => {
     setAdminEnabled(localStorage.getItem(ADMIN_MODE_KEY) === "true");
@@ -158,6 +206,12 @@ export default function AdminOps() {
       if (Number.isFinite(ss.haltOnBatchErrorsOver)) setHaltOnBatchErrorsOver(ss.haltOnBatchErrorsOver);
 
       if (Number.isFinite(ss.ncaaStartAt)) setNcaaStartAt(ss.ncaaStartAt);
+
+      // Repair UI restore (best-effort)
+      if (typeof ss.repairOrg === "string") setRepairOrg(ss.repairOrg);
+      if (typeof ss.repairReason === "string") setRepairReason(ss.repairReason);
+      if (typeof ss.repairQuery === "string") setRepairQuery(ss.repairQuery);
+      if (Number.isFinite(ss.repairLimit)) setRepairLimit(ss.repairLimit);
 
       setHasRecoveredSession(true);
       setShowRecoverBanner(true);
@@ -185,6 +239,10 @@ export default function AdminOps() {
       runUntilDonePauseMs,
       haltOnBatchErrorsOver,
       ncaaStartAt,
+      repairOrg,
+      repairReason,
+      repairQuery,
+      repairLimit,
       savedAt: new Date().toISOString(),
     });
   }, [
@@ -200,6 +258,10 @@ export default function AdminOps() {
     runUntilDonePauseMs,
     haltOnBatchErrorsOver,
     ncaaStartAt,
+    repairOrg,
+    repairReason,
+    repairQuery,
+    repairLimit,
   ]);
 
   // Auto-scroll log view
@@ -222,8 +284,7 @@ export default function AdminOps() {
   function pushLog(line) {
     setLog((prev) => {
       const next = [...prev, `[${new Date().toISOString()}] ${line}`];
-      // keep log bounded so sessionStorage doesn’t explode
-      if (next.length > 800) return next.slice(next.length - 800);
+      if (next.length > 900) return next.slice(next.length - 900);
       return next;
     });
   }
@@ -270,17 +331,14 @@ export default function AdminOps() {
       `NCAA sync start. DryRun=${payload.dryRun} seasonYear=${payload.seasonYear} startAt=${payload.startAt} maxRows=${payload.maxRows} threshold=${payload.confidenceThreshold} throttleMs=${payload.throttleMs} timeBudgetMs=${payload.timeBudgetMs}`
     );
 
-    const raw = await invokeWithRetry(
-      () => base44.functions.invoke("ncaaMembershipSync", payload),
-      {
-        tries: 5,
-        baseDelayMs: 800,
-        jitterMs: 250,
-        onRetry: ({ attempt, tries, backoffMs, error }) => {
-          pushLog(`↻ invoke retry ${attempt}/${tries - 1} in ${backoffMs}ms (reason="${error}")`);
-        },
-      }
-    );
+    const raw = await invokeWithRetry(() => base44.functions.invoke("ncaaMembershipSync", payload), {
+      tries: 5,
+      baseDelayMs: 800,
+      jitterMs: 250,
+      onRetry: ({ attempt, tries, backoffMs, error }) => {
+        pushLog(`↻ invoke retry ${attempt}/${tries - 1} in ${backoffMs}ms (reason="${error}")`);
+      },
+    });
 
     const res = unwrapInvokeResponse(raw);
 
@@ -305,7 +363,6 @@ export default function AdminOps() {
       `✅ NCAA sync complete. processed=${st.processed} matched=${st.matched} created=${st.created} updated=${st.updated} noMatch=${st.noMatch} ambiguous=${st.ambiguous} missingName=${st.missingName} errors=${st.errors} nextStartAt=${nextStartAt} done=${done} elapsedMs=${elapsedMs} stoppedEarly=${stoppedEarly}`
     );
 
-    // persist cursor for resume
     saveCursor(nextStartAt);
 
     return { ok: true, res, nextStartAt, done, stats: st, elapsedMs, stoppedEarly };
@@ -328,15 +385,11 @@ export default function AdminOps() {
     if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
     if (athleticsDryRun) return pushLog("❌ Run-until-done is disabled in DryRun. Switch to Write.");
 
-    // optional sanity check
-    const AthleticsMembership = pickEntityFromSDK("AthleticsMembership");
-    if (!AthleticsMembership) pushLog("⚠️ AthleticsMembership entity not found on client; function may still work, continuing.");
-
     setBusy(true);
     stopRunRef.current = false;
 
     try {
-      let cursor = Math.max(0, Number(ncaaStartAt || 0)); // IMPORTANT: local cursor, not React state
+      let cursor = Math.max(0, Number(ncaaStartAt || 0));
       pushLog(
         `▶ Run until done: maxBatches=${runUntilDoneMaxBatches} pauseMs=${runUntilDonePauseMs} startingCursor=${cursor} haltOnBatchErrorsOver=${haltOnBatchErrorsOver}`
       );
@@ -359,16 +412,14 @@ export default function AdminOps() {
           break;
         }
 
-        // Guardrail: if server reports lots of per-row errors, stop and let operator inspect
         const batchErrors = Number(out?.stats?.errors || 0);
         if (Number.isFinite(batchErrors) && batchErrors > haltOnBatchErrorsOver) {
           pushLog(
-            `🛑 Halting: batch reported errors=${batchErrors} which is > haltOnBatchErrorsOver=${haltOnBatchErrorsOver}. Reduce write rate or inspect server debug/errors.`
+            `🛑 Halting: batch reported errors=${batchErrors} which is > haltOnBatchErrorsOver=${haltOnBatchErrorsOver}. Inspect server debug/errors and/or reduce write rate.`
           );
           break;
         }
 
-        // advance cursor deterministically
         cursor = Math.max(cursor, Number(out.nextStartAt || cursor));
         saveCursor(cursor);
 
@@ -402,7 +453,6 @@ export default function AdminOps() {
 
   function clearLogs() {
     setLog([]);
-    // no pushLog here (would re-add a line immediately)
   }
 
   const lastSavedCursor = useMemo(() => {
@@ -410,12 +460,196 @@ export default function AdminOps() {
     return Number.isFinite(v) ? v : 0;
   }, [cursorStorageKey, ncaaStartAt]);
 
+  // --------------------------
+  // Unmatched Repair UI helpers
+  // --------------------------
+
+  async function loadUnmatchedRows() {
+    if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
+    if (!Unmatched) return pushLog("❌ UnmatchedAthleticsRow entity not found (check entities.js exports).");
+
+    setRepairLoading(true);
+    try {
+      const where = {};
+      if (repairOrg && repairOrg !== "all") where.org = repairOrg;
+      if (repairReason && repairReason !== "all") where.reason = repairReason;
+
+      // Base44 filter is exact-match only in most cases; apply query client-side below.
+      const rows = await Unmatched.filter(where);
+      let list = Array.isArray(rows) ? rows : [];
+
+      const q = lc(repairQuery);
+      if (q) {
+        list = list.filter((r) => {
+          const a = lc(r?.raw_school_name);
+          const b = lc(r?.raw_city);
+          const c = lc(r?.raw_state);
+          const d = lc(r?.raw_source_key);
+          return a.includes(q) || b.includes(q) || c.includes(q) || d.includes(q);
+        });
+      }
+
+      list.sort((a, b) => {
+        const ta = safeStr(a?.created_at || a?.createdAt || "");
+        const tb = safeStr(b?.created_at || b?.createdAt || "");
+        // newest first
+        return tb.localeCompare(ta);
+      });
+
+      const limited = list.slice(0, Math.max(1, Number(repairLimit || 50)));
+      setRepairRows(limited);
+      pushLog(`Loaded Unmatched rows: total=${list.length} showing=${limited.length} org=${repairOrg} reason=${repairReason}`);
+    } catch (e) {
+      pushLog(`❌ Load Unmatched failed: ${safeStr(e?.message || e)}`);
+    } finally {
+      setRepairLoading(false);
+    }
+  }
+
+  async function buildSchoolIndex() {
+    if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
+    if (!School) return pushLog("❌ School entity not found (check entities.js exports).");
+
+    setSchoolIndexLoading(true);
+    try {
+      const rows = await School.filter({});
+      const list = Array.isArray(rows) ? rows : [];
+      const byNorm = new Map();
+
+      for (const srow of list) {
+        const id = getId(srow);
+        const name = safeStr(srow?.school_name || srow?.name || "");
+        const norm = safeStr(srow?.normalized_name || "") || normSchoolName(name);
+        const unitid = safeStr(srow?.unitid || "");
+        if (!id || !norm) continue;
+
+        if (!byNorm.has(norm)) byNorm.set(norm, []);
+        byNorm.get(norm).push({
+          id,
+          unitid,
+          name: name || norm,
+          city: safeStr(srow?.city || ""),
+          state: safeStr(srow?.state || ""),
+          website_url: safeStr(srow?.website_url || ""),
+        });
+      }
+
+      setSchoolIndex(list);
+      setSchoolIndexByNorm(byNorm);
+      pushLog(`School index loaded: rows=${list.length} keys=${byNorm.size}`);
+    } catch (e) {
+      pushLog(`❌ Build school index failed: ${safeStr(e?.message || e)}`);
+    } finally {
+      setSchoolIndexLoading(false);
+    }
+  }
+
+  function computeSchoolSearchResults(q) {
+    const query = normSchoolName(q || "");
+    if (!query) return [];
+    if (!schoolIndexByNorm || !(schoolIndexByNorm instanceof Map) || schoolIndexByNorm.size === 0) return [];
+
+    // Simple heuristic: substring match on norm key, then score by closeness
+    const results = [];
+    for (const [k, arr] of schoolIndexByNorm.entries()) {
+      if (!k.includes(query) && !query.includes(k)) continue;
+      const score = Math.abs(k.length - query.length) + (k.startsWith(query) ? -5 : 0);
+      for (const s of arr) results.push({ ...s, _score: score, _k: k });
+      if (results.length > 200) break; // cap
+    }
+    results.sort((a, b) => a._score - b._score);
+    return results.slice(0, 25);
+  }
+
+  useEffect(() => {
+    const res = computeSchoolSearchResults(schoolSearch);
+    setSchoolSearchResults(res);
+  }, [schoolSearch, schoolIndexByNorm]);
+
+  async function applyRepairForRow(row) {
+    if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
+    if (!AthleticsMembership) return pushLog("❌ AthleticsMembership entity not found (check entities.js exports).");
+    if (!Unmatched) return pushLog("❌ UnmatchedAthleticsRow entity not found (check entities.js exports).");
+
+    const rowId = getId(row);
+    const org = safeStr(row?.org || "ncaa").trim() || "ncaa";
+    const picked = selectedSchoolByRowId?.[rowId];
+
+    if (!rowId) return pushLog("❌ Repair failed: unmatched row missing id.");
+    if (!picked?.id) return pushLog("❌ Repair failed: select a School first.");
+
+    const schoolId = picked.id;
+    const seasonYear = Number(ncaaSeasonYear || new Date().getFullYear());
+    const sourceKey = `${org}:${schoolId}:${seasonYear}`;
+
+    // Membership record fields (minimal but deterministic)
+    const rec = {
+      school_id: schoolId,
+      org,
+      member: true,
+      division: null,
+      subdivision: null,
+      conference: null,
+      season_year: seasonYear,
+      source_platform: "manual-repair",
+      source_url: safeStr(row?.source_url || row?.sourceUrl || ""),
+      source_key: sourceKey,
+      confidence: 1,
+      last_verified_at: new Date().toISOString(),
+    };
+
+    setBusy(true);
+    try {
+      // Upsert strategy:
+      // 1) try create, 2) on duplicate, filter+update first hit
+      try {
+        await AthleticsMembership.create(rec);
+        pushLog(`✅ Repair: created AthleticsMembership source_key=${sourceKey} (school="${picked.name}")`);
+      } catch (e1) {
+        const msg = lc(e1?.message || e1);
+        const looksDup = msg.includes("duplicate") || msg.includes("unique") || msg.includes("already exists") || msg.includes("conflict") || msg.includes("409");
+        if (!looksDup) throw e1;
+
+        const existing = await AthleticsMembership.filter({ source_key: sourceKey });
+        const first = Array.isArray(existing) && existing.length ? existing[0] : null;
+        const exId = getId(first);
+        if (!exId) {
+          // fallback: attempt create again; if still dup, surface
+          await AthleticsMembership.create(rec);
+          pushLog(`✅ Repair: created AthleticsMembership (fallback) source_key=${sourceKey}`);
+        } else {
+          await AthleticsMembership.update(exId, rec);
+          pushLog(`✅ Repair: updated AthleticsMembership source_key=${sourceKey} (school="${picked.name}")`);
+        }
+      }
+
+      // Delete unmatched row so it stops reappearing.
+      // If delete not supported, we leave it and log.
+      const delFn = Unmatched.delete || Unmatched.remove || Unmatched.destroy;
+      if (typeof delFn === "function") {
+        await delFn.call(Unmatched, rowId);
+        pushLog(`✅ Repair: deleted UnmatchedAthleticsRow id=${rowId}`);
+        setRepairRows((prev) => prev.filter((r) => getId(r) !== rowId));
+      } else {
+        pushLog(`⚠️ UnmatchedAthleticsRow delete() not available. Row id=${rowId} not removed. (Safe, but will keep showing up.)`);
+      }
+    } catch (e) {
+      pushLog(`❌ Repair failed for row id=${rowId}: ${safeStr(e?.message || e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // --------------------------
+  // Render
+  // --------------------------
+
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
+    <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Admin Ops</h1>
-          <div className="text-sm text-gray-600">Checkpointed pipelines with telemetry.</div>
+          <div className="text-sm text-gray-600">Checkpointed pipelines with telemetry and repair tools.</div>
         </div>
 
         <div className="flex gap-2">
@@ -473,7 +707,7 @@ export default function AdminOps() {
       {tab === "overview" && (
         <Card className="p-4">
           <div className="text-lg font-semibold">Admin Ops hub</div>
-          <div className="text-sm text-gray-700 mt-2">Use Athletics tab for NCAA enrichment batches.</div>
+          <div className="text-sm text-gray-700 mt-2">Use Athletics tab for NCAA enrichment and repair.</div>
           <div className="flex flex-wrap gap-2 mt-4">
             <Button variant="outline" onClick={() => nav(ROUTES.AdminSeedSchoolsMaster)} disabled={busy}>
               Seed Schools (Scorecard)
@@ -493,6 +727,7 @@ export default function AdminOps() {
 
       {tab === "athletics" && (
         <div className="space-y-4">
+          {/* NCAA runner */}
           <Card className="p-4 space-y-3">
             <div className="text-lg font-semibold">NCAA enrichment (batch + resume)</div>
             <div className="text-sm text-gray-600">
@@ -527,7 +762,7 @@ export default function AdminOps() {
                   onChange={(e) => {
                     const v = Math.max(0, Number(e.target.value || 0));
                     setNcaaStartAt(v);
-                    localStorage.setItem(cursorStorageKey, String(v)); // persist manual edits immediately
+                    localStorage.setItem(cursorStorageKey, String(v));
                   }}
                   disabled={busy}
                 />
@@ -633,6 +868,224 @@ export default function AdminOps() {
 
             <div className="text-xs text-gray-600">
               Cursor key: <span className="font-mono">{cursorStorageKey}</span> (persisted)
+            </div>
+          </Card>
+
+          {/* Unmatched Repair UI */}
+          <Card className="p-4 space-y-3">
+            <div className="text-lg font-semibold">Unmatched repair UI</div>
+            <div className="text-sm text-gray-600">
+              Manually map unmatched athletics rows to an existing School, then write a deterministic AthleticsMembership record. No School creation.
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <div className="text-sm font-medium">1) Load Unmatched</div>
+
+                <div className="flex flex-wrap gap-2 items-center">
+                  <label className="text-sm">
+                    <div className="text-gray-600">Org</div>
+                    <select className="border rounded px-2 py-1" value={repairOrg} onChange={(e) => setRepairOrg(e.target.value)} disabled={busy || repairLoading}>
+                      <option value="ncaa">ncaa</option>
+                      <option value="naia">naia</option>
+                      <option value="njcaa">njcaa</option>
+                      <option value="all">all</option>
+                    </select>
+                  </label>
+
+                  <label className="text-sm">
+                    <div className="text-gray-600">Reason</div>
+                    <select className="border rounded px-2 py-1" value={repairReason} onChange={(e) => setRepairReason(e.target.value)} disabled={busy || repairLoading}>
+                      <option value="no_match">no_match</option>
+                      <option value="ambiguous">ambiguous</option>
+                      <option value="missing_fields">missing_fields</option>
+                      <option value="all">all</option>
+                    </select>
+                  </label>
+
+                  <label className="text-sm">
+                    <div className="text-gray-600">Limit</div>
+                    <input className="border rounded px-2 py-1 w-24" type="number" value={repairLimit} onChange={(e) => setRepairLimit(Number(e.target.value || 50))} disabled={busy || repairLoading} />
+                  </label>
+                </div>
+
+                <label className="text-sm block">
+                  <div className="text-gray-600">Search</div>
+                  <input className="border rounded px-2 py-1 w-full" value={repairQuery} onChange={(e) => setRepairQuery(e.target.value)} disabled={busy || repairLoading} placeholder="name, city, state, source_key" />
+                </label>
+
+                <div className="flex gap-2">
+                  <Button onClick={loadUnmatchedRows} disabled={busy || repairLoading || !adminEnabled}>
+                    {repairLoading ? "Loading..." : "Load unmatched"}
+                  </Button>
+                  <Button variant="outline" onClick={() => setRepairRows([])} disabled={busy || repairLoading}>
+                    Clear list
+                  </Button>
+                </div>
+
+                <div className="text-xs text-gray-600">
+                  Entity status: Unmatched={Unmatched ? "OK" : "MISSING"} | School={School ? "OK" : "MISSING"} | AthleticsMembership={AthleticsMembership ? "OK" : "MISSING"}
+                </div>
+              </div>
+
+              <div className="space-y-2 lg:col-span-2">
+                <div className="text-sm font-medium">2) Load School index + search</div>
+                <div className="text-xs text-gray-600">Load once per session. Then pick a School for each unmatched row.</div>
+
+                <div className="flex flex-wrap gap-2 items-center">
+                  <Button onClick={buildSchoolIndex} disabled={busy || schoolIndexLoading || !adminEnabled}>
+                    {schoolIndexLoading ? "Indexing..." : `Load Schools (${schoolIndex.length || 0})`}
+                  </Button>
+
+                  <label className="text-sm flex-1 min-w-[240px]">
+                    <div className="text-gray-600">School search</div>
+                    <input className="border rounded px-2 py-1 w-full" value={schoolSearch} onChange={(e) => setSchoolSearch(e.target.value)} disabled={busy || schoolIndexLoading} placeholder="e.g., 'adams state' or 'university of akron'" />
+                  </label>
+                </div>
+
+                {schoolSearch && (
+                  <div className="border rounded p-2">
+                    <div className="text-xs text-gray-600 mb-2">Top matches (click to copy as selection when repairing a row):</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {schoolSearchResults.length === 0 && <div className="text-xs text-gray-500">(no matches)</div>}
+                      {schoolSearchResults.map((s) => (
+                        <div key={s.id} className="border rounded p-2 text-sm">
+                          <div className="font-medium">{s.name}</div>
+                          <div className="text-xs text-gray-600">
+                            {s.city ? `${s.city}, ` : ""}
+                            {s.state}
+                            {s.unitid ? ` • unitid ${s.unitid}` : ""}
+                          </div>
+                          <div className="text-xs font-mono mt-1">{s.id}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2">Tip: use this as a lookup list, then select the School per row below.</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t pt-3">
+              <div className="text-sm font-medium mb-2">3) Repair rows</div>
+
+              {repairRows.length === 0 ? (
+                <div className="text-sm text-gray-600">(Load unmatched rows to begin.)</div>
+              ) : (
+                <div className="space-y-3">
+                  {repairRows.map((row) => {
+                    const rowId = getId(row);
+                    const rawName = safeStr(row?.raw_school_name || "");
+                    const rawCity = safeStr(row?.raw_city || "");
+                    const rawState = safeStr(row?.raw_state || "");
+                    const reason = safeStr(row?.reason || "");
+                    const org = safeStr(row?.org || "");
+                    const url = safeStr(row?.source_url || row?.sourceUrl || "");
+                    const key = safeStr(row?.raw_source_key || "");
+                    const notes = safeStr(row?.attempted_match_notes || "");
+                    const selected = selectedSchoolByRowId?.[rowId] || null;
+
+                    return (
+                      <div key={rowId} className="border rounded-lg p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <div className="font-semibold">
+                              {rawName || "(missing raw_school_name)"}{" "}
+                              <span className="text-xs text-gray-500">
+                                [{org || "?"} / {reason || "?"}]
+                              </span>
+                            </div>
+                            <div className="text-sm text-gray-700">
+                              {rawCity || rawState ? (
+                                <span>
+                                  {rawCity ? `${rawCity}, ` : ""}
+                                  {rawState}
+                                </span>
+                              ) : (
+                                <span className="text-gray-500">(no city/state)</span>
+                              )}
+                            </div>
+                            <div className="text-xs font-mono text-gray-600 mt-1">{key}</div>
+                            {notes ? <div className="text-xs text-gray-600 mt-1">Notes: {notes}</div> : null}
+                            {url ? (
+                              <div className="text-xs mt-1">
+                                <button className="underline text-blue-700" onClick={() => openMaybe(url)} disabled={busy}>
+                                  Open source
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="min-w-[320px] flex-1">
+                            <div className="text-xs text-gray-600 mb-1">Select School</div>
+                            <div className="flex gap-2 items-center">
+                              <input
+                                className="border rounded px-2 py-1 flex-1"
+                                placeholder="Paste School id OR type name then pick from results below"
+                                value={selected?.id ? selected.id : ""}
+                                onChange={(e) => {
+                                  const v = safeStr(e.target.value).trim();
+                                  setSelectedSchoolByRowId((prev) => ({
+                                    ...prev,
+                                    [rowId]: v ? { id: v, name: prev?.[rowId]?.name || "", unitid: prev?.[rowId]?.unitid || "" } : null,
+                                  }));
+                                }}
+                                disabled={busy}
+                              />
+                              <Button
+                                variant="outline"
+                                onClick={() => {
+                                  // quick-fill from top search result (if available)
+                                  const top = schoolSearchResults?.[0];
+                                  if (!top?.id) return;
+                                  setSelectedSchoolByRowId((prev) => ({
+                                    ...prev,
+                                    [rowId]: { id: top.id, name: top.name, unitid: top.unitid },
+                                  }));
+                                }}
+                                disabled={busy || schoolSearchResults.length === 0}
+                              >
+                                Use top match
+                              </Button>
+                            </div>
+
+                            {selected?.id ? (
+                              <div className="text-xs text-gray-600 mt-1">
+                                Selected: <span className="font-mono">{selected.id}</span> {selected.name ? `• ${selected.name}` : ""}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-500 mt-1">(No school selected)</div>
+                            )}
+
+                            <div className="flex gap-2 mt-2">
+                              <Button onClick={() => applyRepairForRow(row)} disabled={busy || !adminEnabled || !selected?.id}>
+                                Apply repair
+                              </Button>
+                              <Button
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedSchoolByRowId((prev) => {
+                                    const next = { ...prev };
+                                    delete next[rowId];
+                                    return next;
+                                  });
+                                }}
+                                disabled={busy}
+                              >
+                                Clear selection
+                              </Button>
+                            </div>
+
+                            <div className="text-xs text-gray-500 mt-1">
+                              Writes AthleticsMembership with source_key <span className="font-mono">{`${org || "org"}:${"school_id"}:${ncaaSeasonYear}`}</span> and attempts to delete this Unmatched row.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </Card>
         </div>
