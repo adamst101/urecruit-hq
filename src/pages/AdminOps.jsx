@@ -187,6 +187,12 @@ export default function AdminOps() {
     CampIntentHistory: true,
     CampDecisionScore: true,
 
+    // Athletics enrichment (derived from School master)
+    AthleticsMembership: true,
+    SchoolSport: true,
+    UnmatchedAthleticsRow: true,
+    AthleticsMatchOverride: false,
+
     Scenario: false,
     ScenarioCamp: false,
     TargetSchool: false,
@@ -210,6 +216,13 @@ export default function AdminOps() {
   const [dedupeDryRun, setDedupeDryRun] = useState(true);
   const [dedupeDeleteDelayMs, setDedupeDeleteDelayMs] = useState(220);
   const [dedupeMode, setDedupeMode] = useState("unitid");
+
+  // Athletics sync controls
+  const [athleticsDryRun, setAthleticsDryRun] = useState(true);
+  const [ncaaSeasonYear, setNcaaSeasonYear] = useState(new Date().getFullYear());
+  const [ncaaMaxRows, setNcaaMaxRows] = useState(0); // 0 = no limit
+  const [ncaaConfidenceThreshold, setNcaaConfidenceThreshold] = useState(0.92);
+  const [ncaaThrottleMs, setNcaaThrottleMs] = useState(80);
 
   const [pageSize, setPageSize] = useState(2000);
 
@@ -260,6 +273,9 @@ export default function AdminOps() {
       "CampIntent",
       "CampIntentHistory",
       "CampDecisionScore",
+      "AthleticsMembership",
+      "SchoolSport",
+      "UnmatchedAthleticsRow",
     ];
     for (const k of derived) if (k in next) next[k] = true;
 
@@ -598,6 +614,51 @@ export default function AdminOps() {
     }
   }
 
+  async function runNcaaMembershipSync() {
+    if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
+    setBusy(true);
+    try {
+      if (!base44?.functions?.invoke) {
+        pushLog("❌ base44.functions.invoke is not available in this environment.");
+        return;
+      }
+
+      const payload = {
+        dryRun: athleticsDryRun,
+        seasonYear: ncaaSeasonYear,
+        maxRows: ncaaMaxRows,
+        confidenceThreshold: ncaaConfidenceThreshold,
+        throttleMs: ncaaThrottleMs,
+        sourcePlatform: "ncaa-api",
+      };
+
+      pushLog(
+        `NCAA membership sync start. DryRun=${payload.dryRun} seasonYear=${payload.seasonYear} maxRows=${payload.maxRows || "ALL"} threshold=${payload.confidenceThreshold}`
+      );
+
+      const res = await base44.functions.invoke("ncaaMembershipSync", payload);
+      const ok = !!res?.ok;
+      const st = res?.stats || {};
+
+      if (!ok) {
+        pushLog(`❌ NCAA membership sync failed: ${safeStr(res?.error || "unknown error")}`);
+      } else {
+        pushLog(
+          `✅ NCAA membership sync complete. fetched=${st.fetched} processed=${st.processed} matched=${st.matched} created=${st.created} updated=${st.updated} unmatched=${st.unmatched} ambiguous=${st.ambiguous} errors=${st.errors}`
+        );
+      }
+
+      const samples = asArray(res?.debug?.samples).slice(0, 3);
+      for (const smp of samples) pushLog(`sample: ${safeStr(JSON.stringify(smp)).slice(0, 420)}`);
+      const errs = asArray(res?.debug?.errors).slice(0, 3);
+      for (const er of errs) pushLog(`error: ${safeStr(JSON.stringify(er)).slice(0, 420)}`);
+    } catch (e) {
+      pushLog(`❌ NCAA membership sync exception: ${safeStr(e?.message || e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -639,6 +700,9 @@ export default function AdminOps() {
             </Button>
             <Button variant={tab === "schools" ? "default" : "outline"} onClick={() => setTab("schools")} disabled={busy}>
               Schools
+            </Button>
+            <Button variant={tab === "athletics" ? "default" : "outline"} onClick={() => setTab("athletics")} disabled={busy}>
+              Athletics
             </Button>
             <Button variant={tab === "diagnostics" ? "default" : "outline"} onClick={() => setTab("diagnostics")} disabled={busy}>
               Diagnostics
@@ -840,6 +904,100 @@ export default function AdminOps() {
               <Button onClick={runSchoolDedupe} disabled={busy || !adminEnabled}>
                 Run dedupe (selected mode)
               </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {tab === "athletics" && (
+        <div className="space-y-4">
+          <Card className="p-4 space-y-3">
+            <div className="text-lg font-semibold">Athletics enrichment</div>
+            <div className="text-sm text-gray-600">
+              Enrichment never creates Schools. It only upserts AthleticsMembership / SchoolSport using deterministic keys and holds unmatched rows.
+            </div>
+
+            <div className="flex flex-wrap gap-2 items-center">
+              <Button variant={athleticsDryRun ? "default" : "outline"} onClick={() => setAthleticsDryRun(true)} disabled={busy}>
+                Dry run
+              </Button>
+              <Button variant={!athleticsDryRun ? "default" : "outline"} onClick={() => setAthleticsDryRun(false)} disabled={busy}>
+                Write
+              </Button>
+
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-gray-600">Season year</span>
+                <input
+                  className="border rounded px-2 py-1 w-28"
+                  type="number"
+                  value={ncaaSeasonYear}
+                  onChange={(e) => setNcaaSeasonYear(Number(e.target.value || 0))}
+                  disabled={busy}
+                />
+              </label>
+
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-gray-600">Max rows</span>
+                <input
+                  className="border rounded px-2 py-1 w-28"
+                  type="number"
+                  value={ncaaMaxRows}
+                  onChange={(e) => setNcaaMaxRows(Number(e.target.value || 0))}
+                  disabled={busy}
+                />
+              </label>
+
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-gray-600">Threshold</span>
+                <input
+                  className="border rounded px-2 py-1 w-28"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="1"
+                  value={ncaaConfidenceThreshold}
+                  onChange={(e) => setNcaaConfidenceThreshold(Number(e.target.value || 0))}
+                  disabled={busy}
+                />
+              </label>
+
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-gray-600">Throttle ms</span>
+                <input
+                  className="border rounded px-2 py-1 w-28"
+                  type="number"
+                  value={ncaaThrottleMs}
+                  onChange={(e) => setNcaaThrottleMs(Number(e.target.value || 0))}
+                  disabled={busy}
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={runNcaaMembershipSync} disabled={busy || !adminEnabled}>
+                Run NCAA membership sync
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  pushLog(
+                    "Next: add NAIA membership sync, NJCAA membership sync, and SchoolSport builder once the sport taxonomy is defined."
+                  )
+                }
+                disabled={busy}
+              >
+                Roadmap note
+              </Button>
+            </div>
+          </Card>
+
+          <Card className="p-4 space-y-2">
+            <div className="text-lg font-semibold">Repair queue (unmatched)</div>
+            <div className="text-sm text-gray-600">
+              Manual mapping UI is the next slice. For now, purge/reset unmatched rows using the Purge tab.
+            </div>
+            <div className="text-sm text-gray-700">
+              Tables: <span className="font-mono">UnmatchedAthleticsRow</span>, <span className="font-mono">AthleticsMatchOverride</span>
             </div>
           </Card>
         </div>
