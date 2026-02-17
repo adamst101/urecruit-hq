@@ -31,6 +31,22 @@ function safeStr(x) {
 function lc(x) {
   return safeStr(x).toLowerCase().trim();
 }
+function safeJson(x) {
+  try {
+    return JSON.stringify(x, null, 2);
+  } catch {
+    return String(x);
+  }
+}
+function truncate(x, n = 1800) {
+  const t = typeof x === "string" ? x : safeJson(x);
+  return t.length > n ? t.slice(0, n) + "\n...<truncated>..." : t;
+}
+// Base44 invoke frequently wraps in { data: ... }
+function unwrapInvokeResponse(resp) {
+  return resp?.data ?? resp ?? null;
+}
+
 function getId(r) {
   if (!r) return null;
   if (typeof r.id === "string" || typeof r.id === "number") return String(r.id);
@@ -287,13 +303,9 @@ export default function AdminOps() {
   }
 
   async function purgeEntityDrain(Entity, name, listMode) {
-    // Drain strategy:
-    // If listMode supports paging: do one pass over pages (best effort).
-    // If listMode is "noargs": loop list() -> delete -> list() until list() returns 0.
     const MAX_DRAIN_CYCLES = 50;
 
     if (purgeDryRun) {
-      // For dry-run we just report first visible chunk; draining would overcount.
       const rows = await withRetries(() => listPage(Entity, listMode, { page: 1, pageSize }), {
         tries: 7,
         baseDelayMs: 600,
@@ -310,9 +322,7 @@ export default function AdminOps() {
     let deleted = 0;
     let failed = 0;
 
-    // If paging works, we still prefer draining if we get repeating pages or caps.
     if (listMode !== "noargs") {
-      // Best effort paged pass
       for (let p = 1; p <= 300; p++) {
         const rows = await withRetries(() => listPage(Entity, listMode, { page: p, pageSize }), {
           tries: 7,
@@ -354,7 +364,6 @@ export default function AdminOps() {
       return { deleted, failed };
     }
 
-    // noargs drain loop (this is your School case)
     pushLog(`Drain mode active for ${name} (list cap detected).`);
     for (let cycle = 1; cycle <= MAX_DRAIN_CYCLES; cycle++) {
       const rows = await withRetries(() => listPage(Entity, "noargs", { page: 1, pageSize }), {
@@ -390,7 +399,6 @@ export default function AdminOps() {
         await sleep(purgePerDeleteDelayMs);
       }
 
-      // brief pause so the next list() reflects deletions
       await sleep(600);
     }
 
@@ -443,7 +451,6 @@ export default function AdminOps() {
     try {
       pushLog(`Delete non-scorecard Schools start. DryRun=${deleteNonScorecardDryRun} pageSize=${pageSize}`);
 
-      // No pagination supported, so we also use drain approach but only delete non-scorecard in each cycle.
       const { mode } = await detectListMode(School, Math.min(100, pageSize));
       pushLog(`List mode for School: ${mode}`);
 
@@ -473,8 +480,6 @@ export default function AdminOps() {
 
         const targets = arr.filter((r) => lc(r?.source_platform) !== "scorecard");
         if (!targets.length) {
-          // If the first page has no targets, we still need to keep draining because targets may exist later,
-          // but we don't want to delete scorecard rows here. Stop to avoid infinite loops.
           pushLog(`No non-scorecard rows visible in current chunk. Stopping to avoid deleting scorecard rows.`);
           break;
         }
@@ -522,8 +527,6 @@ export default function AdminOps() {
 
     pushLog(`School dedupe pass start. Mode=${mode} DryRun=${dedupeDryRun} pageSize=${pageSize}`);
 
-    // With list cap, dedupe across the whole table in UI is not reliable.
-    // We will warn and only dedupe the visible chunk (first page). The real fix is the backend idempotent writer.
     const rows = asArray(
       await withRetries(() => School.list(), {
         tries: 7,
@@ -541,9 +544,7 @@ export default function AdminOps() {
 
     const dupKeys = Array.from(grouped.keys()).filter((k) => (grouped.get(k) || []).length >= 2);
 
-    pushLog(
-      `Chunk duplicates (mode=${mode}): ${dupKeys.length} (this only reflects the visible chunk, not the full table)`
-    );
+    pushLog(`Chunk duplicates (mode=${mode}): ${dupKeys.length} (chunk-scoped due to list cap)`);
 
     let deleted = 0;
     let failed = 0;
@@ -585,7 +586,7 @@ export default function AdminOps() {
     }
 
     pushLog(`✅ Dedupe pass finished. Mode=${mode} Deleted=${deleted} Failed=${failed}`);
-    pushLog(`⚠️ For full-table dedupe, use the backend Scorecard writer/deduper (upsert by unitid).`);
+    pushLog(`⚠️ For full-table dedupe, use backend upsert-by-unitid as authoritative fix.`);
   }
 
   async function runSchoolDedupe() {
@@ -608,7 +609,7 @@ export default function AdminOps() {
       await sleep(600);
       await runSchoolDedupePass("name_state");
       pushLog("🏁 All dedupe passes complete (unitid → source_key → name_state).");
-      pushLog("⚠️ These passes are chunk-scoped due to list cap. Backend dedupe is the authoritative fix.");
+      pushLog("⚠️ Chunk-scoped due to list cap. Backend dedupe is authoritative.");
     } finally {
       setBusy(false);
     }
@@ -636,17 +637,28 @@ export default function AdminOps() {
         `NCAA membership sync start. DryRun=${payload.dryRun} seasonYear=${payload.seasonYear} maxRows=${payload.maxRows || "ALL"} threshold=${payload.confidenceThreshold}`
       );
 
-      const res = await base44.functions.invoke("ncaaMembershipSync", payload);
-      const ok = !!res?.ok;
-      const st = res?.stats || {};
+      const raw = await base44.functions.invoke("ncaaMembershipSync", payload);
+      const res = unwrapInvokeResponse(raw);
 
-      if (!ok) {
-        pushLog(`❌ NCAA membership sync failed: ${safeStr(res?.error || "unknown error")}`);
-      } else {
-        pushLog(
-          `✅ NCAA membership sync complete. fetched=${st.fetched} processed=${st.processed} matched=${st.matched} created=${st.created} updated=${st.updated} unmatched=${st.unmatched} ambiguous=${st.ambiguous} errors=${st.errors}`
-        );
+      // Always log the envelope once (truncated)
+      pushLog(`invoke raw:\n${truncate(raw, 900)}`);
+      pushLog(`invoke data:\n${truncate(res, 1200)}`);
+
+      if (res?.error) {
+        pushLog(`❌ NCAA membership sync failed: ${safeStr(res.error)}`);
+        if (res?.debug) pushLog(`server debug:\n${truncate(res.debug, 1200)}`);
+        return;
       }
+
+      if (res?.ok !== true) {
+        pushLog(`❌ NCAA membership sync failed (no ok=true). See invoke payload above.`);
+        return;
+      }
+
+      const st = res?.stats || {};
+      pushLog(
+        `✅ NCAA membership sync complete. fetched=${st.fetched} processed=${st.processed} matched=${st.matched} created=${st.created} updated=${st.updated} unmatched=${st.unmatched} ambiguous=${st.ambiguous} errors=${st.errors}`
+      );
 
       const samples = asArray(res?.debug?.samples).slice(0, 3);
       for (const smp of samples) pushLog(`sample: ${safeStr(JSON.stringify(smp)).slice(0, 420)}`);
@@ -654,6 +666,7 @@ export default function AdminOps() {
       for (const er of errs) pushLog(`error: ${safeStr(JSON.stringify(er)).slice(0, 420)}`);
     } catch (e) {
       pushLog(`❌ NCAA membership sync exception: ${safeStr(e?.message || e)}`);
+      if (e?.raw) pushLog(`exception raw:\n${truncate(e.raw, 1200)}`);
     } finally {
       setBusy(false);
     }
@@ -976,17 +989,6 @@ export default function AdminOps() {
             <div className="flex flex-wrap gap-2">
               <Button onClick={runNcaaMembershipSync} disabled={busy || !adminEnabled}>
                 Run NCAA membership sync
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  pushLog(
-                    "Next: add NAIA membership sync, NJCAA membership sync, and SchoolSport builder once the sport taxonomy is defined."
-                  )
-                }
-                disabled={busy}
-              >
-                Roadmap note
               </Button>
             </div>
           </Card>
