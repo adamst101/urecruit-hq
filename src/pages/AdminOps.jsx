@@ -94,6 +94,21 @@ async function invokeWithRetry(invokeFn, { tries = 5, baseDelayMs = 700, jitterM
   throw lastErr;
 }
 
+function getId(r) {
+  const v = r?.id ?? r?._id ?? r?.uuid;
+  return v == null ? null : String(v);
+}
+function toIso(x) {
+  if (!x) return null;
+  try {
+    const d = new Date(x);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
+  } catch {
+    return null;
+  }
+}
+
 export default function AdminOps() {
   const nav = useNavigate();
 
@@ -121,6 +136,13 @@ export default function AdminOps() {
   const [pauseMs, setPauseMs] = useState(1500);
   const [haltOnBatchErrorsOver, setHaltOnBatchErrorsOver] = useState(60);
 
+  // Unmatched queue visibility
+  const [unmatchedBusy, setUnmatchedBusy] = useState(false);
+  const [unmatchedSummary, setUnmatchedSummary] = useState(null);
+  const [unmatchedSamples, setUnmatchedSamples] = useState([]);
+  const [unmatchedOrg, setUnmatchedOrg] = useState("ncaa"); // default for this vertical slice
+  const [unmatchedLimit, setUnmatchedLimit] = useState(25);
+
   const cursorStorageKey = useMemo(() => `${NCAA_CURSOR_KEY_PREFIX}${seasonYear}`, [seasonYear]);
   const [hasRecoveredSession, setHasRecoveredSession] = useState(false);
   const [showRecoverBanner, setShowRecoverBanner] = useState(false);
@@ -145,6 +167,10 @@ export default function AdminOps() {
       if (Number.isFinite(ss.haltOnBatchErrorsOver)) setHaltOnBatchErrorsOver(ss.haltOnBatchErrorsOver);
 
       if (Number.isFinite(ss.startAt)) setStartAt(ss.startAt);
+
+      // unmatched panel settings
+      if (typeof ss.unmatchedOrg === "string") setUnmatchedOrg(ss.unmatchedOrg);
+      if (Number.isFinite(ss.unmatchedLimit)) setUnmatchedLimit(ss.unmatchedLimit);
 
       setHasRecoveredSession(true);
       setShowRecoverBanner(true);
@@ -172,9 +198,11 @@ export default function AdminOps() {
       maxBatches,
       pauseMs,
       haltOnBatchErrorsOver,
+      unmatchedOrg,
+      unmatchedLimit,
       savedAt: new Date().toISOString(),
     });
-  }, [tab, log, dryRun, seasonYear, startAt, maxRows, confidenceThreshold, throttleMs, timeBudgetMs, maxBatches, pauseMs, haltOnBatchErrorsOver]);
+  }, [tab, log, dryRun, seasonYear, startAt, maxRows, confidenceThreshold, throttleMs, timeBudgetMs, maxBatches, pauseMs, haltOnBatchErrorsOver, unmatchedOrg, unmatchedLimit]);
 
   // Auto-scroll log
   useEffect(() => {
@@ -185,13 +213,13 @@ export default function AdminOps() {
   // Warn on refresh while busy
   useEffect(() => {
     function onBeforeUnload(e) {
-      if (!busy) return;
+      if (!busy && !unmatchedBusy) return;
       e.preventDefault();
       e.returnValue = "";
     }
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [busy]);
+  }, [busy, unmatchedBusy]);
 
   function pushLog(line) {
     setLog((prev) => {
@@ -305,9 +333,6 @@ export default function AdminOps() {
     if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
     if (dryRun) return pushLog("❌ Run-until-done is disabled in Dry run. Switch to Write.");
 
-    const AthleticsMembership = pickEntityFromSDK("AthleticsMembership");
-    if (!AthleticsMembership) pushLog("⚠️ AthleticsMembership entity not found on client; function may still work.");
-
     setBusy(true);
     stopRunRef.current = false;
 
@@ -339,6 +364,7 @@ export default function AdminOps() {
           break;
         }
 
+        // advance cursor defensively
         cursor = Math.max(cursor, Number(out.nextStartAt || cursor));
         saveCursor(cursor);
 
@@ -371,6 +397,69 @@ export default function AdminOps() {
     setLog([]);
   }
 
+  async function refreshUnmatched() {
+    const Unmatched = pickEntityFromSDK("UnmatchedAthleticsRow");
+    if (!Unmatched) {
+      pushLog("❌ UnmatchedAthleticsRow entity not found on client. Check src/api/entities.js export.");
+      return;
+    }
+
+    setUnmatchedBusy(true);
+    try {
+      // We do simple client-side aggregation to avoid relying on group-by support.
+      const all = await Unmatched.filter({});
+      const rows = Array.isArray(all) ? all : [];
+
+      const orgFilter = lc(unmatchedOrg || "");
+      const filtered = orgFilter ? rows.filter((r) => lc(r?.org) === orgFilter) : rows;
+
+      const counts = {
+        total: filtered.length,
+        no_match: 0,
+        ambiguous: 0,
+        missing_fields: 0,
+        other: 0,
+      };
+
+      for (const r of filtered) {
+        const reason = lc(r?.reason || "");
+        if (reason === "no_match") counts.no_match += 1;
+        else if (reason === "ambiguous") counts.ambiguous += 1;
+        else if (reason === "missing_fields") counts.missing_fields += 1;
+        else counts.other += 1;
+      }
+
+      // Sort newest first (created_at best-effort)
+      const sorted = [...filtered].sort((a, b) => {
+        const av = Date.parse(a?.created_at || a?.createdAt || a?.created || "") || 0;
+        const bv = Date.parse(b?.created_at || b?.createdAt || b?.created || "") || 0;
+        return bv - av;
+      });
+
+      const lim = Math.max(1, Number(unmatchedLimit || 25));
+      const sample = sorted.slice(0, lim).map((r) => ({
+        id: getId(r),
+        org: r?.org,
+        reason: r?.reason,
+        raw_school_name: r?.raw_school_name,
+        raw_state: r?.raw_state,
+        raw_city: r?.raw_city,
+        raw_source_key: r?.raw_source_key,
+        source_url: r?.source_url,
+        created_at: toIso(r?.created_at || r?.createdAt || r?.created),
+      }));
+
+      setUnmatchedSummary({ org: orgFilter || "(all)", counts });
+      setUnmatchedSamples(sample);
+
+      pushLog(`📌 Unmatched refreshed: org=${orgFilter || "ALL"} total=${counts.total} no_match=${counts.no_match} ambiguous=${counts.ambiguous} other=${counts.other}`);
+    } catch (e) {
+      pushLog(`❌ Unmatched refresh failed: ${safeStr(e?.message || e)}`);
+    } finally {
+      setUnmatchedBusy(false);
+    }
+  }
+
   const lastSavedCursor = useMemo(() => Number(localStorage.getItem(cursorStorageKey) || 0), [cursorStorageKey, startAt]);
 
   return (
@@ -382,13 +471,13 @@ export default function AdminOps() {
         </div>
 
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => nav(ROUTES.Profile)} disabled={busy}>
+          <Button variant="outline" onClick={() => nav(ROUTES.Profile)} disabled={busy || unmatchedBusy}>
             Profile
           </Button>
-          <Button variant="outline" onClick={() => nav(ROUTES.Workspace)} disabled={busy}>
+          <Button variant="outline" onClick={() => nav(ROUTES.Workspace)} disabled={busy || unmatchedBusy}>
             Workspace
           </Button>
-          <Button onClick={toggleAdminMode} disabled={busy}>
+          <Button onClick={toggleAdminMode} disabled={busy || unmatchedBusy}>
             Admin Mode: {adminEnabled ? "ON" : "OFF"}
           </Button>
         </div>
@@ -403,7 +492,7 @@ export default function AdminOps() {
                 Cursor (season {seasonYear}) last saved at <span className="font-mono">{String(lastSavedCursor || 0)}</span>.
               </div>
             </div>
-            <Button variant="outline" onClick={() => setShowRecoverBanner(false)} disabled={busy}>
+            <Button variant="outline" onClick={() => setShowRecoverBanner(false)} disabled={busy || unmatchedBusy}>
               Dismiss
             </Button>
           </div>
@@ -420,13 +509,13 @@ export default function AdminOps() {
       <Card className="p-3">
         <div className="flex flex-wrap gap-2 items-center justify-between">
           <div className="flex flex-wrap gap-2">
-            <Button variant={tab === "overview" ? "default" : "outline"} onClick={() => setTab("overview")} disabled={busy}>
+            <Button variant={tab === "overview" ? "default" : "outline"} onClick={() => setTab("overview")} disabled={busy || unmatchedBusy}>
               Overview
             </Button>
-            <Button variant={tab === "athletics" ? "default" : "outline"} onClick={() => setTab("athletics")} disabled={busy}>
+            <Button variant={tab === "athletics" ? "default" : "outline"} onClick={() => setTab("athletics")} disabled={busy || unmatchedBusy}>
               Athletics
             </Button>
-            <Button variant={tab === "diagnostics" ? "default" : "outline"} onClick={() => setTab("diagnostics")} disabled={busy}>
+            <Button variant={tab === "diagnostics" ? "default" : "outline"} onClick={() => setTab("diagnostics")} disabled={busy || unmatchedBusy}>
               Diagnostics
             </Button>
           </div>
@@ -436,18 +525,18 @@ export default function AdminOps() {
       {tab === "overview" && (
         <Card className="p-4">
           <div className="text-lg font-semibold">Admin Ops hub</div>
-          <div className="text-sm text-gray-700 mt-2">Use Athletics tab for NCAA enrichment batches.</div>
+          <div className="text-sm text-gray-700 mt-2">Use Athletics tab for NCAA enrichment batches and unmatched visibility.</div>
           <div className="flex flex-wrap gap-2 mt-4">
-            <Button variant="outline" onClick={() => nav(ROUTES.AdminSeedSchoolsMaster)} disabled={busy}>
+            <Button variant="outline" onClick={() => nav(ROUTES.AdminSeedSchoolsMaster)} disabled={busy || unmatchedBusy}>
               Seed Schools (Scorecard)
             </Button>
-            <Button variant="outline" onClick={() => nav(ROUTES.AdminImport)} disabled={busy}>
+            <Button variant="outline" onClick={() => nav(ROUTES.AdminImport)} disabled={busy || unmatchedBusy}>
               Admin Import
             </Button>
-            <Button variant="outline" onClick={() => nav(ROUTES.Discover)} disabled={busy}>
+            <Button variant="outline" onClick={() => nav(ROUTES.Discover)} disabled={busy || unmatchedBusy}>
               Discover
             </Button>
-            <Button variant="outline" onClick={() => nav(ROUTES.AdminFactoryReset)} disabled={busy}>
+            <Button variant="outline" onClick={() => nav(ROUTES.AdminFactoryReset)} disabled={busy || unmatchedBusy}>
               Factory Reset
             </Button>
           </div>
@@ -461,16 +550,16 @@ export default function AdminOps() {
             <div className="text-sm text-gray-600">Labels match function params exactly.</div>
 
             <div className="flex flex-wrap gap-2 items-center">
-              <Button variant={dryRun ? "default" : "outline"} onClick={() => setDryRun(true)} disabled={busy}>
+              <Button variant={dryRun ? "default" : "outline"} onClick={() => setDryRun(true)} disabled={busy || unmatchedBusy}>
                 Dry run
               </Button>
-              <Button variant={!dryRun ? "default" : "outline"} onClick={() => setDryRun(false)} disabled={busy}>
+              <Button variant={!dryRun ? "default" : "outline"} onClick={() => setDryRun(false)} disabled={busy || unmatchedBusy}>
                 Write
               </Button>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">seasonYear</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value || 0))} disabled={busy} />
+                <input className="border rounded px-2 py-1 w-24" type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value || 0))} disabled={busy || unmatchedBusy} />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
@@ -484,46 +573,40 @@ export default function AdminOps() {
                     setStartAt(v);
                     localStorage.setItem(cursorStorageKey, String(v));
                   }}
-                  disabled={busy}
+                  disabled={busy || unmatchedBusy}
                 />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">maxRows</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={maxRows} onChange={(e) => setMaxRows(Number(e.target.value || 0))} disabled={busy} />
+                <input className="border rounded px-2 py-1 w-24" type="number" value={maxRows} onChange={(e) => setMaxRows(Number(e.target.value || 0))} disabled={busy || unmatchedBusy} />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">confidenceThreshold</span>
-                <input
-                  className="border rounded px-2 py-1 w-28"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="1"
-                  value={confidenceThreshold}
-                  onChange={(e) => setConfidenceThreshold(Number(e.target.value || 0))}
-                  disabled={busy}
-                />
+                <input className="border rounded px-2 py-1 w-28" type="number" step="0.01" min="0" max="1" value={confidenceThreshold} onChange={(e) => setConfidenceThreshold(Number(e.target.value || 0))} disabled={busy || unmatchedBusy} />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">throttleMs</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={throttleMs} onChange={(e) => setThrottleMs(Number(e.target.value || 0))} disabled={busy} />
+                <input className="border rounded px-2 py-1 w-24" type="number" value={throttleMs} onChange={(e) => setThrottleMs(Number(e.target.value || 0))} disabled={busy || unmatchedBusy} />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">timeBudgetMs</span>
-                <input className="border rounded px-2 py-1 w-28" type="number" value={timeBudgetMs} onChange={(e) => setTimeBudgetMs(Number(e.target.value || 0))} disabled={busy} />
+                <input className="border rounded px-2 py-1 w-28" type="number" value={timeBudgetMs} onChange={(e) => setTimeBudgetMs(Number(e.target.value || 0))} disabled={busy || unmatchedBusy} />
               </label>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button onClick={runNextBatch} disabled={busy || !adminEnabled}>
+              <Button onClick={runNextBatch} disabled={busy || unmatchedBusy || !adminEnabled}>
                 Run next batch
               </Button>
-              <Button variant="outline" onClick={resetCursor} disabled={busy}>
+              <Button variant="outline" onClick={resetCursor} disabled={busy || unmatchedBusy}>
                 Reset cursor
+              </Button>
+              <Button variant="outline" onClick={() => refreshUnmatched()} disabled={busy || !adminEnabled || unmatchedBusy}>
+                Refresh Unmatched
               </Button>
             </div>
 
@@ -538,20 +621,20 @@ export default function AdminOps() {
               <div className="flex flex-wrap gap-3 items-center">
                 <label className="flex items-center gap-2 text-sm">
                   <span className="text-gray-600">maxBatches</span>
-                  <input className="border rounded px-2 py-1 w-24" type="number" min="1" value={maxBatches} onChange={(e) => setMaxBatches(Math.max(1, Number(e.target.value || 1)))} disabled={busy} />
+                  <input className="border rounded px-2 py-1 w-24" type="number" min="1" value={maxBatches} onChange={(e) => setMaxBatches(Math.max(1, Number(e.target.value || 1)))} disabled={busy || unmatchedBusy} />
                 </label>
 
                 <label className="flex items-center gap-2 text-sm">
                   <span className="text-gray-600">pauseMs</span>
-                  <input className="border rounded px-2 py-1 w-24" type="number" min="0" value={pauseMs} onChange={(e) => setPauseMs(Math.max(0, Number(e.target.value || 0)))} disabled={busy} />
+                  <input className="border rounded px-2 py-1 w-24" type="number" min="0" value={pauseMs} onChange={(e) => setPauseMs(Math.max(0, Number(e.target.value || 0)))} disabled={busy || unmatchedBusy} />
                 </label>
 
                 <label className="flex items-center gap-2 text-sm">
                   <span className="text-gray-600">halt if errors &gt;</span>
-                  <input className="border rounded px-2 py-1 w-20" type="number" min="0" value={haltOnBatchErrorsOver} onChange={(e) => setHaltOnBatchErrorsOver(Math.max(0, Number(e.target.value || 0)))} disabled={busy} />
+                  <input className="border rounded px-2 py-1 w-20" type="number" min="0" value={haltOnBatchErrorsOver} onChange={(e) => setHaltOnBatchErrorsOver(Math.max(0, Number(e.target.value || 0)))} disabled={busy || unmatchedBusy} />
                 </label>
 
-                <Button onClick={runUntilDone} disabled={busy || !adminEnabled || dryRun}>
+                <Button onClick={runUntilDone} disabled={busy || unmatchedBusy || !adminEnabled || dryRun}>
                   Run until done
                 </Button>
 
@@ -565,6 +648,108 @@ export default function AdminOps() {
               <div className="text-xs text-gray-600">
                 Cursor key: <span className="font-mono">{cursorStorageKey}</span> (persisted)
               </div>
+            </div>
+          </Card>
+
+          <Card className="p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold">Unmatched queue</div>
+                <div className="text-sm text-gray-600">Visibility for noMatch/ambiguous staging rows.</div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 items-center">
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">org</span>
+                  <select className="border rounded px-2 py-1" value={unmatchedOrg} onChange={(e) => setUnmatchedOrg(e.target.value)} disabled={busy || unmatchedBusy}>
+                    <option value="ncaa">ncaa</option>
+                    <option value="naia">naia</option>
+                    <option value="njcaa">njcaa</option>
+                    <option value="">(all)</option>
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">sample</span>
+                  <input className="border rounded px-2 py-1 w-20" type="number" min="5" max="100" value={unmatchedLimit} onChange={(e) => setUnmatchedLimit(Number(e.target.value || 25))} disabled={busy || unmatchedBusy} />
+                </label>
+
+                <Button onClick={refreshUnmatched} disabled={busy || !adminEnabled || unmatchedBusy}>
+                  {unmatchedBusy ? "Refreshing..." : "Refresh"}
+                </Button>
+              </div>
+            </div>
+
+            {unmatchedSummary ? (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                <div className="border rounded p-2">
+                  <div className="text-gray-600 text-xs">total</div>
+                  <div className="font-semibold">{unmatchedSummary.counts.total}</div>
+                </div>
+                <div className="border rounded p-2">
+                  <div className="text-gray-600 text-xs">no_match</div>
+                  <div className="font-semibold">{unmatchedSummary.counts.no_match}</div>
+                </div>
+                <div className="border rounded p-2">
+                  <div className="text-gray-600 text-xs">ambiguous</div>
+                  <div className="font-semibold">{unmatchedSummary.counts.ambiguous}</div>
+                </div>
+                <div className="border rounded p-2">
+                  <div className="text-gray-600 text-xs">missing_fields</div>
+                  <div className="font-semibold">{unmatchedSummary.counts.missing_fields}</div>
+                </div>
+                <div className="border rounded p-2">
+                  <div className="text-gray-600 text-xs">other</div>
+                  <div className="font-semibold">{unmatchedSummary.counts.other}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-600">Click Refresh to load unmatched counts and samples.</div>
+            )}
+
+            <div className="border rounded bg-gray-50 p-2 overflow-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-gray-600">
+                    <th className="p-2">reason</th>
+                    <th className="p-2">raw_school_name</th>
+                    <th className="p-2">raw_source_key</th>
+                    <th className="p-2">created_at</th>
+                    <th className="p-2">source_url</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unmatchedSamples.length ? (
+                    unmatchedSamples.map((r) => (
+                      <tr key={r.id || r.raw_source_key} className="border-t">
+                        <td className="p-2 font-mono">{safeStr(r.reason)}</td>
+                        <td className="p-2">{safeStr(r.raw_school_name)}</td>
+                        <td className="p-2 font-mono">{safeStr(r.raw_source_key)}</td>
+                        <td className="p-2 font-mono">{safeStr(r.created_at)}</td>
+                        <td className="p-2">
+                          {r.source_url ? (
+                            <a className="text-blue-700 underline" href={r.source_url} target="_blank" rel="noreferrer">
+                              open
+                            </a>
+                          ) : (
+                            <span className="text-gray-500">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr className="border-t">
+                      <td className="p-2 text-gray-500" colSpan={5}>
+                        (no samples loaded)
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="text-xs text-gray-600">
+              Note: staging rows are written by the function when <span className="font-mono">dryRun=false</span> and a row is <span className="font-mono">no_match</span> or <span className="font-mono">ambiguous</span>.
             </div>
           </Card>
         </div>
@@ -589,10 +774,10 @@ export default function AdminOps() {
         <div className="flex items-center justify-between gap-2">
           <div className="font-semibold">Run log</div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setShowRecoverBanner(true)} disabled={busy}>
+            <Button variant="outline" onClick={() => setShowRecoverBanner(true)} disabled={busy || unmatchedBusy}>
               Show recover info
             </Button>
-            <Button variant="outline" onClick={clearLogs} disabled={busy}>
+            <Button variant="outline" onClick={clearLogs} disabled={busy || unmatchedBusy}>
               Clear
             </Button>
           </div>
@@ -604,4 +789,3 @@ export default function AdminOps() {
     </div>
   );
 }
-
