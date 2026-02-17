@@ -582,7 +582,7 @@ export default function AdminOps() {
     pushLog(`AthleticsMembership dedupe sweep start. dryRun=${payload.dryRun} org=${payload.org} seasonYear=${payload.seasonYear} startAtGroup=${payload.startAtGroup} maxGroups=${payload.maxGroups} maxDelete=${payload.maxDelete} throttleMs=${payload.throttleMs} timeBudgetMs=${payload.timeBudgetMs} tries=${payload.tries}`);
 
     const raw = await invokeWithRetry(
-      () => base44.functions.invoke("athleticsMembershipDedupe", payload),
+      () => base44.functions.invoke("athleticsMembershipDedupeSweep", payload),
       {
         tries: 5,
         baseDelayMs: 800,
