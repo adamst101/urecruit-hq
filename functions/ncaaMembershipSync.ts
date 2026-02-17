@@ -1,27 +1,4 @@
 // functions/ncaaMembershipSync.ts
-// Batch-safe NCAA enrichment (name-only matching) with checkpointing + faster writes.
-//
-// Key improvements (v3):
-// - Robust School pagination that supports Base44 response shapes (array OR {data/items/... , next_cursor})
-// - Adds index telemetry: indexedSchools, indexMissingName, indexMissingSamples
-// - Defensive time budget checks
-// - Faster upsert: try CREATE first, on duplicate then UPDATE
-//
-// Request body:
-// {
-//   dryRun: boolean,
-//   seasonYear: number | null,
-//   startAt: number,
-//   maxRows: number,                 // batch size (recommend 150-250). 0 = ALL (not recommended for write)
-//   confidenceThreshold: number,      // 0..1
-//   throttleMs: number,              // recommend 0-8
-//   timeBudgetMs: number,            // recommend 18000-22000
-//   sourcePlatform: string
-// }
-//
-// Response:
-// { ok, dryRun, stats, debug, nextStartAt, done }
-
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 
 function s(x) {
@@ -62,20 +39,36 @@ async function safeText(r) {
 function isRetryableStatus(st) {
   return st === 429 || st === 500 || st === 502 || st === 503 || st === 504;
 }
-function looksLikeDuplicate(errMsg) {
-  const m = lc(errMsg);
+function looksLikeDuplicate(err) {
+  const msg = lc(err?.message || err);
+  const code = err?.status || err?.statusCode || err?.code || null;
+
+  if (code === 409) return true;
+
   return (
-    m.includes("duplicate") ||
-    m.includes("unique") ||
-    m.includes("already exists") ||
-    m.includes("conflict") ||
-    m.includes("409")
+    msg.includes("409") ||
+    msg.includes("conflict") ||
+    msg.includes("duplicate") ||
+    msg.includes("unique") ||
+    msg.includes("already exists") ||
+    msg.includes("e11000")
   );
+}
+function extractRows(resp) {
+  if (!resp) return [];
+  if (Array.isArray(resp)) return resp;
+  const cands = [resp.data, resp.items, resp.records, resp.results, resp.rows];
+  for (const c of cands) if (Array.isArray(c)) return c;
+  if (resp.data && Array.isArray(resp.data.data)) return resp.data.data;
+  return [];
+}
+function extractCursor(resp) {
+  if (!resp || Array.isArray(resp)) return null;
+  return resp.next_cursor ?? resp.nextCursor ?? resp.next_page_token ?? resp.nextPageToken ?? resp.cursor_next ?? null;
 }
 
 async function fetchJsonWithRetry(url, debug, tries) {
   let lastErr = null;
-
   for (let i = 0; i < tries; i++) {
     try {
       const r = await fetch(url, {
@@ -130,7 +123,6 @@ async function fetchJsonWithRetry(url, debug, tries) {
       throw lastErr;
     }
   }
-
   throw lastErr || new Error("NCAA fetch failed");
 }
 
@@ -149,71 +141,28 @@ function jsonResp(payload) {
   });
 }
 
-// -------- Base44 list() response normalization --------
-function extractRowsFromListResponse(resp) {
-  if (!resp) return [];
-  if (Array.isArray(resp)) return resp;
-
-  // common shapes
-  const candidates = [
-    resp.data,
-    resp.items,
-    resp.records,
-    resp.results,
-    resp.rows,
-  ];
-
-  for (const c of candidates) {
-    if (Array.isArray(c)) return c;
-  }
-
-  // some SDKs nest under "data.data"
-  if (resp.data && Array.isArray(resp.data.data)) return resp.data.data;
-
-  return [];
-}
-
-function extractCursorFromListResponse(resp) {
-  if (!resp || Array.isArray(resp)) return null;
-  return (
-    resp.next_cursor ??
-    resp.nextCursor ??
-    resp.next_page_token ??
-    resp.nextPageToken ??
-    resp.cursor_next ??
-    null
-  );
-}
-
-// Robust pagination for School.list that supports cursor pagination
 async function listAllSchoolsPaged(School, debug, timeBudgetMs, startedAtMs) {
   const out = [];
   const t0 = startedAtMs;
-
   const elapsed = () => Date.now() - t0;
   const outOfTime = () => elapsed() >= timeBudgetMs;
 
   const LIMIT = 1000;
+  let cursor = null;
+  let pages = 0;
 
-  // 1) Prefer list() with cursor if available
   if (School && typeof School.list === "function") {
-    let cursor = null;
-    let pages = 0;
-
     while (!outOfTime()) {
       pages += 1;
       let resp = null;
 
       try {
-        // Try cursor style first (most common in modern SDKs)
         resp = await School.list({ where: {}, limit: LIMIT, cursor });
       } catch {
         try {
-          // Try token naming variations
           resp = await School.list({ where: {}, limit: LIMIT, next_cursor: cursor });
         } catch {
           try {
-            // Try offset style fallback
             resp = await School.list({ where: {}, limit: LIMIT, offset: out.length });
           } catch {
             try {
@@ -225,69 +174,63 @@ async function listAllSchoolsPaged(School, debug, timeBudgetMs, startedAtMs) {
         }
       }
 
-      const page = extractRowsFromListResponse(resp);
-      const next = extractCursorFromListResponse(resp);
+      const page = extractRows(resp);
+      const next = extractCursor(resp);
 
-      if (!Array.isArray(page) || page.length === 0) {
-        break;
-      }
-
+      if (!page.length) break;
       out.push(...page);
 
-      // stop conditions
-      if (next) {
-        cursor = next;
-      } else if (page.length < LIMIT) {
-        break;
-      } else {
-        // if no cursor provided but page is full, try offset on next loop
-        cursor = null;
-      }
+      if (next) cursor = next;
+      else if (page.length < LIMIT) break;
+      else cursor = null;
 
-      // tiny yield
       await sleep(1);
-
-      // safety: don't loop forever
-      if (pages > 50) break;
+      if (pages > 80) break;
     }
 
     debug.notes.push(`School paging(list): rows=${out.length} pages=${pages} elapsedMs=${elapsed()}`);
   }
 
-  // 2) If list returned nothing, fallback to filter({})
   if (out.length === 0 && School && typeof School.filter === "function") {
     try {
-      const rows = await School.filter({});
-      const arr = Array.isArray(rows) ? rows : extractRowsFromListResponse(rows);
-      if (Array.isArray(arr) && arr.length) {
-        debug.notes.push(`School fetch(filter fallback): rows=${arr.length} elapsedMs=${elapsed()}`);
-        return arr;
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  // 3) Final fallback: all()
-  if (out.length === 0 && School && typeof School.all === "function") {
-    try {
-      const rows = await School.all();
-      const arr = Array.isArray(rows) ? rows : extractRowsFromListResponse(rows);
-      if (Array.isArray(arr) && arr.length) {
-        debug.notes.push(`School fetch(all fallback): rows=${arr.length} elapsedMs=${elapsed()}`);
-        return arr;
-      }
-    } catch {
-      // ignore
-    }
+      const resp = await School.filter({});
+      const arr = extractRows(resp);
+      debug.notes.push(`School fetch(filter fallback): rows=${arr.length} elapsedMs=${elapsed()}`);
+      return arr;
+    } catch {}
   }
 
   return out;
 }
 
+async function writeRetry(fn, debug, label) {
+  const tries = 4;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = String(e?.message || e);
+      const retryable =
+        msg.includes("502") ||
+        msg.includes("504") ||
+        msg.includes("503") ||
+        msg.includes("429") ||
+        msg.includes("timeout") ||
+        msg.includes("rate");
+
+      if (!retryable || i === tries - 1) throw e;
+
+      const wait = Math.min(8000, 400 * Math.pow(2, i)) + Math.floor(Math.random() * 200);
+      debug.retries = (debug.retries || 0) + 1;
+      debug.retry_notes = debug.retry_notes || [];
+      debug.retry_notes.push({ attempt: i + 1, wait_ms: wait, kind: "write_retry", label, msg: msg.slice(0, 140) });
+      await sleep(wait);
+    }
+  }
+}
+
 Deno.serve(async (req) => {
   const t0 = Date.now();
-
   const debug = {
     startedAt: new Date().toISOString(),
     retries: 0,
@@ -338,8 +281,8 @@ Deno.serve(async (req) => {
     const startAt = Math.max(0, Number(body?.startAt || 0));
     const maxRows = Number(body?.maxRows || 0);
     const threshold = Number(body?.confidenceThreshold || 0.92);
-    const throttleMs = Number(body?.throttleMs || (dryRun ? 0 : 5));
-    const timeBudgetMs = Math.max(5000, Number(body?.timeBudgetMs || 20000));
+    const throttleMs = Number(body?.throttleMs || (dryRun ? 0 : 8));
+    const timeBudgetMs = Math.max(5000, Number(body?.timeBudgetMs || 22000));
     const sourcePlatform = s(body?.sourcePlatform) || "ncaa-api";
 
     const client = createClientFromRequest(req);
@@ -350,26 +293,17 @@ Deno.serve(async (req) => {
     if (!School) return jsonResp({ ok: false, error: "School entity not found", stats, debug, nextStartAt, done });
     if (!AthleticsMembership) return jsonResp({ ok: false, error: "AthleticsMembership entity not found", stats, debug, nextStartAt, done });
 
-    // Build School name index (paged)
     const allSchools = await listAllSchoolsPaged(School, debug, timeBudgetMs, t0);
 
     const byNormName = new Map();
     for (const r of allSchools) {
-      const rawName =
-        s(r?.school_name) ||
-        s(r?.name) ||
-        s(r?.institution_name) ||
-        s(r?.display_name) ||
-        null;
-
+      const rawName = s(r?.school_name) || s(r?.name) || s(r?.institution_name) || s(r?.display_name) || null;
       const nn = s(r?.normalized_name) || (rawName ? normName(rawName) : null);
-
       if (!nn) {
         stats.indexMissingName += 1;
-        if (debug.indexMissingSamples.length < 6) debug.indexMissingSamples.push({ id: getId(r), keys: Object.keys(r || {}).slice(0, 12) });
+        if (debug.indexMissingSamples.length < 6) debug.indexMissingSamples.push({ id: getId(r) });
         continue;
       }
-
       if (!byNormName.has(nn)) byNormName.set(nn, []);
       byNormName.get(nn).push(r);
     }
@@ -377,15 +311,6 @@ Deno.serve(async (req) => {
     stats.indexedSchools = allSchools.length;
     debug.notes.push(`Indexed schools: keys=${byNormName.size} rows=${allSchools.length} missingName=${stats.indexMissingName} elapsedMs=${elapsed()}`);
 
-    if (outOfTime(timeBudgetMs)) {
-      debug.stoppedEarly = true;
-      debug.elapsedMs = elapsed();
-      nextStartAt = startAt;
-      done = false;
-      return jsonResp({ ok: true, dryRun, stats, debug, nextStartAt, done });
-    }
-
-    // Fetch NCAA index
     const url = "https://ncaa-api.henrygd.me/schools-index";
     const payload = await fetchJsonWithRetry(url, debug, 6);
     const rows = extractSchoolRows(payload);
@@ -396,20 +321,9 @@ Deno.serve(async (req) => {
     nextStartAt = endAt;
     done = endAt >= rows.length;
 
-    debug.notes.push(`Batch window: startAt=${startAt} endAt=${endAt} total=${rows.length} budgetMs=${timeBudgetMs} elapsedMs=${elapsed()}`);
-
-    if (outOfTime(timeBudgetMs)) {
-      debug.stoppedEarly = true;
-      debug.elapsedMs = elapsed();
-      nextStartAt = startAt;
-      done = false;
-      return jsonResp({ ok: true, dryRun, stats, debug, nextStartAt, done });
-    }
-
     for (let i = startAt; i < endAt; i++) {
       if (outOfTime(timeBudgetMs)) {
         debug.stoppedEarly = true;
-        debug.elapsedMs = elapsed();
         nextStartAt = i;
         done = false;
         break;
@@ -431,11 +345,11 @@ Deno.serve(async (req) => {
 
       if (!candidates.length) {
         stats.noMatch += 1;
-
+        // keep staging optional; do not treat staging dup as error
         if (Unmatched && !dryRun) {
           const rawKey = `ncaa:${nkey || "no_name"}:${slug || "no_slug"}`;
           try {
-            await Unmatched.create({
+            await writeRetry(() => Unmatched.create({
               org: "ncaa",
               raw_school_name: rawName,
               raw_city: null,
@@ -443,28 +357,26 @@ Deno.serve(async (req) => {
               raw_source_key: rawKey,
               source_url: slug ? `https://www.ncaa.com/schools/${slug}` : null,
               reason: "no_match",
-              attempted_match_notes: `name_only; normalized="${nkey}"; schoolIndexRows=${allSchools.length}; indexKeys=${byNormName.size}`,
+              attempted_match_notes: `name_only; normalized="${nkey}"`,
               created_at: new Date().toISOString(),
-            });
+            }), debug, "unmatched_create");
           } catch (e) {
             const msg = String(e?.message || e);
-            if (!looksLikeDuplicate(msg)) {
+            if (!looksLikeDuplicate(e)) {
               stats.errors += 1;
-              debug.errors.push({ step: "unmatched_create", message: msg, raw: { rawName, slug }, rawKey });
+              debug.errors.push({ step: "unmatched_create", message: msg, rawKey });
             }
           }
         }
-
         continue;
       }
 
       if (candidates.length > 1) {
         stats.ambiguous += 1;
-
         if (Unmatched && !dryRun) {
           const rawKey = `ncaa:${nkey}:${slug || "no_slug"}`;
           try {
-            await Unmatched.create({
+            await writeRetry(() => Unmatched.create({
               org: "ncaa",
               raw_school_name: rawName,
               raw_city: null,
@@ -472,18 +384,17 @@ Deno.serve(async (req) => {
               raw_source_key: rawKey,
               source_url: slug ? `https://www.ncaa.com/schools/${slug}` : null,
               reason: "ambiguous",
-              attempted_match_notes: `name_only; candidates=${candidates.length}; normalized="${nkey}"`,
+              attempted_match_notes: `name_only; candidates=${candidates.length}`,
               created_at: new Date().toISOString(),
-            });
+            }), debug, "unmatched_create_ambiguous");
           } catch (e) {
             const msg = String(e?.message || e);
-            if (!looksLikeDuplicate(msg)) {
+            if (!looksLikeDuplicate(e)) {
               stats.errors += 1;
-              debug.errors.push({ step: "unmatched_create_ambiguous", message: msg, raw: { rawName, slug }, rawKey });
+              debug.errors.push({ step: "unmatched_create_ambiguous", message: msg, rawKey });
             }
           }
         }
-
         continue;
       }
 
@@ -521,42 +432,37 @@ Deno.serve(async (req) => {
 
       if (dryRun) {
         stats.skippedDryRun += 1;
-        if (debug.samples.length < 4) debug.samples.push({ matched: true, school_id: schoolId, raw: { rawName, slug }, sourceKey });
         continue;
       }
 
       try {
-        await AthleticsMembership.create(rec);
+        await writeRetry(() => AthleticsMembership.create(rec), debug, "membership_create");
         stats.created += 1;
       } catch (e) {
-        const msg = String(e?.message || e);
-        if (!looksLikeDuplicate(msg)) {
+        if (!looksLikeDuplicate(e)) {
           stats.errors += 1;
-          debug.errors.push({ step: "membership_create", message: msg, raw: { rawName, slug }, sourceKey });
+          debug.errors.push({ step: "membership_create", message: String(e?.message || e), sourceKey });
         } else {
+          // update on dup (normalize filter response)
           try {
-            const existing = await AthleticsMembership.filter({ source_key: sourceKey });
-            if (Array.isArray(existing) && existing.length) {
+            const resp = await writeRetry(() => AthleticsMembership.filter({ source_key: sourceKey }), debug, "membership_filter");
+            const existing = extractRows(resp);
+            if (existing.length) {
               const id = getId(existing[0]);
               if (id) {
-                await AthleticsMembership.update(id, rec);
+                await writeRetry(() => AthleticsMembership.update(id, rec), debug, "membership_update");
                 stats.updated += 1;
               } else {
-                await AthleticsMembership.create(rec);
-                stats.created += 1;
+                // if no id, do nothing; avoid looping dup creates
               }
             } else {
-              await AthleticsMembership.create(rec);
+              // if filter yields nothing, do one more create attempt
+              await writeRetry(() => AthleticsMembership.create(rec), debug, "membership_create_retry");
               stats.created += 1;
             }
           } catch (e2) {
             stats.errors += 1;
-            debug.errors.push({
-              step: "membership_update_on_dup",
-              message: String(e2?.message || e2),
-              raw: { rawName, slug },
-              sourceKey,
-            });
+            debug.errors.push({ step: "membership_update_on_dup", message: String(e2?.message || e2), sourceKey });
           }
         }
       }
@@ -566,26 +472,11 @@ Deno.serve(async (req) => {
 
     debug.elapsedMs = elapsed();
 
-    return jsonResp({
-      ok: true,
-      dryRun,
-      stats,
-      debug,
-      nextStartAt,
-      done,
-    });
+    return jsonResp({ ok: true, dryRun, stats, debug, nextStartAt, done });
   } catch (e) {
     stats.errors += 1;
     debug.errors.push({ step: "fatal", message: String(e?.message || e) });
     debug.elapsedMs = Date.now() - t0;
-
-    return jsonResp({
-      ok: false,
-      error: String(e?.message || e),
-      stats,
-      debug,
-      nextStartAt,
-      done,
-    });
+    return jsonResp({ ok: false, error: String(e?.message || e), stats, debug, nextStartAt, done });
   }
 });
