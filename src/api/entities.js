@@ -45,6 +45,12 @@ export const School = pickEntity("School", "Schools");
 export const SchoolSportSite = pickEntity("SchoolSportSite", "SchoolSportSites");
 export const Sport = pickEntity("Sport", "Sports");
 
+// --- Athletics enrichment layer ---
+export const AthleticsMembership = pickEntity("AthleticsMembership", "AthleticsMemberships");
+export const SchoolSport = pickEntity("SchoolSport", "SchoolSports");
+export const UnmatchedAthleticsRow = pickEntity("UnmatchedAthleticsRow", "UnmatchedAthleticsRows");
+export const AthleticsMatchOverride = pickEntity("AthleticsMatchOverride", "AthleticsMatchOverrides");
+
 export const TargetSchool = pickEntity("TargetSchool", "TargetSchools");
 export const TargetSchoolHistory = pickEntity("TargetSchoolHistory", "TargetSchoolHistories");
 
@@ -72,6 +78,9 @@ export function _entitiesSanity() {
       Camp: !!Camp,
       CampDemo: !!CampDemo,
       SchoolSportSite: !!SchoolSportSite,
+      AthleticsMembership: !!AthleticsMembership,
+      SchoolSport: !!SchoolSport,
+      UnmatchedAthleticsRow: !!UnmatchedAthleticsRow,
     },
   };
 }
