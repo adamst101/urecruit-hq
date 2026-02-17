@@ -143,6 +143,18 @@ export default function AdminOps() {
   const [unmatchedOrg, setUnmatchedOrg] = useState("ncaa"); // default for this vertical slice
   const [unmatchedLimit, setUnmatchedLimit] = useState(25);
 
+  // Dedupe controls
+  const [dedupeBusy, setDedupeBusy] = useState(false);
+  const [dedupeOrg, setDedupeOrg] = useState("ncaa");
+  const [dedupeSeasonYear, setDedupeSeasonYear] = useState(new Date().getFullYear());
+  const [dedupeDryRun, setDedupeDryRun] = useState(true);
+  const [dedupeMaxDelete, setDedupeMaxDelete] = useState(5000);
+
+  // Optional staging cleanup (Unmatched)
+  const [purgeUnmatchedBusy, setPurgeUnmatchedBusy] = useState(false);
+  const [purgeUnmatchedOrg, setPurgeUnmatchedOrg] = useState("ncaa");
+  const [purgeUnmatchedMaxDelete, setPurgeUnmatchedMaxDelete] = useState(2000);
+
   const cursorStorageKey = useMemo(() => `${NCAA_CURSOR_KEY_PREFIX}${seasonYear}`, [seasonYear]);
   const [hasRecoveredSession, setHasRecoveredSession] = useState(false);
   const [showRecoverBanner, setShowRecoverBanner] = useState(false);
@@ -172,6 +184,16 @@ export default function AdminOps() {
       if (typeof ss.unmatchedOrg === "string") setUnmatchedOrg(ss.unmatchedOrg);
       if (Number.isFinite(ss.unmatchedLimit)) setUnmatchedLimit(ss.unmatchedLimit);
 
+      // dedupe panel settings
+      if (typeof ss.dedupeOrg === "string") setDedupeOrg(ss.dedupeOrg);
+      if (Number.isFinite(ss.dedupeSeasonYear)) setDedupeSeasonYear(ss.dedupeSeasonYear);
+      if (typeof ss.dedupeDryRun === "boolean") setDedupeDryRun(ss.dedupeDryRun);
+      if (Number.isFinite(ss.dedupeMaxDelete)) setDedupeMaxDelete(ss.dedupeMaxDelete);
+
+      // purge unmatched settings
+      if (typeof ss.purgeUnmatchedOrg === "string") setPurgeUnmatchedOrg(ss.purgeUnmatchedOrg);
+      if (Number.isFinite(ss.purgeUnmatchedMaxDelete)) setPurgeUnmatchedMaxDelete(ss.purgeUnmatchedMaxDelete);
+
       setHasRecoveredSession(true);
       setShowRecoverBanner(true);
     }
@@ -188,6 +210,7 @@ export default function AdminOps() {
     saveSessionState({
       tab,
       log,
+
       dryRun,
       seasonYear,
       startAt,
@@ -198,11 +221,42 @@ export default function AdminOps() {
       maxBatches,
       pauseMs,
       haltOnBatchErrorsOver,
+
       unmatchedOrg,
       unmatchedLimit,
+
+      dedupeOrg,
+      dedupeSeasonYear,
+      dedupeDryRun,
+      dedupeMaxDelete,
+
+      purgeUnmatchedOrg,
+      purgeUnmatchedMaxDelete,
+
       savedAt: new Date().toISOString(),
     });
-  }, [tab, log, dryRun, seasonYear, startAt, maxRows, confidenceThreshold, throttleMs, timeBudgetMs, maxBatches, pauseMs, haltOnBatchErrorsOver, unmatchedOrg, unmatchedLimit]);
+  }, [
+    tab,
+    log,
+    dryRun,
+    seasonYear,
+    startAt,
+    maxRows,
+    confidenceThreshold,
+    throttleMs,
+    timeBudgetMs,
+    maxBatches,
+    pauseMs,
+    haltOnBatchErrorsOver,
+    unmatchedOrg,
+    unmatchedLimit,
+    dedupeOrg,
+    dedupeSeasonYear,
+    dedupeDryRun,
+    dedupeMaxDelete,
+    purgeUnmatchedOrg,
+    purgeUnmatchedMaxDelete,
+  ]);
 
   // Auto-scroll log
   useEffect(() => {
@@ -213,13 +267,13 @@ export default function AdminOps() {
   // Warn on refresh while busy
   useEffect(() => {
     function onBeforeUnload(e) {
-      if (!busy && !unmatchedBusy) return;
+      if (!busy && !unmatchedBusy && !dedupeBusy && !purgeUnmatchedBusy) return;
       e.preventDefault();
       e.returnValue = "";
     }
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [busy, unmatchedBusy]);
+  }, [busy, unmatchedBusy, dedupeBusy, purgeUnmatchedBusy]);
 
   function pushLog(line) {
     setLog((prev) => {
@@ -406,7 +460,6 @@ export default function AdminOps() {
 
     setUnmatchedBusy(true);
     try {
-      // We do simple client-side aggregation to avoid relying on group-by support.
       const all = await Unmatched.filter({});
       const rows = Array.isArray(all) ? all : [];
 
@@ -429,7 +482,6 @@ export default function AdminOps() {
         else counts.other += 1;
       }
 
-      // Sort newest first (created_at best-effort)
       const sorted = [...filtered].sort((a, b) => {
         const av = Date.parse(a?.created_at || a?.createdAt || a?.created || "") || 0;
         const bv = Date.parse(b?.created_at || b?.createdAt || b?.created || "") || 0;
@@ -460,6 +512,94 @@ export default function AdminOps() {
     }
   }
 
+  async function invokeMembershipDedupe() {
+    if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
+    if (!base44?.functions?.invoke) return pushLog("❌ base44.functions.invoke is not available.");
+
+    setDedupeBusy(true);
+    try {
+      const payload = {
+        dryRun: !!dedupeDryRun,
+        org: dedupeOrg || null,
+        seasonYear: Number.isFinite(dedupeSeasonYear) ? Number(dedupeSeasonYear) : null,
+        maxDelete: Math.max(0, Number(dedupeMaxDelete || 0)),
+      };
+
+      pushLog(`AthleticsMembership dedupe sweep start. dryRun=${payload.dryRun} org=${payload.org || "ALL"} seasonYear=${payload.seasonYear ?? "ALL"} maxDelete=${payload.maxDelete}`);
+
+      const raw = await invokeWithRetry(
+        () => base44.functions.invoke("athleticsMembershipDedupeSweep", payload),
+        {
+          tries: 5,
+          baseDelayMs: 800,
+          jitterMs: 250,
+          onRetry: ({ attempt, tries, backoffMs, error }) => pushLog(`↻ dedupe retry ${attempt}/${tries - 1} in ${backoffMs}ms (reason="${error}")`),
+        }
+      );
+
+      const res = unwrapInvokeResponse(raw);
+      pushLog(`dedupe invoke data:\n${truncate(res, 1800)}`);
+
+      if (res?.ok !== true) {
+        pushLog(`❌ Dedupe failed: ${safeStr(res?.error || "no ok=true")}`);
+        return;
+      }
+
+      const st = res?.stats || {};
+      pushLog(`✅ Dedupe complete. scanned=${st.scanned} groups=${st.groups} dupGroups=${st.dupGroups} kept=${st.kept} deleted=${st.deleted} errors=${st.errors} dryRun=${!!dedupeDryRun}`);
+    } catch (e) {
+      pushLog(`❌ Dedupe exception: ${safeStr(e?.message || e)}`);
+    } finally {
+      setDedupeBusy(false);
+    }
+  }
+
+  async function purgeUnmatchedRows() {
+    if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
+    const Unmatched = pickEntityFromSDK("UnmatchedAthleticsRow");
+    if (!Unmatched) {
+      pushLog("❌ UnmatchedAthleticsRow entity not found on client. Check src/api/entities.js export.");
+      return;
+    }
+
+    setPurgeUnmatchedBusy(true);
+    try {
+      const all = await Unmatched.filter({});
+      const rows = Array.isArray(all) ? all : [];
+
+      const orgFilter = lc(purgeUnmatchedOrg || "");
+      const filtered = orgFilter ? rows.filter((r) => lc(r?.org) === orgFilter) : rows;
+
+      const maxDel = Math.max(0, Number(purgeUnmatchedMaxDelete || 0));
+      const toDelete = filtered.slice(0, maxDel);
+
+      pushLog(`Unmatched purge start. org=${orgFilter || "ALL"} candidates=${filtered.length} deleting=${toDelete.length}`);
+
+      let deleted = 0;
+      let errors = 0;
+
+      for (const r of toDelete) {
+        const id = getId(r);
+        if (!id) continue;
+        try {
+          await Unmatched.delete(id);
+          deleted += 1;
+          if (deleted % 50 === 0) await sleep(50);
+        } catch (e) {
+          errors += 1;
+          if (errors <= 10) pushLog(`purge delete failed id=${id}: ${safeStr(e?.message || e)}`);
+        }
+      }
+
+      pushLog(`✅ Unmatched purge complete. deleted=${deleted} errors=${errors}`);
+      await refreshUnmatched();
+    } catch (e) {
+      pushLog(`❌ Unmatched purge exception: ${safeStr(e?.message || e)}`);
+    } finally {
+      setPurgeUnmatchedBusy(false);
+    }
+  }
+
   const lastSavedCursor = useMemo(() => Number(localStorage.getItem(cursorStorageKey) || 0), [cursorStorageKey, startAt]);
 
   return (
@@ -471,13 +611,13 @@ export default function AdminOps() {
         </div>
 
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => nav(ROUTES.Profile)} disabled={busy || unmatchedBusy}>
+          <Button variant="outline" onClick={() => nav(ROUTES.Profile)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
             Profile
           </Button>
-          <Button variant="outline" onClick={() => nav(ROUTES.Workspace)} disabled={busy || unmatchedBusy}>
+          <Button variant="outline" onClick={() => nav(ROUTES.Workspace)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
             Workspace
           </Button>
-          <Button onClick={toggleAdminMode} disabled={busy || unmatchedBusy}>
+          <Button onClick={toggleAdminMode} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
             Admin Mode: {adminEnabled ? "ON" : "OFF"}
           </Button>
         </div>
@@ -492,7 +632,7 @@ export default function AdminOps() {
                 Cursor (season {seasonYear}) last saved at <span className="font-mono">{String(lastSavedCursor || 0)}</span>.
               </div>
             </div>
-            <Button variant="outline" onClick={() => setShowRecoverBanner(false)} disabled={busy || unmatchedBusy}>
+            <Button variant="outline" onClick={() => setShowRecoverBanner(false)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
               Dismiss
             </Button>
           </div>
@@ -509,13 +649,13 @@ export default function AdminOps() {
       <Card className="p-3">
         <div className="flex flex-wrap gap-2 items-center justify-between">
           <div className="flex flex-wrap gap-2">
-            <Button variant={tab === "overview" ? "default" : "outline"} onClick={() => setTab("overview")} disabled={busy || unmatchedBusy}>
+            <Button variant={tab === "overview" ? "default" : "outline"} onClick={() => setTab("overview")} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
               Overview
             </Button>
-            <Button variant={tab === "athletics" ? "default" : "outline"} onClick={() => setTab("athletics")} disabled={busy || unmatchedBusy}>
+            <Button variant={tab === "athletics" ? "default" : "outline"} onClick={() => setTab("athletics")} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
               Athletics
             </Button>
-            <Button variant={tab === "diagnostics" ? "default" : "outline"} onClick={() => setTab("diagnostics")} disabled={busy || unmatchedBusy}>
+            <Button variant={tab === "diagnostics" ? "default" : "outline"} onClick={() => setTab("diagnostics")} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
               Diagnostics
             </Button>
           </div>
@@ -525,18 +665,18 @@ export default function AdminOps() {
       {tab === "overview" && (
         <Card className="p-4">
           <div className="text-lg font-semibold">Admin Ops hub</div>
-          <div className="text-sm text-gray-700 mt-2">Use Athletics tab for NCAA enrichment batches and unmatched visibility.</div>
+          <div className="text-sm text-gray-700 mt-2">Use Athletics tab for NCAA enrichment batches, dedupe, and unmatched visibility.</div>
           <div className="flex flex-wrap gap-2 mt-4">
-            <Button variant="outline" onClick={() => nav(ROUTES.AdminSeedSchoolsMaster)} disabled={busy || unmatchedBusy}>
+            <Button variant="outline" onClick={() => nav(ROUTES.AdminSeedSchoolsMaster)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
               Seed Schools (Scorecard)
             </Button>
-            <Button variant="outline" onClick={() => nav(ROUTES.AdminImport)} disabled={busy || unmatchedBusy}>
+            <Button variant="outline" onClick={() => nav(ROUTES.AdminImport)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
               Admin Import
             </Button>
-            <Button variant="outline" onClick={() => nav(ROUTES.Discover)} disabled={busy || unmatchedBusy}>
+            <Button variant="outline" onClick={() => nav(ROUTES.Discover)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
               Discover
             </Button>
-            <Button variant="outline" onClick={() => nav(ROUTES.AdminFactoryReset)} disabled={busy || unmatchedBusy}>
+            <Button variant="outline" onClick={() => nav(ROUTES.AdminFactoryReset)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
               Factory Reset
             </Button>
           </div>
@@ -550,16 +690,16 @@ export default function AdminOps() {
             <div className="text-sm text-gray-600">Labels match function params exactly.</div>
 
             <div className="flex flex-wrap gap-2 items-center">
-              <Button variant={dryRun ? "default" : "outline"} onClick={() => setDryRun(true)} disabled={busy || unmatchedBusy}>
+              <Button variant={dryRun ? "default" : "outline"} onClick={() => setDryRun(true)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
                 Dry run
               </Button>
-              <Button variant={!dryRun ? "default" : "outline"} onClick={() => setDryRun(false)} disabled={busy || unmatchedBusy}>
+              <Button variant={!dryRun ? "default" : "outline"} onClick={() => setDryRun(false)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
                 Write
               </Button>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">seasonYear</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value || 0))} disabled={busy || unmatchedBusy} />
+                <input className="border rounded px-2 py-1 w-24" type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
@@ -573,39 +713,39 @@ export default function AdminOps() {
                     setStartAt(v);
                     localStorage.setItem(cursorStorageKey, String(v));
                   }}
-                  disabled={busy || unmatchedBusy}
+                  disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}
                 />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">maxRows</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={maxRows} onChange={(e) => setMaxRows(Number(e.target.value || 0))} disabled={busy || unmatchedBusy} />
+                <input className="border rounded px-2 py-1 w-24" type="number" value={maxRows} onChange={(e) => setMaxRows(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">confidenceThreshold</span>
-                <input className="border rounded px-2 py-1 w-28" type="number" step="0.01" min="0" max="1" value={confidenceThreshold} onChange={(e) => setConfidenceThreshold(Number(e.target.value || 0))} disabled={busy || unmatchedBusy} />
+                <input className="border rounded px-2 py-1 w-28" type="number" step="0.01" min="0" max="1" value={confidenceThreshold} onChange={(e) => setConfidenceThreshold(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">throttleMs</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={throttleMs} onChange={(e) => setThrottleMs(Number(e.target.value || 0))} disabled={busy || unmatchedBusy} />
+                <input className="border rounded px-2 py-1 w-24" type="number" value={throttleMs} onChange={(e) => setThrottleMs(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">timeBudgetMs</span>
-                <input className="border rounded px-2 py-1 w-28" type="number" value={timeBudgetMs} onChange={(e) => setTimeBudgetMs(Number(e.target.value || 0))} disabled={busy || unmatchedBusy} />
+                <input className="border rounded px-2 py-1 w-28" type="number" value={timeBudgetMs} onChange={(e) => setTimeBudgetMs(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
               </label>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button onClick={runNextBatch} disabled={busy || unmatchedBusy || !adminEnabled}>
+              <Button onClick={runNextBatch} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy || !adminEnabled}>
                 Run next batch
               </Button>
-              <Button variant="outline" onClick={resetCursor} disabled={busy || unmatchedBusy}>
+              <Button variant="outline" onClick={resetCursor} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
                 Reset cursor
               </Button>
-              <Button variant="outline" onClick={() => refreshUnmatched()} disabled={busy || !adminEnabled || unmatchedBusy}>
+              <Button variant="outline" onClick={() => refreshUnmatched()} disabled={busy || dedupeBusy || purgeUnmatchedBusy || !adminEnabled || unmatchedBusy}>
                 Refresh Unmatched
               </Button>
             </div>
@@ -621,20 +761,20 @@ export default function AdminOps() {
               <div className="flex flex-wrap gap-3 items-center">
                 <label className="flex items-center gap-2 text-sm">
                   <span className="text-gray-600">maxBatches</span>
-                  <input className="border rounded px-2 py-1 w-24" type="number" min="1" value={maxBatches} onChange={(e) => setMaxBatches(Math.max(1, Number(e.target.value || 1)))} disabled={busy || unmatchedBusy} />
+                  <input className="border rounded px-2 py-1 w-24" type="number" min="1" value={maxBatches} onChange={(e) => setMaxBatches(Math.max(1, Number(e.target.value || 1)))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
                 </label>
 
                 <label className="flex items-center gap-2 text-sm">
                   <span className="text-gray-600">pauseMs</span>
-                  <input className="border rounded px-2 py-1 w-24" type="number" min="0" value={pauseMs} onChange={(e) => setPauseMs(Math.max(0, Number(e.target.value || 0)))} disabled={busy || unmatchedBusy} />
+                  <input className="border rounded px-2 py-1 w-24" type="number" min="0" value={pauseMs} onChange={(e) => setPauseMs(Math.max(0, Number(e.target.value || 0)))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
                 </label>
 
                 <label className="flex items-center gap-2 text-sm">
                   <span className="text-gray-600">halt if errors &gt;</span>
-                  <input className="border rounded px-2 py-1 w-20" type="number" min="0" value={haltOnBatchErrorsOver} onChange={(e) => setHaltOnBatchErrorsOver(Math.max(0, Number(e.target.value || 0)))} disabled={busy || unmatchedBusy} />
+                  <input className="border rounded px-2 py-1 w-20" type="number" min="0" value={haltOnBatchErrorsOver} onChange={(e) => setHaltOnBatchErrorsOver(Math.max(0, Number(e.target.value || 0)))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
                 </label>
 
-                <Button onClick={runUntilDone} disabled={busy || unmatchedBusy || !adminEnabled || dryRun}>
+                <Button onClick={runUntilDone} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy || !adminEnabled || dryRun}>
                   Run until done
                 </Button>
 
@@ -652,6 +792,80 @@ export default function AdminOps() {
           </Card>
 
           <Card className="p-4 space-y-3">
+            <div className="text-lg font-semibold">Dedup / repair tools</div>
+            <div className="text-sm text-gray-600">
+              Use this if Base44 cannot enforce Unique constraints on <span className="font-mono">source_key</span>.
+            </div>
+
+            <div className="border rounded bg-gray-50 p-3 space-y-3">
+              <div className="text-sm font-medium">AthleticsMembership: dedupe sweep (by source_key)</div>
+
+              <div className="flex flex-wrap gap-3 items-center">
+                <Button variant={dedupeDryRun ? "default" : "outline"} onClick={() => setDedupeDryRun(true)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
+                  Dry run
+                </Button>
+                <Button variant={!dedupeDryRun ? "default" : "outline"} onClick={() => setDedupeDryRun(false)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
+                  Execute
+                </Button>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">org</span>
+                  <select className="border rounded px-2 py-1" value={dedupeOrg} onChange={(e) => setDedupeOrg(e.target.value)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
+                    <option value="ncaa">ncaa</option>
+                    <option value="naia">naia</option>
+                    <option value="njcaa">njcaa</option>
+                    <option value="">(all)</option>
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">seasonYear</span>
+                  <input className="border rounded px-2 py-1 w-24" type="number" value={dedupeSeasonYear} onChange={(e) => setDedupeSeasonYear(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">maxDelete</span>
+                  <input className="border rounded px-2 py-1 w-28" type="number" value={dedupeMaxDelete} onChange={(e) => setDedupeMaxDelete(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
+                </label>
+
+                <Button onClick={invokeMembershipDedupe} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy || !adminEnabled}>
+                  {dedupeBusy ? "Running..." : dedupeDryRun ? "Dedupe dry run" : "Run dedupe"}
+                </Button>
+              </div>
+
+              <div className="text-xs text-gray-600">
+                Function: <span className="font-mono">athleticsMembershipDedupeSweep</span> (server-side). Keeps newest row per <span className="font-mono">source_key</span>.
+              </div>
+            </div>
+
+            <div className="border rounded bg-gray-50 p-3 space-y-3">
+              <div className="text-sm font-medium">UnmatchedAthleticsRow: purge (optional)</div>
+              <div className="text-xs text-gray-600">Use this when staging is massive and you want a clean re-run (after you’ve shipped better matching).</div>
+
+              <div className="flex flex-wrap gap-3 items-center">
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">org</span>
+                  <select className="border rounded px-2 py-1" value={purgeUnmatchedOrg} onChange={(e) => setPurgeUnmatchedOrg(e.target.value)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
+                    <option value="ncaa">ncaa</option>
+                    <option value="naia">naia</option>
+                    <option value="njcaa">njcaa</option>
+                    <option value="">(all)</option>
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">maxDelete</span>
+                  <input className="border rounded px-2 py-1 w-28" type="number" value={purgeUnmatchedMaxDelete} onChange={(e) => setPurgeUnmatchedMaxDelete(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
+                </label>
+
+                <Button variant="outline" onClick={purgeUnmatchedRows} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy || !adminEnabled}>
+                  {purgeUnmatchedBusy ? "Purging..." : "Purge unmatched"}
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold">Unmatched queue</div>
@@ -661,7 +875,7 @@ export default function AdminOps() {
               <div className="flex flex-wrap gap-2 items-center">
                 <label className="flex items-center gap-2 text-sm">
                   <span className="text-gray-600">org</span>
-                  <select className="border rounded px-2 py-1" value={unmatchedOrg} onChange={(e) => setUnmatchedOrg(e.target.value)} disabled={busy || unmatchedBusy}>
+                  <select className="border rounded px-2 py-1" value={unmatchedOrg} onChange={(e) => setUnmatchedOrg(e.target.value)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
                     <option value="ncaa">ncaa</option>
                     <option value="naia">naia</option>
                     <option value="njcaa">njcaa</option>
@@ -671,10 +885,10 @@ export default function AdminOps() {
 
                 <label className="flex items-center gap-2 text-sm">
                   <span className="text-gray-600">sample</span>
-                  <input className="border rounded px-2 py-1 w-20" type="number" min="5" max="100" value={unmatchedLimit} onChange={(e) => setUnmatchedLimit(Number(e.target.value || 25))} disabled={busy || unmatchedBusy} />
+                  <input className="border rounded px-2 py-1 w-20" type="number" min="5" max="100" value={unmatchedLimit} onChange={(e) => setUnmatchedLimit(Number(e.target.value || 25))} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy} />
                 </label>
 
-                <Button onClick={refreshUnmatched} disabled={busy || !adminEnabled || unmatchedBusy}>
+                <Button onClick={refreshUnmatched} disabled={busy || !adminEnabled || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
                   {unmatchedBusy ? "Refreshing..." : "Refresh"}
                 </Button>
               </div>
@@ -774,10 +988,10 @@ export default function AdminOps() {
         <div className="flex items-center justify-between gap-2">
           <div className="font-semibold">Run log</div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setShowRecoverBanner(true)} disabled={busy || unmatchedBusy}>
+            <Button variant="outline" onClick={() => setShowRecoverBanner(true)} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
               Show recover info
             </Button>
-            <Button variant="outline" onClick={clearLogs} disabled={busy || unmatchedBusy}>
+            <Button variant="outline" onClick={clearLogs} disabled={busy || unmatchedBusy || dedupeBusy || purgeUnmatchedBusy}>
               Clear
             </Button>
           </div>
