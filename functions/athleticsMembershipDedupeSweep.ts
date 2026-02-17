@@ -1,139 +1,256 @@
-// functions/athleticsMembershipDedupeSweep.ts
+// functions/athleticsMembershipDedupe.ts
+// Batch-safe dedupe sweep for AthleticsMembership (JS-only syntax; Base44-editor safe)
+//
+// Request body:
+// {
+//   dryRun: boolean,
+//   org: string,
+//   seasonYear: number | null,
+//   startAtGroup: number,
+//   maxGroups: number,
+//   maxDelete: number,
+//   throttleMs: number,
+//   timeBudgetMs: number,
+//   tries: number
+// }
+//
+// Response:
+// { ok, dryRun, stats, debug, nextStartAtGroup, done }
+
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 
+function safeStr(x) {
+  return x == null ? "" : String(x);
+}
+function lc(x) {
+  return safeStr(x).toLowerCase().trim();
+}
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, Math.max(0, Number(ms || 0))));
+}
+function getId(r) {
+  const v = r && (r.id ?? r._id ?? r.uuid);
+  return v == null ? null : String(v);
+}
+function toTime(x) {
+  const s = safeStr(x);
+  if (!s) return 0;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : 0;
+}
+function isRetryable(msg) {
+  const m = lc(msg);
+  return (
+    m.includes("rate limit") ||
+    m.includes("429") ||
+    m.includes("status code 429") ||
+    m.includes("status code 502") ||
+    m.includes("status code 503") ||
+    m.includes("status code 504") ||
+    m.includes("timeout")
+  );
+}
 function jsonResp(payload) {
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
 }
-function getId(r) {
-  const v = r?.id ?? r?._id ?? r?.uuid;
-  return v === null || v === undefined ? null : String(v);
-}
-function lc(x) {
-  return String(x || "").toLowerCase().trim();
-}
-function extractRows(resp) {
-  if (!resp) return [];
-  if (Array.isArray(resp)) return resp;
-  const cands = [resp.data, resp.items, resp.records, resp.results, resp.rows];
-  for (const c of cands) if (Array.isArray(c)) return c;
-  if (resp.data && Array.isArray(resp.data.data)) return resp.data.data;
-  return [];
-}
-function pickTime(r) {
-  const t =
-    r?.created_at ||
-    r?.last_verified_at ||
-    r?.updated_at ||
-    r?.modified_at ||
-    r?.createdAt ||
-    r?.updatedAt ||
-    null;
-  const ms = t ? Date.parse(String(t)) : NaN;
-  return Number.isFinite(ms) ? ms : 0;
-}
 
 Deno.serve(async (req) => {
-  const startedAt = Date.now();
+  const t0 = Date.now();
+  const elapsed = () => Date.now() - t0;
+
+  const debug = {
+    startedAt: new Date().toISOString(),
+    notes: [],
+    errors: [],
+    retries: 0,
+    retry_notes: [],
+    elapsedMs: 0,
+    stoppedEarly: false,
+  };
+
   const stats = {
     scanned: 0,
     groups: 0,
     dupGroups: 0,
-    deleted: 0,
     kept: 0,
+    deleted: 0,
     errors: 0,
+    deleteAttempts: 0,
   };
-  const debug = { notes: [], errors: [], elapsedMs: 0 };
+
+  let nextStartAtGroup = 0;
+  let done = false;
 
   try {
-    if (req.method !== "POST") return jsonResp({ ok: false, error: "Method not allowed", stats, debug });
+    if (req.method !== "POST") {
+      debug.elapsedMs = elapsed();
+      return jsonResp({ ok: false, error: "Method not allowed", stats, debug, nextStartAtGroup, done });
+    }
 
     const body = await req.json().catch(() => ({}));
-    const org = body?.org ? String(body.org) : null; // optional: "ncaa"
-    const seasonYear = body?.seasonYear != null ? Number(body.seasonYear) : null; // optional
-    const dryRun = !!body?.dryRun;
-    const maxDelete = body?.maxDelete != null ? Number(body.maxDelete) : 5000;
+
+    const dryRun = !!body.dryRun;
+    const org = safeStr(body.org || "ncaa") || "ncaa";
+    const seasonYear = body.seasonYear != null ? Number(body.seasonYear) : null;
+
+    const startAtGroup = Math.max(0, Number(body.startAtGroup || 0));
+    const maxGroups = Math.max(1, Number(body.maxGroups || 100));
+    const maxDelete = Math.max(0, Number(body.maxDelete || 500));
+    const throttleMs = Math.max(0, Number(body.throttleMs || (dryRun ? 0 : 60)));
+    const timeBudgetMs = Math.max(5000, Number(body.timeBudgetMs || 20000));
+    const tries = Math.max(1, Number(body.tries || 6));
 
     const client = createClientFromRequest(req);
     const AthleticsMembership = client.entities.AthleticsMembership || client.entities.AthleticsMemberships;
-    if (!AthleticsMembership) return jsonResp({ ok: false, error: "AthleticsMembership entity not found", stats, debug });
+    if (!AthleticsMembership) {
+      debug.elapsedMs = elapsed();
+      return jsonResp({ ok: false, error: "AthleticsMembership entity not found", stats, debug, nextStartAtGroup, done });
+    }
 
-    // Load all (Base44 may cap; but in practice your membership table is still small)
-    // If you later exceed caps, we can paginate similarly to School.
+    // Load rows with best-effort server-side filter, else fallback local filter
     let rows = [];
     try {
-      const resp = await AthleticsMembership.list({ where: {} });
-      rows = extractRows(resp);
-    } catch {
-      try {
-        const resp = await AthleticsMembership.filter({});
-        rows = extractRows(resp);
-      } catch {
-        rows = [];
-      }
+      const q = { org };
+      if (seasonYear != null && Number.isFinite(seasonYear)) q.season_year = seasonYear;
+      const out = await AthleticsMembership.filter(q);
+      rows = Array.isArray(out) ? out : [];
+    } catch (e) {
+      const out = await AthleticsMembership.filter({});
+      const all = Array.isArray(out) ? out : [];
+      rows = all.filter((r) => lc(r && r.org) === lc(org) && (seasonYear == null ? true : Number(r && r.season_year) === Number(seasonYear)));
+      debug.notes.push(`fallback filter used; loaded all=${all.length} kept=${rows.length}`);
     }
-
-    // Optional filters (client side)
-    if (org) rows = rows.filter((r) => lc(r?.org) === lc(org));
-    if (seasonYear != null) rows = rows.filter((r) => Number(r?.season_year) === seasonYear);
 
     stats.scanned = rows.length;
-    debug.notes.push(`loaded rows=${rows.length} org=${org || "ALL"} seasonYear=${seasonYear ?? "ALL"} dryRun=${dryRun}`);
+    debug.notes.push(`loaded rows=${rows.length} org=${org} seasonYear=${seasonYear == null ? "ALL" : seasonYear} dryRun=${dryRun}`);
 
     // Group by source_key
-    const map = new Map();
+    const byKey = new Map();
     for (const r of rows) {
-      const k = r?.source_key ? String(r.source_key) : null;
+      const k = safeStr(r && r.source_key).trim();
       if (!k) continue;
-      if (!map.has(k)) map.set(k, []);
-      map.get(k).push(r);
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k).push(r);
     }
 
-    stats.groups = map.size;
+    const keys = Array.from(byKey.keys()).sort();
+    stats.groups = keys.length;
 
-    for (const [k, arr] of map.entries()) {
-      if (!Array.isArray(arr) || arr.length <= 1) continue;
+    const endAtGroup = Math.min(keys.length, startAtGroup + maxGroups);
+    nextStartAtGroup = endAtGroup;
+    done = endAtGroup >= keys.length;
+
+    debug.notes.push(`group window startAtGroup=${startAtGroup} endAtGroup=${endAtGroup} totalGroups=${keys.length} maxGroups=${maxGroups}`);
+
+    function chooseKeep(group) {
+      let best = group[0];
+      let bestScore = -1;
+      for (const r of group) {
+        const score =
+          toTime(r && r.last_verified_at) * 10 +
+          toTime((r && (r.updated_at || r.updatedAt)) || "") * 3 +
+          toTime((r && (r.created_at || r.createdAt)) || "") * 1;
+        if (score > bestScore) {
+          bestScore = score;
+          best = r;
+        }
+      }
+      return best;
+    }
+
+    async function deleteWithRetry(id, sourceKey) {
+      for (let i = 0; i < tries; i++) {
+        stats.deleteAttempts += 1;
+        try {
+          await AthleticsMembership.delete(id);
+          return { ok: true };
+        } catch (e) {
+          const msg = safeStr(e && (e.message || e));
+          const retryable = isRetryable(msg);
+          if (!retryable || i === tries - 1) return { ok: false, message: msg };
+
+          const backoff = Math.min(12000, Math.floor(600 * Math.pow(2, i) + Math.random() * 250));
+          debug.retries += 1;
+          debug.retry_notes.push({ step: "delete", attempt: i + 1, tries, backoffMs: backoff, source_key: sourceKey, id, message: msg });
+          await sleep(backoff);
+        }
+      }
+      return { ok: false, message: "delete failed" };
+    }
+
+    let deletesLeft = maxDelete;
+
+    for (let gi = startAtGroup; gi < endAtGroup; gi++) {
+      if (elapsed() >= timeBudgetMs) {
+        debug.stoppedEarly = true;
+        nextStartAtGroup = gi;
+        done = false;
+        break;
+      }
+
+      const k = keys[gi];
+      const group = byKey.get(k) || [];
+      if (group.length <= 1) continue;
 
       stats.dupGroups += 1;
 
-      // Sort newest first
-      arr.sort((a, b) => pickTime(b) - pickTime(a));
-
-      const keep = arr[0];
+      const keep = chooseKeep(group);
       const keepId = getId(keep);
-      if (!keepId) continue;
-
+      if (!keepId) {
+        stats.errors += 1;
+        debug.errors.push({ step: "choose_keep_missing_id", source_key: k, message: "keep record missing id" });
+        continue;
+      }
       stats.kept += 1;
 
-      const dups = arr.slice(1);
-      for (const d of dups) {
-        const id = getId(d);
-        if (!id) continue;
+      for (const r of group) {
+        const id = getId(r);
+        if (!id || id === keepId) continue;
 
-        if (!dryRun) {
-          try {
-            if (stats.deleted >= maxDelete) {
-              debug.notes.push(`hit maxDelete=${maxDelete}, stopping deletes`);
-              return jsonResp({ ok: true, dryRun, stats, debug });
-            }
-            await AthleticsMembership.delete(id);
-          } catch (e) {
-            stats.errors += 1;
-            debug.errors.push({ step: "delete", source_key: k, id, message: String(e?.message || e) });
-            continue;
-          }
+        if (dryRun) {
+          stats.deleted += 1; // would delete
+          continue;
         }
 
-        stats.deleted += 1;
+        if (deletesLeft <= 0) {
+          debug.stoppedEarly = true;
+          nextStartAtGroup = gi;
+          done = false;
+          debug.notes.push(`hit maxDelete cap; resume at groupIndex=${gi}`);
+          break;
+        }
+
+        const out = await deleteWithRetry(id, k);
+        if (!out.ok) {
+          stats.errors += 1;
+          debug.errors.push({ step: "delete", source_key: k, id, message: out.message });
+        } else {
+          stats.deleted += 1;
+          deletesLeft -= 1;
+        }
+
+        if (throttleMs > 0) await sleep(throttleMs);
+        if (elapsed() >= timeBudgetMs) {
+          debug.stoppedEarly = true;
+          nextStartAtGroup = gi;
+          done = false;
+          break;
+        }
       }
+
+      if (debug.stoppedEarly) break;
     }
 
-    debug.elapsedMs = Date.now() - startedAt;
-    return jsonResp({ ok: true, dryRun, stats, debug });
+    debug.elapsedMs = elapsed();
+    return jsonResp({ ok: true, dryRun, stats, debug, nextStartAtGroup, done });
   } catch (e) {
-    debug.elapsedMs = Date.now() - startedAt;
-    return jsonResp({ ok: false, error: String(e?.message || e), stats, debug });
+    stats.errors += 1;
+    debug.errors.push({ step: "fatal", message: safeStr(e && (e.message || e)) });
+    debug.elapsedMs = elapsed();
+    return jsonResp({ ok: false, error: safeStr(e && (e.message || e)), stats, debug, nextStartAtGroup, done });
   }
 });
+
