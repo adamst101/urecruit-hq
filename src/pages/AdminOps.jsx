@@ -47,39 +47,6 @@ function unwrapInvokeResponse(resp) {
   return resp?.data ?? resp ?? null;
 }
 
-function getId(r) {
-  if (!r) return null;
-  if (typeof r.id === "string" || typeof r.id === "number") return String(r.id);
-  if (typeof r._id === "string" || typeof r._id === "number") return String(r._id);
-  if (typeof r.uuid === "string" || typeof r.uuid === "number") return String(r.uuid);
-  return null;
-}
-
-async function withRetries(fn, { tries = 8, baseDelayMs = 400, onRetry } = {}) {
-  let lastErr = null;
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (e) {
-      lastErr = e;
-      const msg = safeStr(e?.message || e);
-      const status = e?.raw?.status || e?.status;
-      const isRate = status === 429 || lc(msg).includes("rate limit") || lc(msg).includes("429");
-      const isNet = lc(msg).includes("network") || lc(msg).includes("timeout");
-      const is500 = status >= 500 && status <= 599;
-
-      if (i < tries - 1 && (isRate || isNet || is500)) {
-        const delay = Math.min(25_000, Math.floor(baseDelayMs * Math.pow(2, i) + Math.random() * 250));
-        onRetry?.({ attempt: i + 1, tries, delayMs: delay, err: e });
-        await sleep(delay);
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw lastErr;
-}
-
 function pickEntityFromSDK(name) {
   const direct = Entities?.[name];
   if (direct) return direct;
@@ -99,13 +66,20 @@ export default function AdminOps() {
   const [log, setLog] = useState([]);
   const logRef = useRef(null);
 
+  // "stop" flag for run-until-done loop (must be ref to read inside async loop)
+  const stopRunRef = useRef(false);
+
   // Athletics sync controls
   const [athleticsDryRun, setAthleticsDryRun] = useState(true);
   const [ncaaSeasonYear, setNcaaSeasonYear] = useState(new Date().getFullYear());
-  const [ncaaMaxRows, setNcaaMaxRows] = useState(200); // batch size
+  const [ncaaMaxRows, setNcaaMaxRows] = useState(250); // batch size
   const [ncaaConfidenceThreshold, setNcaaConfidenceThreshold] = useState(0.92);
-  const [ncaaThrottleMs, setNcaaThrottleMs] = useState(15);
-  const [ncaaTimeBudgetMs, setNcaaTimeBudgetMs] = useState(24000);
+  const [ncaaThrottleMs, setNcaaThrottleMs] = useState(2);
+  const [ncaaTimeBudgetMs, setNcaaTimeBudgetMs] = useState(20000);
+
+  // Run-until-done controls
+  const [runUntilDoneMaxBatches, setRunUntilDoneMaxBatches] = useState(20);
+  const [runUntilDonePauseMs, setRunUntilDonePauseMs] = useState(900);
 
   const cursorStorageKey = useMemo(() => `${NCAA_CURSOR_KEY_PREFIX}${ncaaSeasonYear}`, [ncaaSeasonYear]);
   const [ncaaStartAt, setNcaaStartAt] = useState(0);
@@ -115,7 +89,6 @@ export default function AdminOps() {
   }, []);
 
   useEffect(() => {
-    // load cursor per season
     const saved = Number(localStorage.getItem(cursorStorageKey) || 0);
     setNcaaStartAt(Number.isFinite(saved) ? saved : 0);
   }, [cursorStorageKey]);
@@ -148,71 +121,132 @@ export default function AdminOps() {
     pushLog(`NCAA cursor reset for season ${ncaaSeasonYear}. startAt=0`);
   }
 
-  async function runNcaaMembershipSync({ useSavedCursor = true } = {}) {
+  async function invokeNcaaOnce({ startAtOverride } = {}) {
+    if (!base44?.functions?.invoke) {
+      pushLog("❌ base44.functions.invoke is not available in this environment.");
+      return { ok: false, error: "invoke not available" };
+    }
+
+    const startAt = Number.isFinite(startAtOverride) ? Math.max(0, Number(startAtOverride)) : ncaaStartAt;
+
+    const payload = {
+      dryRun: athleticsDryRun,
+      seasonYear: ncaaSeasonYear,
+      startAt,
+      maxRows: ncaaMaxRows,
+      confidenceThreshold: ncaaConfidenceThreshold,
+      throttleMs: ncaaThrottleMs,
+      timeBudgetMs: ncaaTimeBudgetMs,
+      sourcePlatform: "ncaa-api",
+    };
+
+    pushLog(
+      `NCAA sync start. DryRun=${payload.dryRun} seasonYear=${payload.seasonYear} startAt=${payload.startAt} maxRows=${payload.maxRows} threshold=${payload.confidenceThreshold} throttleMs=${payload.throttleMs} timeBudgetMs=${payload.timeBudgetMs}`
+    );
+
+    const raw = await base44.functions.invoke("ncaaMembershipSync", payload);
+    const res = unwrapInvokeResponse(raw);
+
+    // Keep the payload log short; the next line summarizes the important bits.
+    pushLog(`invoke data:\n${truncate(res, 1200)}`);
+
+    if (res?.error) {
+      pushLog(`❌ NCAA sync failed: ${safeStr(res.error)}`);
+      return { ok: false, error: safeStr(res.error), res };
+    }
+    if (res?.ok !== true) {
+      pushLog(`❌ NCAA sync failed (no ok=true).`);
+      return { ok: false, error: "no ok=true", res };
+    }
+
+    const st = res?.stats || {};
+    const nextStartAt = Number(res?.nextStartAt ?? startAt);
+    const done = !!res?.done;
+    const elapsedMs = Number(res?.debug?.elapsedMs || 0);
+    const stoppedEarly = !!res?.debug?.stoppedEarly;
+
+    pushLog(
+      `✅ NCAA sync complete. processed=${st.processed} matched=${st.matched} created=${st.created} updated=${st.updated} noMatch=${st.noMatch} ambiguous=${st.ambiguous} missingName=${st.missingName} errors=${st.errors} nextStartAt=${nextStartAt} done=${done} elapsedMs=${elapsedMs} stoppedEarly=${stoppedEarly}`
+    );
+
+    // persist cursor for resume (dry run included so operator can iterate)
+    saveCursor(nextStartAt);
+
+    return { ok: true, res, nextStartAt, done, stats: st, elapsedMs, stoppedEarly };
+  }
+
+  async function runNcaaNextBatch() {
     if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
     setBusy(true);
+    stopRunRef.current = false;
     try {
-      if (!base44?.functions?.invoke) {
-        pushLog("❌ base44.functions.invoke is not available in this environment.");
-        return;
-      }
-
-      const startAt = useSavedCursor ? ncaaStartAt : 0;
-
-      const payload = {
-        dryRun: athleticsDryRun,
-        seasonYear: ncaaSeasonYear,
-        startAt,
-        maxRows: ncaaMaxRows,
-        confidenceThreshold: ncaaConfidenceThreshold,
-        throttleMs: ncaaThrottleMs,
-        timeBudgetMs: ncaaTimeBudgetMs,
-        sourcePlatform: "ncaa-api",
-      };
-
-      pushLog(
-        `NCAA sync start. DryRun=${payload.dryRun} seasonYear=${payload.seasonYear} startAt=${payload.startAt} maxRows=${payload.maxRows} threshold=${payload.confidenceThreshold} throttleMs=${payload.throttleMs} timeBudgetMs=${payload.timeBudgetMs}`
-      );
-
-      const raw = await base44.functions.invoke("ncaaMembershipSync", payload);
-      const res = unwrapInvokeResponse(raw);
-
-      pushLog(`invoke data:\n${truncate(res, 1500)}`);
-
-      if (res?.error) {
-        pushLog(`❌ NCAA sync failed: ${safeStr(res.error)}`);
-        if (res?.debug) pushLog(`server debug:\n${truncate(res.debug, 1500)}`);
-        return;
-      }
-
-      if (res?.ok !== true) {
-        pushLog(`❌ NCAA sync failed (no ok=true). See invoke payload above.`);
-        return;
-      }
-
-      const st = res?.stats || {};
-      const nextStartAt = Number(res?.nextStartAt ?? startAt);
-      const done = !!res?.done;
-      const elapsedMs = Number(res?.debug?.elapsedMs || 0);
-      const stoppedEarly = !!res?.debug?.stoppedEarly;
-
-      pushLog(
-        `✅ NCAA sync complete. processed=${st.processed} matched=${st.matched} created=${st.created} updated=${st.updated} noMatch=${st.noMatch} ambiguous=${st.ambiguous} missingName=${st.missingName} errors=${st.errors} nextStartAt=${nextStartAt} done=${done} elapsedMs=${elapsedMs} stoppedEarly=${stoppedEarly}`
-      );
-
-      // persist cursor for resume (even on dry run, so ops can iterate through the dataset)
-      saveCursor(nextStartAt);
-
-      const samples = asArray(res?.debug?.samples).slice(0, 2);
-      for (const smp of samples) pushLog(`sample: ${safeStr(JSON.stringify(smp)).slice(0, 500)}`);
-      const errs = asArray(res?.debug?.errors).slice(0, 2);
-      for (const er of errs) pushLog(`error: ${safeStr(JSON.stringify(er)).slice(0, 500)}`);
+      await invokeNcaaOnce();
     } catch (e) {
       pushLog(`❌ NCAA sync exception: ${safeStr(e?.message || e)}`);
-      if (e?.raw) pushLog(`exception raw:\n${truncate(e.raw, 1500)}`);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function runNcaaUntilDone() {
+    if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
+    if (athleticsDryRun) return pushLog("❌ Run-until-done is disabled in DryRun. Switch to Write.");
+
+    // Basic sanity: make sure the function exists (helps catch env miswires)
+    const AthleticsMembership = pickEntityFromSDK("AthleticsMembership");
+    if (!AthleticsMembership) pushLog("⚠️ AthleticsMembership entity not found on client; function may still work, continuing.");
+
+    setBusy(true);
+    stopRunRef.current = false;
+
+    try {
+      pushLog(
+        `▶ Run until done: maxBatches=${runUntilDoneMaxBatches} pauseMs=${runUntilDonePauseMs} startingCursor=${ncaaStartAt}`
+      );
+
+      let batches = 0;
+      let done = false;
+
+      while (!done && batches < runUntilDoneMaxBatches) {
+        if (stopRunRef.current) {
+          pushLog("⏹ Stopped by operator.");
+          break;
+        }
+
+        batches += 1;
+        pushLog(`--- Batch ${batches} ---`);
+
+        const out = await invokeNcaaOnce();
+        if (!out?.ok) {
+          pushLog(`❌ Batch ${batches} failed. Halting run-until-done.`);
+          break;
+        }
+
+        done = !!out.done;
+
+        // Pause between batches to reduce risk of rate limiting / gateway congestion
+        if (!done && runUntilDonePauseMs > 0) {
+          await sleep(runUntilDonePauseMs);
+        }
+      }
+
+      if (done) {
+        pushLog("🏁 NCAA run-until-done complete: done=true");
+        pushLog("Next: run once from startAt=0 to prove idempotency (created≈0, updated>0).");
+      } else if (batches >= runUntilDoneMaxBatches) {
+        pushLog(`⏸ Reached maxBatches=${runUntilDoneMaxBatches}. Cursor saved at startAt=${ncaaStartAt}. Run again to continue.`);
+      }
+    } catch (e) {
+      pushLog(`❌ run-until-done exception: ${safeStr(e?.message || e)}`);
+    } finally {
+      setBusy(false);
+      stopRunRef.current = false;
+    }
+  }
+
+  function stopRun() {
+    stopRunRef.current = true;
+    pushLog("Stop requested. Will halt after current batch completes.");
   }
 
   return (
@@ -285,7 +319,7 @@ export default function AdminOps() {
           <Card className="p-4 space-y-3">
             <div className="text-lg font-semibold">NCAA enrichment (batch + resume)</div>
             <div className="text-sm text-gray-600">
-              Uses cursor <span className="font-mono">startAt</span> and saves <span className="font-mono">nextStartAt</span> per season.
+              Cursor uses <span className="font-mono">startAt</span> and saves <span className="font-mono">nextStartAt</span> per season.
             </div>
 
             <div className="flex flex-wrap gap-2 items-center">
@@ -328,15 +362,59 @@ export default function AdminOps() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => runNcaaMembershipSync({ useSavedCursor: true })} disabled={busy || !adminEnabled}>
-                Run next batch (uses startAt)
-              </Button>
-              <Button variant="outline" onClick={() => runNcaaMembershipSync({ useSavedCursor: false })} disabled={busy || !adminEnabled}>
-                Run from 0 (ignores cursor)
+              <Button onClick={runNcaaNextBatch} disabled={busy || !adminEnabled}>
+                Run next batch
               </Button>
               <Button variant="outline" onClick={resetCursor} disabled={busy}>
                 Reset cursor
               </Button>
+            </div>
+
+            <div className="border-t pt-3 space-y-2">
+              <div className="text-sm font-medium">Run until done</div>
+              <div className="text-xs text-gray-600">
+                Loops batches until <span className="font-mono">done=true</span>, or max batches reached, or you stop. Disabled in Dry run.
+              </div>
+
+              <div className="flex flex-wrap gap-3 items-center">
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">maxBatches</span>
+                  <input
+                    className="border rounded px-2 py-1 w-24"
+                    type="number"
+                    min="1"
+                    value={runUntilDoneMaxBatches}
+                    onChange={(e) => setRunUntilDoneMaxBatches(Number(e.target.value || 1))}
+                    disabled={busy}
+                  />
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">pauseMs</span>
+                  <input
+                    className="border rounded px-2 py-1 w-24"
+                    type="number"
+                    min="0"
+                    value={runUntilDonePauseMs}
+                    onChange={(e) => setRunUntilDonePauseMs(Number(e.target.value || 0))}
+                    disabled={busy}
+                  />
+                </label>
+
+                <Button onClick={runNcaaUntilDone} disabled={busy || !adminEnabled || athleticsDryRun}>
+                  Run until done
+                </Button>
+
+                <Button variant="outline" onClick={stopRun} disabled={!busy}>
+                  Stop
+                </Button>
+              </div>
+
+              {athleticsDryRun && (
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                  Run-until-done is disabled in Dry run. Switch to Write to use it.
+                </div>
+              )}
             </div>
 
             <div className="text-xs text-gray-600">
