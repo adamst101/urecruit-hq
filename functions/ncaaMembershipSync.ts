@@ -422,7 +422,7 @@ Deno.serve(async (req) => {
         division: null,
         subdivision: null,
         conference: null,
-        season_year: seasonYear,
+        season_year: null,
         source_platform: sourcePlatform,
         source_url: slug ? `https://www.ncaa.com/schools/${slug}` : null,
         source_key: sourceKey,
