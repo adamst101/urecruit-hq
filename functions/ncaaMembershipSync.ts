@@ -414,7 +414,7 @@ Deno.serve(async (req) => {
 
       stats.matched += 1;
 
-      const sourceKey = `ncaa:${schoolId}:${seasonYear || "current"}`;
+    const sourceKey = `ncaa:${schoolId}`;
       const rec = {
         school_id: schoolId,
         org: "ncaa",
