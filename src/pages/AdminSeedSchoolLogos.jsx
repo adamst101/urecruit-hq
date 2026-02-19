@@ -1,8 +1,4 @@
 // src/pages/AdminSeedSchoolLogos.jsx
-// Refresh-proof client runner for server function: ingestSchoolLogos
-// - All writes happen server-side.
-// - Client orchestrates batches and persists cursor + totals to localStorage.
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { base44 } from "../api/base44Client";
 
@@ -35,7 +31,7 @@ function safeJson(x) {
   }
 }
 
-function truncate(x, n = 1800) {
+function truncate(x, n = 2200) {
   const t = typeof x === "string" ? x : safeJson(x);
   return t.length > n ? t.slice(0, n) + "\n...<truncated>..." : t;
 }
@@ -56,9 +52,8 @@ function isTransient(e) {
   return msg.includes("timeout") || msg.includes("network") || msg.includes("rate limit") || msg.includes("502");
 }
 
-// Persisted run state
-const STATE_KEY = "campapp_ingestSchoolLogos_state_v1";
-const CURSOR_KEY = "campapp_ingestSchoolLogos_cursor_v1";
+const STATE_KEY = "campapp_seedSchoolLogos_state_v1";
+const CURSOR_KEY = "campapp_seedSchoolLogos_cursor_v1";
 
 function loadState() {
   try {
@@ -87,15 +82,9 @@ function loadCursor() {
   try {
     const raw = window.localStorage.getItem(CURSOR_KEY);
     if (!raw) return null;
-    const v = JSON.parse(raw);
-    return v ?? null;
+    return JSON.parse(raw);
   } catch {
-    try {
-      const raw2 = window.localStorage.getItem(CURSOR_KEY);
-      return raw2 || null;
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 
@@ -113,14 +102,12 @@ function clearCursor() {
 
 export default function AdminSeedSchoolLogos() {
   const canRun = useMemo(() => !!base44?.functions?.invoke, []);
-
   const cancelRef = useRef(false);
-  const [running, setRunning] = useState(false);
 
+  const [running, setRunning] = useState(false);
   const [log, setLog] = useState([]);
   const push = (m) => setLog((x) => [...x, m]);
 
-  // Controls
   const [dryRun, setDryRun] = useState(true);
   const [maxRows, setMaxRows] = useState(50);
   const [throttleMs, setThrottleMs] = useState(250);
@@ -133,7 +120,14 @@ export default function AdminSeedSchoolLogos() {
   const [delayBetweenBatchesMs, setDelayBetweenBatchesMs] = useState(1200);
 
   const [cursor, setCursor] = useState(null);
-  const [totals, setTotals] = useState({ scanned: 0, eligible: 0, updated: 0, skipped: 0, errors: 0, batches: 0 });
+  const [totals, setTotals] = useState({
+    scanned: 0,
+    eligible: 0,
+    updated: 0,
+    skipped: 0,
+    errors: 0,
+    batches: 0,
+  });
 
   useEffect(() => {
     const st = loadState();
@@ -142,7 +136,6 @@ export default function AdminSeedSchoolLogos() {
     if (st?.totals) setTotals(st.totals);
   }, []);
 
-  // Best-effort refresh guard
   useEffect(() => {
     const handler = (e) => {
       if (!running) return;
@@ -158,12 +151,7 @@ export default function AdminSeedSchoolLogos() {
     cancelRef.current = true;
     setRunning(false);
     push(`⏹️ Stop requested @ ${new Date().toISOString()}`);
-    saveState({
-      running: false,
-      stoppedAt: new Date().toISOString(),
-      totals,
-      cursor,
-    });
+    saveState({ running: false, stoppedAt: new Date().toISOString(), totals, cursor });
   };
 
   const reset = () => {
@@ -193,9 +181,20 @@ export default function AdminSeedSchoolLogos() {
     throw lastErr || new Error("invokeWithRetry failed");
   }
 
-  async function probe() {
+  async function debugSchoolRead() {
     if (!canRun) return;
-    push(`\nProbe start @ ${new Date().toISOString()}`);
+    push(`\n🔎 debugSchoolRead @ ${new Date().toISOString()}`);
+    try {
+      const out = await invokeWithRetry("debugSchoolRead", {});
+      push(`✅ debugSchoolRead: ${truncate(out, 2000)}`);
+    } catch (e) {
+      push(`❌ debugSchoolRead failed: ${String(e?.message || e)}`);
+    }
+  }
+
+  async function probeLogos() {
+    if (!canRun) return;
+    push(`\nProbe ingestSchoolLogos @ ${new Date().toISOString()}`);
     try {
       const out = await invokeWithRetry("ingestSchoolLogos", {
         dryRun: true,
@@ -207,7 +206,7 @@ export default function AdminSeedSchoolLogos() {
         preferWikimedia: true,
         force: false,
       });
-      push(`✅ Probe ok: ${truncate(out, 1600)}`);
+      push(`✅ Probe ok: ${truncate(out, 2000)}`);
     } catch (e) {
       push(`❌ Probe failed: ${String(e?.message || e)}`);
     }
@@ -218,6 +217,7 @@ export default function AdminSeedSchoolLogos() {
 
     cancelRef.current = false;
     setRunning(true);
+
     push(`\n▶️ Run start @ ${new Date().toISOString()}`);
     push(
       `Settings: dryRun=${dryRun} maxRows=${maxRows} throttleMs=${throttleMs} timeBudgetMs=${timeBudgetMs} onlyMissing=${onlyMissing} preferWikimedia=${preferWikimedia} force=${force}`
@@ -273,9 +273,9 @@ export default function AdminSeedSchoolLogos() {
       });
 
       push(
-        `✅ Batch ${batchNum} done | updated=${stats.updated || 0} errors=${stats.errors || 0} next_cursor=${
-          next ? "<set>" : "<null>"
-        }`
+        `✅ Batch ${batchNum} done | scanned=${stats.scanned || 0} updated=${stats.updated || 0} errors=${
+          stats.errors || 0
+        } next_cursor=${next ? "<set>" : "<null>"}`
       );
 
       if (done || !next) {
@@ -288,12 +288,7 @@ export default function AdminSeedSchoolLogos() {
     }
 
     setRunning(false);
-    saveState({
-      running: false,
-      stoppedAt: new Date().toISOString(),
-      totals: localTotals,
-      cursor: cur,
-    });
+    saveState({ running: false, stoppedAt: new Date().toISOString(), totals: localTotals, cursor: cur });
   }
 
   return (
@@ -302,12 +297,15 @@ export default function AdminSeedSchoolLogos() {
         <div>
           <h1 className="text-xl font-semibold">Admin • School Logo Ingestion</h1>
           <p className="text-sm text-slate-600">
-            Server function runner: <span className="font-mono">ingestSchoolLogos</span> (updates School only)
+            Server runner: <span className="font-mono">ingestSchoolLogos</span> + diagnostics
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={probe} disabled={!canRun || running}>
-            Probe
+          <Button variant="outline" onClick={debugSchoolRead} disabled={!canRun || running}>
+            Debug School Read
+          </Button>
+          <Button variant="outline" onClick={probeLogos} disabled={!canRun || running}>
+            Probe Logos
           </Button>
           <Button variant="outline" onClick={reset} disabled={running}>
             Reset
@@ -336,6 +334,7 @@ export default function AdminSeedSchoolLogos() {
               <option value="false">false (write)</option>
             </select>
           </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">maxRows per batch</label>
             <input
@@ -348,8 +347,9 @@ export default function AdminSeedSchoolLogos() {
               disabled={running}
             />
           </div>
+
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">throttleMs (between updates)</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">throttleMs</label>
             <input
               className="w-full rounded-lg border border-slate-300 p-2 text-sm"
               type="number"
@@ -360,8 +360,9 @@ export default function AdminSeedSchoolLogos() {
               disabled={running}
             />
           </div>
+
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">timeBudgetMs (per call)</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">timeBudgetMs</label>
             <input
               className="w-full rounded-lg border border-slate-300 p-2 text-sm"
               type="number"
@@ -372,6 +373,7 @@ export default function AdminSeedSchoolLogos() {
               disabled={running}
             />
           </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">delayBetweenBatchesMs</label>
             <input
@@ -384,8 +386,9 @@ export default function AdminSeedSchoolLogos() {
               disabled={running}
             />
           </div>
+
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">tries (transient retry)</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">tries</label>
             <input
               className="w-full rounded-lg border border-slate-300 p-2 text-sm"
               type="number"
@@ -410,44 +413,32 @@ export default function AdminSeedSchoolLogos() {
               onChange={(e) => setPreferWikimedia(e.target.checked)}
               disabled={running}
             />
-            Prefer Wikimedia (Wikipedia thumbnails)
+            Prefer Wikimedia
           </label>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} disabled={running} />
-            Force overwrite (danger)
+            Force overwrite
           </label>
         </div>
 
         <div className="mt-4 text-sm text-slate-700">
           <div>
-            <span className="font-semibold">Cursor:</span>{" "}
-            <span className="font-mono">{cursor ? truncate(cursor, 120) : "<null>"}</span>
+            <span className="font-semibold">Cursor:</span> <span className="font-mono">{cursor ? truncate(cursor, 120) : "<null>"}</span>
           </div>
           <div className="mt-2 grid grid-cols-2 md:grid-cols-6 gap-2">
-            <div className="rounded-lg border border-slate-200 p-2">
-              <div className="text-xs text-slate-500">batches</div>
-              <div className="font-semibold">{totals.batches}</div>
-            </div>
-            <div className="rounded-lg border border-slate-200 p-2">
-              <div className="text-xs text-slate-500">scanned</div>
-              <div className="font-semibold">{totals.scanned}</div>
-            </div>
-            <div className="rounded-lg border border-slate-200 p-2">
-              <div className="text-xs text-slate-500">eligible</div>
-              <div className="font-semibold">{totals.eligible}</div>
-            </div>
-            <div className="rounded-lg border border-slate-200 p-2">
-              <div className="text-xs text-slate-500">updated</div>
-              <div className="font-semibold">{totals.updated}</div>
-            </div>
-            <div className="rounded-lg border border-slate-200 p-2">
-              <div className="text-xs text-slate-500">skipped</div>
-              <div className="font-semibold">{totals.skipped}</div>
-            </div>
-            <div className="rounded-lg border border-slate-200 p-2">
-              <div className="text-xs text-slate-500">errors</div>
-              <div className="font-semibold">{totals.errors}</div>
-            </div>
+            {[
+              ["batches", totals.batches],
+              ["scanned", totals.scanned],
+              ["eligible", totals.eligible],
+              ["updated", totals.updated],
+              ["skipped", totals.skipped],
+              ["errors", totals.errors],
+            ].map(([k, v]) => (
+              <div key={k} className="rounded-lg border border-slate-200 p-2">
+                <div className="text-xs text-slate-500">{k}</div>
+                <div className="font-semibold">{v}</div>
+              </div>
+            ))}
           </div>
         </div>
       </Card>
