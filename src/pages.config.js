@@ -69,6 +69,7 @@ import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
+import AdminSeedSchoolLogos from './pages/AdminSeedSchoolLogos';
 import __Layout from './Layout.jsx';
 
 
@@ -95,6 +96,7 @@ export const PAGES = {
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
+    "AdminSeedSchoolLogos": AdminSeedSchoolLogos,
 }
 
 export const pagesConfig = {
