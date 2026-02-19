@@ -1,10 +1,13 @@
 // functions/ingestSchoolLogos.ts
 // Deno + Base44 backend function (JS-only style; no TS syntax)
 //
-// Fix v6: Base44 SDK in this app does NOT reliably support School.filter(query, {limit,offset})
-// We always call School.filter({}) then slice locally.
+// v7: Logo-safe approach.
+// - Prefer: Wikidata logo (P154) / coat of arms (P94) when present
+// - Fallback: Commons category scan for likely logo/seal files
+// - LAST resort: Clearbit logo from school domain (if reliable)
+// - Removes dangerous Wikipedia pageimages thumbnails (often random photos)
 //
-// Goal: write School logos to fields:
+// Writes to School:
 // - logo_url, logo_source, logo_updated_at
 //
 // Input:
@@ -17,7 +20,8 @@
 //   "onlyMissing": true,            // default true
 //   "preferWikimedia": true,        // default true
 //   "force": false,                 // default false
-//   "probeOnly": false              // if true: does no work, returns diagnostics + version
+//   "probeOnly": false,             // diagnostics only
+//   "minConfidence": 0.7            // 0..1, default 0.7
 // }
 //
 // Output:
@@ -51,15 +55,10 @@ async function safeText(r) {
   }
 }
 
-// Base44 sometimes returns:
-// - arrays
-// - { data: [...] } / { items: [...] }
-// - OR an object keyed "0","1","2"... (you saw respKeys 0..4999)
 function extractRows(resp) {
   if (!resp) return [];
   if (Array.isArray(resp)) return resp;
 
-  // Common wrappers
   const cands = [resp.data, resp.items, resp.records, resp.results, resp.rows];
   for (const c of cands) if (Array.isArray(c)) return c;
 
@@ -67,7 +66,6 @@ function extractRows(resp) {
   if (resp.data && Array.isArray(resp.data.items)) return resp.data.items;
   if (resp.data && Array.isArray(resp.data.records)) return resp.data.records;
 
-  // Numeric-keyed object
   if (typeof resp === "object") {
     const keys = Object.keys(resp);
     if (keys.length && keys.every((k) => /^\d+$/.test(k))) {
@@ -141,62 +139,192 @@ async function fetchJsonWithRetry(url, debug, tries) {
   throw lastErr || new Error("fetchJsonWithRetry failed");
 }
 
-async function resolveWikimediaLogo(school, debug) {
-  const wikiUrl =
-    school && (school.wikipedia_url || school.wikipedia) ? (school.wikipedia_url || school.wikipedia) : null;
-  const name = school && (school.school_name || school.name) ? (school.school_name || school.name) : null;
+function normalizeWikiTitle(title) {
+  if (!title) return null;
+  let t = String(title).trim();
+  if (!t) return null;
+  t = t.replace(/ /g, "_");
+  return t;
+}
 
-  async function pageThumbByTitle(title) {
-    const api = "https://en.wikipedia.org/w/api.php";
-    const params = new URLSearchParams({
-      action: "query",
-      format: "json",
-      prop: "pageimages",
-      pithumbsize: "320",
-      titles: title,
-      redirects: "1",
-      origin: "*",
-    });
-    const data = await fetchJsonWithRetry(`${api}?${params.toString()}`, debug, 3);
-    const pages = data && data.query && data.query.pages ? data.query.pages : null;
-    if (!pages) return null;
-    const firstKey = Object.keys(pages)[0];
-    const page = pages[firstKey];
-    const thumb = page && page.thumbnail && page.thumbnail.source ? page.thumbnail.source : null;
-    return isUrl(thumb) ? thumb : null;
+function parseWikiTitleFromUrl(wikiUrl) {
+  if (!wikiUrl || typeof wikiUrl !== "string") return null;
+  if (!wikiUrl.includes("wikipedia.org/wiki/")) return null;
+  const raw = (wikiUrl.split("/wiki/")[1] || "").split("#")[0];
+  const title = raw ? decodeURIComponent(raw) : null;
+  return normalizeWikiTitle(title);
+}
+
+async function wikipediaSearchTopTitle(name, debug) {
+  const api = "https://en.wikipedia.org/w/api.php";
+  const params = new URLSearchParams({
+    action: "query",
+    format: "json",
+    list: "search",
+    srsearch: name,
+    srlimit: "1",
+    origin: "*",
+  });
+  const data = await fetchJsonWithRetry(`${api}?${params.toString()}`, debug, 3);
+  const hit = data && data.query && data.query.search && data.query.search[0] ? data.query.search[0] : null;
+  const title = hit && hit.title ? hit.title : null;
+  return normalizeWikiTitle(title);
+}
+
+async function wikipediaGetWikibaseItem(title, debug) {
+  if (!title) return null;
+
+  const api = "https://en.wikipedia.org/w/api.php";
+  const params = new URLSearchParams({
+    action: "query",
+    format: "json",
+    prop: "pageprops",
+    ppprop: "wikibase_item",
+    titles: title,
+    redirects: "1",
+    origin: "*",
+  });
+
+  const data = await fetchJsonWithRetry(`${api}?${params.toString()}`, debug, 3);
+  const pages = data && data.query && data.query.pages ? data.query.pages : null;
+  if (!pages) return null;
+  const firstKey = Object.keys(pages)[0];
+  const page = pages[firstKey];
+  const wb = page && page.pageprops && page.pageprops.wikibase_item ? page.pageprops.wikibase_item : null;
+  return wb || null; // Qxxxx
+}
+
+async function wikidataGetLogoFileName(qid, debug) {
+  if (!qid) return null;
+
+  const endpoint = "https://www.wikidata.org/w/api.php";
+  const params = new URLSearchParams({
+    action: "wbgetclaims",
+    format: "json",
+    entity: qid,
+    property: "P154", // logo image
+    origin: "*",
+  });
+
+  const data = await fetchJsonWithRetry(`${endpoint}?${params.toString()}`, debug, 3);
+  const claims = data && data.claims && data.claims.P154 ? data.claims.P154 : null;
+  const claim = claims && claims[0] ? claims[0] : null;
+  const dv = claim && claim.mainsnak && claim.mainsnak.datavalue ? claim.mainsnak.datavalue : null;
+  const value = dv && dv.value ? dv.value : null; // filename on Commons
+  return value || null;
+}
+
+async function wikidataGetCoatOfArmsFileName(qid, debug) {
+  if (!qid) return null;
+
+  const endpoint = "https://www.wikidata.org/w/api.php";
+  const params = new URLSearchParams({
+    action: "wbgetclaims",
+    format: "json",
+    entity: qid,
+    property: "P94", // coat of arms image
+    origin: "*",
+  });
+
+  const data = await fetchJsonWithRetry(`${endpoint}?${params.toString()}`, debug, 3);
+  const claims = data && data.claims && data.claims.P94 ? data.claims.P94 : null;
+  const claim = claims && claims[0] ? claims[0] : null;
+  const dv = claim && claim.mainsnak && claim.mainsnak.datavalue ? claim.mainsnak.datavalue : null;
+  const value = dv && dv.value ? dv.value : null;
+  return value || null;
+}
+
+async function commonsImageInfoByFileName(fileName, debug) {
+  if (!fileName) return null;
+  const title = `File:${fileName}`;
+  const api = "https://commons.wikimedia.org/w/api.php";
+  const params = new URLSearchParams({
+    action: "query",
+    format: "json",
+    prop: "imageinfo",
+    iiprop: "url|size|mime",
+    titles: title,
+    origin: "*",
+  });
+
+  const data = await fetchJsonWithRetry(`${api}?${params.toString()}`, debug, 3);
+  const pages = data && data.query && data.query.pages ? data.query.pages : null;
+  if (!pages) return null;
+  const firstKey = Object.keys(pages)[0];
+  const page = pages[firstKey];
+  const ii = page && page.imageinfo && page.imageinfo[0] ? page.imageinfo[0] : null;
+  if (!ii) return null;
+  const url = ii.url;
+  if (!isUrl(url)) return null;
+
+  return {
+    url,
+    mime: ii.mime || null,
+    width: ii.width || null,
+    height: ii.height || null,
+  };
+}
+
+function looksLikeLogoFileName(fn) {
+  if (!fn || typeof fn !== "string") return false;
+  const s = fn.toLowerCase();
+  return (
+    s.includes("logo") ||
+    s.includes("seal") ||
+    s.includes("wordmark") ||
+    s.includes("athletics") ||
+    s.includes("sports") ||
+    s.includes("emblem")
+  );
+}
+
+async function commonsCategoryLikelyLogo(title, debug) {
+  // Try Category:<Title> then scan member files that look like logo/seal.
+  // This is a best-effort fallback when Wikidata lacks P154.
+  if (!title) return null;
+
+  const cat = `Category:${title.replace(/_/g, " ")}`;
+  const api = "https://commons.wikimedia.org/w/api.php";
+
+  const params = new URLSearchParams({
+    action: "query",
+    format: "json",
+    list: "categorymembers",
+    cmtitle: cat,
+    cmtype: "file",
+    cmlimit: "50",
+    origin: "*",
+  });
+
+  const data = await fetchJsonWithRetry(`${api}?${params.toString()}`, debug, 3);
+  const members = data && data.query && data.query.categorymembers ? data.query.categorymembers : [];
+  if (!members || !members.length) return null;
+
+  // Score candidates
+  let best = null;
+  for (const m of members) {
+    const t = m && m.title ? m.title : null; // "File:...."
+    if (!t || !t.startsWith("File:")) continue;
+    const fileName = t.slice("File:".length);
+    if (!looksLikeLogoFileName(fileName)) continue;
+
+    // Prefer SVG/PNG by filename
+    const low = fileName.toLowerCase();
+    let score = 0.6;
+    if (low.endsWith(".svg")) score += 0.2;
+    if (low.endsWith(".png")) score += 0.1;
+    if (low.includes("seal")) score += 0.05;
+    if (low.includes("logo")) score += 0.1;
+
+    if (!best || score > best.score) best = { fileName, score };
   }
 
-  // 1) Use wikipedia_url if present
-  if (wikiUrl && typeof wikiUrl === "string" && wikiUrl.includes("wikipedia.org/wiki/")) {
-    const raw = (wikiUrl.split("/wiki/")[1] || "").split("#")[0];
-    const title = raw ? decodeURIComponent(raw) : null;
-    if (title) {
-      const thumb = await pageThumbByTitle(title);
-      if (thumb) return { url: thumb, source: "wikimedia:wikipedia:pageimage" };
-    }
-  }
+  if (!best) return null;
 
-  // 2) Search by name
-  if (name && typeof name === "string" && name.trim().length >= 3) {
-    const api = "https://en.wikipedia.org/w/api.php";
-    const params = new URLSearchParams({
-      action: "query",
-      format: "json",
-      list: "search",
-      srsearch: name.trim(),
-      srlimit: "1",
-      origin: "*",
-    });
-    const data = await fetchJsonWithRetry(`${api}?${params.toString()}`, debug, 3);
-    const hit = data && data.query && data.query.search && data.query.search[0] ? data.query.search[0] : null;
-    const title = hit && hit.title ? hit.title : null;
-    if (title) {
-      const thumb = await pageThumbByTitle(title);
-      if (thumb) return { url: thumb, source: "wikimedia:wikipedia:search+pageimage" };
-    }
-  }
+  const info = await commonsImageInfoByFileName(best.fileName, debug);
+  if (!info) return null;
 
-  return null;
+  return { url: info.url, confidence: best.score, source: "wikimedia:commons:category-scan" };
 }
 
 function resolveClearbitLogo(school) {
@@ -211,7 +339,12 @@ function resolveClearbitLogo(school) {
   domain = (domain.split("/")[0] || "").trim();
   if (!domain || domain.includes(" ")) return null;
 
-  return { url: `https://logo.clearbit.com/${domain}`, source: "clearbit:logo" };
+  // Avoid obvious non-institutional domains (optional guard)
+  if (domain.endsWith(".edu") === false && domain.endsWith(".org") === false && domain.endsWith(".com") === false) {
+    return null;
+  }
+
+  return { url: `https://logo.clearbit.com/${domain}`, confidence: 0.65, source: "clearbit:logo" };
 }
 
 function shouldProcess(school, onlyMissing, force) {
@@ -220,10 +353,56 @@ function shouldProcess(school, onlyMissing, force) {
   return !(school && school.logo_url);
 }
 
+async function resolveWikimediaLogoSafe(school, debug) {
+  const wikiUrl = school && (school.wikipedia_url || school.wikipedia) ? (school.wikipedia_url || school.wikipedia) : null;
+  const name = school && (school.school_name || school.name) ? (school.school_name || school.name) : null;
+
+  // Step 1: get Wikipedia title
+  let title = parseWikiTitleFromUrl(wikiUrl);
+  if (!title && name && typeof name === "string" && name.trim().length >= 3) {
+    title = await wikipediaSearchTopTitle(name.trim(), debug);
+  }
+  if (!title) return null;
+
+  // Step 2: map to Wikidata item
+  const qid = await wikipediaGetWikibaseItem(title, debug);
+  if (!qid) {
+    // Try commons category scan by title anyway
+    const catTry = await commonsCategoryLikelyLogo(title, debug);
+    if (catTry) return { url: catTry.url, confidence: catTry.confidence, source: catTry.source };
+    return null;
+  }
+
+  // Step 3: Wikidata logo (P154)
+  const logoFile = await wikidataGetLogoFileName(qid, debug);
+  if (logoFile) {
+    const info = await commonsImageInfoByFileName(logoFile, debug);
+    if (info && isUrl(info.url)) {
+      // High confidence because it is an explicit logo property
+      return { url: info.url, confidence: 0.95, source: "wikimedia:wikidata:P154-logo" };
+    }
+  }
+
+  // Step 4: Coat of arms (P94) for some institutions (medium confidence)
+  const coatFile = await wikidataGetCoatOfArmsFileName(qid, debug);
+  if (coatFile) {
+    const info = await commonsImageInfoByFileName(coatFile, debug);
+    if (info && isUrl(info.url)) {
+      return { url: info.url, confidence: 0.8, source: "wikimedia:wikidata:P94-coatofarms" };
+    }
+  }
+
+  // Step 5: Commons category scan (best-effort)
+  const catTry = await commonsCategoryLikelyLogo(title, debug);
+  if (catTry) return { url: catTry.url, confidence: catTry.confidence, source: catTry.source };
+
+  return null;
+}
+
 Deno.serve(async (req) => {
   const startedAtMs = Date.now();
   const startedAt = nowIso();
-  const version = "ingestSchoolLogos_2026-02-19_v6";
+  const version = "ingestSchoolLogos_2026-02-19_v7";
 
   const debug = { version, startedAt, notes: [], retries: 0 };
 
@@ -244,14 +423,16 @@ Deno.serve(async (req) => {
     const throttleMs = clampNum(body.throttleMs, 250, 0, 5000);
     const timeBudgetMs = clampNum(body.timeBudgetMs, 20000, 3000, 22000);
 
-    const onlyMissing = body.onlyMissing !== false;         // default true
-    const preferWikimedia = body.preferWikimedia !== false; // default true
+    const onlyMissing = body.onlyMissing !== false;
+    const preferWikimedia = body.preferWikimedia !== false;
     const force = !!body.force;
+
+    const minConfidence = clampNum(body.minConfidence, 0.7, 0, 1);
 
     const cursor = body.cursor || null;
     const offset = clampNum(cursor && cursor.offset != null ? cursor.offset : 0, 0, 0, 10000000);
 
-    // Diagnostics
+    // Diagnostics counts (best effort)
     let listCount = null;
     let filterCount = null;
 
@@ -262,7 +443,6 @@ Deno.serve(async (req) => {
       listCount = `ERR:${String(e && e.message ? e.message : e)}`;
     }
 
-    // We know filter() works in your env
     let allRows = [];
     try {
       const r = await School.filter({});
@@ -308,7 +488,6 @@ Deno.serve(async (req) => {
 
     const sample = { updated: [], errors: [] };
 
-    // Window slice (deterministic)
     const windowRows = allRows.slice(offset, offset + maxRows);
 
     if (!windowRows.length) {
@@ -336,18 +515,20 @@ Deno.serve(async (req) => {
       if (!schoolId) {
         stats.errors++;
         if (sample.errors.length < 10) {
-          sample.errors.push({ stage: "id", err: "missing school id", name: school?.school_name || school?.name || null });
+          sample.errors.push({
+            stage: "id",
+            err: "missing school id",
+            name: school?.school_name || school?.name || null,
+          });
         }
         continue;
       }
 
       let resolved = null;
 
-      // Official athletics resolver not implemented yet (needs your confirmed source field/table)
-
       if (preferWikimedia) {
         try {
-          resolved = await resolveWikimediaLogo(school, debug);
+          resolved = await resolveWikimediaLogoSafe(school, debug);
           if (resolved) stats.sources.wikimedia++;
         } catch (e) {
           if (sample.errors.length < 10) {
@@ -362,6 +543,11 @@ Deno.serve(async (req) => {
       }
 
       if (!resolved) {
+        stats.skipped++;
+        continue;
+      }
+
+      if ((resolved.confidence || 0) < minConfidence) {
         stats.skipped++;
         continue;
       }
@@ -391,6 +577,7 @@ Deno.serve(async (req) => {
           name: school?.school_name || school?.name || null,
           logo_url: patch.logo_url,
           logo_source: patch.logo_source,
+          confidence: resolved.confidence,
           dryRun,
         });
       }
@@ -408,6 +595,7 @@ Deno.serve(async (req) => {
     debug.notes.push(`offset=${offset}`);
     debug.notes.push(`listCount=${listCount}`);
     debug.notes.push(`filterCount=${filterCount}`);
+    debug.notes.push(`minConfidence=${minConfidence}`);
 
     return Response.json({ ok: true, dryRun, done, next_cursor, stats, sample, debug });
   } catch (e) {
