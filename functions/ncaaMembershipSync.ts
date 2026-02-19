@@ -380,7 +380,7 @@ Deno.serve(async (req: Request) => {
               attempted_match_notes: `name_only; normalized="${nkey}"`,
               created_at: new Date().toISOString(),
             }), debug, "unmatched_create");
-          } catch (e) {
+          } catch (e: any) {
             const msg = String(e?.message || e);
             if (!looksLikeDuplicate(e)) {
               stats.errors += 1;
@@ -407,7 +407,7 @@ Deno.serve(async (req: Request) => {
               attempted_match_notes: `name_only; candidates=${candidates.length}`,
               created_at: new Date().toISOString(),
             }), debug, "unmatched_create_ambiguous");
-          } catch (e) {
+          } catch (e: any) {
             const msg = String(e?.message || e);
             if (!looksLikeDuplicate(e)) {
               stats.errors += 1;
@@ -434,20 +434,22 @@ Deno.serve(async (req: Request) => {
 
       stats.matched += 1;
 
-    const sourceKey = `ncaa:${schoolId}`;
-      const rec = {
+      const sourceKey = `ncaa:${schoolId}`; // seasonless
+      const rec: AnyObj = {
         school_id: schoolId,
         org: "ncaa",
         member: true,
         division: null,
         subdivision: null,
         conference: null,
-        season_year: null,
+        // season_year omitted intentionally (seasonless model)
         source_platform: sourcePlatform,
         source_url: slug ? `https://www.ncaa.com/schools/${slug}` : null,
         source_key: sourceKey,
-        confidence: confidence,
+        confidence,
         last_verified_at: new Date().toISOString(),
+        // optional: store last season we verified (informational only)
+        last_verified_season_year: seasonYear ?? null,
       };
 
       if (dryRun) {
