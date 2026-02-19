@@ -1,71 +1,46 @@
 // functions/ingestSchoolLogos.ts
-// Server-side logo enrichment for School rows (NO creates; update-only).
+// Deno + Base44 backend function (JS-only style; no TS syntax used)
 //
-// Goals:
-// - Populate School.logo_url, School.logo_source, School.logo_updated_at
-// - Source priority (best-effort):
-//   1) Wikimedia (via Wikipedia API pageimages)
-//   2) Official site hints (favicon/og:image/logo-ish img)
-//   3) Fallback logo service (Clearbit) using School.website_url domain
+// Goal: write School logos to fields:
+// - logo_url, logo_source, logo_updated_at
 //
-// Operating constraints:
-// - Batch-safe: cursor + maxRows + throttleMs + timeBudgetMs
-// - Idempotent updates: always update by existing School id
-// - Safe retries on transient errors / rate limits
-//
-// Request body:
+// Input:
 // {
 //   "dryRun": true,
-//   "cursor": null,
-//   "maxRows": 50,
-//   "throttleMs": 250,
-//   "timeBudgetMs": 20000,
-//   "onlyMissing": true,
-//   "preferWikimedia": true,
-//   "force": false
+//   "cursor": null,                 // or { "offset": 0 }
+//   "maxRows": 25,                  // 1..250
+//   "throttleMs": 250,              // 0..5000
+//   "timeBudgetMs": 20000,          // 3000..22000
+//   "onlyMissing": true,            // default true
+//   "preferWikimedia": true,        // default true
+//   "force": false,                 // default false
+//   "probeOnly": false              // if true: does no work, returns diagnostics + version
 // }
 //
-// Response:
-// {
-//   ok: true,
-//   dryRun,
-//   done,
-//   next_cursor,
-//   stats: { scanned, eligible, updated, skipped, errors, sources: { wikimedia, official, clearbit }, elapsedMs },
-//   sample: { updated: [...], errors: [...] },
-//   debug: { version, notes, retries }
-// }
+// Output:
+// { ok, dryRun, done, next_cursor, stats, sample, debug }
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 
-type AnyObj = Record<string, any>;
-
-const VERSION = "ingestSchoolLogos_2026-02-19_v1";
-
-function s(x: any): string | null {
-  if (x === null || x === undefined) return null;
-  const t = String(x).trim();
-  return t ? t : null;
+function nowIso() {
+  return new Date().toISOString();
 }
 
-function lc(x: any): string {
-  return String(x || "").toLowerCase().trim();
+function clampNum(x, def, min, max) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(max, Math.max(min, n));
 }
 
-function getId(r: any): string | null {
-  const v = r?.id ?? r?._id ?? r?.uuid;
-  return v === null || v === undefined ? null : String(v);
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, Math.max(0, ms || 0)));
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, Math.max(0, Number(ms || 0))));
-}
-
-function isRetryableStatus(st: number): boolean {
+function isRetryableStatus(st) {
   return st === 429 || st === 500 || st === 502 || st === 503 || st === 504;
 }
 
-async function safeText(r: Response): Promise<string> {
+async function safeText(r) {
   try {
     return await r.text();
   } catch {
@@ -73,430 +48,367 @@ async function safeText(r: Response): Promise<string> {
   }
 }
 
-function extractRows(resp: any): any[] {
+function extractRows(resp) {
   if (!resp) return [];
   if (Array.isArray(resp)) return resp;
+
   const cands = [resp.data, resp.items, resp.records, resp.results, resp.rows];
   for (const c of cands) if (Array.isArray(c)) return c;
+
   if (resp.data && Array.isArray(resp.data.data)) return resp.data.data;
+  if (resp.data && Array.isArray(resp.data.items)) return resp.data.items;
+  if (resp.data && Array.isArray(resp.data.records)) return resp.data.records;
+
   return [];
 }
 
-function extractCursor(resp: any): any | null {
-  if (!resp || Array.isArray(resp)) return null;
-  return resp.next_cursor ?? resp.nextCursor ?? resp.next_page_token ?? resp.nextPageToken ?? resp.cursor_next ?? null;
+function isUrl(s) {
+  return typeof s === "string" && /^https?:\/\//i.test(s);
 }
 
-function jsonResp(payload: any): Response {
-  return new Response(JSON.stringify(payload), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}
+async function fetchJsonWithRetry(url, debug, tries) {
+  let lastErr = null;
 
-async function fetchTextWithRetry(
-  url: string,
-  debug: AnyObj,
-  tries: number,
-  accept: string
-): Promise<{ ok: boolean; status: number; text: string }> {
-  let lastErr: any = null;
   for (let i = 0; i < tries; i++) {
     try {
       const r = await fetch(url, {
         method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-          Accept: accept,
-        },
+        headers: { Accept: "application/json" },
       });
 
-      const txt = await safeText(r);
       debug.last_http = r.status;
       debug.last_url = url;
-      debug.last_body_snippet = txt ? txt.slice(0, 500) : null;
+
+      const text = await safeText(r);
+      debug.last_body_snippet = text ? text.slice(0, 300) : null;
 
       if (!r.ok) {
         if (isRetryableStatus(r.status) && i < tries - 1) {
-          const wait = Math.min(12000, 650 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
+          const wait = Math.min(12000, 700 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
           debug.retries = (debug.retries || 0) + 1;
           debug.retry_notes = debug.retry_notes || [];
           debug.retry_notes.push({ attempt: i + 1, http: r.status, wait_ms: wait, kind: "http" });
           await sleep(wait);
           continue;
         }
-        return { ok: false, status: r.status, text: txt };
+        throw new Error(`HTTP ${r.status}`);
       }
-      return { ok: true, status: r.status, text: txt };
-    } catch (e: any) {
+
+      try {
+        return JSON.parse(text);
+      } catch {
+        if (i < tries - 1) {
+          const wait = Math.min(12000, 700 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
+          debug.retries = (debug.retries || 0) + 1;
+          debug.retry_notes = debug.retry_notes || [];
+          debug.retry_notes.push({ attempt: i + 1, http: r.status, wait_ms: wait, kind: "json_parse_failed" });
+          await sleep(wait);
+          continue;
+        }
+        throw new Error("Invalid JSON");
+      }
+    } catch (e) {
       lastErr = e;
+      const msg = String(e && e.message ? e.message : e);
       if (i < tries - 1) {
-        const wait = Math.min(12000, 650 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
+        const wait = Math.min(12000, 700 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
         debug.retries = (debug.retries || 0) + 1;
         debug.retry_notes = debug.retry_notes || [];
-        debug.retry_notes.push({ attempt: i + 1, wait_ms: wait, kind: "exception", error: String(e?.message || e) });
+        debug.retry_notes.push({ attempt: i + 1, error: msg, wait_ms: wait, kind: "exception" });
         await sleep(wait);
         continue;
       }
       throw lastErr;
     }
   }
-  throw lastErr || new Error("fetchTextWithRetry failed");
+
+  throw lastErr || new Error("fetchJsonWithRetry failed");
 }
 
-async function writeRetry<T>(fn: () => Promise<T>, debug: AnyObj, label: string): Promise<T> {
-  const tries = 5;
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (e: any) {
-      const msg = String(e?.message || e);
-      const status = e?.raw?.status || e?.status || e?.statusCode;
-      const retryable =
-        status === 429 ||
-        (typeof status === "number" && status >= 500) ||
-        lc(msg).includes("rate") ||
-        lc(msg).includes("timeout") ||
-        lc(msg).includes("network") ||
-        lc(msg).includes("502") ||
-        lc(msg).includes("503") ||
-        lc(msg).includes("504");
-      if (!retryable || i === tries - 1) throw e;
+async function resolveWikimediaLogo(school, debug) {
+  const wikiUrl = school && (school.wikipedia_url || school.wikipedia) ? (school.wikipedia_url || school.wikipedia) : null;
+  const name = school && (school.school_name || school.name) ? (school.school_name || school.name) : null;
 
-      const wait = Math.min(12000, 450 * Math.pow(2, i)) + Math.floor(Math.random() * 200);
-      debug.retries = (debug.retries || 0) + 1;
-      debug.retry_notes = debug.retry_notes || [];
-      debug.retry_notes.push({ attempt: i + 1, wait_ms: wait, kind: "write_retry", label, msg: msg.slice(0, 160) });
-      await sleep(wait);
+  async function pageThumbByTitle(title) {
+    const api = "https://en.wikipedia.org/w/api.php";
+    const params = new URLSearchParams({
+      action: "query",
+      format: "json",
+      prop: "pageimages",
+      pithumbsize: "320",
+      titles: title,
+      redirects: "1",
+      origin: "*",
+    });
+    const data = await fetchJsonWithRetry(`${api}?${params.toString()}`, debug, 3);
+    const pages = data && data.query && data.query.pages ? data.query.pages : null;
+    if (!pages) return null;
+    const firstKey = Object.keys(pages)[0];
+    const page = pages[firstKey];
+    const thumb = page && page.thumbnail && page.thumbnail.source ? page.thumbnail.source : null;
+    return isUrl(thumb) ? thumb : null;
+  }
+
+  // 1) Use wikipedia_url if present
+  if (wikiUrl && typeof wikiUrl === "string" && wikiUrl.includes("wikipedia.org/wiki/")) {
+    const raw = (wikiUrl.split("/wiki/")[1] || "").split("#")[0];
+    const title = raw ? decodeURIComponent(raw) : null;
+    if (title) {
+      const thumb = await pageThumbByTitle(title);
+      if (thumb) return { url: thumb, source: "wikimedia:wikipedia:pageimage" };
     }
   }
-  throw new Error("writeRetry failed");
-}
 
-function isStableWikimedia(url: string | null): boolean {
-  const u = lc(url || "");
-  return u.includes("upload.wikimedia.org") || u.includes("wikimedia") || u.includes("wikipedia.org");
-}
-
-function extractDomain(url: string | null): string | null {
-  const u = s(url);
-  if (!u) return null;
-  try {
-    const parsed = new URL(u.includes("://") ? u : `https://${u}`);
-    const host = lc(parsed.hostname);
-    return host ? host.replace(/^www\./, "") : null;
-  } catch {
-    const cleaned = lc(u)
-      .replace(/^https?:\/\//, "")
-      .replace(/^www\./, "")
-      .split("/")[0]
-      .trim();
-    return cleaned || null;
-  }
-}
-
-function clearbitLogoUrlFromDomain(domain: string | null): string | null {
-  const d = s(domain);
-  if (!d) return null;
-  return `https://logo.clearbit.com/${encodeURIComponent(d)}`;
-}
-
-async function getWikipediaThumbUrl(schoolName: string, debug: AnyObj): Promise<string | null> {
-  const q1 = `${schoolName} logo`;
-  const q2 = schoolName;
-  const queries = [q1, q2];
-
-  for (const q of queries) {
-    const searchUrl =
-      `https://en.wikipedia.org/w/api.php?action=query&list=search&srlimit=1&srsearch=` +
-      encodeURIComponent(q) +
-      `&format=json&origin=*`;
-
-    const sr = await fetchTextWithRetry(searchUrl, debug, 3, "application/json");
-    if (!sr.ok) continue;
-
-    let sj: any = null;
-    try {
-      sj = sr.text ? JSON.parse(sr.text) : null;
-    } catch {
-      sj = null;
-    }
-    const title = sj?.query?.search?.[0]?.title ? String(sj.query.search[0].title) : null;
-    if (!title) continue;
-
-    const imgUrl =
-      `https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&pithumbsize=600&titles=` +
-      encodeURIComponent(title) +
-      `&format=json&origin=*`;
-
-    const pr = await fetchTextWithRetry(imgUrl, debug, 3, "application/json");
-    if (!pr.ok) continue;
-
-    let pj: any = null;
-    try {
-      pj = pr.text ? JSON.parse(pr.text) : null;
-    } catch {
-      pj = null;
-    }
-
-    const pages = pj?.query?.pages || {};
-    const pageKeys = Object.keys(pages);
-    for (const k of pageKeys) {
-      const thumb = pages?.[k]?.thumbnail?.source ? String(pages[k].thumbnail.source) : null;
-      if (!thumb) continue;
-      if (isStableWikimedia(thumb)) return thumb;
+  // 2) Search by name
+  if (name && typeof name === "string" && name.trim().length >= 3) {
+    const api = "https://en.wikipedia.org/w/api.php";
+    const params = new URLSearchParams({
+      action: "query",
+      format: "json",
+      list: "search",
+      srsearch: name.trim(),
+      srlimit: "1",
+      origin: "*",
+    });
+    const data = await fetchJsonWithRetry(`${api}?${params.toString()}`, debug, 3);
+    const hit = data && data.query && data.query.search && data.query.search[0] ? data.query.search[0] : null;
+    const title = hit && hit.title ? hit.title : null;
+    if (title) {
+      const thumb = await pageThumbByTitle(title);
+      if (thumb) return { url: thumb, source: "wikimedia:wikipedia:search+pageimage" };
     }
   }
 
   return null;
 }
 
-function pickLogoFromHtml(html: string): string | null {
-  const h = String(html || "");
-  if (!h) return null;
+function resolveClearbitLogo(school) {
+  const site = school && (school.school_url || school.website || school.url)
+    ? (school.school_url || school.website || school.url)
+    : null;
 
-  const og = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'][^>]*>/i.exec(h);
-  if (og && og[1]) return String(og[1]).trim();
+  if (!site || typeof site !== "string") return null;
 
-  const apple = /<link[^>]+rel=["']apple-touch-icon[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>/i.exec(h);
-  if (apple && apple[1]) {
-    const href = String(apple[1]).trim();
-    if (href && !href.startsWith("data:")) return href;
-  }
+  let domain = site.trim();
+  domain = domain.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
+  domain = (domain.split("/")[0] || "").trim();
+  if (!domain || domain.includes(" ")) return null;
 
-  const icon = /<link[^>]+rel=["']icon["'][^>]+href=["']([^"']+)["'][^>]*>/i.exec(h);
-  if (icon && icon[1]) {
-    const href = String(icon[1]).trim();
-    if (href && !href.startsWith("data:")) return href;
-  }
-
-  const logo = /<img[^>]*\blogo\b[^>]+src=["']([^"']+)["'][^>]*>/i.exec(h);
-  if (logo && logo[1]) return String(logo[1]).trim();
-
-  return null;
+  return { url: `https://logo.clearbit.com/${domain}`, source: "clearbit:logo" };
 }
 
-async function getOfficialSiteLogo(websiteUrl: string, debug: AnyObj): Promise<string | null> {
-  const hr = await fetchTextWithRetry(websiteUrl, debug, 2, "text/html");
-  if (!hr.ok) return null;
-
-  const found = pickLogoFromHtml(hr.text);
-  if (!found) return null;
-
-  const u = s(found);
-  if (!u) return null;
-
-  if (u.startsWith("http")) return u;
-
-  try {
-    const base = new URL(websiteUrl);
-    const abs = new URL(u, base).href;
-    return abs;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchLogoForSchool(
-  row: any,
-  onlyMissing: boolean,
-  preferWikimedia: boolean,
-  force: boolean,
-  debug: AnyObj
-): Promise<{ logo_url: string | null; logo_source: string | null }> {
-  const name = s(row.school_name);
-  const website = s(row.website_url);
-  const existing = s(row.logo_url);
-
-  if (existing && !force) return { logo_url: existing, logo_source: s(row.logo_source) };
-  if (!name) return { logo_url: null, logo_source: null };
-
-  let logoUrl: string | null = null;
-  let logoSource: string | null = null;
-
-  if (preferWikimedia) {
-    const wm = await getWikipediaThumbUrl(name, debug);
-    if (wm) {
-      logoUrl = wm;
-      logoSource = "wikimedia";
-    }
-  }
-
-  if (!logoUrl && website) {
-    const off = await getOfficialSiteLogo(website, debug);
-    if (off) {
-      logoUrl = off;
-      logoSource = "official";
-    }
-  }
-
-  if (!logoUrl && website) {
-    const dom = extractDomain(website);
-    if (dom) {
-      const cb = clearbitLogoUrlFromDomain(dom);
-      if (cb) {
-        logoUrl = cb;
-        logoSource = "clearbit";
-      }
-    }
-  }
-
-  if (!logoUrl && !preferWikimedia) {
-    const wm = await getWikipediaThumbUrl(name, debug);
-    if (wm) {
-      logoUrl = wm;
-      logoSource = "wikimedia";
-    }
-  }
-
-  return { logo_url: logoUrl, logo_source: logoSource };
+function shouldProcess(school, onlyMissing, force) {
+  if (force) return true;
+  if (!onlyMissing) return true;
+  return !(school && school.logo_url);
 }
 
 Deno.serve(async (req) => {
-  const t0 = Date.now();
-  const debug: AnyObj = { version: VERSION, notes: [], retries: 0 };
-  const stats: AnyObj = {
-    scanned: 0,
-    eligible: 0,
-    updated: 0,
-    skipped: 0,
-    errors: 0,
-    sources: { wikimedia: 0, official: 0, clearbit: 0 },
-    elapsedMs: 0,
-  };
+  const startedAtMs = Date.now();
+  const startedAt = nowIso();
+  const version = "ingestSchoolLogos_2026-02-19_v5";
 
-  const sample: AnyObj = { updated: [], errors: [] };
-  let next_cursor: any | null = null;
-  let done = false;
-
-  function elapsed() {
-    return Date.now() - t0;
-  }
-  function outOfTime(budgetMs: number) {
-    return elapsed() >= budgetMs;
-  }
+  const debug = { version, startedAt, notes: [], retries: 0 };
 
   try {
-    if (req.method !== "POST") return jsonResp({ ok: false, error: "Method not allowed" });
+    const base44 = createClientFromRequest(req);
+    const School = base44?.entities?.School || base44?.entities?.Schools;
+
+    if (!School) {
+      return Response.json({ ok: false, error: "Missing School entity binding", debug }, { status: 500 });
+    }
 
     const body = await req.json().catch(() => ({}));
 
-    const dryRun = !!body?.dryRun;
-    const cursor = body?.cursor ?? null;
-    const maxRows = Math.max(1, Number(body?.maxRows ?? 50));
-    const throttleMs = Math.max(0, Number(body?.throttleMs ?? 250));
-    const timeBudgetMs = Math.max(5000, Number(body?.timeBudgetMs ?? 20000));
-    const onlyMissing = body?.onlyMissing !== false;
-    const preferWikimedia = body?.preferWikimedia !== false;
-    const force = !!body?.force;
+    const probeOnly = !!body.probeOnly;
 
-    const client = createClientFromRequest(req);
-    const School = client?.entities?.School ?? client?.entities?.Schools;
-    if (!School) return jsonResp({ ok: false, error: "School entity not found" });
+    const dryRun = !!body.dryRun;
+    const maxRows = clampNum(body.maxRows, 25, 1, 250);
+    const throttleMs = clampNum(body.throttleMs, 250, 0, 5000);
+    const timeBudgetMs = clampNum(body.timeBudgetMs, 20000, 3000, 22000);
 
-    if (typeof School.list !== "function") {
-      return jsonResp({ ok: false, error: "School.list is not a function" });
+    const onlyMissing = body.onlyMissing !== false;        // default true
+    const preferWikimedia = body.preferWikimedia !== false; // default true
+    const force = !!body.force;
+
+    const cursor = body.cursor || null;
+    const offset = clampNum(cursor && cursor.offset != null ? cursor.offset : 0, 0, 0, 10000000);
+
+    // Diagnostics: confirm data access shape
+    let listCount = null;
+    let filterCount = null;
+    try {
+      const r = await School.list({ limit: 5 });
+      listCount = extractRows(r).length;
+    } catch (e) {
+      listCount = `ERR:${String(e && e.message ? e.message : e)}`;
+    }
+    try {
+      const r = await School.filter({});
+      filterCount = extractRows(r).length;
+    } catch (e) {
+      filterCount = `ERR:${String(e && e.message ? e.message : e)}`;
     }
 
-    const listParams: any = { limit: maxRows };
-    if (cursor) listParams.cursor = cursor;
+    if (probeOnly) {
+      debug.notes.push("probeOnly=true");
+      debug.notes.push(`listCount=${listCount}`);
+      debug.notes.push(`filterCount=${filterCount}`);
+      return Response.json({
+        ok: true,
+        dryRun,
+        done: true,
+        next_cursor: null,
+        stats: {
+          scanned: 0,
+          eligible: 0,
+          updated: 0,
+          skipped: 0,
+          errors: 0,
+          sources: { wikimedia: 0, official: 0, clearbit: 0 },
+          elapsedMs: Date.now() - startedAtMs,
+        },
+        sample: { updated: [], errors: [] },
+        debug,
+      });
+    }
 
-    const resp = await School.list(listParams);
-    const rows = extractRows(resp);
-    next_cursor = extractCursor(resp);
-    done = !next_cursor || rows.length === 0;
+    const stats = {
+      scanned: 0,
+      eligible: 0,
+      updated: 0,
+      skipped: 0,
+      errors: 0,
+      sources: { wikimedia: 0, official: 0, clearbit: 0 },
+      elapsedMs: 0,
+    };
 
-    stats.scanned = rows.length;
+    const sample = { updated: [], errors: [] };
 
-    for (const row of rows) {
-      if (outOfTime(timeBudgetMs)) {
-        done = false;
-        debug.notes.push("stoppedEarly: out of time");
-        break;
+    // Pull a window via filter(); if SDK supports limit/offset, use it; else slice
+    let windowRows = [];
+    try {
+      let resp = null;
+
+      // Some SDK builds accept (query, opts)
+      if (School.filter && School.filter.length >= 2) {
+        resp = await School.filter({}, { limit: maxRows, offset });
+        windowRows = extractRows(resp);
+      } else {
+        resp = await School.filter({});
+        const all = extractRows(resp);
+        windowRows = all.slice(offset, offset + maxRows);
       }
+    } catch (e) {
+      stats.errors++;
+      sample.errors.push({ stage: "read", err: String(e && e.message ? e.message : e) });
+      stats.elapsedMs = Date.now() - startedAtMs;
+      debug.notes.push(`listCount=${listCount}`);
+      debug.notes.push(`filterCount=${filterCount}`);
+      return Response.json({ ok: false, dryRun, done: true, next_cursor: null, stats, sample, debug });
+    }
 
-      const id = getId(row);
-      if (!id) {
-        stats.skipped += 1;
+    if (!windowRows.length) {
+      stats.elapsedMs = Date.now() - startedAtMs;
+      debug.notes.push("no rows in window");
+      debug.notes.push(`offset=${offset}`);
+      debug.notes.push(`listCount=${listCount}`);
+      debug.notes.push(`filterCount=${filterCount}`);
+      return Response.json({ ok: true, dryRun, done: true, next_cursor: null, stats, sample, debug });
+    }
+
+    for (const school of windowRows) {
+      if (Date.now() - startedAtMs > timeBudgetMs - 750) break;
+
+      stats.scanned++;
+
+      if (!shouldProcess(school, onlyMissing, force)) {
+        stats.skipped++;
         continue;
       }
 
-      const existing = s(row.logo_url);
-      if (onlyMissing && existing && !force) {
-        stats.skipped += 1;
+      stats.eligible++;
+
+      const schoolId = school?.id || school?._id || null;
+      if (!schoolId) {
+        stats.errors++;
+        if (sample.errors.length < 10) {
+          sample.errors.push({ stage: "id", err: "missing school id", name: school?.school_name || school?.name || null });
+        }
         continue;
       }
 
-      stats.eligible += 1;
+      let resolved = null;
 
-      const rowDebug: AnyObj = { id };
-      try {
-        const { logo_url, logo_source } = await fetchLogoForSchool(row, onlyMissing, preferWikimedia, force, rowDebug);
+      // NOTE: "official athletics site" resolver is intentionally not implemented yet
+      // because we don't have a reliable athletics_url field in School in this app.
+      // We'll add it once you confirm where athletics URLs are stored (SchoolSportSite, AthleticsMembership, etc).
 
-        if (!logo_url) {
-          stats.skipped += 1;
+      if (preferWikimedia) {
+        try {
+          resolved = await resolveWikimediaLogo(school, debug);
+          if (resolved) stats.sources.wikimedia++;
+        } catch (e) {
+          // don't fail the batch for a single lookup
+          if (sample.errors.length < 10) sample.errors.push({ stage: "wikimedia", err: String(e && e.message ? e.message : e), schoolId });
+        }
+      }
+
+      if (!resolved) {
+        resolved = resolveClearbitLogo(school);
+        if (resolved) stats.sources.clearbit++;
+      }
+
+      if (!resolved) {
+        stats.skipped++;
+        continue;
+      }
+
+      const patch = {
+        logo_url: resolved.url,
+        logo_source: resolved.source,
+        logo_updated_at: nowIso(),
+      };
+
+      if (!dryRun) {
+        try {
+          await School.update(schoolId, patch);
+        } catch (e) {
+          stats.errors++;
+          if (sample.errors.length < 10) {
+            sample.errors.push({ stage: "update", err: String(e && e.message ? e.message : e), schoolId });
+          }
           continue;
         }
-
-        if (logo_source) {
-          stats.sources[logo_source] = (stats.sources[logo_source] || 0) + 1;
-        }
-
-        if (!dryRun) {
-          const payload: any = {
-            logo_url,
-            logo_source,
-            logo_updated_at: new Date().toISOString(),
-          };
-
-          await writeRetry(() => School.update(id, payload), debug, `update_${id}`);
-        }
-
-        stats.updated += 1;
-
-        if (sample.updated.length < 5) {
-          sample.updated.push({
-            id,
-            name: s(row.school_name),
-            logo_url,
-            logo_source,
-          });
-        }
-      } catch (e: any) {
-        stats.errors += 1;
-        if (sample.errors.length < 10) {
-          sample.errors.push({
-            id,
-            name: s(row.school_name),
-            error: String(e?.message || e).slice(0, 200),
-          });
-        }
       }
 
-      if (throttleMs > 0) await sleep(throttleMs);
+      stats.updated++;
+      if (sample.updated.length < 10) {
+        sample.updated.push({
+          schoolId,
+          name: school?.school_name || school?.name || null,
+          logo_url: patch.logo_url,
+          logo_source: patch.logo_source,
+          dryRun,
+        });
+      }
+
+      if (throttleMs) await sleep(throttleMs);
     }
 
-    stats.elapsedMs = elapsed();
+    const nextOffset = offset + windowRows.length;
+    const done = windowRows.length < maxRows;
+    const next_cursor = done ? null : { offset: nextOffset };
 
-    return jsonResp({
-      ok: true,
-      dryRun,
-      done,
-      next_cursor,
-      stats,
-      sample,
-      debug,
-    });
-  } catch (e: any) {
-    stats.elapsedMs = elapsed();
-    return jsonResp({
-      ok: false,
-      error: String(e?.message || e),
-      stats,
-      sample,
-      debug,
-      next_cursor,
-      done,
-    });
+    stats.elapsedMs = Date.now() - startedAtMs;
+
+    debug.notes.push(`windowRows=${windowRows.length}`);
+    debug.notes.push(`offset=${offset}`);
+    debug.notes.push(`listCount=${listCount}`);
+    debug.notes.push(`filterCount=${filterCount}`);
+
+    return Response.json({ ok: true, dryRun, done, next_cursor, stats, sample, debug });
+  } catch (e) {
+    return Response.json({ ok: false, error: String(e && e.message ? e.message : e), debug }, { status: 500 });
   }
 });
