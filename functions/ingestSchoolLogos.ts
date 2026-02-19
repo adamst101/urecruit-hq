@@ -1,5 +1,8 @@
 // functions/ingestSchoolLogos.ts
-// Deno + Base44 backend function (JS-only style; no TS syntax used)
+// Deno + Base44 backend function (JS-only style; no TS syntax)
+//
+// Fix v6: Base44 SDK in this app does NOT reliably support School.filter(query, {limit,offset})
+// We always call School.filter({}) then slice locally.
 //
 // Goal: write School logos to fields:
 // - logo_url, logo_source, logo_updated_at
@@ -48,16 +51,29 @@ async function safeText(r) {
   }
 }
 
+// Base44 sometimes returns:
+// - arrays
+// - { data: [...] } / { items: [...] }
+// - OR an object keyed "0","1","2"... (you saw respKeys 0..4999)
 function extractRows(resp) {
   if (!resp) return [];
   if (Array.isArray(resp)) return resp;
 
+  // Common wrappers
   const cands = [resp.data, resp.items, resp.records, resp.results, resp.rows];
   for (const c of cands) if (Array.isArray(c)) return c;
 
   if (resp.data && Array.isArray(resp.data.data)) return resp.data.data;
   if (resp.data && Array.isArray(resp.data.items)) return resp.data.items;
   if (resp.data && Array.isArray(resp.data.records)) return resp.data.records;
+
+  // Numeric-keyed object
+  if (typeof resp === "object") {
+    const keys = Object.keys(resp);
+    if (keys.length && keys.every((k) => /^\d+$/.test(k))) {
+      return Object.values(resp);
+    }
+  }
 
   return [];
 }
@@ -126,7 +142,8 @@ async function fetchJsonWithRetry(url, debug, tries) {
 }
 
 async function resolveWikimediaLogo(school, debug) {
-  const wikiUrl = school && (school.wikipedia_url || school.wikipedia) ? (school.wikipedia_url || school.wikipedia) : null;
+  const wikiUrl =
+    school && (school.wikipedia_url || school.wikipedia) ? (school.wikipedia_url || school.wikipedia) : null;
   const name = school && (school.school_name || school.name) ? (school.school_name || school.name) : null;
 
   async function pageThumbByTitle(title) {
@@ -206,7 +223,7 @@ function shouldProcess(school, onlyMissing, force) {
 Deno.serve(async (req) => {
   const startedAtMs = Date.now();
   const startedAt = nowIso();
-  const version = "ingestSchoolLogos_2026-02-19_v5";
+  const version = "ingestSchoolLogos_2026-02-19_v6";
 
   const debug = { version, startedAt, notes: [], retries: 0 };
 
@@ -227,27 +244,33 @@ Deno.serve(async (req) => {
     const throttleMs = clampNum(body.throttleMs, 250, 0, 5000);
     const timeBudgetMs = clampNum(body.timeBudgetMs, 20000, 3000, 22000);
 
-    const onlyMissing = body.onlyMissing !== false;        // default true
+    const onlyMissing = body.onlyMissing !== false;         // default true
     const preferWikimedia = body.preferWikimedia !== false; // default true
     const force = !!body.force;
 
     const cursor = body.cursor || null;
     const offset = clampNum(cursor && cursor.offset != null ? cursor.offset : 0, 0, 0, 10000000);
 
-    // Diagnostics: confirm data access shape
+    // Diagnostics
     let listCount = null;
     let filterCount = null;
+
     try {
       const r = await School.list({ limit: 5 });
       listCount = extractRows(r).length;
     } catch (e) {
       listCount = `ERR:${String(e && e.message ? e.message : e)}`;
     }
+
+    // We know filter() works in your env
+    let allRows = [];
     try {
       const r = await School.filter({});
-      filterCount = extractRows(r).length;
+      allRows = extractRows(r);
+      filterCount = allRows.length;
     } catch (e) {
       filterCount = `ERR:${String(e && e.message ? e.message : e)}`;
+      allRows = [];
     }
 
     if (probeOnly) {
@@ -285,28 +308,8 @@ Deno.serve(async (req) => {
 
     const sample = { updated: [], errors: [] };
 
-    // Pull a window via filter(); if SDK supports limit/offset, use it; else slice
-    let windowRows = [];
-    try {
-      let resp = null;
-
-      // Some SDK builds accept (query, opts)
-      if (School.filter && School.filter.length >= 2) {
-        resp = await School.filter({}, { limit: maxRows, offset });
-        windowRows = extractRows(resp);
-      } else {
-        resp = await School.filter({});
-        const all = extractRows(resp);
-        windowRows = all.slice(offset, offset + maxRows);
-      }
-    } catch (e) {
-      stats.errors++;
-      sample.errors.push({ stage: "read", err: String(e && e.message ? e.message : e) });
-      stats.elapsedMs = Date.now() - startedAtMs;
-      debug.notes.push(`listCount=${listCount}`);
-      debug.notes.push(`filterCount=${filterCount}`);
-      return Response.json({ ok: false, dryRun, done: true, next_cursor: null, stats, sample, debug });
-    }
+    // Window slice (deterministic)
+    const windowRows = allRows.slice(offset, offset + maxRows);
 
     if (!windowRows.length) {
       stats.elapsedMs = Date.now() - startedAtMs;
@@ -340,17 +343,16 @@ Deno.serve(async (req) => {
 
       let resolved = null;
 
-      // NOTE: "official athletics site" resolver is intentionally not implemented yet
-      // because we don't have a reliable athletics_url field in School in this app.
-      // We'll add it once you confirm where athletics URLs are stored (SchoolSportSite, AthleticsMembership, etc).
+      // Official athletics resolver not implemented yet (needs your confirmed source field/table)
 
       if (preferWikimedia) {
         try {
           resolved = await resolveWikimediaLogo(school, debug);
           if (resolved) stats.sources.wikimedia++;
         } catch (e) {
-          // don't fail the batch for a single lookup
-          if (sample.errors.length < 10) sample.errors.push({ stage: "wikimedia", err: String(e && e.message ? e.message : e), schoolId });
+          if (sample.errors.length < 10) {
+            sample.errors.push({ stage: "wikimedia", err: String(e && e.message ? e.message : e), schoolId });
+          }
         }
       }
 
@@ -397,7 +399,7 @@ Deno.serve(async (req) => {
     }
 
     const nextOffset = offset + windowRows.length;
-    const done = windowRows.length < maxRows;
+    const done = nextOffset >= allRows.length;
     const next_cursor = done ? null : { offset: nextOffset };
 
     stats.elapsedMs = Date.now() - startedAtMs;
