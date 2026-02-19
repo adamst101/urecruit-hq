@@ -460,29 +460,28 @@ Deno.serve(async (req: Request) => {
       try {
         await writeRetry(() => AthleticsMembership.create(rec), debug, "membership_create");
         stats.created += 1;
-      } catch (e) {
+      } catch (e: any) {
         if (!looksLikeDuplicate(e)) {
           stats.errors += 1;
           debug.errors.push({ step: "membership_create", message: String(e?.message || e), sourceKey });
         } else {
-          // update on dup (normalize filter response)
           try {
-            const resp = await writeRetry(() => AthleticsMembership.filter({ source_key: sourceKey }), debug, "membership_filter");
-            const existing = extractRows(resp);
-            if (existing.length) {
-              const id = getId(existing[0]);
-              if (id) {
-                await writeRetry(() => AthleticsMembership.update(id, rec), debug, "membership_update");
-                stats.updated += 1;
-              } else {
-                // if no id, do nothing; avoid looping dup creates
-              }
+            const existing = await getExistingBySourceKey(AthleticsMembership, sourceKey, debug);
+            const id = existing ? getId(existing) : null;
+
+            if (id) {
+              await writeRetry(() => AthleticsMembership.update(id, rec), debug, "membership_update");
+              stats.updated += 1;
             } else {
-              // if filter yields nothing, do one more create attempt
-              await writeRetry(() => AthleticsMembership.create(rec), debug, "membership_create_retry");
-              stats.created += 1;
+              // If we cannot find the record, do NOT keep creating in a loop.
+              stats.errors += 1;
+              debug.errors.push({
+                step: "membership_update_on_dup",
+                message: "Duplicate reported but existing row could not be located via filter()",
+                sourceKey,
+              });
             }
-          } catch (e2) {
+          } catch (e2: any) {
             stats.errors += 1;
             debug.errors.push({ step: "membership_update_on_dup", message: String(e2?.message || e2), sourceKey });
           }
@@ -493,9 +492,8 @@ Deno.serve(async (req: Request) => {
     }
 
     debug.elapsedMs = elapsed();
-
     return jsonResp({ ok: true, dryRun, stats, debug, nextStartAt, done });
-  } catch (e) {
+  } catch (e: any) {
     stats.errors += 1;
     debug.errors.push({ step: "fatal", message: String(e?.message || e) });
     debug.elapsedMs = Date.now() - t0;
