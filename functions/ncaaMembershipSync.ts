@@ -1,15 +1,17 @@
 // functions/ncaaMembershipSync.ts
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 
-function s(x) {
+type AnyObj = Record<string, any>;
+
+function s(x: any): string | null {
   if (x === null || x === undefined) return null;
   const t = String(x).trim();
   return t ? t : null;
 }
-function lc(x) {
+function lc(x: any): string {
   return String(x || "").toLowerCase().trim();
 }
-function normName(x) {
+function normName(x: any): string {
   return lc(x)
     .replace(/&/g, "and")
     .replace(/\ba&m\b/g, "am")
@@ -22,39 +24,38 @@ function normName(x) {
     .replace(/\s+/g, " ")
     .trim();
 }
-function getId(r) {
+function getId(r: any): string | null {
   const v = r?.id ?? r?._id ?? r?.uuid;
   return v === null || v === undefined ? null : String(v);
 }
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, Math.max(0, Number(ms || 0))));
 }
-async function safeText(r) {
+async function safeText(r: Response): Promise<string> {
   try {
     return await r.text();
   } catch {
     return "";
   }
 }
-function isRetryableStatus(st) {
+function isRetryableStatus(st: number): boolean {
   return st === 429 || st === 500 || st === 502 || st === 503 || st === 504;
 }
-function looksLikeDuplicate(err) {
+function looksLikeDuplicate(err: any): boolean {
   const msg = lc(err?.message || err);
   const code = err?.status || err?.statusCode || err?.code || null;
-
   if (code === 409) return true;
-
   return (
     msg.includes("409") ||
     msg.includes("conflict") ||
     msg.includes("duplicate") ||
     msg.includes("unique") ||
     msg.includes("already exists") ||
-    msg.includes("e11000")
+    msg.includes("e11000") ||
+    msg.includes("constraint")
   );
 }
-function extractRows(resp) {
+function extractRows(resp: any): any[] {
   if (!resp) return [];
   if (Array.isArray(resp)) return resp;
   const cands = [resp.data, resp.items, resp.records, resp.results, resp.rows];
@@ -62,13 +63,13 @@ function extractRows(resp) {
   if (resp.data && Array.isArray(resp.data.data)) return resp.data.data;
   return [];
 }
-function extractCursor(resp) {
+function extractCursor(resp: any): any | null {
   if (!resp || Array.isArray(resp)) return null;
   return resp.next_cursor ?? resp.nextCursor ?? resp.next_page_token ?? resp.nextPageToken ?? resp.cursor_next ?? null;
 }
 
-async function fetchJsonWithRetry(url, debug, tries) {
-  let lastErr = null;
+async function fetchJsonWithRetry(url: string, debug: AnyObj, tries: number): Promise<any> {
+  let lastErr: any = null;
   for (let i = 0; i < tries; i++) {
     try {
       const r = await fetch(url, {
@@ -110,7 +111,7 @@ async function fetchJsonWithRetry(url, debug, tries) {
         }
         throw new Error("NCAA invalid JSON");
       }
-    } catch (e) {
+    } catch (e: any) {
       lastErr = e;
       if (i < tries - 1) {
         const wait = Math.min(12000, 700 * Math.pow(2, i)) + Math.floor(Math.random() * 250);
@@ -126,7 +127,7 @@ async function fetchJsonWithRetry(url, debug, tries) {
   throw lastErr || new Error("NCAA fetch failed");
 }
 
-function extractSchoolRows(payload) {
+function extractSchoolRows(payload: any): any[] {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.schools)) return payload.schools;
@@ -134,27 +135,27 @@ function extractSchoolRows(payload) {
   return [];
 }
 
-function jsonResp(payload) {
+function jsonResp(payload: any): Response {
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
 }
 
-async function listAllSchoolsPaged(School, debug, timeBudgetMs, startedAtMs) {
-  const out = [];
+async function listAllSchoolsPaged(School: any, debug: AnyObj, timeBudgetMs: number, startedAtMs: number): Promise<any[]> {
+  const out: any[] = [];
   const t0 = startedAtMs;
   const elapsed = () => Date.now() - t0;
   const outOfTime = () => elapsed() >= timeBudgetMs;
 
   const LIMIT = 1000;
-  let cursor = null;
+  let cursor: any | null = null;
   let pages = 0;
 
   if (School && typeof School.list === "function") {
     while (!outOfTime()) {
       pages += 1;
-      let resp = null;
+      let resp: any = null;
 
       try {
         resp = await School.list({ where: {}, limit: LIMIT, cursor });
@@ -197,18 +198,20 @@ async function listAllSchoolsPaged(School, debug, timeBudgetMs, startedAtMs) {
       const arr = extractRows(resp);
       debug.notes.push(`School fetch(filter fallback): rows=${arr.length} elapsedMs=${elapsed()}`);
       return arr;
-    } catch {}
+    } catch {
+      // ignore
+    }
   }
 
   return out;
 }
 
-async function writeRetry(fn, debug, label) {
+async function writeRetry<T>(fn: () => Promise<T>, debug: AnyObj, label: string): Promise<T> {
   const tries = 4;
   for (let i = 0; i < tries; i++) {
     try {
       return await fn();
-    } catch (e) {
+    } catch (e: any) {
       const msg = String(e?.message || e);
       const retryable =
         msg.includes("502") ||
@@ -227,11 +230,33 @@ async function writeRetry(fn, debug, label) {
       await sleep(wait);
     }
   }
+  // unreachable
+  throw new Error("writeRetry failed");
 }
 
-Deno.serve(async (req) => {
+async function getExistingBySourceKey(AthleticsMembership: any, sourceKey: string, debug: AnyObj): Promise<any | null> {
+  // Try multiple filter shapes because Base44 SDKs differ by version
+  const shapes = [
+    { source_key: sourceKey },
+    { where: { source_key: sourceKey } },
+    { filter: { source_key: sourceKey } },
+  ];
+
+  for (const q of shapes) {
+    try {
+      const resp = await writeRetry(() => AthleticsMembership.filter(q as any), debug, "membership_filter");
+      const rows = extractRows(resp);
+      if (rows.length) return rows[0];
+    } catch {
+      // keep trying
+    }
+  }
+  return null;
+}
+
+Deno.serve(async (req: Request) => {
   const t0 = Date.now();
-  const debug = {
+  const debug: AnyObj = {
     startedAt: new Date().toISOString(),
     retries: 0,
     retry_notes: [],
@@ -246,7 +271,7 @@ Deno.serve(async (req) => {
     indexMissingSamples: [],
   };
 
-  const stats = {
+  const stats: AnyObj = {
     fetched: 0,
     processed: 0,
     matched: 0,
@@ -257,7 +282,6 @@ Deno.serve(async (req) => {
     skippedDryRun: 0,
     missingName: 0,
     errors: 0,
-
     indexedSchools: 0,
     indexMissingName: 0,
   };
@@ -265,17 +289,13 @@ Deno.serve(async (req) => {
   let nextStartAt = 0;
   let done = false;
 
-  function elapsed() {
-    return Date.now() - t0;
-  }
-  function outOfTime(budgetMs) {
-    return elapsed() >= budgetMs;
-  }
+  const elapsed = () => Date.now() - t0;
+  const outOfTime = (budgetMs: number) => elapsed() >= budgetMs;
 
   try {
     if (req.method !== "POST") return jsonResp({ ok: false, error: "Method not allowed", stats, debug, nextStartAt, done });
 
-    const body = await req.json().catch(() => ({}));
+    const body: AnyObj = await req.json().catch(() => ({}));
     const dryRun = !!body?.dryRun;
     const seasonYear = body?.seasonYear != null ? Number(body.seasonYear) : null;
     const startAt = Math.max(0, Number(body?.startAt || 0));
@@ -285,7 +305,7 @@ Deno.serve(async (req) => {
     const timeBudgetMs = Math.max(5000, Number(body?.timeBudgetMs || 22000));
     const sourcePlatform = s(body?.sourcePlatform) || "ncaa-api";
 
-    const client = createClientFromRequest(req);
+    const client = createClientFromRequest(req) as any;
     const School = client.entities.School || client.entities.Schools;
     const AthleticsMembership = client.entities.AthleticsMembership || client.entities.AthleticsMemberships;
     const Unmatched = client.entities.UnmatchedAthleticsRow || client.entities.UnmatchedAthleticsRows;
@@ -295,7 +315,7 @@ Deno.serve(async (req) => {
 
     const allSchools = await listAllSchoolsPaged(School, debug, timeBudgetMs, t0);
 
-    const byNormName = new Map();
+    const byNormName = new Map<string, any[]>();
     for (const r of allSchools) {
       const rawName = s(r?.school_name) || s(r?.name) || s(r?.institution_name) || s(r?.display_name) || null;
       const nn = s(r?.normalized_name) || (rawName ? normName(rawName) : null);
@@ -305,7 +325,7 @@ Deno.serve(async (req) => {
         continue;
       }
       if (!byNormName.has(nn)) byNormName.set(nn, []);
-      byNormName.get(nn).push(r);
+      byNormName.get(nn)!.push(r);
     }
 
     stats.indexedSchools = allSchools.length;
