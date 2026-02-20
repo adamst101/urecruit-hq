@@ -371,7 +371,7 @@ export default function Discover() {
         const filtered = allRows.filter((r) => {
           const sy = safeNumber(r?.season_year ?? r?.seasonYear);
           if (sy != null) return sy === seasonYear;
-          if (String(r?.season_year ?? r?.seasonYear || "") === String(seasonYear)) return true;
+          if (String((r?.season_year ?? r?.seasonYear) || "") === String(seasonYear)) return true;
 
           const derived = computeSeasonYearFootballFromStart(r?.start_date);
           return derived === seasonYear;
