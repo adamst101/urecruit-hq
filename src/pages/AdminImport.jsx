@@ -230,6 +230,7 @@ function normalizeSiteRow(r) {
     sport_id: r && r.sport_id ? String(r.sport_id) : null,
     camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : null,
     active: typeof r && typeof r.active === "boolean" ? r.active : !!(r && r.active),
+    needs_review: typeof r?.needs_review === \"boolean\" ? r.needs_review : !!(r && r.needs_review),
     crawl_status: statusOf(r),
     last_crawled_at: safeString(r && r.last_crawled_at),
     next_crawl_at: safeString(r && r.next_crawl_at),
@@ -620,7 +621,7 @@ function AdminImportInner() {
     }
 
     const siteRowsRaw = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
-    const allSites = siteRowsRaw.map(normalizeSiteRow);
+    const allSites = siteRowsRaw.map(normalizeSiteRow).filter((s) => !!s.school_id && !s.needs_review);
     const allSchools = new Set(allSites.map((s) => s.school_id).filter(Boolean));
 
     const demoRows = await entityList(CampDemoEntity, { sport_id: selectedSportId });
@@ -871,51 +872,88 @@ function AdminImportInner() {
       .replace(/^-+|-+$/g, "");
   }
 
-  async function upsertSchoolBySourceKey({ school_name, logo_url, source_key, source_school_url }) {
-    if (!SchoolEntity?.create || !SchoolEntity?.update) throw new Error("School entity not available.");
-
-    const key = safeString(source_key);
-    const name = safeString(school_name);
-    if (!name) throw new Error("Missing school_name");
-    if (!key) throw new Error("Missing source_key");
-
-    let existing = [];
-    try {
-      existing = await entityList(SchoolEntity, { source_key: key });
-    } catch {
-      existing = [];
-    }
-
-    const payload = {
-      school_name: name,
-      logo_url: safeString(logo_url) || null,
-      source_platform: "sportsusa",
-      source_school_url: safeString(source_school_url) || null,
-      source_key: key,
-      active: true,
-      needs_review: false,
-      normalized_name: lc(name).replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim(),
-      aliases_json: "[]",
-      school_type: "College/University",
-      division: "Unknown",
-      conference: null,
-      city: null,
-      state: null,
-      country: "US",
-      website_url: null,
-      last_seen_at: new Date().toISOString(),
-    };
-
-    if (existing.length && existing[0]?.id) {
-      await SchoolEntity.update(String(existing[0].id), payload);
-      return { id: String(existing[0].id), mode: "updated" };
-    }
-
-    const created = await SchoolEntity.create(payload);
-    return { id: created?.id ? String(created.id) : null, mode: "created" };
+  function normName(x) {
+    return lc(x)
+      .replace(/&/g, "and")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
-  async function upsertSchoolSportSiteByKey({ school_id, sport_id, camp_site_url, logo_url, source_key }) {
+  function getRowId(r) {
+    const v = r?.id ?? r?._id ?? r?.uuid;
+    return v == null ? null : String(v);
+  }
+
+  function scoreCanonicalSchoolRow(r) {
+    // Prefer Scorecard master rows and higher-fidelity records.
+    let sc = 0;
+    if (safeString(r?.unitid)) sc += 10;
+    if (safeString(r?.school_name)) sc += 6;
+    if (safeString(r?.state)) sc += 4;
+    if (safeString(r?.city)) sc += 3;
+    if (safeString(r?.website_url)) sc += 2;
+    if (safeString(r?.logo_url)) sc += 1;
+    if (lc(r?.source_platform) === "scorecard") sc += 5;
+    if (safeString(r?.source_key) && String(r.source_key).startsWith("scorecard:")) sc += 3;
+    return sc;
+  }
+
+  function pickBestCanonicalSchool(rows) {
+    const list = asArray(rows).filter(Boolean);
+    if (!list.length) return null;
+    const sorted = [...list].sort((a, b) => {
+      const sa = scoreCanonicalSchoolRow(a);
+      const sb = scoreCanonicalSchoolRow(b);
+      if (sb !== sa) return sb - sa;
+      const ida = String(getRowId(a) || "");
+      const idb = String(getRowId(b) || "");
+      return ida.localeCompare(idb);
+    });
+    return sorted[0] || null;
+  }
+
+  async function findCanonicalSchoolMatchByName(schoolNameRaw) {
+    // Returns { school_id, confidence, candidatesCount }
+    const nm = safeString(schoolNameRaw);
+    if (!nm || !SchoolEntity) return { school_id: null, confidence: 0, candidatesCount: 0 };
+
+    const normalized = normName(nm);
+    if (!normalized) return { school_id: null, confidence: 0, candidatesCount: 0 };
+
+    let candidates = [];
+    try {
+      candidates = await entityList(SchoolEntity, { normalized_name: normalized });
+    } catch {
+      candidates = [];
+    }
+
+    // If your Scorecard load put everything into School, we still prefer scorecard rows if present.
+    const best = pickBestCanonicalSchool(candidates);
+    const bestId = best ? getRowId(best) : null;
+
+    // Confidence logic:
+    // - 1 clear candidate: high
+    // - multiple candidates: lower (needs review)
+    // - none: 0
+    const cnt = asArray(candidates).length;
+    const confidence = cnt === 1 && bestId ? 100 : bestId ? 60 : 0;
+
+    // If multiple candidates, still return bestId but force review.
+    return { school_id: bestId, confidence, candidatesCount: cnt };
+  }
+
+  async function upsertSchoolSportSiteByKey({
+    school_id,
+    sport_id,
+    camp_site_url,
+    logo_url,
+    source_key,
+    needs_review = false,
+    match_confidence = null,
+    match_candidates = null,
+    school_name_raw = null,
+  }) {
     if (!SchoolSportSiteEntity?.create || !SchoolSportSiteEntity?.update)
       throw new Error("SchoolSportSite entity not available.");
 
@@ -930,29 +968,73 @@ function AdminImportInner() {
     }
 
     const payload = {
-      school_id: safeString(school_id),
+      school_id: safeString(school_id) || null,
       sport_id: safeString(sport_id),
       camp_site_url: safeString(camp_site_url),
       logo_url: safeString(logo_url) || null,
       source_platform: "sportsusa",
       source_key: key,
       active: true,
-      needs_review: false,
+      needs_review: !!needs_review,
       last_seen_at: new Date().toISOString(),
-      crawl_status: "ready",
-      crawl_error: null,
+
+      // Crawl state: only crawl if mapped.
+      crawl_status: needs_review || !school_id ? "needs_review" : "ready",
+      crawl_error: needs_review ? "unmatched_school" : null,
       last_crawled_at: null,
       next_crawl_at: null,
       last_crawl_run_id: null,
+
+      // Optional enrichment/debug fields (safe if schema supports them; otherwise Base44 ignores)
+      match_confidence: match_confidence,
+      match_candidates: match_candidates,
+      school_name_raw: safeString(school_name_raw) || null,
     };
 
-    if (existing.length && existing[0]?.id) {
-      await SchoolSportSiteEntity.update(String(existing[0].id), payload);
-      return { id: String(existing[0].id), mode: "updated" };
+    // If Base44 rejects unknown fields, remove them by catching and retrying.
+    async function writeWithFallback(id) {
+      try {
+        if (id) {
+          await SchoolSportSiteEntity.update(String(id), payload);
+          return { id: String(id), mode: "updated" };
+        }
+        const created = await SchoolSportSiteEntity.create(payload);
+        return { id: created?.id ? String(created.id) : null, mode: "created" };
+      } catch (e) {
+        const msg = String(e?.message || e);
+        const looksLikeUnknownField =
+          msg.toLowerCase().includes("field") && msg.toLowerCase().includes("not") && msg.toLowerCase().includes("exist");
+
+        if (!looksLikeUnknownField) throw e;
+
+        const minimalPayload = {
+          school_id: payload.school_id,
+          sport_id: payload.sport_id,
+          camp_site_url: payload.camp_site_url,
+          logo_url: payload.logo_url,
+          source_platform: payload.source_platform,
+          source_key: payload.source_key,
+          active: payload.active,
+          needs_review: payload.needs_review,
+          last_seen_at: payload.last_seen_at,
+          crawl_status: payload.crawl_status,
+          crawl_error: payload.crawl_error,
+          last_crawled_at: payload.last_crawled_at,
+          next_crawl_at: payload.next_crawl_at,
+          last_crawl_run_id: payload.last_crawl_run_id,
+        };
+
+        if (id) {
+          await SchoolSportSiteEntity.update(String(id), minimalPayload);
+          return { id: String(id), mode: "updated" };
+        }
+        const created2 = await SchoolSportSiteEntity.create(minimalPayload);
+        return { id: created2?.id ? String(created2.id) : null, mode: "created" };
+      }
     }
 
-    const created = await SchoolSportSiteEntity.create(payload);
-    return { id: created?.id ? String(created.id) : null, mode: "created" };
+    if (existing.length && existing[0]?.id) return await writeWithFallback(existing[0].id);
+    return await writeWithFallback(null);
   }
 
   async function runSportsUSASeedSchools() {
@@ -960,8 +1042,9 @@ function AdminImportInner() {
     setSportsUSAWorking(true);
     setLogSportsUSA("");
 
-    appendLog("sportsusa", `[SportsUSA] Starting: School Seed (${selectedSportName}) @ ${runIso}`);
+    appendLog("sportsusa", `[SportsUSA] Starting: Site Seed (${selectedSportName}) @ ${runIso}`);
     appendLog("sportsusa", `[SportsUSA] DryRun=${sportsUSADryRun ? "true" : "false"} | Limit=${sportsUSALimit}`);
+    appendLog("sportsusa", `[SportsUSA] Unmatched behavior: needs_review=true (no School creates)`);
 
     try {
       if (!selectedSportId) return appendLog("sportsusa", "[SportsUSA] ERROR: Select a sport first.");
@@ -1010,10 +1093,10 @@ function AdminImportInner() {
         return;
       }
 
-      let schoolsCreated = 0;
-      let schoolsUpdated = 0;
       let sitesCreated = 0;
       let sitesUpdated = 0;
+      let matched = 0;
+      let needsReview = 0;
       let skipped = 0;
       let errors = 0;
 
@@ -1024,7 +1107,6 @@ function AdminImportInner() {
           const logoUrl = safeString(srow.logo_url);
           const viewSiteUrl = safeString(srow.view_site_url);
 
-          const sourceKeySchool = safeString(srow.source_key) || `sportsusa:school:${lc(viewSiteUrl || schoolName || "")}`;
           const sourceKeySite = `sportsusa:${slugify(selectedSportName)}:${lc(viewSiteUrl || "")}`;
 
           if (!schoolName || !viewSiteUrl) {
@@ -1032,34 +1114,35 @@ function AdminImportInner() {
             continue;
           }
 
-          const upSchool = await upsertSchoolBySourceKey({
-            school_name: schoolName,
-            logo_url: logoUrl,
-            source_key: sourceKeySchool,
-            source_school_url: viewSiteUrl,
-          });
-
-          if (upSchool.mode === "created") schoolsCreated += 1;
-          if (upSchool.mode === "updated") schoolsUpdated += 1;
+          const match = await findCanonicalSchoolMatchByName(schoolName);
+          const isNeedsReview = !match.school_id || match.candidatesCount !== 1;
 
           const upSite = await upsertSchoolSportSiteByKey({
-            school_id: upSchool.id,
+            school_id: match.school_id,
             sport_id: selectedSportId,
             camp_site_url: viewSiteUrl,
             logo_url: logoUrl,
             source_key: sourceKeySite,
+            needs_review: isNeedsReview,
+            match_confidence: match.confidence,
+            match_candidates: match.candidatesCount,
+            school_name_raw: schoolName,
           });
 
           if (upSite.mode === "created") sitesCreated += 1;
           if (upSite.mode === "updated") sitesUpdated += 1;
+
+          if (!isNeedsReview) matched += 1;
+          else needsReview += 1;
         } catch (e) {
           errors += 1;
           appendLog("sportsusa", `[SportsUSA] ERROR row #${i + 1}: ${String(e?.message || e)}`);
         }
+
         if ((i + 1) % 25 === 0) {
           appendLog(
             "sportsusa",
-            `[SportsUSA] Progress ${i + 1}/${schoolsFound.length} | Schools c/u=${schoolsCreated}/${schoolsUpdated} | Sites c/u=${sitesCreated}/${sitesUpdated} | skipped=${skipped} errors=${errors}`
+            `[SportsUSA] Progress ${i + 1}/${schoolsFound.length} | Sites c/u=${sitesCreated}/${sitesUpdated} | matched=${matched} needs_review=${needsReview} skipped=${skipped} errors=${errors}`
           );
         }
         await sleep(15);
@@ -1067,8 +1150,9 @@ function AdminImportInner() {
 
       appendLog(
         "sportsusa",
-        `[SportsUSA] Done. Schools created=${schoolsCreated} updated=${schoolsUpdated} | Sites created=${sitesCreated} updated=${sitesUpdated} | skipped=${skipped} errors=${errors}`
+        `[SportsUSA] Done. Sites created=${sitesCreated} updated=${sitesUpdated} | matched=${matched} needs_review=${needsReview} | skipped=${skipped} errors=${errors}`
       );
+
       await refreshCrawlCounters();
       await refreshQualityCounters();
     } catch (e) {
@@ -1077,6 +1161,7 @@ function AdminImportInner() {
       setSportsUSAWorking(false);
     }
   }
+
 
   /* ----------------------------
      Camps ingest helpers
@@ -3402,4 +3487,3 @@ export default function AdminImport() {
     </ErrorBoundary>
   );
 }
-
