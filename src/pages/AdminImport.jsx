@@ -230,7 +230,7 @@ function normalizeSiteRow(r) {
     sport_id: r && r.sport_id ? String(r.sport_id) : null,
     camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : null,
     active: typeof r && typeof r.active === "boolean" ? r.active : !!(r && r.active),
-    needs_review: typeof r?.needs_review === "boolean" ? r.needs_review : !!(r && r.needs_review),
+    needs_review: typeof r?.needs_review === \"boolean\" ? r.needs_review : !!(r && r.needs_review),
     crawl_status: statusOf(r),
     last_crawled_at: safeString(r && r.last_crawled_at),
     next_crawl_at: safeString(r && r.next_crawl_at),
@@ -1386,6 +1386,9 @@ function AdminImportInner() {
     const key = payload?.event_key ? String(payload.event_key) : null;
     if (!key) throw new Error("Missing event_key for CampDemo upsert");
 
+    // CampDemo schema requires source_key; default to event_key for idempotent upserts
+    if (!safeString(payload?.source_key)) payload.source_key = key;
+
     let existing = [];
     try {
       existing = await entityList(CampDemoEntity, { event_key: key });
@@ -1627,6 +1630,7 @@ function AdminImportInner() {
         season_year,
         program_id,
         event_key,
+        source_key: event_key,
         source_platform,
         source_url: source_url || null,
         last_seen_at: runIso,
@@ -1883,6 +1887,7 @@ function AdminImportInner() {
         season_year,
         program_id,
         event_key,
+        source_key: event_key,
         source_platform,
         source_url: source_url || null,
         last_seen_at: runIso,
@@ -1933,8 +1938,8 @@ function AdminImportInner() {
     const key = payload?.event_key ? String(payload.event_key) : null;
     if (!key) throw new Error("Missing event_key for Camp upsert");
 
-    // Camp.source_key is required by schema.
-    // Normalize here as a second line of defense in case callers forget it.
+
+    // Camp schema requires source_key; default to event_key for idempotent upserts
     if (!safeString(payload?.source_key)) payload.source_key = key;
 
     let existing = [];
@@ -1988,10 +1993,6 @@ function AdminImportInner() {
         source_url,
       });
 
-    // Camp requires a stable source_key (schema required).
-    // Use event_key (already unique and stable) as the canonical source_key.
-    const source_key = safeString(r?.source_key) || event_key;
-
     const content_hash =
       safeString(r?.content_hash) ||
       simpleHash({
@@ -2024,8 +2025,8 @@ function AdminImportInner() {
       notes: safeString(r?.notes) || null,
       season_year: season_year != null ? season_year : null,
       program_id,
-      source_key,
       event_key,
+      source_key: event_key,
       source_platform,
       source_url: source_url || null,
       last_seen_at: runIso,
@@ -3496,3 +3497,4 @@ export default function AdminImport() {
     </ErrorBoundary>
   );
 }
+
