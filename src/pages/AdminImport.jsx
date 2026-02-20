@@ -230,7 +230,7 @@ function normalizeSiteRow(r) {
     sport_id: r && r.sport_id ? String(r.sport_id) : null,
     camp_site_url: r && r.camp_site_url ? String(r.camp_site_url) : null,
     active: typeof r && typeof r.active === "boolean" ? r.active : !!(r && r.active),
-    needs_review: typeof r?.needs_review === \"boolean\" ? r.needs_review : !!(r && r.needs_review),
+    needs_review: typeof r?.needs_review === "boolean" ? r.needs_review : !!(r && r.needs_review),
     crawl_status: statusOf(r),
     last_crawled_at: safeString(r && r.last_crawled_at),
     next_crawl_at: safeString(r && r.next_crawl_at),
