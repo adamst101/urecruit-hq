@@ -205,6 +205,46 @@ async function entityList(Entity, whereObj) {
   throw new Error("Entity has no supported list method (filter/list/findMany/all).");
 }
 
+
+/* =========================================================
+   Entity get-by-id helper (robust across Base44 APIs)
+========================================================= */
+async function entityGetById(Entity, id) {
+  const sid = id == null ? null : String(id);
+  if (!Entity || !sid) return null;
+
+  // Best-case: direct getter
+  const fns = ["get", "read", "findById"];
+  for (const fn of fns) {
+    try {
+      if (typeof Entity[fn] === "function") {
+        const row = await Entity[fn](sid);
+        if (row) return row;
+      }
+    } catch {
+      // ignore and fall back
+    }
+  }
+
+  // Next: try filter by id
+  try {
+    const rows = await entityList(Entity, { id: sid });
+    const hit = asArray(rows).find((r) => String(r?.id || "") === sid);
+    if (hit) return hit;
+  } catch {
+    // ignore
+  }
+
+  // Last resort: load list and find (heavier but correct)
+  try {
+    const rows = await entityList(Entity, {});
+    const hit = asArray(rows).find((r) => String(r?.id || "") === sid);
+    return hit || null;
+  } catch {
+    return null;
+  }
+}
+
 /* =========================================================
    Crawl-state helpers
 ========================================================= */
@@ -434,6 +474,7 @@ function AdminImportInner() {
     return schoolNameById[String(id)] || "";
   }
 
+
   /* ----------------------------
      Sport selector
   ----------------------------- */
@@ -476,6 +517,7 @@ function AdminImportInner() {
   const [resetWorking, setResetWorking] = useState(false);
   const [editorWorking, setEditorWorking] = useState(false);
   const [dedupWorking, setDedupWorking] = useState(false);
+  const [logoRefreshWorking, setLogoRefreshWorking] = useState(false);
 
   /* ----------------------------
      Seed Schools controls
@@ -1162,72 +1204,68 @@ function AdminImportInner() {
     }
   }
 
+
   /* ----------------------------
      Camps ingest helpers
   ----------------------------- */
-  async function tryUpdate(Entity, id, payload) {
-    if (!Entity?.update || !id) return false;
-    await Entity.update(String(id), payload);
-    return true;
-  }
 
-  async function normalizeCampDatesToISO() {
-    setNormalizeDatesWorking(true);
-    const runIso = new Date().toISOString();
-    try {
-      if (!selectedSportId) {
-        appendLog("camps", `[Dates] Select a sport first.`);
-        return;
-      }
-      if (!CampDemoEntity && !CampEntity) {
-        appendLog("camps", `[Dates] ERROR: CampDemo/Camp entities not available.`);
-        return;
-      }
-
-      const normalizeEntity = async (Entity, label) => {
-        if (!Entity) return { scanned: 0, updated: 0, errors: 0 };
-        const rows = await entityList(Entity, { sport_id: selectedSportId });
-        let scanned = 0;
-        let updated = 0;
-        let errors = 0;
-
-        for (const raw of rows) {
-          scanned += 1;
-          const r = raw || {};
-          const start0 = safeString(r.start_date);
-          const end0 = safeString(r.end_date);
-          const start1 = toISODate(start0);
-          const end1 = toISODate(end0);
-
-          const needs =
-            (start0 && start0.includes("/")) ||
-            (end0 && end0.includes("/")) ||
-            (start0 && start1 && start0 !== start1) ||
-            (end0 && end1 && end0 !== end1);
-
-          if (!needs) continue;
-
-          try {
-            const ok = await tryUpdate(Entity, r.id, { start_date: start1 || null, end_date: end1 || null });
-            if (ok) updated += 1;
-            else errors += 1;
-          } catch {
-            errors += 1;
-          }
-        }
-
-        appendLog("camps", `[Dates] ${label} scanned=${scanned} updated=${updated} errors=${errors}`);
-        return { scanned, updated, errors };
-      };
-
-      appendLog("camps", `[Dates] Normalize start/end to ISO begin @ ${runIso} (sport=${selectedSportName || selectedSportId})`);
-      await normalizeEntity(CampDemoEntity, "CampDemo");
-      await normalizeEntity(CampEntity, "Camp");
-      appendLog("camps", `[Dates] Normalize done.`);
-    } finally {
-      setNormalizeDatesWorking(false);
+async function normalizeCampDatesToISO() {
+  setNormalizeDatesWorking(true);
+  const runIso = new Date().toISOString();
+  try {
+    if (!selectedSportId) {
+      appendLog("camps", `[Dates] Select a sport first.`);
+      return;
     }
+    if (!CampDemoEntity && !CampEntity) {
+      appendLog("camps", `[Dates] ERROR: CampDemo/Camp entities not available.`);
+      return;
+    }
+
+    const normalizeEntity = async (Entity, label) => {
+      if (!Entity) return { scanned: 0, updated: 0, errors: 0 };
+      const rows = await entityList(Entity, { sport_id: selectedSportId });
+      let scanned = 0;
+      let updated = 0;
+      let errors = 0;
+
+      for (const raw of rows) {
+        scanned += 1;
+        const r = raw || {};
+        const start0 = safeString(r.start_date);
+        const end0 = safeString(r.end_date);
+        const start1 = toISODate(start0);
+        const end1 = toISODate(end0);
+
+        const needs =
+          (start0 && start0.includes("/")) ||
+          (end0 && end0.includes("/")) ||
+          (start0 && start1 && start0 !== start1) ||
+          (end0 && end1 && end0 !== end1);
+
+        if (!needs) continue;
+
+        try {
+          const ok = await tryUpdate(Entity, r.id, { start_date: start1 || null, end_date: end1 || null });
+          if (ok) updated += 1;
+          else errors += 1;
+        } catch {
+          errors += 1;
+        }
+      }
+
+      appendLog("camps", `[Dates] ${label} scanned=${scanned} updated=${updated} errors=${errors}`);
+      return { scanned, updated, errors };
+    };
+
+    appendLog("camps", `[Dates] Normalize start/end to ISO begin @ ${runIso} (sport=${selectedSportName || selectedSportId})`);
+    await normalizeEntity(CampDemoEntity, "CampDemo");
+    await normalizeEntity(CampEntity, "Camp");
+    appendLog("camps", `[Dates] Normalize done.`);
+  } finally {
+    setNormalizeDatesWorking(false);
   }
+}
 
   function normalizeAcceptedRowToFlat(a) {
     if (!a) return {};
@@ -1297,8 +1335,12 @@ function AdminImportInner() {
     };
   }
 
-  // ✅ Treat placeholders/non-URLs as "empty" so Ryzer logos can fill them while still honoring fill-only-when-empty.
-  function isEmptyLogoValue(v) {
+  
+  // Logo quality gate:
+  // - empty/whitespace = bad
+  // - placeholders (na/null/etc) = bad
+  // - non-http(s) values = bad
+  function isBadLogoValue(v) {
     const s = (v == null ? "" : String(v)).trim();
     if (!s) return true;
 
@@ -1311,44 +1353,35 @@ function AdminImportInner() {
     return false;
   }
 
-  async function patchSchoolLogoIfMissing(schoolId, logoUrl) {
-    const sid = safeString(schoolId);
-    const lu = safeString(logoUrl);
-    if (!sid || !lu) return { updated: false, reason: "missing_input" };
-    if (!SchoolEntity?.update) return { updated: false, reason: "missing_school_entity" };
+async function patchSchoolLogoIfMissing(schoolId, logoUrl, { allowOverwriteBad = false } = {}) {
+  const sid = safeString(schoolId);
+  const lu = safeString(logoUrl);
+  if (!sid || !lu) return { updated: false, reason: "missing_input" };
+  if (!SchoolEntity?.update) return { updated: false, reason: "missing_school_entity" };
 
-    // Load current School row
-    let existing = [];
-    try {
-      existing = await entityList(SchoolEntity, { id: sid });
-    } catch {
-      existing = [];
-    }
+  // Robust fetch by id (Base44 list/filter semantics vary)
+  const current = await entityGetById(SchoolEntity, sid);
+  if (!current) return { updated: false, reason: "school_lookup_failed" };
 
-    const current = existing && existing[0] ? existing[0] : null;
+  const rawLogo = (current.logo_url || current.school_logo_url || current.logo || current.image_url) ?? null;
+  const currentLooksBad = isBadLogoValue(rawLogo);
 
-    // Check common logo fields (schema drift safe)
-    const rawLogo =
-      (current && (current.logo_url || current.school_logo_url || current.logo || current.image_url)) ?? null;
+  // Fill-only-when-empty OR overwrite only if the existing logo is "bad"
+  if (!currentLooksBad && !allowOverwriteBad) return { updated: false, reason: "already_has_logo" };
 
-    // Fill-only-when-empty (placeholder-aware)
-    if (!isEmptyLogoValue(rawLogo)) return { updated: false, reason: "already_has_logo" };
-
-    // If schema rejects extra fields, keep only logo_url.
-    try {
-      await SchoolEntity.update(String(sid), {
-        logo_url: lu,
-        logo_source: "ryzer",
-        logo_last_seen_at: new Date().toISOString(),
-      });
-    } catch {
-      await SchoolEntity.update(String(sid), {
-        logo_url: lu,
-      });
-    }
-
-    return { updated: true, reason: "patched" };
+  // Write logo_url (metadata best-effort; fallback to logo_url only if schema rejects)
+  try {
+    await SchoolEntity.update(String(sid), {
+      logo_url: lu,
+      logo_source: "ryzer",
+      logo_last_seen_at: new Date().toISOString(),
+    });
+  } catch {
+    await SchoolEntity.update(String(sid), { logo_url: lu });
   }
+
+  return { updated: true, reason: currentLooksBad ? "overwritten_bad" : "patched" };
+}
 
   async function updateCrawlStateForSites(siteIds, patch) {
     if (!SchoolSportSiteEntity?.update) return { updated: 0, errors: 0 };
@@ -1514,6 +1547,167 @@ function AdminImportInner() {
   /* ----------------------------
      Camps ingest (batch runner)
   ----------------------------- */
+
+  /* ----------------------------
+     Refresh Bad Logos (Ryzer) - does NOT write CampDemo
+     - Calls sportsUSAIngestCamps to extract school_logo_url
+     - Overwrites School.logo_url ONLY if current logo is "bad" (placeholder / non-url / empty)
+  ----------------------------- */
+  async function runRyzerLogoRefreshBadOnly() {
+    const runIso = new Date().toISOString();
+    const runId = `logo_${runIso.replace(/[:.]/g, "").slice(0, 15)}`;
+    setLogoRefreshWorking(true);
+    setLogCamps("");
+
+    appendLog("camps", `[Logos] Starting: Refresh Bad Logos (Ryzer) @ ${runIso} (${selectedSportName})`);
+    appendLog("camps", `[Logos] Mode: overwrite ONLY if current logo is bad (placeholder/non-url/empty). No CampDemo writes. No crawl-state updates.`);
+    appendLog("camps", `[Logos] MaxSites/batch=${campsMaxSites} | MaxRegs/site=${campsMaxRegsPerSite} | MaxEvents=${campsMaxEvents} | fastMode=${fastMode ? "true" : "false"}`);
+
+    try {
+      if (!selectedSportId) return appendLog("camps", "[Logos] ERROR: Select a sport first.");
+      if (!SchoolSportSiteEntity) return appendLog("camps", "[Logos] ERROR: SchoolSportSite entity not available.");
+      if (!SchoolEntity) return appendLog("camps", "[Logos] ERROR: School entity not available.");
+
+      const siteRowsRaw = await entityList(SchoolSportSiteEntity, { sport_id: selectedSportId, active: true });
+      const sites = asArray(siteRowsRaw).map(normalizeSiteRow).filter((x) => !!x.school_id && !x.needs_review);
+
+      appendLog("camps", `[Logos] Loaded SchoolSportSite rows: ${sites.length} (active, mapped)`);
+
+      if (!sites.length) {
+        appendLog("camps", "[Logos] Nothing to do (no mapped sites). Run Seed Schools first.");
+        return;
+      }
+
+      const maxSitesPerBatch = Math.max(1, Number(campsMaxSites || 25));
+      const maxBatchCount = runBatches ? Math.max(1, Number(maxBatches || 1)) : 1;
+
+      const totalSites = sites.length;
+      const totalPossibleBatches = Math.ceil(totalSites / maxSitesPerBatch);
+      const batchesToRun = Math.min(totalPossibleBatches, maxBatchCount);
+
+      let totalCandidates = 0;
+      let totalOverwritten = 0;
+      let totalSkippedGood = 0;
+      let totalLookupFailed = 0;
+      let totalErrors = 0;
+
+      for (let b = 0; b < batchesToRun; b++) {
+        const start = b * maxSitesPerBatch;
+        const end = Math.min(totalSites, start + maxSitesPerBatch);
+        const batchSites = sites.slice(start, end);
+
+        appendLog("camps", ``);
+        appendLog("camps", `[Logos] ---- Batch ${b + 1} ----`);
+        appendLog("camps", `[Logos] Batch size=${batchSites.length} | remainingAfterThis=${Math.max(0, totalSites - end)}`);
+
+        appendLog("camps", `[Logos] Calling /functions/sportsUSAIngestCamps (logo-only payload: sites=${batchSites.length})`);
+
+        const res = await fetch("/functions/sportsUSAIngestCamps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sportId: selectedSportId,
+            sportName: selectedSportName,
+            dryRun: true,
+            maxSites: Number(batchSites.length),
+            maxRegsPerSite: Number(campsMaxRegsPerSite || 10),
+            maxEvents: Number(campsMaxEvents || 300),
+            fastMode: !!fastMode,
+            sites: batchSites.map((r) => ({
+              id: r.id,
+              school_id: r.school_id,
+              sport_id: r.sport_id,
+              camp_site_url: r.camp_site_url,
+            })),
+            testSiteUrl: null,
+            testSchoolId: null,
+            runId,
+          }),
+        });
+
+        let data = null;
+        let rawText = null;
+        try {
+          data = await res.json();
+        } catch {
+          rawText = await res.text().catch(() => null);
+        }
+
+        if (!res.ok || !data) {
+          totalErrors += 1;
+          appendLog("camps", `[Logos] Function ERROR (HTTP ${res.status}).`);
+          if (data) appendLog("camps", truncate(JSON.stringify(data || {}, null, 2), 800));
+          if (!data && rawText) appendLog("camps", `[Logos] Raw response: ${truncate(rawText, 500)}`);
+          continue;
+        }
+
+        appendLog("camps", `[Logos] Function version: ${data?.version ? data.version : "MISSING"}`);
+
+        const acceptedRaw = asArray(data?.accepted || []);
+        const accepted = acceptedRaw.map((x) => normalizeAcceptedRowToFlat(x));
+        appendLog("camps", `[Logos] Accepted events returned: ${accepted.length}`);
+
+        const bySchool = new Map();
+        for (let i = 0; i < accepted.length; i++) {
+          const a = accepted[i] || {};
+          const sid = safeString(a.school_id);
+          const lu = safeString(a.school_logo_url);
+          if (!sid || !lu) continue;
+          if (!bySchool.has(sid)) bySchool.set(sid, lu);
+        }
+
+        const schoolIds = Array.from(bySchool.keys());
+        totalCandidates += schoolIds.length;
+
+        if (!schoolIds.length) {
+          appendLog("camps", `[Logos] No logo candidates in this batch.`);
+          continue;
+        }
+
+        let overwritten = 0;
+        let skippedGood = 0;
+        let lookupFailed = 0;
+        let errors = 0;
+
+        appendLog("camps", `[Logos] Candidate schools=${schoolIds.length} (overwrite if current logo is bad)`);
+
+        for (let j = 0; j < schoolIds.length; j++) {
+          const sid = schoolIds[j];
+          const lu = bySchool.get(sid);
+          try {
+            const r = await writeWithRetry(() => patchSchoolLogoIfMissing(sid, lu, { allowOverwriteBad: true }), { maxRetries: 5 });
+            if (r?.updated) overwritten += 1;
+            else if (r?.reason === "already_has_logo") skippedGood += 1;
+            else if (r?.reason === "school_lookup_failed") lookupFailed += 1;
+            else skippedGood += 1;
+          } catch {
+            errors += 1;
+          }
+          if ((j + 1) % 50 === 0) await sleep(10);
+        }
+
+        totalOverwritten += overwritten;
+        totalSkippedGood += skippedGood;
+        totalLookupFailed += lookupFailed;
+        totalErrors += errors;
+
+        appendLog("camps", `[Logos] Batch ${b + 1} done. overwritten_bad=${overwritten} skipped_good=${skippedGood} lookup_failed=${lookupFailed} errors=${errors}`);
+
+        if (b < batchesToRun - 1) await sleep(Math.max(0, Number(batchDelayMs || 0)));
+      }
+
+      appendLog("camps", ``);
+      appendLog(
+        "camps",
+        `[Logos] DONE. candidates=${totalCandidates} overwritten_bad=${totalOverwritten} skipped_good=${totalSkippedGood} lookup_failed=${totalLookupFailed} errors=${totalErrors}`
+      );
+    } catch (e) {
+      appendLog("camps", `[Logos] ERROR: ${String(e?.message || e)}`);
+    } finally {
+      setLogoRefreshWorking(false);
+    }
+  }
+
   async function runSportsUSACampsIngest() {
     const runIso = new Date().toISOString();
     const runId = `run_${runIso.replace(/[:.]/g, "").slice(0, 15)}`;
@@ -1823,7 +2017,7 @@ function AdminImportInner() {
     appendLog("camps", `[Camps] Accepted events returned: ${accepted.length}`);
 
     // ✅ Persist school logos opportunistically from Ryzer registration pages
-    // Practical rule: only set logo_url when School has no usable logo yet (no overwrites).
+    // Practical rule: only set logo_url when School has no logo yet (no overwrites).
     if (!testSiteUrl) {
       if (campsDryRun) {
         // no writes
@@ -2027,6 +2221,7 @@ function AdminImportInner() {
     if (!CampEntity?.create || !CampEntity?.update) throw new Error("Camp entity not available (base44.entities.Camp missing).");
     const key = payload?.event_key ? String(payload.event_key) : null;
     if (!key) throw new Error("Missing event_key for Camp upsert");
+
 
     // Camp schema requires source_key; default to event_key for idempotent upserts
     if (!safeString(payload?.source_key)) payload.source_key = key;
@@ -2289,57 +2484,58 @@ function AdminImportInner() {
     };
   }
 
-  async function openFixPanelForSchoolId(schoolId, { sourceRowId = "" } = {}) {
-    const sid = safeString(schoolId);
-    if (!sid) {
-      appendLog("editor", `[Fix] Cannot open fix panel: missing school_id.`);
-      return;
-    }
-    if (!selectedSportId) {
-      appendLog("editor", `[Fix] Select a sport first.`);
-      return;
-    }
-    if (!SchoolSportSiteEntity) {
-      appendLog("editor", `[Fix] SchoolSportSite entity not available.`);
-      return;
-    }
-
-    setFixPanelOpen(true);
-    setFixSchoolId(String(sid));
-    setFixRowId(String(sourceRowId || ""));
-    setFixSiteRow(null);
-    setFixCampSiteUrl("");
-
-    try {
-      // Prefer active site record for this school+sport
-      let sites = [];
-      try {
-        sites = await entityList(SchoolSportSiteEntity, { school_id: String(sid), sport_id: selectedSportId });
-      } catch {
-        sites = [];
-      }
-      const activeFirst = asArray(sites).sort((a, b) => (readActiveFlag(b) ? 1 : 0) - (readActiveFlag(a) ? 1 : 0));
-      const hit = activeFirst[0] || null;
-
-      setFixSiteRow(hit);
-      setFixCampSiteUrl(safeString(hit?.camp_site_url) || "");
-
-      appendLog(
-        "editor",
-        `[Fix] Loaded SchoolSportSite for school_id=${sid} sport_id=${selectedSportId}: ${hit?.id ? `site_id=${hit.id}` : "NOT FOUND"}`
-      );
-      if (!hit?.id) {
-        appendLog(
-          "editor",
-          `[Fix] NOTE: No SchoolSportSite record found for this school+sport. Run Seed Schools first (or ensure SchoolSportSite exists).`
-        );
-      }
-    } catch (e) {
-      appendLog("editor", `[Fix] ERROR loading SchoolSportSite: ${String(e?.message || e)}`);
-    }
+  
+async function openFixPanelForSchoolId(schoolId, { sourceRowId = "" } = {}) {
+  const sid = safeString(schoolId);
+  if (!sid) {
+    appendLog("editor", `[Fix] Cannot open fix panel: missing school_id.`);
+    return;
+  }
+  if (!selectedSportId) {
+    appendLog("editor", `[Fix] Select a sport first.`);
+    return;
+  }
+  if (!SchoolSportSiteEntity) {
+    appendLog("editor", `[Fix] SchoolSportSite entity not available.`);
+    return;
   }
 
-  async function openFixPanelForRow(row) {
+  setFixPanelOpen(true);
+  setFixSchoolId(String(sid));
+  setFixRowId(String(sourceRowId || ""));
+  setFixSiteRow(null);
+  setFixCampSiteUrl("");
+
+  try {
+    // Prefer active site record for this school+sport
+    let sites = [];
+    try {
+      sites = await entityList(SchoolSportSiteEntity, { school_id: String(sid), sport_id: selectedSportId });
+    } catch {
+      sites = [];
+    }
+    const activeFirst = asArray(sites).sort((a, b) => (readActiveFlag(b) ? 1 : 0) - (readActiveFlag(a) ? 1 : 0));
+    const hit = activeFirst[0] || null;
+
+    setFixSiteRow(hit);
+    setFixCampSiteUrl(safeString(hit?.camp_site_url) || "");
+
+    appendLog(
+      "editor",
+      `[Fix] Loaded SchoolSportSite for school_id=${sid} sport_id=${selectedSportId}: ${hit?.id ? `site_id=${hit.id}` : "NOT FOUND"}`
+    );
+    if (!hit?.id) {
+      appendLog(
+        "editor",
+        `[Fix] NOTE: No SchoolSportSite record found for this school+sport. Run Seed Schools first (or ensure SchoolSportSite exists).`
+      );
+    }
+  } catch (e) {
+    appendLog("editor", `[Fix] ERROR loading SchoolSportSite: ${String(e?.message || e)}`);
+  }
+}
+
+async function openFixPanelForRow(row) {
     const sid = safeString(row?.school_id);
     return openFixPanelForSchoolId(sid, { sourceRowId: row?.id ? String(row.id) : "" });
   }
@@ -2673,7 +2869,7 @@ function AdminImportInner() {
                 }}
                 disabled={sportsLoading || sportsUSAWorking || campsWorking || promoteWorking || dedupWorking}
               >
-                <option value="">Select…</option>
+                <option value="">Select Sport</option>
                 {sports.map((sx) => (
                   <option key={sx.id} value={sx.id}>
                     {sx.name} {sx.active ? "" : "(Inactive)"}
@@ -3043,13 +3239,16 @@ function AdminImportInner() {
           </div>
 
           <div className="mt-3 flex gap-2 flex-wrap">
-            <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || campsWorking}>
+            <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || campsWorking || logoRefreshWorking}>
               {campsWorking ? "Running…" : "Run Ingest"}
             </Button>
-            <Button onClick={normalizeCampDatesToISO} disabled={!selectedSportId || campsWorking || normalizeDatesWorking}>
+            <Button onClick={runRyzerLogoRefreshBadOnly} disabled={!selectedSportId || campsWorking || logoRefreshWorking}>
+              {logoRefreshWorking ? "Refreshing Logos…" : "Refresh Bad Logos (Ryzer)"}
+            </Button>
+            <Button onClick={normalizeCampDatesToISO} disabled={!selectedSportId || campsWorking || normalizeDatesWorking || logoRefreshWorking}>
               {normalizeDatesWorking ? "Normalizing…" : "Normalize Dates (ISO)"}
             </Button>
-            <Button onClick={() => setLogCamps("")} disabled={campsWorking}>
+            <Button onClick={() => setLogCamps("")} disabled={campsWorking || logoRefreshWorking}>
               Clear Log
             </Button>
           </div>
@@ -3129,13 +3328,453 @@ function AdminImportInner() {
         </Card>
 
         {/* 8) Camp Editor */}
-        {/* (UNCHANGED from your pasted file below this point) */}
-        {/* NOTE: The rest of the file remains exactly as you provided. */}
-        {/* ---------------------------------------------------------------- */}
-        {/* Because your pasted file is extremely long, and you asked for full code updated,
-            everything above includes the only functional changes required to fix logo patching.
-            If you want the entire remainder reprinted verbatim in-chat too, say “print rest”
-            and I’ll output it. */}
+        <Card className="p-4">
+          <div className="font-semibold text-slate-900">8) Camp Editor (aligned to Quality Counters)</div>
+          <div className="text-sm text-slate-600 mt-1">
+            Filters match the naming in <b>3) Quality Counters (CampDemo)</b>. Registration links render as clickable URLs.
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Filter (aligned)</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+                value={editorFilter}
+                onChange={(e) => setEditorFilter(e.target.value)}
+                disabled={editorWorking}
+              >
+                <option value="bad_name">{QUALITY_VOCAB.bad_name}</option>
+                <option value="name_format">{QUALITY_VOCAB.name_format}</option>
+                <option value="missing_price">{QUALITY_VOCAB.missing_price}</option>
+                <option value="missing_event_key">Missing event_key</option>
+                <option value="no_camps">{QUALITY_VOCAB.no_camps}</option>
+
+                <option value="schools_bad_name">{QUALITY_VOCAB.schools_bad_name}</option>
+                <option value="schools_name_format">{QUALITY_VOCAB.schools_name_format}</option>
+                <option value="schools_missing_price">{QUALITY_VOCAB.schools_missing_price}</option>
+                <option value="schools_any_cleanup">{QUALITY_VOCAB.schools_any_cleanup}</option>
+
+                <option value="any_cleanup">{QUALITY_VOCAB.schools_any_cleanup} (row list)</option>
+                <option value="active_only">Active only</option>
+                <option value="inactive">Inactive only</option>
+                <option value="all">All (sport)</option>
+              </select>
+              <div className="text-[11px] text-slate-500 mt-1">Note: {QUALITY_VOCAB.no_camps} lists schools/sites (not CampDemo rows).</div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Search</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={editorSearch}
+                onChange={(e) => setEditorSearch(e.target.value)}
+                placeholder="camp name, school_id, event_key, url…"
+                disabled={editorWorking || editorFilter === "no_camps"}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Limit</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={editorLimit}
+                onChange={(e) => setEditorLimit(Number(e.target.value || 0))}
+                min={50}
+                max={5000}
+                disabled={editorWorking}
+              />
+            </div>
+
+            <div className="flex items-end gap-2 flex-wrap">
+              <Button onClick={loadCampRowsForEditor} disabled={!selectedSportId || editorWorking || campsWorking}>
+                {editorWorking ? "Loading…" : "Load"}
+              </Button>
+              <Button onClick={() => setAllLoadedActive(true)} disabled={!campRows.length || editorWorking || editorFilter === "no_camps"}>
+                Mark all Active
+              </Button>
+              <Button onClick={() => setAllLoadedActive(false)} disabled={!campRows.length || editorWorking || editorFilter === "no_camps"}>
+                Mark all Inactive
+              </Button>
+              <Button onClick={() => setLogEditor("")} disabled={editorWorking}>
+                Clear Log
+              </Button>
+            </div>
+          </div>
+
+          
+{/* Missing event_key helper (school-level route) */}
+{editorFilter === "missing_event_key" && campRows.length ? (
+  <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+    <div className="font-semibold text-slate-900 text-sm">Missing event_key: School-level fixes</div>
+    <div className="text-xs text-slate-600 mt-1">
+      If event keys are missing because the school camp page is wrong, fix the SchoolSportSite <b>camp_site_url</b> and re-ingest that school.
+    </div>
+    <div className="mt-2 flex flex-wrap gap-2">
+      {Array.from(new Set(campRows.map((r) => safeString(r?.school_id)).filter(Boolean))).slice(0, 25).map((sid) => (
+        <Button key={sid} className="text-xs" onClick={() => openFixPanelForSchoolId(sid)} disabled={fixWorking}>
+          Fix camp_site_url for {String(sid).slice(0, 8)}…
+        </Button>
+      ))}
+    </div>
+    <div className="text-[11px] text-slate-500 mt-2">
+      Showing up to 25 schools. Use Search to narrow the list.
+    </div>
+  </div>
+) : null}
+
+{/* No Camps Remaining view */}
+          {editorFilter === "no_camps" ? (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr className="text-left">
+                    <th className="p-2 border-b border-slate-200">School</th>
+                    <th className="p-2 border-b border-slate-200">school_id</th>
+                    <th className="p-2 border-b border-slate-200">site_id</th>
+                    <th className="p-2 border-b border-slate-200">camp_site_url</th>
+                    <th className="p-2 border-b border-slate-200">crawl_status</th>
+                    <th className="p-2 border-b border-slate-200">next_crawl_at</th>
+                    <th className="p-2 border-b border-slate-200 w-44">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {noCampSites.length ? (
+                    noCampSites.map((s) => (
+                      <tr key={String(s.id)} className="border-b border-slate-100">
+                        <td className="p-2">{schoolLabel(s.school_id) || "—"}</td>
+                        <td className="p-2">{String(s.school_id || "")}</td>
+                        <td className="p-2">{String(s.id || "")}</td>
+                        <td className="p-2">
+                          <a className="text-blue-600 underline" href={s.camp_site_url || "#"} target="_blank" rel="noreferrer">
+                            {truncate(String(s.camp_site_url || ""), 80)}
+                          </a>
+                        </td>
+                        <td className="p-2">{String(s.crawl_status || "")}</td>
+                        <td className="p-2">{String(s.next_crawl_at || "")}</td>
+                        <td className="p-2">
+                          <Button className="text-sm" onClick={() => openFixPanelForSchoolId(s.school_id, { sourceRowId: s.id })} disabled={fixWorking}>
+                            Fix camp_site_url
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={7} className="p-3 text-slate-500">
+                        {selectedSportId ? (editorWorking ? "Loading…" : "No schools currently in No Camps Remaining. Click Load.") : "Select a sport first."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr className="text-left">
+                    <th className="p-2 border-b border-slate-200">Camp Name</th>
+                    <th className="p-2 border-b border-slate-200">Event Key</th>
+                    <th className="p-2 border-b border-slate-200 w-24">Active</th>
+                    <th className="p-2 border-b border-slate-200 w-28">Price</th>
+                    <th className="p-2 border-b border-slate-200 w-28">Min</th>
+                    <th className="p-2 border-b border-slate-200 w-28">Max</th>
+                    <th className="p-2 border-b border-slate-200 w-28">City</th>
+                    <th className="p-2 border-b border-slate-200 w-20">State</th>
+                    <th className="p-2 border-b border-slate-200 w-[360px]">Registration Link</th>
+                    <th className="p-2 border-b border-slate-200 w-44">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {campRows.length ? (
+                    campRows.map((r) => {
+                      const id = String(r.id);
+                      const edit = campEdit?.[id] || buildEditRowDefaults(r);
+                      const link = safeString(edit.link_url);
+
+                      return (
+                        <tr key={id} className="border-b border-slate-100">
+                          <td className="p-2 min-w-[320px]">
+                            <div className="text-[11px] text-slate-500 mb-1">
+                              school={schoolLabel(r.school_id) || "—"} • school_id={String(r.school_id || "")} • event_key={truncate(String(r.event_key || ""), 52)}
+                            </div>
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.camp_name ?? ""}
+                              onChange={(e) =>
+                                setCampEdit((prev) => ({
+                                  ...prev,
+                                  [id]: { ...(prev[id] || edit), camp_name: e.target.value },
+                                }))
+                              }
+                            />
+                          </td>
+
+                          {/* Event Key: full + copy */}
+                          <td className="p-2 min-w-[220px]">
+                            {safeString(r?.event_key) ? (
+                              <div className="flex items-center gap-2">
+                                <div className="text-xs text-slate-700 break-all">{String(r.event_key)}</div>
+                                <Button
+                                  className="text-xs"
+                                  onClick={async () => {
+                                    try {
+                                      await navigator.clipboard.writeText(String(r.event_key));
+                                      appendLog("editor", `[Editor] Copied event_key for ${id}`);
+                                    } catch {
+                                      appendLog("editor", `[Editor] Copy failed (browser blocked).`);
+                                    }
+                                  }}
+                                >
+                                  Copy
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-amber-700">
+                                Missing event_key <span className="text-[11px] text-slate-500">(not dedup/upsert-safe)</span>
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="p-2">
+                            <label className="flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={!!edit.active}
+                                onChange={(e) =>
+                                  setCampEdit((prev) => ({
+                                    ...prev,
+                                    [id]: { ...(prev[id] || edit), active: e.target.checked },
+                                  }))
+                                }
+                              />
+                              {edit.active ? "Yes" : "No"}
+                            </label>
+                            <div className="text-[11px] text-slate-500 mt-1">{edit.active ? "Shown" : "Hidden"}</div>
+                          </td>
+
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.price ?? ""}
+                              onChange={(e) =>
+                                setCampEdit((prev) => ({ ...prev, [id]: { ...(prev[id] || edit), price: e.target.value } }))
+                              }
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.price_min ?? ""}
+                              onChange={(e) =>
+                                setCampEdit((prev) => ({
+                                  ...prev,
+                                  [id]: { ...(prev[id] || edit), price_min: e.target.value },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.price_max ?? ""}
+                              onChange={(e) =>
+                                setCampEdit((prev) => ({
+                                  ...prev,
+                                  [id]: { ...(prev[id] || edit), price_max: e.target.value },
+                                }))
+                              }
+                            />
+                          </td>
+
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.city ?? ""}
+                              onChange={(e) =>
+                                setCampEdit((prev) => ({ ...prev, [id]: { ...(prev[id] || edit), city: e.target.value } }))
+                              }
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                              value={edit.state ?? ""}
+                              onChange={(e) =>
+                                setCampEdit((prev) => ({ ...prev, [id]: { ...(prev[id] || edit), state: e.target.value } }))
+                              }
+                            />
+                          </td>
+
+                          {/* Registration Link: input + clickable link */}
+                          <td className="p-2">
+                            <div className="flex flex-col gap-1">
+                              <input
+                                className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                                value={edit.link_url ?? ""}
+                                onChange={(e) =>
+                                  setCampEdit((prev) => ({
+                                    ...prev,
+                                    [id]: { ...(prev[id] || edit), link_url: e.target.value },
+                                  }))
+                                }
+                              />
+                              {link ? (
+                                <a className="text-xs text-blue-600 underline break-all" href={link} target="_blank" rel="noreferrer">
+                                  {link}
+                                </a>
+                              ) : (
+                                <span className="text-xs text-slate-400">—</span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="p-2">
+                            <div className="flex gap-2 flex-wrap">
+                              <Button className="text-sm" onClick={() => saveCampRow(id)} disabled={campSavingId === id || editorWorking}>
+                                {campSavingId === id ? "Saving…" : "Save"}
+                              </Button>
+                              <Button className="text-sm" onClick={() => openFixPanelForRow(r)} disabled={fixWorking}>
+                                Fix camp_site_url
+                              </Button>
+                              <Button
+                                className="text-sm"
+                                onClick={async () => {
+                                  const nextActive = !readCampActiveFlag(r);
+                                  setCampEdit((prev) => ({ ...prev, [id]: { ...(prev[id] || edit), active: nextActive } }));
+                                  await saveCampRow(id);
+                                }}
+                                disabled={campSavingId === id || editorWorking}
+                              >
+                                Toggle Active
+                              </Button>
+                              <Button
+                                className="text-sm"
+                                onClick={async () => {
+                                  const ok = await tryDelete(CampDemoEntity, id);
+                                  appendLog("editor", ok ? `[Editor] Deleted ${id}` : `[Editor] Delete FAILED ${id}`);
+                                  if (ok) {
+                                    await loadCampRowsForEditor();
+                                    await refreshQualityCounters();
+                                  }
+                                }}
+                                disabled={editorWorking}
+                              >
+                                Delete
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={10} className="p-3 text-slate-500">
+                        {selectedSportId ? (editorWorking ? "Loading…" : "No rows loaded. Click Load.") : "Select a sport first."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Fix SchoolSportSite.camp_site_url → cleanup → re-ingest (from Camp Editor rows) */}
+          {fixPanelOpen && editorFilter !== "no_camps" ? (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div className="font-semibold text-slate-900">Fix School Camp Page (SchoolSportSite)</div>
+                  <div className="text-xs text-slate-600 mt-1">
+                    This updates <b>camp_site_url</b> for the school+sport, deletes that school’s CampDemo rows, then re-ingests from the corrected page.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    className="text-sm"
+                    onClick={() => {
+                      setFixPanelOpen(false);
+                      setFixSiteRow(null);
+                      setFixCampSiteUrl("");
+                      setFixSchoolId("");
+                      setFixRowId("");
+                    }}
+                    disabled={fixWorking}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-slate-700">school_id</div>
+                  <div className="text-sm text-slate-800">{fixSchoolId ? `${schoolLabel(fixSchoolId) || "—"} (${fixSchoolId})` : "—"}</div>
+                  <div className="text-xs text-slate-500 mt-1">row_id={fixRowId || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-slate-700">SchoolSportSite id</div>
+                  <div className="text-sm text-slate-800">{fixSiteRow?.id ? String(fixSiteRow.id) : "—"}</div>
+                  <div className="text-xs text-slate-500 mt-1">sport_id={selectedSportId || "—"}</div>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">camp_site_url (school camp page)</label>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    value={fixCampSiteUrl}
+                    onChange={(e) => setFixCampSiteUrl(e.target.value)}
+                    placeholder="https://..."
+                    disabled={fixWorking}
+                  />
+                  {safeString(fixCampSiteUrl) ? (
+                    <a className="text-xs text-blue-600 underline break-all" href={fixCampSiteUrl} target="_blank" rel="noreferrer">
+                      Open camp_site_url
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={!!fixDryRun} onChange={(e) => setFixDryRun(e.target.checked)} disabled={fixWorking} />
+                  Dry Run (preview only)
+                </label>
+
+                <Button onClick={saveFixCampSiteUrlOnly} disabled={fixWorking || !fixSiteRow?.id || !safeString(fixCampSiteUrl)}>
+                  Save camp_site_url
+                </Button>
+                <Button onClick={() => cleanupCampDemoForFixSchool({ dryRun: true })} disabled={fixWorking || !fixSchoolId}>
+                  Preview Cleanup
+                </Button>
+                <Button
+                  className="border-slate-900"
+                  onClick={fixSchoolSiteThenCleanThenReingest}
+                  disabled={fixWorking || !fixSchoolId || !safeString(fixCampSiteUrl)}
+                >
+                  {fixWorking ? "Working…" : "Fix + Clean + Re-ingest"}
+                </Button>
+              </div>
+
+              <div className="mt-2 text-xs text-slate-500">
+                Tip: Start with Dry Run. When preview looks right, uncheck Dry Run and run the full fix.
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mt-3">
+            <div className="text-xs text-slate-500 mb-1">Editor Log</div>
+            <pre className="text-xs bg-white border border-slate-200 rounded-lg p-3 overflow-auto max-h-56">
+              {logEditor || "—"}
+            </pre>
+          </div>
+        </Card>
+
+        <div className="text-center">
+          <div className="text-xs text-slate-500">
+            Reminder: to hide inactive camps in the app, your list queries must filter for <b>active === true</b>.
+          </div>
+        </div>
       </div>
     </div>
   );
