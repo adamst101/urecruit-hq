@@ -4,12 +4,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { SlidersHorizontal } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
-import {
-  Camp as CampEntityPicked,
-  Event as EventEntityPicked,
-  School as SchoolEntityPicked,
-  Sport as SportEntityPicked,
-} from "../api/entities";
 
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -126,8 +120,30 @@ function readActiveFlag(row) {
 
 function trackEvent(payload) {
   try {
-    const EventEntity = EventEntityPicked || base44?.entities?.Event || base44?.entities?.Events;
-    EventEntity?.create?.({ ...payload, ts: new Date().toISOString() });
+    const EventEntity = base44?.entities?.Event || base44?.entities?.Events;
+    if (!EventEntity?.create) return;
+
+    const now = new Date();
+    const iso = now.toISOString();
+    const day = iso.slice(0, 10);
+
+    const eventName =
+      payload?.event_name || payload?.event_type || payload?.title || payload?.name || "event";
+    const sourcePlatform = payload?.source_platform || payload?.source || "web";
+    const title = payload?.title || String(eventName);
+    const sourceKey =
+      payload?.source_key || payload?.sourceKey || `${String(sourcePlatform)}:${String(eventName)}`;
+    const startDate = payload?.start_date || day;
+
+    EventEntity.create({
+      source_platform: String(sourcePlatform),
+      event_type: String(eventName),
+      title: String(title),
+      source_key: String(sourceKey),
+      start_date: String(startDate),
+      payload_json: JSON.stringify(payload || {}),
+      ts: iso,
+    });
   } catch {}
 }
 
@@ -162,56 +178,6 @@ async function fetchByIds(entity, ids) {
   }
 }
 
-async function fetchCampsForSeason(CampEntity, seasonYear) {
-  if (!CampEntity?.filter) return [];
-
-  const yNum = safeNumber(seasonYear);
-  const yStr = yNum != null ? String(yNum) : seasonYear != null ? String(seasonYear) : "";
-
-  // Prefer server-side filtering so we don't rely on implicit pagination of filter({}).
-  const tries = [
-    // common equality
-    { season_year: yNum },
-    { season_year: yStr },
-    // schema variants
-    { seasonYear: yNum },
-    { seasonYear: yStr },
-    // IN variants
-    { season_year: { in: [yNum, yStr].filter((v) => v != null && String(v) !== "") } },
-    { season_year: { $in: [yNum, yStr].filter((v) => v != null && String(v) !== "") } },
-  ];
-
-  for (const q of tries) {
-    try {
-      const rows = asArray(await CampEntity.filter(q));
-      if (rows.length) return rows;
-    } catch {
-      // keep trying
-    }
-  }
-
-  // Last-resort: attempt a date-range query (if backend supports gte/lt).
-  if (yNum != null) {
-    const start = `${yNum}-01-01`;
-    const end = `${yNum + 1}-01-01`;
-    const dateTries = [
-      { start_date: { gte: start, lt: end } },
-      { start_date: { $gte: start, $lt: end } },
-      { start_date: { ">=": start, "<": end } },
-    ];
-    for (const q of dateTries) {
-      try {
-        const rows = asArray(await CampEntity.filter(q));
-        if (rows.length) return rows;
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  return [];
-}
-
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
@@ -227,6 +193,14 @@ export default function Discover() {
 
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const requestedSeason = url.requestedSeason;
+  const debugMode = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(loc.search || "");
+      return sp.get("debug") === "1";
+    } catch {
+      return false;
+    }
+  }, [loc.search]);
 
   const currentPath = useMemo(
     () => (loc?.pathname || "") + (loc?.search || ""),
@@ -366,29 +340,45 @@ export default function Discover() {
       setRawCamps([]);
 
       try {
-        const CampEntity = CampEntityPicked || base44?.entities?.Camp || base44?.entities?.Camps;
+        const CampEntity = base44?.entities?.Camp || base44?.entities?.Camps;
         if (!CampEntity?.filter) throw new Error("Camp entity not available.");
 
-        // ✅ Primary: server-side season filter (avoids pagination surprises)
-        const bySeason = await fetchCampsForSeason(CampEntity, seasonYear);
-        if (bySeason.length > 0) {
-          if (!cancelled) setRawCamps(bySeason);
+        let byYear = [];
+        let allRows = [];
+
+        try {
+          byYear = asArray(await CampEntity.filter({ season_year: seasonYear }));
+        } catch {
+          byYear = [];
+        }
+
+        // If season_year is stored as a string in Base44, try again.
+        if (byYear.length === 0) {
+          try {
+            byYear = asArray(await CampEntity.filter({ season_year: String(seasonYear) }));
+          } catch {
+            // ignore
+          }
+        }
+
+        if (byYear.length > 0) {
+          if (!cancelled) setRawCamps(byYear);
           return;
         }
 
-        // Fallback: client-side filtering if we can fetch a full list.
-        // Note: some backends paginate filter({}) silently; this path is best-effort.
-        const allRows = asArray(await CampEntity.filter({}));
+        allRows = asArray(await CampEntity.filter({}));
 
         const filtered = allRows.filter((r) => {
           const sy = safeNumber(r?.season_year ?? r?.seasonYear);
           if (sy != null) return sy === seasonYear;
+          if (String(r?.season_year ?? r?.seasonYear || "") === String(seasonYear)) return true;
 
           const derived = computeSeasonYearFootballFromStart(r?.start_date);
           return derived === seasonYear;
         });
 
-        if (!cancelled) setRawCamps(filtered);
+        // If we have camps but none match the season derivation, show all (better than blank).
+        if (!cancelled) setRawCamps(filtered.length > 0 ? filtered : allRows);
       } catch (e) {
         const msg = String(e?.message || e);
         if (!cancelled) {
@@ -421,9 +411,7 @@ export default function Discover() {
         .filter(Boolean);
 
       try {
-        const SchoolEntity =
-          SchoolEntityPicked || base44?.entities?.School || base44?.entities?.Schools;
-        const rows = await fetchByIds(SchoolEntity, ids);
+        const rows = await fetchByIds(base44?.entities?.School, ids);
         const map = {};
         for (const s of asArray(rows)) {
           const id = String(normId(s?.id ?? s?._id) || "");
@@ -436,8 +424,7 @@ export default function Discover() {
       }
 
       try {
-        const SportEntity = SportEntityPicked || base44?.entities?.Sport || base44?.entities?.Sports;
-        const rows = await fetchByIds(SportEntity, sportIds);
+        const rows = await fetchByIds(base44?.entities?.Sport, sportIds);
         const map = {};
         for (const sp of asArray(rows)) {
           const id = String(normId(sp?.id ?? sp?._id) || "");
@@ -478,6 +465,43 @@ export default function Discover() {
         return true;
       });
   }, [rawCamps, nf, isPaid, athleteSportId]);
+
+  const debugStats = useMemo(() => {
+    if (!debugMode) return null;
+    return {
+      mode: effectiveMode,
+      seasonYear,
+      requestedSeason: requestedSeason || null,
+      entitledSeason,
+      hasAccess: !!season?.hasAccess,
+      accountId: season?.accountId ? "yes" : "no",
+      athleteId: athleteId ? "yes" : "no",
+      athleteSportId: athleteSportId || null,
+      nfSports: Array.isArray(nf?.sports) ? nf.sports : [],
+      nfState: nf?.state || null,
+      nfDivisions: Array.isArray(nf?.divisions) ? nf.divisions : [],
+      nfPositions: Array.isArray(nf?.positions) ? nf.positions : [],
+      nfStart: nf?.startDate || null,
+      nfEnd: nf?.endDate || null,
+      rawCamps: Array.isArray(rawCamps) ? rawCamps.length : 0,
+      rows: Array.isArray(rows) ? rows.length : 0,
+      campErr: campErr || null,
+    };
+  }, [
+    debugMode,
+    effectiveMode,
+    seasonYear,
+    requestedSeason,
+    entitledSeason,
+    season?.hasAccess,
+    season?.accountId,
+    athleteId,
+    athleteSportId,
+    nf,
+    rawCamps,
+    rows,
+    campErr,
+  ]);
 
   const loading = season?.isLoading || identityLoading || loadingCamps;
 
@@ -664,6 +688,15 @@ export default function Discover() {
             {paidMissingSport ? "Complete Profile" : "Filter"}
           </Button>
         </div>
+
+        {debugMode && debugStats && (
+          <Card className="mt-4 p-4 border-slate-200 bg-white">
+            <div className="text-sm font-semibold text-slate-800">Discover debug</div>
+            <pre className="mt-2 text-xs text-slate-700 overflow-auto whitespace-pre-wrap">
+{JSON.stringify(debugStats, null, 2)}
+            </pre>
+          </Card>
+        )}
 
         {renderBody()}
 
