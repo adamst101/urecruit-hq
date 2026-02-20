@@ -4,6 +4,12 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { SlidersHorizontal } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
+import {
+  Camp as CampEntityPicked,
+  Event as EventEntityPicked,
+  School as SchoolEntityPicked,
+  Sport as SportEntityPicked,
+} from "../api/entities";
 
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -120,7 +126,8 @@ function readActiveFlag(row) {
 
 function trackEvent(payload) {
   try {
-    base44?.entities?.Event?.create?.({ ...payload, ts: new Date().toISOString() });
+    const EventEntity = EventEntityPicked || base44?.entities?.Event || base44?.entities?.Events;
+    EventEntity?.create?.({ ...payload, ts: new Date().toISOString() });
   } catch {}
 }
 
@@ -153,6 +160,56 @@ async function fetchByIds(entity, ids) {
   } catch {
     return [];
   }
+}
+
+async function fetchCampsForSeason(CampEntity, seasonYear) {
+  if (!CampEntity?.filter) return [];
+
+  const yNum = safeNumber(seasonYear);
+  const yStr = yNum != null ? String(yNum) : seasonYear != null ? String(seasonYear) : "";
+
+  // Prefer server-side filtering so we don't rely on implicit pagination of filter({}).
+  const tries = [
+    // common equality
+    { season_year: yNum },
+    { season_year: yStr },
+    // schema variants
+    { seasonYear: yNum },
+    { seasonYear: yStr },
+    // IN variants
+    { season_year: { in: [yNum, yStr].filter((v) => v != null && String(v) !== "") } },
+    { season_year: { $in: [yNum, yStr].filter((v) => v != null && String(v) !== "") } },
+  ];
+
+  for (const q of tries) {
+    try {
+      const rows = asArray(await CampEntity.filter(q));
+      if (rows.length) return rows;
+    } catch {
+      // keep trying
+    }
+  }
+
+  // Last-resort: attempt a date-range query (if backend supports gte/lt).
+  if (yNum != null) {
+    const start = `${yNum}-01-01`;
+    const end = `${yNum + 1}-01-01`;
+    const dateTries = [
+      { start_date: { gte: start, lt: end } },
+      { start_date: { $gte: start, $lt: end } },
+      { start_date: { ">=": start, "<": end } },
+    ];
+    for (const q of dateTries) {
+      try {
+        const rows = asArray(await CampEntity.filter(q));
+        if (rows.length) return rows;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return [];
 }
 
 export default function Discover() {
@@ -309,27 +366,22 @@ export default function Discover() {
       setRawCamps([]);
 
       try {
-        const CampEntity = base44?.entities?.Camp;
+        const CampEntity = CampEntityPicked || base44?.entities?.Camp || base44?.entities?.Camps;
         if (!CampEntity?.filter) throw new Error("Camp entity not available.");
 
-        let byYear = [];
-        let allRows = [];
-
-        try {
-          byYear = asArray(await CampEntity.filter({ season_year: seasonYear }));
-        } catch {
-          byYear = [];
-        }
-
-        if (byYear.length > 0) {
-          if (!cancelled) setRawCamps(byYear);
+        // ✅ Primary: server-side season filter (avoids pagination surprises)
+        const bySeason = await fetchCampsForSeason(CampEntity, seasonYear);
+        if (bySeason.length > 0) {
+          if (!cancelled) setRawCamps(bySeason);
           return;
         }
 
-        allRows = asArray(await CampEntity.filter({}));
+        // Fallback: client-side filtering if we can fetch a full list.
+        // Note: some backends paginate filter({}) silently; this path is best-effort.
+        const allRows = asArray(await CampEntity.filter({}));
 
         const filtered = allRows.filter((r) => {
-          const sy = safeNumber(r?.season_year);
+          const sy = safeNumber(r?.season_year ?? r?.seasonYear);
           if (sy != null) return sy === seasonYear;
 
           const derived = computeSeasonYearFootballFromStart(r?.start_date);
@@ -369,7 +421,9 @@ export default function Discover() {
         .filter(Boolean);
 
       try {
-        const rows = await fetchByIds(base44?.entities?.School, ids);
+        const SchoolEntity =
+          SchoolEntityPicked || base44?.entities?.School || base44?.entities?.Schools;
+        const rows = await fetchByIds(SchoolEntity, ids);
         const map = {};
         for (const s of asArray(rows)) {
           const id = String(normId(s?.id ?? s?._id) || "");
@@ -382,7 +436,8 @@ export default function Discover() {
       }
 
       try {
-        const rows = await fetchByIds(base44?.entities?.Sport, sportIds);
+        const SportEntity = SportEntityPicked || base44?.entities?.Sport || base44?.entities?.Sports;
+        const rows = await fetchByIds(SportEntity, sportIds);
         const map = {};
         for (const sp of asArray(rows)) {
           const id = String(normId(sp?.id ?? sp?._id) || "");
