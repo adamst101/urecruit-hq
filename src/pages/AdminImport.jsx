@@ -1087,6 +1087,7 @@ function AdminImportInner() {
       const e = a.event;
       return {
         school_id: safeString(e.school_id),
+        school_logo_url: safeString(e.school_logo_url),
         sport_id: safeString(e.sport_id),
         camp_name: safeString(e.camp_name),
         start_date: safeString(e.start_date),
@@ -1118,6 +1119,7 @@ function AdminImportInner() {
 
     return {
       school_id: safeString(a.school_id),
+      school_logo_url: safeString(a.school_logo_url),
       sport_id: safeString(a.sport_id),
       camp_name: safeString(a.camp_name),
       start_date: safeString(a.start_date),
@@ -1145,6 +1147,32 @@ function AdminImportInner() {
       registration_url: safeString(a.registration_url),
       active: typeof a.active === "boolean" ? a.active : undefined,
     };
+  }
+
+  async function patchSchoolLogoIfMissing(schoolId, logoUrl) {
+    const sid = safeString(schoolId);
+    const lu = safeString(logoUrl);
+    if (!sid || !lu) return { updated: false, reason: "missing_input" };
+    if (!SchoolEntity?.update) return { updated: false, reason: "missing_school_entity" };
+
+    // Only set if missing (do not overwrite intentional logos)
+    let existing = [];
+    try {
+      existing = await entityList(SchoolEntity, { id: sid });
+    } catch {
+      existing = [];
+    }
+
+    const current = existing && existing[0] ? existing[0] : null;
+    const currentLogo = safeString(current && (current.logo_url || current.school_logo_url || current.logo || current.image_url));
+    if (currentLogo) return { updated: false, reason: "already_has_logo" };
+
+    await SchoolEntity.update(String(sid), {
+      logo_url: lu,
+      last_seen_at: new Date().toISOString(),
+    });
+
+    return { updated: true, reason: "patched" };
   }
 
   async function updateCrawlStateForSites(siteIds, patch) {
@@ -1614,6 +1642,47 @@ function AdminImportInner() {
     const acceptedRaw = asArray(data?.accepted || []);
     const accepted = acceptedRaw.map((x) => normalizeAcceptedRowToFlat(x));
     appendLog("camps", `[Camps] Accepted events returned: ${accepted.length}`);
+
+    // ✅ Persist school logos opportunistically from Ryzer registration pages
+    // Practical rule: only set logo_url when School has no logo yet (no overwrites).
+    if (!testSiteUrl) {
+      if (campsDryRun) {
+        // no writes
+      } else if (accepted.length && SchoolEntity?.update) {
+        const bySchool = new Map();
+        for (let i = 0; i < accepted.length; i++) {
+          const a = accepted[i] || {};
+          const sid = safeString(a.school_id);
+          const lu = safeString(a.school_logo_url);
+          if (!sid || !lu) continue;
+          if (!bySchool.has(sid)) bySchool.set(sid, lu);
+        }
+
+        const schoolIds = Array.from(bySchool.keys());
+        if (schoolIds.length) {
+          let patched = 0;
+          let skipped = 0;
+          let errors = 0;
+
+          appendLog("camps", `[Camps] Logo capture: candidate schools=${schoolIds.length} (patch only if missing)`);
+
+          for (let j = 0; j < schoolIds.length; j++) {
+            const sid = schoolIds[j];
+            const lu = bySchool.get(sid);
+            try {
+              const r = await writeWithRetry(() => patchSchoolLogoIfMissing(sid, lu), { maxRetries: 5 });
+              if (r && r.updated) patched += 1;
+              else skipped += 1;
+            } catch {
+              errors += 1;
+            }
+            if ((j + 1) % 50 === 0) await sleep(10);
+          }
+
+          appendLog("camps", `[Camps] Logo capture: patched=${patched} skipped=${skipped} errors=${errors}`);
+        }
+      }
+    }
 
     // Update crawl-state for batch sites (only in non-dry-run, non-test)
     if (!testSiteUrl) {
