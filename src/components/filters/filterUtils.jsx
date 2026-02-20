@@ -172,7 +172,18 @@ export function matchesDivision(camp, divisions) {
 
 export function matchesSport(camp, sports) {
   if (!Array.isArray(sports) || sports.length === 0) return true;
-  const campSport = String(camp?.sport_id || "");
+
+  // Be resilient to different Camp schemas:
+  // - sport_id may be a string/number id
+  // - sportId may be used instead
+  // - sport_id may be an object (relationship) with {id} / {_id}
+  const raw = camp?.sport_id ?? camp?.sportId ?? camp?.sport;
+  const campSport =
+    raw && typeof raw === "object"
+      ? String(raw?.id ?? raw?._id ?? raw?.uuid ?? "")
+      : String(raw ?? "");
+
+  if (!campSport) return false;
   return sports.some((s) => String(s) === campSport);
 }
 
