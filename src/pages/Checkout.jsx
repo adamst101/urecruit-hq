@@ -13,9 +13,28 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 
 function trackEvent(payload) {
   try {
-    base44.entities.Event.create({
-      ...payload,
-      ts: new Date().toISOString(),
+    const EventEntity = base44?.entities?.Event || base44?.entities?.Events;
+    if (!EventEntity?.create) return;
+
+    const now = new Date();
+    const iso = now.toISOString();
+    const day = iso.slice(0, 10);
+    const eventName =
+      payload?.event_name || payload?.event_type || payload?.title || payload?.name || "event";
+    const sourcePlatform = payload?.source_platform || payload?.source || "web";
+    const title = payload?.title || String(eventName);
+    const sourceKey =
+      payload?.source_key || payload?.sourceKey || `${String(sourcePlatform)}:${String(eventName)}`;
+    const startDate = payload?.start_date || day;
+
+    EventEntity.create({
+      source_platform: String(sourcePlatform),
+      event_type: String(eventName),
+      title: String(title),
+      source_key: String(sourceKey),
+      start_date: String(startDate),
+      payload_json: JSON.stringify(payload || {}),
+      ts: iso,
     });
   } catch {}
 }
