@@ -7,7 +7,7 @@
 // ✅ Price parse now prefers the main option price (max package price) instead of min fees.
 
 const VERSION =
-  "sportsUSAIngestCamps_2026-02-06_v19_add_location_city_state_and_fix_price_choice";
+  "sportsUSAIngestCamps_2026-02-20_v20_add_ryzer_logo_capture";
 
 function safeString(x) {
   if (x === null || x === undefined) return null;
@@ -166,6 +166,92 @@ function extractCampLinksFromHtml(html, baseUrl) {
   if (withId.length) return withId;
 
   return out;
+}
+
+/* -------------------------
+   ✅ Logo extraction (Ryzer registration page)
+   Goal: return a stable logo URL for the school/program *only for schools with camps*.
+   We prefer social meta tags (og:image / twitter:image), then fall back to header/logo-like <img>.
+-------------------------- */
+function extractMetaContent(html, attrName, attrValue) {
+  if (!html) return null;
+  const re = new RegExp(
+    `<meta[^>]+${attrName}\\s*=\\s*("|')${attrValue}\\1[^>]*>`,
+    "i"
+  );
+  const m = re.exec(String(html));
+  if (!m) return null;
+  const tag = m[0] || "";
+  const c = /content\\s*=\\s*("|')([^"']+)("|')/i.exec(tag);
+  return c && c[2] ? String(c[2]).trim() : null;
+}
+
+function looksLikeImageUrl(u) {
+  const s = lc(u || "");
+  if (!s) return false;
+  if (s.includes("favicon") || s.endsWith(".ico")) return false;
+  if (s.includes("apple-touch-icon")) return false;
+  if (
+    s.includes(".png") ||
+    s.includes(".jpg") ||
+    s.includes(".jpeg") ||
+    s.includes(".webp") ||
+    s.includes(".gif") ||
+    s.includes(".svg")
+  )
+    return true;
+  // Allow signed/extensionless image URLs from common CDNs
+  if (
+    s.includes("image") &&
+    (s.includes("cdn") ||
+      s.includes("cloudfront") ||
+      s.includes("storage") ||
+      s.includes("object"))
+  )
+    return true;
+  return false;
+}
+
+function extractLogoUrlFromRyzerRegistrationHtml(html, baseUrl) {
+  if (!html) return null;
+  const h = String(html);
+
+  // 1) Best signal: og:image / twitter:image
+  const og =
+    extractMetaContent(h, "property", "og:image") ||
+    extractMetaContent(h, "name", "og:image");
+  const tw =
+    extractMetaContent(h, "name", "twitter:image") ||
+    extractMetaContent(h, "property", "twitter:image");
+
+  const bestMeta = safeString(og || tw);
+  if (bestMeta) {
+    const u = absUrl(baseUrl, bestMeta);
+    if (u && looksLikeImageUrl(u)) return u;
+  }
+
+  // 2) Header/logo-like <img>
+  const reImg = /<img[^>]+>/gi;
+  let m;
+  while ((m = reImg.exec(h)) !== null) {
+    const tag = m[0] || "";
+    const t = lc(tag);
+    if (!(t.includes("logo") || t.includes("brand") || t.includes("header")))
+      continue;
+
+    const srcM = /\ssrc\s*=\s*("|')([^"']+)("|')/i.exec(tag);
+    if (!srcM || !srcM[2]) continue;
+    const u2 = absUrl(baseUrl, srcM[2]);
+    if (u2 && looksLikeImageUrl(u2)) return u2;
+  }
+
+  // 3) Fallback: first reasonable image on the page
+  const reAnyImg =
+    /(https?:\/\/[^"' <]+\.(?:png|jpg|jpeg|webp|gif|svg)(?:\?[^"' <]*)?)/gi;
+  const any = reAnyImg.exec(h);
+  if (any && any[1]) return any[1];
+
+  return null;
 }
 
 /* -------------------------
@@ -391,7 +477,13 @@ function parseSingleOrRangeDate(line, defaultYear) {
     };
   }
 
-  return { start: null, end: null, rawLine: t, pattern: null, inferredYear: false };
+  return {
+    start: null,
+    end: null,
+    rawLine: t,
+    pattern: null,
+    inferredYear: false,
+  };
 }
 
 function scoreParsedDate(parsed) {
@@ -490,14 +582,16 @@ function sanitizeCampName(titleOrH1) {
 }
 
 /* -------------------------
-   ✅ Location parsing (new)
+   ✅ Location parsing
 -------------------------- */
 function parseCityStateFromLocationLine(locLine) {
   const s = safeString(locLine);
   if (!s) return { city: null, state: null, raw: null };
 
   // If pipe exists, take the right-most segment (Facility | City, ST)
-  const seg = s.includes("|") ? s.split("|")[s.split("|").length - 1].trim() : s.trim();
+  const seg = s.includes("|")
+    ? s.split("|")[s.split("|").length - 1].trim()
+    : s.trim();
 
   // Find "City, ST" (ignore zip)
   const m = /([A-Za-z .'-]{2,}),\s*([A-Z]{2})\b/.exec(seg);
@@ -514,7 +608,10 @@ function extractCityStateFromRyzerHeader(html) {
   const text = htmlToText(html);
 
   // Typical header format becomes: "Location Searcy, AR Event Date(s) ..."
-  const m = /Location\s+(.{0,140}?)(?:Event Date\(s\)|Event Date|Grades|Register By|Select a price|We Accept|$)/i.exec(text);
+  const m =
+    /Location\s+(.{0,140}?)(?:Event Date\(s\)|Event Date|Grades|Register By|Select a price|We Accept|$)/i.exec(
+      text
+    );
   const loc = m && m[1] ? m[1].trim() : null;
 
   const parsed = parseCityStateFromLocationLine(loc);
@@ -522,17 +619,19 @@ function extractCityStateFromRyzerHeader(html) {
 }
 
 /* -------------------------
-   ✅ Price parsing (improved)
+   ✅ Price parsing
 -------------------------- */
 function extractPriceFromHtml(html) {
-  if (!html) return { price: null, price_min: null, price_max: null, price_raw: null };
+  if (!html)
+    return { price: null, price_min: null, price_max: null, price_raw: null };
 
   const text = htmlToText(html);
 
   // Prefer "option" lines like: "Two-Day Package  $313.00 (..."
   // Capture the first $ amount on a line that looks like a price option.
   const optionPrices = [];
-  const reOption = /(?:^|\s)([A-Za-z0-9][A-Za-z0-9 \-\/()]+?)\s+\$\s*(\d{1,5})(?:\.(\d{2}))?/g;
+  const reOption =
+    /(?:^|\s)([A-Za-z0-9][A-Za-z0-9 \-\/()]+?)\s+\$\s*(\d{1,5})(?:\.(\d{2}))?/g;
   let mo;
   while ((mo = reOption.exec(text)) !== null) {
     const whole = mo[2];
@@ -555,7 +654,8 @@ function extractPriceFromHtml(html) {
   }
 
   const prices = optionPrices.length ? optionPrices : anyPrices;
-  if (!prices.length) return { price: null, price_min: null, price_max: null, price_raw: null };
+  if (!prices.length)
+    return { price: null, price_min: null, price_max: null, price_raw: null };
 
   const uniqPrices = Array.from(new Set(prices)).sort((a, b) => a - b);
   const price_min = uniqPrices[0];
@@ -631,7 +731,10 @@ Deno.serve(async (req) => {
 
   try {
     if (req.method !== "POST") {
-      return finishResponse({ error: "Method not allowed", version: VERSION, debug }, 405);
+      return finishResponse(
+        { error: "Method not allowed", version: VERSION, debug },
+        405
+      );
     }
 
     const body = await req.json().catch(() => null);
@@ -640,16 +743,30 @@ Deno.serve(async (req) => {
     const sportName = safeString(body && body.sportName) || "";
     const dryRun = !!(body && body.dryRun);
 
-    const maxSites = Number(body && body.maxSites !== undefined ? body.maxSites : 5);
-    const maxRegsPerSite = Number(body && body.maxRegsPerSite !== undefined ? body.maxRegsPerSite : 10);
-    const maxEvents = Number(body && body.maxEvents !== undefined ? body.maxEvents : 25);
+    const maxSites = Number(
+      body && body.maxSites !== undefined ? body.maxSites : 5
+    );
+    const maxRegsPerSite = Number(
+      body && body.maxRegsPerSite !== undefined ? body.maxRegsPerSite : 10
+    );
+    const maxEvents = Number(
+      body && body.maxEvents !== undefined ? body.maxEvents : 25
+    );
 
     const fastMode = body && body.fastMode !== undefined ? !!body.fastMode : true;
     const maxMs = Number(body && body.maxMs !== undefined ? body.maxMs : 45000);
-    const siteTimeoutMs = Number(body && body.siteTimeoutMs !== undefined ? body.siteTimeoutMs : 12000);
-    const regTimeoutMs = Number(body && body.regTimeoutMs !== undefined ? body.regTimeoutMs : 12000);
-    const nameTimeoutMs = Number(body && body.nameTimeoutMs !== undefined ? body.nameTimeoutMs : 6000);
-    const maxRegFetchTotal = Number(body && body.maxRegFetchTotal !== undefined ? body.maxRegFetchTotal : 250);
+    const siteTimeoutMs = Number(
+      body && body.siteTimeoutMs !== undefined ? body.siteTimeoutMs : 12000
+    );
+    const regTimeoutMs = Number(
+      body && body.regTimeoutMs !== undefined ? body.regTimeoutMs : 12000
+    );
+    const nameTimeoutMs = Number(
+      body && body.nameTimeoutMs !== undefined ? body.nameTimeoutMs : 6000
+    );
+    const maxRegFetchTotal = Number(
+      body && body.maxRegFetchTotal !== undefined ? body.maxRegFetchTotal : 250
+    );
 
     const testSiteUrl = safeString(body && body.testSiteUrl);
     const testSchoolId = safeString(body && body.testSchoolId);
@@ -677,7 +794,10 @@ Deno.serve(async (req) => {
     };
 
     if (!sportId || !sportName) {
-      return finishResponse({ error: "Missing required: sportId/sportName", version: VERSION, debug }, 400);
+      return finishResponse(
+        { error: "Missing required: sportId/sportName", version: VERSION, debug },
+        400
+      );
     }
 
     let crawl = [];
@@ -700,7 +820,14 @@ Deno.serve(async (req) => {
       return finishResponse(
         {
           version: VERSION,
-          stats: { processedSites: 0, processedRegs: 0, accepted: 0, rejected: 0, errors: 1, percentWithStartDate: 0 },
+          stats: {
+            processedSites: 0,
+            processedRegs: 0,
+            accepted: 0,
+            rejected: 0,
+            errors: 1,
+            percentWithStartDate: 0,
+          },
           accepted: [],
           rejected_samples: [],
           errors: [{ error: "Provide sites[] OR siteUrls[] OR testSiteUrl." }],
@@ -754,7 +881,8 @@ Deno.serve(async (req) => {
         htmlType = r.headers.get("content-type") || "";
         html = await r.text().catch(() => "");
 
-        if (!debug.firstSiteHtmlSnippet) debug.firstSiteHtmlSnippet = truncate(html, 1600);
+        if (!debug.firstSiteHtmlSnippet)
+          debug.firstSiteHtmlSnippet = truncate(html, 1600);
 
         regLinks = extractCampLinksFromHtml(html, siteUrl).slice(0, maxRegsPerSite);
 
@@ -764,7 +892,11 @@ Deno.serve(async (req) => {
           htmlType,
           regLinks: regLinks.length,
           sample: regLinks.length ? regLinks[0] : "",
-          notes: isRegisterListingUrl(siteUrl) ? "direct_register_listing_expanded" : (regLinks.length ? "" : "no_camp_links_found"),
+          notes: isRegisterListingUrl(siteUrl)
+            ? "direct_register_listing_expanded"
+            : regLinks.length
+            ? ""
+            : "no_camp_links_found",
         });
 
         if (!regLinks.length && isDirectRegistrationUrl(siteUrl)) {
@@ -783,11 +915,17 @@ Deno.serve(async (req) => {
           const regUrl = regLinks[i2];
           processedRegs += 1;
 
-          const listingSnippetHtml = html ? extractSnippetAroundNeedle(html, regUrl, 900) : null;
-          const listingSnippetText = listingSnippetHtml ? htmlToText(listingSnippetHtml) : null;
+          const listingSnippetHtml = html
+            ? extractSnippetAroundNeedle(html, regUrl, 900)
+            : null;
+          const listingSnippetText = listingSnippetHtml
+            ? htmlToText(listingSnippetHtml)
+            : null;
 
           // Date from listing
-          const listingParsed = listingSnippetText ? parseSingleOrRangeDate(listingSnippetText, defaultYear) : null;
+          const listingParsed = listingSnippetText
+            ? parseSingleOrRangeDate(listingSnippetText, defaultYear)
+            : null;
           let finalParsed = null;
           let eventDatesRaw = null;
 
@@ -810,15 +948,19 @@ Deno.serve(async (req) => {
           const shouldFetchDates = !fastMode || !(finalParsed && finalParsed.start);
           const shouldFetchName = !campName;
 
-          // We want price and location from detail. Location is always there; price almost always is.
+          // We want price and location from detail.
           const shouldFetchPrice = true;
           const shouldFetchLocation = true;
 
-          const shouldFetchDetail = shouldFetchDates || shouldFetchName || shouldFetchPrice || shouldFetchLocation;
+          const shouldFetchDetail =
+            shouldFetchDates || shouldFetchName || shouldFetchPrice || shouldFetchLocation;
 
           let regHttp = 0;
           let regHtml = "";
           let desc = null;
+
+          // ✅ logo (school/program) from Ryzer registration page
+          let school_logo_url = null;
 
           // outputs
           let price = null;
@@ -855,6 +997,11 @@ Deno.serve(async (req) => {
               regHtml = await rr.text().catch(() => "");
 
               desc = regHtml ? extractMetaDescription(regHtml) : null;
+
+              // ✅ logo capture
+              if (regHtml) {
+                school_logo_url = extractLogoUrlFromRyzerRegistrationHtml(regHtml, regUrl);
+              }
 
               // Name from detail
               if (!campName && regHtml) {
@@ -939,6 +1086,9 @@ Deno.serve(async (req) => {
             camp_name: campName,
             start_date: finalParsed.start,
             end_date: finalParsed.end || null,
+
+            // ✅ logo captured from Ryzer registration page (caller can persist to School)
+            school_logo_url: school_logo_url || null,
 
             // ✅ now populated
             city: city || null,
