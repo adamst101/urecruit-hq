@@ -1,4 +1,3 @@
-// src/pages/UserNotRegisteredError.jsx
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Lock, ArrowRight, LogOut } from "lucide-react";
@@ -13,7 +12,29 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 
 function trackEvent(payload) {
   try {
-    base44.entities.Event.create({ ...payload, ts: new Date().toISOString() });
+    const EventEntity = base44?.entities?.Event || base44?.entities?.Events;
+    if (!EventEntity?.create) return;
+
+    const now = new Date();
+    const iso = now.toISOString();
+    const day = iso.slice(0, 10);
+    const eventName =
+      payload?.event_name || payload?.event_type || payload?.title || payload?.name || "event";
+    const sourcePlatform = payload?.source_platform || payload?.source || "web";
+    const title = payload?.title || String(eventName);
+    const sourceKey =
+      payload?.source_key || payload?.sourceKey || `${String(sourcePlatform)}:${String(eventName)}`;
+    const startDate = payload?.start_date || day;
+
+    EventEntity.create({
+      source_platform: String(sourcePlatform),
+      event_type: String(eventName),
+      title: String(title),
+      source_key: String(sourceKey),
+      start_date: String(startDate),
+      payload_json: JSON.stringify(payload || {}),
+      ts: iso,
+    });
   } catch {}
 }
 
@@ -52,14 +73,14 @@ export default function UserNotRegisteredError() {
           <div>
             <h1 className="text-2xl font-bold text-deep-navy">Access Restricted</h1>
             <p className="text-slate-600 mt-2">
-              Your account isn’t registered for this application yet.
+              Your account isn't registered for this application yet.
             </p>
           </div>
 
           <div className="bg-slate-50 rounded-lg p-4 text-sm text-slate-600 text-left">
             <p className="font-medium text-slate-700 mb-2">What you can do:</p>
             <ul className="list-disc list-inside space-y-1">
-              <li>Confirm you’re logged in with the correct email</li>
+              <li>Confirm you're logged in with the correct email</li>
               <li>Contact the app administrator to request access</li>
               <li>Log out and sign back in</li>
             </ul>
