@@ -1340,7 +1340,20 @@ async function normalizeCampDatesToISO() {
   // - empty/whitespace = bad
   // - placeholders (na/null/etc) = bad
   // - non-http(s) values = bad
-  function isBadLogoValue(v) {
+  
+  // Pick the correct School logo field name based on the current row shape.
+  // Base44 schemas vary (logo_url vs logoUrl vs logo).
+  function resolveSchoolLogoField(row) {
+    const r = row || {};
+    const candidates = ["logo_url", "logoUrl", "school_logo_url", "image_url", "logo"];
+    for (const k of candidates) {
+      if (Object.prototype.hasOwnProperty.call(r, k)) return k;
+    }
+    // Default if the field doesn't exist on the row (schema may still accept it)
+    return "logo_url";
+  }
+
+function isBadLogoValue(v) {
     const s = (v == null ? "" : String(v)).trim();
     if (!s) return true;
 
@@ -1363,24 +1376,31 @@ async function patchSchoolLogoIfMissing(schoolId, logoUrl, { allowOverwriteBad =
   const current = await entityGetById(SchoolEntity, sid);
   if (!current) return { updated: false, reason: "school_lookup_failed" };
 
-  const rawLogo = (current.logo_url || current.school_logo_url || current.logo || current.image_url) ?? null;
+  const logoField = resolveSchoolLogoField(current);
+  const rawLogo = current ? current[logoField] : null;
+
   const currentLooksBad = isBadLogoValue(rawLogo);
 
   // Fill-only-when-empty OR overwrite only if the existing logo is "bad"
   if (!currentLooksBad && !allowOverwriteBad) return { updated: false, reason: "already_has_logo" };
+  if (!currentLooksBad && allowOverwriteBad) return { updated: false, reason: "skipped_good" };
 
-  // Write logo_url (metadata best-effort; fallback to logo_url only if schema rejects)
+  // Write the logo back to the same field we read (prevents schema mismatch loops).
+  const patch = {
+    [logoField]: lu,
+    // Best-effort metadata (safe fallback below if schema rejects)
+    logo_source: "ryzer",
+    logo_last_seen_at: new Date().toISOString(),
+  };
+
   try {
-    await SchoolEntity.update(String(sid), {
-      logo_url: lu,
-      logo_source: "ryzer",
-      logo_last_seen_at: new Date().toISOString(),
-    });
+    await SchoolEntity.update(String(sid), patch);
   } catch {
-    await SchoolEntity.update(String(sid), { logo_url: lu });
+    // Fallback: just the field (most compatible)
+    await SchoolEntity.update(String(sid), { [logoField]: lu });
   }
 
-  return { updated: true, reason: currentLooksBad ? "overwritten_bad" : "patched" };
+  return { updated: true, reason: "overwritten_bad", field: logoField };
 }
 
   async function updateCrawlStateForSites(siteIds, patch) {
@@ -1677,7 +1697,7 @@ async function patchSchoolLogoIfMissing(schoolId, logoUrl, { allowOverwriteBad =
           try {
             const r = await writeWithRetry(() => patchSchoolLogoIfMissing(sid, lu, { allowOverwriteBad: true }), { maxRetries: 5 });
             if (r?.updated) overwritten += 1;
-            else if (r?.reason === "already_has_logo") skippedGood += 1;
+            else if (r?.reason === "already_has_logo" || r?.reason === "skipped_good") skippedGood += 1;
             else if (r?.reason === "school_lookup_failed") lookupFailed += 1;
             else skippedGood += 1;
           } catch {
@@ -3787,3 +3807,4 @@ export default function AdminImport() {
     </ErrorBoundary>
   );
 }
+
