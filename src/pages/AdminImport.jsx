@@ -470,6 +470,7 @@ function AdminImportInner() {
   ----------------------------- */
   const [sportsUSAWorking, setSportsUSAWorking] = useState(false);
   const [campsWorking, setCampsWorking] = useState(false);
+  const [normalizeDatesWorking, setNormalizeDatesWorking] = useState(false);
   const [promoteWorking, setPromoteWorking] = useState(false);
   const [countersWorking, setCountersWorking] = useState(false);
   const [qualityWorking, setQualityWorking] = useState(false);
@@ -1166,6 +1167,65 @@ function AdminImportInner() {
   /* ----------------------------
      Camps ingest helpers
   ----------------------------- */
+
+async function normalizeCampDatesToISO() {
+  setNormalizeDatesWorking(true);
+  const runIso = new Date().toISOString();
+  try {
+    if (!selectedSportId) {
+      appendLog("camps", `[Dates] Select a sport first.`);
+      return;
+    }
+    if (!CampDemoEntity && !CampEntity) {
+      appendLog("camps", `[Dates] ERROR: CampDemo/Camp entities not available.`);
+      return;
+    }
+
+    const normalizeEntity = async (Entity, label) => {
+      if (!Entity) return { scanned: 0, updated: 0, errors: 0 };
+      const rows = await entityList(Entity, { sport_id: selectedSportId });
+      let scanned = 0;
+      let updated = 0;
+      let errors = 0;
+
+      for (const raw of rows) {
+        scanned += 1;
+        const r = raw || {};
+        const start0 = safeString(r.start_date);
+        const end0 = safeString(r.end_date);
+        const start1 = toISODate(start0);
+        const end1 = toISODate(end0);
+
+        const needs =
+          (start0 && start0.includes("/")) ||
+          (end0 && end0.includes("/")) ||
+          (start0 && start1 && start0 !== start1) ||
+          (end0 && end1 && end0 !== end1);
+
+        if (!needs) continue;
+
+        try {
+          const ok = await tryUpdate(Entity, r.id, { start_date: start1 || null, end_date: end1 || null });
+          if (ok) updated += 1;
+          else errors += 1;
+        } catch {
+          errors += 1;
+        }
+      }
+
+      appendLog("camps", `[Dates] ${label} scanned=${scanned} updated=${updated} errors=${errors}`);
+      return { scanned, updated, errors };
+    };
+
+    appendLog("camps", `[Dates] Normalize start/end to ISO begin @ ${runIso} (sport=${selectedSportName || selectedSportId})`);
+    await normalizeEntity(CampDemoEntity, "CampDemo");
+    await normalizeEntity(CampEntity, "Camp");
+    appendLog("camps", `[Dates] Normalize done.`);
+  } finally {
+    setNormalizeDatesWorking(false);
+  }
+}
+
   function normalizeAcceptedRowToFlat(a) {
     if (!a) return {};
     if (a.event && typeof a.event === "object") {
@@ -2957,6 +3017,9 @@ async function openFixPanelForRow(row) {
           <div className="mt-3 flex gap-2 flex-wrap">
             <Button onClick={runSportsUSACampsIngest} disabled={!selectedSportId || campsWorking}>
               {campsWorking ? "Running…" : "Run Ingest"}
+            </Button>
+            <Button onClick={normalizeCampDatesToISO} disabled={!selectedSportId || campsWorking || normalizeDatesWorking}>
+              {normalizeDatesWorking ? "Normalizing…" : "Normalize Dates (ISO)"}
             </Button>
             <Button onClick={() => setLogCamps("")} disabled={campsWorking}>
               Clear Log
