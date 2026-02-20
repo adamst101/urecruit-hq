@@ -1933,6 +1933,10 @@ function AdminImportInner() {
     const key = payload?.event_key ? String(payload.event_key) : null;
     if (!key) throw new Error("Missing event_key for Camp upsert");
 
+    // Camp.source_key is required by schema.
+    // Normalize here as a second line of defense in case callers forget it.
+    if (!safeString(payload?.source_key)) payload.source_key = key;
+
     let existing = [];
     try {
       existing = await entityList(CampEntity, { event_key: key });
@@ -1984,6 +1988,10 @@ function AdminImportInner() {
         source_url,
       });
 
+    // Camp requires a stable source_key (schema required).
+    // Use event_key (already unique and stable) as the canonical source_key.
+    const source_key = safeString(r?.source_key) || event_key;
+
     const content_hash =
       safeString(r?.content_hash) ||
       simpleHash({
@@ -2016,6 +2024,7 @@ function AdminImportInner() {
       notes: safeString(r?.notes) || null,
       season_year: season_year != null ? season_year : null,
       program_id,
+      source_key,
       event_key,
       source_platform,
       source_url: source_url || null,
