@@ -1,5 +1,5 @@
 // src/pages/Discover.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SlidersHorizontal } from "lucide-react";
 
@@ -7,6 +7,7 @@ import { base44 } from "../api/base44Client";
 
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
+import { Badge } from "../components/ui/badge";
 
 import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
@@ -26,7 +27,70 @@ import {
   matchesDateRange,
 } from "../components/filters/filterUtils.jsx";
 
-import CampCard from "../components/camps/CampCard.jsx";
+// CampCard kept for backwards compatibility in other pages; Discover uses a tighter scan-first card.
+
+/* -------------------------
+   Discover UX (Option A)
+   - list-first
+   - sticky chips row
+   - sort
+   - skeleton loading
+   - paid sport lock
+------------------------- */
+
+function SkeletonCard() {
+  return (
+    <Card className="p-4 border-slate-200 bg-white">
+      <div className="animate-pulse">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-slate-200" />
+            <div className="min-w-0">
+              <div className="h-3 w-24 bg-slate-200 rounded" />
+              <div className="h-5 w-48 bg-slate-200 rounded mt-2" />
+              <div className="h-4 w-40 bg-slate-200 rounded mt-2" />
+            </div>
+          </div>
+          <div className="h-8 w-8 rounded bg-slate-200" />
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="h-4 w-32 bg-slate-200 rounded" />
+          <div className="h-4 w-28 bg-slate-200 rounded" />
+          <div className="h-4 w-24 bg-slate-200 rounded" />
+        </div>
+        <div className="mt-4 flex gap-2">
+          <div className="h-9 w-24 bg-slate-200 rounded" />
+          <div className="h-9 w-28 bg-slate-200 rounded" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function chipLabel(key, nf) {
+  if (!nf) return "";
+  if (key === "state") return nf.state ? String(nf.state).toUpperCase() : "State";
+  if (key === "dates") {
+    if (!nf.startDate && !nf.endDate) return "Dates";
+    if (nf.startDate && !nf.endDate) return `From ${nf.startDate}`;
+    if (!nf.startDate && nf.endDate) return `Until ${nf.endDate}`;
+    return `${nf.startDate} → ${nf.endDate}`;
+  }
+  if (key === "division") return "Division";
+  if (key === "position") return "Position";
+  return "";
+}
+
+function hasActiveFilters(nf, isPaid) {
+  if (!nf) return false;
+  const divOn = Array.isArray(nf.divisions) && nf.divisions.length > 0;
+  const posOn = Array.isArray(nf.positions) && nf.positions.length > 0;
+  const stateOn = !!nf.state;
+  const dateOn = !!nf.startDate || !!nf.endDate;
+  // sport filters are always active in paid mode by policy, so don't count them.
+  const sportOn = !isPaid && Array.isArray(nf.sports) && nf.sports.length > 0;
+  return divOn || posOn || stateOn || dateOn || sportOn;
+}
 
 /* -------------------------
    Helpers (MVP-safe)
@@ -187,8 +251,13 @@ export default function Discover() {
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
   const [filterOpen, setFilterOpen] = useState(false);
+  const [sortKey, setSortKey] = useState("soonest"); // soonest | price_low | school_az
   const { nf, setNF, clearFilters } = useCampFilters();
   const writeGate = useWriteGate();
+
+  // Paid-only: athlete intent map for favorites/registered flags
+  const [intentByCampId, setIntentByCampId] = useState({});
+  const intentRefreshSeq = useRef(0);
 
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
 
@@ -250,6 +319,78 @@ export default function Discover() {
   const paidMissingSport = useMemo(() => {
     return isPaid && !!athleteId && !athleteSportId;
   }, [isPaid, athleteId, athleteSportId]);
+
+  // Paid-only: load camp intents for favorite state and "My Camps" parity
+  useEffect(() => {
+    if (!isPaid) {
+      setIntentByCampId({});
+      return;
+    }
+    if (!athleteId) return;
+
+    let cancelled = false;
+    const seq = ++intentRefreshSeq.current;
+
+    (async () => {
+      try {
+        const rows = asArray(await base44?.entities?.CampIntent?.filter?.({ athlete_id: athleteId }));
+        if (cancelled) return;
+        if (seq !== intentRefreshSeq.current) return;
+
+        const map = {};
+        for (const r of rows) {
+          const campKey = String(normId(r?.camp_id) || r?.camp_id || "");
+          if (!campKey) continue;
+          map[campKey] = r;
+        }
+        setIntentByCampId(map);
+      } catch {
+        if (!cancelled) setIntentByCampId({});
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isPaid, athleteId]);
+
+  async function upsertIntent(campId, nextStatus) {
+    if (!isPaid) return { ok: false };
+    if (!athleteId) return { ok: false };
+    const CampIntent = base44?.entities?.CampIntent;
+    if (!CampIntent?.filter || !CampIntent?.create) return { ok: false };
+
+    const campKey = String(campId || "");
+    if (!campKey) return { ok: false };
+
+    // optimistic UI
+    setIntentByCampId((prev) => {
+      const cur = prev?.[campKey] || null;
+      const next = { ...(cur || {}), athlete_id: athleteId, camp_id: campKey, status: nextStatus };
+      return { ...(prev || {}), [campKey]: next };
+    });
+
+    try {
+      const existing = asArray(
+        await CampIntent.filter({ athlete_id: athleteId, camp_id: campKey })
+      )[0];
+
+      if (existing?.id && CampIntent.update) {
+        await CampIntent.update(existing.id, { status: nextStatus });
+      } else {
+        await CampIntent.create({ athlete_id: athleteId, camp_id: campKey, status: nextStatus });
+      }
+      return { ok: true };
+    } catch (e) {
+      // revert optimistic on failure
+      setIntentByCampId((prev) => {
+        const copy = { ...(prev || {}) };
+        delete copy[campKey];
+        return copy;
+      });
+      return { ok: false, error: String(e?.message || e) };
+    }
+  }
 
   // Season-aware gate only if a season is explicitly requested
   useEffect(() => {
@@ -455,7 +596,7 @@ export default function Discover() {
         ? nf.sports
         : [];
 
-    return src
+    const filtered = src
       .filter((r) => readActiveFlag(r) === true)
       .filter((r) => {
         if (!matchesDivision(r, nf.divisions)) return false;
@@ -465,7 +606,42 @@ export default function Discover() {
         if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
         return true;
       });
-  }, [rawCamps, nf, isPaid, athleteSportId]);
+
+    const getStartTs = (r) => {
+      const iso = toISODate(r?.start_date);
+      if (!iso) return Number.POSITIVE_INFINITY;
+      const d = new Date(`${iso}T00:00:00.000Z`);
+      const t = d.getTime();
+      return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
+    };
+
+    const getPrice = (r) => {
+      const pMax = safeNumber(r?.price_max ?? r?.priceMax);
+      const p = safeNumber(r?.price ?? r?.cost);
+      if (pMax != null) return pMax;
+      if (p != null) return p;
+      return Number.POSITIVE_INFINITY;
+    };
+
+    const getSchoolName = (r) => {
+      const schoolId = String(normId(r?.school_id) ?? "");
+      const srow = schoolById?.[schoolId] || null;
+      const nm = srow?.school_name || srow?.name || r?.school_name || r?.school || "";
+      return String(nm || "").toLowerCase();
+    };
+
+    const sorted = [...filtered];
+    if (sortKey === "price_low") {
+      sorted.sort((a, b) => getPrice(a) - getPrice(b));
+    } else if (sortKey === "school_az") {
+      sorted.sort((a, b) => getSchoolName(a).localeCompare(getSchoolName(b)));
+    } else {
+      // soonest
+      sorted.sort((a, b) => getStartTs(a) - getStartTs(b));
+    }
+
+    return sorted;
+  }, [rawCamps, nf, isPaid, athleteSportId, sortKey, schoolById]);
 
   const debugStats = useMemo(() => {
     if (!debugMode) return null;
@@ -536,8 +712,28 @@ export default function Discover() {
     setFilterOpen(true);
   };
 
+  const sportLockedLabel = useMemo(() => {
+    if (!isPaid) return null;
+    if (!athleteSportId) return "Sport locked";
+    const sp = sportById?.[String(athleteSportId)] || null;
+    return sp?.sport_name || sp?.name || "Sport locked";
+  }, [isPaid, athleteSportId, sportById]);
+
+  const resultsCountLabel = useMemo(() => {
+    const n = Array.isArray(rows) ? rows.length : 0;
+    return `${n.toLocaleString()} camps`;
+  }, [rows]);
+
   const renderBody = () => {
-    if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
+    if (loading) {
+      return (
+        <div className="space-y-3">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      );
+    }
 
     if (campErr) {
       return (
@@ -605,71 +801,184 @@ export default function Discover() {
 
           const sportName = sprow?.sport_name || sprow?.name || r?.sport_name || r?.sport || "Sport";
 
-          const camp = {
-            id: campId,
-            camp_name: r?.camp_name ?? r?.name ?? "Camp",
-            name: r?.camp_name ?? r?.name ?? "Camp",
-            start_date: r?.start_date ?? null,
-            end_date: r?.end_date ?? null,
-            cost: r?.price ?? null,
-            price: r?.price ?? null,
-            url: r?.link_url ?? r?.source_url ?? null,
-            link_url: r?.link_url ?? null,
-            notes: r?.notes ?? null,
-            city: r?.city ?? schoolCity,
-            state: r?.state ?? schoolState,
-          };
+          const priceMax = safeNumber(r?.price_max ?? r?.priceMax);
+          const price = safeNumber(r?.price ?? r?.cost);
+          const priceLabel =
+            priceMax != null
+              ? priceMax > 0
+                ? `$${priceMax}`
+                : "Free"
+              : price != null
+              ? price > 0
+                ? `$${price}`
+                : "Free"
+              : "";
 
-          const school = {
-            id: schoolId,
-            name: schoolName,
-            school_name: schoolName,
-            city: schoolCity,
-            state: schoolState,
-            division: schoolDivision,
-            logo_url: schoolLogo,
-          };
+          const linkUrl = r?.link_url ?? r?.source_url ?? r?.url ?? null;
+          const startIso = toISODate(r?.start_date);
+          const endIso = toISODate(r?.end_date);
+          const dateLabel =
+            startIso && endIso && endIso !== startIso ? `${startIso} → ${endIso}` : startIso || "TBD";
 
-          const sport = {
-            id: sportId,
-            name: sportName,
-            sport_name: sportName,
-          };
-
-          const posObjs = asArray(r?.position_ids).map((pid) => ({
-            id: String(pid),
-            name: String(pid),
-          }));
+          const intent = intentByCampId?.[campId] || null;
+          const isFavorite = String(intent?.status || "").toLowerCase() === "favorite";
+          const isRegistered =
+            String(intent?.status || "").toLowerCase() === "registered" ||
+            String(intent?.status || "").toLowerCase() === "completed";
 
           return (
-            <CampCard
+            <Card
               key={campId}
-              camp={camp}
-              school={school}
-              sport={sport}
-              positions={posObjs}
-              isFavorite={false}
-              isRegistered={false}
-              mode={isPaid ? "paid" : "demo"}
+              className="p-4 border-slate-200 bg-white cursor-pointer hover:shadow-sm transition"
+              role="button"
+              tabIndex={0}
               onClick={() => {
-                try {
+                nav(
+                  isPaid
+                    ? `/CampDetail?id=${encodeURIComponent(campId)}`
+                    : `/CampDetailDemo?id=${encodeURIComponent(campId)}`
+                );
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
                   nav(
                     isPaid
                       ? `/CampDetail?id=${encodeURIComponent(campId)}`
                       : `/CampDetailDemo?id=${encodeURIComponent(campId)}`
                   );
-                } catch {
-                  // ignore
                 }
               }}
-              disabledFavorite={!isPaid}
-              onFavoriteToggle={async () => {
-                if (!isPaid) return;
-                const ok = await (writeGate?.ensure ? writeGate.ensure("favorite") : true);
-                if (!ok) return;
-                trackEvent({ event_name: "favorite_toggle", source: "discover", camp_id: campId });
-              }}
-            />
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
+                    {schoolLogo ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={schoolLogo}
+                        alt={`${schoolName} logo`}
+                        className="w-full h-full object-contain"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="text-[10px] text-slate-400">Logo</div>
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {schoolDivision && (
+                        <Badge className="bg-slate-900 text-white text-xs">{schoolDivision}</Badge>
+                      )}
+                      {sportName && <span className="text-xs text-slate-500 font-medium">{sportName}</span>}
+                      {isRegistered && <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>}
+                      {!isPaid && (
+                        <Badge variant="outline" className="text-xs">
+                          Demo
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="text-lg font-semibold text-deep-navy truncate mt-1">
+                      {schoolName}
+                    </div>
+                    <div className="text-sm text-slate-600 truncate">
+                      {r?.camp_name ?? r?.name ?? "Camp"}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                      <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">
+                        {dateLabel}
+                      </span>
+                      {(schoolCity || schoolState) && (
+                        <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">
+                          {[schoolCity, schoolState].filter(Boolean).join(", ")}
+                        </span>
+                      )}
+                      {priceLabel && (
+                        <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">
+                          {priceLabel}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={!isPaid}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!isPaid) return;
+                    const ok = await (writeGate?.ensure ? writeGate.ensure("favorite") : true);
+                    if (!ok) return;
+                    const next = isFavorite ? "" : "favorite";
+                    const res = await upsertIntent(campId, next);
+                    trackEvent({
+                      event_name: "favorite_toggle",
+                      source: "discover",
+                      camp_id: campId,
+                      next_status: next,
+                      ok: res?.ok ? 1 : 0,
+                    });
+                  }}
+                  aria-label={isPaid ? (isFavorite ? "Remove favorite" : "Add favorite") : "Favorites locked"}
+                  title={isPaid ? (isFavorite ? "Remove favorite" : "Add favorite") : "Favorites are paid-only"}
+                >
+                  <span className={isFavorite ? "text-amber-500" : "text-slate-400"}>
+                    {isFavorite ? "★" : "☆"}
+                  </span>
+                </Button>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <div className="text-xs text-slate-500 truncate">
+                  {linkUrl ? "Registration available" : "No registration link"}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      nav(isPaid ? "/MyCamps" : "/Upgrade");
+                    }}
+                  >
+                    {isPaid ? "My Camps" : "Upgrade"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!linkUrl}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!linkUrl) return;
+                      try {
+                        window.open(String(linkUrl), "_blank", "noopener,noreferrer");
+                      } catch {
+                        // ignore
+                      }
+                      if (isPaid) {
+                        const ok = await (writeGate?.ensure ? writeGate.ensure("register") : true);
+                        if (ok) {
+                          // optional: mark as registered intent for faster value
+                          await upsertIntent(campId, "registered");
+                        }
+                      }
+                      trackEvent({ event_name: "register_click", source: "discover", camp_id: campId });
+                    }}
+                  >
+                    Register
+                  </Button>
+                </div>
+              </div>
+            </Card>
           );
         })}
       </div>
@@ -679,16 +988,127 @@ export default function Discover() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
             <div className="text-2xl font-bold text-deep-navy">Discover</div>
-            <div className="text-xs text-slate-500">{isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}</div>
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
+              <Badge variant="secondary" className="bg-slate-100 text-slate-700">
+                Season {seasonYear}
+              </Badge>
+              {isPaid ? (
+                <Badge className="bg-deep-navy text-white">Paid</Badge>
+              ) : (
+                <Badge variant="outline">Demo</Badge>
+              )}
+              <span className="text-xs text-slate-500">{resultsCountLabel}</span>
+            </div>
           </div>
 
-          <Button variant="outline" onClick={openFiltersOrProfile}>
-            <SlidersHorizontal className="w-4 h-4 mr-2" />
-            {paidMissingSport ? "Complete Profile" : "Filter"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <select
+              className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+              value={sortKey}
+              onChange={(e) => setSortKey(String(e.target.value || "soonest"))}
+              aria-label="Sort"
+            >
+              <option value="soonest">Sort: Soonest</option>
+              <option value="price_low">Sort: Lowest price</option>
+              <option value="school_az">Sort: School A–Z</option>
+            </select>
+
+            <Button variant="outline" onClick={openFiltersOrProfile}>
+              <SlidersHorizontal className="w-4 h-4 mr-2" />
+              {paidMissingSport ? "Complete Profile" : "Filters"}
+            </Button>
+          </div>
+        </div>
+
+        {/* Sticky chips row */}
+        <div className="mt-4 sticky top-0 z-30 bg-slate-50 pt-2 pb-3 border-b border-slate-200">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            {/* Sport (locked in paid mode) */}
+            <button
+              type="button"
+              className={
+                "whitespace-nowrap text-sm px-3 py-2 rounded-full border " +
+                (isPaid
+                  ? "border-slate-300 bg-white text-slate-800"
+                  : Array.isArray(nf?.sports) && nf.sports.length
+                  ? "border-slate-800 bg-slate-900 text-white"
+                  : "border-slate-300 bg-white text-slate-800")
+              }
+              onClick={() => {
+                if (isPaid) return; // locked
+                openFiltersOrProfile();
+              }}
+              aria-label={isPaid ? "Sport locked" : "Filter sport"}
+              title={isPaid ? "Sport is locked in paid mode" : "Choose sport"}
+            >
+              {isPaid ? `${sportLockedLabel} (locked)` : "Sport"}
+            </button>
+
+            <button
+              type="button"
+              className={
+                "whitespace-nowrap text-sm px-3 py-2 rounded-full border " +
+                (nf?.state ? "border-slate-800 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-800")
+              }
+              onClick={openFiltersOrProfile}
+            >
+              {chipLabel("state", nf)}
+            </button>
+
+            <button
+              type="button"
+              className={
+                "whitespace-nowrap text-sm px-3 py-2 rounded-full border " +
+                (nf?.startDate || nf?.endDate
+                  ? "border-slate-800 bg-slate-900 text-white"
+                  : "border-slate-300 bg-white text-slate-800")
+              }
+              onClick={openFiltersOrProfile}
+            >
+              {chipLabel("dates", nf)}
+            </button>
+
+            <button
+              type="button"
+              className={
+                "whitespace-nowrap text-sm px-3 py-2 rounded-full border " +
+                (Array.isArray(nf?.divisions) && nf.divisions.length
+                  ? "border-slate-800 bg-slate-900 text-white"
+                  : "border-slate-300 bg-white text-slate-800")
+              }
+              onClick={openFiltersOrProfile}
+            >
+              Division
+            </button>
+
+            <button
+              type="button"
+              className={
+                "whitespace-nowrap text-sm px-3 py-2 rounded-full border " +
+                (Array.isArray(nf?.positions) && nf.positions.length
+                  ? "border-slate-800 bg-slate-900 text-white"
+                  : "border-slate-300 bg-white text-slate-800")
+              }
+              onClick={openFiltersOrProfile}
+            >
+              Position
+            </button>
+
+            {hasActiveFilters(nf, isPaid) && (
+              <button
+                type="button"
+                className="whitespace-nowrap text-sm px-3 py-2 rounded-full border border-slate-300 bg-white text-slate-800"
+                onClick={() => {
+                  clearFilters();
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {debugStats && (
@@ -698,7 +1118,7 @@ export default function Discover() {
           </Card>
         )}
 
-        <div className={debugStats ? "mt-4" : "mt-6"}>{renderBody()}</div>
+        <div className={debugStats ? "mt-4" : "mt-4"}>{renderBody()}</div>
 
         <FilterSheet
           isOpen={filterOpen}
