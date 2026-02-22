@@ -1,7 +1,7 @@
 // src/pages/MyCamps.jsx
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Lock } from "lucide-react";
+import { Loader2, Lock, Trash2, RefreshCw } from "lucide-react";
 
 import { createPageUrl } from "../utils";
 
@@ -26,6 +26,18 @@ function normLower(x) {
   return String(x || "").trim().toLowerCase();
 }
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, Math.max(0, Number(ms) || 0)));
+}
+
+function chunk(arr, size) {
+  const out = [];
+  const a = Array.isArray(arr) ? arr : [];
+  const n = Math.max(1, Number(size) || 25);
+  for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n));
+  return out;
+}
+
 function MyCampsPage() {
   const navigate = useNavigate();
   const { currentYear } = useSeasonAccess();
@@ -35,7 +47,22 @@ function MyCampsPage() {
   const sportId = normId(athleteProfile?.sport_id) || athleteProfile?.sport_id;
 
   // Only fetch diagnostics on demand (prevents rate-limit spikes)
-  const [diag, setDiag] = useState({ loading: false, loaded: false, count: 0, favorites: 0, registered: 0, err: "" });
+  const [diag, setDiag] = useState({
+    loading: false,
+    loaded: false,
+    count: 0,
+    favorites: 0,
+    registered: 0,
+    err: "",
+    intentIds: [],
+  });
+
+  const [resetState, setResetState] = useState({
+    running: false,
+    done: false,
+    err: "",
+    deleted: 0,
+  });
 
   const { data, isLoading, isError, error, refetch } = useCampSummariesClient({
     athleteId: athleteId ? String(athleteId) : undefined,
@@ -58,7 +85,16 @@ function MyCampsPage() {
 
   async function runDiagnostics() {
     if (!athleteId) return;
-    setDiag({ loading: true, loaded: false, count: 0, favorites: 0, registered: 0, err: "" });
+    setDiag({
+      loading: true,
+      loaded: false,
+      count: 0,
+      favorites: 0,
+      registered: 0,
+      err: "",
+      intentIds: [],
+    });
+    setResetState({ running: false, done: false, err: "", deleted: 0 });
 
     try {
       const Intent = base44?.entities?.CampIntent;
@@ -66,12 +102,82 @@ function MyCampsPage() {
 
       const rows = await Intent.filter({ athlete_id: String(athleteId) });
       const arr = Array.isArray(rows) ? rows : [];
+
       const fav = arr.filter((r) => normLower(r?.status) === "favorite").length;
       const reg = arr.filter((r) => ["registered", "completed"].includes(normLower(r?.status))).length;
 
-      setDiag({ loading: false, loaded: true, count: arr.length, favorites: fav, registered: reg, err: "" });
+      const intentIds = arr.map((r) => String(r?.id || "")).filter(Boolean);
+
+      setDiag({
+        loading: false,
+        loaded: true,
+        count: arr.length,
+        favorites: fav,
+        registered: reg,
+        err: "",
+        intentIds,
+      });
     } catch (e) {
-      setDiag({ loading: false, loaded: true, count: 0, favorites: 0, registered: 0, err: String(e?.message || e) });
+      setDiag({
+        loading: false,
+        loaded: true,
+        count: 0,
+        favorites: 0,
+        registered: 0,
+        err: String(e?.message || e),
+        intentIds: [],
+      });
+    }
+  }
+
+  async function resetFavorites() {
+    if (!athleteId) return;
+    const Intent = base44?.entities?.CampIntent;
+    if (!Intent?.filter || !Intent?.delete) {
+      setResetState({
+        running: false,
+        done: false,
+        err: "CampIntent delete not available in this environment.",
+        deleted: 0,
+      });
+      return;
+    }
+
+    setResetState({ running: true, done: false, err: "", deleted: 0 });
+
+    try {
+      // Re-load intents to avoid stale diag
+      const rows = await Intent.filter({ athlete_id: String(athleteId) });
+      const arr = Array.isArray(rows) ? rows : [];
+
+      // Only delete favorite/registered/completed (leave any future statuses alone)
+      const toDelete = arr
+        .filter((r) => ["favorite", "registered", "completed", ""].includes(normLower(r?.status)))
+        .map((r) => String(r?.id || ""))
+        .filter(Boolean);
+
+      let deleted = 0;
+      for (const part of chunk(toDelete, 15)) {
+        // sequential deletes to be kind to rate limits
+        for (const id of part) {
+          try {
+            await Intent.delete(id);
+            deleted += 1;
+          } catch {
+            // ignore individual failures
+          }
+          await sleep(80);
+        }
+        await sleep(250);
+      }
+
+      setResetState({ running: false, done: true, err: "", deleted });
+
+      // Refresh both the hook data and diag view
+      await runDiagnostics();
+      await refetch();
+    } catch (e) {
+      setResetState({ running: false, done: false, err: String(e?.message || e), deleted: 0 });
     }
   }
 
@@ -103,6 +209,8 @@ function MyCampsPage() {
     );
   }
 
+  const showEmpty = registered.length === 0 && favorites.length === 0;
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
@@ -113,11 +221,11 @@ function MyCampsPage() {
       </div>
 
       <div className="max-w-md mx-auto p-4 space-y-6">
-        {registered.length === 0 && favorites.length === 0 && (
+        {showEmpty && (
           <Card className="p-4">
             <div className="flex items-start gap-3">
               <Lock className="w-5 h-5 text-slate-600 mt-0.5" />
-              <div>
+              <div className="w-full">
                 <div className="font-semibold text-deep-navy">No camps yet</div>
                 <div className="text-sm text-slate-600 mt-1">
                   Favorite or register for camps in Discover to see them here.
@@ -127,7 +235,12 @@ function MyCampsPage() {
                   <Button className="w-full" onClick={() => navigate(createPageUrl("Discover"))}>
                     Go to Discover
                   </Button>
-                  <Button variant="outline" className="w-full" onClick={runDiagnostics} disabled={diag.loading}>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={runDiagnostics}
+                    disabled={diag.loading}
+                  >
                     {diag.loading ? "Checking…" : "Troubleshoot"}
                   </Button>
                 </div>
@@ -145,10 +258,49 @@ function MyCampsPage() {
                         <div className="mt-1">
                           Intents: {diag.count} • Favorites: {diag.favorites} • Registered: {diag.registered}
                         </div>
+
                         <div className="mt-2">
-                          If intents &gt; 0 but this page is empty, your Camp IDs likely changed after a promotion rerun.
-                          Next fix is to store event_key in intents (stable) and re-favorite once.
+                          If intents &gt; 0 but this page is empty, those favorites were saved with an old key that no longer matches Camp rows after promotion.
                         </div>
+
+                        <div className="mt-3 p-3 rounded-lg border border-amber-200 bg-white text-amber-900">
+                          <div className="font-semibold">Fix it in 30 seconds</div>
+                          <ol className="mt-2 list-decimal ml-5 space-y-1">
+                            <li>Tap <span className="font-semibold">Reset favorites</span> below.</li>
+                            <li>Go to Discover and favorite 1 camp again.</li>
+                            <li>Come back here and it will show up.</li>
+                          </ol>
+                        </div>
+
+                        <div className="mt-3 flex gap-2">
+                          <Button
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => refetch()}
+                            disabled={resetState.running}
+                          >
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Reload
+                          </Button>
+                          <Button
+                            className="w-full"
+                            onClick={resetFavorites}
+                            disabled={resetState.running || diag.count === 0}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            {resetState.running ? "Resetting…" : "Reset favorites"}
+                          </Button>
+                        </div>
+
+                        {resetState.err && (
+                          <div className="mt-2 text-xs text-rose-700 break-words">{resetState.err}</div>
+                        )}
+
+                        {resetState.done && !resetState.err && (
+                          <div className="mt-2 text-xs text-emerald-700">
+                            Reset complete. Deleted {resetState.deleted} intents. Now go favorite 1 camp in Discover.
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
