@@ -118,6 +118,7 @@ function readActiveFlag(row) {
   return true; // default to shown
 }
 
+// Schema-safe Event telemetry (no page-breaking required-field errors)
 function trackEvent(payload) {
   try {
     const EventEntity = base44?.entities?.Event || base44?.entities?.Events;
@@ -144,14 +145,15 @@ function trackEvent(payload) {
       payload_json: JSON.stringify(payload || {}),
       ts: iso,
     });
-  } catch {}
+  } catch {
+    // never break product UX on telemetry
+  }
 }
 
 async function fetchByIds(entity, ids) {
   const clean = Array.from(new Set(asArray(ids).filter(Boolean).map(String)));
   if (!entity || clean.length === 0) return [];
 
-  // Try a few common "IN" patterns across Base44 backends.
   const tries = [
     { id: { in: clean } },
     { id: { $in: clean } },
@@ -168,7 +170,6 @@ async function fetchByIds(entity, ids) {
     }
   }
 
-  // Fallback: list everything and filter client-side.
   try {
     const all = asArray((await entity.list?.()) ?? (await entity.filter?.({})));
     const set = new Set(clean);
@@ -229,27 +230,23 @@ export default function Discover() {
     return isEntitled ? entitledSeason : computedDemoSeason;
   }, [requestedSeason, isEntitled, entitledSeason, computedDemoSeason]);
 
-  // ✅ Paid Discover: lock sport to athlete profile sport_id
+  // Paid Discover: lock sport to athlete profile sport_id
   const athleteSportId = useMemo(() => {
     const sid = athleteProfile?.sport_id ?? athleteProfile?.sportId ?? null;
     return sid != null ? String(sid) : "";
   }, [athleteProfile]);
 
-  // ✅ HARD ENFORCE in paid mode (reliable even with localStorage leftovers)
+  // Hard enforce in paid mode (even if localStorage filters drift)
   useEffect(() => {
     if (!isPaid) return;
     if (!athleteSportId) return;
 
     const cur = Array.isArray(nf?.sports) ? nf.sports.map(String) : [];
     const ok = cur.length === 1 && cur[0] === athleteSportId;
-
-    if (!ok) {
-      setNF({ sports: [athleteSportId], positions: [] });
-    }
+    if (!ok) setNF({ sports: [athleteSportId], positions: [] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPaid, athleteSportId]);
 
-  // ✅ UX polish: paid mode + athlete exists but sport missing
   const paidMissingSport = useMemo(() => {
     return isPaid && !!athleteId && !athleteSportId;
   }, [isPaid, athleteId, athleteSportId]);
@@ -284,7 +281,7 @@ export default function Discover() {
     nav,
   ]);
 
-  // ✅ Load picklists for filter UI (sports + positions)
+  // Load picklists for filter UI
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
@@ -292,7 +289,6 @@ export default function Discover() {
     let mounted = true;
 
     (async () => {
-      // Sports
       try {
         const rows = await base44?.entities?.Sport?.list?.();
         if (mounted) setSports(Array.isArray(rows) ? rows : []);
@@ -305,7 +301,6 @@ export default function Discover() {
         }
       }
 
-      // Positions
       try {
         const rows = await base44?.entities?.Position?.list?.();
         if (mounted) setPositions(Array.isArray(rows) ? rows : []);
@@ -343,16 +338,15 @@ export default function Discover() {
         const CampEntity = base44?.entities?.Camp || base44?.entities?.Camps;
         if (!CampEntity?.filter) throw new Error("Camp entity not available.");
 
+        // Prefer server-side filtering by season_year first.
         let byYear = [];
-        let allRows = [];
-
         try {
           byYear = asArray(await CampEntity.filter({ season_year: seasonYear }));
         } catch {
           byYear = [];
         }
 
-        // If season_year is stored as a string in Base44, try again.
+        // If season_year stored as string, try again.
         if (byYear.length === 0) {
           try {
             byYear = asArray(await CampEntity.filter({ season_year: String(seasonYear) }));
@@ -366,19 +360,28 @@ export default function Discover() {
           return;
         }
 
-        allRows = asArray(await CampEntity.filter({}));
+        // Fallback: fetch and derive season on the client.
+        const allRows = asArray(await CampEntity.filter({}));
 
         const filtered = allRows.filter((r) => {
-          const sy = safeNumber(r?.season_year ?? r?.seasonYear);
-          if (sy != null) return sy === seasonYear;
+          const syNum = safeNumber(r?.season_year ?? r?.seasonYear);
+          if (syNum != null) return syNum === seasonYear;
           if (String((r?.season_year ?? r?.seasonYear) || "") === String(seasonYear)) return true;
 
           const derived = computeSeasonYearFootballFromStart(r?.start_date);
           return derived === seasonYear;
         });
 
-        // If we have camps but none match the season derivation, show all (better than blank).
-        if (!cancelled) setRawCamps(filtered.length > 0 ? filtered : allRows);
+        // Important: do NOT silently show all seasons.
+        // If we cannot find the season, fail closed and show a clear action message.
+        if (!cancelled) {
+          setRawCamps(filtered);
+          if (filtered.length === 0 && allRows.length > 0) {
+            setCampErr(
+              `No camps match season ${seasonYear}. Camp has ${allRows.length} rows, but season_year/start_date derivation did not match. If you just promoted data, check that season_year is populated on Camp rows.`
+            );
+          }
+        }
       } catch (e) {
         const msg = String(e?.message || e);
         if (!cancelled) {
@@ -398,7 +401,7 @@ export default function Discover() {
     };
   }, [season?.isLoading, seasonYear]);
 
-  // Enrich: schools + sports (so Discover doesn't depend on Camp denormalized fields)
+  // Enrich: schools + sports
   useEffect(() => {
     let cancelled = false;
 
@@ -445,8 +448,6 @@ export default function Discover() {
   const rows = useMemo(() => {
     const src = asArray(rawCamps);
 
-    // ✅ Paid: always force athlete sport.
-    // ✅ Demo: use nf.sports from dropdown.
     const effectiveSports =
       isPaid && athleteSportId
         ? [athleteSportId]
@@ -455,7 +456,7 @@ export default function Discover() {
         : [];
 
     return src
-      .filter((r) => readActiveFlag(r) === true) // ✅ hide inactive camps everywhere in Discover
+      .filter((r) => readActiveFlag(r) === true)
       .filter((r) => {
         if (!matchesDivision(r, nf.divisions)) return false;
         if (!matchesSport(r, effectiveSports)) return false;
@@ -510,7 +511,9 @@ export default function Discover() {
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
-    } catch {}
+    } catch {
+      // ignore
+    }
 
     trackEvent({
       event_name: "discover_viewed",
@@ -538,9 +541,16 @@ export default function Discover() {
 
     if (campErr) {
       return (
-        <Card className="p-5 border-rose-200 bg-rose-50">
-          <div className="text-lg font-semibold text-rose-900">Error loading camps</div>
-          <div className="mt-2 text-sm text-rose-900/80">{campErr}</div>
+        <Card className="p-5 border-amber-200 bg-amber-50">
+          <div className="text-lg font-semibold text-amber-900">Camps not available</div>
+          <div className="mt-2 text-sm text-amber-900/80">{campErr}</div>
+          <div className="mt-4 flex gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => nav("/AdminOps")}>Open Admin Ops</Button>
+            <Button onClick={() => window.location.reload()}>Reload</Button>
+          </div>
+          <div className="mt-3 text-xs text-amber-900/70">
+            Tip: If you just ingested camps, run promotion (CampDemo → Camp) in Admin Ops so paid Discover can read Camp.
+          </div>
         </Card>
       );
     }
@@ -567,13 +577,8 @@ export default function Discover() {
             No camps found for season {seasonYear} (or filters excluded them).
           </div>
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" onClick={clearFilters}>
-              Clear filters
-            </Button>
-
-            <Button onClick={openFiltersOrProfile}>
-              {paidMissingSport ? "Complete Profile" : "Edit filters"}
-            </Button>
+            <Button variant="outline" onClick={clearFilters}>Clear filters</Button>
+            <Button onClick={openFiltersOrProfile}>{paidMissingSport ? "Complete Profile" : "Edit filters"}</Button>
           </div>
         </Card>
       );
@@ -611,7 +616,6 @@ export default function Discover() {
             url: r?.link_url ?? r?.source_url ?? null,
             link_url: r?.link_url ?? null,
             notes: r?.notes ?? null,
-            // location: prefer camp-specific fields if present, else fall back to school
             city: r?.city ?? schoolCity,
             state: r?.state ?? schoolState,
           };
@@ -649,14 +653,14 @@ export default function Discover() {
               mode={isPaid ? "paid" : "demo"}
               onClick={() => {
                 try {
-                  // Keep the first-click experience identical for paid + demo.
-                  // Paid goes to the full detail page; demo stays in demo detail.
                   nav(
                     isPaid
                       ? `/CampDetail?id=${encodeURIComponent(campId)}`
                       : `/CampDetailDemo?id=${encodeURIComponent(campId)}`
                   );
-                } catch {}
+                } catch {
+                  // ignore
+                }
               }}
               disabledFavorite={!isPaid}
               onFavoriteToggle={async () => {
@@ -678,9 +682,7 @@ export default function Discover() {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-2xl font-bold text-deep-navy">Discover</div>
-            <div className="text-xs text-slate-500">
-              {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
-            </div>
+            <div className="text-xs text-slate-500">{isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}</div>
           </div>
 
           <Button variant="outline" onClick={openFiltersOrProfile}>
@@ -689,16 +691,14 @@ export default function Discover() {
           </Button>
         </div>
 
-        {debugMode && debugStats && (
-          <Card className="mt-4 p-4 border-slate-200 bg-white">
-            <div className="text-sm font-semibold text-slate-800">Discover debug</div>
-            <pre className="mt-2 text-xs text-slate-700 overflow-auto whitespace-pre-wrap">
-{JSON.stringify(debugStats, null, 2)}
-            </pre>
+        {debugStats && (
+          <Card className="p-3 mt-4 border border-slate-200 bg-white">
+            <div className="text-sm font-semibold">Debug</div>
+            <pre className="text-xs overflow-auto mt-2">{JSON.stringify(debugStats, null, 2)}</pre>
           </Card>
         )}
 
-        {renderBody()}
+        <div className={debugStats ? "mt-4" : "mt-6"}>{renderBody()}</div>
 
         <FilterSheet
           isOpen={filterOpen}
@@ -712,7 +712,6 @@ export default function Discover() {
             clearFilters();
             setFilterOpen(false);
           }}
-          // ✅ Paid: hide sport dropdown + force sport from athlete profile
           lockSportId={isPaid && athleteSportId ? athleteSportId : ""}
         />
       </div>
