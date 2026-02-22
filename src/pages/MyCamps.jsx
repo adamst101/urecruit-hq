@@ -1,7 +1,7 @@
 // src/pages/MyCamps.jsx
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Lock, Trash2, RefreshCw } from "lucide-react";
+import { Loader2, Lock, Trash2, RefreshCw, Wrench } from "lucide-react";
 
 import { createPageUrl } from "../utils";
 
@@ -38,6 +38,27 @@ function chunk(arr, size) {
   return out;
 }
 
+function isRateLimitError(e) {
+  const msg = String(e?.message || e || "").toLowerCase();
+  return msg.includes("rate limit") || msg.includes("rate limited") || msg.includes("429") || msg.includes("too many");
+}
+
+async function safeFilter(entity, where, sort, limit, { retries = 1, baseDelayMs = 250 } = {}) {
+  if (!entity?.filter) return [];
+  let last = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const rows = await entity.filter(where || {}, sort, limit);
+      return Array.isArray(rows) ? rows : [];
+    } catch (e) {
+      last = e;
+      if (!isRateLimitError(e) || attempt === retries) break;
+      await sleep(baseDelayMs * Math.pow(2, attempt));
+    }
+  }
+  throw last;
+}
+
 function MyCampsPage() {
   const navigate = useNavigate();
   const { currentYear } = useSeasonAccess();
@@ -46,7 +67,7 @@ function MyCampsPage() {
   const athleteId = normId(athleteProfile);
   const sportId = normId(athleteProfile?.sport_id) || athleteProfile?.sport_id;
 
-  // Only fetch diagnostics on demand (prevents rate-limit spikes)
+  // Diagnostics on demand only
   const [diag, setDiag] = useState({
     loading: false,
     loaded: false,
@@ -54,7 +75,19 @@ function MyCampsPage() {
     favorites: 0,
     registered: 0,
     err: "",
-    intentIds: [],
+    intentRows: [],
+    sampleKeys: [],
+  });
+
+  const [resolve, setResolve] = useState({
+    running: false,
+    done: false,
+    err: "",
+    key: "",
+    attempts: [],
+    found: false,
+    foundBy: "",
+    foundCamp: null,
   });
 
   const [resetState, setResetState] = useState({
@@ -85,6 +118,7 @@ function MyCampsPage() {
 
   async function runDiagnostics() {
     if (!athleteId) return;
+
     setDiag({
       loading: true,
       loaded: false,
@@ -92,21 +126,26 @@ function MyCampsPage() {
       favorites: 0,
       registered: 0,
       err: "",
-      intentIds: [],
+      intentRows: [],
+      sampleKeys: [],
     });
+    setResolve({ running: false, done: false, err: "", key: "", attempts: [], found: false, foundBy: "", foundCamp: null });
     setResetState({ running: false, done: false, err: "", deleted: 0 });
 
     try {
       const Intent = base44?.entities?.CampIntent;
       if (!Intent?.filter) throw new Error("CampIntent not available");
 
-      const rows = await Intent.filter({ athlete_id: String(athleteId) });
+      const rows = await safeFilter(Intent, { athlete_id: String(athleteId) }, undefined, undefined, { retries: 2 });
       const arr = Array.isArray(rows) ? rows : [];
 
       const fav = arr.filter((r) => normLower(r?.status) === "favorite").length;
       const reg = arr.filter((r) => ["registered", "completed"].includes(normLower(r?.status))).length;
 
-      const intentIds = arr.map((r) => String(r?.id || "")).filter(Boolean);
+      const sampleKeys = arr
+        .map((r) => String(r?.camp_id || ""))
+        .filter(Boolean)
+        .slice(0, 5);
 
       setDiag({
         loading: false,
@@ -115,7 +154,8 @@ function MyCampsPage() {
         favorites: fav,
         registered: reg,
         err: "",
-        intentIds,
+        intentRows: arr,
+        sampleKeys,
       });
     } catch (e) {
       setDiag({
@@ -125,8 +165,115 @@ function MyCampsPage() {
         favorites: 0,
         registered: 0,
         err: String(e?.message || e),
-        intentIds: [],
+        intentRows: [],
+        sampleKeys: [],
       });
+    }
+  }
+
+  async function resolveOneIntentKey() {
+    if (!athleteId) return;
+    const Camp = base44?.entities?.Camp;
+    if (!Camp?.filter) {
+      setResolve((p) => ({ ...p, done: true, err: "Camp entity not available." }));
+      return;
+    }
+
+    // pick the newest favorite/registered intent if possible
+    const intents = Array.isArray(diag.intentRows) ? diag.intentRows : [];
+    const candidate = intents.find((r) => ["favorite", "registered", "completed"].includes(normLower(r?.status))) || intents[0];
+    const key = String(candidate?.camp_id || "").trim();
+    if (!key) {
+      setResolve({ running: false, done: true, err: "No intent key found to resolve.", key: "", attempts: [], found: false, foundBy: "", foundCamp: null });
+      return;
+    }
+
+    setResolve({ running: true, done: false, err: "", key, attempts: [], found: false, foundBy: "", foundCamp: null });
+
+    const attempts = [
+      { label: "Camp.id", where: { id: key } },
+      { label: "Camp._id", where: { _id: key } },
+      { label: "Camp.event_key", where: { event_key: key } },
+      { label: "Camp.eventKey", where: { eventKey: key } },
+      { label: "Camp.source_key", where: { source_key: key } },
+      { label: "Camp.event_id", where: { event_id: key } },
+    ];
+
+    try {
+      for (const a of attempts) {
+        let rows = [];
+        let ok = false;
+        let note = "";
+        try {
+          rows = await safeFilter(Camp, a.where, undefined, 2, { retries: 1, baseDelayMs: 300 });
+          ok = true;
+          note = `rows=${Array.isArray(rows) ? rows.length : 0}`;
+        } catch (e) {
+          ok = false;
+          note = String(e?.message || e);
+        }
+
+        setResolve((prev) => ({
+          ...prev,
+          attempts: [...prev.attempts, { label: a.label, ok, note }],
+        }));
+
+        if (ok && Array.isArray(rows) && rows.length > 0) {
+          const foundCamp = rows[0];
+          setResolve({
+            running: false,
+            done: true,
+            err: "",
+            key,
+            attempts: (prev => prev)(null), // placeholder, overwritten next line
+            found: true,
+            foundBy: a.label,
+            foundCamp: {
+              id: String(foundCamp?.id ?? foundCamp?._id ?? ""),
+              event_key: foundCamp?.event_key ?? foundCamp?.eventKey ?? null,
+              sport_id: String(normId(foundCamp?.sport_id) || foundCamp?.sport_id || ""),
+              season_year: foundCamp?.season_year ?? null,
+              camp_name: foundCamp?.camp_name ?? foundCamp?.name ?? null,
+            },
+          });
+
+          // Because we can’t reference resolve.attempts in that setResolve above cleanly, do a second merge.
+          setResolve((prev) => ({
+            ...prev,
+            running: false,
+            done: true,
+            found: true,
+            foundBy: a.label,
+            foundCamp: {
+              id: String(foundCamp?.id ?? foundCamp?._id ?? ""),
+              event_key: foundCamp?.event_key ?? foundCamp?.eventKey ?? null,
+              sport_id: String(normId(foundCamp?.sport_id) || foundCamp?.sport_id || ""),
+              season_year: foundCamp?.season_year ?? null,
+              camp_name: foundCamp?.camp_name ?? foundCamp?.name ?? null,
+            },
+          }));
+          return;
+        }
+
+        await sleep(80);
+      }
+
+      setResolve((prev) => ({
+        ...prev,
+        running: false,
+        done: true,
+        found: false,
+        foundBy: "",
+        foundCamp: null,
+        err: "No Camp row matched this intent key by any known field.",
+      }));
+    } catch (e) {
+      setResolve((prev) => ({
+        ...prev,
+        running: false,
+        done: true,
+        err: String(e?.message || e),
+      }));
     }
   }
 
@@ -146,11 +293,9 @@ function MyCampsPage() {
     setResetState({ running: true, done: false, err: "", deleted: 0 });
 
     try {
-      // Re-load intents to avoid stale diag
-      const rows = await Intent.filter({ athlete_id: String(athleteId) });
+      const rows = await safeFilter(Intent, { athlete_id: String(athleteId) }, undefined, undefined, { retries: 2 });
       const arr = Array.isArray(rows) ? rows : [];
 
-      // Only delete favorite/registered/completed (leave any future statuses alone)
       const toDelete = arr
         .filter((r) => ["favorite", "registered", "completed", ""].includes(normLower(r?.status)))
         .map((r) => String(r?.id || ""))
@@ -158,13 +303,12 @@ function MyCampsPage() {
 
       let deleted = 0;
       for (const part of chunk(toDelete, 15)) {
-        // sequential deletes to be kind to rate limits
         for (const id of part) {
           try {
             await Intent.delete(id);
             deleted += 1;
           } catch {
-            // ignore individual failures
+            // ignore
           }
           await sleep(80);
         }
@@ -173,7 +317,6 @@ function MyCampsPage() {
 
       setResetState({ running: false, done: true, err: "", deleted });
 
-      // Refresh both the hook data and diag view
       await runDiagnostics();
       await refetch();
     } catch (e) {
@@ -259,25 +402,19 @@ function MyCampsPage() {
                           Intents: {diag.count} • Favorites: {diag.favorites} • Registered: {diag.registered}
                         </div>
 
-                        <div className="mt-2">
-                          If intents &gt; 0 but this page is empty, those favorites were saved with an old key that no longer matches Camp rows after promotion.
-                        </div>
-
-                        <div className="mt-3 p-3 rounded-lg border border-amber-200 bg-white text-amber-900">
-                          <div className="font-semibold">Fix it in 30 seconds</div>
-                          <ol className="mt-2 list-decimal ml-5 space-y-1">
-                            <li>Tap <span className="font-semibold">Reset favorites</span> below.</li>
-                            <li>Go to Discover and favorite 1 camp again.</li>
-                            <li>Come back here and it will show up.</li>
-                          </ol>
-                        </div>
+                        {diag.sampleKeys.length > 0 && (
+                          <div className="mt-2">
+                            <div className="font-semibold">Sample keys</div>
+                            <div className="mt-1 break-words">{diag.sampleKeys.join(" • ")}</div>
+                          </div>
+                        )}
 
                         <div className="mt-3 flex gap-2">
                           <Button
                             variant="outline"
                             className="w-full"
                             onClick={() => refetch()}
-                            disabled={resetState.running}
+                            disabled={resetState.running || resolve.running}
                           >
                             <RefreshCw className="w-4 h-4 mr-2" />
                             Reload
@@ -285,20 +422,56 @@ function MyCampsPage() {
                           <Button
                             className="w-full"
                             onClick={resetFavorites}
-                            disabled={resetState.running || diag.count === 0}
+                            disabled={resetState.running || resolve.running || diag.count === 0}
                           >
                             <Trash2 className="w-4 h-4 mr-2" />
                             {resetState.running ? "Resetting…" : "Reset favorites"}
                           </Button>
                         </div>
 
-                        {resetState.err && (
-                          <div className="mt-2 text-xs text-rose-700 break-words">{resetState.err}</div>
-                        )}
+                        <div className="mt-2">
+                          <Button
+                            variant="outline"
+                            className="w-full"
+                            onClick={resolveOneIntentKey}
+                            disabled={resolve.running || diag.count === 0}
+                          >
+                            <Wrench className="w-4 h-4 mr-2" />
+                            {resolve.running ? "Resolving…" : "Resolve 1 intent key"}
+                          </Button>
+                        </div>
 
+                        {resetState.err && <div className="mt-2 text-xs text-rose-700 break-words">{resetState.err}</div>}
                         {resetState.done && !resetState.err && (
                           <div className="mt-2 text-xs text-emerald-700">
                             Reset complete. Deleted {resetState.deleted} intents. Now go favorite 1 camp in Discover.
+                          </div>
+                        )}
+
+                        {resolve.done && (
+                          <div className="mt-3 text-xs bg-white border border-amber-200 rounded-lg p-3 text-amber-900">
+                            <div className="font-semibold">Resolve result</div>
+                            <div className="mt-1 break-words">
+                              Key: <span className="font-mono">{resolve.key}</span>
+                            </div>
+
+                            <div className="mt-2 space-y-1">
+                              {resolve.attempts.map((a, idx) => (
+                                <div key={idx} className="flex items-start justify-between gap-2">
+                                  <div className="font-mono">{a.label}</div>
+                                  <div className={a.ok ? "text-emerald-700" : "text-slate-600"}>{a.ok ? "OK" : "Fail"}</div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {resolve.found ? (
+                              <div className="mt-2">
+                                <div className="text-emerald-700 font-semibold">Found by: {resolve.foundBy}</div>
+                                <pre className="mt-2 text-[11px] overflow-auto">{JSON.stringify(resolve.foundCamp, null, 2)}</pre>
+                              </div>
+                            ) : (
+                              <div className="mt-2 text-rose-700">{resolve.err || "Not found"}</div>
+                            )}
                           </div>
                         )}
                       </>
