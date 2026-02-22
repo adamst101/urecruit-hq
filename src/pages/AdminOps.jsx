@@ -136,7 +136,7 @@ export default function AdminOps() {
       try {
         const SportEntity = pickEntityFromSDK("Sport");
         if (!SportEntity) return;
-        const rows = typeof SportEntity.filter === "function" ? await SportEntity.filter({}) : SportEntity.list ? await SportEntity.list({}) : [];
+        const rows = (typeof SportEntity.filter === "function") ? await SportEntity.filter({}) : (SportEntity.list ? await SportEntity.list({}) : []);
         if (!mounted) return;
         setSportsList(Array.isArray(rows) ? rows : []);
       } catch {
@@ -521,11 +521,12 @@ export default function AdminOps() {
 
     const res = unwrapInvokeResponse(raw);
 
+    pushLog(`invoke data:\n${truncate(res, 1400)}`);
+
     if (res?.error) {
-      pushLog(`❌ NCAA sync error: ${safeStr(res.error)}`);
+      pushLog(`❌ NCAA sync failed: ${safeStr(res.error)}`);
       return { ok: false, error: safeStr(res.error), res };
     }
-
     if (res?.ok !== true) {
       pushLog("❌ NCAA sync failed (no ok=true).");
       return { ok: false, error: "no ok=true", res };
@@ -535,7 +536,9 @@ export default function AdminOps() {
     const next = Number(res?.nextStartAt ?? cursor);
     const done = !!res?.done;
 
-    pushLog(`✅ NCAA sync complete. scanned=${st.scanned} created=${st.created} updated=${st.updated} staged_unmatched=${st.staged_unmatched} errors=${st.errors} dryRun=${!!res?.dryRun} nextStartAt=${next} done=${done} stoppedEarly=${!!res?.debug?.stoppedEarly}`);
+    pushLog(
+      `✅ NCAA sync complete. processed=${st.processed} matched=${st.matched} created=${st.created} updated=${st.updated} noMatch=${st.noMatch} ambiguous=${st.ambiguous} missingName=${st.missingName} errors=${st.errors} skippedDryRun=${st.skippedDryRun} nextStartAt=${next} done=${done} stoppedEarly=${!!res?.debug?.stoppedEarly}`
+    );
 
     saveCursor(next);
 
@@ -543,17 +546,20 @@ export default function AdminOps() {
   }
 
   async function runNextBatch() {
+    if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
     setBusy(true);
+    stopRunRef.current = false;
     try {
       await invokeNcaaOnce();
     } catch (e) {
-      pushLog(`❌ NCAA invoke exception: ${safeStr(e?.message || e)}`);
+      pushLog(`❌ NCAA sync exception: ${safeStr(e?.message || e)}`);
     } finally {
       setBusy(false);
     }
   }
 
   async function runUntilDone() {
+    if (!adminEnabled) return pushLog("❌ Blocked: Admin Mode is OFF.");
     if (dryRun) return pushLog("❌ Run-until-done is disabled in Dry run. Switch to Write.");
 
     setBusy(true);
@@ -561,30 +567,29 @@ export default function AdminOps() {
 
     try {
       let cursor = Math.max(0, Number(startAt || 0));
-      pushLog(`▶ Run until done: startingCursor=${cursor} maxRowsPerBatch=${maxRows} maxBatches=${maxBatches} pauseMs=${pauseMs}`);
+      pushLog(`▶ Run until done: maxBatches=${maxBatches} pauseMs=${pauseMs} startingCursor=${cursor} haltOnBatchErrorsOver=${haltOnBatchErrorsOver}`);
 
-      let loops = 0;
+      let batches = 0;
       let done = false;
-      let totalErrors = 0;
 
-      while (!done && loops < Math.max(1, Number(maxBatches || 1))) {
+      while (!done && batches < maxBatches) {
         if (stopRunRef.current) {
-          pushLog("⏹ Run stopped by user.");
+          pushLog("⏹ Stopped by operator.");
           break;
         }
 
-        loops += 1;
-        pushLog(`--- Batch ${loops} ---`);
+        batches += 1;
+        pushLog(`--- Batch ${batches} ---`);
 
         const out = await invokeNcaaOnce({ startAtOverride: cursor });
         if (!out?.ok) {
-          pushLog(`❌ Batch ${loops} failed. Halting.`);
+          pushLog(`❌ Batch ${batches} failed. Halting.`);
           break;
         }
 
-        totalErrors += Number(out?.stats?.errors || 0);
-        if (totalErrors > Math.max(0, Number(haltOnBatchErrorsOver || 0))) {
-          pushLog(`⛔ Halted: errors=${totalErrors} exceeded threshold=${haltOnBatchErrorsOver}`);
+        const batchErrors = Number(out?.stats?.errors || 0);
+        if (Number.isFinite(batchErrors) && batchErrors > haltOnBatchErrorsOver) {
+          pushLog(`🛑 Halting: batch reported errors=${batchErrors} which is > haltOnBatchErrorsOver=${haltOnBatchErrorsOver}.`);
           break;
         }
 
@@ -593,16 +598,27 @@ export default function AdminOps() {
 
         done = !!out.done;
 
-        await sleep(Math.max(0, Number(pauseMs || 0)));
+        if (!done && pauseMs > 0) await sleep(pauseMs);
       }
 
-      if (done) pushLog("🏁 Run-until-done complete: done=true");
-      else pushLog(`⏸ Halted. Cursor saved at startAt=${cursor}`);
+      if (done) {
+        pushLog("🏁 NCAA run-until-done complete: done=true");
+      } else if (batches >= maxBatches) {
+        pushLog(`⏸ Reached maxBatches=${maxBatches}. Cursor saved at startAt=${cursor}.`);
+      } else {
+        pushLog(`⏸ Halted early. Cursor saved at startAt=${cursor}.`);
+      }
     } catch (e) {
-      pushLog(`❌ Run-until-done exception: ${safeStr(e?.message || e)}`);
+      pushLog(`❌ run-until-done exception: ${safeStr(e?.message || e)}`);
     } finally {
       setBusy(false);
+      stopRunRef.current = false;
     }
+  }
+
+  function stopRun() {
+    stopRunRef.current = true;
+    pushLog("Stop requested. Will halt after current batch completes.");
   }
 
   function clearLogs() {
@@ -610,31 +626,37 @@ export default function AdminOps() {
   }
 
   async function refreshUnmatched() {
+    const Unmatched = pickEntityFromSDK("UnmatchedAthleticsRow");
+    if (!Unmatched) {
+      pushLog("❌ UnmatchedAthleticsRow entity not found on client. Check src/api/entities.js export.");
+      return;
+    }
+
     setUnmatchedBusy(true);
     try {
-      const Unmatched = pickEntityFromSDK("UnmatchedAthleticsRow");
-      if (!Unmatched) {
-        pushLog("❌ UnmatchedAthleticsRow entity not available.");
-        return;
+      const all = await Unmatched.filter({});
+      const rows = Array.isArray(all) ? all : [];
+
+      const orgFilter = lc(unmatchedOrg || "");
+      const filtered = orgFilter ? rows.filter((r) => lc(r?.org) === orgFilter) : rows;
+
+      const counts = { total: filtered.length, no_match: 0, ambiguous: 0, missing_fields: 0, other: 0 };
+      for (const r of filtered) {
+        const reason = lc(r?.reason || "");
+        if (reason === "no_match") counts.no_match += 1;
+        else if (reason === "ambiguous") counts.ambiguous += 1;
+        else if (reason === "missing_fields") counts.missing_fields += 1;
+        else counts.other += 1;
       }
 
-      const orgFilter = unmatchedOrg && unmatchedOrg !== "all" ? unmatchedOrg : null;
+      const sorted = [...filtered].sort((a, b) => {
+        const av = Date.parse(a?.created_at || a?.createdAt || a?.created || "") || 0;
+        const bv = Date.parse(b?.created_at || b?.createdAt || b?.created || "") || 0;
+        return bv - av;
+      });
 
-      const rows = await (typeof Unmatched.filter === "function"
-        ? Unmatched.filter(orgFilter ? { org: orgFilter } : {})
-        : Unmatched.list
-        ? Unmatched.list(orgFilter ? { where: { org: orgFilter } } : {})
-        : []);
-
-      const arr = Array.isArray(rows) ? rows : [];
-      const counts = {
-        total: arr.length,
-        no_match: arr.filter((r) => r?.reason === "no_match").length,
-        ambiguous: arr.filter((r) => r?.reason === "ambiguous").length,
-        other: arr.filter((r) => r?.reason && !["no_match", "ambiguous"].includes(r.reason)).length,
-      };
-
-      const sample = arr.slice(0, Math.max(1, Number(unmatchedLimit || 25))).map((r) => ({
+      const lim = Math.max(1, Number(unmatchedLimit || 25));
+      const sample = sorted.slice(0, lim).map((r) => ({
         id: getId(r),
         org: r?.org,
         reason: r?.reason,
@@ -765,14 +787,21 @@ export default function AdminOps() {
   /* ----------------------------
      Camps: Promote CampDemo -> Camp (server-side function)
   ----------------------------- */
-  function resolvePromoteSportId() {
+
+  /* ----------------------------
+     Camps: Promote CampDemo -> Camp (server-side function)
+     Fixes:
+     - Advance sportIndex deterministically in run-until-done (avoid stale React state)
+     - Allow resolvePromoteSportId(index)
+  ----------------------------- */
+  function resolvePromoteSportId(sportIndexOverride) {
     if (promoteOnlySportId) return promoteOnlySportId;
-    const idx = Math.max(0, Number(promoteCursor?.sportIndex ?? 0));
+    const idx = Math.max(0, Number(sportIndexOverride ?? promoteCursor?.sportIndex ?? 0));
     const row = Array.isArray(sportsList) ? sportsList[idx] : null;
     return row ? getId(row) : "";
   }
 
-  async function invokePromoteOnce({ sportIdOverride, startAtOverride } = {}) {
+  async function invokePromoteOnce({ sportIdOverride, startAtOverride, sportIndexOverride } = {}) {
     if (!adminEnabled) {
       pushLog("❌ Blocked: Admin Mode is OFF.");
       return { ok: false, error: "admin off" };
@@ -782,7 +811,7 @@ export default function AdminOps() {
       return { ok: false, error: "invoke not available" };
     }
 
-    const sportId = safeStr(sportIdOverride || resolvePromoteSportId());
+    const sportId = safeStr(sportIdOverride || resolvePromoteSportId(sportIndexOverride));
     const startAt2 = Number.isFinite(startAtOverride)
       ? Math.max(0, Number(startAtOverride))
       : Math.max(0, Number(promoteCursor?.startAt ?? 0));
@@ -815,7 +844,7 @@ export default function AdminOps() {
     });
 
     const res = unwrapInvokeResponse(raw);
-    pushLog(`promote invoke data:\n${truncate(res, 1400)}`);
+    pushLog(`promote invoke data:\n${truncate(res, 1600)}`);
 
     if (res?.ok !== true) {
       const err = safeStr(res?.error || "no ok=true");
@@ -833,24 +862,11 @@ export default function AdminOps() {
       totals,
       nextStartAt,
       done,
+      debug: res?.debug || null,
     });
 
-    // Advance cursor
-    if (done) {
-      if (promoteOnlySportId) {
-        savePromoteCursor({ sportIndex: promoteCursor.sportIndex, startAt: nextStartAt });
-      } else {
-        // Move to next sport
-        savePromoteCursor({ sportIndex: Math.max(0, Number(promoteCursor?.sportIndex ?? 0)) + 1, startAt: 0 });
-      }
-    } else {
-      savePromoteCursor({ sportIndex: Math.max(0, Number(promoteCursor?.sportIndex ?? 0)), startAt: nextStartAt });
-    }
-
     pushLog(
-      `✅ Promote batch complete. sportId=${sportId} processed=${totals.processed} created=${totals.created} updated=${totals.updated} skipped=${totals.skipped} errors=${totals.errors} nextStartAt=${
-        done ? (promoteOnlySportId ? nextStartAt : 0) : nextStartAt
-      } done=${done}`
+      `✅ Promote batch complete. sportId=${sportId} processed=${totals.processed} created=${totals.created} updated=${totals.updated} skipped=${totals.skipped} errors=${totals.errors} nextStartAt=${nextStartAt} done=${done}`
     );
 
     return { ok: true, res, sportId, nextStartAt, done, totals };
@@ -871,12 +887,16 @@ export default function AdminOps() {
     setPromoteBusy(true);
     stopRunRef.current = false;
 
+    // Use local cursors to avoid stale React state during rapid loops.
+    let localSportIndex = Math.max(0, Number(promoteCursor?.sportIndex ?? 0));
+    let localStartAt = Math.max(0, Number(promoteCursor?.startAt ?? 0));
+
     try {
       let loops = 0;
       let totalErrors = 0;
 
       pushLog(
-        `▶ Promote run until done: mode=${promoteOnlySportId ? "single-sport" : "all-sports"} starting sportIndex=${promoteCursor.sportIndex} startAt=${promoteCursor.startAt} maxBatches=${promoteMaxBatches}`
+        `▶ Promote run until done: mode=${promoteOnlySportId ? "single-sport" : "all-sports"} starting sportIndex=${localSportIndex} startAt=${localStartAt} maxBatches=${promoteMaxBatches}`
       );
 
       while (loops < Math.max(1, Number(promoteMaxBatches || 50))) {
@@ -885,19 +905,28 @@ export default function AdminOps() {
           break;
         }
 
-        // If running all sports and we've exhausted the list, stop.
         if (!promoteOnlySportId) {
-          const idx = Math.max(0, Number(promoteCursor?.sportIndex ?? 0));
-          if (Array.isArray(sportsList) && idx >= sportsList.length) {
+          if (Array.isArray(sportsList) && localSportIndex >= sportsList.length) {
             pushLog("🏁 Promote complete: reached end of Sports list.");
             break;
           }
         }
 
+        const sportId = promoteOnlySportId ? promoteOnlySportId : resolvePromoteSportId(localSportIndex);
+        if (!sportId) {
+          pushLog("❌ Promote: Could not resolve sportId for current sportIndex.");
+          break;
+        }
+
         loops += 1;
         pushLog(`--- Promote Batch ${loops} ---`);
 
-        const out = await invokePromoteOnce();
+        const out = await invokePromoteOnce({
+          sportIdOverride: sportId,
+          startAtOverride: localStartAt,
+          sportIndexOverride: localSportIndex,
+        });
+
         if (!out?.ok) {
           pushLog(`❌ Promote batch ${loops} failed. Halting.`);
           break;
@@ -909,24 +938,34 @@ export default function AdminOps() {
           break;
         }
 
-        // Pause to reduce churn
-        await sleep(Math.max(0, Number(promotePauseMs || 0)));
-
-        // If single-sport and done, stop
-        if (promoteOnlySportId && !!out.done) {
-          pushLog("🏁 Promote complete: done=true (single sport)");
-          break;
+        // Advance local cursor
+        if (promoteOnlySportId) {
+          localStartAt = out.done ? out.nextStartAt : out.nextStartAt;
+          savePromoteCursor({ sportIndex: localSportIndex, startAt: localStartAt });
+          if (out.done) {
+            pushLog("🏁 Promote complete: done=true (single sport)");
+            break;
+          }
+        } else {
+          if (out.done) {
+            localSportIndex += 1;
+            localStartAt = 0;
+          } else {
+            localStartAt = out.nextStartAt;
+          }
+          savePromoteCursor({ sportIndex: localSportIndex, startAt: localStartAt });
         }
+
+        await sleep(Math.max(0, Number(promotePauseMs || 0)));
       }
 
-      pushLog(`⏸ Promote ended. Cursor: sportIndex=${promoteCursor.sportIndex} startAt=${promoteCursor.startAt}`);
+      pushLog(`⏸ Promote ended. Cursor: sportIndex=${localSportIndex} startAt=${localStartAt}`);
     } catch (e) {
       pushLog(`❌ Promote run-until-done exception: ${safeStr(e?.message || e)}`);
     } finally {
       setPromoteBusy(false);
     }
   }
-
   const lastSavedCursor = useMemo(() => Number(localStorage.getItem(cursorStorageKey) || 0), [cursorStorageKey, startAt]);
   const lastSavedDedupeCursor = useMemo(() => Number(localStorage.getItem(dedupeCursorStorageKey) || 0), [dedupeCursorStorageKey, startAtGroup]);
 
@@ -961,7 +1000,6 @@ export default function AdminOps() {
                 <span className="font-mono">{String(lastSavedDedupeCursor || 0)}</span>.
               </div>
             </div>
-
             <Button variant="outline" onClick={() => setShowRecoverBanner(false)} disabled={busy || unmatchedBusy || dedupeBusy || promoteBusy}>
               Dismiss
             </Button>
@@ -1025,54 +1063,48 @@ export default function AdminOps() {
 
             <div className="flex flex-wrap gap-2 items-center">
               <Button variant={dryRun ? "default" : "outline"} onClick={() => setDryRun(true)} disabled={busy || unmatchedBusy || dedupeBusy}>
-                DryRun
+                Dry run
               </Button>
               <Button variant={!dryRun ? "default" : "outline"} onClick={() => setDryRun(false)} disabled={busy || unmatchedBusy || dedupeBusy}>
                 Write
               </Button>
 
-              <Button variant="outline" onClick={() => (stopRunRef.current = true)} disabled={!busy}>
-                Stop
-              </Button>
-
-              <Button variant="outline" onClick={resetCursor} disabled={busy}>
-                Reset cursor
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <label className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">seasonYear</span>
                 <input className="border rounded px-2 py-1 w-24" type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy} />
               </label>
 
-              <label className="flex flex-col gap-1">
-                <span className="text-gray-600">startAt (cursor)</span>
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-gray-600">startAt</span>
                 <input
-                  className="border rounded px-2 py-1 w-28"
+                  className="border rounded px-2 py-1 w-24"
                   type="number"
                   value={startAt}
-                  onChange={(e) => setStartAt(Math.max(0, Number(e.target.value || 0)))}
+                  onChange={(e) => {
+                    const v = Math.max(0, Number(e.target.value || 0));
+                    setStartAt(v);
+                    localStorage.setItem(cursorStorageKey, String(v));
+                  }}
                   disabled={busy || unmatchedBusy || dedupeBusy}
                 />
               </label>
 
-              <label className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">maxRows</span>
                 <input className="border rounded px-2 py-1 w-24" type="number" value={maxRows} onChange={(e) => setMaxRows(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy} />
               </label>
 
-              <label className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">confidenceThreshold</span>
                 <input className="border rounded px-2 py-1 w-28" type="number" step="0.01" min="0" max="1" value={confidenceThreshold} onChange={(e) => setConfidenceThreshold(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy} />
               </label>
 
-              <label className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">throttleMs</span>
                 <input className="border rounded px-2 py-1 w-24" type="number" value={throttleMs} onChange={(e) => setThrottleMs(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy} />
               </label>
 
-              <label className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">timeBudgetMs</span>
                 <input className="border rounded px-2 py-1 w-28" type="number" value={timeBudgetMs} onChange={(e) => setTimeBudgetMs(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy} />
               </label>
@@ -1082,196 +1114,249 @@ export default function AdminOps() {
               <Button onClick={runNextBatch} disabled={busy || unmatchedBusy || dedupeBusy || !adminEnabled}>
                 Run next batch
               </Button>
-              <Button variant="outline" onClick={runUntilDone} disabled={busy || unmatchedBusy || dedupeBusy || !adminEnabled}>
-                Run until done
+              <Button variant="outline" onClick={resetCursor} disabled={busy || unmatchedBusy || dedupeBusy}>
+                Reset cursor
+              </Button>
+              <Button variant="outline" onClick={() => refreshUnmatched()} disabled={busy || !adminEnabled || unmatchedBusy || dedupeBusy}>
+                Refresh Unmatched
               </Button>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-3">
-              <Card className="p-3">
-                <div className="font-medium">Payload preview</div>
-                <pre className="text-xs overflow-auto mt-2">{safeJson(payloadPreview)}</pre>
-              </Card>
+            <div className="border rounded bg-gray-50 p-3">
+              <div className="text-xs font-semibold text-gray-700 mb-2">Payload preview (exact request body)</div>
+              <pre className="text-xs overflow-auto">{safeJson(payloadPreview)}</pre>
+            </div>
 
-              <Card className="p-3">
-                <div className="font-medium">Run-until-done controls</div>
-                <div className="grid grid-cols-2 gap-3 mt-2 text-sm">
-                  <label className="flex flex-col gap-1">
-                    <span className="text-gray-600">maxBatches</span>
-                    <input className="border rounded px-2 py-1 w-24" type="number" value={maxBatches} onChange={(e) => setMaxBatches(Number(e.target.value || 0))} disabled={busy} />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-gray-600">pauseMs</span>
-                    <input className="border rounded px-2 py-1 w-24" type="number" value={pauseMs} onChange={(e) => setPauseMs(Number(e.target.value || 0))} disabled={busy} />
-                  </label>
-                  <label className="flex flex-col gap-1 col-span-2">
-                    <span className="text-gray-600">haltOnBatchErrorsOver</span>
-                    <input className="border rounded px-2 py-1 w-28" type="number" value={haltOnBatchErrorsOver} onChange={(e) => setHaltOnBatchErrorsOver(Number(e.target.value || 0))} disabled={busy} />
-                  </label>
-                </div>
-              </Card>
+            <div className="border-t pt-3 space-y-2">
+              <div className="text-sm font-medium">Run until done</div>
+
+              <div className="flex flex-wrap gap-3 items-center">
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">maxBatches</span>
+                  <input className="border rounded px-2 py-1 w-24" type="number" min="1" value={maxBatches} onChange={(e) => setMaxBatches(Math.max(1, Number(e.target.value || 1)))} disabled={busy || unmatchedBusy || dedupeBusy} />
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">pauseMs</span>
+                  <input className="border rounded px-2 py-1 w-24" type="number" min="0" value={pauseMs} onChange={(e) => setPauseMs(Math.max(0, Number(e.target.value || 0)))} disabled={busy || unmatchedBusy || dedupeBusy} />
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">halt if errors &gt;</span>
+                  <input className="border rounded px-2 py-1 w-20" type="number" min="0" value={haltOnBatchErrorsOver} onChange={(e) => setHaltOnBatchErrorsOver(Math.max(0, Number(e.target.value || 0)))} disabled={busy || unmatchedBusy || dedupeBusy} />
+                </label>
+
+                <Button onClick={runUntilDone} disabled={busy || unmatchedBusy || dedupeBusy || !adminEnabled || dryRun}>
+                  Run until done
+                </Button>
+
+                <Button variant="outline" onClick={stopRun} disabled={!busy}>
+                  Stop
+                </Button>
+              </div>
+
+              {dryRun && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">Run-until-done is disabled in Dry run. Switch to Write.</div>}
+
+              <div className="text-xs text-gray-600">
+                Cursor key: <span className="font-mono">{cursorStorageKey}</span> (persisted)
+              </div>
             </div>
           </Card>
 
-          {/* Unmatched */}
+          {/* DEDUPE */}
           <Card className="p-4 space-y-3">
-            <div className="text-lg font-semibold">Unmatched queue</div>
-            <div className="text-sm text-gray-600">Visibility into staged rows to triage matching issues.</div>
+            <div className="text-lg font-semibold">AthleticsMembership dedupe sweep</div>
+            <div className="text-sm text-gray-600">
+              Use this to remove duplicates per <span className="font-mono">source_key</span> safely. Tuned to avoid rate limits.
+            </div>
 
             <div className="flex flex-wrap gap-2 items-center">
+              <Button variant={dedupeDryRun ? "default" : "outline"} onClick={() => setDedupeDryRun(true)} disabled={busy || unmatchedBusy || dedupeBusy}>
+                Dry run
+              </Button>
+              <Button variant={!dedupeDryRun ? "default" : "outline"} onClick={() => setDedupeDryRun(false)} disabled={busy || unmatchedBusy || dedupeBusy}>
+                Write
+              </Button>
+
               <label className="flex items-center gap-2 text-sm">
-                <span className="text-gray-600">Org</span>
-                <select className="border rounded px-2 py-1" value={unmatchedOrg} onChange={(e) => setUnmatchedOrg(e.target.value)} disabled={unmatchedBusy || busy}>
-                  <option value="all">all</option>
+                <span className="text-gray-600">org</span>
+                <select className="border rounded px-2 py-1" value={dedupeOrg} onChange={(e) => setDedupeOrg(e.target.value)} disabled={busy || unmatchedBusy || dedupeBusy}>
                   <option value="ncaa">ncaa</option>
+                  <option value="naia">naia</option>
+                  <option value="njcaa">njcaa</option>
                 </select>
               </label>
 
               <label className="flex items-center gap-2 text-sm">
-                <span className="text-gray-600">Limit</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={unmatchedLimit} onChange={(e) => setUnmatchedLimit(Number(e.target.value || 0))} disabled={unmatchedBusy || busy} />
-              </label>
-
-              <Button onClick={refreshUnmatched} disabled={unmatchedBusy}>
-                Refresh
-              </Button>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-3">
-              <Card className="p-3">
-                <div className="font-medium">Summary</div>
-                <pre className="text-xs overflow-auto mt-2">{safeJson(unmatchedSummary || { note: "(none yet)" })}</pre>
-              </Card>
-
-              <Card className="p-3">
-                <div className="font-medium">Samples</div>
-                <div className="mt-2 overflow-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-left">
-                        <th className="p-2">reason</th>
-                        <th className="p-2">raw_school_name</th>
-                        <th className="p-2">raw_city</th>
-                        <th className="p-2">raw_state</th>
-                        <th className="p-2">source</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {unmatchedSamples.length ? (
-                        unmatchedSamples.map((r) => (
-                          <tr key={r.id} className="border-t">
-                            <td className="p-2 font-mono">{r.reason}</td>
-                            <td className="p-2">{r.raw_school_name}</td>
-                            <td className="p-2">{r.raw_city}</td>
-                            <td className="p-2">{r.raw_state}</td>
-                            <td className="p-2">
-                              {r.source_url ? (
-                                <a className="text-blue-700 underline" href={r.source_url} target="_blank" rel="noreferrer">
-                                  open
-                                </a>
-                              ) : (
-                                <span className="text-gray-500">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr className="border-t">
-                          <td className="p-2 text-gray-500" colSpan={5}>
-                            (no samples loaded)
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </div>
-
-            <div className="text-xs text-gray-600">
-              Note: staging rows are written by the function when <span className="font-mono">dryRun=false</span> and a row is <span className="font-mono">no_match</span> or <span className="font-mono">ambiguous</span>.
-            </div>
-          </Card>
-
-          {/* Dedupe */}
-          <Card className="p-4 space-y-3">
-            <div className="text-lg font-semibold">AthleticsMembership dedupe sweep</div>
-
-            <div className="flex flex-wrap gap-2 items-center">
-              <Button variant={dedupeDryRun ? "default" : "outline"} onClick={() => setDedupeDryRun(true)} disabled={dedupeBusy || !adminEnabled}>
-                DryRun
-              </Button>
-              <Button variant={!dedupeDryRun ? "default" : "outline"} onClick={() => setDedupeDryRun(false)} disabled={dedupeBusy || !adminEnabled}>
-                Write
-              </Button>
-
-              <Button variant="outline" onClick={resetDedupeCursor} disabled={dedupeBusy}>
-                Reset cursor
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <label className="flex flex-col gap-1">
-                <span className="text-gray-600">org</span>
-                <input className="border rounded px-2 py-1" value={dedupeOrg} onChange={(e) => setDedupeOrg(e.target.value)} disabled={dedupeBusy} />
-              </label>
-
-              <label className="flex flex-col gap-1">
                 <span className="text-gray-600">seasonYear</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={dedupeSeasonYear} onChange={(e) => setDedupeSeasonYear(Number(e.target.value || 0))} disabled={dedupeBusy} />
+                <input className="border rounded px-2 py-1 w-24" type="number" value={dedupeSeasonYear} onChange={(e) => setDedupeSeasonYear(Number(e.target.value || 0))} disabled={busy || unmatchedBusy || dedupeBusy} />
               </label>
 
-              <label className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">startAtGroup</span>
-                <input className="border rounded px-2 py-1 w-28" type="number" value={startAtGroup} onChange={(e) => setStartAtGroup(Math.max(0, Number(e.target.value || 0)))} disabled={dedupeBusy} />
+                <input
+                  className="border rounded px-2 py-1 w-24"
+                  type="number"
+                  value={startAtGroup}
+                  onChange={(e) => {
+                    const v = Math.max(0, Number(e.target.value || 0));
+                    setStartAtGroup(v);
+                    localStorage.setItem(dedupeCursorStorageKey, String(v));
+                  }}
+                  disabled={busy || unmatchedBusy || dedupeBusy}
+                />
               </label>
 
-              <label className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">maxGroups</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={maxGroups} onChange={(e) => setMaxGroups(Number(e.target.value || 0))} disabled={dedupeBusy} />
+                <input className="border rounded px-2 py-1 w-24" type="number" min="1" value={maxGroups} onChange={(e) => setMaxGroups(Math.max(1, Number(e.target.value || 1)))} disabled={busy || unmatchedBusy || dedupeBusy} />
               </label>
 
-              <label className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">maxDelete</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={maxDelete} onChange={(e) => setMaxDelete(Number(e.target.value || 0))} disabled={dedupeBusy} />
+                <input className="border rounded px-2 py-1 w-24" type="number" min="0" value={maxDelete} onChange={(e) => setMaxDelete(Math.max(0, Number(e.target.value || 0)))} disabled={busy || unmatchedBusy || dedupeBusy} />
               </label>
 
-              <label className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">throttleMs</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={dedupeThrottleMs} onChange={(e) => setDedupeThrottleMs(Number(e.target.value || 0))} disabled={dedupeBusy} />
+                <input className="border rounded px-2 py-1 w-24" type="number" min="0" value={dedupeThrottleMs} onChange={(e) => setDedupeThrottleMs(Math.max(0, Number(e.target.value || 0)))} disabled={busy || unmatchedBusy || dedupeBusy} />
               </label>
 
-              <label className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">timeBudgetMs</span>
-                <input className="border rounded px-2 py-1 w-28" type="number" value={dedupeTimeBudgetMs} onChange={(e) => setDedupeTimeBudgetMs(Number(e.target.value || 0))} disabled={dedupeBusy} />
+                <input className="border rounded px-2 py-1 w-28" type="number" min="5000" value={dedupeTimeBudgetMs} onChange={(e) => setDedupeTimeBudgetMs(Math.max(5000, Number(e.target.value || 0)))} disabled={busy || unmatchedBusy || dedupeBusy} />
               </label>
 
-              <label className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">tries</span>
-                <input className="border rounded px-2 py-1 w-24" type="number" value={dedupeTries} onChange={(e) => setDedupeTries(Number(e.target.value || 0))} disabled={dedupeBusy} />
+                <input className="border rounded px-2 py-1 w-20" type="number" min="1" value={dedupeTries} onChange={(e) => setDedupeTries(Math.max(1, Number(e.target.value || 1)))} disabled={busy || unmatchedBusy || dedupeBusy} />
               </label>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button onClick={runDedupeNext} disabled={dedupeBusy || !adminEnabled}>
-                Run next batch
+              <Button onClick={runDedupeNext} disabled={busy || unmatchedBusy || dedupeBusy || !adminEnabled}>
+                Run dedupe batch
               </Button>
-              <Button variant="outline" onClick={runDedupeUntilDone} disabled={dedupeBusy || !adminEnabled}>
-                Run until done
+              <Button variant="outline" onClick={resetDedupeCursor} disabled={busy || unmatchedBusy || dedupeBusy}>
+                Reset dedupe cursor
+              </Button>
+              <Button onClick={runDedupeUntilDone} disabled={busy || unmatchedBusy || dedupeBusy || !adminEnabled || dedupeDryRun}>
+                Run dedupe until done
               </Button>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-3">
-              <Card className="p-3">
-                <div className="font-medium">Payload preview</div>
-                <pre className="text-xs overflow-auto mt-2">{safeJson(dedupePayloadPreview)}</pre>
-              </Card>
-              <Card className="p-3">
-                <div className="font-medium">Notes</div>
-                <div className="text-sm text-gray-700 mt-2">
-                  This uses <span className="font-mono">athleticsMembershipDedupeSweep</span>. Cursor saved per <span className="font-mono">org + seasonYear</span>.
+            {dedupeDryRun && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">Run-until-done is disabled in Dry run. Switch to Write.</div>}
+
+            <div className="border rounded bg-gray-50 p-3">
+              <div className="text-xs font-semibold text-gray-700 mb-2">Dedupe payload preview (exact request body)</div>
+              <pre className="text-xs overflow-auto">{safeJson(dedupePayloadPreview)}</pre>
+            </div>
+
+            <div className="text-xs text-gray-600">
+              Cursor key: <span className="font-mono">{dedupeCursorStorageKey}</span> (persisted)
+            </div>
+          </Card>
+
+          {/* Unmatched queue */}
+          <Card className="p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold">Unmatched queue</div>
+                <div className="text-sm text-gray-600">Visibility for noMatch/ambiguous staging rows.</div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 items-center">
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">org</span>
+                  <select className="border rounded px-2 py-1" value={unmatchedOrg} onChange={(e) => setUnmatchedOrg(e.target.value)} disabled={busy || unmatchedBusy || dedupeBusy}>
+                    <option value="ncaa">ncaa</option>
+                    <option value="naia">naia</option>
+                    <option value="njcaa">njcaa</option>
+                    <option value="">(all)</option>
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">sample</span>
+                  <input className="border rounded px-2 py-1 w-20" type="number" min="5" max="100" value={unmatchedLimit} onChange={(e) => setUnmatchedLimit(Number(e.target.value || 25))} disabled={busy || unmatchedBusy || dedupeBusy} />
+                </label>
+
+                <Button onClick={refreshUnmatched} disabled={busy || !adminEnabled || unmatchedBusy || dedupeBusy}>
+                  {unmatchedBusy ? "Refreshing..." : "Refresh"}
+                </Button>
+              </div>
+            </div>
+
+            {unmatchedSummary ? (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                <div className="border rounded p-2">
+                  <div className="text-gray-600 text-xs">total</div>
+                  <div className="font-semibold">{unmatchedSummary.counts.total}</div>
                 </div>
-              </Card>
+                <div className="border rounded p-2">
+                  <div className="text-gray-600 text-xs">no_match</div>
+                  <div className="font-semibold">{unmatchedSummary.counts.no_match}</div>
+                </div>
+                <div className="border rounded p-2">
+                  <div className="text-gray-600 text-xs">ambiguous</div>
+                  <div className="font-semibold">{unmatchedSummary.counts.ambiguous}</div>
+                </div>
+                <div className="border rounded p-2">
+                  <div className="text-gray-600 text-xs">missing_fields</div>
+                  <div className="font-semibold">{unmatchedSummary.counts.missing_fields}</div>
+                </div>
+                <div className="border rounded p-2">
+                  <div className="text-gray-600 text-xs">other</div>
+                  <div className="font-semibold">{unmatchedSummary.counts.other}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-600">Click Refresh to load unmatched counts and samples.</div>
+            )}
+
+            <div className="border rounded bg-gray-50 p-2 overflow-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-gray-600">
+                    <th className="p-2">reason</th>
+                    <th className="p-2">raw_school_name</th>
+                    <th className="p-2">raw_source_key</th>
+                    <th className="p-2">created_at</th>
+                    <th className="p-2">source_url</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unmatchedSamples.length ? (
+                    unmatchedSamples.map((r) => (
+                      <tr key={r.id || r.raw_source_key} className="border-t">
+                        <td className="p-2 font-mono">{safeStr(r.reason)}</td>
+                        <td className="p-2">{safeStr(r.raw_school_name)}</td>
+                        <td className="p-2 font-mono">{safeStr(r.raw_source_key)}</td>
+                        <td className="p-2 font-mono">{safeStr(r.created_at)}</td>
+                        <td className="p-2">
+                          {r.source_url ? (
+                            <a className="text-blue-700 underline" href={r.source_url} target="_blank" rel="noreferrer">
+                              open
+                            </a>
+                          ) : (
+                            <span className="text-gray-500">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr className="border-t">
+                      <td className="p-2 text-gray-500" colSpan={5}>
+                        (no samples loaded)
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="text-xs text-gray-600">
+              Note: staging rows are written by the function when <span className="font-mono">dryRun=false</span> and a row is <span className="font-mono">no_match</span> or <span className="font-mono">ambiguous</span>.
             </div>
           </Card>
         </div>
