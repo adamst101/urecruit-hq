@@ -130,8 +130,14 @@ function selectCampFieldsFromDemoRow(r: any, runIso: string) {
 }
 
 async function fetchCampDemoRowsBySport(CampDemo: any, sportId: string) {
-  // CampDemo schema varies. Try common filters.
+  // sportId='*' promotes all CampDemo rows (no sport filter)
   const sport = safeStr(sportId);
+  if (sport === '*' || sport === 'ALL' || sport === '__ALL__') {
+    const rows = asArray<any>(await withRetry(() => CampDemo.filter({})));
+    return { rows, matchedOn: { all: true } };
+  }
+
+  // CampDemo schema varies. Try common filters.
   const tries = [
     { sport_id: sport },
     { sport_id: Number.isFinite(Number(sport)) ? Number(sport) : sport },
@@ -201,6 +207,13 @@ Deno.serve(async (req) => {
             sportId: r?.sportId,
             sport: r?.sport,
           })),
+          distinctSportIdsSample: Array.from(
+            new Set(
+              sample
+                .map((r) => safeStr(r?.sport_id || r?.sportId || r?.sport).trim())
+                .filter(Boolean)
+            )
+          ).slice(0, 30),
         };
       } catch {
         schemaHint = { note: "No CampDemo rows matched sport filter; unable to sample CampDemo." };
