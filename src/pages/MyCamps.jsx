@@ -1,5 +1,5 @@
 // src/pages/MyCamps.jsx
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Lock } from "lucide-react";
 
@@ -14,6 +14,17 @@ import RouteGuard from "../components/auth/RouteGuard";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
+import { base44 } from "../api/base44Client";
+
+function normId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  return x.id || x._id || x.uuid || null;
+}
+
+function normLower(x) {
+  return String(x || "").trim().toLowerCase();
+}
 
 /**
  * MyCamps
@@ -28,26 +39,67 @@ function MyCampsPage() {
   const { currentYear } = useSeasonAccess();
   const { athleteProfile } = useAthleteIdentity();
 
-  const athleteId = athleteProfile?.id;
-  const sportId = athleteProfile?.sport_id;
+  const athleteId = normId(athleteProfile);
+  const sportId = normId(athleteProfile?.sport_id) || athleteProfile?.sport_id;
+
+  // Diagnostics to avoid “No camps yet” when intents exist but camp joins fail.
+  const [intentDiag, setIntentDiag] = useState({
+    loading: true,
+    count: 0,
+    favorites: 0,
+    registered: 0,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!athleteId) {
+      setIntentDiag({ loading: false, count: 0, favorites: 0, registered: 0 });
+      return;
+    }
+
+    (async () => {
+      try {
+        const Intent = base44?.entities?.CampIntent;
+        if (!Intent?.filter) {
+          if (!cancelled) setIntentDiag({ loading: false, count: 0, favorites: 0, registered: 0 });
+          return;
+        }
+
+        const rows = await Intent.filter({ athlete_id: String(athleteId) });
+        const arr = Array.isArray(rows) ? rows : [];
+        const fav = arr.filter((r) => normLower(r?.status) === "favorite").length;
+        const reg = arr.filter((r) => ["registered", "completed"].includes(normLower(r?.status))).length;
+
+        if (!cancelled) setIntentDiag({ loading: false, count: arr.length, favorites: fav, registered: reg });
+      } catch {
+        if (!cancelled) setIntentDiag({ loading: false, count: 0, favorites: 0, registered: 0 });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [athleteId]);
 
   const { data, isLoading, isError, error } = useCampSummariesClient({
-    athleteId,
-    sportId,
-    enabled: !!athleteId
+    athleteId: athleteId ? String(athleteId) : undefined,
+    sportId: sportId ? String(sportId) : "",
+    enabled: !!athleteId,
   });
 
   const campSummaries = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
-  const registered = useMemo(
-    () => campSummaries.filter((c) => c.intent_status === "registered" || c.intent_status === "completed"),
-    [campSummaries]
-  );
+  const registered = useMemo(() => {
+    return campSummaries.filter((c) => {
+      const st = normLower(c?.intent_status);
+      return st === "registered" || st === "completed";
+    });
+  }, [campSummaries]);
 
-  const favorites = useMemo(
-    () => campSummaries.filter((c) => c.intent_status === "favorite"),
-    [campSummaries]
-  );
+  const favorites = useMemo(() => {
+    return campSummaries.filter((c) => normLower(c?.intent_status) === "favorite");
+  }, [campSummaries]);
 
   if (isLoading) {
     return (
@@ -91,6 +143,26 @@ function MyCampsPage() {
                 <div className="text-sm text-slate-600 mt-1">
                   Favorite or register for camps in Discover to see them here.
                 </div>
+
+                {!intentDiag.loading && intentDiag.count > 0 && (
+                  <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <div className="font-semibold">We found your intents, but couldn’t match camps.</div>
+                    <div className="mt-1">
+                      Intents: {intentDiag.count} • Favorites: {intentDiag.favorites} • Registered: {intentDiag.registered}
+                    </div>
+                    <div className="mt-2">
+                      Most common cause: the Camp row referenced by your favorite was not found (promotion/IDs mismatch).
+                      Run CampDemo → Camp promotion again, then reload.
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <Button variant="outline" onClick={() => navigate(createPageUrl("AdminOps"))}>
+                        Open Admin Ops
+                      </Button>
+                      <Button onClick={() => window.location.reload()}>Reload</Button>
+                    </div>
+                  </div>
+                )}
+
                 <Button className="w-full mt-4" onClick={() => navigate(createPageUrl("Discover"))}>
                   Go to Discover
                 </Button>
