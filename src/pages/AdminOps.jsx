@@ -196,6 +196,11 @@ export default function AdminOps() {
   const [promoteStatus, setPromoteStatus] = useState(null);
   const [promoteCursor, setPromoteCursor] = useState({ sportIndex: 0, startAt: 0 });
 
+  // CampDemo sport ids (CampDemo.sport_id) often differ from Sport.id.
+  // Use these ids for promotion so we actually match CampDemo rows.
+  const [campDemoSportIds, setCampDemoSportIds] = useState([]);
+  const [campDemoSportBusy, setCampDemoSportBusy] = useState(false);
+
   const cursorStorageKey = useMemo(() => `${NCAA_CURSOR_KEY_PREFIX}${seasonYear}`, [seasonYear]);
   const dedupeCursorStorageKey = useMemo(
     () => `${DEDUPE_CURSOR_KEY_PREFIX}${dedupeOrg}:${dedupeSeasonYear}`,
@@ -794,9 +799,42 @@ export default function AdminOps() {
      - Advance sportIndex deterministically in run-until-done (avoid stale React state)
      - Allow resolvePromoteSportId(index)
   ----------------------------- */
-  function resolvePromoteSportId(sportIndexOverride) {
+  
+  async function discoverCampDemoSportIds() {
+    setCampDemoSportBusy(true);
+    try {
+      const CampDemo = pickEntityFromSDK("CampDemo");
+      if (!CampDemo?.filter) {
+        pushLog("❌ CampDemo entity not available or missing filter().");
+        return;
+      }
+
+      const rows = await CampDemo.filter({});
+      const ids = Array.from(
+        new Set((Array.isArray(rows) ? rows : []).map((r) => safeStr(r?.sport_id).trim()).filter(Boolean))
+      ).sort();
+
+      setCampDemoSportIds(ids);
+      pushLog(`✅ Discovered CampDemo sportIds: count=${ids.length} sample=${ids.slice(0, 6).join(", ") || "(none)"}`);
+    } catch (e) {
+      pushLog(`❌ Discover CampDemo sportIds failed: ${safeStr(e?.message || e)}`);
+    } finally {
+      setCampDemoSportBusy(false);
+    }
+  }
+
+function resolvePromoteSportId(sportIndexOverride) {
     if (promoteOnlySportId) return promoteOnlySportId;
+
     const idx = Math.max(0, Number(sportIndexOverride ?? promoteCursor?.sportIndex ?? 0));
+
+    // Prefer CampDemo sport ids if discovered (these match CampDemo.sport_id values).
+    if (Array.isArray(campDemoSportIds) && campDemoSportIds.length > 0) {
+      const sid = campDemoSportIds[idx];
+      return sid ? String(sid) : "";
+    }
+
+    // Fallback (older behavior): Sport table ids
     const row = Array.isArray(sportsList) ? sportsList[idx] : null;
     return row ? getId(row) : "";
   }
@@ -906,8 +944,14 @@ export default function AdminOps() {
         }
 
         if (!promoteOnlySportId) {
-          if (Array.isArray(sportsList) && localSportIndex >= sportsList.length) {
-            pushLog("🏁 Promote complete: reached end of Sports list.");
+          const listLen = Array.isArray(campDemoSportIds) && campDemoSportIds.length > 0
+            ? campDemoSportIds.length
+            : Array.isArray(sportsList)
+            ? sportsList.length
+            : 0;
+
+          if (listLen > 0 && localSportIndex >= listLen) {
+            pushLog("🏁 Promote complete: reached end of sportId list.");
             break;
           }
         }
@@ -1384,6 +1428,17 @@ export default function AdminOps() {
               <Button variant="outline" onClick={resetPromoteCursor} disabled={promoteBusy}>
                 Reset cursor
               </Button>
+            <div className="flex flex-wrap gap-2 items-center mt-2">
+              <Button variant="outline" onClick={discoverCampDemoSportIds} disabled={campDemoSportBusy || promoteBusy || !adminEnabled}>
+                {campDemoSportBusy ? "Discovering..." : "Discover CampDemo sportIds"}
+              </Button>
+              <div className="text-xs text-gray-600">
+                CampDemo sportIds loaded: <span className="font-mono">{String(Array.isArray(campDemoSportIds) ? campDemoSportIds.length : 0)}</span>
+                {" · "}
+                Sport table loaded: <span className="font-mono">{String(Array.isArray(sportsList) ? sportsList.length : 0)}</span>
+              </div>
+            </div>
+
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
