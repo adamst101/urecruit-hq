@@ -267,3 +267,6 @@ export function useCampSummariesClient({
     },
   });
 }
+
+// Legacy export for backwards compatibility
+export const usePublicCampSummariesClient = useCampSummariesClient;
