@@ -27,8 +27,6 @@ import {
   matchesDateRange,
 } from "../components/filters/filterUtils.jsx";
 
-// CampCard kept for backwards compatibility in other pages; Discover uses a tighter scan-first card.
-
 /* -------------------------
    Discover UX (Option A)
    - list-first
@@ -36,6 +34,7 @@ import {
    - sort
    - skeleton loading
    - paid sport lock
+   - IMPORTANT: favorites use event_key (stable across promotions)
 ------------------------- */
 
 function SkeletonCard() {
@@ -87,14 +86,10 @@ function hasActiveFilters(nf, isPaid) {
   const posOn = Array.isArray(nf.positions) && nf.positions.length > 0;
   const stateOn = !!nf.state;
   const dateOn = !!nf.startDate || !!nf.endDate;
-  // sport filters are always active in paid mode by policy, so don't count them.
   const sportOn = !isPaid && Array.isArray(nf.sports) && nf.sports.length > 0;
   return divOn || posOn || stateOn || dateOn || sportOn;
 }
 
-/* -------------------------
-   Helpers (MVP-safe)
-------------------------- */
 function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
@@ -179,10 +174,10 @@ function readActiveFlag(row) {
   const st = String(row?.status || "").toLowerCase().trim();
   if (st === "inactive") return false;
   if (st === "active") return true;
-  return true; // default to shown
+  return true;
 }
 
-// Schema-safe Event telemetry (no page-breaking required-field errors)
+// Schema-safe Event telemetry
 function trackEvent(payload) {
   try {
     const EventEntity = base44?.entities?.Event || base44?.entities?.Events;
@@ -210,7 +205,7 @@ function trackEvent(payload) {
       ts: iso,
     });
   } catch {
-    // never break product UX on telemetry
+    // never break UX on telemetry
   }
 }
 
@@ -255,14 +250,15 @@ export default function Discover() {
   const { nf, setNF, clearFilters } = useCampFilters();
   const writeGate = useWriteGate();
 
-  // Paid-only: athlete intent map for favorites/registered flags
-  const [intentByCampId, setIntentByCampId] = useState({});
+  // Paid-only: athlete intent map for favorite state and "My Camps" parity
+  const [intentByKey, setIntentByKey] = useState({});
   const intentRefreshSeq = useRef(0);
 
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
 
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const requestedSeason = url.requestedSeason;
+
   const debugMode = useMemo(() => {
     try {
       const sp = new URLSearchParams(loc.search || "");
@@ -305,7 +301,6 @@ export default function Discover() {
     return sid != null ? String(sid) : "";
   }, [athleteProfile]);
 
-  // Hard enforce in paid mode (even if localStorage filters drift)
   useEffect(() => {
     if (!isPaid) return;
     if (!athleteSportId) return;
@@ -320,10 +315,11 @@ export default function Discover() {
     return isPaid && !!athleteId && !athleteSportId;
   }, [isPaid, athleteId, athleteSportId]);
 
-  // Paid-only: load camp intents for favorite state and "My Camps" parity
+  // Paid-only: load camp intents for favorite state
+  // IMPORTANT: intents are keyed by camp_id which we will store as event_key going forward
   useEffect(() => {
     if (!isPaid) {
-      setIntentByCampId({});
+      setIntentByKey({});
       return;
     }
     if (!athleteId) return;
@@ -333,19 +329,19 @@ export default function Discover() {
 
     (async () => {
       try {
-        const rows = asArray(await base44?.entities?.CampIntent?.filter?.({ athlete_id: athleteId }));
+        const rows = asArray(await base44?.entities?.CampIntent?.filter?.({ athlete_id: String(athleteId) }));
         if (cancelled) return;
         if (seq !== intentRefreshSeq.current) return;
 
         const map = {};
         for (const r of rows) {
-          const campKey = String(normId(r?.camp_id) || r?.camp_id || "");
-          if (!campKey) continue;
-          map[campKey] = r;
+          const key = String(r?.camp_id || "");
+          if (!key) continue;
+          map[key] = r;
         }
-        setIntentByCampId(map);
+        setIntentByKey(map);
       } catch {
-        if (!cancelled) setIntentByCampId({});
+        if (!cancelled) setIntentByKey({});
       }
     })();
 
@@ -354,38 +350,36 @@ export default function Discover() {
     };
   }, [isPaid, athleteId]);
 
-  async function upsertIntent(campId, nextStatus) {
+  async function upsertIntent(intentKey, nextStatus) {
     if (!isPaid) return { ok: false };
     if (!athleteId) return { ok: false };
     const CampIntent = base44?.entities?.CampIntent;
     if (!CampIntent?.filter || !CampIntent?.create) return { ok: false };
 
-    const campKey = String(campId || "");
-    if (!campKey) return { ok: false };
+    const key = String(intentKey || "");
+    if (!key) return { ok: false };
 
     // optimistic UI
-    setIntentByCampId((prev) => {
-      const cur = prev?.[campKey] || null;
-      const next = { ...(cur || {}), athlete_id: athleteId, camp_id: campKey, status: nextStatus };
-      return { ...(prev || {}), [campKey]: next };
+    setIntentByKey((prev) => {
+      const cur = prev?.[key] || null;
+      const next = { ...(cur || {}), athlete_id: String(athleteId), camp_id: key, status: nextStatus };
+      return { ...(prev || {}), [key]: next };
     });
 
     try {
-      const existing = asArray(
-        await CampIntent.filter({ athlete_id: athleteId, camp_id: campKey })
-      )[0];
+      const existing = asArray(await CampIntent.filter({ athlete_id: String(athleteId), camp_id: key }))[0];
 
       if (existing?.id && CampIntent.update) {
         await CampIntent.update(existing.id, { status: nextStatus });
       } else {
-        await CampIntent.create({ athlete_id: athleteId, camp_id: campKey, status: nextStatus });
+        await CampIntent.create({ athlete_id: String(athleteId), camp_id: key, status: nextStatus });
       }
       return { ok: true };
     } catch (e) {
       // revert optimistic on failure
-      setIntentByCampId((prev) => {
+      setIntentByKey((prev) => {
         const copy = { ...(prev || {}) };
-        delete copy[campKey];
+        delete copy[key];
         return copy;
       });
       return { ok: false, error: String(e?.message || e) };
@@ -479,7 +473,6 @@ export default function Discover() {
         const CampEntity = base44?.entities?.Camp || base44?.entities?.Camps;
         if (!CampEntity?.filter) throw new Error("Camp entity not available.");
 
-        // Prefer server-side filtering by season_year first.
         let byYear = [];
         try {
           byYear = asArray(await CampEntity.filter({ season_year: seasonYear }));
@@ -487,7 +480,6 @@ export default function Discover() {
           byYear = [];
         }
 
-        // If season_year stored as string, try again.
         if (byYear.length === 0) {
           try {
             byYear = asArray(await CampEntity.filter({ season_year: String(seasonYear) }));
@@ -501,7 +493,6 @@ export default function Discover() {
           return;
         }
 
-        // Fallback: fetch and derive season on the client.
         const allRows = asArray(await CampEntity.filter({}));
 
         const filtered = allRows.filter((r) => {
@@ -513,8 +504,6 @@ export default function Discover() {
           return derived === seasonYear;
         });
 
-        // Important: do NOT silently show all seasons.
-        // If we cannot find the season, fail closed and show a clear action message.
         if (!cancelled) {
           setRawCamps(filtered);
           if (filtered.length === 0 && allRows.length > 0) {
@@ -542,7 +531,6 @@ export default function Discover() {
     };
   }, [season?.isLoading, seasonYear]);
 
-  // Enrich: schools + sports
   useEffect(() => {
     let cancelled = false;
 
@@ -636,7 +624,6 @@ export default function Discover() {
     } else if (sortKey === "school_az") {
       sorted.sort((a, b) => getSchoolName(a).localeCompare(getSchoolName(b)));
     } else {
-      // soonest
       sorted.sort((a, b) => getStartTs(a) - getStartTs(b));
     }
 
@@ -655,11 +642,6 @@ export default function Discover() {
       athleteId: athleteId ? "yes" : "no",
       athleteSportId: athleteSportId || null,
       nfSports: Array.isArray(nf?.sports) ? nf.sports : [],
-      nfState: nf?.state || null,
-      nfDivisions: Array.isArray(nf?.divisions) ? nf.divisions : [],
-      nfPositions: Array.isArray(nf?.positions) ? nf.positions : [],
-      nfStart: nf?.startDate || null,
-      nfEnd: nf?.endDate || null,
       rawCamps: Array.isArray(rawCamps) ? rawCamps.length : 0,
       rows: Array.isArray(rows) ? rows.length : 0,
       campErr: campErr || null,
@@ -741,7 +723,9 @@ export default function Discover() {
           <div className="text-lg font-semibold text-amber-900">Camps not available</div>
           <div className="mt-2 text-sm text-amber-900/80">{campErr}</div>
           <div className="mt-4 flex gap-2 flex-wrap">
-            <Button variant="outline" onClick={() => nav("/AdminOps")}>Open Admin Ops</Button>
+            <Button variant="outline" onClick={() => nav("/AdminOps")}>
+              Open Admin Ops
+            </Button>
             <Button onClick={() => window.location.reload()}>Reload</Button>
           </div>
           <div className="mt-3 text-xs text-amber-900/70">
@@ -773,7 +757,9 @@ export default function Discover() {
             No camps found for season {seasonYear} (or filters excluded them).
           </div>
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" onClick={clearFilters}>Clear filters</Button>
+            <Button variant="outline" onClick={clearFilters}>
+              Clear filters
+            </Button>
             <Button onClick={openFiltersOrProfile}>{paidMissingSport ? "Complete Profile" : "Edit filters"}</Button>
           </div>
         </Card>
@@ -782,8 +768,20 @@ export default function Discover() {
 
     return (
       <div className="space-y-3">
+        {/* IMPORTANT NOTE: existing favorites saved before this change may not appear in MyCamps.
+            User must un-favorite and favorite again once to write event_key-based intents. */}
+        <Card className="p-3 border-slate-200 bg-white">
+          <div className="text-xs text-slate-600">
+            If My Camps looks empty after you favorited earlier today, unfavorite and favorite again once.
+            We now save favorites using a stable key so they won’t break after promotions.
+          </div>
+        </Card>
+
         {rows.map((r) => {
           const campId = String(r?.id ?? "");
+          const eventKey = r?.event_key ? String(r.event_key) : "";
+          const intentKey = eventKey || campId; // <--- THIS IS THE FIX (stable)
+
           const schoolId = String(normId(r?.school_id) ?? "");
           const sportId = String(r?.sport_id ?? "");
 
@@ -820,7 +818,7 @@ export default function Discover() {
           const dateLabel =
             startIso && endIso && endIso !== startIso ? `${startIso} → ${endIso}` : startIso || "TBD";
 
-          const intent = intentByCampId?.[campId] || null;
+          const intent = intentByKey?.[intentKey] || null;
           const isFavorite = String(intent?.status || "").toLowerCase() === "favorite";
           const isRegistered =
             String(intent?.status || "").toLowerCase() === "registered" ||
@@ -833,19 +831,11 @@ export default function Discover() {
               role="button"
               tabIndex={0}
               onClick={() => {
-                nav(
-                  isPaid
-                    ? `/CampDetail?id=${encodeURIComponent(campId)}`
-                    : `/CampDetailDemo?id=${encodeURIComponent(campId)}`
-                );
+                nav(isPaid ? `/CampDetail?id=${encodeURIComponent(campId)}` : `/CampDetailDemo?id=${encodeURIComponent(campId)}`);
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
-                  nav(
-                    isPaid
-                      ? `/CampDetail?id=${encodeURIComponent(campId)}`
-                      : `/CampDetailDemo?id=${encodeURIComponent(campId)}`
-                  );
+                  nav(isPaid ? `/CampDetail?id=${encodeURIComponent(campId)}` : `/CampDetailDemo?id=${encodeURIComponent(campId)}`);
                 }
               }}
             >
@@ -853,7 +843,6 @@ export default function Discover() {
                 <div className="flex items-start gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
                     {schoolLogo ? (
-                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={schoolLogo}
                         alt={`${schoolName} logo`}
@@ -915,12 +904,16 @@ export default function Discover() {
                     if (!isPaid) return;
                     const ok = await (writeGate?.ensure ? writeGate.ensure("favorite") : true);
                     if (!ok) return;
+
                     const next = isFavorite ? "" : "favorite";
-                    const res = await upsertIntent(campId, next);
+                    const res = await upsertIntent(intentKey, next);
+
                     trackEvent({
                       event_name: "favorite_toggle",
                       source: "discover",
                       camp_id: campId,
+                      event_key: eventKey || null,
+                      intent_key: intentKey,
                       next_status: next,
                       ok: res?.ok ? 1 : 0,
                     });
@@ -959,19 +952,27 @@ export default function Discover() {
                       e.preventDefault();
                       e.stopPropagation();
                       if (!linkUrl) return;
+
                       try {
                         window.open(String(linkUrl), "_blank", "noopener,noreferrer");
                       } catch {
                         // ignore
                       }
+
                       if (isPaid) {
                         const ok = await (writeGate?.ensure ? writeGate.ensure("register") : true);
                         if (ok) {
-                          // optional: mark as registered intent for faster value
-                          await upsertIntent(campId, "registered");
+                          await upsertIntent(intentKey, "registered");
                         }
                       }
-                      trackEvent({ event_name: "register_click", source: "discover", camp_id: campId });
+
+                      trackEvent({
+                        event_name: "register_click",
+                        source: "discover",
+                        camp_id: campId,
+                        event_key: eventKey || null,
+                        intent_key: intentKey,
+                      });
                     }}
                   >
                     Register
@@ -995,11 +996,7 @@ export default function Discover() {
               <Badge variant="secondary" className="bg-slate-100 text-slate-700">
                 Season {seasonYear}
               </Badge>
-              {isPaid ? (
-                <Badge className="bg-deep-navy text-white">Paid</Badge>
-              ) : (
-                <Badge variant="outline">Demo</Badge>
-              )}
+              {isPaid ? <Badge className="bg-deep-navy text-white">Paid</Badge> : <Badge variant="outline">Demo</Badge>}
               <span className="text-xs text-slate-500">{resultsCountLabel}</span>
             </div>
           </div>
@@ -1016,17 +1013,15 @@ export default function Discover() {
               <option value="school_az">Sort: School A–Z</option>
             </select>
 
-            <Button variant="outline" onClick={openFiltersOrProfile}>
+            <Button variant="outline" onClick={() => (paidMissingSport ? nav("/Profile") : setFilterOpen(true))}>
               <SlidersHorizontal className="w-4 h-4 mr-2" />
               {paidMissingSport ? "Complete Profile" : "Filters"}
             </Button>
           </div>
         </div>
 
-        {/* Sticky chips row */}
         <div className="mt-4 sticky top-0 z-30 bg-slate-50 pt-2 pb-3 border-b border-slate-200">
           <div className="flex items-center gap-2 overflow-x-auto">
-            {/* Sport (locked in paid mode) */}
             <button
               type="button"
               className={
@@ -1038,8 +1033,8 @@ export default function Discover() {
                   : "border-slate-300 bg-white text-slate-800")
               }
               onClick={() => {
-                if (isPaid) return; // locked
-                openFiltersOrProfile();
+                if (isPaid) return;
+                setFilterOpen(true);
               }}
               aria-label={isPaid ? "Sport locked" : "Filter sport"}
               title={isPaid ? "Sport is locked in paid mode" : "Choose sport"}
@@ -1053,7 +1048,7 @@ export default function Discover() {
                 "whitespace-nowrap text-sm px-3 py-2 rounded-full border " +
                 (nf?.state ? "border-slate-800 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-800")
               }
-              onClick={openFiltersOrProfile}
+              onClick={() => setFilterOpen(true)}
             >
               {chipLabel("state", nf)}
             </button>
@@ -1066,7 +1061,7 @@ export default function Discover() {
                   ? "border-slate-800 bg-slate-900 text-white"
                   : "border-slate-300 bg-white text-slate-800")
               }
-              onClick={openFiltersOrProfile}
+              onClick={() => setFilterOpen(true)}
             >
               {chipLabel("dates", nf)}
             </button>
@@ -1079,7 +1074,7 @@ export default function Discover() {
                   ? "border-slate-800 bg-slate-900 text-white"
                   : "border-slate-300 bg-white text-slate-800")
               }
-              onClick={openFiltersOrProfile}
+              onClick={() => setFilterOpen(true)}
             >
               Division
             </button>
@@ -1092,7 +1087,7 @@ export default function Discover() {
                   ? "border-slate-800 bg-slate-900 text-white"
                   : "border-slate-300 bg-white text-slate-800")
               }
-              onClick={openFiltersOrProfile}
+              onClick={() => setFilterOpen(true)}
             >
               Position
             </button>
@@ -1101,9 +1096,7 @@ export default function Discover() {
               <button
                 type="button"
                 className="whitespace-nowrap text-sm px-3 py-2 rounded-full border border-slate-300 bg-white text-slate-800"
-                onClick={() => {
-                  clearFilters();
-                }}
+                onClick={clearFilters}
               >
                 Clear
               </button>
