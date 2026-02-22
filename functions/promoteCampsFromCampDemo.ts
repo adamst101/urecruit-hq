@@ -1,7 +1,13 @@
 // functions/promoteCampsFromCampDemo.ts
 // Server-side promotion runner: CampDemo -> Camp (idempotent upsert by event_key)
-// Goal: promote safely in batches with resume cursor.
-// IMPORTANT: CampDemo schemas vary; this function tries common field names.
+//
+// Supports:
+// - Promote ALL via sportId="*"
+// - Promote per sportId via sportId=<CampDemo.sport_id>
+//
+// Adds observability:
+// - debug.errorSamples (up to 5)
+// - debug.skippedSamples (up to 5)
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 
@@ -13,6 +19,11 @@ function safeStr(x: any): string {
 }
 function lc(x: any): string {
   return safeStr(x).toLowerCase().trim();
+}
+function getId(x: any): string {
+  if (!x) return "";
+  if (typeof x === "string" || typeof x === "number") return String(x);
+  return String(x?.id ?? x?._id ?? x?.uuid ?? "");
 }
 
 function isRetryableError(e: any): boolean {
@@ -51,10 +62,30 @@ function pickEntity(base44: any, name: string) {
   return e[name] || e[`${name}s`] || null;
 }
 
-function getId(x: any): string {
-  if (!x) return "";
-  if (typeof x === "string" || typeof x === "number") return String(x);
-  return String(x?.id ?? x?._id ?? x?.uuid ?? "");
+type DemoRowIdentity = {
+  campDemoId?: string;
+  event_key?: string;
+  source_key?: string;
+  school_id?: string;
+  sport_id?: string;
+  start_date?: string;
+  camp_name?: string;
+  source_platform?: string;
+  source_url?: string;
+};
+
+function identityFromDemoRow(r: any): DemoRowIdentity {
+  return {
+    campDemoId: safeStr(r?.id),
+    event_key: safeStr(r?.event_key || r?.eventKey),
+    source_key: safeStr(r?.source_key || r?.sourceKey),
+    school_id: getId(r?.school_id || r?.schoolId || r?.school),
+    sport_id: getId(r?.sport_id || r?.sportId || r?.sport),
+    start_date: safeStr(r?.start_date || r?.startDate),
+    camp_name: safeStr(r?.camp_name || r?.campName || r?.name),
+    source_platform: safeStr(r?.source_platform || r?.sourcePlatform),
+    source_url: safeStr(r?.source_url || r?.sourceUrl || r?.link_url || r?.linkUrl),
+  };
 }
 
 function selectCampFieldsFromDemoRow(r: any, runIso: string) {
@@ -67,9 +98,15 @@ function selectCampFieldsFromDemoRow(r: any, runIso: string) {
 
   if (!event_key || !school_id || !sport_id || !camp_name || !start_date) {
     return {
-      ok: false,
-      error:
-        "Missing required fields for Camp (event_key/source_key, school_id, sport_id, camp_name, start_date).",
+      ok: false as const,
+      reason: "missing_required_fields",
+      missing: {
+        event_key: !event_key,
+        school_id: !school_id,
+        sport_id: !sport_id,
+        camp_name: !camp_name,
+        start_date: !start_date,
+      },
     };
   }
 
@@ -126,25 +163,26 @@ function selectCampFieldsFromDemoRow(r: any, runIso: string) {
     active: typeof r?.active === "boolean" ? r.active : true,
   };
 
-  return { ok: true, payload };
+  return { ok: true as const, payload };
 }
 
-async function fetchCampDemoRowsBySport(CampDemo: any, sportId: string) {
-  // sportId='*' promotes all CampDemo rows (no sport filter)
+async function fetchCampDemoRows(CampDemo: any, sportId: string) {
+  // sportId="*" means no sport filter (promote everything)
   const sport = safeStr(sportId);
-  if (sport === '*' || sport === 'ALL' || sport === '__ALL__') {
+
+  if (sport === "*" || sport === "__ALL__" || sport === "ALL") {
     const rows = asArray<any>(await withRetry(() => CampDemo.filter({})));
     return { rows, matchedOn: { all: true } };
   }
 
   // CampDemo schema varies. Try common filters.
-  const tries = [
-    { sport_id: sport },
-    { sport_id: Number.isFinite(Number(sport)) ? Number(sport) : sport },
-    { sportId: sport },
-    { sportId: Number.isFinite(Number(sport)) ? Number(sport) : sport },
-    { sport: sport },
-  ];
+  const tries: any[] = [{ sport_id: sport }, { sportId: sport }, { sport: sport }];
+
+  // Numeric cast attempt
+  const n = Number(sport);
+  if (Number.isFinite(n) && String(n) === sport) {
+    tries.unshift({ sport_id: n }, { sportId: n }, { sport: n });
+  }
 
   for (const q of tries) {
     try {
@@ -155,8 +193,31 @@ async function fetchCampDemoRowsBySport(CampDemo: any, sportId: string) {
     }
   }
 
-  // No match
   return { rows: [], matchedOn: null };
+}
+
+function buildSchemaHint(sample: any[], matchedOn: any) {
+  const keys = sample?.[0] ? Object.keys(sample[0]).slice(0, 80) : [];
+  const sampleSportValues = asArray(sample).map((r: any) => ({
+    sport_id: r?.sport_id,
+    sportId: r?.sportId,
+    sport: r?.sport,
+  }));
+  const distinct = Array.from(
+    new Set(
+      sampleSportValues
+        .map((v) => safeStr(v.sport_id || v.sportId || v.sport).trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 30);
+
+  return {
+    note: "No CampDemo rows matched sport filter; sample keys from CampDemo.filter({})",
+    matchedOn,
+    sampleKeys: keys,
+    sampleSportValues,
+    distinctSportIdsSample: distinct,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -182,39 +243,20 @@ Deno.serve(async (req) => {
     if (!Camp?.filter || !Camp?.create || !Camp?.update) {
       return Response.json({ ok: false, error: "Camp entity not available or missing filter/create/update." });
     }
-
     if (!sportId) {
-      return Response.json({ ok: false, error: "sportId is required (run per-sport to avoid giant scans)." });
+      return Response.json({ ok: false, error: "sportId is required. Use sportId='*' to promote all." });
     }
 
     const started = Date.now();
 
-    const fetched = await fetchCampDemoRowsBySport(CampDemo, sportId);
+    const fetched = await fetchCampDemoRows(CampDemo, sportId);
     const allRows = fetched.rows;
 
-    // Helpful schema hints when we see 0
     let schemaHint: any = null;
     if (allRows.length === 0 && startAt === 0) {
       try {
-        const sample = asArray<any>(await withRetry(() => CampDemo.filter({}))).slice(0, 3);
-        const keys = sample[0] ? Object.keys(sample[0]).slice(0, 60) : [];
-        schemaHint = {
-          note: "No CampDemo rows matched sport filter; sample keys from CampDemo.filter({})",
-          matchedOn: fetched.matchedOn,
-          sampleKeys: keys,
-          sampleSportValues: sample.map((r) => ({
-            sport_id: r?.sport_id,
-            sportId: r?.sportId,
-            sport: r?.sport,
-          })),
-          distinctSportIdsSample: Array.from(
-            new Set(
-              sample
-                .map((r) => safeStr(r?.sport_id || r?.sportId || r?.sport).trim())
-                .filter(Boolean)
-            )
-          ).slice(0, 30),
-        };
+        const sample = asArray<any>(await withRetry(() => CampDemo.filter({}))).slice(0, 5);
+        schemaHint = buildSchemaHint(sample, fetched.matchedOn);
       } catch {
         schemaHint = { note: "No CampDemo rows matched sport filter; unable to sample CampDemo." };
       }
@@ -228,13 +270,25 @@ Deno.serve(async (req) => {
     let skipped = 0;
     let errors = 0;
 
+    const skippedSamples: any[] = [];
+    const errorSamples: any[] = [];
+
     for (let i = 0; i < slice.length; i++) {
       if (Date.now() - started > timeBudgetMs) break;
 
       const r = slice[i];
+      const ident = identityFromDemoRow(r);
+
       const built = selectCampFieldsFromDemoRow(r, runIso);
       if (!built.ok) {
         skipped += 1;
+        if (skippedSamples.length < 5) {
+          skippedSamples.push({
+            ...ident,
+            reason: built.reason,
+            missing: built.missing,
+          });
+        }
         continue;
       }
 
@@ -249,8 +303,15 @@ Deno.serve(async (req) => {
           if (!dryRun) await withRetry(() => Camp.create(payload));
           created += 1;
         }
-      } catch {
+      } catch (e) {
         errors += 1;
+        if (errorSamples.length < 5) {
+          errorSamples.push({
+            ...ident,
+            event_key_effective: safeStr(payload?.event_key),
+            error: safeStr(e?.message || e),
+          });
+        }
       }
 
       if (throttleMs) await sleep(throttleMs);
@@ -267,6 +328,8 @@ Deno.serve(async (req) => {
       debug: {
         matchedOn: fetched.matchedOn,
         schemaHint,
+        skippedSamples,
+        errorSamples,
       },
       totals: { total, processed, created, updated, skipped, errors },
       next: { nextStartAt, done },
