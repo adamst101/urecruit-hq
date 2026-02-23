@@ -635,6 +635,17 @@ export default function Discover() {
 
   const resultsCountLabel = useMemo(() => `${(rows?.length || 0).toLocaleString()} camps`, [rows]);
 
+  const favoriteCount = useMemo(() => {
+    if (!isPaid) return 0;
+    const map = intentByKey || {};
+    let n = 0;
+    for (const k of Object.keys(map)) {
+      const st = String(map?.[k]?.status || "").toLowerCase();
+      if (st === "favorite") n++;
+    }
+    return n;
+  }, [isPaid, intentByKey]);
+
   const renderBody = () => {
     if (loading) {
       return (
@@ -691,23 +702,14 @@ export default function Discover() {
           const intentKey = eventKey || campId;
 
           const schoolId = String(normId(r?.school_id) ?? "");
-          const sportId = String(r?.sport_id ?? "");
 
           const srow = schoolById[schoolId] || null;
-          const sprow = sportById[sportId] || null;
 
           const schoolName = srow?.school_name || srow?.name || r?.school_name || "Unknown School";
           const schoolCity = srow?.city || r?.city || null;
           const schoolState = srow?.state || r?.state || null;
           const schoolDivision = srow?.division || srow?.school_division || r?.division || null;
           const schoolLogo = srow?.logo_url || srow?.school_logo_url || null;
-
-          const sportName = sprow?.sport_name || sprow?.name || r?.sport_name || "Sport";
-
-          const priceMax = safeNumber(r?.price_max ?? r?.priceMax);
-          const price = safeNumber(r?.price ?? r?.cost);
-          const priceLabel =
-            priceMax != null ? (priceMax > 0 ? `$${priceMax}` : "Free") : price != null ? (price > 0 ? `$${price}` : "Free") : "";
 
           const linkUrl = r?.link_url ?? r?.source_url ?? r?.url ?? null;
           const startIso = toISODate(r?.start_date);
@@ -739,21 +741,29 @@ export default function Discover() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       {schoolDivision && <Badge className="bg-slate-900 text-white text-xs">{schoolDivision}</Badge>}
-                      {sportName && <span className="text-xs text-slate-500 font-medium">{sportName}</span>}
-                      {!isPaid && <Badge variant="outline" className="text-xs">Demo</Badge>}
+                      {!isPaid && (
+                        <Badge variant="outline" className="text-xs">
+                          Demo
+                        </Badge>
+                      )}
                     </div>
 
+                    {/* MUST SHOW: School Name */}
                     <div className="text-lg font-semibold text-deep-navy truncate mt-1">{schoolName}</div>
-                    <div className="text-sm text-slate-600 truncate">{r?.camp_name ?? r?.name ?? "Camp"}</div>
+
+                    {/* MUST SHOW: Camp Name */}
+                    <div className="text-sm text-slate-700 truncate">{r?.camp_name ?? r?.name ?? "Camp"}</div>
 
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                      {/* MUST SHOW: Date */}
                       <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">{dateLabel}</span>
+
+                      {/* MUST SHOW: City/State */}
                       {(schoolCity || schoolState) && (
                         <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">
                           {[schoolCity, schoolState].filter(Boolean).join(", ")}
                         </span>
                       )}
-                      {priceLabel && <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">{priceLabel}</span>}
                     </div>
                   </div>
                 </div>
@@ -790,46 +800,34 @@ export default function Discover() {
               </div>
 
               <div className="mt-4 flex items-center justify-between gap-2">
-                <div className="text-xs text-slate-500 truncate">{linkUrl ? "Registration available" : "No registration link"}</div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      nav(isPaid ? "/MyCamps" : "/Upgrade");
-                    }}
-                  >
-                    {isPaid ? "My Camps" : "Upgrade"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={!linkUrl}
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (!linkUrl) return;
+                <div className="text-xs text-slate-500 truncate">{linkUrl ? "Registration link" : "No registration link"}</div>
 
-                      try {
-                        window.open(String(linkUrl), "_blank", "noopener,noreferrer");
-                      } catch {
-                        // ignore
-                      }
+                {/* MUST SHOW: Register Button */}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!linkUrl}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!linkUrl) return;
 
-                      if (isPaid) {
-                        const ok = await (writeGate?.ensure ? writeGate.ensure("register") : true);
-                        if (ok) await upsertIntent(intentKey, "registered");
-                      }
+                    try {
+                      window.open(String(linkUrl), "_blank", "noopener,noreferrer");
+                    } catch {
+                      // ignore
+                    }
 
-                      trackEvent({ event_name: "register_click", source: "discover", camp_id: campId, intent_key: intentKey });
-                    }}
-                  >
-                    Register
-                  </Button>
-                </div>
+                    if (isPaid) {
+                      const ok = await (writeGate?.ensure ? writeGate.ensure("register") : true);
+                      if (ok) await upsertIntent(intentKey, "registered");
+                    }
+
+                    trackEvent({ event_name: "register_click", source: "discover", camp_id: campId, intent_key: intentKey });
+                  }}
+                >
+                  Register
+                </Button>
               </div>
             </Card>
           );
@@ -854,6 +852,22 @@ export default function Discover() {
           </div>
 
           <div className="flex items-center gap-2">
+            {isPaid && (
+              <Button
+                variant="outline"
+                onClick={() => nav("/MyCamps")}
+                aria-label="Go to My Camps"
+                title="View saved and registered camps"
+              >
+                My Camps
+                {favoriteCount > 0 && (
+                  <span className="ml-2 inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-slate-900 text-white text-xs">
+                    {favoriteCount > 99 ? "99+" : favoriteCount}
+                  </span>
+                )}
+              </Button>
+            )}
+
             <select
               className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
               value={sortKey}
