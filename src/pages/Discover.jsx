@@ -91,6 +91,39 @@ function readActiveFlag(row) {
   return true;
 }
 
+function isBadLogoUrl(url) {
+  const u = String(url || "").trim();
+  if (!u) return true;
+  const lu = u.toLowerCase();
+
+  // Known vendor/source placeholders (not school identity)
+  if (lu.includes("ryzer")) return true;
+  if (lu.includes("sportsusa")) return true;
+  if (lu.includes("sportscamps")) return true;
+
+  // Generic placeholders
+  if (lu.includes("placeholder")) return true;
+
+  return false;
+}
+
+function pickBestLogoUrl(...candidates) {
+  for (const c of candidates) {
+    const u = String(c || "").trim();
+    if (!u) continue;
+    if (isBadLogoUrl(u)) continue;
+    return u;
+  }
+  return null;
+}
+
+function initialBadge(name) {
+  const s = String(name || "").trim();
+  if (!s) return "?";
+  const ch = s.replace(/[^A-Za-z0-9]/g, "").slice(0, 1);
+  return (ch || "?").toUpperCase();
+}
+
 function toISODate(dateInput) {
   if (!dateInput) return null;
 
@@ -199,470 +232,281 @@ function trackEvent(payload) {
   }
 }
 
-/**
- * Base44-safe bulk fetch by ids (no "list all" fallback).
- * If it fails, we just return empty and cards render without enrichment.
- */
-async function batchFetchByIds(entity, ids, { chunkSize = 60 } = {}) {
-  const clean = Array.from(new Set(asArray(ids).map(normId).filter(Boolean).map(String)));
-  if (!entity?.filter || clean.length === 0) return [];
-
-  const out = [];
-  for (const part of chunk(clean, chunkSize)) {
-    const tries = [{ id: { in: part } }, { id: { $in: part } }, { _id: { in: part } }, { _id: { $in: part } }];
-    let got = [];
-    for (const w of tries) {
-      try {
-        got = await safeFilter(entity, w, undefined, undefined, { retries: 2, baseDelayMs: 250 });
-        if (got.length) break;
-      } catch (e) {
-        // on rate limits, safeFilter already retried; keep trying other operator forms
-        if (!isRateLimitError(e)) {
-          // continue to next operator form
-        }
-      }
-    }
-    out.push(...asArray(got));
-  }
-
-  // de-dupe
-  const seen = new Set();
-  const deduped = [];
-  for (const r of out) {
-    const k = normId(r);
-    if (!k) continue;
-    const key = String(k);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(r);
-  }
-  return deduped;
-}
-
-function SkeletonCard() {
-  return (
-    <Card className="p-4 border-slate-200 bg-white">
-      <div className="animate-pulse">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-lg bg-slate-200" />
-            <div className="min-w-0">
-              <div className="h-3 w-24 bg-slate-200 rounded" />
-              <div className="h-5 w-48 bg-slate-200 rounded mt-2" />
-              <div className="h-4 w-40 bg-slate-200 rounded mt-2" />
-            </div>
-          </div>
-          <div className="h-8 w-8 rounded bg-slate-200" />
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="h-4 w-32 bg-slate-200 rounded" />
-          <div className="h-4 w-28 bg-slate-200 rounded" />
-          <div className="h-4 w-24 bg-slate-200 rounded" />
-        </div>
-        <div className="mt-4 flex gap-2">
-          <div className="h-9 w-24 bg-slate-200 rounded" />
-          <div className="h-9 w-28 bg-slate-200 rounded" />
-        </div>
-      </div>
-    </Card>
-  );
-}
-
+/* =========================================================
+   Page
+========================================================= */
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
+  const { isDemoMode } = readDemoMode();
 
-  const season = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
-  const { nf, setNF, clearFilters } = useCampFilters();
+  const { athlete, athleteSportId } = useAthleteIdentity();
+  const { hasAccess, entitledSeason } = useSeasonAccess();
   const writeGate = useWriteGate();
 
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [sortKey, setSortKey] = useState("soonest"); // soonest | price_low | school_az
+  const isPaid = !!hasAccess && !isDemoMode;
 
-  const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
-  const requestedSeason = url.requestedSeason;
-
-  const demoSession = useMemo(() => readDemoMode(), []);
-  const forceDemoUrl = url.mode === "demo";
-  const forceDemoSession = String(demoSession?.mode || "").toLowerCase() === "demo";
-
-  const computedCurrentSeason = useMemo(() => footballSeasonYearForDate(new Date()), []);
-  const computedDemoSeason = useMemo(() => computedCurrentSeason - 1, [computedCurrentSeason]);
-
-  const entitledSeason = safeNumber(season?.entitlement?.season_year) || null;
-  const isEntitled = !!season?.accountId && !!season?.hasAccess && !!entitledSeason;
-
-  const effectiveMode = isEntitled ? "paid" : "demo";
-  const isPaid = effectiveMode === "paid";
-
+  const urlp = useMemo(() => getUrlParams(loc?.search || ""), [loc?.search]);
   const seasonYear = useMemo(() => {
-    if (requestedSeason) {
-      if (isEntitled && entitledSeason === requestedSeason) return requestedSeason;
-      return isEntitled ? entitledSeason : computedDemoSeason;
-    }
-    return isEntitled ? entitledSeason : computedDemoSeason;
-  }, [requestedSeason, isEntitled, entitledSeason, computedDemoSeason]);
+    if (urlp?.requestedSeason) return urlp.requestedSeason;
+    if (isPaid && entitledSeason) return entitledSeason;
+    return footballSeasonYearForDate(new Date());
+  }, [urlp?.requestedSeason, isPaid, entitledSeason]);
 
-  const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
-  const athleteSportId = useMemo(() => {
-    const sid = athleteProfile?.sport_id ?? athleteProfile?.sportId ?? null;
-    return sid != null ? String(sid) : "";
-  }, [athleteProfile]);
-
-  // Paid lock: sport always enforced
-  useEffect(() => {
-    if (!isPaid) return;
-    if (!athleteSportId) return;
-
-    const cur = Array.isArray(nf?.sports) ? nf.sports.map(String) : [];
-    const ok = cur.length === 1 && cur[0] === athleteSportId;
-    if (!ok) setNF({ sports: [athleteSportId], positions: [] });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPaid, athleteSportId]);
-
-  const paidMissingSport = useMemo(() => isPaid && !!athleteId && !athleteSportId, [isPaid, athleteId, athleteSportId]);
-
-  // Intents map (keyed by camp_id which should be event_key going forward)
+  const [isLoading, setIsLoading] = useState(false);
+  const [campErr, setCampErr] = useState(null);
+  const [rawRows, setRawRows] = useState([]);
   const [intentByKey, setIntentByKey] = useState({});
-  const intentRefreshSeq = useRef(0);
+  const [schoolById, setSchoolById] = useState({});
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
-  useEffect(() => {
-    if (!isPaid) {
-      setIntentByKey({});
-      return;
-    }
-    if (!athleteId) return;
+  const filtersApi = useCampFilters({
+    isPaid,
+    athleteSportId,
+    seasonYear,
+  });
 
-    let cancelled = false;
-    const seq = ++intentRefreshSeq.current;
+  const nf = filtersApi?.normalizedFilters || null;
 
-    (async () => {
-      try {
-        const rows = asArray(await safeFilter(base44?.entities?.CampIntent, { athlete_id: String(athleteId) }, undefined, undefined, { retries: 2 }));
-        if (cancelled) return;
-        if (seq !== intentRefreshSeq.current) return;
+  const campKeyForRow = (r) => {
+    const campId = String(r?.id ?? "");
+    const eventKey = r?.event_key ? String(r.event_key) : "";
+    return eventKey || campId;
+  };
 
-        const map = {};
-        for (const r of rows) {
-          const key = String(r?.camp_id || "");
-          if (!key) continue;
-          map[key] = r;
-        }
-        setIntentByKey(map);
-      } catch {
-        if (!cancelled) setIntentByKey({});
-      }
-    })();
+  const resultsCountLabel = useMemo(() => {
+    const n = Array.isArray(rawRows) ? rawRows.length : 0;
+    if (isLoading) return "Loading…";
+    if (campErr) return "Error";
+    return `${n} camps`;
+  }, [rawRows, isLoading, campErr]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [isPaid, athleteId]);
-
-  async function upsertIntent(intentKey, nextStatus) {
-    if (!isPaid) return { ok: false };
-    if (!athleteId) return { ok: false };
-    const CampIntent = base44?.entities?.CampIntent;
-    if (!CampIntent?.filter || !CampIntent?.create) return { ok: false };
-
-    const key = String(intentKey || "");
-    if (!key) return { ok: false };
-
-    // optimistic
-    setIntentByKey((prev) => {
-      const cur = prev?.[key] || null;
-      const next = { ...(cur || {}), athlete_id: String(athleteId), camp_id: key, status: nextStatus };
-      return { ...(prev || {}), [key]: next };
-    });
-
+  async function loadIntents(keys) {
     try {
-      const existing = asArray(await safeFilter(CampIntent, { athlete_id: String(athleteId), camp_id: key }, undefined, undefined, { retries: 2 }))[0];
-      if (existing?.id && CampIntent.update) {
-        await CampIntent.update(existing.id, { status: nextStatus });
-      } else {
-        await CampIntent.create({ athlete_id: String(athleteId), camp_id: key, status: nextStatus });
+      const CampIntent = base44?.entities?.CampIntent;
+      if (!CampIntent?.filter) return {};
+
+      const keyArr = asArray(keys).filter(Boolean);
+      if (!keyArr.length) return {};
+
+      const out = {};
+      const groups = chunk(keyArr, 50);
+
+      for (const g of groups) {
+        const rows = await safeFilter(CampIntent, { intent_key: g }, "-updated_at", 2000, { retries: 2, baseDelayMs: 350 });
+        for (const r of asArray(rows)) {
+          const k = String(r?.intent_key || "");
+          if (!k) continue;
+          out[k] = r;
+        }
       }
-      return { ok: true };
-    } catch (e) {
-      setIntentByKey((prev) => {
-        const copy = { ...(prev || {}) };
-        delete copy[key];
-        return copy;
-      });
-      return { ok: false, error: String(e?.message || e) };
+
+      return out;
+    } catch {
+      return {};
     }
   }
 
-  // Lazy picklists: only load when filter sheet opens
-  const [sports, setSports] = useState([]);
-  const [positions, setPositions] = useState([]);
-  const [picklistsLoaded, setPicklistsLoaded] = useState(false);
+  async function upsertIntent(intentKey, nextStatus) {
+    const CampIntent = base44?.entities?.CampIntent;
+    if (!CampIntent?.create) return;
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!filterOpen) return;
-    if (picklistsLoaded) return;
+    const key = String(intentKey || "");
+    if (!key) return;
 
-    (async () => {
-      try {
-        // Paid mode doesn't need sport list for lock, but keep it for demo / future.
-        const [sportsRows, posRows] = await Promise.all([
-          safeFilter(base44?.entities?.Sport, {}, undefined, 500, { retries: 2, baseDelayMs: 250 }).catch(() => []),
-          safeFilter(base44?.entities?.Position, {}, undefined, 500, { retries: 2, baseDelayMs: 250 }).catch(() => []),
-        ]);
-        if (cancelled) return;
-        setSports(Array.isArray(sportsRows) ? sportsRows : []);
-        setPositions(Array.isArray(posRows) ? posRows : []);
-        setPicklistsLoaded(true);
-      } catch {
-        if (!cancelled) {
-          setSports([]);
-          setPositions([]);
-          setPicklistsLoaded(true);
+    const existing = intentByKey?.[key] || null;
+
+    if (!nextStatus) {
+      // Clearing favorite: we set empty status rather than deleting to keep audit simple
+      if (existing?.id && CampIntent?.update) {
+        await CampIntent.update(existing.id, { status: "" });
+        setIntentByKey((p) => ({ ...p, [key]: { ...existing, status: "" } }));
+      }
+      return;
+    }
+
+    if (existing?.id && CampIntent?.update) {
+      const updated = await CampIntent.update(existing.id, { status: String(nextStatus) });
+      setIntentByKey((p) => ({ ...p, [key]: updated || { ...existing, status: String(nextStatus) } }));
+      return;
+    }
+
+    const created = await CampIntent.create({ intent_key: key, status: String(nextStatus) });
+    setIntentByKey((p) => ({ ...p, [key]: created || { intent_key: key, status: String(nextStatus) } }));
+  }
+
+  async function loadSchoolsForRows(rows) {
+    try {
+      const School = base44?.entities?.School;
+      if (!School?.filter) return {};
+
+      const ids = Array.from(
+        new Set(
+          asArray(rows)
+            .map((r) => normId(r?.school_id))
+            .filter(Boolean)
+            .map(String)
+        )
+      );
+
+      if (!ids.length) return {};
+
+      const out = {};
+      const groups = chunk(ids, 50);
+
+      for (const g of groups) {
+        const srows = await safeFilter(School, { id: g }, "school_name", 2000, { retries: 2, baseDelayMs: 350 });
+        for (const s of asArray(srows)) {
+          const sid = String(s?.id ?? "");
+          if (!sid) continue;
+          out[sid] = s;
         }
       }
-    })();
 
-    return () => {
-      cancelled = true;
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+  const applyFilters = useMemo(() => {
+    const isPaidMode = isPaid;
+
+    return (rows) => {
+      const a = asArray(rows);
+
+      return a.filter((r) => {
+        if (!readActiveFlag(r)) return false;
+
+        if (isPaidMode) {
+          // paid: sport is locked to athlete profile
+          if (!matchesSport(r, [athleteSportId].filter(Boolean))) return false;
+        } else {
+          if (Array.isArray(nf?.sports) && nf.sports.length > 0 && !matchesSport(r, nf.sports)) return false;
+        }
+
+        if (Array.isArray(nf?.divisions) && nf.divisions.length > 0 && !matchesDivision(r, nf.divisions)) return false;
+        if (Array.isArray(nf?.positions) && nf.positions.length > 0 && !matchesPositions(r, nf.positions)) return false;
+        if (nf?.state && !matchesState(r, nf.state)) return false;
+        if ((nf?.startDate || nf?.endDate) && !matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
+
+        return true;
+      });
     };
-  }, [filterOpen, picklistsLoaded]);
-
-  const [rawCamps, setRawCamps] = useState([]);
-  const [loadingCamps, setLoadingCamps] = useState(true);
-  const [campErr, setCampErr] = useState("");
-
-  const [schoolById, setSchoolById] = useState({});
-  const [sportById, setSportById] = useState({});
+  }, [isPaid, athleteSportId, nf]);
 
   async function loadCamps() {
-    setLoadingCamps(true);
-    setCampErr("");
-    setRawCamps([]);
+    setIsLoading(true);
+    setCampErr(null);
 
     try {
       const CampEntity = base44?.entities?.Camp;
-      if (!CampEntity?.filter) throw new Error("Camp entity not available.");
+      if (!CampEntity?.filter) {
+        setRawRows([]);
+        setCampErr("Camps not available.");
+        return;
+      }
 
-      // Primary: server-side season_year
       let rows = [];
       try {
         rows = await safeFilter(CampEntity, { season_year: seasonYear }, "-start_date", 2000, { retries: 2, baseDelayMs: 350 });
-      } catch {
-        rows = [];
-      }
-
-      if (rows.length === 0) {
+      } catch (e1) {
         try {
           rows = await safeFilter(CampEntity, { season_year: String(seasonYear) }, "-start_date", 2000, { retries: 2, baseDelayMs: 350 });
-        } catch {
-          rows = [];
+        } catch (e2) {
+          throw e2 || e1;
         }
       }
 
-      // If still none, do NOT pull whole table (that triggers throttling). Return empty state.
-      setRawCamps(rows);
+      const filtered = applyFilters(rows);
+
+      setRawRows(filtered);
+
+      const keys = filtered.map(campKeyForRow).filter(Boolean);
+      const intents = await loadIntents(keys);
+      setIntentByKey(intents);
+
+      const schools = await loadSchoolsForRows(filtered);
+      setSchoolById(schools);
+
+      trackEvent({
+        event_name: "discover_loaded",
+        source: "discover",
+        season_year: seasonYear,
+        paid: isPaid,
+        raw_camps: Array.isArray(rows) ? rows.length : 0,
+        shown_camps: filtered.length,
+      });
     } catch (e) {
-      const msg = String(e?.message || e);
-      if (isRateLimitError(e)) {
-        setCampErr("Rate limit exceeded. Retry in a moment.");
-      } else {
-        setCampErr(msg);
-      }
-      setRawCamps([]);
+      const msg = isRateLimitError(e) ? "Camps not available: Rate limit exceeded" : String(e?.message || e || "Failed to load camps");
+      setCampErr(msg);
+      setRawRows([]);
+
+      trackEvent({
+        event_name: "discover_error",
+        source: "discover",
+        season_year: seasonYear,
+        paid: isPaid,
+        error: msg,
+      });
     } finally {
-      setLoadingCamps(false);
+      setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    let cancelled = false;
-    if (season?.isLoading) return;
-
-    (async () => {
-      if (cancelled) return;
-      await loadCamps();
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    loadCamps();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [season?.isLoading, seasonYear]);
+  }, [seasonYear, isPaid]);
 
-  // Enrichment: fetch schools and sports for current result set (batched, no list-all fallback)
-  useEffect(() => {
-    let cancelled = false;
+  function clearFilters() {
+    filtersApi?.clear?.();
+    setTimeout(() => loadCamps(), 0);
+  }
 
-    (async () => {
-      const campRows = asArray(rawCamps);
-      if (campRows.length === 0) {
-        if (!cancelled) {
-          setSchoolById({});
-          setSportById({});
-        }
-        return;
-      }
+  function openFiltersOrProfile() {
+    if (!isPaid) setIsFiltersOpen(true);
+    else setIsFiltersOpen(true);
+  }
 
-      const schoolIds = campRows.map((r) => normId(r?.school_id)).filter(Boolean);
-      const sportIds = campRows.map((r) => normId(r?.sport_id)).filter(Boolean);
-
-      try {
-        const [schoolsRows, sportsRows] = await Promise.all([
-          batchFetchByIds(base44?.entities?.School, schoolIds, { chunkSize: 60 }).catch(() => []),
-          batchFetchByIds(base44?.entities?.Sport, sportIds, { chunkSize: 60 }).catch(() => []),
-        ]);
-
-        if (cancelled) return;
-
-        const sMap = {};
-        for (const s of asArray(schoolsRows)) {
-          const id = String(normId(s) || "");
-          if (id) sMap[id] = s;
-        }
-        const spMap = {};
-        for (const sp of asArray(sportsRows)) {
-          const id = String(normId(sp) || "");
-          if (id) spMap[id] = sp;
-        }
-
-        setSchoolById(sMap);
-        setSportById(spMap);
-      } catch {
-        if (!cancelled) {
-          setSchoolById({});
-          setSportById({});
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [rawCamps]);
-
-  const loading = season?.isLoading || identityLoading || loadingCamps;
-
-  useEffect(() => {
-    const key = `evt_discover_viewed_${seasonYear}`;
-    try {
-      if (sessionStorage.getItem(key) === "1") return;
-      sessionStorage.setItem(key, "1");
-    } catch {
-      // ignore
-    }
-
-    trackEvent({
-      event_name: "discover_viewed",
-      effective_mode: effectiveMode,
-      season_year: seasonYear,
-      account_id: season?.accountId || null,
-      entitled: isEntitled ? 1 : 0,
-      requested_season: requestedSeason || null,
-      force_demo_url: forceDemoUrl ? 1 : 0,
-      force_demo_session: forceDemoSession ? 1 : 0,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seasonYear]);
-
-  const sportLockedLabel = useMemo(() => {
-    if (!isPaid) return null;
-    if (!athleteSportId) return "Sport locked";
-    const sp = sportById?.[String(athleteSportId)] || null;
-    return sp?.sport_name || sp?.name || "Sport locked";
-  }, [isPaid, athleteSportId, sportById]);
-
-  const openFiltersOrProfile = () => {
-    if (paidMissingSport) {
-      nav("/Profile");
-      return;
-    }
-    setFilterOpen(true);
-  };
-
-  const rows = useMemo(() => {
-    const src = asArray(rawCamps);
-
-    const effectiveSports =
-      isPaid && athleteSportId
-        ? [athleteSportId]
-        : Array.isArray(nf?.sports)
-        ? nf.sports
-        : [];
-
-    const filtered = src
-      .filter((r) => readActiveFlag(r) === true)
-      .filter((r) => {
-        if (!matchesDivision(r, nf.divisions)) return false;
-        if (!matchesSport(r, effectiveSports)) return false;
-        if (!matchesPositions(r, nf.positions)) return false;
-        if (!matchesState(r, nf.state)) return false;
-        if (!matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
-        return true;
-      });
-
-    const getStartTs = (r) => {
-      const iso = toISODate(r?.start_date);
-      if (!iso) return Number.POSITIVE_INFINITY;
-      const d = new Date(`${iso}T00:00:00.000Z`);
-      const t = d.getTime();
-      return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
-    };
-
-    const getPrice = (r) => {
-      const pMax = safeNumber(r?.price_max ?? r?.priceMax);
-      const p = safeNumber(r?.price ?? r?.cost);
-      if (pMax != null) return pMax;
-      if (p != null) return p;
-      return Number.POSITIVE_INFINITY;
-    };
-
-    const getSchoolName = (r) => {
-      const schoolId = String(normId(r?.school_id) ?? "");
-      const srow = schoolById?.[schoolId] || null;
-      const nm = srow?.school_name || srow?.name || r?.school_name || r?.school || "";
-      return String(nm || "").toLowerCase();
-    };
-
-    const sorted = [...filtered];
-    if (sortKey === "price_low") sorted.sort((a, b) => getPrice(a) - getPrice(b));
-    else if (sortKey === "school_az") sorted.sort((a, b) => getSchoolName(a).localeCompare(getSchoolName(b)));
-    else sorted.sort((a, b) => getStartTs(a) - getStartTs(b));
-
-    return sorted;
-  }, [rawCamps, nf, isPaid, athleteSportId, sortKey, schoolById]);
-
-  const resultsCountLabel = useMemo(() => `${(rows?.length || 0).toLocaleString()} camps`, [rows]);
+  const shownRows = rawRows;
 
   const favoriteCount = useMemo(() => {
-    if (!isPaid) return 0;
     const map = intentByKey || {};
-    let n = 0;
+    let c = 0;
     for (const k of Object.keys(map)) {
-      const st = String(map?.[k]?.status || "").toLowerCase();
-      if (st === "favorite") n++;
+      const st = String(map[k]?.status || "").toLowerCase();
+      if (st === "favorite") c += 1;
     }
-    return n;
-  }, [isPaid, intentByKey]);
+    return c;
+  }, [intentByKey]);
 
-  const renderBody = () => {
-    if (loading) {
-      return (
-        <div className="space-y-3">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <SkeletonCard key={i} />
-          ))}
-        </div>
-      );
-    }
+  const activeChipKeys = useMemo(() => {
+    const out = [];
+    if (Array.isArray(nf?.divisions) && nf.divisions.length) out.push("divisions");
+    if (Array.isArray(nf?.positions) && nf.positions.length) out.push("positions");
+    if (nf?.state) out.push("state");
+    if (nf?.startDate || nf?.endDate) out.push("dates");
+    if (!isPaid && Array.isArray(nf?.sports) && nf.sports.length) out.push("sports");
+    return out;
+  }, [nf, isPaid]);
+
+  const chipsLabel = (k) => {
+    if (k === "divisions") return `Division: ${nf?.divisions?.join(", ") || ""}`;
+    if (k === "positions") return `Position: ${nf?.positions?.join(", ") || ""}`;
+    if (k === "sports") return `Sport: ${nf?.sports?.join(", ") || ""}`;
+    return chipLabel(k, nf);
+  };
+
+  const CampList = () => {
+    const rows = asArray(shownRows);
 
     if (campErr) {
       return (
-        <Card className="p-5 border-amber-200 bg-amber-50">
-          <div className="text-lg font-semibold text-amber-900">Camps not available</div>
-          <div className="mt-2 text-sm text-amber-900/80">{campErr}</div>
-          <div className="mt-4 flex gap-2 flex-wrap">
+        <Card className="p-5 border-slate-200">
+          <div className="text-lg font-semibold text-deep-navy">Camps not available</div>
+          <div className="mt-1 text-sm text-slate-700">{campErr}</div>
+          <div className="mt-4 flex gap-2">
             <Button variant="outline" onClick={() => loadCamps()}>
               Retry
             </Button>
@@ -674,6 +518,37 @@ export default function Discover() {
             Tip: If this keeps happening, you’re hitting Base44 throttling. Retry after a few seconds. We now avoid full-table fallbacks to reduce load.
           </div>
         </Card>
+      );
+    }
+
+    if (isLoading) {
+      return (
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map((n) => (
+            <Card key={n} className="p-4 border-slate-200 bg-white">
+              <div className="animate-pulse">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200" />
+                    <div className="min-w-0">
+                      <div className="h-3 w-28 bg-slate-200 rounded" />
+                      <div className="mt-2 h-5 w-56 bg-slate-200 rounded" />
+                      <div className="mt-2 h-4 w-40 bg-slate-200 rounded" />
+                      <div className="mt-3 flex gap-2">
+                        <div className="h-6 w-20 bg-slate-200 rounded" />
+                        <div className="h-6 w-28 bg-slate-200 rounded" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="h-9 w-9 bg-slate-200 rounded" />
+                </div>
+                <div className="mt-4 flex items-center justify-end">
+                  <div className="h-8 w-20 bg-slate-200 rounded" />
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
       );
     }
 
@@ -702,14 +577,20 @@ export default function Discover() {
           const intentKey = eventKey || campId;
 
           const schoolId = String(normId(r?.school_id) ?? "");
-
           const srow = schoolById[schoolId] || null;
 
           const schoolName = srow?.school_name || srow?.name || r?.school_name || "Unknown School";
           const schoolCity = srow?.city || r?.city || null;
           const schoolState = srow?.state || r?.state || null;
           const schoolDivision = srow?.division || srow?.school_division || r?.division || null;
-          const schoolLogo = srow?.logo_url || srow?.school_logo_url || null;
+
+          const schoolLogo = pickBestLogoUrl(
+            srow?.logo_url,
+            srow?.school_logo_url,
+            srow?.athletics_logo_url,
+            r?.school_logo_url,
+            r?.logo_url
+          );
 
           const linkUrl = r?.link_url ?? r?.source_url ?? r?.url ?? null;
           const startIso = toISODate(r?.start_date);
@@ -726,7 +607,9 @@ export default function Discover() {
               className="p-4 border-slate-200 bg-white cursor-pointer hover:shadow-sm transition"
               role="button"
               tabIndex={0}
-              onClick={() => nav(isPaid ? `/CampDetail?id=${encodeURIComponent(campId)}` : `/CampDetailDemo?id=${encodeURIComponent(campId)}`)}
+              onClick={() =>
+                nav(isPaid ? `/CampDetail?id=${encodeURIComponent(campId)}` : `/CampDetailDemo?id=${encodeURIComponent(campId)}`)
+              }
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3 min-w-0">
@@ -734,13 +617,16 @@ export default function Discover() {
                     {schoolLogo ? (
                       <img src={schoolLogo} alt={`${schoolName} logo`} className="w-full h-full object-contain" loading="lazy" />
                     ) : (
-                      <div className="text-[10px] text-slate-400">Logo</div>
+                      <div className="text-xs font-semibold text-slate-500">{initialBadge(schoolName)}</div>
                     )}
                   </div>
 
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      {schoolDivision && <Badge className="bg-slate-900 text-white text-xs">{schoolDivision}</Badge>}
+                      {schoolDivision &&
+                        !["unknown", "n/a", "na", "none"].includes(String(schoolDivision).toLowerCase().trim()) && (
+                          <Badge className="bg-slate-900 text-white text-xs">{schoolDivision}</Badge>
+                        )}
                       {!isPaid && (
                         <Badge variant="outline" className="text-xs">
                           Demo
@@ -748,17 +634,11 @@ export default function Discover() {
                       )}
                     </div>
 
-                    {/* MUST SHOW: School Name */}
                     <div className="text-lg font-semibold text-deep-navy truncate mt-1">{schoolName}</div>
-
-                    {/* MUST SHOW: Camp Name */}
                     <div className="text-sm text-slate-700 truncate">{r?.camp_name ?? r?.name ?? "Camp"}</div>
 
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
-                      {/* MUST SHOW: Date */}
                       <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">{dateLabel}</span>
-
-                      {/* MUST SHOW: City/State */}
                       {(schoolCity || schoolState) && (
                         <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">
                           {[schoolCity, schoolState].filter(Boolean).join(", ")}
@@ -772,6 +652,7 @@ export default function Discover() {
                   type="button"
                   variant="ghost"
                   size="sm"
+                  className="h-10 w-10 p-0"
                   disabled={!isPaid}
                   onClick={async (e) => {
                     e.preventDefault();
@@ -795,14 +676,13 @@ export default function Discover() {
                   }}
                   aria-label={isPaid ? (isFavorite ? "Remove favorite" : "Add favorite") : "Favorites locked"}
                 >
-                  <span className={isFavorite ? "text-amber-500" : "text-slate-400"}>{isFavorite ? "★" : "☆"}</span>
+                  <span className={(isFavorite ? "text-amber-500" : "text-slate-400") + " text-2xl leading-none"}>
+                    {isFavorite ? "★" : "☆"}
+                  </span>
                 </Button>
               </div>
 
-              <div className="mt-4 flex items-center justify-between gap-2">
-                <div className="text-xs text-slate-500 truncate">{linkUrl ? "Registration link" : "No registration link"}</div>
-
-                {/* MUST SHOW: Register Button */}
+              <div className="mt-4 flex items-center justify-end gap-2">
                 <Button
                   type="button"
                   size="sm"
@@ -858,131 +738,63 @@ export default function Discover() {
                 onClick={() => nav("/MyCamps")}
                 aria-label="Go to My Camps"
                 title="View saved and registered camps"
+                className="whitespace-nowrap"
               >
                 My Camps
                 {favoriteCount > 0 && (
-                  <span className="ml-2 inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-slate-900 text-white text-xs">
-                    {favoriteCount > 99 ? "99+" : favoriteCount}
+                  <span className="ml-2 inline-flex items-center justify-center min-w-[22px] h-[22px] px-2 rounded-full bg-slate-900 text-white text-xs">
+                    {favoriteCount}
                   </span>
                 )}
               </Button>
             )}
 
-            <select
-              className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
-              value={sortKey}
-              onChange={(e) => setSortKey(String(e.target.value || "soonest"))}
-              aria-label="Sort"
-            >
-              <option value="soonest">Sort: Soonest</option>
-              <option value="price_low">Sort: Lowest price</option>
-              <option value="school_az">Sort: School A–Z</option>
-            </select>
-
-            <Button variant="outline" onClick={openFiltersOrProfile}>
+            <Button variant="outline" onClick={() => setIsFiltersOpen(true)} aria-label="Open filters">
               <SlidersHorizontal className="w-4 h-4 mr-2" />
-              {paidMissingSport ? "Complete Profile" : "Filters"}
+              Filters
             </Button>
           </div>
         </div>
 
-        {/* Sticky chips row */}
-        <div className="mt-4 sticky top-0 z-30 bg-slate-50 pt-2 pb-3 border-b border-slate-200">
-          <div className="flex items-center gap-2 overflow-x-auto">
-            <button
-              type="button"
-              className={
-                "whitespace-nowrap text-sm px-3 py-2 rounded-full border " +
-                (isPaid ? "border-slate-300 bg-white text-slate-800" : "border-slate-300 bg-white text-slate-800")
-              }
-              onClick={() => {
-                if (isPaid) return;
-                setFilterOpen(true);
-              }}
-              title={isPaid ? "Sport is locked in paid mode" : "Choose sport"}
-            >
-              {isPaid ? `${sportLockedLabel} (locked)` : "Sport"}
-            </button>
-
-            <button
-              type="button"
-              className={
-                "whitespace-nowrap text-sm px-3 py-2 rounded-full border " +
-                (nf?.state ? "border-slate-800 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-800")
-              }
-              onClick={() => setFilterOpen(true)}
-            >
-              {chipLabel("state", nf)}
-            </button>
-
-            <button
-              type="button"
-              className={
-                "whitespace-nowrap text-sm px-3 py-2 rounded-full border " +
-                (nf?.startDate || nf?.endDate
-                  ? "border-slate-800 bg-slate-900 text-white"
-                  : "border-slate-300 bg-white text-slate-800")
-              }
-              onClick={() => setFilterOpen(true)}
-            >
-              {chipLabel("dates", nf)}
-            </button>
-
-            <button
-              type="button"
-              className={
-                "whitespace-nowrap text-sm px-3 py-2 rounded-full border " +
-                (Array.isArray(nf?.divisions) && nf.divisions.length
-                  ? "border-slate-800 bg-slate-900 text-white"
-                  : "border-slate-300 bg-white text-slate-800")
-              }
-              onClick={() => setFilterOpen(true)}
-            >
-              Division
-            </button>
-
-            <button
-              type="button"
-              className={
-                "whitespace-nowrap text-sm px-3 py-2 rounded-full border " +
-                (Array.isArray(nf?.positions) && nf.positions.length
-                  ? "border-slate-800 bg-slate-900 text-white"
-                  : "border-slate-300 bg-white text-slate-800")
-              }
-              onClick={() => setFilterOpen(true)}
-            >
-              Position
-            </button>
-
-            {hasActiveFilters(nf, isPaid) && (
+        {hasActiveFilters(nf, isPaid) && (
+          <div className="mt-4 flex flex-wrap gap-2 items-center">
+            {activeChipKeys.map((k) => (
               <button
+                key={k}
                 type="button"
-                className="whitespace-nowrap text-sm px-3 py-2 rounded-full border border-slate-300 bg-white text-slate-800"
-                onClick={clearFilters}
+                className="text-xs px-2 py-1 rounded-full border border-slate-200 bg-white hover:bg-slate-50"
+                onClick={() => setIsFiltersOpen(true)}
               >
-                Clear
+                {chipsLabel(k)}
               </button>
-            )}
+            ))}
+            <button
+              type="button"
+              className="text-xs px-2 py-1 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-500"
+              onClick={clearFilters}
+            >
+              Clear
+            </button>
           </div>
+        )}
+
+        <div className="mt-5">
+          <CampList />
         </div>
-
-        <div className="mt-4">{renderBody()}</div>
-
-        <FilterSheet
-          isOpen={filterOpen}
-          onClose={() => setFilterOpen(false)}
-          filters={nf}
-          onFilterChange={setNF}
-          sports={sports}
-          positions={positions}
-          onApply={() => setFilterOpen(false)}
-          onClear={() => {
-            clearFilters();
-            setFilterOpen(false);
-          }}
-          lockSportId={isPaid && athleteSportId ? athleteSportId : ""}
-        />
       </div>
+
+      <FilterSheet
+        open={isFiltersOpen}
+        onOpenChange={(v) => setIsFiltersOpen(!!v)}
+        isPaid={isPaid}
+        athleteSportId={athleteSportId}
+        seasonYear={seasonYear}
+        filtersApi={filtersApi}
+        onApply={() => {
+          setIsFiltersOpen(false);
+          loadCamps();
+        }}
+      />
 
       <BottomNav />
     </div>
