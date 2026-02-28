@@ -28,7 +28,7 @@ import {
 } from "../components/filters/filterUtils.jsx";
 
 /* -------------------------
-   Rate-limit hardened helpers
+   Helpers
 ------------------------- */
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, Math.max(0, Number(ms) || 0)));
@@ -91,12 +91,36 @@ function readActiveFlag(row) {
   return true;
 }
 
+function isBadText(v) {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return true;
+  return ["unknown", "n/a", "na", "none", "null", "undefined", "-"].includes(s);
+}
+
+function normalizeDivisionLabel(v) {
+  const s = String(v ?? "").trim();
+  if (!s || isBadText(s)) return null;
+
+  // Normalize common patterns
+  const upper = s.toUpperCase();
+
+  // "Division I" vs "D1" vs "DI"
+  if (upper === "D1" || upper === "DI") return "Division I";
+  if (upper === "D2" || upper === "DII") return "Division II";
+  if (upper === "D3" || upper === "DIII") return "Division III";
+
+  // Already good
+  if (upper.startsWith("DIVISION ")) return `Division ${upper.replace("DIVISION", "").trim()}`;
+
+  return s;
+}
+
 function isBadLogoUrl(url) {
   const u = String(url || "").trim();
   if (!u) return true;
   const lu = u.toLowerCase();
 
-  // Known vendor/source placeholders (not school identity)
+  // Vendor/source placeholders (not school identity)
   if (lu.includes("ryzer")) return true;
   if (lu.includes("sportsusa")) return true;
   if (lu.includes("sportscamps")) return true;
@@ -107,10 +131,16 @@ function isBadLogoUrl(url) {
   return false;
 }
 
+function looksLikeHttpUrl(url) {
+  const u = String(url || "").trim().toLowerCase();
+  return u.startsWith("http://") || u.startsWith("https://");
+}
+
 function pickBestLogoUrl(...candidates) {
   for (const c of candidates) {
     const u = String(c || "").trim();
     if (!u) continue;
+    if (!looksLikeHttpUrl(u)) continue;
     if (isBadLogoUrl(u)) continue;
     return u;
   }
@@ -221,6 +251,27 @@ function trackEvent(payload) {
   }
 }
 
+function LogoAvatar({ schoolName, logoUrl }) {
+  const [imgErr, setImgErr] = useState(false);
+  const showImg = !!logoUrl && !imgErr;
+
+  return (
+    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
+      {showImg ? (
+        <img
+          src={logoUrl}
+          alt={`${schoolName} logo`}
+          className="w-full h-full object-contain"
+          loading="lazy"
+          onError={() => setImgErr(true)}
+        />
+      ) : (
+        <div className="text-xs font-semibold text-slate-500">{initialBadge(schoolName)}</div>
+      )}
+    </div>
+  );
+}
+
 /* =========================================================
    Page
 ========================================================= */
@@ -228,7 +279,6 @@ export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
 
-  // ✅ FIX: demo mode is nullable and does NOT contain `isDemoMode`
   const dm = readDemoMode(); // null or { mode: "demo", seasonYear, setAt }
   const isDemoMode = dm?.mode === "demo";
   const demoSeasonOverride = Number.isFinite(Number(dm?.seasonYear)) ? Number(dm.seasonYear) : null;
@@ -284,7 +334,10 @@ export default function Discover() {
       const groups = chunk(keyArr, 50);
 
       for (const g of groups) {
-        const rows = await safeFilter(CampIntent, { intent_key: g }, "-updated_at", 2000, { retries: 2, baseDelayMs: 350 });
+        const rows = await safeFilter(CampIntent, { intent_key: g }, "-updated_at", 2000, {
+          retries: 2,
+          baseDelayMs: 350,
+        });
         for (const r of asArray(rows)) {
           const k = String(r?.intent_key || "");
           if (!k) continue;
@@ -345,7 +398,10 @@ export default function Discover() {
       const groups = chunk(ids, 50);
 
       for (const g of groups) {
-        const srows = await safeFilter(School, { id: g }, "school_name", 2000, { retries: 2, baseDelayMs: 350 });
+        const srows = await safeFilter(School, { id: g }, "school_name", 2000, {
+          retries: 2,
+          baseDelayMs: 350,
+        });
         for (const s of asArray(srows)) {
           const sid = String(s?.id ?? "");
           if (!sid) continue;
@@ -374,10 +430,13 @@ export default function Discover() {
           if (Array.isArray(nf?.sports) && nf.sports.length > 0 && !matchesSport(r, nf.sports)) return false;
         }
 
-        if (Array.isArray(nf?.divisions) && nf.divisions.length > 0 && !matchesDivision(r, nf.divisions)) return false;
-        if (Array.isArray(nf?.positions) && nf.positions.length > 0 && !matchesPositions(r, nf.positions)) return false;
+        if (Array.isArray(nf?.divisions) && nf.divisions.length > 0 && !matchesDivision(r, nf.divisions))
+          return false;
+        if (Array.isArray(nf?.positions) && nf.positions.length > 0 && !matchesPositions(r, nf.positions))
+          return false;
         if (nf?.state && !matchesState(r, nf.state)) return false;
-        if ((nf?.startDate || nf?.endDate) && !matchesDateRange(r, nf.startDate || "", nf.endDate || "")) return false;
+        if ((nf?.startDate || nf?.endDate) && !matchesDateRange(r, nf.startDate || "", nf.endDate || ""))
+          return false;
 
         return true;
       });
@@ -398,10 +457,16 @@ export default function Discover() {
 
       let rows = [];
       try {
-        rows = await safeFilter(CampEntity, { season_year: seasonYear }, "-start_date", 2000, { retries: 2, baseDelayMs: 350 });
+        rows = await safeFilter(CampEntity, { season_year: seasonYear }, "-start_date", 2000, {
+          retries: 2,
+          baseDelayMs: 350,
+        });
       } catch (e1) {
         try {
-          rows = await safeFilter(CampEntity, { season_year: String(seasonYear) }, "-start_date", 2000, { retries: 2, baseDelayMs: 350 });
+          rows = await safeFilter(CampEntity, { season_year: String(seasonYear) }, "-start_date", 2000, {
+            retries: 2,
+            baseDelayMs: 350,
+          });
         } catch (e2) {
           throw e2 || e1;
         }
@@ -427,7 +492,9 @@ export default function Discover() {
         shown_camps: filtered.length,
       });
     } catch (e) {
-      const msg = isRateLimitError(e) ? "Camps not available: Rate limit exceeded" : String(e?.message || e || "Failed to load camps");
+      const msg = isRateLimitError(e)
+        ? "Camps not available: Rate limit exceeded"
+        : String(e?.message || e || "Failed to load camps");
       setCampErr(msg);
       setRawRows([]);
 
@@ -498,9 +565,6 @@ export default function Discover() {
               Open Admin Ops
             </Button>
           </div>
-          <div className="mt-3 text-xs text-amber-900/70">
-            Tip: If this keeps happening, you’re hitting Base44 throttling. Retry after a few seconds.
-          </div>
         </Card>
       );
     }
@@ -518,16 +582,9 @@ export default function Discover() {
                       <div className="h-3 w-28 bg-slate-200 rounded" />
                       <div className="mt-2 h-5 w-56 bg-slate-200 rounded" />
                       <div className="mt-2 h-4 w-40 bg-slate-200 rounded" />
-                      <div className="mt-3 flex gap-2">
-                        <div className="h-6 w-20 bg-slate-200 rounded" />
-                        <div className="h-6 w-28 bg-slate-200 rounded" />
-                      </div>
                     </div>
                   </div>
                   <div className="h-9 w-9 bg-slate-200 rounded" />
-                </div>
-                <div className="mt-4 flex items-center justify-end">
-                  <div className="h-8 w-20 bg-slate-200 rounded" />
                 </div>
               </div>
             </Card>
@@ -563,17 +620,38 @@ export default function Discover() {
           const schoolId = String(normId(r?.school_id) ?? "");
           const srow = schoolById[schoolId] || null;
 
-          const schoolName = srow?.school_name || srow?.name || r?.school_name || "Unknown School";
-          const schoolCity = srow?.city || r?.city || null;
-          const schoolState = srow?.state || r?.state || null;
-          const schoolDivision = srow?.division || srow?.school_division || r?.division || null;
+          // ✅ Remove "unknown" from school name
+          const rawSchoolName = srow?.school_name || srow?.name || r?.school_name || "";
+          const schoolName = !isBadText(rawSchoolName) ? String(rawSchoolName) : "School";
 
+          const schoolCity = !isBadText(srow?.city) ? srow?.city : (!isBadText(r?.city) ? r?.city : null);
+          const schoolState = !isBadText(srow?.state) ? srow?.state : (!isBadText(r?.state) ? r?.state : null);
+
+          // ✅ Add Division (and suppress "unknown")
+          const divisionRaw =
+            srow?.division ||
+            srow?.ncaa_division ||
+            srow?.school_division ||
+            srow?.athletics_division ||
+            r?.division ||
+            r?.school_division ||
+            null;
+          const divisionLabel = normalizeDivisionLabel(divisionRaw);
+
+          // ✅ Better logo fallback list + handle broken URLs
           const schoolLogo = pickBestLogoUrl(
+            // School-level
+            srow?.athletics_logo_url,
+            srow?.team_logo_url,
             srow?.logo_url,
             srow?.school_logo_url,
-            srow?.athletics_logo_url,
+            srow?.primary_logo_url,
+            srow?.logo,
+            // Camp-level
             r?.school_logo_url,
-            r?.logo_url
+            r?.athletics_logo_url,
+            r?.logo_url,
+            r?.logo
           );
 
           const linkUrl = r?.link_url ?? r?.source_url ?? r?.url ?? null;
@@ -597,17 +675,11 @@ export default function Discover() {
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
-                    {schoolLogo ? (
-                      <img src={schoolLogo} alt={`${schoolName} logo`} className="w-full h-full object-contain" loading="lazy" />
-                    ) : (
-                      <div className="text-xs font-semibold text-slate-500">{initialBadge(schoolName)}</div>
-                    )}
-                  </div>
+                  <LogoAvatar schoolName={schoolName} logoUrl={schoolLogo} />
 
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      {schoolDivision && <Badge className="bg-slate-900 text-white text-xs">{schoolDivision}</Badge>}
+                      {divisionLabel && <Badge className="bg-slate-900 text-white text-xs">{divisionLabel}</Badge>}
                       {!isPaid && (
                         <Badge variant="outline" className="text-xs">
                           Demo
