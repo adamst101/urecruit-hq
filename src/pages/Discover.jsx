@@ -96,12 +96,9 @@ function isBadLogoUrl(url) {
   if (!u) return true;
   const lu = u.toLowerCase();
 
-  // Known vendor/source placeholders (not school identity)
   if (lu.includes("ryzer")) return true;
   if (lu.includes("sportsusa")) return true;
   if (lu.includes("sportscamps")) return true;
-
-  // Generic placeholders
   if (lu.includes("placeholder")) return true;
 
   return false;
@@ -152,17 +149,6 @@ function toISODate(dateInput) {
 }
 
 function footballSeasonYearForDate(d = new Date()) {
-  const y = d.getUTCFullYear();
-  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
-  return d >= feb1 ? y : y - 1;
-}
-
-function computeSeasonYearFootballFromStart(startDate) {
-  const iso = toISODate(startDate);
-  if (!iso) return null;
-  const d = new Date(`${iso}T00:00:00.000Z`);
-  if (Number.isNaN(d.getTime())) return null;
-
   const y = d.getUTCFullYear();
   const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
   return d >= feb1 ? y : y - 1;
@@ -240,8 +226,11 @@ export default function Discover() {
   const loc = useLocation();
   const { isDemoMode } = readDemoMode();
 
-  const { athlete, athleteSportId } = useAthleteIdentity();
-  const { hasAccess, entitledSeason } = useSeasonAccess();
+  // Hooks return stable shapes; keep local names consistent.
+  const { identity: athleteProfile } = useAthleteIdentity();
+  const athleteSportId = athleteProfile?.sport_id ? String(athleteProfile.sport_id) : "";
+
+  const { hasAccess, seasonYear: accessSeasonYear } = useSeasonAccess();
   const writeGate = useWriteGate();
 
   const isPaid = !!hasAccess && !isDemoMode;
@@ -249,9 +238,10 @@ export default function Discover() {
   const urlp = useMemo(() => getUrlParams(loc?.search || ""), [loc?.search]);
   const seasonYear = useMemo(() => {
     if (urlp?.requestedSeason) return urlp.requestedSeason;
-    if (isPaid && entitledSeason) return entitledSeason;
+    // Paid mode defaults to the entitled/access season when available.
+    if (isPaid && accessSeasonYear) return accessSeasonYear;
     return footballSeasonYearForDate(new Date());
-  }, [urlp?.requestedSeason, isPaid, entitledSeason]);
+  }, [urlp?.requestedSeason, isPaid, accessSeasonYear]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [campErr, setCampErr] = useState(null);
@@ -260,13 +250,8 @@ export default function Discover() {
   const [schoolById, setSchoolById] = useState({});
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
-  const filtersApi = useCampFilters({
-    isPaid,
-    athleteSportId,
-    seasonYear,
-  });
-
-  const nf = filtersApi?.normalizedFilters || null;
+  const filtersApi = useCampFilters();
+  const nf = filtersApi?.nf || null;
 
   const campKeyForRow = (r) => {
     const campId = String(r?.id ?? "");
@@ -317,7 +302,6 @@ export default function Discover() {
     const existing = intentByKey?.[key] || null;
 
     if (!nextStatus) {
-      // Clearing favorite: we set empty status rather than deleting to keep audit simple
       if (existing?.id && CampIntent?.update) {
         await CampIntent.update(existing.id, { status: "" });
         setIntentByKey((p) => ({ ...p, [key]: { ...existing, status: "" } }));
@@ -379,7 +363,6 @@ export default function Discover() {
         if (!readActiveFlag(r)) return false;
 
         if (isPaidMode) {
-          // paid: sport is locked to athlete profile
           if (!matchesSport(r, [athleteSportId].filter(Boolean))) return false;
         } else {
           if (Array.isArray(nf?.sports) && nf.sports.length > 0 && !matchesSport(r, nf.sports)) return false;
@@ -460,13 +443,8 @@ export default function Discover() {
   }, [seasonYear, isPaid]);
 
   function clearFilters() {
-    filtersApi?.clear?.();
+    filtersApi?.clearFilters?.();
     setTimeout(() => loadCamps(), 0);
-  }
-
-  function openFiltersOrProfile() {
-    if (!isPaid) setIsFiltersOpen(true);
-    else setIsFiltersOpen(true);
   }
 
   const shownRows = rawRows;
@@ -514,9 +492,6 @@ export default function Discover() {
               Open Admin Ops
             </Button>
           </div>
-          <div className="mt-3 text-xs text-amber-900/70">
-            Tip: If this keeps happening, you’re hitting Base44 throttling. Retry after a few seconds. We now avoid full-table fallbacks to reduce load.
-          </div>
         </Card>
       );
     }
@@ -534,16 +509,9 @@ export default function Discover() {
                       <div className="h-3 w-28 bg-slate-200 rounded" />
                       <div className="mt-2 h-5 w-56 bg-slate-200 rounded" />
                       <div className="mt-2 h-4 w-40 bg-slate-200 rounded" />
-                      <div className="mt-3 flex gap-2">
-                        <div className="h-6 w-20 bg-slate-200 rounded" />
-                        <div className="h-6 w-28 bg-slate-200 rounded" />
-                      </div>
                     </div>
                   </div>
                   <div className="h-9 w-9 bg-slate-200 rounded" />
-                </div>
-                <div className="mt-4 flex items-center justify-end">
-                  <div className="h-8 w-20 bg-slate-200 rounded" />
                 </div>
               </div>
             </Card>
@@ -563,7 +531,7 @@ export default function Discover() {
             <Button variant="outline" onClick={clearFilters}>
               Clear filters
             </Button>
-            <Button onClick={openFiltersOrProfile}>Edit filters</Button>
+            <Button onClick={() => setIsFiltersOpen(true)}>Edit filters</Button>
           </div>
         </Card>
       );
@@ -622,19 +590,7 @@ export default function Discover() {
                   </div>
 
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {schoolDivision &&
-                        !["unknown", "n/a", "na", "none"].includes(String(schoolDivision).toLowerCase().trim()) && (
-                          <Badge className="bg-slate-900 text-white text-xs">{schoolDivision}</Badge>
-                        )}
-                      {!isPaid && (
-                        <Badge variant="outline" className="text-xs">
-                          Demo
-                        </Badge>
-                      )}
-                    </div>
-
-                    <div className="text-lg font-semibold text-deep-navy truncate mt-1">{schoolName}</div>
+                    <div className="text-lg font-semibold text-deep-navy truncate">{schoolName}</div>
                     <div className="text-sm text-slate-700 truncate">{r?.camp_name ?? r?.name ?? "Camp"}</div>
 
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
@@ -643,6 +599,9 @@ export default function Discover() {
                         <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">
                           {[schoolCity, schoolState].filter(Boolean).join(", ")}
                         </span>
+                      )}
+                      {schoolDivision && (
+                        <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">{schoolDivision}</span>
                       )}
                     </div>
                   </div>
@@ -664,15 +623,6 @@ export default function Discover() {
 
                     const next = isFavorite ? "" : "favorite";
                     await upsertIntent(intentKey, next);
-
-                    trackEvent({
-                      event_name: "favorite_toggle",
-                      source: "discover",
-                      camp_id: campId,
-                      event_key: eventKey || null,
-                      intent_key: intentKey,
-                      next_status: next,
-                    });
                   }}
                   aria-label={isPaid ? (isFavorite ? "Remove favorite" : "Add favorite") : "Favorites locked"}
                 >
@@ -694,16 +644,12 @@ export default function Discover() {
 
                     try {
                       window.open(String(linkUrl), "_blank", "noopener,noreferrer");
-                    } catch {
-                      // ignore
-                    }
+                    } catch {}
 
                     if (isPaid) {
                       const ok = await (writeGate?.ensure ? writeGate.ensure("register") : true);
                       if (ok) await upsertIntent(intentKey, "registered");
                     }
-
-                    trackEvent({ event_name: "register_click", source: "discover", camp_id: campId, intent_key: intentKey });
                   }}
                 >
                   Register
@@ -733,13 +679,7 @@ export default function Discover() {
 
           <div className="flex items-center gap-2">
             {isPaid && (
-              <Button
-                variant="outline"
-                onClick={() => nav("/MyCamps")}
-                aria-label="Go to My Camps"
-                title="View saved and registered camps"
-                className="whitespace-nowrap"
-              >
+              <Button variant="outline" onClick={() => nav("/MyCamps")} className="whitespace-nowrap">
                 My Camps
                 {favoriteCount > 0 && (
                   <span className="ml-2 inline-flex items-center justify-center min-w-[22px] h-[22px] px-2 rounded-full bg-slate-900 text-white text-xs">
@@ -784,12 +724,14 @@ export default function Discover() {
       </div>
 
       <FilterSheet
-        open={isFiltersOpen}
-        onOpenChange={(v) => setIsFiltersOpen(!!v)}
-        isPaid={isPaid}
-        athleteSportId={athleteSportId}
-        seasonYear={seasonYear}
-        filtersApi={filtersApi}
+        isOpen={isFiltersOpen}
+        onClose={() => setIsFiltersOpen(false)}
+        filters={nf || {}}
+        onFilterChange={(next) => filtersApi?.setNF?.(next)}
+        positions={[]}
+        sports={[]}
+        lockSportId={isPaid ? String(athleteSportId || "") : ""}
+        onClear={clearFilters}
         onApply={() => {
           setIsFiltersOpen(false);
           loadCamps();
