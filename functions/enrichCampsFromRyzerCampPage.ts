@@ -20,7 +20,8 @@
 //   "startAt": 0,
 //   "sleepMs": 150,
 //   "maxRetries": 6,
-//   "updateHostNameMode": "missing_only"  // "missing_only" | "always"
+//   "updateHostNameMode": "missing_only",  // "missing_only" | "always"
+//   "debugHtml": false   // true = include raw HTML context in sample (use maxCamps ≤ 5)
 // }
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
@@ -143,45 +144,95 @@ function extractDataSrcCandidates(html: string): string[] {
   return Array.from(new Set(out.filter(Boolean)));
 }
 
-function pickBestS3Logo(html: string, baseUrl: string): string | null {
-  // Priority 1: OpenGraph / Twitter card meta (most reliable)
+// Known non-logo image patterns to skip even if they are S3 URLs
+const SKIP_IMG_PATTERNS = [
+  "webart/logo.png",     // Ryzer placeholder
+  "spacer.gif",
+  "blank.png",
+  "pixel.gif",
+  "/icons/",
+  "/favicon",
+  "advertisement",
+];
+
+function isSkippableImg(u: string | null): boolean {
+  const s = String(u || "").toLowerCase();
+  return SKIP_IMG_PATTERNS.some((p) => s.includes(p));
+}
+
+function pickBestLogoFromHtml(html: string, baseUrl: string): { url: string | null; isS3: boolean } {
+  // Priority 1: OpenGraph / Twitter card meta — check S3 first, then any https
   const og = normalizeUrl(absUrl(baseUrl, extractMetaContent(html, "og:image") || ""));
-  if (og && isS3LogoUrl(og)) return og;
+  if (og && isS3LogoUrl(og) && !isSkippableImg(og)) return { url: og, isS3: true };
 
   const tw = normalizeUrl(absUrl(baseUrl, extractMetaContent(html, "twitter:image") || ""));
-  if (tw && isS3LogoUrl(tw)) return tw;
+  if (tw && isS3LogoUrl(tw) && !isSkippableImg(tw)) return { url: tw, isS3: true };
 
-  // Priority 2: <img src> tags
+  // Priority 2: <img src> S3 URLs
   for (const c of extractImgCandidates(html)) {
     const u = normalizeUrl(absUrl(baseUrl, c) || "");
-    if (u && isS3LogoUrl(u)) return u;
+    if (u && isS3LogoUrl(u) && !isSkippableImg(u)) return { url: u, isS3: true };
   }
 
-  // Priority 3: lazy-loaded data-src attributes (some Ryzer pages defer image loading)
+  // Priority 3: data-src / lazy-load S3 URLs
   for (const c of extractDataSrcCandidates(html)) {
     const u = normalizeUrl(absUrl(baseUrl, c) || "");
-    if (u && isS3LogoUrl(u)) return u;
+    if (u && isS3LogoUrl(u) && !isSkippableImg(u)) return { url: u, isS3: true };
   }
 
-  return null;
+  // Priority 4 (fallback): any og:image https URL — not S3 but still a real logo
+  if (og && og.startsWith("https://") && !isBadLogoUrl(og) && !isSkippableImg(og)) return { url: og, isS3: false };
+  if (tw && tw.startsWith("https://") && !isBadLogoUrl(tw) && !isSkippableImg(tw)) return { url: tw, isS3: false };
+
+  return { url: null, isS3: false };
+}
+
+// Keep old name as thin wrapper for shouldReplaceLogo compatibility
+function pickBestS3Logo(html: string, baseUrl: string): string | null {
+  return pickBestLogoFromHtml(html, baseUrl).url;
+}
+
+// Debug helper: returns raw HTML snippets to diagnose extraction misses
+function buildHtmlDebugContext(html: string, baseUrl: string): any {
+  const h = String(html || "");
+  return {
+    htmlLen: h.length,
+    ogImage:       extractMetaContent(h, "og:image"),
+    ogSiteName:    extractMetaContent(h, "og:site_name"),
+    twitterImage:  extractMetaContent(h, "twitter:image"),
+    title:         extractTitle(h),
+    h1:            extractH1(h),
+    imgSrcs:       extractImgCandidates(h).slice(0, 10),
+    dataSrcs:      extractDataSrcCandidates(h).slice(0, 10),
+    s3Mentions:    (h.match(/s3\.amazonaws\.com[^\"'\s]*/gi) || []).slice(0, 5),
+    ryzerImgMentions: (h.match(/ryzer\.com\/[^\"'\s]*(?:png|jpg|svg|webp)/gi) || []).slice(0, 5),
+  };
+}
+
+// Vendor strings that indicate the page hasn't provided a real host name
+const GENERIC_HOST_NAMES = ["ryzer", "register", "camp registration", "online registration"];
+
+function isGenericHostName(s: string | null): boolean {
+  if (!s) return true;
+  const lc = s.toLowerCase().trim();
+  return GENERIC_HOST_NAMES.some((g) => lc === g || lc === g + ".");
 }
 
 function pickHostName(html: string): string | null {
-  // Best-effort, deterministic extraction (no guessing via location)
-  const ogSite = safeString(extractMetaContent(html, "og:site_name"));
-  if (ogSite) return ogSite;
-
+  // Skip og:site_name — Ryzer sets it to "Ryzer" on every page, which is useless
+  // Fall straight through to h1 (most reliable: contains actual camp/school name)
   const h1 = safeString(extractH1(html));
-  if (h1) return h1;
+  if (h1 && !isGenericHostName(h1)) return h1;
 
   const title = safeString(extractTitle(html));
   if (title) {
-    // clean common suffixes
-    return title
+    const cleaned = title
       .replace(/\s*\|\s*registration\s*$/i, "")
       .replace(/\s*-\s*registration\s*$/i, "")
       .replace(/\s*\|\s*ryzer\s*$/i, "")
+      .replace(/\s*-\s*ryzer\s*$/i, "")
       .trim();
+    if (cleaned && !isGenericHostName(cleaned)) return cleaned;
   }
 
   return null;
@@ -234,6 +285,7 @@ Deno.serve(async (req) => {
     const sleepMs = Math.max(0, Number(body?.sleepMs ?? 150));
     const maxRetries = Math.max(0, Number(body?.maxRetries ?? 6));
     const updateHostNameMode = String(body?.updateHostNameMode || "missing_only"); // missing_only | always
+    const debugHtml = body?.debugHtml === true; // expose raw HTML context in sample (use on small runs only)
 
     if (!seasonYear) return Response.json({ ok: false, error: "seasonYear required" });
 
@@ -338,14 +390,16 @@ Deno.serve(async (req) => {
       }
 
       if (sample.length < 10) {
-        sample.push({
+        const entry: any = {
           campId,
           ryzer_camp_id: ryzerId,
           pageStatus: status,
           extractedLogo,
           extractedHost,
           willWrite: Object.keys(patch),
-        });
+        };
+        if (debugHtml) entry.htmlDebug = buildHtmlDebugContext(html, url);
+        sample.push(entry);
       }
     }
 
