@@ -1,7 +1,7 @@
 // functions/resolveRyzerIdsFromBrandedPages.ts
 //
 // For each Camp with source_url/link_url on a branded domain, fetch HTML and extract
-// register.ryzer.com/camp.cfm?...id=#### (or id=#### anywhere), then write camp.ryzer_camp_id.
+// register.ryzer.com/camp.cfm?...id=#### (or other embedded id patterns), then write camp.ryzer_camp_id.
 //
 // Payload:
 // {
@@ -9,7 +9,7 @@
 //   "dryRun": true,
 //   "maxCamps": 120,
 //   "startAt": 0,
-//   "sleepMs": 250,
+//   "sleepMs": 300,
 //   "maxRetries": 6,
 //   "onlyMissing": true
 // }
@@ -62,6 +62,7 @@ async function fetchHtmlWithRetry(url: string, maxRetries: number) {
   return { ok: false, status: 0, html: "", error: String(lastErr?.message || lastErr) };
 }
 
+// ✅ Hardened extractor: links + hidden inputs + JS variables
 function extractRyzerNumericIdFromText(html: string): string | null {
   const h = String(html || "");
 
@@ -69,13 +70,25 @@ function extractRyzerNumericIdFromText(html: string): string | null {
   const m1 = h.match(/https?:\/\/register\.ryzer\.com\/camp\.cfm[^"' ]*?[?&]id=(\d+)/i);
   if (m1?.[1]) return String(m1[1]);
 
-  // 2) Any id=digits in context of camp.cfm
+  // 2) Any camp.cfm link with id=digits
   const m2 = h.match(/camp\.cfm[^"' ]*?[?&]id=(\d+)/i);
   if (m2?.[1]) return String(m2[1]);
 
-  // 3) Sometimes embedded as "id: 123456" etc
-  const m3 = h.match(/["']id["']\s*:\s*["']?(\d{5,7})["']?/i);
-  if (m3?.[1]) return String(m3[1]);
+  // 3) Hidden input patterns: <input name="id" value="123456">
+  const mInp = h.match(/<input[^>]+name=["']id["'][^>]+value=["'](\d{5,7})["']/i);
+  if (mInp?.[1]) return String(mInp[1]);
+
+  // 4) JS variable patterns
+  // campid: 123456  OR  campId = "123456"
+  const mJs1 = h.match(/\bcamp\s*id\b\s*[:=]\s*["']?(\d{5,7})["']?/i);
+  if (mJs1?.[1]) return String(mJs1[1]);
+
+  const mJs1b = h.match(/\bcampid\b\s*[:=]\s*["']?(\d{5,7})["']?/i);
+  if (mJs1b?.[1]) return String(mJs1b[1]);
+
+  // id: 123456 (last resort; still 5-7 digits)
+  const mJs2 = h.match(/\bid\b\s*[:=]\s*["']?(\d{5,7})["']?/i);
+  if (mJs2?.[1]) return String(mJs2[1]);
 
   return null;
 }
@@ -106,7 +119,7 @@ Deno.serve(async (req) => {
     const dryRun = body?.dryRun !== false; // default true
     const maxCamps = Math.max(1, Number(body?.maxCamps ?? 120));
     const startAt = Math.max(0, Number(body?.startAt ?? 0));
-    const sleepMs = Math.max(0, Number(body?.sleepMs ?? 250));
+    const sleepMs = Math.max(0, Number(body?.sleepMs ?? 300));
     const maxRetries = Math.max(0, Number(body?.maxRetries ?? 6));
     const onlyMissing = body?.onlyMissing !== false; // default true
 
@@ -119,6 +132,7 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: "Camp entity not available" });
     }
 
+    // Stable list for paging
     const rows: any[] = await Camp.filter({ season_year: seasonYear }, "id", Math.min(10000, startAt + maxCamps));
     const slice = (rows || []).slice(startAt, startAt + maxCamps);
     const nextStartAt = startAt + slice.length;
@@ -141,7 +155,7 @@ Deno.serve(async (req) => {
 
     const sample: any[] = [];
 
-    // Cache by branded URL so duplicates don't refetch
+    // Cache by branded URL so duplicates don’t refetch
     const htmlCache = new Map<string, { status: number; rid: string | null }>();
 
     for (const c of slice) {
