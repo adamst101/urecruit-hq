@@ -28,6 +28,21 @@ import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 const RYZER_PLACEHOLDER_LOGO = "https://register.ryzer.com/webart/logo.png";
 const S3_PREFIX = "https://s3.amazonaws.com/";
 
+// All known bad/vendor logos — any stored URL matching these should be replaced
+const BAD_LOGO_PATTERNS = [
+  "register.ryzer.com",   // Ryzer default placeholder
+  "ryzer.com/webart",     // any ryzer webart asset
+  "sportsusa",
+  "sportscamps",
+  "placeholder",
+];
+
+function isBadLogoUrl(u: string | null): boolean {
+  const s = String(u || "").trim().toLowerCase();
+  if (!s) return true;
+  return BAD_LOGO_PATTERNS.some((p) => s.includes(p));
+}
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, Math.max(0, Number(ms) || 0)));
 }
@@ -58,10 +73,10 @@ function shouldReplaceLogo(existing: string | null, nextLogo: string | null): bo
   const ex = normalizeUrl(existing);
   const nx = normalizeUrl(nextLogo);
   if (!nx) return false;
-  if (!isS3LogoUrl(nx)) return false;
-  if (!ex) return true;
-  if (isRyzerPlaceholderLogo(ex)) return true;
-  return false;
+  if (!isS3LogoUrl(nx)) return false;      // only accept real S3 logos
+  if (!ex) return true;                    // no existing logo → write
+  if (isBadLogoUrl(ex)) return true;       // existing is a placeholder → replace
+  return false;                            // existing looks real → leave it
 }
 
 function extractMetaContent(html: string, key: string): string | null {
@@ -116,14 +131,34 @@ function absUrl(baseUrl: string, maybe: string): string | null {
   }
 }
 
+function extractDataSrcCandidates(html: string): string[] {
+  // Pull data-src / data-lazy-src attributes (lazy-loaded images on some Ryzer pages)
+  const h = String(html || "");
+  const out: string[] = [];
+  const re = /data-(?:src|lazy-src|original)=["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(h)) !== null) {
+    if (m[1]) out.push(m[1].trim());
+  }
+  return Array.from(new Set(out.filter(Boolean)));
+}
+
 function pickBestS3Logo(html: string, baseUrl: string): string | null {
+  // Priority 1: OpenGraph / Twitter card meta (most reliable)
   const og = normalizeUrl(absUrl(baseUrl, extractMetaContent(html, "og:image") || ""));
   if (og && isS3LogoUrl(og)) return og;
 
   const tw = normalizeUrl(absUrl(baseUrl, extractMetaContent(html, "twitter:image") || ""));
   if (tw && isS3LogoUrl(tw)) return tw;
 
+  // Priority 2: <img src> tags
   for (const c of extractImgCandidates(html)) {
+    const u = normalizeUrl(absUrl(baseUrl, c) || "");
+    if (u && isS3LogoUrl(u)) return u;
+  }
+
+  // Priority 3: lazy-loaded data-src attributes (some Ryzer pages defer image loading)
+  for (const c of extractDataSrcCandidates(html)) {
     const u = normalizeUrl(absUrl(baseUrl, c) || "");
     if (u && isS3LogoUrl(u)) return u;
   }
