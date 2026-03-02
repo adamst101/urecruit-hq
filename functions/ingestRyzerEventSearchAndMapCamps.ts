@@ -1,353 +1,385 @@
-// functions/ingestRyzerEventSearchAndMapCamps.ts
+// functions/resolveRyzerIdsFromBrandedPages_CampDemo.ts
 //
-// Pull Ryzer eventSearch results and enrich Camp rows by ryzer_camp_id.
-// - Sets Camp.school_logo_url from event.logo ONLY when current logo is missing or Ryzer placeholder.
-// - Sets Camp.host_name from event.organizer (default: only when missing; toggleable).
-// - Does NOT attempt School mapping here (eventSearch doesn’t provide a reliable school domain).
+// CampDemo-only: fetch branded camp pages, extract Ryzer numeric id, write CampDemo.ryzer_camp_id.
+// This is STEP 1 of the backfill pipeline:
+//   resolveRyzerIdsFromBrandedPages_CampDemo  ← (this file)
+//   promoteCampsFromCampDemo                  ← then run this (carries ryzer_camp_id → Camp)
+//   auditRyzerCampIdCoverage                  ← verify
 //
-// Rules:
-// - Ryzer placeholder logo: https://register.ryzer.com/webart/logo.png
-// - Only write logos that start with https://s3.amazonaws.com/
-//
-// Payload (POST JSON):
+// ─── Dry-run (safe to run first) ────────────────────────────────────────────
 // {
-//   "dryRun": true,
 //   "seasonYear": 2026,
-//   "ryzerAuth": "<JWT>",
-//   "search": { ... },
-//   "maxPages": 25,
-//   "maxCampsToUpdate": 5000,
-//   "updateHostNameMode": "missing_only", // "missing_only" | "always"
-//   "updateCampName": false
+//   "dryRun": true,
+//   "maxRows": 60,
+//   "startAt": 0,
+//   "sleepMs": 300,
+//   "maxRetries": 6,
+//   "onlyMissing": true,
+//   "debugContext": false
 // }
+//
+// ─── Write mode (page through to completion) ────────────────────────────────
+// {
+//   "seasonYear": 2026,
+//   "dryRun": false,
+//   "maxRows": 60,
+//   "startAt": 0,       ← set to stats.nextStartAt from previous response
+//   "sleepMs": 300,
+//   "maxRetries": 6,
+//   "onlyMissing": true,
+//   "debugContext": false
+// }
+// Repeat with startAt = stats.nextStartAt until stats.done === true.
+//
+// ─── Edge-case overrides ──────────────────────────────────────────────────────
+// Hardcoded overrides (e.g. Gary Goff Houston) are baked into HARDCODED_OVERRIDES
+// below and applied automatically on every run — no payload needed.
+//
+// To add a one-off override at runtime without editing code, pass in payload:
+// {
+//   ...,
+//   "overrides": [
+//     { "demoId": "<CampDemo row id>", "ryzerId": "123456" },
+//     { "src": "https://example.com/camp.cfm", "ryzerId": "123456" }
+//   ]
+// }
+// Payload overrides are merged with (and take precedence over) hardcoded ones.
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 
-const ENDPOINT = "https://ryzer.com/rest/controller/connect/event/eventSearch/";
-const RYZER_PLACEHOLDER_LOGO = "https://register.ryzer.com/webart/logo.png";
-const S3_PREFIX = "https://s3.amazonaws.com/";
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
-function asArray<T>(x: any): T[] {
-  return Array.isArray(x) ? x : [];
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, Math.max(0, Number(ms) || 0)));
 }
 
 function safeString(x: any): string | null {
-  if (x === null || x === undefined) return null;
+  if (x == null) return null;
   const s = String(x).trim();
-  return s ? s : null;
+  return s || null;
 }
 
 function normalizeUrl(u: string | null): string | null {
   const s = safeString(u);
-  if (!s) return null;
-  return s.replace(/#.*$/, "").replace(/\?.*$/, "").trim();
+  return s ? s.replace(/#.*$/, "").trim() : null;
 }
 
-function isS3LogoUrl(u: string | null): boolean {
-  const s = normalizeUrl(u);
-  return !!s && s.startsWith(S3_PREFIX);
+function isRateLimitError(e: any) {
+  const msg = String(e?.message || e || "").toLowerCase();
+  return msg.includes("rate limit") || msg.includes("too many") || msg.includes("429");
 }
 
-function isRyzerPlaceholderLogo(u: string | null): boolean {
-  const s = normalizeUrl(u);
-  return !!s && s === RYZER_PLACEHOLDER_LOGO;
+async function updateWithRetry(Entity: any, rowId: string, patch: any, maxRetries: number) {
+  let lastErr: any = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await Entity.update(rowId, patch);
+      return { ok: true };
+    } catch (e: any) {
+      lastErr = e;
+      if (!isRateLimitError(e) || attempt === maxRetries) break;
+      await sleep(250 * Math.pow(2, attempt));
+    }
+  }
+  return { ok: false, error: String(lastErr?.message || lastErr) };
 }
 
-function shouldReplaceLogo(existing: string | null, nextLogo: string | null): boolean {
-  const ex = normalizeUrl(existing);
-  const nx = normalizeUrl(nextLogo);
-  if (!nx) return false;
-  if (!isS3LogoUrl(nx)) return false;
-  if (!ex) return true;
-  if (isRyzerPlaceholderLogo(ex)) return true;
-  return false;
+async function fetchTextWithRetry(url: string, maxRetries: number) {
+  let lastErr: any = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
+          "Accept": "text/html,*/*",
+        },
+      });
+      return {
+        ok: true,
+        status: res.status,
+        finalUrl: res.url || url,
+        html: await res.text().catch(() => ""),
+      };
+    } catch (e: any) {
+      lastErr = e;
+      if (attempt === maxRetries) break;
+      await sleep(250 * Math.pow(2, attempt));
+    }
+  }
+  return { ok: false, status: 0, finalUrl: url, html: "", error: String(lastErr?.message || lastErr) };
 }
 
-function extractRyzerNumericCampId(url: string | null): string | null {
-  const s = safeString(url);
+// ─── HTML parsing ─────────────────────────────────────────────────────────────
+
+function unescapeJsSlashes(s: string) {
+  return String(s || "").replace(/\\\//g, "/");
+}
+
+function normalizeProtocol(s: string) {
+  return String(s || "")
+    .replace(/https:\/\/\//g, "https://")
+    .replace(/http:\/\/\//g, "http://")
+    .replace(/https:\//g, "https://")
+    .replace(/http:\//g, "http://");
+}
+
+function extractIdFromUrl(u: string | null): string | null {
+  const s = safeString(u);
   if (!s) return null;
   try {
-    const u = new URL(s);
-    const id = u.searchParams.get("id");
-    if (!id) return null;
-    const t = id.trim();
-    return t ? t : null;
-  } catch {
-    const m = s.match(/[?&]id=(\d+)/i);
-    return m?.[1] ? String(m[1]) : null;
-  }
+    const id = new URL(s).searchParams.get("id");
+    if (id?.trim()) return id.trim();
+  } catch { /* ignore */ }
+  const m = s.match(/[?&]id=(\d{5,7})/i);
+  return m?.[1] ? String(m[1]) : null;
 }
 
-async function ryzerEventSearch(ryzerAuth: string, searchBody: any) {
-  const resp = await fetch(ENDPOINT, {
-    method: "POST",
-    headers: {
-      Accept: "*/*",
-      "Content-type": "application/json; charset=UTF-8",
-      authorization: String(ryzerAuth),
-      Origin: "https://ryzer.com",
-      Referer: "https://ryzer.com/events/?tab=eventSearch",
-    },
-    body: JSON.stringify(searchBody || {}),
-  });
+function extractRyzerIdFromHtml(html: string): {
+  rid: string | null;
+  ctx: string | null;
+  registerUrl: string | null;
+} {
+  const h = normalizeProtocol(unescapeJsSlashes(String(html || "")));
 
-  const status = resp.status;
-  const text = await resp.text().catch(() => "");
-  let json: any = null;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = null;
-  }
+  const PATTERNS: Array<{ name: string; re: RegExp }> = [
+    { name: "registerLink",  re: /https?:\/\/register\.ryzer\.com\/camp\.cfm[^"' ]*?[?&]id=(\d{5,7})/i },
+    { name: "campLink",      re: /camp\.cfm[^"' ]*?[?&]id=(\d{5,7})/i },
+    { name: "iframeSrc",     re: /<iframe[^>]+src=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d{5,7})/i },
+    { name: "formAction",    re: /<form[^>]+action=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d{5,7})/i },
+    { name: "inputHidden",   re: /<input[^>]+name=["']id["'][^>]+value=["'](\d{5,7})["']/i },
+    { name: "dataUrl",       re: /data-(?:url|href)=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d{5,7})/i },
+    { name: "jsCampid",      re: /\bcampid\b\s*[:=]\s*["']?(\d{5,7})["']?/i },
+    { name: "jsCampId2",     re: /\bcamp\s*id\b\s*[:=]\s*["']?(\d{5,7})["']?/i },
+  ];
 
-  // Ryzer returns json.data as stringified JSON
-  let decodedData: any = null;
-  if (json && typeof json === "object") {
-    const d = json?.data;
-    if (typeof d === "string" && d.trim().startsWith("{")) {
-      try {
-        decodedData = JSON.parse(d);
-      } catch {
-        decodedData = null;
-      }
-    } else if (d && typeof d === "object") {
-      decodedData = d;
+  for (const p of PATTERNS) {
+    const m = h.match(p.re);
+    if (m?.[1]) {
+      const rid = m[1];
+      const idx = m.index ?? h.indexOf(m[0]);
+      const ctx = `[${p.name}] ${h.slice(Math.max(0, idx - 140), Math.min(h.length, idx + 260))}`;
+      return { rid, ctx, registerUrl: null };
     }
   }
 
-  return { status, json, decodedData, text };
+  // No id found in static HTML — look for a register.ryzer.com link to follow
+  const reg = h.match(/https?:\/\/register\.ryzer\.com\/[^"' ]+/i);
+  const registerUrl = reg?.[0] ?? null;
+
+  const pos = h.toLowerCase().indexOf(registerUrl ? "register.ryzer.com" : "ryzer");
+  const ctx = pos >= 0
+    ? `[context] ${h.slice(Math.max(0, pos - 140), Math.min(h.length, pos + 260))}`
+    : null;
+
+  return { rid: null, ctx, registerUrl };
 }
 
-function extractEvents(decodedData: any): any[] {
-  if (!decodedData) return [];
-  if (Array.isArray(decodedData?.events)) return decodedData.events;
-  if (Array.isArray(decodedData?.Events)) return decodedData.Events;
-  return [];
+// ─── hardcoded overrides ──────────────────────────────────────────────────────
+// Add entries here for JS-rendered pages that don't expose id= in static HTML.
+// These are merged with any overrides passed in the request payload.
+// Fields: demoId (CampDemo row id), src (source_url/link_url), ryzerId (Ryzer numeric camp id).
+// You only need one of demoId or src per entry — both is fine too.
+//
+// To add a new edge case:
+//   { src: "https://example.com/camp-page.cfm", ryzerId: "123456" }
+//   { demoId: "<base44 CampDemo row id>",        ryzerId: "123456" }
+
+const HARDCODED_OVERRIDES: Array<{ demoId?: string; src?: string; ryzerId: string }> = [
+  // Gary Goff Football Camps – Houston (JS-rendered, id= not in static HTML)
+  { src: "https://www.garygofffootballcamps.com/houston-camp.cfm", ryzerId: "289884" },
+
+  // ── Add more entries below as you discover new JS-rendered edge cases ──────
+  // { src: "https://example.com/some-camp.cfm", ryzerId: "XXXXXX" },
+];
+
+// ─── override maps ────────────────────────────────────────────────────────────
+
+function buildOverrideMaps(overrides: any[]) {
+  const byDemoId = new Map<string, string>();
+  const bySrc    = new Map<string, string>();
+  for (const o of overrides || []) {
+    const demoId  = safeString(o?.demoId);
+    const src     = normalizeUrl(safeString(o?.src));
+    const ryzerId = safeString(o?.ryzerId);
+    if (!ryzerId) continue;
+    if (demoId) byDemoId.set(demoId, ryzerId);
+    if (src)    bySrc.set(src, ryzerId);
+  }
+  return { byDemoId, bySrc };
 }
+
+// ─── handler ─────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
   const t0 = Date.now();
 
   try {
     if (req.method !== "POST") return Response.json({ ok: false, error: "POST only" });
-
     const body = await req.json().catch(() => ({}));
-    const dryRun = body?.dryRun !== false; // default true
-    const seasonYear = Number(body?.seasonYear || 0);
-    const ryzerAuth = safeString(body?.ryzerAuth);
-    const search = body?.search || null;
 
-    const maxPages = Math.max(1, Number(body?.maxPages ?? 50));  // 50 pages × 100/page = up to 5000 events
-    const maxCampsToUpdate = Math.max(1, Number(body?.maxCampsToUpdate ?? 5000));
-    const updateHostNameMode = String(body?.updateHostNameMode || "missing_only"); // missing_only | always
-    const updateCampName = !!body?.updateCampName;
+    const seasonYear   = Number(body?.seasonYear || 0);
+    const dryRun       = body?.dryRun !== false;  // default: true (safe)
+    const maxRows      = Math.max(1,   Number(body?.maxRows   ?? 60));
+    const startAt      = Math.max(0,   Number(body?.startAt   ?? 0));
+    const sleepMs      = Math.max(0,   Number(body?.sleepMs   ?? 300));
+    const maxRetries   = Math.max(0,   Number(body?.maxRetries ?? 6));
+    const onlyMissing  = body?.onlyMissing !== false;  // default: true
+    const debugContext = body?.debugContext === true;   // default: false (keeps logs small)
 
-    if (!seasonYear) return Response.json({ ok: false, error: "seasonYear required" });
-    if (!ryzerAuth) return Response.json({ ok: false, error: "ryzerAuth required" });
-    // search is optional — default fetches all activity types for the season date range
-    // Do NOT pass ActivityTypes to avoid filtering to the wrong sport category
+    // Merge hardcoded overrides (always applied) with any passed in the payload
+    const payloadOverrides = Array.isArray(body?.overrides) ? body.overrides : [];
+    const mergedOverrides  = [...HARDCODED_OVERRIDES, ...payloadOverrides];
+    const { byDemoId, bySrc } = buildOverrideMaps(mergedOverrides);
 
-    const base44 = createClientFromRequest(req);
-    const Camp = base44?.entities?.Camp ?? base44?.entities?.Camps;
+    if (!seasonYear) return Response.json({ ok: false, error: "seasonYear is required (e.g. 2026)" });
 
-    if (!Camp || typeof Camp.filter !== "function" || typeof Camp.update !== "function") {
-      return Response.json({ ok: false, error: "Camp entity not available" });
+    const base44   = createClientFromRequest(req);
+    const CampDemo = base44?.entities?.CampDemo ?? base44?.entities?.CampDemos;
+
+    if (!CampDemo || typeof CampDemo.filter !== "function" || typeof CampDemo.update !== "function") {
+      return Response.json({ ok: false, error: "CampDemo entity not available (check entity name)" });
     }
 
-    // Load camps for the season; build two indexes:
-    //   byRyzerId  — Camp.ryzer_camp_id → Camp[]   (primary, fast)
-    //   byRyzerUrl — normalised rlink URL → Camp[] (fallback for rows without ryzer_camp_id yet)
-    const camps = asArray<any>(await Camp.filter({ season_year: seasonYear }, "-start_date", 10000));
-    const byRyzerId  = new Map<string, any[]>();
-    const byRyzerUrl = new Map<string, any[]>();
+    // Fetch page of rows, filtered by season_year
+    const pageLimit = Math.min(10_000, startAt + maxRows);
+    const rows: any[] = await CampDemo.filter({ season_year: seasonYear }, "id", pageLimit);
+    const slice = (rows || []).slice(startAt, startAt + maxRows);
+    const nextStartAt = startAt + slice.length;
 
-    for (const c of camps) {
-      // Primary index: explicit ryzer_camp_id field
-      const rid = safeString(c?.ryzer_camp_id);
-      if (rid) {
-        const arr = byRyzerId.get(rid) || [];
-        arr.push(c);
-        byRyzerId.set(rid, arr);
-      }
-
-      // Fallback index: parse numeric id out of link_url / source_url
-      // Covers rows that haven't been through the ryzer_camp_id backfill yet
-      const urlFields = [c?.link_url, c?.source_url, c?.registration_url];
-      const seenParsed = new Set<string>();
-      for (const u of urlFields) {
-        const parsed = extractRyzerNumericCampId(u);
-        if (parsed && !seenParsed.has(parsed)) {
-          seenParsed.add(parsed);
-          const arr = byRyzerUrl.get(parsed) || [];
-          arr.push(c);
-          byRyzerUrl.set(parsed, arr);
-        }
-      }
-    }
-
-    const stats: any = {
+    const stats: Record<string, any> = {
       seasonYear,
-      totalCampsIndexed: camps.length,
-      indexedByRyzerIdField: byRyzerId.size,
-      indexedByUrlFallback: byRyzerUrl.size,
-      pagesFetched: 0,
-      eventsSeen: 0,
-      eventsWithNumericId: 0,
-      matchedCampRows: 0,
-      updatedCampRows: 0,
-      logoUpdated: 0,
-      hostNameUpdated: 0,
-      campNameUpdated: 0,
-      ryzerIdBackfilled: 0,
-      skippedNoMatch: 0,
+      startAt,
+      nextStartAt,
+      scanned:             slice.length,
+      eligible:            0,
+      skippedAlreadyHasId: 0,
+      skippedNoUrl:        0,
+      usedOverride:        0,
+      fetched:             0,
+      html200:             0,
+      extracted:           0,
+      followedRegisterUrl: 0,
+      extractedViaFollow:  0,
+      wrote:               0,
+      errors:              0,
       dryRun,
-      elapsedMs: 0,
+      elapsedMs:           0,
+      done:                slice.length < maxRows,
     };
 
-    const debug: any = {
-      sampleEvents: [],
-      sampleUpdates: [],
-      notes: [],
-    };
+    const sample:  any[] = [];
+    // URL → fetch result cache (avoids re-fetching the same branded page for multiple CampDemo rows)
+    const urlCache = new Map<string, {
+      status: number;
+      rid: string | null;
+      ctx: string | null;
+      registerUrl: string | null;
+      finalFollowUrl: string | null;
+    }>();
 
-    let totalUpdatesAttempted = 0;
+    for (const r of slice) {
+      const demoId = safeString(r?.id);
+      if (!demoId) continue;
 
-    for (let page = 0; page < maxPages; page++) {
-      if (totalUpdatesAttempted >= maxCampsToUpdate) break;
-
-      // Build search body: caller's search params + page cursor
-      // Default: all activity types, all genders, wide proximity — let Camp index filter by sport
-      const defaultSearch = {
-        startDate: `${seasonYear}-01-01`,
-        endDate:   `${seasonYear}-12-31`,
-        Proximity: "10000",
-        RecordsPerPage: 100,
-        SoldOut: 0,
-      };
-      const pageBody = { ...defaultSearch, ...(search || {}), Page: page };
-      const { status, decodedData, json } = await ryzerEventSearch(ryzerAuth, pageBody);
-
-      stats.pagesFetched += 1;
-
-      if (status !== 200 || !json) {
-        debug.notes.push(`page=${page} status=${status} non-json`);
-        break;
+      const existing = safeString(r?.ryzer_camp_id);
+      if (onlyMissing && existing) {
+        stats.skippedAlreadyHasId += 1;
+        continue;
       }
 
-      const events = extractEvents(decodedData);
-      stats.eventsSeen += events.length;
-
-      if (page === 0 && events.length) {
-        debug.sampleEvents.push({
-          keys: Object.keys(events[0] || {}),
-          example: events[0] || null,
-        });
+      const src = normalizeUrl(safeString(r?.source_url)) || normalizeUrl(safeString(r?.link_url));
+      if (!src) {
+        stats.skippedNoUrl += 1;
+        continue;
       }
 
-      if (!events.length) break;
+      stats.eligible += 1;
 
-      for (const evt of events) {
-        const rlink = safeString(evt?.rlink);
-        const numericId = extractRyzerNumericCampId(rlink);
-        if (!numericId) continue;
-        stats.eventsWithNumericId += 1;
-
-        // Match: prefer explicit ryzer_camp_id field, fall back to URL parse
-        const matchedById  = byRyzerId.get(numericId)  || [];
-        const matchedByUrl = byRyzerUrl.get(numericId) || [];
-
-        // First mismatch: capture diagnostic to show id format on both sides
-        if (!debug.idMismatchDiag && matchedById.length === 0 && matchedByUrl.length === 0) {
-          debug.idMismatchDiag = {
-            apiNumericId: numericId,
-            apiRlink: rlink,
-            sampleRyzerIdFieldKeys: Array.from(byRyzerId.keys()).slice(0, 8),
-            sampleUrlFallbackKeys:  Array.from(byRyzerUrl.keys()).slice(0, 8),
-          };
+      // ── override check ────────────────────────────────────────────────────
+      const overrideRid = byDemoId.get(demoId) || bySrc.get(src) || null;
+      if (overrideRid) {
+        stats.usedOverride += 1;
+        if (!dryRun) {
+          // Also store branded_url so promoteCampsFromCampDemo → Camp → enrichLogoFromBrandedPage can use it
+          const patch: any = { ryzer_camp_id: overrideRid };
+          if (src && !src.includes("register.ryzer.com")) patch.branded_url = src;
+          const res = await updateWithRetry(CampDemo, demoId, patch, maxRetries);
+          if (res.ok) stats.wrote += 1;
+          else stats.errors += 1;
         }
+        if (sample.length < 10) sample.push({ demoId, src, extractedRid: overrideRid, usedOverride: true });
+        continue;
+      }
 
-        // Merge, dedupe by camp row id
-        const seenIds = new Set<string>();
-        const matches: any[] = [];
-        for (const c of [...matchedById, ...matchedByUrl]) {
-          const cid = safeString(c?.id);
-          if (cid && !seenIds.has(cid)) { seenIds.add(cid); matches.push(c); }
-        }
-        const matchedViaUrlFallback = matchedById.length === 0 && matches.length > 0;
+      // ── URL fetch (or cache hit) ──────────────────────────────────────────
+      let cached = urlCache.get(src) ?? null;
+      let status = 0, rid: string | null = null, ctx: string | null = null;
+      let registerUrl: string | null = null, finalFollowUrl: string | null = null;
 
-        if (!matches.length) {
-          stats.skippedNoMatch += 1;
+      if (cached) {
+        ({ status, rid, ctx, registerUrl, finalFollowUrl } = cached);
+      } else {
+        await sleep(sleepMs);
+
+        const res = await fetchTextWithRetry(src, maxRetries);
+        if (!res.ok) {
+          stats.errors += 1;
+          if (sample.length < 10) sample.push({ demoId, src, error: res.error });
           continue;
         }
 
-        const organizer = safeString(evt?.organizer);
-        const logo = safeString(evt?.logo);
-        const name = safeString(evt?.name);
+        stats.fetched += 1;
+        status = res.status;
+        if (status === 200) stats.html200 += 1;
 
-        for (const camp of matches) {
-          if (totalUpdatesAttempted >= maxCampsToUpdate) break;
+        const ex = status === 200 ? extractRyzerIdFromHtml(res.html) : { rid: null, ctx: null, registerUrl: null };
+        rid = ex.rid; ctx = ex.ctx; registerUrl = ex.registerUrl;
 
-          const campRowId = safeString(camp?.id);
-          if (!campRowId) continue;
-
-          const patch: any = {};
-
-          // Logo
-          if (shouldReplaceLogo(safeString(camp?.school_logo_url), logo)) {
-            patch.school_logo_url = normalizeUrl(logo);
-          }
-
-          // Host name
-          if (organizer) {
-            const existingHost = safeString(camp?.host_name);
-            if (updateHostNameMode === "always" || !existingHost) {
-              patch.host_name = organizer;
-            }
-          }
-
-          // Camp name (optional)
-          if (updateCampName && name) {
-            const existingName = safeString(camp?.camp_name) || safeString(camp?.name);
-            if (!existingName) patch.camp_name = name;
-          }
-
-          // Backfill ryzer_camp_id when matched via URL fallback (idempotent enrichment)
-          if (matchedViaUrlFallback && !safeString(camp?.ryzer_camp_id)) {
-            patch.ryzer_camp_id = numericId;
-          }
-
-          if (Object.keys(patch).length === 0) continue;
-
-          stats.matchedCampRows += 1;
-          totalUpdatesAttempted += 1;
-
-          if (!dryRun) {
-            await Camp.update(campRowId, patch);
-          }
-
-          stats.updatedCampRows += 1;
-          if (patch.school_logo_url) stats.logoUpdated += 1;
-          if (patch.host_name) stats.hostNameUpdated += 1;
-          if (patch.camp_name) stats.campNameUpdated += 1;
-          if (patch.ryzer_camp_id) stats.ryzerIdBackfilled = (stats.ryzerIdBackfilled || 0) + 1;
-
-          if (debug.sampleUpdates.length < 10) {
-            debug.sampleUpdates.push({
-              ryzer_camp_id: numericId,
-              matchedVia: matchedViaUrlFallback ? "url_fallback" : "ryzer_camp_id_field",
-              campRowId,
-              patch,
-              organizer,
-              logo,
-              rlink,
-            });
+        // Follow the register.ryzer.com link if found but no id in static HTML
+        if (!rid && registerUrl) {
+          stats.followedRegisterUrl += 1;
+          await sleep(Math.min(500, sleepMs));
+          const rr = await fetchTextWithRetry(registerUrl, maxRetries);
+          if (rr.ok && rr.status < 400) {
+            finalFollowUrl = rr.finalUrl;
+            rid = extractIdFromUrl(rr.finalUrl) || extractRyzerIdFromHtml(rr.html).rid;
+            if (rid) stats.extractedViaFollow += 1;
           }
         }
+
+        urlCache.set(src, { status, rid, ctx, registerUrl, finalFollowUrl });
+      }
+
+      if (rid) stats.extracted += 1;
+
+      // ── write ─────────────────────────────────────────────────────────────
+      // Write ryzer_camp_id + branded_url together.
+      // branded_url is the non-Ryzer landing page URL — used later by enrichLogoFromBrandedPage
+      // to fetch the school logo (Ryzer registration pages don't contain school logos).
+      if (rid && !dryRun) {
+        const patch: any = { ryzer_camp_id: rid };
+        if (src && !src.includes("register.ryzer.com")) patch.branded_url = src;
+        const res = await updateWithRetry(CampDemo, demoId, patch, maxRetries);
+        if (res.ok) stats.wrote += 1;
+        else stats.errors += 1;
+      }
+
+      if (sample.length < 10) {
+        const entry: any = { demoId, src, pageStatus: status, extractedRid: rid };
+        if (debugContext) {
+          entry.context = ctx;
+          entry.registerUrlFound = registerUrl;
+          entry.finalFollowUrl = finalFollowUrl;
+        }
+        sample.push(entry);
       }
     }
 
     stats.elapsedMs = Date.now() - t0;
-    return Response.json({ ok: true, stats, debug });
+    return Response.json({ ok: true, stats, sample });
+
   } catch (e: any) {
     return Response.json({ ok: false, error: String(e?.message || e) });
   }
