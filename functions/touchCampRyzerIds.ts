@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
     const maxCamps = Math.max(1, Number(body?.maxCamps ?? 500));
 
     const base44 = createClientFromRequest(req);
-    const Camp = base44?.entities?.Camp ?? base44?.entities?.Camps;
+    const Camp = base44?.asServiceRole?.entities?.Camp ?? base44?.asServiceRole?.entities?.Camps ?? base44?.entities?.Camp ?? base44?.entities?.Camps;
     if (!Camp?.filter) return Response.json({ ok: false, error: "Camp entity not available" });
 
     const rows: any[] = await Camp.filter(seasonYear ? { season_year: seasonYear } : {}, "id", maxCamps);
