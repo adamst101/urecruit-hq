@@ -290,6 +290,20 @@ Deno.serve(async (req) => {
     const total = allRows.length;
     const slice = allRows.slice(startAt, startAt + batchSize);
 
+    // Build in-memory index of existing Camp rows by event_key (avoids per-row filter calls)
+    const sr = base44.asServiceRole;
+    const SrCamp = sr?.entities?.Camp ?? sr?.entities?.Camps ?? Camp;
+    const existingCampRows: any[] = await withRetry(() => SrCamp.filter({}, "id", 20000));
+    const campByEventKey = new Map<string, string>(); // event_key -> camp id
+    const campBySourceKey = new Map<string, string>(); // source_key -> camp id
+    for (const c of asArray(existingCampRows)) {
+      const ek = safeStr(c?.event_key);
+      const sk = safeStr(c?.source_key);
+      const cid = safeStr(c?.id);
+      if (ek && cid) campByEventKey.set(ek, cid);
+      if (sk && cid) campBySourceKey.set(sk, cid);
+    }
+
     let created = 0;
     let updated = 0;
     let skipped = 0;
@@ -318,14 +332,14 @@ Deno.serve(async (req) => {
       }
 
       const payload = built.payload;
+      const existingId = campByEventKey.get(safeStr(payload.event_key)) || campBySourceKey.get(safeStr(payload.source_key)) || null;
 
       try {
-        const existing = asArray<any>(await withRetry(() => Camp.filter({ event_key: payload.event_key })));
-        if (existing.length && existing[0]?.id) {
-          if (!dryRun) await withRetry(() => Camp.update(String(existing[0].id), payload));
+        if (existingId) {
+          if (!dryRun) await withRetry(() => SrCamp.update(existingId, payload));
           updated += 1;
         } else {
-          if (!dryRun) await withRetry(() => Camp.create(payload));
+          if (!dryRun) await withRetry(() => SrCamp.create(payload));
           created += 1;
         }
       } catch (e) {
