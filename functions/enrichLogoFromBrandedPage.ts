@@ -313,15 +313,18 @@ Deno.serve(async (req) => {
       const campId = safeString(r?.id);
       if (!campId) continue;
 
-      // Pick the branded URL — prefer source_url over link_url
-      const srcUrl = normalizeUrl(safeString(r?.source_url)) || normalizeUrl(safeString(r?.link_url));
-      if (!srcUrl) {
-        stats.skippedNoUrl += 1;
-        continue;
-      }
+      // Pick the branded URL in priority order:
+      //   1. branded_url — set by resolveRyzerIdsFromBrandedPages_CampDemo (most reliable)
+      //   2. source_url  — may be branded or Ryzer depending on ingest source
+      //   3. link_url    — fallback
+      // Skip any register.ryzer.com URLs — those pages never contain school logos
+      const rawUrl =
+        normalizeUrl(safeString(r?.branded_url)) ||
+        normalizeUrl(safeString(r?.source_url))  ||
+        normalizeUrl(safeString(r?.link_url));
 
-      // Skip Ryzer registration URLs — logos aren't there
-      if (srcUrl.includes("register.ryzer.com")) {
+      const srcUrl = rawUrl && !rawUrl.includes("register.ryzer.com") ? rawUrl : null;
+      if (!srcUrl) {
         stats.skippedNoUrl += 1;
         continue;
       }
