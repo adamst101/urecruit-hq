@@ -1,12 +1,7 @@
 // functions/resolveRyzerIdsFromBrandedPages.ts
 //
 // Fetch branded camp pages and extract Ryzer numeric camp id, then write Camp.ryzer_camp_id.
-//
-// Extraction strategy:
-// 1) Search branded HTML for register.ryzer.com/camp.cfm?id=#### or camp.cfm?...id=####
-// 2) If missing, find ANY register.ryzer.com URL in HTML (even JS-escaped), fetch it, then extract id from:
-//    - final response.url (after redirects), OR
-//    - fetched HTML body
+// Adds manual overrides to handle JS-rendered edge pages.
 //
 // Payload:
 // {
@@ -17,7 +12,13 @@
 //   "sleepMs": 300,
 //   "maxRetries": 6,
 //   "onlyMissing": true,
-//   "debugContext": true
+//   "debugContext": true,
+//
+//   // Optional overrides (use for edge cases)
+//   "overrides": [
+//     { "campId": "699b62388644f35fb8bbc950", "ryzerId": "289884" },
+//     { "src": "https://www.garygofffootballcamps.com/houston-camp.cfm", "ryzerId": "289884" }
+//   ]
 // }
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
@@ -47,8 +48,8 @@ async function updateWithRetry(Camp: any, campId: string, patch: any, maxRetries
   let lastErr: any = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const res = await Camp.update(campId, patch);
-      return { ok: true, res };
+      await Camp.update(campId, patch);
+      return { ok: true };
     } catch (e: any) {
       lastErr = e;
       if (!isRateLimitError(e) || attempt === maxRetries) break;
@@ -85,14 +86,15 @@ async function fetchTextWithRetry(url: string, maxRetries: number) {
   return { ok: false, status: 0, finalUrl: url, html: "", error: String(lastErr?.message || lastErr) };
 }
 
-// Unescape common JS-escaped URLs: https:\/\/register.ryzer.com\/...
 function unescapeJsSlashes(s: string) {
   return String(s || "").replace(/\\\//g, "/");
 }
 
-// Sometimes you see "https:/" in HTML snippets. Normalize to https://
-function normalizeProtocolSlashes(s: string) {
+// Fix https:///example.com -> https://example.com
+function normalizeProtocolWeirdness(s: string) {
   return String(s || "")
+    .replace(/https:\/\/\//g, "https://")
+    .replace(/http:\/\/\//g, "http://")
     .replace(/https:\//g, "https://")
     .replace(/http:\//g, "http://");
 }
@@ -109,10 +111,9 @@ function extractIdFromUrl(u: string | null): string | null {
   return m?.[1] ? String(m[1]) : null;
 }
 
-// Return rid + a context snippet for debugging
 function extractRyzerIdFromHtml(html: string): { rid: string | null; ctx: string | null; registerUrl: string | null } {
   const raw = String(html || "");
-  const h = normalizeProtocolSlashes(unescapeJsSlashes(raw));
+  const h = normalizeProtocolWeirdness(unescapeJsSlashes(raw));
 
   const patterns: Array<{ name: string; re: RegExp }> = [
     { name: "registerLink", re: /https?:\/\/register\.ryzer\.com\/camp\.cfm[^"' ]*?[?&]id=(\d{5,7})/i },
@@ -136,17 +137,31 @@ function extractRyzerIdFromHtml(html: string): { rid: string | null; ctx: string
     }
   }
 
-  // Second-pass: find ANY register.ryzer.com URL (even if it doesn't include id in the visible snippet)
   const reg = h.match(/https?:\/\/register\.ryzer\.com\/[^"' ]+/i);
   const registerUrl = reg?.[0] ? reg[0] : null;
 
-  // Provide some context around "register.ryzer.com" or "ryzer"
   const needle = registerUrl ? "register.ryzer.com" : "ryzer";
   const pos = h.toLowerCase().indexOf(needle);
   const ctx =
     pos >= 0 ? `[context] ${h.slice(Math.max(0, pos - 140), Math.min(h.length, pos + 260))}` : null;
 
   return { rid: null, ctx, registerUrl };
+}
+
+function buildOverrideMaps(overrides: any[]) {
+  const byCampId = new Map<string, string>();
+  const bySrc = new Map<string, string>();
+
+  for (const o of overrides || []) {
+    const campId = safeString(o?.campId);
+    const src = normalizeUrl(safeString(o?.src));
+    const ryzerId = safeString(o?.ryzerId);
+    if (!ryzerId) continue;
+    if (campId) byCampId.set(campId, ryzerId);
+    if (src) bySrc.set(src, ryzerId);
+  }
+
+  return { byCampId, bySrc };
 }
 
 Deno.serve(async (req) => {
@@ -157,13 +172,16 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
 
     const seasonYear = Number(body?.seasonYear || 0);
-    const dryRun = body?.dryRun !== false; // default true
+    const dryRun = body?.dryRun !== false;
     const maxCamps = Math.max(1, Number(body?.maxCamps ?? 120));
     const startAt = Math.max(0, Number(body?.startAt ?? 0));
     const sleepMs = Math.max(0, Number(body?.sleepMs ?? 300));
     const maxRetries = Math.max(0, Number(body?.maxRetries ?? 6));
-    const onlyMissing = body?.onlyMissing !== false; // default true
-    const debugContext = body?.debugContext !== false; // default true
+    const onlyMissing = body?.onlyMissing !== false;
+    const debugContext = body?.debugContext !== false;
+
+    const overrides = Array.isArray(body?.overrides) ? body.overrides : [];
+    const { byCampId: overrideByCampId, bySrc: overrideBySrc } = buildOverrideMaps(overrides);
 
     if (!seasonYear) return Response.json({ ok: false, error: "seasonYear required" });
 
@@ -184,6 +202,7 @@ Deno.serve(async (req) => {
       nextStartAt,
       scanned: slice.length,
       eligible: 0,
+      usedOverride: 0,
       fetched: 0,
       html200: 0,
       extracted: 0,
@@ -197,9 +216,7 @@ Deno.serve(async (req) => {
     };
 
     const sample: any[] = [];
-
-    // Cache by branded URL so duplicates don’t refetch
-    const cache = new Map<string, { status: number; rid: string | null; ctx: string | null }>();
+    const cache = new Map<string, { status: number; rid: string | null; ctx: string | null; registerUrl: string | null; finalFollowUrl: string | null }>();
 
     for (const c of slice) {
       const campId = safeString(c?.id);
@@ -213,7 +230,23 @@ Deno.serve(async (req) => {
 
       stats.eligible += 1;
 
+      // ✅ Overrides first
+      const overrideRid = overrideByCampId.get(campId) || overrideBySrc.get(src) || null;
+      if (overrideRid) {
+        stats.usedOverride += 1;
+        if (!dryRun) {
+          const ures = await updateWithRetry(Camp, campId, { ryzer_camp_id: overrideRid }, maxRetries);
+          if (ures.ok) stats.wrote += 1;
+          else stats.errors += 1;
+        }
+        if (sample.length < 10) {
+          sample.push({ campId, src, extractedRid: overrideRid, usedOverride: true });
+        }
+        continue;
+      }
+
       let cached = cache.get(src) || null;
+
       let status = 0;
       let rid: string | null = null;
       let ctx: string | null = null;
@@ -224,6 +257,8 @@ Deno.serve(async (req) => {
         status = cached.status;
         rid = cached.rid;
         ctx = cached.ctx;
+        registerUrl = cached.registerUrl;
+        finalFollowUrl = cached.finalFollowUrl;
       } else {
         await sleep(sleepMs);
 
@@ -243,10 +278,9 @@ Deno.serve(async (req) => {
         ctx = ex1.ctx;
         registerUrl = ex1.registerUrl;
 
-        // ✅ Second pass: follow registerUrl if present and rid still missing
         if (!rid && registerUrl) {
           stats.followedRegisterUrl += 1;
-          await sleep(Math.min(500, sleepMs)); // small extra delay
+          await sleep(Math.min(500, sleepMs));
 
           const rr = await fetchTextWithRetry(registerUrl, maxRetries);
           if (rr.ok && rr.status >= 200 && rr.status < 400) {
@@ -256,7 +290,7 @@ Deno.serve(async (req) => {
           }
         }
 
-        cache.set(src, { status, rid, ctx });
+        cache.set(src, { status, rid, ctx, registerUrl, finalFollowUrl });
       }
 
       if (rid) stats.extracted += 1;
