@@ -100,6 +100,7 @@ function extractImgCandidates(html: string): string[] {
     out.push(srcM[1].trim());
   }
 
+  // de-dupe
   return Array.from(new Set(out.filter(Boolean)));
 }
 
@@ -131,6 +132,7 @@ function pickBestS3Logo(html: string, baseUrl: string): string | null {
 }
 
 function pickHostName(html: string): string | null {
+  // Best-effort, deterministic extraction (no guessing via location)
   const ogSite = safeString(extractMetaContent(html, "og:site_name"));
   if (ogSite) return ogSite;
 
@@ -139,6 +141,7 @@ function pickHostName(html: string): string | null {
 
   const title = safeString(extractTitle(html));
   if (title) {
+    // clean common suffixes
     return title
       .replace(/\s*\|\s*registration\s*$/i, "")
       .replace(/\s*-\s*registration\s*$/i, "")
@@ -205,6 +208,7 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: "Camp entity not available" });
     }
 
+    // Pull stable list of camps for season; page using startAt
     const rows: any[] = await Camp.filter({ season_year: seasonYear }, "id", Math.min(10000, startAt + maxCamps));
     const slice = (rows || []).slice(startAt, startAt + maxCamps);
     const nextStartAt = startAt + slice.length;
@@ -230,6 +234,8 @@ Deno.serve(async (req) => {
     };
 
     const sample: any[] = [];
+
+    // Cache html by ryzer id to avoid refetching duplicates
     const htmlCache = new Map<string, { status: number; html: string }>();
 
     for (const c of slice) {
@@ -291,6 +297,8 @@ Deno.serve(async (req) => {
           } else {
             stats.errors += 1;
           }
+        } else {
+          // dry run counts as would write only
         }
       }
 
