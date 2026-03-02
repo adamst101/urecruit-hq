@@ -1,27 +1,31 @@
 // functions/ingestRyzerEventSearchAndMapCamps.ts
 //
-// Pulls Ryzer eventSearch results and (in dryRun by default) shows event schema.
-// Also matches events to your Camps by Ryzer numeric camp id in rlink (id=12345).
+// Pull Ryzer eventSearch results and enrich Camp rows by ryzer_camp_id.
+// - Sets Camp.school_logo_url from event.logo ONLY when current logo is missing or Ryzer placeholder.
+// - Sets Camp.host_name from event.organizer (default: only when missing; toggleable).
+// - Does NOT attempt School mapping here (eventSearch doesn’t provide a reliable school domain).
 //
-// IMPORTANT:
-// - Do NOT hardcode tokens in this file.
-// - Pass ryzerAuth token in payload when running.
+// Rules:
+// - Ryzer placeholder logo: https://register.ryzer.com/webart/logo.png
+// - Only write logos that start with https://s3.amazonaws.com/
 //
 // Payload (POST JSON):
 // {
 //   "dryRun": true,
 //   "seasonYear": 2026,
-//   "ryzerAuth": "<JWT from browser>",
-//   "search": { ...same body you captured... },
-//   "maxPages": 1
+//   "ryzerAuth": "<JWT>",
+//   "search": { ... },
+//   "maxPages": 25,
+//   "maxCampsToUpdate": 5000,
+//   "updateHostNameMode": "missing_only", // "missing_only" | "always"
+//   "updateCampName": false
 // }
-//
-// Next step after this: once we see event keys, we’ll extract host_name/host_site_url (if present)
-// and perform School mapping deterministically.
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 
 const ENDPOINT = "https://ryzer.com/rest/controller/connect/event/eventSearch/";
+const RYZER_PLACEHOLDER_LOGO = "https://register.ryzer.com/webart/logo.png";
+const S3_PREFIX = "https://s3.amazonaws.com/";
 
 function asArray<T>(x: any): T[] {
   return Array.isArray(x) ? x : [];
@@ -36,7 +40,27 @@ function safeString(x: any): string | null {
 function normalizeUrl(u: string | null): string | null {
   const s = safeString(u);
   if (!s) return null;
-  return s.replace(/#.*$/, "").trim();
+  return s.replace(/#.*$/, "").replace(/\?.*$/, "").trim();
+}
+
+function isS3LogoUrl(u: string | null): boolean {
+  const s = normalizeUrl(u);
+  return !!s && s.startsWith(S3_PREFIX);
+}
+
+function isRyzerPlaceholderLogo(u: string | null): boolean {
+  const s = normalizeUrl(u);
+  return !!s && s === RYZER_PLACEHOLDER_LOGO;
+}
+
+function shouldReplaceLogo(existing: string | null, nextLogo: string | null): boolean {
+  const ex = normalizeUrl(existing);
+  const nx = normalizeUrl(nextLogo);
+  if (!nx) return false;
+  if (!isS3LogoUrl(nx)) return false;
+  if (!ex) return true;
+  if (isRyzerPlaceholderLogo(ex)) return true;
+  return false;
 }
 
 function extractRyzerNumericCampId(url: string | null): string | null {
@@ -46,8 +70,8 @@ function extractRyzerNumericCampId(url: string | null): string | null {
     const u = new URL(s);
     const id = u.searchParams.get("id");
     if (!id) return null;
-    const trimmed = id.trim();
-    return trimmed ? trimmed : null;
+    const t = id.trim();
+    return t ? t : null;
   } catch {
     const m = s.match(/[?&]id=(\d+)/i);
     return m?.[1] ? String(m[1]) : null;
@@ -76,7 +100,7 @@ async function ryzerEventSearch(ryzerAuth: string, searchBody: any) {
     json = null;
   }
 
-  // ✅ Ryzer returns json.data as a STRING of JSON. Decode it.
+  // Ryzer returns json.data as stringified JSON
   let decodedData: any = null;
   if (json && typeof json === "object") {
     const d = json?.data;
@@ -91,16 +115,13 @@ async function ryzerEventSearch(ryzerAuth: string, searchBody: any) {
     }
   }
 
-  return { status, text, json, decodedData };
+  return { status, json, decodedData, text };
 }
 
 function extractEvents(decodedData: any): any[] {
   if (!decodedData) return [];
-  if (Array.isArray(decodedData)) return decodedData;
   if (Array.isArray(decodedData?.events)) return decodedData.events;
   if (Array.isArray(decodedData?.Events)) return decodedData.Events;
-  if (decodedData?.data && Array.isArray(decodedData.data?.events)) return decodedData.data.events;
-  if (decodedData?.data && Array.isArray(decodedData.data?.Events)) return decodedData.data.Events;
   return [];
 }
 
@@ -116,69 +137,67 @@ Deno.serve(async (req) => {
     const ryzerAuth = safeString(body?.ryzerAuth);
     const search = body?.search || null;
 
-    const maxPages = Math.max(1, Number(body?.maxPages ?? 1));
+    const maxPages = Math.max(1, Number(body?.maxPages ?? 25));
+    const maxCampsToUpdate = Math.max(1, Number(body?.maxCampsToUpdate ?? 5000));
+    const updateHostNameMode = String(body?.updateHostNameMode || "missing_only"); // missing_only | always
+    const updateCampName = !!body?.updateCampName;
 
-    if (!ryzerAuth) return Response.json({ ok: false, error: "ryzerAuth required (from browser request)" });
+    if (!seasonYear) return Response.json({ ok: false, error: "seasonYear required" });
+    if (!ryzerAuth) return Response.json({ ok: false, error: "ryzerAuth required" });
     if (!search) return Response.json({ ok: false, error: "search body required" });
 
     const base44 = createClientFromRequest(req);
     const Camp = base44?.entities?.Camp ?? base44?.entities?.Camps;
 
-    if (!Camp || typeof Camp.filter !== "function") {
+    if (!Camp || typeof Camp.filter !== "function" || typeof Camp.update !== "function") {
       return Response.json({ ok: false, error: "Camp entity not available" });
+    }
+
+    // Load camps for the season and index by ryzer_camp_id
+    const camps = asArray<any>(await Camp.filter({ season_year: seasonYear }, "-start_date", 10000));
+    const byRyzerId = new Map<string, any[]>();
+
+    for (const c of camps) {
+      const rid = safeString(c?.ryzer_camp_id);
+      if (!rid) continue;
+      const arr = byRyzerId.get(rid) || [];
+      arr.push(c);
+      byRyzerId.set(rid, arr);
     }
 
     const stats: any = {
       seasonYear,
       pagesFetched: 0,
       eventsSeen: 0,
-      campsMatched: 0,
+      eventsWithNumericId: 0,
+      matchedCampRows: 0,
+      updatedCampRows: 0,
+      logoUpdated: 0,
+      hostNameUpdated: 0,
+      campNameUpdated: 0,
+      skippedNoMatch: 0,
       dryRun,
       elapsedMs: 0,
     };
 
     const debug: any = {
-      ryzerTopKeys: [],
-      ryzerDecodedKeys: [],
-      ryzerSnippet: "",
-      decodedSnippet: "",
-      sampleEventKeys: [],
-      sampleEvent: null,
-      sampleMatches: [],
+      sampleEvents: [],
+      sampleUpdates: [],
       notes: [],
     };
 
-    // Preload camps for season to match by numeric id in URL
-    const camps = seasonYear
-      ? asArray<any>(await Camp.filter({ season_year: seasonYear }, "-start_date", 5000))
-      : asArray<any>(await Camp.filter({}, "-start_date", 5000));
-
-    const byRyzerNumericId = new Map<string, any[]>();
-    for (const c of camps) {
-      const regUrl = safeString(c?.source_url) || safeString(c?.link_url) || safeString(c?.url);
-      const nurl = normalizeUrl(regUrl);
-      const rid = extractRyzerNumericCampId(nurl);
-      if (!rid) continue;
-      const arr = byRyzerNumericId.get(rid) || [];
-      arr.push(c);
-      byRyzerNumericId.set(rid, arr);
-    }
+    let totalUpdatesAttempted = 0;
 
     for (let page = 0; page < maxPages; page++) {
-      const pageBody = { ...(search || {}), Page: page };
+      if (totalUpdatesAttempted >= maxCampsToUpdate) break;
 
-      const { status, text, json, decodedData } = await ryzerEventSearch(ryzerAuth, pageBody);
+      const pageBody = { ...(search || {}), Page: page };
+      const { status, decodedData, json } = await ryzerEventSearch(ryzerAuth, pageBody);
+
       stats.pagesFetched += 1;
 
-      if (page === 0) {
-        debug.ryzerSnippet = String(text || "").slice(0, 800);
-        debug.ryzerTopKeys = json && typeof json === "object" ? Object.keys(json) : [];
-        debug.ryzerDecodedKeys = decodedData && typeof decodedData === "object" ? Object.keys(decodedData) : [];
-        debug.decodedSnippet = decodedData ? JSON.stringify(decodedData).slice(0, 800) : "";
-      }
-
       if (status !== 200 || !json) {
-        debug.notes.push(`page=${page} status=${status} non-json or error`);
+        debug.notes.push(`page=${page} status=${status} non-json`);
         break;
       }
 
@@ -186,29 +205,81 @@ Deno.serve(async (req) => {
       stats.eventsSeen += events.length;
 
       if (page === 0 && events.length) {
-        debug.sampleEvent = events[0] || null;
-        debug.sampleEventKeys = Object.keys(events[0] || {});
+        debug.sampleEvents.push({
+          keys: Object.keys(events[0] || {}),
+          example: events[0] || null,
+        });
       }
 
-      // Match some events to camps for proof-of-life
-      for (const evt of events.slice(0, 25)) {
-        const rlink = safeString(evt?.rlink) || safeString(evt?.RLink) || safeString(evt?.link) || safeString(evt?.url);
-        const rid = extractRyzerNumericCampId(rlink);
-        if (!rid) continue;
+      if (!events.length) break;
 
-        const matches = byRyzerNumericId.get(rid) || [];
-        if (!matches.length) continue;
+      for (const evt of events) {
+        const rlink = safeString(evt?.rlink);
+        const numericId = extractRyzerNumericCampId(rlink);
+        if (!numericId) continue;
+        stats.eventsWithNumericId += 1;
 
-        stats.campsMatched += matches.length;
+        const matches = byRyzerId.get(numericId) || [];
+        if (!matches.length) {
+          stats.skippedNoMatch += 1;
+          continue;
+        }
 
-        if (debug.sampleMatches.length < 10) {
-          debug.sampleMatches.push({
-            ryzerNumericId: rid,
-            rlink,
-            eventName: safeString(evt?.name) || safeString(evt?.Name) || null,
-            logo: safeString(evt?.logo) || safeString(evt?.Logo) || null,
-            matchedCampIds: matches.map((m) => m?.id).filter(Boolean).slice(0, 5),
-          });
+        const organizer = safeString(evt?.organizer);
+        const logo = safeString(evt?.logo);
+        const name = safeString(evt?.name);
+
+        for (const camp of matches) {
+          if (totalUpdatesAttempted >= maxCampsToUpdate) break;
+
+          const campRowId = safeString(camp?.id);
+          if (!campRowId) continue;
+
+          const patch: any = {};
+
+          // Logo
+          if (shouldReplaceLogo(safeString(camp?.school_logo_url), logo)) {
+            patch.school_logo_url = normalizeUrl(logo);
+          }
+
+          // Host name
+          if (organizer) {
+            const existingHost = safeString(camp?.host_name);
+            if (updateHostNameMode === "always" || !existingHost) {
+              patch.host_name = organizer;
+            }
+          }
+
+          // Camp name (optional)
+          if (updateCampName && name) {
+            const existingName = safeString(camp?.camp_name) || safeString(camp?.name);
+            if (!existingName) patch.camp_name = name;
+          }
+
+          if (Object.keys(patch).length === 0) continue;
+
+          stats.matchedCampRows += 1;
+          totalUpdatesAttempted += 1;
+
+          if (!dryRun) {
+            await Camp.update(campRowId, patch);
+          }
+
+          stats.updatedCampRows += 1;
+          if (patch.school_logo_url) stats.logoUpdated += 1;
+          if (patch.host_name) stats.hostNameUpdated += 1;
+          if (patch.camp_name) stats.campNameUpdated += 1;
+
+          if (debug.sampleUpdates.length < 10) {
+            debug.sampleUpdates.push({
+              ryzer_camp_id: numericId,
+              campRowId,
+              patch,
+              organizer,
+              logo,
+              rlink,
+            });
+          }
         }
       }
     }
