@@ -43,13 +43,19 @@ Deno.serve(async (req) => {
       if (!campId || !rid) { skipped += 1; continue; }
 
       if (!dryRun) {
-        try {
-          await Camp.update(campId, { ryzer_camp_id: rid });
-          touched += 1;
-        } catch {
-          errors += 1;
+        let wrote = false;
+        for (let attempt = 0; attempt <= 5; attempt++) {
+          try {
+            await Camp.update(campId, { ryzer_camp_id: rid });
+            wrote = true;
+            break;
+          } catch {
+            await sleep(500 * Math.pow(2, attempt));
+          }
         }
-        await sleep(100);
+        if (wrote) touched += 1;
+        else errors += 1;
+        await sleep(300);
       } else {
         touched += 1;
       }
