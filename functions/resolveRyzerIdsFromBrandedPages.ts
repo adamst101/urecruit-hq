@@ -1,6 +1,12 @@
 // functions/resolveRyzerIdsFromBrandedPages.ts
 //
-// Fetch branded camp pages and extract Ryzer numeric camp id, then write camp.ryzer_camp_id.
+// Fetch branded camp pages and extract Ryzer numeric camp id, then write Camp.ryzer_camp_id.
+//
+// Extraction strategy:
+// 1) Search branded HTML for register.ryzer.com/camp.cfm?id=#### or camp.cfm?...id=####
+// 2) If missing, find ANY register.ryzer.com URL in HTML (even JS-escaped), fetch it, then extract id from:
+//    - final response.url (after redirects), OR
+//    - fetched HTML body
 //
 // Payload:
 // {
@@ -37,96 +43,12 @@ function isRateLimitError(e: any) {
   return msg.includes("rate limit") || msg.includes("too many") || msg.includes("429");
 }
 
-async function fetchHtmlWithRetry(url: string, maxRetries: number) {
-  let lastErr: any = null;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const rr = await fetch(url, {
-        method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-          Accept: "text/html,*/*",
-        },
-      });
-      const status = rr.status;
-      const html = await rr.text().catch(() => "");
-      return { ok: true, status, html };
-    } catch (e: any) {
-      lastErr = e;
-      if (attempt === maxRetries) break;
-      await sleep(250 * Math.pow(2, attempt));
-    }
-  }
-
-  return { ok: false, status: 0, html: "", error: String(lastErr?.message || lastErr) };
-}
-
-// Unescape common JS-escaped URLs: https:\/\/register.ryzer.com\/camp.cfm?id=123
-function unescapeJsSlashes(s: string) {
-  return String(s || "").replace(/\\\//g, "/");
-}
-
-// ✅ Hardened extractor: links + iframe/src + form/action + data-* attrs + JS strings
-function extractRyzerNumericIdFromText(html: string): { rid: string | null; context: string | null } {
-  const raw = String(html || "");
-  const h = unescapeJsSlashes(raw);
-
-  const patterns: Array<{ name: string; re: RegExp }> = [
-    // 1) Full register.ryzer.com link
-    { name: "registerLink", re: /https?:\/\/register\.ryzer\.com\/camp\.cfm[^"' ]*?[?&]id=(\d+)/i },
-
-    // 2) Any camp.cfm link with id=digits (including relative)
-    { name: "campLink", re: /camp\.cfm[^"' ]*?[?&]id=(\d+)/i },
-
-    // 3) iframe src="...id=123..."
-    { name: "iframeSrc", re: /<iframe[^>]+src=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d+)/i },
-
-    // 4) form action="...id=123..."
-    { name: "formAction", re: /<form[^>]+action=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d+)/i },
-
-    // 5) hidden input name="id" value="123456"
-    { name: "inputId", re: /<input[^>]+name=["']id["'][^>]+value=["'](\d{5,7})["']/i },
-
-    // 6) data-url / data-href containing register link
-    { name: "dataUrl", re: /data-(?:url|href)=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d+)/i },
-
-    // 7) JS variable campId / campid / id (last resort)
-    { name: "jsCampId", re: /\bcamp\s*id\b\s*[:=]\s*["']?(\d{5,7})["']?/i },
-    { name: "jsCampid", re: /\bcampid\b\s*[:=]\s*["']?(\d{5,7})["']?/i },
-    { name: "jsId", re: /\bid\b\s*[:=]\s*["']?(\d{5,7})["']?/i },
-  ];
-
-  for (const p of patterns) {
-    const m = h.match(p.re);
-    if (m?.[1]) {
-      const rid = String(m[1]);
-      // return a small context snippet around the match to debug future misses
-      const idx = m.index ?? h.indexOf(m[0]);
-      const start = Math.max(0, idx - 120);
-      const end = Math.min(h.length, idx + 220);
-      const context = h.slice(start, end);
-      return { rid, context: `[${p.name}] ${context}` };
-    }
-  }
-
-  // If no id found, still return a "ryzer" context snippet if present
-  const ryzerIdx = h.toLowerCase().indexOf("ryzer");
-  if (ryzerIdx >= 0) {
-    const start = Math.max(0, ryzerIdx - 120);
-    const end = Math.min(h.length, ryzerIdx + 220);
-    return { rid: null, context: `[ryzerContext] ${h.slice(start, end)}` };
-  }
-
-  return { rid: null, context: null };
-}
-
 async function updateWithRetry(Camp: any, campId: string, patch: any, maxRetries: number) {
   let lastErr: any = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      await Camp.update(campId, patch);
-      return { ok: true };
+      const res = await Camp.update(campId, patch);
+      return { ok: true, res };
     } catch (e: any) {
       lastErr = e;
       if (!isRateLimitError(e) || attempt === maxRetries) break;
@@ -134,6 +56,97 @@ async function updateWithRetry(Camp: any, campId: string, patch: any, maxRetries
     }
   }
   return { ok: false, error: String(lastErr?.message || lastErr) };
+}
+
+async function fetchTextWithRetry(url: string, maxRetries: number) {
+  let lastErr: any = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const rr = await fetch(url, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
+          Accept: "text/html,*/*",
+        },
+      });
+      const status = rr.status;
+      const finalUrl = rr.url || url;
+      const html = await rr.text().catch(() => "");
+      return { ok: true, status, finalUrl, html };
+    } catch (e: any) {
+      lastErr = e;
+      if (attempt === maxRetries) break;
+      await sleep(250 * Math.pow(2, attempt));
+    }
+  }
+
+  return { ok: false, status: 0, finalUrl: url, html: "", error: String(lastErr?.message || lastErr) };
+}
+
+// Unescape common JS-escaped URLs: https:\/\/register.ryzer.com\/...
+function unescapeJsSlashes(s: string) {
+  return String(s || "").replace(/\\\//g, "/");
+}
+
+// Sometimes you see "https:/" in HTML snippets. Normalize to https://
+function normalizeProtocolSlashes(s: string) {
+  return String(s || "")
+    .replace(/https:\//g, "https://")
+    .replace(/http:\//g, "http://");
+}
+
+function extractIdFromUrl(u: string | null): string | null {
+  const s = safeString(u);
+  if (!s) return null;
+  try {
+    const url = new URL(s);
+    const id = url.searchParams.get("id");
+    if (id && id.trim()) return id.trim();
+  } catch {}
+  const m = s.match(/[?&]id=(\d{5,7})/i);
+  return m?.[1] ? String(m[1]) : null;
+}
+
+// Return rid + a context snippet for debugging
+function extractRyzerIdFromHtml(html: string): { rid: string | null; ctx: string | null; registerUrl: string | null } {
+  const raw = String(html || "");
+  const h = normalizeProtocolSlashes(unescapeJsSlashes(raw));
+
+  const patterns: Array<{ name: string; re: RegExp }> = [
+    { name: "registerLink", re: /https?:\/\/register\.ryzer\.com\/camp\.cfm[^"' ]*?[?&]id=(\d{5,7})/i },
+    { name: "campLink", re: /camp\.cfm[^"' ]*?[?&]id=(\d{5,7})/i },
+    { name: "iframeSrc", re: /<iframe[^>]+src=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d{5,7})/i },
+    { name: "formAction", re: /<form[^>]+action=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d{5,7})/i },
+    { name: "inputId", re: /<input[^>]+name=["']id["'][^>]+value=["'](\d{5,7})["']/i },
+    { name: "dataUrl", re: /data-(?:url|href)=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d{5,7})/i },
+    { name: "jsCampid", re: /\bcampid\b\s*[:=]\s*["']?(\d{5,7})["']?/i },
+    { name: "jsCampId", re: /\bcamp\s*id\b\s*[:=]\s*["']?(\d{5,7})["']?/i },
+  ];
+
+  for (const p of patterns) {
+    const m = h.match(p.re);
+    if (m?.[1]) {
+      const rid = String(m[1]);
+      const idx = m.index ?? h.indexOf(m[0]);
+      const start = Math.max(0, idx - 140);
+      const end = Math.min(h.length, idx + 260);
+      return { rid, ctx: `[${p.name}] ${h.slice(start, end)}`, registerUrl: null };
+    }
+  }
+
+  // Second-pass: find ANY register.ryzer.com URL (even if it doesn't include id in the visible snippet)
+  const reg = h.match(/https?:\/\/register\.ryzer\.com\/[^"' ]+/i);
+  const registerUrl = reg?.[0] ? reg[0] : null;
+
+  // Provide some context around "register.ryzer.com" or "ryzer"
+  const needle = registerUrl ? "register.ryzer.com" : "ryzer";
+  const pos = h.toLowerCase().indexOf(needle);
+  const ctx =
+    pos >= 0 ? `[context] ${h.slice(Math.max(0, pos - 140), Math.min(h.length, pos + 260))}` : null;
+
+  return { rid: null, ctx, registerUrl };
 }
 
 Deno.serve(async (req) => {
@@ -176,13 +189,17 @@ Deno.serve(async (req) => {
       extracted: 0,
       wrote: 0,
       errors: 0,
+      followedRegisterUrl: 0,
+      extractedViaFollow: 0,
       dryRun,
       elapsedMs: 0,
       done: slice.length < maxCamps,
     };
 
     const sample: any[] = [];
-    const htmlCache = new Map<string, { status: number; rid: string | null; ctx: string | null }>();
+
+    // Cache by branded URL so duplicates don’t refetch
+    const cache = new Map<string, { status: number; rid: string | null; ctx: string | null }>();
 
     for (const c of slice) {
       const campId = safeString(c?.id);
@@ -196,10 +213,12 @@ Deno.serve(async (req) => {
 
       stats.eligible += 1;
 
-      let cached = htmlCache.get(src) || null;
+      let cached = cache.get(src) || null;
+      let status = 0;
       let rid: string | null = null;
       let ctx: string | null = null;
-      let status = 0;
+      let registerUrl: string | null = null;
+      let finalFollowUrl: string | null = null;
 
       if (cached) {
         status = cached.status;
@@ -208,7 +227,7 @@ Deno.serve(async (req) => {
       } else {
         await sleep(sleepMs);
 
-        const res = await fetchHtmlWithRetry(src, maxRetries);
+        const res = await fetchTextWithRetry(src, maxRetries);
         if (!res.ok) {
           stats.errors += 1;
           if (sample.length < 10) sample.push({ campId, src, error: res.error });
@@ -219,11 +238,25 @@ Deno.serve(async (req) => {
         status = res.status;
         if (status === 200) stats.html200 += 1;
 
-        const ex = status === 200 ? extractRyzerNumericIdFromText(res.html) : { rid: null, context: null };
-        rid = ex.rid;
-        ctx = ex.context;
+        const ex1 = status === 200 ? extractRyzerIdFromHtml(res.html) : { rid: null, ctx: null, registerUrl: null };
+        rid = ex1.rid;
+        ctx = ex1.ctx;
+        registerUrl = ex1.registerUrl;
 
-        htmlCache.set(src, { status, rid, ctx });
+        // ✅ Second pass: follow registerUrl if present and rid still missing
+        if (!rid && registerUrl) {
+          stats.followedRegisterUrl += 1;
+          await sleep(Math.min(500, sleepMs)); // small extra delay
+
+          const rr = await fetchTextWithRetry(registerUrl, maxRetries);
+          if (rr.ok && rr.status >= 200 && rr.status < 400) {
+            finalFollowUrl = rr.finalUrl;
+            rid = extractIdFromUrl(rr.finalUrl) || extractRyzerIdFromHtml(rr.html).rid;
+            if (rid) stats.extractedViaFollow += 1;
+          }
+        }
+
+        cache.set(src, { status, rid, ctx });
       }
 
       if (rid) stats.extracted += 1;
@@ -236,7 +269,11 @@ Deno.serve(async (req) => {
 
       if (sample.length < 10) {
         const row: any = { campId, src, pageStatus: status, extractedRid: rid };
-        if (debugContext) row.context = ctx;
+        if (debugContext) {
+          row.context = ctx;
+          row.registerUrlFound = registerUrl;
+          row.finalFollowUrl = finalFollowUrl;
+        }
         sample.push(row);
       }
     }
