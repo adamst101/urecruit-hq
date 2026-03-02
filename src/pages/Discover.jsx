@@ -19,6 +19,9 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 import { useCampFilters } from "../components/filters/useCampFilters.jsx";
 import { useWriteGate } from "../components/hooks/useWriteGate.jsx";
 
+// ✅ Centralised school identity resolution (logo, name, division)
+import { useSchoolIdentity } from "../components/hooks/useSchoolIdentity.jsx";
+
 import {
   matchesDivision,
   matchesSport,
@@ -27,22 +30,25 @@ import {
   matchesDateRange,
 } from "../components/filters/filterUtils.jsx";
 
-/* -------------------------
-   Helpers
-------------------------- */
+/* ─── helpers ──────────────────────────────────────────────────────────────── */
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, Math.max(0, Number(ms) || 0)));
 }
 
 function isRateLimitError(e) {
   const msg = String(e?.message || e || "").toLowerCase();
-  return msg.includes("rate limit") || msg.includes("rate limited") || msg.includes("429") || msg.includes("too many");
+  return (
+    msg.includes("rate limit") ||
+    msg.includes("rate limited") ||
+    msg.includes("429") ||
+    msg.includes("too many")
+  );
 }
 
 async function safeFilter(entity, where, sort, limit, { retries = 2, baseDelayMs = 350 } = {}) {
   if (!entity?.filter) return [];
   let lastErr = null;
-
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const rows = await entity.filter(where || {}, sort, limit);
@@ -53,7 +59,6 @@ async function safeFilter(entity, where, sort, limit, { retries = 2, baseDelayMs
       await sleep(baseDelayMs * Math.pow(2, attempt));
     }
   }
-
   throw lastErr;
 }
 
@@ -84,117 +89,38 @@ function readActiveFlag(row) {
   if (typeof row?.active === "boolean") return row.active;
   if (typeof row?.is_active === "boolean") return row.is_active;
   if (typeof row?.isActive === "boolean") return row.isActive;
-
   const st = String(row?.status || "").toLowerCase().trim();
   if (st === "inactive") return false;
   if (st === "active") return true;
   return true;
 }
 
-function isBadText(v) {
-  const s = String(v ?? "").trim().toLowerCase();
-  if (!s) return true;
-  return ["unknown", "n/a", "na", "none", "null", "undefined", "-"].includes(s);
-}
-
-function normalizeDivisionLabel(v) {
-  const s = String(v ?? "").trim();
-  if (!s || isBadText(s)) return null;
-
-  // Normalize common patterns
-  const upper = s.toUpperCase();
-
-  // "Division I" vs "D1" vs "DI"
-  if (upper === "D1" || upper === "DI") return "Division I";
-  if (upper === "D2" || upper === "DII") return "Division II";
-  if (upper === "D3" || upper === "DIII") return "Division III";
-
-  // Already good
-  if (upper.startsWith("DIVISION ")) return `Division ${upper.replace("DIVISION", "").trim()}`;
-
-  return s;
-}
-
-function isBadLogoUrl(url) {
-  const u = String(url || "").trim();
-  if (!u) return true;
-  const lu = u.toLowerCase();
-
-  // Vendor/source placeholders (not school identity)
-  if (lu.includes("ryzer")) return true;
-  if (lu.includes("sportsusa")) return true;
-  if (lu.includes("sportscamps")) return true;
-
-  // Generic placeholders
-  if (lu.includes("placeholder")) return true;
-
-  return false;
-}
-
-function looksLikeHttpUrl(url) {
-  const u = String(url || "").trim().toLowerCase();
-  return u.startsWith("http://") || u.startsWith("https://");
-}
-
-function pickBestLogoUrl(...candidates) {
-  for (const c of candidates) {
-    const u = String(c || "").trim();
-    if (!u) continue;
-    if (!looksLikeHttpUrl(u)) continue;
-    if (isBadLogoUrl(u)) continue;
-    return u;
-  }
-  return null;
-}
-
-function initialBadge(name) {
-  const s = String(name || "").trim();
-  if (!s) return "?";
-  const ch = s.replace(/[^A-Za-z0-9]/g, "").slice(0, 1);
-  return (ch || "?").toUpperCase();
-}
-
 function toISODate(dateInput) {
   if (!dateInput) return null;
-
-  if (typeof dateInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+  if (typeof dateInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim()))
     return dateInput.trim();
-  }
-
   if (typeof dateInput === "string") {
-    const s = dateInput.trim();
-    const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    const mdy = dateInput.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (mdy) {
-      const mm = String(mdy[1]).padStart(2, "0");
-      const dd = String(mdy[2]).padStart(2, "0");
-      const yyyy = String(mdy[3]);
-      return `${yyyy}-${mm}-${dd}`;
+      return `${mdy[3]}-${String(mdy[1]).padStart(2, "0")}-${String(mdy[2]).padStart(2, "0")}`;
     }
   }
-
   const d = new Date(dateInput);
   if (Number.isNaN(d.getTime())) return null;
-
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
 function footballSeasonYearForDate(d = new Date()) {
   const y = d.getUTCFullYear();
-  const feb1 = new Date(Date.UTC(y, 1, 1, 0, 0, 0));
-  return d >= feb1 ? y : y - 1;
+  return d >= new Date(Date.UTC(y, 1, 1)) ? y : y - 1;
 }
 
 function getUrlParams(search) {
   try {
     const sp = new URLSearchParams(search || "");
-    const mode = sp.get("mode");
-    const season = sp.get("season");
     return {
-      mode: mode ? String(mode).toLowerCase() : null,
-      requestedSeason: safeNumber(season),
+      mode: sp.get("mode") ? String(sp.get("mode")).toLowerCase() : null,
+      requestedSeason: safeNumber(sp.get("season")),
     };
   } catch {
     return { mode: null, requestedSeason: null };
@@ -215,48 +141,47 @@ function chipLabel(key, nf) {
 
 function hasActiveFilters(nf, isPaid) {
   if (!nf) return false;
-  const divOn = Array.isArray(nf.divisions) && nf.divisions.length > 0;
-  const posOn = Array.isArray(nf.positions) && nf.positions.length > 0;
-  const stateOn = !!nf.state;
-  const dateOn = !!nf.startDate || !!nf.endDate;
-  const sportOn = !isPaid && Array.isArray(nf.sports) && nf.sports.length > 0;
-  return divOn || posOn || stateOn || dateOn || sportOn;
+  return (
+    (Array.isArray(nf.divisions) && nf.divisions.length > 0) ||
+    (Array.isArray(nf.positions) && nf.positions.length > 0) ||
+    !!nf.state ||
+    !!nf.startDate || !!nf.endDate ||
+    (!isPaid && Array.isArray(nf.sports) && nf.sports.length > 0)
+  );
 }
 
-// Schema-safe Event telemetry (never breaks UX)
 function trackEvent(payload) {
   try {
     const EventEntity = base44?.entities?.Event || base44?.entities?.Events;
     if (!EventEntity?.create) return;
-
     const iso = new Date().toISOString();
-    const day = iso.slice(0, 10);
-
-    const eventName = payload?.event_name || payload?.event_type || "event";
-    const sourcePlatform = payload?.source_platform || "web";
-    const title = payload?.title || String(eventName);
-    const sourceKey = payload?.source_key || `${String(sourcePlatform)}:${String(eventName)}`;
-
+    const eventName = payload?.event_name || "event";
+    const src = payload?.source_platform || "web";
     EventEntity.create({
-      source_platform: String(sourcePlatform),
+      source_platform: String(src),
       event_type: String(eventName),
-      title: String(title),
-      source_key: String(sourceKey),
-      start_date: payload?.start_date || day,
+      title: String(payload?.title || String(eventName)),
+      source_key: String(payload?.source_key || `${src}:${eventName}`),
+      start_date: payload?.start_date || iso.slice(0, 10),
       payload_json: JSON.stringify(payload || {}),
       ts: iso,
     });
-  } catch {
-    // ignore
-  }
+  } catch { /* ignore */ }
 }
+
+function initialBadge(name) {
+  const s = String(name || "").trim();
+  return (s.replace(/[^A-Za-z0-9]/g, "").slice(0, 1) || "?").toUpperCase();
+}
+
+/* ─── LogoAvatar ────────────────────────────────────────────────────────────── */
 
 function LogoAvatar({ schoolName, logoUrl }) {
   const [imgErr, setImgErr] = useState(false);
   const showImg = !!logoUrl && !imgErr;
 
   return (
-    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
+    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center flex-shrink-0">
       {showImg ? (
         <img
           src={logoUrl}
@@ -272,15 +197,17 @@ function LogoAvatar({ schoolName, logoUrl }) {
   );
 }
 
-/* =========================================================
+/* ═══════════════════════════════════════════════════════════════════════════════
    Page
-========================================================= */
+═══════════════════════════════════════════════════════════════════════════════ */
+
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
 
-  const dm = readDemoMode(); // null or { mode: "demo", seasonYear, setAt }
-  const isDemoMode = dm?.mode === "demo";
+  // ✅ FIX 1: readDemoMode() returns null when not set — always use optional chaining
+  const dm             = readDemoMode();           // null | { mode, seasonYear, setAt }
+  const isDemoMode     = dm?.mode === "demo";
   const demoSeasonOverride = Number.isFinite(Number(dm?.seasonYear)) ? Number(dm.seasonYear) : null;
 
   const { identity: athleteProfile } = useAthleteIdentity();
@@ -299,52 +226,49 @@ export default function Discover() {
     return footballSeasonYearForDate(new Date());
   }, [urlp?.requestedSeason, isDemoMode, demoSeasonOverride, accessSeasonYear]);
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [campErr, setCampErr] = useState(null);
-  const [rawRows, setRawRows] = useState([]);
-  const [intentByKey, setIntentByKey] = useState({});
-  const [schoolById, setSchoolById] = useState({});
+  const [isLoading, setIsLoading]         = useState(false);
+  const [campErr, setCampErr]             = useState(null);
+  const [rawRows, setRawRows]             = useState([]);
+  const [intentByKey, setIntentByKey]     = useState({});
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
   const filtersApi = useCampFilters();
   const nf = filtersApi?.nf || null;
 
+  // ✅ FIX 2: School identity via dedicated hook
+  // Fetches School rows for all camp school_ids, exposes resolveIdentity(schoolId, campRow)
+  // which returns { name, logoUrl, division, city, state } — never "unknown", never Ryzer placeholder
+  const { resolveIdentity } = useSchoolIdentity(rawRows);
+
   const campKeyForRow = (r) => {
-    const campId = String(r?.id ?? "");
+    const campId   = String(r?.id ?? "");
     const eventKey = r?.event_key ? String(r.event_key) : "";
     return eventKey || campId;
   };
 
   const resultsCountLabel = useMemo(() => {
-    const n = Array.isArray(rawRows) ? rawRows.length : 0;
     if (isLoading) return "Loading…";
-    if (campErr) return "Error";
-    return `${n} camps`;
+    if (campErr)   return "Error";
+    return `${Array.isArray(rawRows) ? rawRows.length : 0} camps`;
   }, [rawRows, isLoading, campErr]);
+
+  /* ─── intents ─────────────────────────────────────────────────────────── */
 
   async function loadIntents(keys) {
     try {
       const CampIntent = base44?.entities?.CampIntent;
       if (!CampIntent?.filter) return {};
-
       const keyArr = asArray(keys).filter(Boolean);
       if (!keyArr.length) return {};
 
       const out = {};
-      const groups = chunk(keyArr, 50);
-
-      for (const g of groups) {
-        const rows = await safeFilter(CampIntent, { intent_key: g }, "-updated_at", 2000, {
-          retries: 2,
-          baseDelayMs: 350,
-        });
+      for (const g of chunk(keyArr, 50)) {
+        const rows = await safeFilter(CampIntent, { intent_key: g }, "-updated_at", 2000);
         for (const r of asArray(rows)) {
           const k = String(r?.intent_key || "");
-          if (!k) continue;
-          out[k] = r;
+          if (k) out[k] = r;
         }
       }
-
       return out;
     } catch {
       return {};
@@ -354,7 +278,6 @@ export default function Discover() {
   async function upsertIntent(intentKey, nextStatus) {
     const CampIntent = base44?.entities?.CampIntent;
     if (!CampIntent?.create) return;
-
     const key = String(intentKey || "");
     if (!key) return;
 
@@ -378,58 +301,19 @@ export default function Discover() {
     setIntentByKey((p) => ({ ...p, [key]: created || { intent_key: key, status: String(nextStatus) } }));
   }
 
-  async function loadSchoolsForRows(rows) {
-    try {
-      const School = base44?.entities?.School;
-      if (!School?.filter) return {};
-
-      const ids = Array.from(
-        new Set(
-          asArray(rows)
-            .map((r) => normId(r?.school_id))
-            .filter(Boolean)
-            .map(String)
-        )
-      );
-
-      if (!ids.length) return {};
-
-      const out = {};
-      const groups = chunk(ids, 50);
-
-      for (const g of groups) {
-        const srows = await safeFilter(School, { id: g }, "school_name", 2000, {
-          retries: 2,
-          baseDelayMs: 350,
-        });
-        for (const s of asArray(srows)) {
-          const sid = String(s?.id ?? "");
-          if (!sid) continue;
-          out[sid] = s;
-        }
-      }
-
-      return out;
-    } catch {
-      return {};
-    }
-  }
+  /* ─── filters ─────────────────────────────────────────────────────────── */
 
   const applyFilters = useMemo(() => {
-    const isPaidMode = isPaid;
-
-    return (rows) => {
-      const a = asArray(rows);
-
-      return a.filter((r) => {
+    const paidMode = isPaid;
+    return (rows) =>
+      asArray(rows).filter((r) => {
         if (!readActiveFlag(r)) return false;
-
-        if (isPaidMode) {
+        if (paidMode) {
           if (!matchesSport(r, [athleteSportId].filter(Boolean))) return false;
         } else {
-          if (Array.isArray(nf?.sports) && nf.sports.length > 0 && !matchesSport(r, nf.sports)) return false;
+          if (Array.isArray(nf?.sports) && nf.sports.length > 0 && !matchesSport(r, nf.sports))
+            return false;
         }
-
         if (Array.isArray(nf?.divisions) && nf.divisions.length > 0 && !matchesDivision(r, nf.divisions))
           return false;
         if (Array.isArray(nf?.positions) && nf.positions.length > 0 && !matchesPositions(r, nf.positions))
@@ -437,11 +321,11 @@ export default function Discover() {
         if (nf?.state && !matchesState(r, nf.state)) return false;
         if ((nf?.startDate || nf?.endDate) && !matchesDateRange(r, nf.startDate || "", nf.endDate || ""))
           return false;
-
         return true;
       });
-    };
   }, [isPaid, athleteSportId, nf]);
+
+  /* ─── load camps ──────────────────────────────────────────────────────── */
 
   async function loadCamps() {
     setIsLoading(true);
@@ -457,38 +341,28 @@ export default function Discover() {
 
       let rows = [];
       try {
-        rows = await safeFilter(CampEntity, { season_year: seasonYear }, "-start_date", 2000, {
-          retries: 2,
-          baseDelayMs: 350,
-        });
+        rows = await safeFilter(CampEntity, { season_year: seasonYear }, "-start_date", 2000);
       } catch (e1) {
         try {
-          rows = await safeFilter(CampEntity, { season_year: String(seasonYear) }, "-start_date", 2000, {
-            retries: 2,
-            baseDelayMs: 350,
-          });
+          rows = await safeFilter(CampEntity, { season_year: String(seasonYear) }, "-start_date", 2000);
         } catch (e2) {
           throw e2 || e1;
         }
       }
 
       const filtered = applyFilters(rows);
-
       setRawRows(filtered);
 
-      const keys = filtered.map(campKeyForRow).filter(Boolean);
+      const keys    = filtered.map(campKeyForRow).filter(Boolean);
       const intents = await loadIntents(keys);
       setIntentByKey(intents);
 
-      const schools = await loadSchoolsForRows(filtered);
-      setSchoolById(schools);
-
       trackEvent({
-        event_name: "discover_loaded",
-        source: "discover",
+        event_name:  "discover_loaded",
+        source:      "discover",
         season_year: seasonYear,
-        paid: isPaid,
-        raw_camps: Array.isArray(rows) ? rows.length : 0,
+        paid:        isPaid,
+        raw_camps:   Array.isArray(rows) ? rows.length : 0,
         shown_camps: filtered.length,
       });
     } catch (e) {
@@ -497,14 +371,7 @@ export default function Discover() {
         : String(e?.message || e || "Failed to load camps");
       setCampErr(msg);
       setRawRows([]);
-
-      trackEvent({
-        event_name: "discover_error",
-        source: "discover",
-        season_year: seasonYear,
-        paid: isPaid,
-        error: msg,
-      });
+      trackEvent({ event_name: "discover_error", source: "discover", season_year: seasonYear, paid: isPaid, error: msg });
     } finally {
       setIsLoading(false);
     }
@@ -520,14 +387,12 @@ export default function Discover() {
     setTimeout(() => loadCamps(), 0);
   }
 
-  const shownRows = rawRows;
+  /* ─── derived ─────────────────────────────────────────────────────────── */
 
   const favoriteCount = useMemo(() => {
-    const map = intentByKey || {};
     let c = 0;
-    for (const k of Object.keys(map)) {
-      const st = String(map[k]?.status || "").toLowerCase();
-      if (st === "favorite") c += 1;
+    for (const k of Object.keys(intentByKey || {})) {
+      if (String(intentByKey[k]?.status || "").toLowerCase() === "favorite") c += 1;
     }
     return c;
   }, [intentByKey]);
@@ -545,12 +410,14 @@ export default function Discover() {
   const chipsLabel = (k) => {
     if (k === "divisions") return `Division: ${nf?.divisions?.join(", ") || ""}`;
     if (k === "positions") return `Position: ${nf?.positions?.join(", ") || ""}`;
-    if (k === "sports") return `Sport: ${nf?.sports?.join(", ") || ""}`;
+    if (k === "sports")    return `Sport: ${nf?.sports?.join(", ") || ""}`;
     return chipLabel(k, nf);
   };
 
+  /* ─── CampList ────────────────────────────────────────────────────────── */
+
   const CampList = () => {
-    const rows = asArray(shownRows);
+    const rows = asArray(rawRows);
 
     if (campErr) {
       return (
@@ -558,12 +425,8 @@ export default function Discover() {
           <div className="text-lg font-semibold text-deep-navy">Camps not available</div>
           <div className="mt-1 text-sm text-slate-700">{campErr}</div>
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" onClick={() => loadCamps()}>
-              Retry
-            </Button>
-            <Button variant="outline" onClick={() => nav("/AdminOps")}>
-              Open Admin Ops
-            </Button>
+            <Button variant="outline" onClick={() => loadCamps()}>Retry</Button>
+            <Button variant="outline" onClick={() => nav("/AdminOps")}>Open Admin Ops</Button>
           </div>
         </Card>
       );
@@ -577,14 +440,14 @@ export default function Discover() {
               <div className="animate-pulse">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200" />
-                    <div className="min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
                       <div className="h-3 w-28 bg-slate-200 rounded" />
                       <div className="mt-2 h-5 w-56 bg-slate-200 rounded" />
                       <div className="mt-2 h-4 w-40 bg-slate-200 rounded" />
                     </div>
                   </div>
-                  <div className="h-9 w-9 bg-slate-200 rounded" />
+                  <div className="h-9 w-9 bg-slate-200 rounded flex-shrink-0" />
                 </div>
               </div>
             </Card>
@@ -601,9 +464,7 @@ export default function Discover() {
             No camps found for season {seasonYear} (or filters excluded them).
           </div>
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" onClick={clearFilters}>
-              Clear filters
-            </Button>
+            <Button variant="outline" onClick={clearFilters}>Clear filters</Button>
             <Button onClick={() => setIsFiltersOpen(true)}>Edit filters</Button>
           </div>
         </Card>
@@ -613,54 +474,26 @@ export default function Discover() {
     return (
       <div className="space-y-3">
         {rows.map((r) => {
-          const campId = String(r?.id ?? "");
-          const eventKey = r?.event_key ? String(r.event_key) : "";
+          const campId    = String(r?.id ?? "");
+          const eventKey  = r?.event_key ? String(r.event_key) : "";
           const intentKey = eventKey || campId;
+          const schoolId  = String(normId(r?.school_id) ?? "");
 
-          const schoolId = String(normId(r?.school_id) ?? "");
-          const srow = schoolById[schoolId] || null;
+          // ✅ FIX 2: resolveIdentity pulls School row fields + Camp row fallbacks.
+          //    Returns name (never "unknown"), logoUrl (never Ryzer placeholder),
+          //    division (normalized), city, state.
+          const { name: schoolName, logoUrl: schoolLogo, division: divisionLabel, city: schoolCity, state: schoolState } =
+            resolveIdentity(schoolId, r);
 
-          // ✅ Remove "unknown" from school name
-          const rawSchoolName = srow?.school_name || srow?.name || r?.school_name || "";
-          const schoolName = !isBadText(rawSchoolName) ? String(rawSchoolName) : "School";
-
-          const schoolCity = !isBadText(srow?.city) ? srow?.city : (!isBadText(r?.city) ? r?.city : null);
-          const schoolState = !isBadText(srow?.state) ? srow?.state : (!isBadText(r?.state) ? r?.state : null);
-
-          // ✅ Add Division (and suppress "unknown")
-          const divisionRaw =
-            srow?.division ||
-            srow?.ncaa_division ||
-            srow?.school_division ||
-            srow?.athletics_division ||
-            r?.division ||
-            r?.school_division ||
-            null;
-          const divisionLabel = normalizeDivisionLabel(divisionRaw);
-
-          // ✅ Better logo fallback list + handle broken URLs
-          const schoolLogo = pickBestLogoUrl(
-            // School-level
-            srow?.athletics_logo_url,
-            srow?.team_logo_url,
-            srow?.logo_url,
-            srow?.school_logo_url,
-            srow?.primary_logo_url,
-            srow?.logo,
-            // Camp-level
-            r?.school_logo_url,
-            r?.athletics_logo_url,
-            r?.logo_url,
-            r?.logo
-          );
-
-          const linkUrl = r?.link_url ?? r?.source_url ?? r?.url ?? null;
-          const startIso = toISODate(r?.start_date);
-          const endIso = toISODate(r?.end_date);
+          const linkUrl   = r?.link_url ?? r?.source_url ?? r?.url ?? null;
+          const startIso  = toISODate(r?.start_date);
+          const endIso    = toISODate(r?.end_date);
           const dateLabel =
-            startIso && endIso && endIso !== startIso ? `${startIso} → ${endIso}` : startIso || "TBD";
+            startIso && endIso && endIso !== startIso
+              ? `${startIso} → ${endIso}`
+              : startIso || "TBD";
 
-          const intent = intentByKey?.[intentKey] || null;
+          const intent     = intentByKey?.[intentKey] || null;
           const isFavorite = String(intent?.status || "").toLowerCase() === "favorite";
 
           return (
@@ -670,28 +503,39 @@ export default function Discover() {
               role="button"
               tabIndex={0}
               onClick={() =>
-                nav(isPaid ? `/CampDetail?id=${encodeURIComponent(campId)}` : `/CampDetailDemo?id=${encodeURIComponent(campId)}`)
+                nav(isPaid
+                  ? `/CampDetail?id=${encodeURIComponent(campId)}`
+                  : `/CampDetailDemo?id=${encodeURIComponent(campId)}`)
               }
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3 min-w-0">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
                   <LogoAvatar schoolName={schoolName} logoUrl={schoolLogo} />
 
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
+                    {/* Division badge — only rendered when non-null / non-"unknown" */}
                     <div className="flex items-center gap-2 flex-wrap">
-                      {divisionLabel && <Badge className="bg-slate-900 text-white text-xs">{divisionLabel}</Badge>}
+                      {divisionLabel && (
+                        <Badge className="bg-slate-900 text-white text-xs">{divisionLabel}</Badge>
+                      )}
                       {!isPaid && (
-                        <Badge variant="outline" className="text-xs">
-                          Demo
-                        </Badge>
+                        <Badge variant="outline" className="text-xs">Demo</Badge>
                       )}
                     </div>
 
-                    <div className="text-lg font-semibold text-deep-navy truncate mt-1">{schoolName}</div>
-                    <div className="text-sm text-slate-700 truncate">{r?.camp_name ?? r?.name ?? "Camp"}</div>
+                    {/* School name — never "unknown" */}
+                    <div className="text-lg font-semibold text-deep-navy truncate mt-1">
+                      {schoolName}
+                    </div>
+
+                    <div className="text-sm text-slate-700 truncate">
+                      {r?.camp_name ?? r?.name ?? "Camp"}
+                    </div>
 
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
-                      <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">{dateLabel}</span>
+                      <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">
+                        {dateLabel}
+                      </span>
                       {(schoolCity || schoolState) && (
                         <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">
                           {[schoolCity, schoolState].filter(Boolean).join(", ")}
@@ -705,18 +549,15 @@ export default function Discover() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-10 w-10 p-0"
+                  className="h-10 w-10 p-0 flex-shrink-0"
                   disabled={!isPaid}
                   onClick={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     if (!isPaid) return;
-
                     const ok = await (writeGate?.ensure ? writeGate.ensure("favorite") : true);
                     if (!ok) return;
-
-                    const next = isFavorite ? "" : "favorite";
-                    await upsertIntent(intentKey, next);
+                    await upsertIntent(intentKey, isFavorite ? "" : "favorite");
                   }}
                   aria-label={isPaid ? (isFavorite ? "Remove favorite" : "Add favorite") : "Favorites locked"}
                 >
@@ -735,11 +576,7 @@ export default function Discover() {
                     e.preventDefault();
                     e.stopPropagation();
                     if (!linkUrl) return;
-
-                    try {
-                      window.open(String(linkUrl), "_blank", "noopener,noreferrer");
-                    } catch {}
-
+                    try { window.open(String(linkUrl), "_blank", "noopener,noreferrer"); } catch { /* ignore */ }
                     if (isPaid) {
                       const ok = await (writeGate?.ensure ? writeGate.ensure("register") : true);
                       if (ok) await upsertIntent(intentKey, "registered");
@@ -756,6 +593,8 @@ export default function Discover() {
     );
   };
 
+  /* ─── render ──────────────────────────────────────────────────────────── */
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
@@ -766,7 +605,10 @@ export default function Discover() {
               <Badge variant="secondary" className="bg-slate-100 text-slate-700">
                 Season {seasonYear}
               </Badge>
-              {isPaid ? <Badge className="bg-deep-navy text-white">Paid</Badge> : <Badge variant="outline">Demo</Badge>}
+              {isPaid
+                ? <Badge className="bg-deep-navy text-white">Paid</Badge>
+                : <Badge variant="outline">Demo</Badge>
+              }
               <span className="text-xs text-slate-500">{resultsCountLabel}</span>
             </div>
           </div>
@@ -777,7 +619,6 @@ export default function Discover() {
                 variant="outline"
                 onClick={() => nav("/MyCamps")}
                 aria-label="Go to My Camps"
-                title="View saved and registered camps"
                 className="whitespace-nowrap"
               >
                 My Camps
@@ -788,7 +629,6 @@ export default function Discover() {
                 )}
               </Button>
             )}
-
             <Button variant="outline" onClick={() => setIsFiltersOpen(true)} aria-label="Open filters">
               <SlidersHorizontal className="w-4 h-4 mr-2" />
               Filters
