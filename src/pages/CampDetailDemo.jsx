@@ -48,8 +48,32 @@ function pickSchoolDivision(s) {
     null
   );
 }
+// Reject vendor placeholders and known bad URLs — mirrors Discover.jsx logic
+function isBadLogoUrl(url) {
+  const u = String(url || "").trim().toLowerCase();
+  if (!u) return true;
+  if (!u.startsWith("http://") && !u.startsWith("https://")) return true;
+  if (u.includes("ryzer")) return true;       // register.ryzer.com/webart/logo.png
+  if (u.includes("sportsusa")) return true;
+  if (u.includes("sportscamps")) return true;
+  if (u.includes("placeholder")) return true;
+  return false;
+}
+
 function pickSchoolLogo(s) {
-  return s?.logo_url || s?.school_logo_url || s?.logo || s?.image_url || null;
+  const candidates = [
+    s?.athletics_logo_url,
+    s?.athletic_logo_url,
+    s?.logo_url,
+    s?.school_logo_url,
+    s?.logo,
+    s?.image_url,
+  ];
+  for (const c of candidates) {
+    const u = String(c || "").trim();
+    if (u && !isBadLogoUrl(u)) return u;
+  }
+  return null;
 }
 function pickSportName(sp) {
   return sp?.sport_name || sp?.name || sp?.title || null;
@@ -384,7 +408,8 @@ export default function CampDetailDemo() {
               <img
                 src={detail.school_logo_url}
                 alt={detail.school_name}
-                className="w-16 h-16 rounded-xl object-cover"
+                className="w-16 h-16 rounded-xl object-contain bg-slate-100"
+                onError={(e) => { e.currentTarget.style.display = "none"; }}
               />
             )}
             <div className="flex-1 min-w-0">
