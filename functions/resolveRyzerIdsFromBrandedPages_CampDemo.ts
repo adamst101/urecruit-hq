@@ -1,7 +1,10 @@
 // functions/resolveRyzerIdsFromBrandedPages_CampDemo.ts
 //
-// CampDemo-only: fetch branded camp pages (source_url/link_url), extract Ryzer numeric id,
-// and write CampDemo.ryzer_camp_id.
+// Fetch branded camp pages and extract Ryzer numeric camp id, then write CampDemo.ryzer_camp_id.
+//
+// Why this exists:
+// - Most Camp/CampDemo URLs are branded landing pages with no id= param.
+// - Promotion is CampDemo -> Camp, so enrichment must be durable on CampDemo.
 //
 // Payload:
 // {
@@ -13,7 +16,12 @@
 //   "maxRetries": 6,
 //   "onlyMissing": true,
 //   "debugContext": false,
-//   "overrides": [ { "demoId": "...", "src": "...", "ryzerId": "123456" } ]
+//
+//   // Optional overrides (use for edge cases)
+//   "overrides": [
+//     { "demoId": "699b62388644f35fb8bbc950", "ryzerId": "289884" },
+//     { "src": "https://www.garygofffootballcamps.com/houston-camp.cfm", "ryzerId": "289884" }
+//   ]
 // }
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
@@ -39,11 +47,11 @@ function isRateLimitError(e: any) {
   return msg.includes("rate limit") || msg.includes("too many") || msg.includes("429");
 }
 
-async function updateWithRetry(Entity: any, rowId: string, patch: any, maxRetries: number) {
+async function updateWithRetry(CampDemo: any, demoId: string, patch: any, maxRetries: number) {
   let lastErr: any = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      await Entity.update(rowId, patch);
+      await CampDemo.update(demoId, patch);
       return { ok: true };
     } catch (e: any) {
       lastErr = e;
@@ -85,6 +93,7 @@ function unescapeJsSlashes(s: string) {
   return String(s || "").replace(/\\\//g, "/");
 }
 
+// Fix https:///example.com -> https://example.com
 function normalizeProtocolWeirdness(s: string) {
   return String(s || "")
     .replace(/https:\/\/\//g, "https://")
@@ -158,6 +167,27 @@ function buildOverrideMaps(overrides: any[]) {
   return { byDemoId, bySrc };
 }
 
+function pickUrlForDemoRow(r: any): string | null {
+  const candidates = [
+    r?.source_url,
+    r?.sourceUrl,
+    r?.link_url,
+    r?.linkUrl,
+    r?.registration_url,
+    r?.registrationUrl,
+    r?.registration_link,
+    r?.registrationLink,
+    r?.url,
+    r?.camp_url,
+    r?.campUrl,
+  ];
+  for (const c of candidates) {
+    const u = normalizeUrl(safeString(c));
+    if (u) return u;
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   const t0 = Date.now();
 
@@ -172,10 +202,10 @@ Deno.serve(async (req) => {
     const sleepMs = Math.max(0, Number(body?.sleepMs ?? 300));
     const maxRetries = Math.max(0, Number(body?.maxRetries ?? 6));
     const onlyMissing = body?.onlyMissing !== false;
-    const debugContext = body?.debugContext === true; // default false (keep logs small)
+    const debugContext = body?.debugContext === true;
 
     const overrides = Array.isArray(body?.overrides) ? body.overrides : [];
-    const { byDemoId, bySrc } = buildOverrideMaps(overrides);
+    const { byDemoId: overrideByDemoId, bySrc: overrideBySrc } = buildOverrideMaps(overrides);
 
     if (!seasonYear) return Response.json({ ok: false, error: "seasonYear required" });
 
@@ -186,7 +216,11 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: "CampDemo entity not available" });
     }
 
-    const rows: any[] = await CampDemo.filter({ season_year: seasonYear }, "id", Math.min(10000, startAt + maxRows));
+    const rows: any[] = await CampDemo.filter(
+      { season_year: seasonYear },
+      "id",
+      Math.min(10000, startAt + maxRows)
+    );
     const slice = (rows || []).slice(startAt, startAt + maxRows);
     const nextStartAt = startAt + slice.length;
 
@@ -197,6 +231,7 @@ Deno.serve(async (req) => {
       scanned: slice.length,
       eligible: 0,
       usedOverride: 0,
+      extractedFromUrl: 0,
       fetched: 0,
       html200: 0,
       extracted: 0,
@@ -210,100 +245,122 @@ Deno.serve(async (req) => {
     };
 
     const sample: any[] = [];
-    const cache = new Map<string, { status: number; rid: string | null; ctx: string | null; registerUrl: string | null; finalFollowUrl: string | null }>();
+    const cache = new Map<
+      string,
+      { status: number; rid: string | null; ctx: string | null; registerUrl: string | null; finalFollowUrl: string | null }
+    >();
 
     for (const r of slice) {
       const demoId = safeString(r?.id);
       if (!demoId) continue;
 
-      const existing = safeString(r?.ryzer_camp_id);
-      if (onlyMissing && existing) continue;
+      const existingRid = safeString(r?.ryzer_camp_id ?? r?.ryzerCampId ?? r?.ryzer_id ?? r?.ryzerId);
+      if (onlyMissing && existingRid) continue;
 
-      const src = normalizeUrl(safeString(r?.source_url)) || normalizeUrl(safeString(r?.link_url));
-      if (!src) continue;
+      const src = pickUrlForDemoRow(r);
+      const normalizedSrc = normalizeUrl(src);
+      if (!normalizedSrc) continue;
 
       stats.eligible += 1;
 
-      const overrideRid = byDemoId.get(demoId) || bySrc.get(src) || null;
-      if (overrideRid) {
+      // Override takes precedence
+      const ov = overrideByDemoId.get(demoId) || (normalizedSrc ? overrideBySrc.get(normalizedSrc) : null);
+      if (ov) {
         stats.usedOverride += 1;
         if (!dryRun) {
-          const ures = await updateWithRetry(CampDemo, demoId, { ryzer_camp_id: overrideRid }, maxRetries);
-          if (ures.ok) stats.wrote += 1;
+          const wr = await updateWithRetry(CampDemo, demoId, { ryzer_camp_id: ov }, maxRetries);
+          if (wr.ok) stats.wrote += 1;
           else stats.errors += 1;
+        } else {
+          stats.wrote += 1;
         }
-        if (sample.length < 10) sample.push({ demoId, src, extractedRid: overrideRid, usedOverride: true });
+        if (sample.length < 10) sample.push({ demoId, src: normalizedSrc, override: true, ryzerId: ov });
+        if (sleepMs) await sleep(sleepMs);
         continue;
       }
 
-      let cached = cache.get(src) || null;
-
-      let status = 0;
-      let rid: string | null = null;
-      let ctx: string | null = null;
-      let registerUrl: string | null = null;
-      let finalFollowUrl: string | null = null;
-
-      if (cached) {
-        status = cached.status;
-        rid = cached.rid;
-        ctx = cached.ctx;
-        registerUrl = cached.registerUrl;
-        finalFollowUrl = cached.finalFollowUrl;
-      } else {
-        await sleep(sleepMs);
-
-        const res = await fetchTextWithRetry(src, maxRetries);
-        if (!res.ok) {
-          stats.errors += 1;
-          if (sample.length < 10) sample.push({ demoId, src, error: res.error });
-          continue;
+      // Fast path: some branded pages still have id= in URL
+      const ridFromUrl = extractIdFromUrl(normalizedSrc);
+      if (ridFromUrl) {
+        stats.extractedFromUrl += 1;
+        if (!dryRun) {
+          const wr = await updateWithRetry(CampDemo, demoId, { ryzer_camp_id: ridFromUrl }, maxRetries);
+          if (wr.ok) stats.wrote += 1;
+          else stats.errors += 1;
+        } else {
+          stats.wrote += 1;
         }
+        if (sample.length < 10) sample.push({ demoId, src: normalizedSrc, ryzerId: ridFromUrl, via: "url" });
+        if (sleepMs) await sleep(sleepMs);
+        continue;
+      }
 
+      // Cache by URL to reduce repeat fetches
+      let cached = cache.get(normalizedSrc);
+      if (!cached) {
         stats.fetched += 1;
-        status = res.status;
+        const ft = await fetchTextWithRetry(normalizedSrc, maxRetries);
+        const status = ft.ok ? ft.status : 0;
         if (status === 200) stats.html200 += 1;
 
-        const ex1 = status === 200 ? extractRyzerIdFromHtml(res.html) : { rid: null, ctx: null, registerUrl: null };
-        rid = ex1.rid;
-        ctx = ex1.ctx;
-        registerUrl = ex1.registerUrl;
+        const ex = extractRyzerIdFromHtml(ft.html);
+        cached = { status, rid: ex.rid, ctx: ex.ctx, registerUrl: ex.registerUrl, finalFollowUrl: null };
 
-        if (!rid && registerUrl) {
+        // If we got a register.ryzer.com URL but no id, try following it once.
+        if (!cached.rid && cached.registerUrl) {
           stats.followedRegisterUrl += 1;
-          await sleep(Math.min(500, sleepMs));
-
-          const rr = await fetchTextWithRetry(registerUrl, maxRetries);
-          if (rr.ok && rr.status >= 200 && rr.status < 400) {
-            finalFollowUrl = rr.finalUrl;
-            rid = extractIdFromUrl(rr.finalUrl) || extractRyzerIdFromHtml(rr.html).rid;
-            if (rid) stats.extractedViaFollow += 1;
+          const followUrl = normalizeUrl(cached.registerUrl);
+          if (followUrl) {
+            const ft2 = await fetchTextWithRetry(followUrl, maxRetries);
+            cached.finalFollowUrl = ft2.ok ? (ft2.finalUrl || followUrl) : followUrl;
+            const ridFromFinalUrl = extractIdFromUrl(cached.finalFollowUrl);
+            if (ridFromFinalUrl) {
+              cached.rid = ridFromFinalUrl;
+              cached.ctx = `[follow.finalUrl] ${cached.finalFollowUrl}`;
+              stats.extractedViaFollow += 1;
+            } else {
+              const ex2 = extractRyzerIdFromHtml(ft2.html);
+              if (ex2.rid) {
+                cached.rid = ex2.rid;
+                cached.ctx = ex2.ctx;
+                stats.extractedViaFollow += 1;
+              }
+            }
           }
         }
 
-        cache.set(src, { status, rid, ctx, registerUrl, finalFollowUrl });
+        cache.set(normalizedSrc, cached);
       }
 
+      const rid = cached?.rid || null;
       if (rid) stats.extracted += 1;
 
-      if (rid && !dryRun) {
-        const ures = await updateWithRetry(CampDemo, demoId, { ryzer_camp_id: rid }, maxRetries);
-        if (ures.ok) stats.wrote += 1;
-        else stats.errors += 1;
+      if (rid) {
+        if (!dryRun) {
+          const wr = await updateWithRetry(CampDemo, demoId, { ryzer_camp_id: rid }, maxRetries);
+          if (wr.ok) stats.wrote += 1;
+          else stats.errors += 1;
+        } else {
+          stats.wrote += 1;
+        }
       }
 
       if (sample.length < 10) {
-        const row: any = { demoId, src, pageStatus: status, extractedRid: rid };
-        if (debugContext) {
-          row.context = ctx;
-          row.registerUrlFound = registerUrl;
-          row.finalFollowUrl = finalFollowUrl;
-        }
-        sample.push(row);
+        sample.push({
+          demoId,
+          src: normalizedSrc,
+          status: cached?.status,
+          ryzerId: rid,
+          registerUrl: cached?.registerUrl || null,
+          ctx: debugContext ? cached?.ctx : null,
+        });
       }
+
+      if (sleepMs) await sleep(sleepMs);
     }
 
     stats.elapsedMs = Date.now() - t0;
+
     return Response.json({ ok: true, stats, sample });
   } catch (e: any) {
     return Response.json({ ok: false, error: String(e?.message || e) });
