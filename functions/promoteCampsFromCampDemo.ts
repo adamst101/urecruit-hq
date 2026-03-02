@@ -26,17 +26,17 @@ function getId(x: any): string {
   return String(x?.id ?? x?._id ?? x?.uuid ?? "");
 }
 
-// Extract numeric Ryzer camp id from a URL (register.ryzer.com or branded page that includes ?id=)
-function extractRyzerNumericCampId(url: any): string {
+function extractRyzerNumericCampId(url: string | null): string | null {
   const s = safeStr(url).trim();
-  if (!s) return "";
+  if (!s) return null;
   try {
     const u = new URL(s);
     const id = u.searchParams.get("id");
-    return id ? String(id).trim() : "";
+    const t = (id || "").trim();
+    return t ? t : null;
   } catch {
     const m = s.match(/[?&]id=(\d{5,7})/i);
-    return m?.[1] ? String(m[1]).trim() : "";
+    return m?.[1] ? String(m[1]) : null;
   }
 }
 
@@ -177,16 +177,16 @@ function selectCampFieldsFromDemoRow(r: any, runIso: string) {
     active: typeof r?.active === "boolean" ? r.active : true,
   };
 
-  // ✅ Carry ryzer_camp_id from CampDemo → Camp
-  // Prefer explicit field from demo; fallback parse from urls (in case demo stores register.ryzer.com)
-  const demoRyzerId = safeStr(r?.ryzer_camp_id || r?.ryzerCampId || "").trim();
-  const parsedRyzerId =
-    extractRyzerNumericCampId(payload.link_url) ||
-    extractRyzerNumericCampId(payload.source_url) ||
-    "";
-
-  const ryzerId = demoRyzerId || parsedRyzerId;
-  if (ryzerId) payload.ryzer_camp_id = ryzerId;
+  // Carry-forward Ryzer camp id (durable join key)
+  // Source of truth is CampDemo, but allow parsing from URL when present.
+  const demoRid = safeStr(r?.ryzer_camp_id ?? r?.ryzerCampId ?? r?.ryzer_id ?? r?.ryzerId);
+  const parsedRid =
+    extractRyzerNumericCampId(safeStr(payload?.link_url)) ||
+    extractRyzerNumericCampId(safeStr(payload?.source_url)) ||
+    extractRyzerNumericCampId(
+      safeStr(r?.registration_url ?? r?.registrationUrl ?? r?.registration_link ?? r?.registrationLink)
+    );
+  payload.ryzer_camp_id = demoRid || parsedRid || null;
 
   return { ok: true as const, payload };
 }
