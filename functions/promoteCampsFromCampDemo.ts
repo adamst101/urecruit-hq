@@ -26,6 +26,20 @@ function getId(x: any): string {
   return String(x?.id ?? x?._id ?? x?.uuid ?? "");
 }
 
+// Extract numeric Ryzer camp id from a URL (register.ryzer.com or branded page that includes ?id=)
+function extractRyzerNumericCampId(url: any): string {
+  const s = safeStr(url).trim();
+  if (!s) return "";
+  try {
+    const u = new URL(s);
+    const id = u.searchParams.get("id");
+    return id ? String(id).trim() : "";
+  } catch {
+    const m = s.match(/[?&]id=(\d{5,7})/i);
+    return m?.[1] ? String(m[1]).trim() : "";
+  }
+}
+
 function isRetryableError(e: any): boolean {
   const msg = lc(e?.message || e);
   return (
@@ -162,6 +176,17 @@ function selectCampFieldsFromDemoRow(r: any, runIso: string) {
     // lifecycle
     active: typeof r?.active === "boolean" ? r.active : true,
   };
+
+  // ✅ Carry ryzer_camp_id from CampDemo → Camp
+  // Prefer explicit field from demo; fallback parse from urls (in case demo stores register.ryzer.com)
+  const demoRyzerId = safeStr(r?.ryzer_camp_id || r?.ryzerCampId || "").trim();
+  const parsedRyzerId =
+    extractRyzerNumericCampId(payload.link_url) ||
+    extractRyzerNumericCampId(payload.source_url) ||
+    "";
+
+  const ryzerId = demoRyzerId || parsedRyzerId;
+  if (ryzerId) payload.ryzer_camp_id = ryzerId;
 
   return { ok: true as const, payload };
 }
