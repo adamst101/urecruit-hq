@@ -1,7 +1,6 @@
 // functions/resolveRyzerIdsFromBrandedPages.ts
 //
-// For each Camp with source_url/link_url on a branded domain, fetch HTML and extract
-// register.ryzer.com/camp.cfm?...id=#### (or other embedded id patterns), then write camp.ryzer_camp_id.
+// Fetch branded camp pages and extract Ryzer numeric camp id, then write camp.ryzer_camp_id.
 //
 // Payload:
 // {
@@ -11,7 +10,8 @@
 //   "startAt": 0,
 //   "sleepMs": 300,
 //   "maxRetries": 6,
-//   "onlyMissing": true
+//   "onlyMissing": true,
+//   "debugContext": true
 // }
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
@@ -62,35 +62,63 @@ async function fetchHtmlWithRetry(url: string, maxRetries: number) {
   return { ok: false, status: 0, html: "", error: String(lastErr?.message || lastErr) };
 }
 
-// ✅ Hardened extractor: links + hidden inputs + JS variables
-function extractRyzerNumericIdFromText(html: string): string | null {
-  const h = String(html || "");
+// Unescape common JS-escaped URLs: https:\/\/register.ryzer.com\/camp.cfm?id=123
+function unescapeJsSlashes(s: string) {
+  return String(s || "").replace(/\\\//g, "/");
+}
 
-  // 1) Strong signal: register.ryzer.com link with id=digits
-  const m1 = h.match(/https?:\/\/register\.ryzer\.com\/camp\.cfm[^"' ]*?[?&]id=(\d+)/i);
-  if (m1?.[1]) return String(m1[1]);
+// ✅ Hardened extractor: links + iframe/src + form/action + data-* attrs + JS strings
+function extractRyzerNumericIdFromText(html: string): { rid: string | null; context: string | null } {
+  const raw = String(html || "");
+  const h = unescapeJsSlashes(raw);
 
-  // 2) Any camp.cfm link with id=digits
-  const m2 = h.match(/camp\.cfm[^"' ]*?[?&]id=(\d+)/i);
-  if (m2?.[1]) return String(m2[1]);
+  const patterns: Array<{ name: string; re: RegExp }> = [
+    // 1) Full register.ryzer.com link
+    { name: "registerLink", re: /https?:\/\/register\.ryzer\.com\/camp\.cfm[^"' ]*?[?&]id=(\d+)/i },
 
-  // 3) Hidden input patterns: <input name="id" value="123456">
-  const mInp = h.match(/<input[^>]+name=["']id["'][^>]+value=["'](\d{5,7})["']/i);
-  if (mInp?.[1]) return String(mInp[1]);
+    // 2) Any camp.cfm link with id=digits (including relative)
+    { name: "campLink", re: /camp\.cfm[^"' ]*?[?&]id=(\d+)/i },
 
-  // 4) JS variable patterns
-  // campid: 123456  OR  campId = "123456"
-  const mJs1 = h.match(/\bcamp\s*id\b\s*[:=]\s*["']?(\d{5,7})["']?/i);
-  if (mJs1?.[1]) return String(mJs1[1]);
+    // 3) iframe src="...id=123..."
+    { name: "iframeSrc", re: /<iframe[^>]+src=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d+)/i },
 
-  const mJs1b = h.match(/\bcampid\b\s*[:=]\s*["']?(\d{5,7})["']?/i);
-  if (mJs1b?.[1]) return String(mJs1b[1]);
+    // 4) form action="...id=123..."
+    { name: "formAction", re: /<form[^>]+action=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d+)/i },
 
-  // id: 123456 (last resort; still 5-7 digits)
-  const mJs2 = h.match(/\bid\b\s*[:=]\s*["']?(\d{5,7})["']?/i);
-  if (mJs2?.[1]) return String(mJs2[1]);
+    // 5) hidden input name="id" value="123456"
+    { name: "inputId", re: /<input[^>]+name=["']id["'][^>]+value=["'](\d{5,7})["']/i },
 
-  return null;
+    // 6) data-url / data-href containing register link
+    { name: "dataUrl", re: /data-(?:url|href)=["'][^"']*?(?:register\.ryzer\.com\/)?camp\.cfm[^"']*?[?&]id=(\d+)/i },
+
+    // 7) JS variable campId / campid / id (last resort)
+    { name: "jsCampId", re: /\bcamp\s*id\b\s*[:=]\s*["']?(\d{5,7})["']?/i },
+    { name: "jsCampid", re: /\bcampid\b\s*[:=]\s*["']?(\d{5,7})["']?/i },
+    { name: "jsId", re: /\bid\b\s*[:=]\s*["']?(\d{5,7})["']?/i },
+  ];
+
+  for (const p of patterns) {
+    const m = h.match(p.re);
+    if (m?.[1]) {
+      const rid = String(m[1]);
+      // return a small context snippet around the match to debug future misses
+      const idx = m.index ?? h.indexOf(m[0]);
+      const start = Math.max(0, idx - 120);
+      const end = Math.min(h.length, idx + 220);
+      const context = h.slice(start, end);
+      return { rid, context: `[${p.name}] ${context}` };
+    }
+  }
+
+  // If no id found, still return a "ryzer" context snippet if present
+  const ryzerIdx = h.toLowerCase().indexOf("ryzer");
+  if (ryzerIdx >= 0) {
+    const start = Math.max(0, ryzerIdx - 120);
+    const end = Math.min(h.length, ryzerIdx + 220);
+    return { rid: null, context: `[ryzerContext] ${h.slice(start, end)}` };
+  }
+
+  return { rid: null, context: null };
 }
 
 async function updateWithRetry(Camp: any, campId: string, patch: any, maxRetries: number) {
@@ -122,6 +150,7 @@ Deno.serve(async (req) => {
     const sleepMs = Math.max(0, Number(body?.sleepMs ?? 300));
     const maxRetries = Math.max(0, Number(body?.maxRetries ?? 6));
     const onlyMissing = body?.onlyMissing !== false; // default true
+    const debugContext = body?.debugContext !== false; // default true
 
     if (!seasonYear) return Response.json({ ok: false, error: "seasonYear required" });
 
@@ -132,7 +161,6 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: "Camp entity not available" });
     }
 
-    // Stable list for paging
     const rows: any[] = await Camp.filter({ season_year: seasonYear }, "id", Math.min(10000, startAt + maxCamps));
     const slice = (rows || []).slice(startAt, startAt + maxCamps);
     const nextStartAt = startAt + slice.length;
@@ -154,9 +182,7 @@ Deno.serve(async (req) => {
     };
 
     const sample: any[] = [];
-
-    // Cache by branded URL so duplicates don’t refetch
-    const htmlCache = new Map<string, { status: number; rid: string | null }>();
+    const htmlCache = new Map<string, { status: number; rid: string | null; ctx: string | null }>();
 
     for (const c of slice) {
       const campId = safeString(c?.id);
@@ -172,11 +198,13 @@ Deno.serve(async (req) => {
 
       let cached = htmlCache.get(src) || null;
       let rid: string | null = null;
+      let ctx: string | null = null;
       let status = 0;
 
       if (cached) {
         status = cached.status;
         rid = cached.rid;
+        ctx = cached.ctx;
       } else {
         await sleep(sleepMs);
 
@@ -191,8 +219,11 @@ Deno.serve(async (req) => {
         status = res.status;
         if (status === 200) stats.html200 += 1;
 
-        rid = status === 200 ? extractRyzerNumericIdFromText(res.html) : null;
-        htmlCache.set(src, { status, rid });
+        const ex = status === 200 ? extractRyzerNumericIdFromText(res.html) : { rid: null, context: null };
+        rid = ex.rid;
+        ctx = ex.context;
+
+        htmlCache.set(src, { status, rid, ctx });
       }
 
       if (rid) stats.extracted += 1;
@@ -204,12 +235,9 @@ Deno.serve(async (req) => {
       }
 
       if (sample.length < 10) {
-        sample.push({
-          campId,
-          src,
-          pageStatus: status,
-          extractedRid: rid,
-        });
+        const row: any = { campId, src, pageStatus: status, extractedRid: rid };
+        if (debugContext) row.context = ctx;
+        sample.push(row);
       }
     }
 
