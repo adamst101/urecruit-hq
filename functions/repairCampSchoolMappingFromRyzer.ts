@@ -1,26 +1,34 @@
 // functions/repairCampSchoolMappingFromRyzer.ts
 //
 // Repair pass for Camps where:
-// - school_logo_url is missing OR is actually the Ryzer brand logo
+// - school_logo_url is missing OR is the Ryzer placeholder logo
 // - school_id is missing and we can map by logo
+//
+// New hard rules (per Tom):
+// - Ryzer placeholder logo is EXACT: https://register.ryzer.com/webart/logo.png
+// - Correct school logos start with: https://s3.amazonaws.com/
 //
 // Safe behavior:
 // - Default dryRun=true
-// - Only overwrites logo if existing is missing or clearly Ryzer-branded
-// - Only sets school_id when the logo match is UNIQUE
+// - Only overwrites logo if existing is missing or exactly the Ryzer placeholder
+// - Only writes a logo if extracted logo is an S3 URL
+// - Only sets school_id when match is UNIQUE
 //
 // Usage (POST JSON):
 // {
 //   "seasonYear": 2026,
 //   "dryRun": true,
 //   "maxCamps": 250,
-//   "maxSchools": 2500,
+//   "maxSchools": 4000,
 //   "onlyMissingSchoolId": false,
 //   "onlyBadOrMissingLogo": true,
 //   "throttleMs": 150
 // }
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
+
+const RYZER_PLACEHOLDER_LOGO = "https://register.ryzer.com/webart/logo.png";
+const S3_PREFIX = "https://s3.amazonaws.com/";
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, Math.max(0, Number(ms) || 0)));
@@ -45,47 +53,44 @@ function looksLikeHttpUrl(url: any) {
   return u.startsWith("http://") || u.startsWith("https://");
 }
 
+// Strip fragment + query
 function normalizeUrl(u: string | null): string | null {
   const s = safeString(u);
   if (!s) return null;
-  return s.replace(/#.*$/, "").trim();
+  return s.replace(/#.*$/, "").replace(/\?.*$/, "").trim();
 }
 
-function isLikelyImageUrl(u: string) {
-  const s = lc(u);
+function isS3LogoUrl(u: string | null): boolean {
+  const s = normalizeUrl(u);
   if (!s) return false;
-  if (s.includes("favicon") || s.endsWith(".ico")) return false;
-  if (s.includes("apple-touch-icon")) return false;
-
-  if (
-    s.includes(".png") ||
-    s.includes(".jpg") ||
-    s.includes(".jpeg") ||
-    s.includes(".webp") ||
-    s.includes(".gif") ||
-    s.includes(".svg")
-  )
-    return true;
-
-  // some CDNs are extensionless
-  if (s.includes("cloudfront") || s.includes("amazonaws") || s.includes("cdn")) return true;
-
-  return false;
+  return s.startsWith(S3_PREFIX);
 }
 
-// Reject obvious Ryzer brand/logo assets.
-function isRyzerBrandLogoCandidate(u: string) {
-  const s = lc(u);
-  if (!s) return true;
+function isRyzerPlaceholderLogo(u: string | null): boolean {
+  const s = normalizeUrl(u);
+  if (!s) return false;
+  return s === RYZER_PLACEHOLDER_LOGO;
+}
 
-  if (s.includes("ryzer") && (s.includes("logo") || s.includes("brand") || s.includes("favicon") || s.includes("icon")))
-    return true;
+function urlBasename(u: string | null): string | null {
+  const s = normalizeUrl(u);
+  if (!s) return null;
+  const last = s.split("/").pop() || "";
+  const base = last.split("?")[0].split("#")[0].trim();
+  if (!base) return null;
+  return base;
+}
 
-  if (s.includes("ryzer.com") && s.includes("ryzer")) return true;
-
-  if (s.includes("ryzer") && s.includes("connect") && (s.includes("logo") || s.includes("brand"))) return true;
-
-  return false;
+function urlHostlessPath(u: string | null): string | null {
+  const s = normalizeUrl(u);
+  if (!s) return null;
+  try {
+    const uu = new URL(s);
+    const path = `${uu.pathname}`.trim();
+    return path || null;
+  } catch {
+    return s;
+  }
 }
 
 function absUrl(baseUrl: string, maybe: string) {
@@ -137,31 +142,18 @@ function extractImgCandidates(html: string) {
     const raw = srcM[1].trim();
     if (!raw) continue;
 
-    // ignore explicit ryzer brand tags
-    if (t.includes("ryzer")) continue;
-
-    // score heuristic: prefer logos in header/brand/org/program contexts
+    // Score: prefer logo-ish images
     let score = 0;
     if (t.includes("logo")) score += 4;
     if (t.includes("brand")) score += 2;
     if (t.includes("header")) score += 2;
-    if (t.includes("org")) score += 3;
-    if (t.includes("organization")) score += 3;
+    if (t.includes("org")) score += 2;
     if (t.includes("school")) score += 3;
     if (t.includes("team")) score += 3;
     if (t.includes("athletic")) score += 3;
-
     if (t.includes("sprite") || t.includes("icon")) score -= 2;
 
     out.push({ url: raw, score });
-  }
-
-  // also pick direct image URLs in HTML
-  const reAnyImg = /(https?:\/\/[^"' <]+\.(?:png|jpg|jpeg|webp|gif|svg)(?:\?[^"' <]*)?)/gi;
-  let mi: RegExpExecArray | null;
-  while ((mi = reAnyImg.exec(h)) !== null) {
-    if (!mi[1]) continue;
-    out.push({ url: mi[1], score: 1 });
   }
 
   out.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -179,23 +171,20 @@ function extractImgCandidates(html: string) {
   return deduped;
 }
 
-function pickBestNonRyzerLogo(html: string, baseUrl: string) {
+// ✅ Per rule: Only accept extracted logos that start with s3.amazonaws.com
+function pickBestS3Logo(html: string, baseUrl: string) {
   const meta = extractMetaImage(html);
   if (meta) {
     const u = absUrl(baseUrl, meta);
-    if (u && looksLikeHttpUrl(u) && isLikelyImageUrl(u) && !isRyzerBrandLogoCandidate(u)) {
-      return normalizeUrl(u);
-    }
+    const nu = normalizeUrl(u);
+    if (nu && isS3LogoUrl(nu)) return nu;
   }
 
   const candidates = extractImgCandidates(html);
   for (const c of candidates) {
     const u = absUrl(baseUrl, c.url);
-    if (!u) continue;
-    if (!looksLikeHttpUrl(u)) continue;
-    if (!isLikelyImageUrl(u)) continue;
-    if (isRyzerBrandLogoCandidate(u)) continue;
-    return normalizeUrl(u);
+    const nu = normalizeUrl(u);
+    if (nu && isS3LogoUrl(nu)) return nu;
   }
 
   return null;
@@ -205,8 +194,12 @@ function shouldReplaceLogo(existing: string | null, nextLogo: string | null) {
   const ex = normalizeUrl(existing);
   const nx = normalizeUrl(nextLogo);
   if (!nx) return false;
+  if (!isS3LogoUrl(nx)) return false;
+
+  // Overwrite only if missing OR exactly the Ryzer placeholder
   if (!ex) return true;
-  if (isRyzerBrandLogoCandidate(ex)) return true;
+  if (isRyzerPlaceholderLogo(ex)) return true;
+
   return false;
 }
 
@@ -223,13 +216,20 @@ async function fetchHtml(url: string) {
   return { status, html };
 }
 
-// ✅ FIXED: build school logo index using School.filter (Base44-safe)
+function addToIndex(idx: Map<string, string[]>, key: string | null, schoolId: string) {
+  if (!key) return;
+  const k = key.toLowerCase();
+  const arr = idx.get(k) || [];
+  arr.push(schoolId);
+  idx.set(k, arr);
+}
+
+// ✅ Only index S3 logos from Schools
 async function buildSchoolLogoIndex(School: any, maxSchools: number) {
-  const idx = new Map<string, string[]>(); // logoUrl -> [schoolId...]
+  const idx = new Map<string, string[]>(); // key -> [schoolId...]
   let scanned = 0;
 
-  // Pull a deterministic set of schools. Increase maxSchools if needed.
-  const limit = Math.max(200, Math.min(5000, Number(maxSchools) || 2500));
+  const limit = Math.max(200, Math.min(10000, Number(maxSchools) || 4000));
   const rows = asArray<any>(await School.filter({}, "school_name", limit));
 
   for (const s of rows) {
@@ -247,17 +247,32 @@ async function buildSchoolLogoIndex(School: any, maxSchools: number) {
     ];
 
     for (const l of logos) {
-      const u = normalizeUrl(safeString(l));
-      if (!u) continue;
-      if (isRyzerBrandLogoCandidate(u)) continue;
+      const raw = normalizeUrl(safeString(l));
+      if (!raw) continue;
+      if (!isS3LogoUrl(raw)) continue; // ✅ enforce rule
 
-      const arr = idx.get(u) || [];
-      arr.push(sid);
-      idx.set(u, arr);
+      addToIndex(idx, raw, sid);
+      addToIndex(idx, urlHostlessPath(raw), sid);
+      addToIndex(idx, urlBasename(raw), sid);
     }
   }
 
   return { idx, scanned };
+}
+
+function uniqueMatch(idx: Map<string, string[]>, keys: string[]) {
+  const collected = new Set<string>();
+
+  for (const k of keys) {
+    const kk = (k || "").toLowerCase().trim();
+    if (!kk) continue;
+    const matches = idx.get(kk) || [];
+    for (const m of matches) collected.add(m);
+  }
+
+  const arr = Array.from(collected);
+  if (arr.length === 1) return { schoolId: arr[0], count: 1 };
+  return { schoolId: null, count: arr.length };
 }
 
 Deno.serve(async (req) => {
@@ -273,7 +288,7 @@ Deno.serve(async (req) => {
 
     const dryRun = body?.dryRun !== false; // default true
     const maxCamps = Math.max(1, Number(body?.maxCamps ?? 250));
-    const maxSchools = Math.max(200, Number(body?.maxSchools ?? 2500));
+    const maxSchools = Math.max(200, Number(body?.maxSchools ?? 4000));
     const throttleMs = Math.max(0, Number(body?.throttleMs ?? 150));
 
     const onlyMissingSchoolId = !!body?.onlyMissingSchoolId;
@@ -286,8 +301,6 @@ Deno.serve(async (req) => {
     if (!Camp || typeof Camp.filter !== "function") {
       return Response.json({ ok: false, error: "Camp entity not available" });
     }
-
-    // ✅ FIXED: validate School.filter not School.list
     if (!School || typeof School.filter !== "function") {
       return Response.json({ ok: false, error: "School entity not available" });
     }
@@ -309,13 +322,18 @@ Deno.serve(async (req) => {
 
     const debug: any = {
       sample: [],
+      logoSamples: [],
       schoolIndexScanned: 0,
+      rules: {
+        ryzerPlaceholderLogo: RYZER_PLACEHOLDER_LOGO,
+        requiredLogoPrefix: S3_PREFIX,
+      },
     };
 
     const { idx: schoolLogoIdx, scanned: schoolIndexScanned } = await buildSchoolLogoIndex(School, maxSchools);
     debug.schoolIndexScanned = schoolIndexScanned;
 
-    // ✅ Perf: cache duplicate regUrl fetches (your sample shows repeats)
+    // Cache duplicate regUrl fetches
     const regCache = new Map<string, { status: number; extractedLogo: string | null }>();
 
     const camps = asArray<any>(await Camp.filter({ season_year: seasonYear }, "-start_date", maxCamps));
@@ -327,7 +345,8 @@ Deno.serve(async (req) => {
 
       const currentSchoolId = safeString(c?.school_id);
       const currentLogo = normalizeUrl(safeString(c?.school_logo_url));
-      const isBadLogo = !currentLogo || isRyzerBrandLogoCandidate(currentLogo);
+
+      const isBadLogo = !currentLogo || isRyzerPlaceholderLogo(currentLogo);
 
       if (onlyMissingSchoolId && currentSchoolId) {
         stats.skipped += 1;
@@ -340,15 +359,13 @@ Deno.serve(async (req) => {
 
       stats.eligibleCamps += 1;
 
-      const regUrl =
-        safeString(c?.source_url) || safeString(c?.link_url) || safeString(c?.url);
+      const regUrl = safeString(c?.source_url) || safeString(c?.link_url) || safeString(c?.url);
       if (!regUrl || !looksLikeHttpUrl(regUrl)) {
         stats.skipped += 1;
         continue;
       }
 
-      // Throttle only when we need to actually fetch (cache hits skip wait)
-      let cached = regCache.get(regUrl) || null;
+      const cached = regCache.get(regUrl) || null;
 
       try {
         let httpStatus = 0;
@@ -362,7 +379,10 @@ Deno.serve(async (req) => {
           const { status, html } = await fetchHtml(regUrl);
           stats.fetchedPages += 1;
           httpStatus = status;
-          extractedLogo = pickBestNonRyzerLogo(html, regUrl);
+
+          // ✅ Only S3 logos are considered valid
+          extractedLogo = pickBestS3Logo(html, regUrl);
+
           regCache.set(regUrl, { status, extractedLogo });
         }
 
@@ -373,15 +393,24 @@ Deno.serve(async (req) => {
           nextLogoToWrite = extractedLogo;
         }
 
-        // Decide school mapping
+        // Decide school mapping with multi-key match (still deterministic)
         let nextSchoolIdToWrite: string | null = null;
+        let matchCount = 0;
+
         if (!currentSchoolId) {
-          const key = normalizeUrl(nextLogoToWrite || extractedLogo || currentLogo);
-          if (key) {
-            const matches = schoolLogoIdx.get(key) || [];
-            if (matches.length === 1) {
-              nextSchoolIdToWrite = matches[0];
-            } else if (matches.length > 1) {
+          const bestLogoKey = normalizeUrl(nextLogoToWrite || extractedLogo || currentLogo);
+          if (bestLogoKey && isS3LogoUrl(bestLogoKey)) {
+            const keysToTry = [
+              bestLogoKey,
+              urlHostlessPath(bestLogoKey) || "",
+              urlBasename(bestLogoKey) || "",
+            ].filter(Boolean);
+
+            const m = uniqueMatch(schoolLogoIdx, keysToTry);
+            nextSchoolIdToWrite = m.schoolId;
+            matchCount = m.count;
+
+            if (!nextSchoolIdToWrite && matchCount > 1) {
               stats.schoolIdSkippedAmbiguous += 1;
             }
           }
@@ -415,16 +444,31 @@ Deno.serve(async (req) => {
             nextLogoToWrite,
             currentSchoolId,
             nextSchoolIdToWrite,
+            matchCount,
+          });
+        }
+
+        if (extractedLogo && debug.logoSamples.length < 10) {
+          const bestLogoKey = normalizeUrl(extractedLogo);
+          const keysToTry = bestLogoKey
+            ? [bestLogoKey, urlHostlessPath(bestLogoKey) || "", urlBasename(bestLogoKey) || ""].filter(Boolean)
+            : [];
+
+          const m = uniqueMatch(schoolLogoIdx, keysToTry);
+
+          debug.logoSamples.push({
+            campId,
+            regUrl,
+            extractedLogo,
+            keysToTry,
+            matchCount: m.count,
+            nextSchoolIdToWrite: m.schoolId,
           });
         }
       } catch (e: any) {
         stats.errors += 1;
         if (debug.sample.length < 10) {
-          debug.sample.push({
-            campId,
-            regUrl,
-            error: String(e?.message || e),
-          });
+          debug.sample.push({ campId, regUrl, error: String(e?.message || e) });
         }
       }
     }
