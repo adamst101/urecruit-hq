@@ -218,20 +218,36 @@ function isGenericHostName(s: string | null): boolean {
   return GENERIC_HOST_NAMES.some((g) => lc === g || lc === g + ".");
 }
 
+// Strip trailing date/detail fragments from h1 values like "Camp Name | June 8th" or "Camp | July 14-16"
+function stripDateSuffix(s: string): string {
+  return s
+    .replace(/\s*[|\-]\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d[^|\-]*/i, "")
+    .replace(/\s*[|\-]\s*\d{1,2}\/\d{1,2}(?:\/\d{2,4})?[^|\-]*/i, "")
+    .replace(/\s*[|\-]\s*(?:spring|summer|fall|winter)\s+\d{4}\s*$/i, "")
+    .trim();
+}
+
 function pickHostName(html: string): string | null {
-  // Skip og:site_name — Ryzer sets it to "Ryzer" on every page, which is useless
-  // Fall straight through to h1 (most reliable: contains actual camp/school name)
-  const h1 = safeString(extractH1(html));
-  if (h1 && !isGenericHostName(h1)) return h1;
+  // Skip og:site_name — Ryzer sets it to "Ryzer" on every page, useless
+  // h1 is most reliable — contains the actual camp/event name
+  const h1Raw = safeString(extractH1(html));
+  if (h1Raw && !isGenericHostName(h1Raw)) {
+    const h1 = stripDateSuffix(h1Raw);
+    if (h1 && !isGenericHostName(h1)) return h1;
+  }
 
   const title = safeString(extractTitle(html));
   if (title) {
-    const cleaned = title
-      .replace(/\s*\|\s*registration\s*$/i, "")
-      .replace(/\s*-\s*registration\s*$/i, "")
-      .replace(/\s*\|\s*ryzer\s*$/i, "")
-      .replace(/\s*-\s*ryzer\s*$/i, "")
-      .trim();
+    const cleaned = stripDateSuffix(
+      title
+        .replace(/^view\s+/i, "")
+        .replace(/\s*\|\s*registration\s*$/i, "")
+        .replace(/\s*-\s*registration\s*$/i, "")
+        .replace(/\s*\|\s*ryzer\s*$/i, "")
+        .replace(/\s*-\s*ryzer\s*$/i, "")
+        .replace(/\s+details\s*$/i, "")
+        .trim()
+    );
     if (cleaned && !isGenericHostName(cleaned)) return cleaned;
   }
 
