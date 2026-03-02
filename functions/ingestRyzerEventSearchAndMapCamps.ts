@@ -172,9 +172,11 @@ Deno.serve(async (req) => {
       // Fallback index: parse numeric id out of link_url / source_url
       // Covers rows that haven't been through the ryzer_camp_id backfill yet
       const urlFields = [c?.link_url, c?.source_url, c?.registration_url];
+      const seenParsed = new Set<string>();
       for (const u of urlFields) {
         const parsed = extractRyzerNumericCampId(u);
-        if (parsed && !byRyzerUrl.has(parsed)) {
+        if (parsed && !seenParsed.has(parsed)) {
+          seenParsed.add(parsed);
           const arr = byRyzerUrl.get(parsed) || [];
           arr.push(c);
           byRyzerUrl.set(parsed, arr);
@@ -243,6 +245,16 @@ Deno.serve(async (req) => {
         // Match: prefer explicit ryzer_camp_id field, fall back to URL parse
         const matchedById  = byRyzerId.get(numericId)  || [];
         const matchedByUrl = byRyzerUrl.get(numericId) || [];
+
+        // First mismatch: capture diagnostic to show id format on both sides
+        if (!debug.idMismatchDiag && matchedById.length === 0 && matchedByUrl.length === 0) {
+          debug.idMismatchDiag = {
+            apiNumericId: numericId,
+            apiRlink: rlink,
+            sampleRyzerIdFieldKeys: Array.from(byRyzerId.keys()).slice(0, 8),
+            sampleUrlFallbackKeys:  Array.from(byRyzerUrl.keys()).slice(0, 8),
+          };
+        }
 
         // Merge, dedupe by camp row id
         const seenIds = new Set<string>();
