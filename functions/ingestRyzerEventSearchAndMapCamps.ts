@@ -153,20 +153,40 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: "Camp entity not available" });
     }
 
-    // Load camps for the season and index by ryzer_camp_id
+    // Load camps for the season; build two indexes:
+    //   byRyzerId  — Camp.ryzer_camp_id → Camp[]   (primary, fast)
+    //   byRyzerUrl — normalised rlink URL → Camp[] (fallback for rows without ryzer_camp_id yet)
     const camps = asArray<any>(await Camp.filter({ season_year: seasonYear }, "-start_date", 10000));
-    const byRyzerId = new Map<string, any[]>();
+    const byRyzerId  = new Map<string, any[]>();
+    const byRyzerUrl = new Map<string, any[]>();
 
     for (const c of camps) {
+      // Primary index: explicit ryzer_camp_id field
       const rid = safeString(c?.ryzer_camp_id);
-      if (!rid) continue;
-      const arr = byRyzerId.get(rid) || [];
-      arr.push(c);
-      byRyzerId.set(rid, arr);
+      if (rid) {
+        const arr = byRyzerId.get(rid) || [];
+        arr.push(c);
+        byRyzerId.set(rid, arr);
+      }
+
+      // Fallback index: parse numeric id out of link_url / source_url
+      // Covers rows that haven't been through the ryzer_camp_id backfill yet
+      const urlFields = [c?.link_url, c?.source_url, c?.registration_url];
+      for (const u of urlFields) {
+        const parsed = extractRyzerNumericCampId(u);
+        if (parsed && !byRyzerUrl.has(parsed)) {
+          const arr = byRyzerUrl.get(parsed) || [];
+          arr.push(c);
+          byRyzerUrl.set(parsed, arr);
+        }
+      }
     }
 
     const stats: any = {
       seasonYear,
+      totalCampsIndexed: camps.length,
+      indexedByRyzerIdField: byRyzerId.size,
+      indexedByUrlFallback: byRyzerUrl.size,
       pagesFetched: 0,
       eventsSeen: 0,
       eventsWithNumericId: 0,
@@ -175,6 +195,7 @@ Deno.serve(async (req) => {
       logoUpdated: 0,
       hostNameUpdated: 0,
       campNameUpdated: 0,
+      ryzerIdBackfilled: 0,
       skippedNoMatch: 0,
       dryRun,
       elapsedMs: 0,
@@ -219,7 +240,19 @@ Deno.serve(async (req) => {
         if (!numericId) continue;
         stats.eventsWithNumericId += 1;
 
-        const matches = byRyzerId.get(numericId) || [];
+        // Match: prefer explicit ryzer_camp_id field, fall back to URL parse
+        const matchedById  = byRyzerId.get(numericId)  || [];
+        const matchedByUrl = byRyzerUrl.get(numericId) || [];
+
+        // Merge, dedupe by camp row id
+        const seenIds = new Set<string>();
+        const matches: any[] = [];
+        for (const c of [...matchedById, ...matchedByUrl]) {
+          const cid = safeString(c?.id);
+          if (cid && !seenIds.has(cid)) { seenIds.add(cid); matches.push(c); }
+        }
+        const matchedViaUrlFallback = matchedById.length === 0 && matches.length > 0;
+
         if (!matches.length) {
           stats.skippedNoMatch += 1;
           continue;
@@ -256,6 +289,11 @@ Deno.serve(async (req) => {
             if (!existingName) patch.camp_name = name;
           }
 
+          // Backfill ryzer_camp_id when matched via URL fallback (idempotent enrichment)
+          if (matchedViaUrlFallback && !safeString(camp?.ryzer_camp_id)) {
+            patch.ryzer_camp_id = numericId;
+          }
+
           if (Object.keys(patch).length === 0) continue;
 
           stats.matchedCampRows += 1;
@@ -269,10 +307,12 @@ Deno.serve(async (req) => {
           if (patch.school_logo_url) stats.logoUpdated += 1;
           if (patch.host_name) stats.hostNameUpdated += 1;
           if (patch.camp_name) stats.campNameUpdated += 1;
+          if (patch.ryzer_camp_id) stats.ryzerIdBackfilled = (stats.ryzerIdBackfilled || 0) + 1;
 
           if (debug.sampleUpdates.length < 10) {
             debug.sampleUpdates.push({
               ryzer_camp_id: numericId,
+              matchedVia: matchedViaUrlFallback ? "url_fallback" : "ryzer_camp_id_field",
               campRowId,
               patch,
               organizer,
