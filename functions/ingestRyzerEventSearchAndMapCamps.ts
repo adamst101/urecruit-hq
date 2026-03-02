@@ -137,14 +137,15 @@ Deno.serve(async (req) => {
     const ryzerAuth = safeString(body?.ryzerAuth);
     const search = body?.search || null;
 
-    const maxPages = Math.max(1, Number(body?.maxPages ?? 25));
+    const maxPages = Math.max(1, Number(body?.maxPages ?? 50));  // 50 pages × 100/page = up to 5000 events
     const maxCampsToUpdate = Math.max(1, Number(body?.maxCampsToUpdate ?? 5000));
     const updateHostNameMode = String(body?.updateHostNameMode || "missing_only"); // missing_only | always
     const updateCampName = !!body?.updateCampName;
 
     if (!seasonYear) return Response.json({ ok: false, error: "seasonYear required" });
     if (!ryzerAuth) return Response.json({ ok: false, error: "ryzerAuth required" });
-    if (!search) return Response.json({ ok: false, error: "search body required" });
+    // search is optional — default fetches all activity types for the season date range
+    // Do NOT pass ActivityTypes to avoid filtering to the wrong sport category
 
     const base44 = createClientFromRequest(req);
     const Camp = base44?.entities?.Camp ?? base44?.entities?.Camps;
@@ -214,7 +215,16 @@ Deno.serve(async (req) => {
     for (let page = 0; page < maxPages; page++) {
       if (totalUpdatesAttempted >= maxCampsToUpdate) break;
 
-      const pageBody = { ...(search || {}), Page: page };
+      // Build search body: caller's search params + page cursor
+      // Default: all activity types, all genders, wide proximity — let Camp index filter by sport
+      const defaultSearch = {
+        startDate: `${seasonYear}-01-01`,
+        endDate:   `${seasonYear}-12-31`,
+        Proximity: "10000",
+        RecordsPerPage: 100,
+        SoldOut: 0,
+      };
+      const pageBody = { ...defaultSearch, ...(search || {}), Page: page };
       const { status, decodedData, json } = await ryzerEventSearch(ryzerAuth, pageBody);
 
       stats.pagesFetched += 1;
