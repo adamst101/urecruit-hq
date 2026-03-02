@@ -48,7 +48,6 @@ function looksLikeHttpUrl(url: any) {
 function normalizeUrl(u: string | null): string | null {
   const s = safeString(u);
   if (!s) return null;
-  // strip common tracking fragments
   return s.replace(/#.*$/, "").trim();
 }
 
@@ -57,6 +56,7 @@ function isLikelyImageUrl(u: string) {
   if (!s) return false;
   if (s.includes("favicon") || s.endsWith(".ico")) return false;
   if (s.includes("apple-touch-icon")) return false;
+
   if (
     s.includes(".png") ||
     s.includes(".jpg") ||
@@ -64,7 +64,8 @@ function isLikelyImageUrl(u: string) {
     s.includes(".webp") ||
     s.includes(".gif") ||
     s.includes(".svg")
-  ) return true;
+  )
+    return true;
 
   // some CDNs are extensionless
   if (s.includes("cloudfront") || s.includes("amazonaws") || s.includes("cdn")) return true;
@@ -72,21 +73,17 @@ function isLikelyImageUrl(u: string) {
   return false;
 }
 
-// This is the key: reject obvious Ryzer brand/logo assets.
+// Reject obvious Ryzer brand/logo assets.
 function isRyzerBrandLogoCandidate(u: string) {
   const s = lc(u);
   if (!s) return true;
 
-  // very strong negative indicators
   if (s.includes("ryzer") && (s.includes("logo") || s.includes("brand") || s.includes("favicon") || s.includes("icon")))
     return true;
 
-  // common pattern: ryzer.com + logo assets
   if (s.includes("ryzer.com") && s.includes("ryzer")) return true;
 
-  // some pages might use "connect" assets for Ryzer branding
-  if (s.includes("ryzer") && s.includes("connect") && (s.includes("logo") || s.includes("brand")))
-    return true;
+  if (s.includes("ryzer") && s.includes("connect") && (s.includes("logo") || s.includes("brand"))) return true;
 
   return false;
 }
@@ -104,7 +101,6 @@ function absUrl(baseUrl: string, maybe: string) {
 }
 
 function extractMetaImage(html: string) {
-  // og:image or twitter:image
   const h = String(html || "");
   const patterns = [
     /<meta[^>]+property\s*=\s*["']og:image["'][^>]*>/i,
@@ -155,7 +151,6 @@ function extractImgCandidates(html: string) {
     if (t.includes("team")) score += 3;
     if (t.includes("athletic")) score += 3;
 
-    // reduce likely junk
     if (t.includes("sprite") || t.includes("icon")) score -= 2;
 
     out.push({ url: raw, score });
@@ -169,10 +164,8 @@ function extractImgCandidates(html: string) {
     out.push({ url: mi[1], score: 1 });
   }
 
-  // sort by score desc
   out.sort((a, b) => (b.score || 0) - (a.score || 0));
 
-  // de-dupe by url
   const seen = new Set<string>();
   const deduped: { url: string; score: number }[] = [];
   for (const c of out) {
@@ -213,7 +206,6 @@ function shouldReplaceLogo(existing: string | null, nextLogo: string | null) {
   const nx = normalizeUrl(nextLogo);
   if (!nx) return false;
   if (!ex) return true;
-  // overwrite only if existing looks like Ryzer brand
   if (isRyzerBrandLogoCandidate(ex)) return true;
   return false;
 }
@@ -231,46 +223,38 @@ async function fetchHtml(url: string) {
   return { status, html };
 }
 
+// ✅ FIXED: build school logo index using School.filter (Base44-safe)
 async function buildSchoolLogoIndex(School: any, maxSchools: number) {
   const idx = new Map<string, string[]>(); // logoUrl -> [schoolId...]
-  let cursor: string | null = null;
   let scanned = 0;
 
-  while (scanned < maxSchools) {
-    const limit = Math.min(250, maxSchools - scanned);
-    const params: any = { limit };
-    if (cursor) params.cursor = cursor;
+  // Pull a deterministic set of schools. Increase maxSchools if needed.
+  const limit = Math.max(200, Math.min(5000, Number(maxSchools) || 2500));
+  const rows = asArray<any>(await School.filter({}, "school_name", limit));
 
-    const resp = await School.list(params);
-    const rows = asArray<any>(resp?.data || resp?.items || resp?.records || resp);
-    const next = resp?.next_cursor ?? resp?.nextCursor ?? null;
+  for (const s of rows) {
+    scanned += 1;
+    const sid = safeString(s?.id);
+    if (!sid) continue;
 
-    for (const s of rows) {
-      scanned += 1;
-      const sid = safeString(s?.id);
-      if (!sid) continue;
+    const logos = [
+      s?.athletics_logo_url,
+      s?.team_logo_url,
+      s?.school_logo_url,
+      s?.logo_url,
+      s?.primary_logo_url,
+      s?.logo,
+    ];
 
-      const logos = [
-        s?.athletics_logo_url,
-        s?.team_logo_url,
-        s?.school_logo_url,
-        s?.logo_url,
-        s?.primary_logo_url,
-        s?.logo,
-      ];
+    for (const l of logos) {
+      const u = normalizeUrl(safeString(l));
+      if (!u) continue;
+      if (isRyzerBrandLogoCandidate(u)) continue;
 
-      for (const l of logos) {
-        const u = normalizeUrl(safeString(l));
-        if (!u) continue;
-        if (isRyzerBrandLogoCandidate(u)) continue;
-        const arr = idx.get(u) || [];
-        arr.push(sid);
-        idx.set(u, arr);
-      }
+      const arr = idx.get(u) || [];
+      arr.push(sid);
+      idx.set(u, arr);
     }
-
-    cursor = next;
-    if (!cursor || rows.length === 0) break;
   }
 
   return { idx, scanned };
@@ -302,7 +286,9 @@ Deno.serve(async (req) => {
     if (!Camp || typeof Camp.filter !== "function") {
       return Response.json({ ok: false, error: "Camp entity not available" });
     }
-    if (!School || typeof School.list !== "function") {
+
+    // ✅ FIXED: validate School.filter not School.list
+    if (!School || typeof School.filter !== "function") {
       return Response.json({ ok: false, error: "School entity not available" });
     }
 
@@ -329,6 +315,9 @@ Deno.serve(async (req) => {
     const { idx: schoolLogoIdx, scanned: schoolIndexScanned } = await buildSchoolLogoIndex(School, maxSchools);
     debug.schoolIndexScanned = schoolIndexScanned;
 
+    // ✅ Perf: cache duplicate regUrl fetches (your sample shows repeats)
+    const regCache = new Map<string, { status: number; extractedLogo: string | null }>();
+
     const camps = asArray<any>(await Camp.filter({ season_year: seasonYear }, "-start_date", maxCamps));
     stats.scannedCamps = camps.length;
 
@@ -351,19 +340,32 @@ Deno.serve(async (req) => {
 
       stats.eligibleCamps += 1;
 
-      const regUrl = safeString(c?.source_url) || safeString(c?.link_url) || safeString(c?.url);
+      const regUrl =
+        safeString(c?.source_url) || safeString(c?.link_url) || safeString(c?.url);
       if (!regUrl || !looksLikeHttpUrl(regUrl)) {
         stats.skipped += 1;
         continue;
       }
 
-      await sleep(throttleMs);
+      // Throttle only when we need to actually fetch (cache hits skip wait)
+      let cached = regCache.get(regUrl) || null;
 
       try {
-        const { status, html } = await fetchHtml(regUrl);
-        stats.fetchedPages += 1;
+        let httpStatus = 0;
+        let extractedLogo: string | null = null;
 
-        const extractedLogo = pickBestNonRyzerLogo(html, regUrl);
+        if (cached) {
+          httpStatus = cached.status;
+          extractedLogo = cached.extractedLogo;
+        } else {
+          await sleep(throttleMs);
+          const { status, html } = await fetchHtml(regUrl);
+          stats.fetchedPages += 1;
+          httpStatus = status;
+          extractedLogo = pickBestNonRyzerLogo(html, regUrl);
+          regCache.set(regUrl, { status, extractedLogo });
+        }
+
         if (extractedLogo) stats.logoFound += 1;
 
         let nextLogoToWrite: string | null = null;
@@ -371,7 +373,7 @@ Deno.serve(async (req) => {
           nextLogoToWrite = extractedLogo;
         }
 
-        // decide school mapping
+        // Decide school mapping
         let nextSchoolIdToWrite: string | null = null;
         if (!currentSchoolId) {
           const key = normalizeUrl(nextLogoToWrite || extractedLogo || currentLogo);
@@ -406,7 +408,7 @@ Deno.serve(async (req) => {
         if (debug.sample.length < 10) {
           debug.sample.push({
             campId,
-            http: status,
+            http: httpStatus,
             regUrl,
             currentLogo,
             extractedLogo,
@@ -420,6 +422,7 @@ Deno.serve(async (req) => {
         if (debug.sample.length < 10) {
           debug.sample.push({
             campId,
+            regUrl,
             error: String(e?.message || e),
           });
         }
