@@ -15,7 +15,7 @@
 //   "seasonYear": 2026,
 //   "ryzerAuth": "<JWT from browser>",
 //   "search": { ...same body you captured... },
-//   "maxPages": 5,
+//   "maxPages": 1,
 //   "allowRemapSchoolId": false,
 //   "enableNameMatch": false,
 //   "maxSchoolSportSites": 12000,
@@ -77,7 +77,6 @@ function extractRyzerCampId(url: string | null): string | null {
     const trimmed = id.trim();
     return trimmed ? trimmed : null;
   } catch {
-    // sometimes url isn't parseable; try regex
     const m = s.match(/[?&]id=(\d+)/i);
     return m?.[1] ? String(m[1]) : null;
   }
@@ -120,7 +119,6 @@ async function buildSchoolDomainIndex(SchoolSportSite: any, maxSites: number) {
 }
 
 async function buildSchoolNameIndex(School: any, maxSchools: number) {
-  // normalized school_name -> [schoolId]
   const idx = new Map<string, string[]>();
   const limit = Math.max(200, Math.min(10000, Number(maxSchools) || 5000));
   const rows = asArray<any>(await School.filter({}, "school_name", limit));
@@ -172,35 +170,63 @@ async function ryzerEventSearch(ryzerAuth: string, searchBody: any) {
   return { status, text, json };
 }
 
-// Attempt to find the array of events in any plausible response shape.
-function extractEvents(payload: any): any[] {
-  if (!payload) return [];
-  if (Array.isArray(payload)) return payload;
+// ---- NEW: recursive event discovery ----
+function looksLikeEventObject(o: any): boolean {
+  if (!o || typeof o !== "object") return false;
+  const keys = Object.keys(o);
+  if (!keys.length) return false;
 
-  const candidates = [
-    payload?.data,
-    payload?.Data,
-    payload?.results,
-    payload?.Results,
-    payload?.events,
-    payload?.Events,
-    payload?.items,
-    payload?.Items,
+  // Heuristics: any one of these fields often exists on event objects
+  const keyset = new Set(keys.map((k) => k.toLowerCase()));
+  const hints = [
+    "eventid",
+    "id",
+    "registrationurl",
+    "registerurl",
+    "url",
+    "eventurl",
+    "accountname",
+    "organizationname",
+    "locationdisplay",
+    "distance",
+    "logo",
+    "logourl",
   ];
 
-  for (const c of candidates) {
-    if (Array.isArray(c)) return c;
-    if (c && Array.isArray(c?.items)) return c.items;
-    if (c && Array.isArray(c?.results)) return c.results;
+  let hits = 0;
+  for (const h of hints) if (keyset.has(h)) hits += 1;
+  return hits >= 2; // require multiple hints to reduce false positives
+}
+
+function findEventArrayDeep(root: any, maxDepth = 6): any[] {
+  const seen = new Set<any>();
+
+  function walk(node: any, depth: number): any[] {
+    if (!node || depth > maxDepth) return [];
+    if (typeof node !== "object") return [];
+    if (seen.has(node)) return [];
+    seen.add(node);
+
+    if (Array.isArray(node)) {
+      // array of objects that looks like events
+      if (node.length && typeof node[0] === "object" && looksLikeEventObject(node[0])) return node;
+      // else, search elements
+      for (const it of node) {
+        const found = walk(it, depth + 1);
+        if (found.length) return found;
+      }
+      return [];
+    }
+
+    for (const k of Object.keys(node)) {
+      const v = node[k];
+      const found = walk(v, depth + 1);
+      if (found.length) return found;
+    }
+    return [];
   }
 
-  // Last resort: scan first-level keys for an array of objects that "looks" like events
-  for (const k of Object.keys(payload || {})) {
-    const v = payload?.[k];
-    if (Array.isArray(v) && v.length && typeof v[0] === "object") return v;
-  }
-
-  return [];
+  return walk(root, 0);
 }
 
 function pickEventField(evt: any, keys: string[]): string | null {
@@ -223,7 +249,7 @@ Deno.serve(async (req) => {
     const ryzerAuth = safeString(body?.ryzerAuth);
     const search = body?.search || null;
 
-    const maxPages = Math.max(1, Number(body?.maxPages ?? 5));
+    const maxPages = Math.max(1, Number(body?.maxPages ?? 1));
     const allowRemapSchoolId = !!body?.allowRemapSchoolId;
     const enableNameMatch = !!body?.enableNameMatch;
 
@@ -265,6 +291,9 @@ Deno.serve(async (req) => {
       sampleEvents: [],
       sampleUpdates: [],
       notes: [],
+      ryzerTopKeys: [],
+      ryzerJsonType: null,
+      ryzerSnippet: "",
     };
 
     const { idx: domainIdx, scanned: domainScanned } = await buildSchoolDomainIndex(SchoolSportSite, maxSchoolSportSites);
@@ -277,7 +306,7 @@ Deno.serve(async (req) => {
       debug.notes.push(`schoolNameIndexScanned=${r.scanned}`);
     }
 
-    // Preload camps for this season by ryzer id to avoid N calls.
+    // Preload camps for this season
     const camps = seasonYear
       ? asArray<any>(await Camp.filter({ season_year: seasonYear }, "-start_date", 5000))
       : asArray<any>(await Camp.filter({}, "-start_date", 5000));
@@ -286,44 +315,49 @@ Deno.serve(async (req) => {
     const byUrl = new Map<string, any[]>();
 
     for (const c of camps) {
-      const campId = safeString(c?.id);
-      if (!campId) continue;
-
       const regUrl = safeString(c?.source_url) || safeString(c?.link_url) || safeString(c?.url);
       const nurl = normalizeUrl(regUrl);
-      if (nurl) {
-        const arr = byUrl.get(nurl) || [];
-        arr.push(c);
-        byUrl.set(nurl, arr);
+      if (!nurl) continue;
 
-        const rid = extractRyzerCampId(nurl);
-        if (rid) {
-          const arr2 = byRyzerId.get(rid) || [];
-          arr2.push(c);
-          byRyzerId.set(rid, arr2);
-        }
+      const arr = byUrl.get(nurl) || [];
+      arr.push(c);
+      byUrl.set(nurl, arr);
+
+      const rid = extractRyzerCampId(nurl);
+      if (rid) {
+        const arr2 = byRyzerId.get(rid) || [];
+        arr2.push(c);
+        byRyzerId.set(rid, arr2);
       }
     }
 
     for (let page = 0; page < maxPages; page++) {
       const pageBody = { ...(search || {}), Page: page };
-      const { status, json, text } = await ryzerEventSearch(ryzerAuth, pageBody);
 
+      const { status, json, text } = await ryzerEventSearch(ryzerAuth, pageBody);
       stats.pagesFetched += 1;
+
+      // Always expose debug for the first page
+      if (page === 0) {
+        debug.ryzerSnippet = String(text || "").slice(0, 800);
+        debug.ryzerJsonType = Array.isArray(json) ? "array" : typeof json;
+        debug.ryzerTopKeys = json && typeof json === "object" && !Array.isArray(json) ? Object.keys(json) : [];
+      }
 
       if (status !== 200 || !json) {
         debug.notes.push(`page=${page} status=${status} non-json or error`);
-        debug.notes.push(`page=${page} bodySnippet=${String(text || "").slice(0, 200)}`);
         break;
       }
 
-      const events = extractEvents(json);
+      // ✅ NEW: deep search for event array
+      const events = findEventArrayDeep(json, 7);
       stats.eventsSeen += events.length;
 
-      if (debug.sampleEvents.length < 5) {
+      if (debug.sampleEvents.length < 1) {
         debug.sampleEvents.push({
           page,
           status,
+          eventsFound: events.length,
           exampleKeys: Object.keys(events?.[0] || {}),
           example: events?.[0] || null,
         });
@@ -367,22 +401,15 @@ Deno.serve(async (req) => {
           return null;
         })();
 
+        // Match camps
         let matchedCamps: any[] = [];
-
-        if (evtId) {
-          const arr = byRyzerId.get(String(evtId)) || [];
-          matchedCamps = matchedCamps.concat(arr);
-        }
-
-        if (!matchedCamps.length && regUrl) {
-          const arr = byUrl.get(normalizeUrl(regUrl) || "") || [];
-          matchedCamps = matchedCamps.concat(arr);
-        }
+        if (evtId) matchedCamps = matchedCamps.concat(byRyzerId.get(String(evtId)) || []);
+        if (!matchedCamps.length && regUrl) matchedCamps = matchedCamps.concat(byUrl.get(normalizeUrl(regUrl) || "") || []);
 
         if (!matchedCamps.length) continue;
-
         stats.campsMatched += matchedCamps.length;
 
+        // Map school
         let mappedSchoolId: string | null = null;
         let schoolMatchCount = 0;
 
@@ -411,17 +438,13 @@ Deno.serve(async (req) => {
           if (location) patch.host_location = location;
 
           const currentSchoolId = safeString(camp?.school_id);
-          if (mappedSchoolId && (!currentSchoolId || allowRemapSchoolId)) {
-            patch.school_id = mappedSchoolId;
-          }
+          if (mappedSchoolId && (!currentSchoolId || allowRemapSchoolId)) patch.school_id = mappedSchoolId;
 
           if (Object.keys(patch).length) {
             stats.campsUpdatedHost += 1;
             if (patch.school_id) stats.schoolIdSet += 1;
 
-            if (!dryRun) {
-              await Camp.update(campRowId, patch);
-            }
+            if (!dryRun) await Camp.update(campRowId, patch);
 
             if (debug.sampleUpdates.length < 10) {
               debug.sampleUpdates.push({
