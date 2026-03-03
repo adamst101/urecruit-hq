@@ -73,21 +73,30 @@ async function fetchHtmlWithRetry(url: string, tries = 3): Promise<{ ok: boolean
 function normForMatch(x: string): string {
   return x.toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\b(university|college|institute|school|academy|of|the|and|at|a|an)\b/g, " ")
+    .replace(/\b(university|college|institute|school|academy|of|the|and|at|a|an|for|in|state)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function titleMatchScore(schoolName: string, wikiTitle: string): number {
+  // Hard reject list/disambiguation pages immediately
+  if (/^list of /i.test(wikiTitle)) return 0;
+  if (/\(disambiguation\)/i.test(wikiTitle)) return 0;
+
   const sn = normForMatch(schoolName);
   const wt = normForMatch(wikiTitle);
+
+  if (!sn || !wt) return 0;
   if (sn === wt) return 100;
   if (wt.includes(sn) || sn.includes(wt)) return 80;
+
   const snWords = new Set(sn.split(" ").filter((w: string) => w.length > 2));
   const wtWords = wt.split(" ").filter((w: string) => w.length > 2);
   if (snWords.size === 0) return 0;
   const overlap = wtWords.filter((w: string) => snWords.has(w)).length;
-  return Math.round((overlap / snWords.size) * 60);
+  // Use max of both denominators — penalize when wiki title has many unrelated words
+  const denominator = Math.max(snWords.size, wtWords.length);
+  return Math.round((overlap / denominator) * 80);
 }
 
 async function getWikipediaUrl(schoolName: string): Promise<string | null> {
