@@ -412,6 +412,24 @@ Deno.serve(async (req) => {
             logoSource = "school_entity";
             stats.logoFoundViaSchool += 1;
             if (!stats.logoFound) stats.logoFound += 1;
+          } else if (sample.length < 12) {
+            // Debug: capture what the School row actually has so we can diagnose
+            try {
+              const schools = await School.filter({ id: schoolId });
+              const s = Array.isArray(schools) ? schools[0] : schools;
+              if (s) {
+                (stats._schoolDebugSample = stats._schoolDebugSample || []).push({
+                  campId,
+                  schoolId,
+                  school_name: s?.name ?? s?.school_name ?? null,
+                  athletic_logo_url: s?.athletic_logo_url ?? "(missing)",
+                  athletics_logo_url: s?.athletics_logo_url ?? "(missing)",
+                  logo_url: s?.logo_url ?? "(missing)",
+                  school_logo_url: s?.school_logo_url ?? "(missing)",
+                  allKeys: Object.keys(s).filter(k => k.toLowerCase().includes("logo")).slice(0, 10),
+                });
+              }
+            } catch { /* ignore debug errors */ }
           }
         }
       }
