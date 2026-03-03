@@ -352,7 +352,13 @@ Deno.serve(async (req) => {
     }
     debug.schemaProbe = schemaProbe;
 
-    const allRows: any[] = await School.filter({}, "school_name", pageLimit);
+    // Filter at query level to only athletics schools (have division or conference)
+    // This avoids paginating through thousands of trade/vocational schools
+    const allRows: any[] = await School.filter(
+      { division__exists: true },
+      "school_name",
+      pageLimit
+    );
     const rows = (allRows || []).slice(startAt, startAt + maxRows);
     const nextOffset = startAt + rows.length;
     const next_cursor = rows.length === maxRows ? String(nextOffset) : null;
@@ -373,8 +379,12 @@ Deno.serve(async (req) => {
 
       if (!schoolId || !schoolName) { stats.skippedMissing++; continue; }
 
-      // Skip private organizer entities (no unitid = not a real NCAA school)
-      if (!row?.unitid) { stats.skippedMissing++; continue; }
+      // Skip non-athletics schools — must have division or conference populated
+      // (scorecard import includes trade schools, beauty academies, etc. that have unitid
+      // but are not NCAA/NAIA members and won't have Wikidata athletics entries)
+      const hasDivision  = !!(row?.division  || row?.subdivision);
+      const hasConference = !!row?.conference;
+      if (!hasDivision && !hasConference) { stats.skippedMissing++; continue; }
 
       if (onlyMissing && existing && !force) {
         stats.skippedMissing++;
