@@ -334,13 +334,29 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "School entity not available" }, 500);
     }
 
-    const listParams: any = { limit: maxRows };
-    if (cursor) listParams.cursor = cursor;
+    // Base44 uses filter() not list() — paginate via startAt offset
+    const startAt = cursor ? Number(cursor) : 0;
+    const pageLimit = startAt + maxRows;
 
-    const resp = await School.list(listParams);
-    const rows = extractRows(resp);
-    const next_cursor = extractCursor(resp);
-    const done = !next_cursor || rows.length === 0;
+    // Schema probe: confirm entity is reachable and check field names
+    let schemaProbe: any = null;
+    try {
+      const probeRows: any[] = await School.filter({}, "school_name", 3);
+      schemaProbe = {
+        rowCount: probeRows?.length ?? 0,
+        firstRowKeys: probeRows?.[0] ? Object.keys(probeRows[0]).slice(0, 20) : [],
+        sample: probeRows?.[0] ?? null,
+      };
+    } catch (e: any) {
+      schemaProbe = { error: String(e?.message || e) };
+    }
+    debug.schemaProbe = schemaProbe;
+
+    const allRows: any[] = await School.filter({}, "school_name", pageLimit);
+    const rows = (allRows || []).slice(startAt, startAt + maxRows);
+    const nextOffset = startAt + rows.length;
+    const next_cursor = rows.length === maxRows ? String(nextOffset) : null;
+    const done = rows.length < maxRows;
 
     stats.scanned = rows.length;
 
