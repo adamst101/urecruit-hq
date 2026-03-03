@@ -309,6 +309,14 @@ Deno.serve(async (req) => {
     // Cache by URL so multiple Camp rows pointing to same branded page don't re-fetch
     const urlCache = new Map<string, { status: number; html: string; finalUrl: string }>();
 
+    // Schema probe: show URL fields on first 5 rows regardless of eligibility
+    const schemaSample = slice.slice(0, 5).map((r: any) => ({
+      id:          r?.id,
+      branded_url: r?.branded_url ?? "(missing)",
+      source_url:  r?.source_url  ?? "(missing)",
+      link_url:    r?.link_url    ?? "(missing)",
+    }));
+
     for (const r of slice) {
       const campId = safeString(r?.id);
       if (!campId) continue;
@@ -395,6 +403,7 @@ Deno.serve(async (req) => {
     return Response.json({
       ok: true,
       stats,
+      schemaSample,
       sample,
       errorSamples,
       nextStep: stats.done
