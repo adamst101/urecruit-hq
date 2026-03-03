@@ -102,18 +102,22 @@ async function getWikipediaUrl(schoolName: string): Promise<string | null> {
 // ─── Athletics affiliation extraction ────────────────────────────────────────
 
 const DIVISION_PATTERNS: Array<{ pattern: RegExp; division: string }> = [
-  { pattern: /NCAA\s+Division\s+I(?:\s*[-\u2013]\s*FBS)?/i, division: "NCAA Division I FBS" },
-  { pattern: /NCAA\s+Division\s+I(?:\s*[-\u2013]\s*FCS)?/i, division: "NCAA Division I FCS" },
-  { pattern: /NCAA\s+Division\s+I\b/i,                       division: "NCAA Division I" },
-  { pattern: /NCAA\s+Division\s+II\b/i,                      division: "NCAA Division II" },
-  { pattern: /NCAA\s+Division\s+III\b/i,                     division: "NCAA Division III" },
-  { pattern: /\bNAIA\b/i,                                     division: "NAIA" },
-  { pattern: /\bNJCAA\b/i,                                    division: "NJCAA" },
-  { pattern: /\bCCCAA\b/i,                                    division: "CCCAA" },
-  { pattern: /\bNWAC\b/i,                                     division: "NWAC" },
-  { pattern: /\bUSAA\b.*athletics/i,                          division: "USAA" },
-  { pattern: /junior\s+college/i,                             division: "Junior College" },
-  { pattern: /community\s+college.*athletics/i,               division: "Community College" },
+  // Check most-specific first — D3/D2/FBS/FCS before the generic D1 catch-all.
+  // FBS and FCS require the explicit suffix — never infer from plain "Division I".
+  { pattern: /NCAA\s+Division\s+III\b/i,                            division: "NCAA Division III" },
+  { pattern: /NCAA\s+Division\s+II\b/i,                             division: "NCAA Division II" },
+  { pattern: /NCAA\s+Division\s+I[-\u2013]FBS/i,                   division: "NCAA Division I FBS" },
+  { pattern: /NCAA\s+Division\s+I[-\u2013]FCS/i,                   division: "NCAA Division I FCS" },
+  { pattern: /Football\s+Bowl\s+Subdivision/i,                       division: "NCAA Division I FBS" },
+  { pattern: /Football\s+Championship\s+Subdivision/i,              division: "NCAA Division I FCS" },
+  { pattern: /NCAA\s+Division\s+I\b/i,                              division: "NCAA Division I" },
+  { pattern: /\bNAIA\b/i,                                            division: "NAIA" },
+  { pattern: /\bNJCAA\b/i,                                           division: "NJCAA" },
+  { pattern: /\bCCCAA\b/i,                                           division: "CCCAA" },
+  { pattern: /\bNWAC\b/i,                                            division: "NWAC" },
+  { pattern: /\bUSAA\b.*athletics/i,                                 division: "USAA" },
+  { pattern: /junior\s+college/i,                                    division: "Junior College" },
+  { pattern: /community\s+college.*athletics/i,                      division: "Community College" },
 ];
 
 const KNOWN_CONFERENCES = [
@@ -177,10 +181,23 @@ function extractAthleticsFromHtml(html: string, wikipediaUrl: string): Athletics
     }
   }
 
+  // Extract text near sporting affiliations and conference labels.
+  // Short abbreviations (CAA, MAC etc) must appear in this narrowed context —
+  // prevents matching "CAA" appearing elsewhere in unrelated infobox rows.
   const sportingSection = stripped.match(/[Ss]porting\s+affiliations?(.*?)(?:[A-Z][a-z]+\s+affiliations?|$)/s);
-  const sectionText     = sportingSection ? sportingSection[1] : stripped;
+  const confSection     = stripped.match(/[Cc]onference[s]?\s{0,10}([A-Z][\s\S]*?)(?:\s{3,}|$)/);
+  const sectionText     = [
+    sportingSection ? sportingSection[1] : "",
+    confSection     ? confSection[1]     : "",
+  ].join(" ");
+
   for (const conf of KNOWN_CONFERENCES) {
-    if (sectionText.includes(conf) || new RegExp(`\\b${conf}\\b`, "i").test(stripped)) {
+    // Short all-caps abbreviations (CAA, MAC, WAC etc) → only match in context window
+    // Long or multi-word names → match anywhere in infobox
+    const isShortAbbr = /^[A-Z0-9-]{2,5}$/.test(conf);
+    const searchText  = isShortAbbr ? sectionText : stripped;
+    const escaped     = conf.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`\\b${escaped}\\b`, "i").test(searchText)) {
       result.conference = conf;
       result.matchedPatterns.push(`conference:${conf}`);
       break;
@@ -191,8 +208,16 @@ function extractAthleticsFromHtml(html: string, wikipediaUrl: string): Athletics
     stripped.match(/[Nn]ickname[s]?\s+([A-Z][A-Za-z\s]+?)(?:\s{2,}|[A-Z][a-z]+\s+[A-Z]|$)/) ??
     stripped.match(/[Aa]thletics?\s+nickname[s]?\s+([A-Z][A-Za-z\s]+?)(?:\s{2,}|$)/);
   if (nicknameMatch) {
-    const raw = nicknameMatch[1].trim();
-    if (raw.length < 40 && raw.split(" ").length <= 4) {
+    let raw = nicknameMatch[1].trim();
+    // Strip trailing infobox noise: "Eagles Sporting affiliations NCAA" → "Eagles"
+    raw = raw.replace(/\s+sporting\b.*/i, "").trim();
+    raw = raw.replace(/\s+affiliations?\b.*/i, "").trim();
+    raw = raw.replace(/\s+ncaa\b.*/i, "").trim();
+    raw = raw.replace(/\s+naia\b.*/i, "").trim();
+    raw = raw.replace(/\s+conference\b.*/i, "").trim();
+    raw = raw.replace(/\s+division\b.*/i, "").trim();
+    // Accept only clean 1-3 word nicknames (e.g. "Wildcats", "Fighting Illini")
+    if (raw.length >= 2 && raw.length < 30 && raw.split(" ").length <= 3) {
       result.nickname = raw;
       result.matchedPatterns.push(`nickname:${raw}`);
     }
