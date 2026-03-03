@@ -124,10 +124,10 @@ async function getWikipediaUrl(schoolName: string): Promise<string | null> {
     if (bestScore < 50 || !bestResult) return null;
 
     const title = String(bestResult.title || "").trim();
-    // Reject list pages and disambiguation pages — they produce false positives
+    if (!title) return null;
+    // Double-check rejections (also handled in scorer but belt+suspenders)
     if (/^list of /i.test(title)) return null;
     if (/\(disambiguation\)/i.test(title)) return null;
-    if (!title) return null;
 
     return `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
   } catch {
