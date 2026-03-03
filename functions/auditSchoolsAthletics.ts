@@ -195,9 +195,28 @@ function extractAthleticsFromHtml(html: string, wikipediaUrl: string): Athletics
   const full     = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
   // ── Division detection ────────────────────────────────────────────────────
-  // Check infobox first (high confidence), then full page (medium)
+  // Athletics-context anchors — a division match is only valid if it appears
+  // within 300 chars of one of these phrases. Prevents "junior college" from
+  // matching the "Secondary education" section of a completely unrelated article.
+  const ATHLETICS_ANCHORS = /sporting affiliation|athletic program|member of the|conference member|ncaa|naia|njcaa|cccaa|nwac/i;
+
+  // Helper: does the pattern match within an athletics-anchored window?
+  function matchedNearAthletics(text: string, pattern: RegExp): boolean {
+    // Find all positions of the division pattern
+    const re = new RegExp(pattern.source, "gi");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const start = Math.max(0, m.index - 300);
+      const end   = Math.min(text.length, m.index + m[0].length + 300);
+      const window = text.slice(start, end);
+      if (ATHLETICS_ANCHORS.test(window)) return true;
+    }
+    return false;
+  }
+
+  // Check infobox first (high confidence)
   for (const { pattern, division } of DIVISION_PATTERNS) {
-    if (pattern.test(stripped)) {
+    if (matchedNearAthletics(stripped, pattern)) {
       result.division        = division;
       result.hasAthletics    = true;
       result.confidence      = "high";
@@ -206,14 +225,9 @@ function extractAthleticsFromHtml(html: string, wikipediaUrl: string): Athletics
     }
   }
   if (!result.division) {
-    // Tighter fallback: only accept full-page match if it appears near athletics keywords.
-    // Prevents "Junior College" from matching a passing mention on unrelated pages.
-    const athleticsContext = full.match(
-      /.{0,200}(sporting affiliation|athletic|NCAA|NAIA|NJCAA|conference member).{0,200}/gi
-    ) || [];
-    const contextText = athleticsContext.join(" ");
+    // Fallback: full page, but still require athletics context window
     for (const { pattern, division } of DIVISION_PATTERNS) {
-      if (contextText.length > 0 && pattern.test(contextText)) {
+      if (matchedNearAthletics(full, pattern)) {
         result.division     = division;
         result.hasAthletics = true;
         result.confidence   = "medium";
