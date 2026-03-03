@@ -1,13 +1,15 @@
 // functions/enrichLogoFromBrandedPage.ts
 //
-// Extracts school logos from branded camp landing pages (source_url / link_url)
-// and writes Camp.school_logo_url.
+// Fills Camp.school_logo_url from the best available source, in priority order:
 //
-// WHY THIS EXISTS:
-// Ryzer camp registration pages (register.ryzer.com/camp.cfm?id=X) do not contain
-// school logos — they only show the generic Ryzer branding. The school logo lives on
-// the branded landing page (e.g. wonderboyfootballcamps.com/...) stored in
-// Camp.source_url or Camp.link_url. This function fetches those pages instead.
+//   1. Branded landing page  — Camp.branded_url / source_url / link_url (non-Ryzer)
+//      Fetches the school's actual website and extracts og:image or prominent img tags.
+//
+//   2. School entity fallback — Camp.school_id → School.athletic_logo_url / logo_url
+//      Used when all stored URLs are register.ryzer.com (direct Ryzer ingests have no
+//      branded page). Copies the school's logo directly — no HTTP fetch needed.
+//
+// Skips rows that already have a good logo (use force=true to re-evaluate all).
 //
 // LOGO ACCEPTANCE RULES (in priority order):
 //   1. og:image — if it's https and not a known bad/vendor URL
@@ -275,7 +277,8 @@ Deno.serve(async (req) => {
     if (!seasonYear) return Response.json({ ok: false, error: "seasonYear required" });
 
     const base44 = createClientFromRequest(req);
-    const Camp   = base44?.entities?.Camp ?? base44?.entities?.Camps;
+    const Camp   = base44?.entities?.Camp   ?? base44?.entities?.Camps;
+    const School = base44?.entities?.School ?? base44?.entities?.Schools;
     if (!Camp?.filter || !Camp?.update) {
       return Response.json({ ok: false, error: "Camp entity not available" });
     }
@@ -289,20 +292,24 @@ Deno.serve(async (req) => {
       seasonYear,
       startAt,
       nextStartAt,
-      scanned:          slice.length,
-      skippedNoUrl:     0,
-      skippedHasLogo:   0,
-      eligible:         0,
-      fetched:          0,
-      html200:          0,
-      logoFound:        0,
-      logoWouldWrite:   0,
-      logoWrote:        0,
-      errors:           0,
+      scanned:              slice.length,
+      skippedNoUrl:         0,
+      skippedHasLogo:       0,
+      eligible:             0,
+      fetched:              0,
+      html200:              0,
+      logoFound:            0,
+      logoFoundViaSchool:   0,  // sourced from School entity (no branded page fetch)
+      logoWouldWrite:       0,
+      logoWrote:            0,
+      errors:               0,
       dryRun,
-      elapsedMs:        0,
-      done:             slice.length < maxRows,
+      elapsedMs:            0,
+      done:                 slice.length < maxRows,
     };
+
+    // Cache school logo lookups — many Camp rows share the same school_id
+    const schoolLogoCache = new Map<string, string | null>();
 
     const sample:      any[] = [];
     const errorSamples: any[] = [];
@@ -332,10 +339,8 @@ Deno.serve(async (req) => {
         normalizeUrl(safeString(r?.link_url));
 
       const srcUrl = rawUrl && !rawUrl.includes("register.ryzer.com") ? rawUrl : null;
-      if (!srcUrl) {
-        stats.skippedNoUrl += 1;
-        continue;
-      }
+      // Don't skip when srcUrl is null — School entity fallback will handle it below
+      if (!srcUrl) stats.skippedNoUrl += 1;  // still count for observability, but don't skip
 
       const existingLogo = safeString(r?.school_logo_url);
       if (!force && onlyMissing && existingLogo && !isBadLogoUrl(existingLogo)) {
@@ -345,33 +350,73 @@ Deno.serve(async (req) => {
 
       stats.eligible += 1;
 
-      // Fetch (or use cache)
-      let cached = urlCache.get(srcUrl) ?? null;
-      let status = 0, html = "", finalUrl = srcUrl;
+      // ── Path A: fetch branded page ────────────────────────────────────────
+      let logo: string | null = null;
+      let logoSource = "none";
+      let fetchStatus = 0;
+      let fetchFinalUrl = srcUrl || "";
+      let fetchHtmlSnap = "";
 
-      if (cached) {
-        ({ status, html, finalUrl } = cached);
-      } else {
-        await sleep(sleepMs);
-        const res = await fetchHtmlWithRetry(srcUrl, maxRetries);
-        if (!res.ok) {
-          stats.errors += 1;
-          if (errorSamples.length < 5) errorSamples.push({ campId, srcUrl, error: res.error });
-          continue;
+      if (srcUrl) {
+        let cached = urlCache.get(srcUrl) ?? null;
+        let html = "", finalUrl = srcUrl;
+
+        if (cached) {
+          ({ status: fetchStatus, html, finalUrl } = cached);
+        } else {
+          await sleep(sleepMs);
+          const res = await fetchHtmlWithRetry(srcUrl, maxRetries);
+          if (!res.ok) {
+            stats.errors += 1;
+            if (errorSamples.length < 5) errorSamples.push({ campId, srcUrl, error: res.error });
+            continue;
+          }
+          stats.fetched += 1;
+          fetchStatus = res.status;
+          html = res.html;
+          finalUrl = res.finalUrl;
+          urlCache.set(srcUrl, { status: fetchStatus, html, finalUrl });
         }
-        stats.fetched += 1;
-        status = res.status;
-        html = res.html;
-        finalUrl = res.finalUrl;
-        urlCache.set(srcUrl, { status, html, finalUrl });
+
+        if (fetchStatus === 200) {
+          stats.html200 += 1;
+          logo = pickBestLogo(html, finalUrl);
+          if (logo) { logoSource = "branded_page"; stats.logoFound += 1; }
+        }
+        fetchFinalUrl = finalUrl;
+        fetchHtmlSnap = html;
       }
 
-      if (status === 200) stats.html200 += 1;
+      // ── Path B: School entity fallback ────────────────────────────────────
+      // Used when no branded URL exists (direct Ryzer ingests) or branded page had no logo.
+      if (!logo && School) {
+        const schoolId = safeString(r?.school_id);
+        if (schoolId) {
+          let schoolLogo: string | null | undefined = schoolLogoCache.get(schoolId);
+          if (schoolLogo === undefined) {
+            try {
+              const schools = await School.filter({ id: schoolId });
+              const s = Array.isArray(schools) ? schools[0] : schools;
+              // Priority: athletic_logo_url (Wikidata SVG) → logo_url (scorecard)
+              const candidates = [s?.athletic_logo_url, s?.athletics_logo_url, s?.logo_url, s?.school_logo_url];
+              schoolLogo = null;
+              for (const c of candidates) {
+                const u = safeString(c);
+                if (u && !isBadLogoUrl(u)) { schoolLogo = u; break; }
+              }
+            } catch { schoolLogo = null; }
+            schoolLogoCache.set(schoolId, schoolLogo ?? null);
+          }
+          if (schoolLogo) {
+            logo = schoolLogo;
+            logoSource = "school_entity";
+            stats.logoFoundViaSchool += 1;
+            if (!stats.logoFound) stats.logoFound += 1;
+          }
+        }
+      }
 
-      const logo = status === 200 ? pickBestLogo(html, finalUrl) : null;
-      if (logo) stats.logoFound += 1;
-
-      const shouldWrite = logo && (force || !existingLogo || isBadLogoUrl(existingLogo));
+      const shouldWrite = !!logo && (force || !existingLogo || isBadLogoUrl(existingLogo));
       if (shouldWrite) stats.logoWouldWrite += 1;
 
       if (shouldWrite && !dryRun) {
@@ -379,21 +424,21 @@ Deno.serve(async (req) => {
         if (res.ok) stats.logoWrote += 1;
         else {
           stats.errors += 1;
-          if (errorSamples.length < 5) errorSamples.push({ campId, srcUrl, error: res.error });
+          if (errorSamples.length < 5) errorSamples.push({ campId, srcUrl: srcUrl ?? "(none)", error: res.error });
         }
       }
 
       if (sample.length < 12) {
         const entry: any = {
           campId,
-          srcUrl,
-          finalUrl: finalUrl !== srcUrl ? finalUrl : undefined,
-          pageStatus: status,
+          srcUrl:       srcUrl ?? "(none — school fallback used)",
+          pageStatus:   fetchStatus || undefined,
+          logoSource,
           existingLogo,
           extractedLogo: logo,
-          willWrite: shouldWrite,
+          willWrite:    shouldWrite,
         };
-        if (debugHtml) entry.htmlDebug = buildDebugContext(html, finalUrl);
+        if (debugHtml && fetchHtmlSnap) entry.htmlDebug = buildDebugContext(fetchHtmlSnap, fetchFinalUrl);
         sample.push(entry);
       }
     }
