@@ -70,6 +70,7 @@ import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
+import SchoolAthleticsCleanup from './pages/SchoolAthleticsCleanup';
 import __Layout from './Layout.jsx';
 
 
@@ -97,6 +98,7 @@ export const PAGES = {
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
+    "SchoolAthleticsCleanup": SchoolAthleticsCleanup,
 }
 
 export const pagesConfig = {
