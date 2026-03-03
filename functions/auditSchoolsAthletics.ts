@@ -70,9 +70,29 @@ async function fetchHtmlWithRetry(url: string, tries = 3): Promise<{ ok: boolean
 
 // ─── Wikipedia lookup ─────────────────────────────────────────────────────────
 
+function normForMatch(x: string): string {
+  return x.toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(university|college|institute|school|academy|of|the|and|at|a|an)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function titleMatchScore(schoolName: string, wikiTitle: string): number {
+  const sn = normForMatch(schoolName);
+  const wt = normForMatch(wikiTitle);
+  if (sn === wt) return 100;
+  if (wt.includes(sn) || sn.includes(wt)) return 80;
+  const snWords = new Set(sn.split(" ").filter((w: string) => w.length > 2));
+  const wtWords = wt.split(" ").filter((w: string) => w.length > 2);
+  if (snWords.size === 0) return 0;
+  const overlap = wtWords.filter((w: string) => snWords.has(w)).length;
+  return Math.round((overlap / snWords.size) * 60);
+}
+
 async function getWikipediaUrl(schoolName: string): Promise<string | null> {
   const q = encodeURIComponent(schoolName);
-  const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${q}&srlimit=3&format=json&origin=*`;
+  const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${q}&srlimit=5&format=json&origin=*`;
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 10000);
@@ -82,15 +102,24 @@ async function getWikipediaUrl(schoolName: string): Promise<string | null> {
     const results = data?.query?.search;
     if (!Array.isArray(results) || results.length === 0) return null;
 
-    // Prefer exact or close match
-    const target = lc(schoolName);
-    const best =
-      results.find((r: any) => lc(r.title) === target) ??
-      results.find((r: any) => lc(r.title).includes(target) || target.includes(lc(r.title))) ??
-      results[0];
+    // Score each result — only accept if title meaningfully matches school name.
+    // This prevents "Manchester by the Sea (film)" matching "A Better U Beauty Academy".
+    let bestResult: any = null;
+    let bestScore = 0;
+    for (const result of results) {
+      const score = titleMatchScore(schoolName, result.title || "");
+      if (score > bestScore) { bestScore = score; bestResult = result; }
+    }
 
-    const title = safeStr(best?.title);
+    // Require minimum 50 score — reject garbage matches
+    if (bestScore < 50 || !bestResult) return null;
+
+    const title = String(bestResult.title || "").trim();
+    // Reject list pages and disambiguation pages — they produce false positives
+    if (/^list of /i.test(title)) return null;
+    if (/\(disambiguation\)/i.test(title)) return null;
     if (!title) return null;
+
     return `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
   } catch {
     return null;
@@ -148,6 +177,7 @@ function extractAthleticsFromHtml(html: string, wikipediaUrl: string): Athletics
   if (!html) return result;
 
   // ── Extract infobox section ───────────────────────────────────────────────
+  // Wikipedia infoboxes contain "Sporting affiliations" rows
   const infoboxMatch = html.match(/<table[^>]*infobox[^>]*>([\s\S]*?)<\/table>/i);
   const infoboxHtml  = infoboxMatch ? infoboxMatch[1] : html;
 
@@ -156,6 +186,7 @@ function extractAthleticsFromHtml(html: string, wikipediaUrl: string): Athletics
   const full     = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
   // ── Division detection ────────────────────────────────────────────────────
+  // Check infobox first (high confidence), then full page (medium)
   for (const { pattern, division } of DIVISION_PATTERNS) {
     if (pattern.test(stripped)) {
       result.division        = division;
@@ -166,18 +197,25 @@ function extractAthleticsFromHtml(html: string, wikipediaUrl: string): Athletics
     }
   }
   if (!result.division) {
+    // Tighter fallback: only accept full-page match if it appears near athletics keywords.
+    // Prevents "Junior College" from matching a passing mention on unrelated pages.
+    const athleticsContext = full.match(
+      /.{0,200}(sporting affiliation|athletic|NCAA|NAIA|NJCAA|conference member).{0,200}/gi
+    ) || [];
+    const contextText = athleticsContext.join(" ");
     for (const { pattern, division } of DIVISION_PATTERNS) {
-      if (pattern.test(full)) {
+      if (contextText.length > 0 && pattern.test(contextText)) {
         result.division     = division;
         result.hasAthletics = true;
         result.confidence   = "medium";
-        result.matchedPatterns.push(`fullpage:${division}`);
+        result.matchedPatterns.push(`context:${division}`);
         break;
       }
     }
   }
 
   // ── Conference detection ──────────────────────────────────────────────────
+  // Look for conference in infobox rows near "Sporting affiliations" or "Conference"
   const sportingSection = stripped.match(/[Ss]porting\s+affiliations?(.*?)(?:[A-Z][a-z]+\s+affiliations?|$)/s);
   const sectionText     = sportingSection ? sportingSection[1] : stripped;
 
@@ -190,11 +228,13 @@ function extractAthleticsFromHtml(html: string, wikipediaUrl: string): Athletics
   }
 
   // ── Nickname extraction ───────────────────────────────────────────────────
+  // Look for "Nickname: Wildcats" or "Athletics nickname: Wildcats" in infobox
   const nicknameMatch =
     stripped.match(/[Nn]ickname[s]?\s+([A-Z][A-Za-z\s]+?)(?:\s{2,}|[A-Z][a-z]+\s+[A-Z]|$)/) ??
     stripped.match(/[Aa]thletics?\s+nickname[s]?\s+([A-Z][A-Za-z\s]+?)(?:\s{2,}|$)/);
   if (nicknameMatch) {
     const raw = nicknameMatch[1].trim();
+    // Sanity: should be 1-4 words, title-case
     if (raw.length < 40 && raw.split(" ").length <= 4) {
       result.nickname = raw;
       result.matchedPatterns.push(`nickname:${raw}`);
@@ -231,32 +271,32 @@ Deno.serve(async (req) => {
     const stats: Record<string, any> = {
       mode, dryRun, startAt,
       scanned:          0,
-      alreadyConfirmed: 0,
+      alreadyConfirmed: 0,  // had division/conference → skipped
       wikipediaFetched: 0,
-      athleticsFound:   0,
-      noAthleticsFound: 0,
-      wikiNotFound:     0,
-      updated:          0,
-      deleted:          0,
+      athleticsFound:   0,  // Wikipedia confirmed athletics program
+      noAthleticsFound: 0,  // Wikipedia found but no athletics
+      wikiNotFound:     0,  // couldn't find Wikipedia page
+      updated:          0,  // wrote division/conference/nickname (update mode)
+      deleted:          0,  // deleted row (delete mode)
       errors:           0,
       nextStartAt:      0,
       done:             false,
       elapsedMs:        0,
     };
 
-    const confirmed:          any[] = [];
-    const athleticsFound:     any[] = [];
-    const flaggedForDeletion: any[] = [];
-    const wikiNotFound:       any[] = [];
+    const confirmed:         any[] = [];  // already had division — sample only
+    const athleticsFound:    any[] = [];  // Wikipedia confirmed — full list for update mode
+    const flaggedForDeletion: any[] = []; // no athletics found — full list for delete mode
+    const wikiNotFound:      any[] = [];  // couldn't resolve Wikipedia
 
     // ── Load slice ────────────────────────────────────────────────────────────
     const pageLimit = startAt + maxRows;
     const allRows   = await School.filter({}, "school_name", pageLimit);
     const slice     = (allRows || []).slice(startAt, startAt + maxRows);
 
-    stats.scanned     = slice.length;
-    stats.nextStartAt = startAt + slice.length;
-    stats.done        = slice.length < maxRows;
+    stats.scanned      = slice.length;
+    stats.nextStartAt  = startAt + slice.length;
+    stats.done         = slice.length < maxRows;
 
     for (const row of slice) {
       const schoolId   = safeStr(row?.id);
@@ -275,6 +315,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      // In delete mode, only process rows WITHOUT division (candidates for deletion)
       if (mode === "delete" && (hasDivision || hasConference)) {
         stats.alreadyConfirmed++;
         continue;
@@ -308,24 +349,25 @@ Deno.serve(async (req) => {
         stats.athleticsFound++;
         athleticsFound.push({
           schoolId,
-          school_name:     schoolName,
-          division:        info.division,
-          conference:      info.conference,
-          nickname:        info.nickname,
-          confidence:      info.confidence,
-          wikipediaUrl:    wikiUrl,
-          matchedPatterns: info.matchedPatterns,
+          school_name:      schoolName,
+          division:         info.division,
+          conference:       info.conference,
+          nickname:         info.nickname,
+          confidence:       info.confidence,
+          wikipediaUrl:     wikiUrl,
+          matchedPatterns:  info.matchedPatterns,
         });
 
         if (mode === "update" && !dryRun) {
           const patch: any = {};
-          if (info.division   && !hasDivision)                    patch.division           = info.division;
-          if (info.conference && !hasConference)                   patch.conference         = info.conference;
-          if (info.nickname   && !safeStr(row?.athletics_nickname)) patch.athletics_nickname = info.nickname;
+          if (info.division  && !hasDivision)               patch.division           = info.division;
+          if (info.conference && !hasConference)             patch.conference         = info.conference;
+          if (info.nickname  && !safeStr(row?.athletics_nickname)) patch.athletics_nickname = info.nickname;
           if (Object.keys(patch).length) {
             try { await School.update(schoolId, patch); stats.updated++; } catch { stats.errors++; }
           }
         } else if (mode === "update") {
+          // dry run — count what would be written
           stats.updated++;
         }
       } else {
@@ -349,6 +391,7 @@ Deno.serve(async (req) => {
     return Response.json({
       ok: true,
       stats,
+      // Summary counts
       summary: [
         `Scanned: ${stats.scanned}`,
         `Already confirmed (division/conference set): ${stats.alreadyConfirmed}`,
@@ -359,10 +402,11 @@ Deno.serve(async (req) => {
         mode === "update" ? `📝 Updated: ${stats.updated}` : null,
         mode === "delete" ? `🗑️  Deleted: ${stats.deleted}` : null,
       ].filter(Boolean),
-      athleticsFound:      athleticsFound.slice(0, 50),
-      flaggedForDeletion:  flaggedForDeletion.slice(0, 100),
-      wikiNotFound:        wikiNotFound.slice(0, 50),
-      confirmedSample:     confirmed,
+      // Full lists for review / action
+      athleticsFound:     athleticsFound.slice(0, 50),
+      flaggedForDeletion: flaggedForDeletion.slice(0, 100),
+      wikiNotFound:       wikiNotFound.slice(0, 50),
+      confirmedSample:    confirmed,
     });
 
   } catch (e: any) {
