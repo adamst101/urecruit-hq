@@ -265,7 +265,8 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
 
     const mode          = safeStr(body?.mode) ?? "audit";
-    const dryRun        = mode === "audit" || body?.dryRun !== false;
+    // audit mode is always dry. update/delete default to dryRun:false unless explicitly set true.
+    const dryRun        = mode === "audit" ? true : (body?.dryRun === true);
     const maxRows       = Math.max(1, Math.min(500, Number(body?.maxRows ?? 50)));
     const startAt       = Math.max(0, Number(body?.startAt ?? 0));
     const sleepMs       = Math.max(0, Number(body?.sleepMs ?? 400));
@@ -309,6 +310,10 @@ Deno.serve(async (req) => {
       if (skipConfirmed && (hasDivision || hasConference)) {
         stats.alreadyConfirmed++;
         if (confirmed.length < 5) confirmed.push({ schoolId, school_name: schoolName, division: row.division, conference: row.conference });
+        // Stamp audit status on already-confirmed rows so they show correctly in the table
+        if (mode === "update" && !dryRun && !safeStr(row?.athletics_audit_status)) {
+          try { await School.update(schoolId, { athletics_audit_status: "confirmed" }); } catch { /* non-fatal */ }
+        }
         continue;
       }
       if (mode === "delete" && (hasDivision || hasConference)) { stats.alreadyConfirmed++; continue; }
