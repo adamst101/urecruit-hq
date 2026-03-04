@@ -143,9 +143,9 @@ function parseWikiTable(html) {
       // Skip header rows
       if (rowHtml.includes("<th") && !rowHtml.includes("<td")) continue;
 
-      // Extract cells (both <th> and <td>)
+      // Extract cells (both <th> and <td>) — handle both self-closing and content cells
       const cells = [];
-      const cellRe = /<(?:td|th)\s*[^>]*>([\s\S]*?)<\/(?:td|th)>/gi;
+      const cellRe = /<(?:td|th)\b[^>]*>([\s\S]*?)<\/(?:td|th)>/gi;
       let cm;
       while ((cm = cellRe.exec(rowHtml)) !== null) {
         cells.push(cm[1]);
