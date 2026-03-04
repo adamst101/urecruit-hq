@@ -111,10 +111,16 @@ export default function HostOrgMappingManager() {
           <option value="false">Suggested only</option>
         </select>
         <span style={{ fontSize: 14, color: "#6B7280" }}>{filtered.length} shown</span>
-        <button onClick={handleVerifyAll} style={{ ...S.btn, background: "#059669", color: "#FFF", border: "none", marginLeft: "auto" }}>
+        <button onClick={handleVerifyAll} disabled={!!progress} style={{ ...S.btn, background: progress ? "#9CA3AF" : "#059669", color: "#FFF", border: "none", marginLeft: "auto" }}>
           ✓ Verify all shown ({filtered.filter(r => !r.verified).length})
         </button>
       </div>
+
+      {progress && (
+        <div style={{ background: "#FFFBEB", borderBottom: "1px solid #FDE68A", padding: "8px 24px", fontSize: 14, fontWeight: 600, color: "#92400E" }}>
+          ⏳ {progress}
+        </div>
+      )}
 
       {loading ? (
         <div style={{ padding: 60, textAlign: "center", color: "#9CA3AF" }}>Loading…</div>
