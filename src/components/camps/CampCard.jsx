@@ -72,6 +72,10 @@ export default function CampCard({
             {isRegistered && (
               <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>
             )}
+
+            {!isRegistered && isFavorite && (
+              <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-xs">Potential</Badge>
+            )}
           </div>
 
           <div className="text-lg font-semibold text-deep-navy truncate">
@@ -163,3 +167,4 @@ export default function CampCard({
     </Card>
   );
 }
+

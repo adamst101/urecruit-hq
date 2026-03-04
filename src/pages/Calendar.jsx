@@ -12,6 +12,9 @@ import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
+import { getDemoFavorites } from "../components/hooks/demoFavorites.jsx";
+import { isDemoRegistered } from "../components/hooks/demoRegistered.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
@@ -81,6 +84,7 @@ export default function Calendar() {
   const loc = useLocation();
 
   const season = useSeasonAccess();
+  const { demoProfileId } = useDemoProfile();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
   // ---- effective mode (URL ?mode=demo always wins) ----
@@ -232,43 +236,55 @@ export default function Calendar() {
   // ---- apply filters client-side (source-agnostic) ----
   const rows = useMemo(() => {
     const base = isPaid ? asArray(paidQuery?.data) : asArray(demoQuery?.data);
-
     const wantedState = nf?.state ? String(nf.state) : null;
     const wantedDivisions = asArray(nf?.divisions).map(String).filter(Boolean);
     const wantedPositions = asArray(nf?.positionIds).map(String).filter(Boolean);
 
+    const demoFavoriteSet = !isPaid
+      ? new Set(getDemoFavorites(demoProfileId, seasonYear).map(String))
+      : new Set();
+
     return base
-      .filter((c) => readActiveFlag(c) === true) // ✅ hide inactive camps everywhere in Calendar
+      .filter((c) => readActiveFlag(c) === true)
       .filter((c) => {
-        // --- State ---
         if (wantedState) {
           const campState =
             normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
           if (campState !== wantedState) return false;
         }
 
-        // --- Division (multi-select) ---
         if (wantedDivisions.length) {
           const div = c?.school_division || c?.division || null;
           const divStr = div ? String(div) : "";
           if (!divStr || !wantedDivisions.includes(divStr)) return false;
         }
 
-        // --- Positions ---
         if (wantedPositions.length) {
           const campPos = asArray(c?.position_ids).map(String);
           const hasAny = wantedPositions.some((pid) => campPos.includes(pid));
           if (!hasAny) return false;
         }
 
-        // --- Date range overlap (handles multi-day camps) ---
         const campStart = c?.start_date || null;
         const campEnd = c?.end_date || null;
         if (!withinDateRange(campStart, nf?.startDate || "", nf?.endDate || "", campEnd)) return false;
 
         return true;
+      })
+      .map((c) => {
+        if (isPaid) return c;
+        const cid = String(c?.camp_id || c?.id || "");
+        const reg = cid ? isDemoRegistered(demoProfileId, cid) : false;
+        const fav = cid ? demoFavoriteSet.has(cid) : false;
+        const intent = reg ? "registered" : fav ? "favorite" : "";
+        return { ...c, intent_status: intent };
+      })
+      .filter((c) => {
+        if (isPaid) return true;
+        const st = String(c?.intent_status || "").toLowerCase();
+        return st === "favorite" || st === "registered" || st === "completed";
       });
-  }, [isPaid, paidQuery?.data, demoQuery?.data, nf]);
+  }, [isPaid, paidQuery?.data, demoQuery?.data, nf, demoProfileId, seasonYear]);
 
   const title = "Calendar";
 
@@ -480,3 +496,5 @@ export default function Calendar() {
     </div>
   );
 }
+
+
