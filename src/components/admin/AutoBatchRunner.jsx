@@ -56,9 +56,9 @@ export default function AutoBatchRunner({
     const stealth = data.stealth || {};
     const start = pag.startAt ?? "?";
     const next = pag.nextStartAt ?? "?";
-    const isIngest = stats.campsInserted !== undefined;
+    const isIngest = stats.campsInserted !== undefined || stats.schoolsProcessed !== undefined;
     if (isIngest) {
-      return `schools ${start}-${next} · ${stats.campsInserted || 0} new · ${stats.campsSkipped || 0} skipped · ${stats.campsErrors || 0} errors · ${stealth.ryzerRequestsTotal ?? "?"} ryzer req · ${formatDuration(elapsedMs)}`;
+      return `schools ${start}→${next} · ${stats.schoolsProcessed ?? "?"} schools · ${stats.campsInserted || 0} new · ${stats.campsUpdated || 0} updated · ${stats.campsSkipped || 0} skipped · ${stats.campsErrors || 0} errors · ${stealth.ryzerRequestsTotal ?? 0} ryzer req · ${formatDuration(elapsedMs)}`;
     }
     // Generic fallback
     const processed = stats.processed ?? pag.processed ?? "?";
