@@ -46,13 +46,6 @@ const TOOLS = [
         color: "#1a6b5a",
       },
       {
-        title: "Admin Import",
-        description: "Import data from CSV or external sources into entities.",
-        route: "/AdminImport",
-        icon: "📥",
-        color: "#4a4a1a",
-      },
-      {
         title: "Test Functions",
         description: "Run and test backend functions manually with custom parameters.",
         route: "/TestFunctions",
