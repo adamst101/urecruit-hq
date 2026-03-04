@@ -193,7 +193,7 @@ function extractLogoFromGenericSite(html, siteUrl) {
   const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
     || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
   if (ogMatch) {
-    const url = resolveUrl(siteUrl, ogMatch[1]);
+    const url = resolveUrl(siteUrl, decodeHtmlEntities(ogMatch[1]));
     if (url) candidates.push({ url, source: "og:image", score: 0.8 });
   }
 
