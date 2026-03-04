@@ -1103,9 +1103,11 @@ async function upsertCamp(Camp, payload, existingBySourceKey, dryRun, runIso) {
     var schoolChanged = safeStr(existing.school_id) !== safeStr(payload.school_id);
 
     if (!meaningfulChange && !schoolChanged) {
-      // No meaningful diff — skip entirely (no DB write, saves credits on re-runs)
+      // No meaningful diff — skip entirely: ZERO DB writes
+      // Do NOT call Camp.update — timestamps alone never justify a write
       return "skipped";
     }
+    // Only write when there's a real change
     if (!dryRun) {
       await Camp.update(String(existing.id), payload);
     }
