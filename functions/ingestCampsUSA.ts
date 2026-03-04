@@ -1341,6 +1341,18 @@ Deno.serve(async function(req) {
   var skipDetailFetch = !!(body.skipDetailFetch);
   var elapsed = function() { return Date.now() - t0; };
 
+  // ── Reset per-invocation state (module globals persist across requests in same isolate) ──
+  _rateState.fetchedUrls = {};
+  _rateState.circuitBroken = false;
+  _rateState.circuitBrokenReason = "";
+  _rateState.consecutiveErrors = 0;
+  _rateState.totalRequests = 0;
+  _rateState.ryzerTotal = 0;
+  _rateState.registerTotal = 0;
+  _rateState.ryzerThisHour = 0;
+  _rateState.registerThisHour = 0;
+  _rateState.hourStart = Date.now();
+
   // ── 1. Fetch directory (non-Ryzer site, still use stealth headers) ──
   var dirResult = await stealthFetch(DIRECTORY_URL, 20000, "https://www.google.com/");
   if (!dirResult.ok) return json({ error: "Failed to fetch " + DIRECTORY_URL + ": HTTP " + dirResult.status, version: VERSION, sport_key: sportKey });
