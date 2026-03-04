@@ -1,5 +1,6 @@
 // src/pages/AdminOps.jsx
 import { useNavigate } from "react-router-dom";
+import IngestStatusPanel from "../components/admin/IngestStatusPanel";
 
 const TOOLS = [
   {
@@ -108,6 +109,9 @@ export default function AdminOps() {
       </div>
 
       <div style={styles.content}>
+        <div style={{ marginBottom: 28 }}>
+          <IngestStatusPanel />
+        </div>
         {TOOLS.map(section => (
           <div key={section.section} style={styles.section}>
             <div style={styles.sectionLabel}>{section.section}</div>
