@@ -305,7 +305,7 @@ function buildSchoolIndex(schools) {
       byNormName[nn].push({ id: sid, school: s });
     }
 
-    var nick = lc(s.athletics_nickname || "");
+    var nick = lcn(s.athletics_nickname || "");
     var st = normalizeState(s.state);
     if (nick && st) {
       var nk = nick + "|" + st;
