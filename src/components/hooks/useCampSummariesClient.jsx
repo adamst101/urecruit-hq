@@ -318,7 +318,7 @@ export function useCampSummariesClient({
           school_id: schoolId,
           school_name: school?.school_name || school?.name || null,
           school_division: school?.division || school?.school_division || null,
-          school_logo_url: school?.athletic_logo_url || school?.logo_url || school?.school_logo_url || null,
+          school_logo_url: school?.athletic_logo_url || school?.athletics_logo_url || school?.logo_url || school?.school_logo_url || null,
 
           sport_id: sportId2,
           sport_name: sport?.sport_name || sport?.name || null,

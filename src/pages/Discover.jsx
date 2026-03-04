@@ -252,9 +252,7 @@ export default function Discover() {
   const { resolveIdentity } = useSchoolIdentity(rawRows);
 
   const campKeyForRow = (r) => {
-    const campId   = String(r?.id ?? "");
-    const eventKey = r?.event_key ? String(r.event_key) : "";
-    return eventKey || campId;
+    return String(r?.id ?? "");
   };
 
   const resultsCountLabel = useMemo(() => {
@@ -274,9 +272,9 @@ export default function Discover() {
 
       const out = {};
       for (const g of chunk(keyArr, 50)) {
-        const rows = await safeFilter(CampIntent, { intent_key: g }, "-updated_at", 2000);
+        const rows = await safeFilter(CampIntent, { camp_id: g }, "-updated_date", 2000);
         for (const r of asArray(rows)) {
-          const k = String(r?.intent_key || "");
+          const k = String(r?.camp_id || "");
           if (k) out[k] = r;
         }
       }
@@ -294,6 +292,9 @@ export default function Discover() {
 
     const existing = intentByKey?.[key] || null;
 
+    // Resolve athlete_id for CampIntent records
+    const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
+
     if (!nextStatus) {
       if (existing?.id && CampIntent?.update) {
         await CampIntent.update(existing.id, { status: "" });
@@ -308,8 +309,12 @@ export default function Discover() {
       return;
     }
 
-    const created = await CampIntent.create({ intent_key: key, status: String(nextStatus) });
-    setIntentByKey((p) => ({ ...p, [key]: created || { intent_key: key, status: String(nextStatus) } }));
+    const created = await CampIntent.create({
+      camp_id: key,
+      athlete_id: aId ? String(aId) : null,
+      status: String(nextStatus),
+    });
+    setIntentByKey((p) => ({ ...p, [key]: created || { camp_id: key, status: String(nextStatus) } }));
   }
 
   /* ─── filters ─────────────────────────────────────────────────────────── */
@@ -489,8 +494,7 @@ export default function Discover() {
       <div className="space-y-3">
         {rows.map((r) => {
           const campId    = String(r?.id ?? "");
-          const eventKey  = r?.event_key ? String(r.event_key) : "";
-          const intentKey = eventKey || campId;
+          const intentKey = campId;
           const schoolId  = String(normId(r?.school_id) || normId(r?.school) || normId(r?.school_ref) || "");
 
           // ✅ FIX 2: resolveIdentity pulls School row fields + Camp row fallbacks.

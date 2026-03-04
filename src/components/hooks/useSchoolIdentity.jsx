@@ -153,6 +153,7 @@ export function buildIdentity(schoolRow, campRow) {
     pickBestText(s.school_name, s.name, r.school_name, r.camp_name) || "School";
 
   const logoUrl = pickBestLogo(
+    s.athletic_logo_url,
     s.athletics_logo_url,
     s.team_logo_url,
     s.logo_url,
@@ -160,6 +161,7 @@ export function buildIdentity(schoolRow, campRow) {
     s.primary_logo_url,
     s.logo,
     r.school_logo_url,
+    r.athletic_logo_url,
     r.athletics_logo_url,
     r.logo_url,
     r.logo
@@ -238,6 +240,3 @@ export function useSchoolIdentity(campRows) {
 }
 
 export default useSchoolIdentity;
-
-
-
