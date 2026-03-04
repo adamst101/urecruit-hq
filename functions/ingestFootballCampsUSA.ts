@@ -887,7 +887,7 @@ function extractRyzerCampDetails(html, regUrl) {
   var city = null;
   var state = null;
   if (locationRaw) {
-    var csMatch = /([A-Za-z .'-]{2,}),\s*([A-Z]{2})\b/.exec(locationRaw);
+    var csMatch = /([A-Za-z .'-]{2,}),+\s*([A-Z]{2})\b/.exec(locationRaw);
     if (csMatch) {
       city = csMatch[1].replace(/,+$/, "").trim();
       state = csMatch[2].trim();
@@ -897,7 +897,7 @@ function extractRyzerCampDetails(html, regUrl) {
     var locFallback = /Location\s+(.{0,140}?)(?:Event Date|Grades|Register By|Select a price|We Accept|$)/i.exec(text);
     if (locFallback && locFallback[1]) {
       var seg = locFallback[1].indexOf("|") >= 0 ? locFallback[1].split("|").pop().trim() : locFallback[1].trim();
-      var csMatch2 = /([A-Za-z .'-]{2,}),\s*([A-Z]{2})\b/.exec(seg);
+      var csMatch2 = /([A-Za-z .'-]{2,}),+\s*([A-Z]{2})\b/.exec(seg);
       if (csMatch2) {
         city = csMatch2[1].replace(/,+$/, "").trim();
         state = csMatch2[2].trim();
