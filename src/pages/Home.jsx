@@ -85,9 +85,12 @@ export default function Home() {
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
       {/* ── NAV ── */}
-      <nav style={{ position: "sticky", top: 0, zIndex: 50, background: "rgba(10,14,26,0.95)", backdropFilter: "blur(12px)", borderBottom: "1px solid #1f2937" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>URECRUIT HQ</span>
+      <nav style={{ position: "sticky", top: 0, zIndex: 50, background: "rgba(10,14,26,0.95)", backdropFilter: "blur(12px)", borderBottom: "1px solid #1f2937", height: 48 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 24px", height: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {logoOk && <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 40, width: "auto", objectFit: "contain" }} />}
+            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>URECRUIT HQ</span>
+          </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {isAuthed && isMember ? (
               <button onClick={handleContinue} style={S.navBtnAmber}>Go to HQ <ArrowRight style={{ width: 16, height: 16, marginLeft: 4 }} /></button>
