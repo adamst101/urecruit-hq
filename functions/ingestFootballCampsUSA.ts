@@ -960,6 +960,8 @@ Deno.serve(async function(req) {
   }
 
   var step = lc(body.step || "ingest"); // "matchSchools" or "ingest" (default)
+  // matchOnly is an alias for step=matchSchools
+  if (body.matchOnly) step = "matchschools";
   var dryRun = body.dryRun !== false && body.dryRun !== "false";
   var maxSchools = Math.max(1, Number(body.maxSchools || 259));
   var startAt = Math.max(0, Number(body.startAt || 0));
