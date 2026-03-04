@@ -1221,7 +1221,7 @@ Deno.serve(async function(req) {
   var dryRun = body.dryRun !== false && body.dryRun !== "false";
   var maxSchools = Math.max(1, Number(body.maxSchools || 259));
   var startAt = Math.max(0, Number(body.startAt || 0));
-  var sleepMs = Math.max(500, Number(body.sleepMs || 1000));
+  var sleepMs = Math.max(1000, Number(body.sleepMs || 1000));
   var timeBudgetMs = Math.max(10000, Number(body.timeBudgetMs || 55000));
   var skipDetailFetch = !!(body.skipDetailFetch); // skip fetching individual camp pages
 
