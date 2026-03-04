@@ -60,6 +60,13 @@ const TOOLS = [
         color: "#6b1a3a",
       },
       {
+        title: "Sport Configs",
+        description: "Configure multi-sport ingestion: URLs, keywords, mappings, blocklists. Test and toggle sports.",
+        route: "/SportIngestConfigManager",
+        icon: "🏆",
+        color: "#6b4e1a",
+      },
+      {
         title: "Host Org Mappings",
         description: "Map host_org / Ryzer program names to schools. Auto-links camps during ingestion.",
         route: "/HostOrgMappingManager",

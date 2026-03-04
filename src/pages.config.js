@@ -52,6 +52,7 @@ import AdminOps from './pages/AdminOps';
 import AdminSeedSchoolLogos from './pages/AdminSeedSchoolLogos';
 import AdminSeedSchoolsMaster from './pages/AdminSeedSchoolsMaster';
 import AuthRedirect from './pages/AuthRedirect';
+import BackfillRyzerProgramName from './pages/BackfillRyzerProgramName';
 import BlockListManager from './pages/BlockListManager';
 import Calendar from './pages/Calendar';
 import CampDetail from './pages/CampDetail';
@@ -59,6 +60,7 @@ import CampsManager from './pages/CampsManager';
 import Checkout from './pages/Checkout';
 import Discover from './pages/Discover';
 import Home from './pages/Home';
+import HostOrgMappingManager from './pages/HostOrgMappingManager';
 import Index from './pages/Index';
 import MyCamps from './pages/MyCamps';
 import Profile from './pages/Profile';
@@ -69,8 +71,7 @@ import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
-import HostOrgMappingManager from './pages/HostOrgMappingManager';
-import BackfillRyzerProgramName from './pages/BackfillRyzerProgramName';
+import SportIngestConfigManager from './pages/SportIngestConfigManager';
 import __Layout from './Layout.jsx';
 
 
@@ -80,6 +81,7 @@ export const PAGES = {
     "AdminSeedSchoolLogos": AdminSeedSchoolLogos,
     "AdminSeedSchoolsMaster": AdminSeedSchoolsMaster,
     "AuthRedirect": AuthRedirect,
+    "BackfillRyzerProgramName": BackfillRyzerProgramName,
     "BlockListManager": BlockListManager,
     "Calendar": Calendar,
     "CampDetail": CampDetail,
@@ -87,6 +89,7 @@ export const PAGES = {
     "Checkout": Checkout,
     "Discover": Discover,
     "Home": Home,
+    "HostOrgMappingManager": HostOrgMappingManager,
     "Index": Index,
     "MyCamps": MyCamps,
     "Profile": Profile,
@@ -97,8 +100,7 @@ export const PAGES = {
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
-    "HostOrgMappingManager": HostOrgMappingManager,
-    "BackfillRyzerProgramName": BackfillRyzerProgramName,
+    "SportIngestConfigManager": SportIngestConfigManager,
 }
 
 export const pagesConfig = {
