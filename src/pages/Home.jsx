@@ -205,7 +205,7 @@ export default function Home() {
               <div
                 style={{
                   marginTop: 2,
-                  marginBottom: 2,
+                  marginBottom:0,
                   display: "flex",
                   alignItems: "center"
                 }}
