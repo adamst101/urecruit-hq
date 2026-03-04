@@ -187,6 +187,9 @@ export function useSeasonAccess() {
       const ent = await fetchEntitlement({ accountId, seasonYear: currentYear });
 
       if (ent) {
+        // Clear demo mode when user has paid access
+        try { sessionStorage.removeItem("demoMode_v1"); } catch {}
+
         setState((p) => ({
           ...p,
           isLoading: false,
