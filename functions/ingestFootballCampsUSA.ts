@@ -458,6 +458,16 @@ var HARDCODED_PROGRAM_TO_SCHOOL = {
   "alabama crimson tide football camps": "university of alabama",
   "floridagatorscamps": "university of florida",
   "levi camps": "purdue university",
+  "brent key football camps": "georgia institute of technology",
+  "marcus freeman football camps": "university of notre dame",
+  "rick stockstill football camps": "middle tennessee state university",
+  "tony elliott football camps": "university of virginia",
+  "mark nofri football camp @ shu": "sacred heart university",
+  "ut martin football": "university of tennessee at martin",
+  "drake football": "drake university",
+  "coyote football camps": "university of south dakota",
+  "panther football camps": "prairie view a&m university",
+  "arizona christian university football": "arizona christian university",
 };
 // Programs where the description says a specific school but parsing can't get it
 var HARDCODED_DESCRIPTION_SCHOOL = {
