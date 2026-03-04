@@ -18,6 +18,8 @@ import { readDemoMode } from "../components/hooks/demoMode.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 import { useCampFilters } from "../components/filters/useCampFilters.jsx";
 import { useWriteGate } from "../components/hooks/useWriteGate.jsx";
+import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
+import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
 
 // ✅ Centralised school identity resolution (logo, name, division)
 import { useSchoolIdentity } from "../components/hooks/useSchoolIdentity.jsx";
@@ -211,6 +213,7 @@ export default function Discover() {
   const demoSeasonOverride = Number.isFinite(Number(dm?.seasonYear)) ? Number(dm.seasonYear) : null;
 
   const { identity: athleteProfile } = useAthleteIdentity();
+  const { demoProfileId } = useDemoProfile();
   const athleteSportId = athleteProfile?.sport_id != null ? String(athleteProfile.sport_id) : "";
 
   const { hasAccess, seasonYear: accessSeasonYear } = useSeasonAccess();
@@ -231,8 +234,16 @@ export default function Discover() {
   const [rawRows, setRawRows]             = useState([]);
   const [intentByKey, setIntentByKey]     = useState({});
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [demoFavoriteIds, setDemoFavoriteIds] = useState([]);
 
   const filtersApi = useCampFilters();
+  useEffect(() => {
+    if (isPaid) {
+      setDemoFavoriteIds([]);
+      return;
+    }
+    setDemoFavoriteIds(getDemoFavorites(demoProfileId, seasonYear));
+  }, [isPaid, demoProfileId, seasonYear]);
   const nf = filtersApi?.nf || null;
 
   // ✅ FIX 2: School identity via dedicated hook
@@ -480,7 +491,7 @@ export default function Discover() {
           const campId    = String(r?.id ?? "");
           const eventKey  = r?.event_key ? String(r.event_key) : "";
           const intentKey = eventKey || campId;
-          const schoolId  = String(normId(r?.school_id) ?? "");
+          const schoolId  = String(normId(r?.school_id) || normId(r?.school) || normId(r?.school_ref) || "");
 
           // ✅ FIX 2: resolveIdentity pulls School row fields + Camp row fallbacks.
           //    Returns name (never "unknown"), logoUrl (never Ryzer placeholder),
@@ -497,7 +508,9 @@ export default function Discover() {
               : startIso || "TBD";
 
           const intent     = intentByKey?.[intentKey] || null;
-          const isFavorite = String(intent?.status || "").toLowerCase() === "favorite";
+          const isFavorite = isPaid
+            ? String(intent?.status || "").toLowerCase() === "favorite"
+            : demoFavoriteIds.includes(campId);
 
           return (
             <Card
@@ -556,6 +569,11 @@ export default function Discover() {
                   onClick={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    if (!isPaid) {
+                      const next = toggleDemoFavorite(demoProfileId, campId, seasonYear);
+                      setDemoFavoriteIds(next);
+                      return;
+                    }
                     const ok = await (writeGate?.ensure ? writeGate.ensure("favorite", { campId }) : true);
                     if (!ok) return;
                     await upsertIntent(intentKey, isFavorite ? "" : "favorite");
@@ -578,6 +596,12 @@ export default function Discover() {
                     e.preventDefault();
                     e.stopPropagation();
                     if (!linkUrl) return;
+
+                    if (!isPaid) {
+                      const nextPath = encodeURIComponent((loc?.pathname || "") + (loc?.search || ""));
+                      nav(`/Subscribe?force=1&source=discover_demo_register&intent=register&camp_id=${encodeURIComponent(campId)}&next=${nextPath}`);
+                      return;
+                    }
 
                     const ok = await (writeGate?.ensure
                       ? writeGate.ensure("register", { campId })
@@ -687,6 +711,12 @@ export default function Discover() {
     </div>
   );
 }
+
+
+
+
+
+
 
 
 
