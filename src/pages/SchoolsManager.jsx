@@ -285,6 +285,9 @@ export default function SchoolsManager() {
     load();
   }, []);
 
+  // Track whether filter/sort criteria changed (vs just data refresh)
+  const prevFiltersRef = useRef({ search, divFilter, activeFilter, auditFilter, sortField, sortDir });
+
   // Filter + sort
   useEffect(() => {
     let rows = [...schools];
@@ -305,7 +308,14 @@ export default function SchoolsManager() {
     });
 
     setFiltered(rows);
-    setPage(0);
+
+    // Only reset page when filters/sort actually changed, not on data-only updates
+    const prev = prevFiltersRef.current;
+    if (prev.search !== search || prev.divFilter !== divFilter || prev.activeFilter !== activeFilter ||
+        prev.auditFilter !== auditFilter || prev.sortField !== sortField || prev.sortDir !== sortDir) {
+      setPage(0);
+    }
+    prevFiltersRef.current = { search, divFilter, activeFilter, auditFilter, sortField, sortDir };
   }, [schools, search, divFilter, activeFilter, auditFilter, sortField, sortDir]);
 
   const handleSort = key => {
