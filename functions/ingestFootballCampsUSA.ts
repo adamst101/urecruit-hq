@@ -18,12 +18,23 @@ Deno.serve(async function(req) {
   // Inject sport_key if not already set
   if (!body.sport_key) body.sport_key = "football";
 
-  var base44 = createClientFromRequest(req);
-  var response = await base44.functions.invoke("ingestCampsUSA", body);
+  try {
+    var base44 = createClientFromRequest(req);
+    var response = await base44.functions.invoke("ingestCampsUSA", body);
 
-  // Forward the response from the generic function
-  return new Response(JSON.stringify(response.data), {
-    status: response.status || 200,
-    headers: { "content-type": "application/json; charset=utf-8" },
-  });
+    // response is Axios-shaped: { data, status, headers }
+    var data = response.data || response;
+    return new Response(JSON.stringify(data), {
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  } catch (e) {
+    // If the inner function returned an error status, Axios throws
+    var errData = e.response ? e.response.data : { error: String(e.message || e) };
+    var errStatus = e.response ? e.response.status : 500;
+    return new Response(JSON.stringify(errData), {
+      status: errStatus,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
 });
