@@ -490,6 +490,7 @@ export default function SchoolsManager() {
           <table style={styles.table}>
             <thead>
               <tr>
+                <th style={{ ...styles.th, width: 50, minWidth: 50 }}></th>
                 {visFields.map(f => (
                   <th
                     key={f.key}
