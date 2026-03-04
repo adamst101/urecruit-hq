@@ -130,19 +130,20 @@ const KNOWN_CONFERENCES = [
 ];
 
 interface AthleticsInfo {
-  hasAthletics:    boolean;
-  division:        string | null;
-  conference:      string | null;
-  nickname:        string | null;
-  wikipediaUrl:    string | null;
-  confidence:      "high" | "medium" | "low" | "none";
-  matchedPatterns: string[];
+  hasAthletics:          boolean;
+  division:              string | null;
+  conference:            string | null;
+  nickname:              string | null;
+  athleticsWikipediaUrl: string | null;  // e.g. https://en.wikipedia.org/wiki/Arizona_Wildcats
+  wikipediaUrl:          string | null;
+  confidence:            "high" | "medium" | "low" | "none";
+  matchedPatterns:       string[];
 }
 
 function extractAthleticsFromHtml(html: string, wikipediaUrl: string): AthleticsInfo {
   const result: AthleticsInfo = {
     hasAthletics: false, division: null, conference: null, nickname: null,
-    wikipediaUrl, confidence: "none", matchedPatterns: [],
+    athleticsWikipediaUrl: null, wikipediaUrl, confidence: "none", matchedPatterns: [],
   };
   if (!html) return result;
 
@@ -204,22 +205,51 @@ function extractAthleticsFromHtml(html: string, wikipediaUrl: string): Athletics
     }
   }
 
-  const nicknameMatch =
-    stripped.match(/[Nn]ickname[s]?\s+([A-Z][A-Za-z\s]+?)(?:\s{2,}|[A-Z][a-z]+\s+[A-Z]|$)/) ??
-    stripped.match(/[Aa]thletics?\s+nickname[s]?\s+([A-Z][A-Za-z\s]+?)(?:\s{2,}|$)/);
-  if (nicknameMatch) {
-    let raw = nicknameMatch[1].trim();
-    // Strip trailing infobox noise: "Eagles Sporting affiliations NCAA" → "Eagles"
-    raw = raw.replace(/\s+sporting\b.*/i, "").trim();
-    raw = raw.replace(/\s+affiliations?\b.*/i, "").trim();
-    raw = raw.replace(/\s+ncaa\b.*/i, "").trim();
-    raw = raw.replace(/\s+naia\b.*/i, "").trim();
-    raw = raw.replace(/\s+conference\b.*/i, "").trim();
-    raw = raw.replace(/\s+division\b.*/i, "").trim();
-    // Accept only clean 1-3 word nicknames (e.g. "Wildcats", "Fighting Illini")
-    if (raw.length >= 2 && raw.length < 30 && raw.split(" ").length <= 3) {
-      result.nickname = raw;
-      result.matchedPatterns.push(`nickname:${raw}`);
+  // ── Athletics Wikipedia URL via nickname anchor ──────────────────────────────
+  // The Wikipedia infobox "Nickname" row often contains an anchor like:
+  //   <a href="/wiki/Arizona_Wildcats">Wildcats</a>
+  // That href IS the athletics program Wikipedia page — follow it for logo lookup.
+  // We extract from the raw infobox HTML before stripping tags.
+  const nicknameRowMatch = infoboxHtml.match(
+    /[Nn]ickname[s]?[\s\S]{0,200}?<a\s+href="(\/wiki\/[^"#]+)"[^>]*>([^<]+)<\/a>/
+  );
+  if (nicknameRowMatch) {
+    const href      = nicknameRowMatch[1];  // e.g. /wiki/Arizona_Wildcats
+    const linkText  = nicknameRowMatch[2].trim();
+    // Sanity: reject links to disambiguation, lists, or generic terms
+    const isGeneric = /^(NCAA|NAIA|NJCAA|Division|Conference|Athletic|Sports|College|University)$/i.test(linkText);
+    if (!isGeneric && href && linkText.length >= 2 && linkText.length < 40) {
+      result.athleticsWikipediaUrl = `https://en.wikipedia.org${href}`;
+      result.matchedPatterns.push(`athletics_wiki:${linkText}`);
+      // Also use the link text as the nickname if we don't have one yet
+      if (!result.nickname) {
+        let nickRaw = linkText
+          .replace(/\s+sporting\b.*/i, "").replace(/\s+affiliations?\b.*/i, "")
+          .replace(/\s+ncaa\b.*/i, "").replace(/\s+naia\b.*/i, "").trim();
+        if (nickRaw.length >= 2 && nickRaw.length < 40 && nickRaw.split(" ").length <= 4) {
+          result.nickname = nickRaw;
+        }
+      }
+    }
+  }
+
+  // Fallback: extract nickname from stripped text if anchor approach missed it
+  if (!result.nickname) {
+    const nicknameMatch =
+      stripped.match(/[Nn]ickname[s]?\s+([A-Z][A-Za-z\s]+?)(?:\s{2,}|[A-Z][a-z]+\s+[A-Z]|$)/) ??
+      stripped.match(/[Aa]thletics?\s+nickname[s]?\s+([A-Z][A-Za-z\s]+?)(?:\s{2,}|$)/);
+    if (nicknameMatch) {
+      let raw = nicknameMatch[1].trim();
+      raw = raw.replace(/\s+sporting\b.*/i, "").trim();
+      raw = raw.replace(/\s+affiliations?\b.*/i, "").trim();
+      raw = raw.replace(/\s+ncaa\b.*/i, "").trim();
+      raw = raw.replace(/\s+naia\b.*/i, "").trim();
+      raw = raw.replace(/\s+conference\b.*/i, "").trim();
+      raw = raw.replace(/\s+division\b.*/i, "").trim();
+      if (raw.length >= 2 && raw.length < 30 && raw.split(" ").length <= 3) {
+        result.nickname = raw;
+        result.matchedPatterns.push(`nickname:${raw}`);
+      }
     }
   }
 
@@ -285,11 +315,18 @@ Deno.serve(async (req) => {
 
       await sleep(sleepMs);
 
-      const wikiUrl = await getWikipediaUrl(schoolName);
+      // If a wikipedia_url was manually set on the row, use it directly —
+      // skip the search step so manually-corrected rows are re-processed.
+      const storedWikiUrl = safeStr(row?.wikipedia_url);
+      const wikiUrl = storedWikiUrl ?? await getWikipediaUrl(schoolName);
+
       if (!wikiUrl) {
         stats.wikiNotFound++;
         wikiNotFound.push({ schoolId, school_name: schoolName });
         flaggedForDeletion.push({ schoolId, school_name: schoolName, reason: "wikipedia_not_found" });
+        if (mode === "update" && !dryRun) {
+          try { await School.update(schoolId, { athletics_audit_status: "wiki_not_found" }); } catch { stats.errors++; }
+        }
         if (mode === "delete" && !dryRun) {
           try { await School.delete(schoolId); stats.deleted++; } catch { stats.errors++; }
         }
@@ -312,13 +349,13 @@ Deno.serve(async (req) => {
         });
         if (mode === "update" && !dryRun) {
           const patch: any = {};
-          if (info.division   && !hasDivision)                      patch.division           = info.division;
-          if (info.conference && !hasConference)                    patch.conference         = info.conference;
-          if (info.nickname   && !safeStr(row?.athletics_nickname)) patch.athletics_nickname = info.nickname;
-          if (wikiUrl         && !safeStr(row?.wikipedia_url))      patch.wikipedia_url      = wikiUrl;
-          if (Object.keys(patch).length) {
-            try { await School.update(schoolId, patch); stats.updated++; } catch { stats.errors++; }
-          }
+          if (info.division              && !hasDivision)                          patch.division                 = info.division;
+          if (info.conference            && !hasConference)                        patch.conference               = info.conference;
+          if (info.nickname              && !safeStr(row?.athletics_nickname))     patch.athletics_nickname       = info.nickname;
+          if (wikiUrl                    && !safeStr(row?.wikipedia_url))          patch.wikipedia_url            = wikiUrl;
+          if (info.athleticsWikipediaUrl && !safeStr(row?.athletics_wikipedia_url)) patch.athletics_wikipedia_url = info.athleticsWikipediaUrl;
+          patch.athletics_audit_status = "confirmed";
+          try { await School.update(schoolId, patch); stats.updated++; } catch { stats.errors++; }
         } else if (mode === "update") { stats.updated++; }
       } else {
         stats.noAthleticsFound++;
@@ -327,6 +364,9 @@ Deno.serve(async (req) => {
           reason: "no_sporting_affiliations_on_wikipedia",
           wikipediaUrl: wikiUrl, confidence: info.confidence,
         });
+        if (mode === "update" && !dryRun) {
+          try { await School.update(schoolId, { athletics_audit_status: "no_athletics" }); } catch { stats.errors++; }
+        }
         if (mode === "delete" && !dryRun) {
           try { await School.delete(schoolId); stats.deleted++; } catch { stats.errors++; }
         }
