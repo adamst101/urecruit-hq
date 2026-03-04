@@ -27,16 +27,23 @@ export function useWriteGate() {
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
   const ensure = useCallback(
-    async (action = "write") => {
+    async (action = "write", options = {}) => {
       // Wait for season/identity to settle
       if (season?.isLoading || identityLoading) return false;
 
       const currentPath = (loc?.pathname || "") + (loc?.search || "");
       const nextParam = encodeURIComponent(currentPath);
+      const campId = String(options?.campId || "").trim();
+      const source = encodeURIComponent(`write_gate_${action}`);
 
       // 1) Not signed in
       if (!season?.accountId) {
-        nav(createPageUrl("Home") + `?signin=1&next=${nextParam}`, { replace: true });
+        nav(
+          createPageUrl("Home") +
+            `?signin=1&source=${source}&next=${nextParam}` +
+            (campId ? `&camp_id=${encodeURIComponent(campId)}` : ""),
+          { replace: true }
+        );
         return false;
       }
 
@@ -44,8 +51,9 @@ export function useWriteGate() {
       if (!season?.hasAccess) {
         nav(
           createPageUrl("Subscribe") +
-            `?source=${encodeURIComponent(`write_gate_${action}`)}` +
-            `&next=${nextParam}`,
+            `?force=1&source=${source}&intent=${encodeURIComponent(action)}` +
+            `&next=${nextParam}` +
+            (campId ? `&camp_id=${encodeURIComponent(campId)}` : ""),
           { replace: true }
         );
         return false;
