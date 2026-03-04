@@ -36,10 +36,10 @@ const FIELDS = [
 // ─── Status badge config ──────────────────────────────────────────────────────
 
 const INGEST_STYLES = {
-  "active":         { bg: "#1a3d1a", color: "#4caf82", border: "#2a6b2a", label: "✓ Active" },
-  "needs_review":   { bg: "#2a2a1a", color: "#c0a030", border: "#5a5a1a", label: "⚠ Needs Review" },
-  "removed_from_source": { bg: "#3d1a1a", color: "#e05c5c", border: "#6b2a2a", label: "✗ Removed" },
-  "inactive":       { bg: "#1a1a2a", color: "#6070a0", border: "#2a2a4a", label: "· Inactive" },
+  "active":         { bg: "#ECFDF5", color: "#059669", border: "#A7F3D0", label: "✓ Active" },
+  "needs_review":   { bg: "#FFFBEB", color: "#D97706", border: "#FDE68A", label: "⚠ Needs Review" },
+  "removed_from_source": { bg: "#FEF2F2", color: "#DC2626", border: "#FECACA", label: "✗ Removed" },
+  "inactive":       { bg: "#F0F4FF", color: "#6B7280", border: "#D1D5DB", label: "· Inactive" },
 };
 
 const SOURCE_COLORS = {
@@ -52,33 +52,33 @@ const SOURCE_COLORS = {
 // ─── Helper components ────────────────────────────────────────────────────────
 
 function IngestStatusBadge({ value }) {
-  if (!value) return <span style={{ color: "#444", fontSize: 13 }}>—</span>;
-  const s = INGEST_STYLES[value] || { bg: "#222", color: "#888", border: "#333", label: value };
+  if (!value) return <span style={{ color: "#9CA3AF", fontSize: 13 }}>—</span>;
+  const s = INGEST_STYLES[value] || { bg: "#F3F4F6", color: "#6B7280", border: "#D1D5DB", label: value };
   return (
     <span style={{
       background: s.bg, color: s.color, border: `1px solid ${s.border}`,
       borderRadius: 4, padding: "4px 9px", fontSize: 13, fontWeight: 600,
-      whiteSpace: "nowrap", fontFamily: "monospace",
+      whiteSpace: "nowrap", fontFamily: "Inter, system-ui, sans-serif",
     }}>{s.label}</span>
   );
 }
 
 function SourceBadge({ value }) {
-  if (!value) return <span style={{ color: "#444", fontSize: 13 }}>—</span>;
-  const color = SOURCE_COLORS[value] || "#444";
+  if (!value) return <span style={{ color: "#9CA3AF", fontSize: 13 }}>—</span>;
+  const color = SOURCE_COLORS[value] || "#6B7280";
   return (
     <span style={{
       background: color + "22", color: color, border: `1px solid ${color}44`,
       borderRadius: 4, padding: "4px 9px", fontSize: 13, fontWeight: 600,
-      whiteSpace: "nowrap", fontFamily: "monospace",
+      whiteSpace: "nowrap", fontFamily: "Inter, system-ui, sans-serif",
     }}>{value}</span>
   );
 }
 
 function PriceBadge({ value }) {
-  if (value == null || value === "") return <span style={{ color: "#444", fontSize: 13 }}>—</span>;
+  if (value == null || value === "") return <span style={{ color: "#9CA3AF", fontSize: 13 }}>—</span>;
   return (
-    <span style={{ color: "#7dcea0", fontSize: 13, fontFamily: "monospace", fontWeight: 600 }}>
+    <span style={{ color: "#059669", fontSize: 13, fontFamily: "monospace", fontWeight: 600 }}>
       ${Number(value).toFixed(0)}
     </span>
   );
@@ -86,16 +86,16 @@ function PriceBadge({ value }) {
 
 function PriceOptions({ value }) {
   if (!value || !Array.isArray(value) || value.length === 0)
-    return <span style={{ color: "#444", fontSize: 13 }}>—</span>;
+    return <span style={{ color: "#9CA3AF", fontSize: 13 }}>—</span>;
   if (value.length === 1)
     return <PriceBadge value={value[0].price} />;
   return (
-    <span style={{ color: "#a0b8d0", fontSize: 12, fontFamily: "monospace" }}>
+    <span style={{ color: "#374151", fontSize: 12, fontFamily: "monospace" }}>
       {value.map((o, i) => (
         <span key={i} style={{ marginRight: 6, whiteSpace: "nowrap" }}>
-          <span style={{ color: "#7dcea0" }}>${o.price}</span>
-          {o.label ? <span style={{ color: "#506880", marginLeft: 3 }}>{o.label.substring(0, 18)}</span> : null}
-          {i < value.length - 1 ? <span style={{ color: "#333" }}> · </span> : null}
+          <span style={{ color: "#059669" }}>${o.price}</span>
+          {o.label ? <span style={{ color: "#6B7280", marginLeft: 3 }}>{o.label.substring(0, 18)}</span> : null}
+          {i < value.length - 1 ? <span style={{ color: "#D1D5DB" }}> · </span> : null}
         </span>
       ))}
     </span>
@@ -103,11 +103,11 @@ function PriceOptions({ value }) {
 }
 
 function SchoolCell({ schoolId, schoolIndex }) {
-  if (!schoolId) return <span style={{ color: "#444", fontSize: 13 }}>—</span>;
+  if (!schoolId) return <span style={{ color: "#9CA3AF", fontSize: 13 }}>—</span>;
   const school = schoolIndex[schoolId];
-  if (!school) return <span style={{ color: "#506880", fontSize: 12, fontFamily: "monospace" }}>{schoolId.substring(0, 12)}…</span>;
+  if (!school) return <span style={{ color: "#6B7280", fontSize: 12, fontFamily: "monospace" }}>{schoolId.substring(0, 12)}…</span>;
   return (
-    <span style={{ fontSize: 13, color: "#c8d8f0", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: 200, whiteSpace: "nowrap" }}>
+    <span style={{ fontSize: 13, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: 200, whiteSpace: "nowrap" }}>
       {school.school_name}
     </span>
   );
@@ -115,36 +115,36 @@ function SchoolCell({ schoolId, schoolIndex }) {
 
 function CellValue({ field, value, schoolIndex }) {
   if (value === null || value === undefined || value === "")
-    return <span style={{ color: "#444", fontSize: 13 }}>—</span>;
+    return <span style={{ color: "#9CA3AF", fontSize: 13 }}>—</span>;
   if (field.type === "ingeststatus") return <IngestStatusBadge value={value} />;
   if (field.key === "source_platform") return <SourceBadge value={value} />;
   if (field.type === "price") return <PriceBadge value={value} />;
   if (field.type === "priceoptions") return <PriceOptions value={value} />;
   if (field.type === "school") return <SchoolCell schoolId={value} schoolIndex={schoolIndex} />;
   if (field.type === "boolean") return (
-    <span style={{ color: value ? "#4caf82" : "#e05c5c", fontSize: 13, fontWeight: 600 }}>
+    <span style={{ color: value ? "#059669" : "#DC2626", fontSize: 13, fontWeight: 600 }}>
       {value ? "✓" : "✗"}
     </span>
   );
   if (field.type === "url") return (
     <a href={value} target="_blank" rel="noreferrer"
-      style={{ color: "#4a90e2", fontSize: 13, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: field.width - 16 }}
+      style={{ color: "#0B1F3B", fontSize: 13, textDecoration: "underline", textDecorationColor: "#D1D5DB", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: field.width - 16 }}
       onClick={e => e.stopPropagation()}>
       {value.replace(/^https?:\/\//, "").substring(0, 28)}{value.length > 34 ? "…" : ""}
     </a>
   );
   if (field.type === "number") return (
-    <span style={{ color: "#a0c4ff", fontSize: 13, fontFamily: "monospace" }}>
+    <span style={{ color: "#0B1F3B", fontSize: 13, fontFamily: "monospace" }}>
       {typeof value === "number" ? value.toFixed(2) : value}
     </span>
   );
   if (field.type === "text") return (
-    <span style={{ fontSize: 13, color: "#8090a8", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: field.width - 16, whiteSpace: "nowrap" }}>
+    <span style={{ fontSize: 13, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: field.width - 16, whiteSpace: "nowrap" }}>
       {String(value)}
     </span>
   );
   return (
-    <span style={{ fontSize: 14, color: "#c8d8f0", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: field.width - 16, whiteSpace: "nowrap" }}>
+    <span style={{ fontSize: 14, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: field.width - 16, whiteSpace: "nowrap" }}>
       {String(value)}
     </span>
   );
@@ -153,9 +153,9 @@ function CellValue({ field, value, schoolIndex }) {
 // ─── Cell editor ─────────────────────────────────────────────────────────────
 
 const editorStyle = {
-  background: "#1a2235", color: "#e8f0ff",
-  border: "1.5px solid #4a90e2", borderRadius: 4,
-  padding: "5px 9px", fontSize: 14, fontFamily: "monospace",
+  background: "#FFFFFF", color: "#111827",
+  border: "1.5px solid #0B1F3B", borderRadius: 4,
+  padding: "5px 9px", fontSize: 14, fontFamily: "Inter, system-ui, sans-serif",
   outline: "none", width: "100%", boxSizing: "border-box",
 };
 
@@ -365,13 +365,13 @@ export default function CampsManager() {
           <div style={styles.subtitle}>
             {filtered.length.toLocaleString()} of {camps.length.toLocaleString()} records
             {needsReview > 0 && (
-              <span style={{ marginLeft: 12, color: "#c0a030", fontSize: 13, cursor: "pointer" }}
+              <span style={{ marginLeft: 12, color: "#D97706", fontSize: 13, cursor: "pointer" }}
                 onClick={() => setStatusFilter("needs_review")}>
                 ⚠ {needsReview} needs review
               </span>
             )}
             {saveMsg && (
-              <span style={{ marginLeft: 16, color: saveMsg.startsWith("Error") ? "#e05c5c" : "#4caf82", fontSize: 14 }}>
+              <span style={{ marginLeft: 16, color: saveMsg.startsWith("Error") ? "#DC2626" : "#059669", fontSize: 14 }}>
                 {saveMsg}
               </span>
             )}
@@ -462,22 +462,22 @@ export default function CampsManager() {
             </thead>
             <tbody>
               {pageRows.map((row, ri) => (
-                <tr key={row.id} style={{ background: ri % 2 === 0 ? "#0d1520" : "#101b2a" }}>
+                <tr key={row.id} style={{ background: ri % 2 === 0 ? "#FFFFFF" : "#F9FAFB" }}>
                   <td style={{ ...styles.td, width: 50, minWidth: 50, textAlign: "center", padding: "4px 6px" }}>
                     {saving[`del:${row.id}`] ? (
-                      <span style={{ color: "#e05c5c", fontSize: 12 }}>…</span>
+                      <span style={{ color: "#DC2626", fontSize: 12 }}>…</span>
                     ) : confirmDelete === row.id ? (
                       <span style={{ display: "flex", gap: 4, justifyContent: "center" }}>
                         <button onClick={() => handleDelete(row.id)}
-                          style={{ background: "none", border: "none", color: "#4caf82", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}
+                          style={{ background: "none", border: "none", color: "#059669", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}
                           title="Confirm delete">✓</button>
                         <button onClick={() => setConfirmDelete(null)}
-                          style={{ background: "none", border: "none", color: "#e05c5c", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}
+                          style={{ background: "none", border: "none", color: "#DC2626", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}
                           title="Cancel">✗</button>
                       </span>
                     ) : (
                       <button onClick={() => setConfirmDelete(row.id)}
-                        style={{ background: "none", border: "none", color: "#5a3030", cursor: "pointer", fontSize: 15, padding: "2px 4px" }}
+                        style={{ background: "none", border: "none", color: "#9CA3AF", cursor: "pointer", fontSize: 15, padding: "2px 4px" }}
                         title="Delete this camp">⌫</button>
                     )}
                   </td>
@@ -491,7 +491,7 @@ export default function CampsManager() {
                         style={{
                           ...styles.td,
                           width: f.width, minWidth: f.width,
-                          background: isEditing ? "#1a2840" : isSaving ? "#1a2820" : undefined,
+                          background: isEditing ? "#EEF2FF" : isSaving ? "#ECFDF5" : undefined,
                           cursor: readOnly ? "default" : "pointer",
                         }}
                         onDoubleClick={() => !readOnly && startEdit(row.id, f.key)}
@@ -505,7 +505,7 @@ export default function CampsManager() {
                             schoolList={schoolList}
                           />
                         ) : isSaving ? (
-                          <span style={{ color: "#4caf82", fontSize: 13 }}>saving…</span>
+                          <span style={{ color: "#059669", fontSize: 13 }}>saving…</span>
                         ) : (
                           <CellValue field={f} value={row[f.key]} schoolIndex={schoolIndex} />
                         )}
@@ -516,7 +516,7 @@ export default function CampsManager() {
               ))}
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={visFields.length + 1} style={{ ...styles.td, textAlign: "center", color: "#446", padding: 40 }}>
+                  <td colSpan={visFields.length + 1} style={{ ...styles.td, textAlign: "center", color: "#9CA3AF", padding: 40 }}>
                     No camps match your filters
                   </td>
                 </tr>
@@ -528,7 +528,7 @@ export default function CampsManager() {
 
       {/* Footer */}
       <div style={styles.footer}>
-        <span style={{ color: "#446", fontSize: 13 }}>
+        <span style={{ color: "#9CA3AF", fontSize: 13 }}>
           Double-click any cell to edit • Enter to save • Esc to cancel • School field auto-sets manual verification
         </span>
         <div style={styles.paginator}>
@@ -553,10 +553,10 @@ export default function CampsManager() {
 
 const styles = {
   root: {
-    background: "#080e18",
+    background: "#F3F4F6",
     height: "100vh",
-    fontFamily: "'IBM Plex Mono', 'Fira Code', monospace",
-    color: "#c8d8f0",
+    fontFamily: "Inter, system-ui, sans-serif",
+    color: "#111827",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
@@ -566,18 +566,19 @@ const styles = {
     alignItems: "flex-start",
     justifyContent: "space-between",
     padding: "20px 24px 12px",
-    borderBottom: "1px solid #1a2535",
+    borderBottom: "1px solid #E5E7EB",
+    background: "#FFFFFF",
     position: "relative",
   },
   title: {
     fontSize: 24,
     fontWeight: 700,
-    color: "#e8f4ff",
-    letterSpacing: 1,
+    color: "#0B1F3B",
+    letterSpacing: 0.5,
   },
   subtitle: {
     fontSize: 14,
-    color: "#4a6080",
+    color: "#6B7280",
     marginTop: 3,
     display: "flex",
     alignItems: "center",
@@ -585,9 +586,9 @@ const styles = {
   },
   headerRight: { position: "relative" },
   colBtn: {
-    background: "#131f30",
-    color: "#7090b0",
-    border: "1px solid #1e3048",
+    background: "#FFFFFF",
+    color: "#374151",
+    border: "1px solid #E5E7EB",
     borderRadius: 6,
     padding: "6px 14px",
     fontSize: 14,
@@ -599,8 +600,8 @@ const styles = {
     right: 0,
     top: "100%",
     marginTop: 4,
-    background: "#0d1a28",
-    border: "1px solid #1e3048",
+    background: "#FFFFFF",
+    border: "1px solid #E5E7EB",
     borderRadius: 8,
     padding: "10px 14px",
     zIndex: 100,
@@ -610,11 +611,11 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: 6,
-    boxShadow: "0 8px 32px #00000088",
+    boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
   },
   colPickerItem: {
     fontSize: 14,
-    color: "#a0b8d0",
+    color: "#374151",
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
@@ -625,14 +626,15 @@ const styles = {
     alignItems: "center",
     gap: 10,
     padding: "10px 24px",
-    borderBottom: "1px solid #111d2a",
+    borderBottom: "1px solid #E5E7EB",
+    background: "#FFFFFF",
     flexWrap: "wrap",
   },
   searchInput: {
-    background: "#0d1a28",
-    border: "1px solid #1e3048",
+    background: "#F9FAFB",
+    border: "1px solid #E5E7EB",
     borderRadius: 6,
-    color: "#c8d8f0",
+    color: "#111827",
     padding: "7px 14px",
     fontSize: 15,
     fontFamily: "inherit",
@@ -640,10 +642,10 @@ const styles = {
     width: 300,
   },
   filterSelect: {
-    background: "#0d1a28",
-    border: "1px solid #1e3048",
+    background: "#F9FAFB",
+    border: "1px solid #E5E7EB",
     borderRadius: 6,
-    color: "#a0b8d0",
+    color: "#374151",
     padding: "7px 12px",
     fontSize: 14,
     fontFamily: "inherit",
@@ -652,10 +654,10 @@ const styles = {
   },
   paginator: { display: "flex", alignItems: "center", marginLeft: "auto" },
   pageBtn: {
-    background: "#0d1a28",
-    border: "1px solid #1e3048",
+    background: "#FFFFFF",
+    border: "1px solid #E5E7EB",
     borderRadius: 4,
-    color: "#5080a0",
+    color: "#0B1F3B",
     padding: "4px 9px",
     fontSize: 15,
     cursor: "pointer",
@@ -672,15 +674,15 @@ const styles = {
     minWidth: "100%",
   },
   th: {
-    background: "#0a1525",
-    color: "#4a7090",
+    background: "#F9FAFB",
+    color: "#6B7280",
     fontWeight: 600,
     fontSize: 13,
     textTransform: "uppercase",
     letterSpacing: "0.06em",
     padding: "11px 12px",
     textAlign: "left",
-    borderBottom: "2px solid #1a2e44",
+    borderBottom: "2px solid #E5E7EB",
     position: "sticky",
     top: 0,
     cursor: "pointer",
@@ -692,19 +694,19 @@ const styles = {
   },
   td: {
     padding: "9px 12px",
-    borderBottom: "1px solid #0f1c2a",
+    borderBottom: "1px solid #F3F4F6",
     verticalAlign: "middle",
     overflow: "hidden",
     whiteSpace: "nowrap",
   },
-  loading: { padding: 60, textAlign: "center", color: "#446", fontSize: 16 },
-  errMsg:  { padding: 40, textAlign: "center", color: "#e05c5c", fontSize: 15 },
+  loading: { padding: 60, textAlign: "center", color: "#9CA3AF", fontSize: 16 },
+  errMsg:  { padding: 40, textAlign: "center", color: "#DC2626", fontSize: 15 },
   footer: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     padding: "8px 24px",
-    borderTop: "1px solid #111d2a",
-    background: "#080e18",
+    borderTop: "1px solid #E5E7EB",
+    background: "#FFFFFF",
   },
 };
