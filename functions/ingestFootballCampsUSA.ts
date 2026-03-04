@@ -15,6 +15,17 @@ var MATCH_CONFIDENCE_THRESHOLD = 0.7;
 var SOURCE_PLATFORM = "footballcampsusa";
 
 // ─── Non-football keyword filter ────────────────────────────────────────────
+// ─── Normalize host_org / ryzer_program_name for HostOrgMapping lookup ──────
+function normalizeHostOrgKey(raw) {
+  if (!raw) return "";
+  var s = lc(raw);
+  s = s.replace(/\s*-\s*football\s*$/i, "");
+  s = s.replace(/\s+football\s+camps?\s*$/i, "");
+  s = s.replace(/\s+football\s*$/i, "");
+  s = s.replace(/\s+camps?\s*$/i, "");
+  return s.replace(/\s+/g, " ").trim();
+}
+
 var NON_FOOTBALL_KEYWORDS = [
   "soccer", "basketball", "baseball", "softball", "volleyball",
   "lacrosse", "tennis", "golf", "swimming", "wrestling",
@@ -827,6 +838,30 @@ function extractRyzerCampDetails(html, regUrl) {
     hostOrg = stripNonAscii(hostMatch[1]).trim() || null;
   }
 
+  // Extract ryzer_program_name from "View More Events by X" link or program header
+  var ryzerProgramName = null;
+  var viewMoreMatch = /View More Events by\s+([^<]+)/i.exec(html);
+  if (viewMoreMatch && viewMoreMatch[1]) {
+    ryzerProgramName = stripNonAscii(viewMoreMatch[1]).trim() || null;
+  }
+  if (!ryzerProgramName) {
+    // Try programName div or similar header elements
+    var progNameMatch = /<div[^>]*class="[^"]*programName[^"]*"[^>]*>([^<]+)<\/div>/i.exec(html);
+    if (progNameMatch && progNameMatch[1]) {
+      ryzerProgramName = stripNonAscii(progNameMatch[1]).trim() || null;
+    }
+  }
+  if (!ryzerProgramName) {
+    // Try the small text that appears before the h1 in the blue header area
+    var headerAreaMatch = /<div[^>]*class="[^"]*campDetailsHeader[^"]*"[^>]*>([\s\S]*?)<h1/i.exec(html);
+    if (headerAreaMatch && headerAreaMatch[1]) {
+      var headerText = stripTags(headerAreaMatch[1]).trim();
+      if (headerText && headerText.length > 2 && headerText.length < 120) {
+        ryzerProgramName = headerText;
+      }
+    }
+  }
+
   var locationRaw = null;
   var eventDateRaw = null;
   var gradesRaw = null;
@@ -921,6 +956,7 @@ function extractRyzerCampDetails(html, regUrl) {
   return {
     camp_name: cleanTextField(campName),
     host_org: cleanTextField(hostOrg),
+    ryzer_program_name: cleanTextField(ryzerProgramName),
     description: desc,
     start_date: startDate,
     end_date: endDate,
