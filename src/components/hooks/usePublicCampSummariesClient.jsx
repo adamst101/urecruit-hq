@@ -193,7 +193,7 @@ async function fetchPublicCampSummaries({
 
       school_name: pickSchoolName(sch),
       school_division: pickSchoolDivision(sch),
-      school_logo_url: sch?.logo_url || sch?.school_logo_url || null,
+      school_logo_url: sch?.athletic_logo_url || sch?.logo_url || sch?.school_logo_url || null,
 
       sport_name: pickSportName(sp),
 
