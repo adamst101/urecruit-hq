@@ -318,23 +318,32 @@ async function fetchRyzerPage(auth, activityTypeId, accountTypeId, page, records
 }
 
 function isFootballEvent(row) {
-  var title = lc(row.eventTitle || row.EventTitle || row.title || row.Name || row.name || "");
-  var actName = lc(row.activitytype || row.activityType || row.ActivityType || "");
+  var title = lc(row.eventTitle || row.EventTitle || row.title || row.name || row.Name || "");
+  var actName = lc(row.activitytype || row.activityType || row.ActivityType ||
+    row.ActivityTypeName || row.activityTypeName || "");
 
-  if (actName.indexOf("football") >= 0) return true;
+  // Explicit activity type match
+  if (actName === "football") return true;
+
+  // Explicit non-football activity type — reject immediately
+  if (actName && actName !== "football") return false;
+
+  // No activity type? Use title + host heuristics
   if (title.indexOf("football") >= 0) return true;
 
-  // Reject clearly non-football
-  var nonFootball = ["basketball", "baseball", "soccer", "volleyball", "softball", "lacrosse",
-    "hockey", "tennis", "wrestling", "track", "swimming", "golf", "cheer", "dance", "yoga"];
-  for (var i = 0; i < nonFootball.length; i++) {
-    if (title.indexOf(nonFootball[i]) >= 0 || actName.indexOf(nonFootball[i]) >= 0) return false;
-  }
-
-  // Camp with a college host mentioning "camp" is likely football if no other sport indicated
-  var host = lc(row.organizer || row.Organizer || row.accountName || row.AccountName || "");
+  var host = lc(row.organizer || row.Organizer || row.accountName || row.AccountName ||
+    row.schoolName || row.SchoolName || "");
   if (host.indexOf("football") >= 0) return true;
 
+  // Reject if title mentions another sport
+  var nonFootball = ["basketball", "baseball", "soccer", "volleyball", "softball", "lacrosse",
+    "hockey", "tennis", "wrestling", "track", "swimming", "golf", "cheer", "dance", "yoga",
+    "diving", "cross country", "field hockey", "rowing", "water polo"];
+  for (var i = 0; i < nonFootball.length; i++) {
+    if (title.indexOf(nonFootball[i]) >= 0) return false;
+  }
+
+  // No sport signals at all — skip (don't guess)
   return false;
 }
 
