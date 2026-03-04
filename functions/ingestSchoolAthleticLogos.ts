@@ -54,6 +54,12 @@ function lc(x: any) {
   return String(x || "").toLowerCase().trim();
 }
 
+function safeStr(x: any): string | null {
+  if (x == null) return null;
+  const s = String(x).trim();
+  return s || null;
+}
+
 function extractRows(resp: any) {
   if (!resp) return [];
   if (Array.isArray(resp)) return resp;
@@ -170,8 +176,37 @@ interface LogoResult {
 
 async function getAthleticLogoFromWikidata(
   schoolName: string,
-  existingNickname?: string | null
+  existingNickname?: string | null,
+  athleticsWikipediaUrl?: string | null
 ): Promise<LogoResult | null> {
+
+  // ── Step 0: Direct athletics Wikipedia URL (most reliable path) ───────────
+  // If auditSchoolsAthletics stored the athletics program Wikipedia URL
+  // (e.g. https://en.wikipedia.org/wiki/Arizona_Wildcats), use it directly
+  // to search Wikidata — this bypasses university entity lookup entirely.
+  if (athleticsWikipediaUrl) {
+    const titleMatch = athleticsWikipediaUrl.match(/\/wiki\/([^#?]+)$/);
+    if (titleMatch) {
+      const athleticsTitle = decodeURIComponent(titleMatch[1].replace(/_/g, " "));
+      const results = await wdSearch(athleticsTitle, 3);
+      if (results.length) {
+        const match = results[0]; // top result for exact athletics title should be correct
+        const mClaims = await wdGetClaims(match.id);
+        const fileName = claimStringValue(mClaims, "P154");
+        if (fileName) {
+          const confidence = scoreCandidate(fileName);
+          return {
+            url:               commonsFilePath(fileName),
+            source:            `wikidata:athletics_wiki:${match.id}:P154`,
+            confidence,
+            fileName,
+            athleticsEntityId: match.id,
+            athleticsLabel:    match.label,
+          };
+        }
+      }
+    }
+  }
 
   // ── Step 1: Find university Wikidata entity ───────────────────────────────
   const searchResults = await wdSearch(schoolName, 5);
@@ -395,7 +430,8 @@ Deno.serve(async (req) => {
 
       let result: LogoResult | null = null;
       try {
-        result = await getAthleticLogoFromWikidata(schoolName, nickname || null);
+        const athleticsWikiUrl = safeStr(row?.athletics_wikipedia_url);
+        result = await getAthleticLogoFromWikidata(schoolName, nickname || null, athleticsWikiUrl);
       } catch (e: any) {
         stats.errors++;
         if (sample.errors.length < 10) {
