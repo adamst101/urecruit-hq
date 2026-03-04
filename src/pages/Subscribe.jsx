@@ -169,7 +169,7 @@ export default function Subscribe() {
   const faqs = [
     { q: "Can I add multiple kids?", a: "Yes — one email can manage multiple athletes under one subscription." },
     { q: "Do I need to create a profile first?", a: "No — you create athlete profiles after purchase. Buy first, set up later." },
-    { q: "What does "Demo" mean?", a: "Demo shows last season's data so you can explore the platform. Subscribe to unlock current camps." },
+    { q: "What does 'Demo' mean?", a: "Demo shows last season's data so you can explore the platform. Subscribe to unlock current camps." },
   ];
 
   return (
