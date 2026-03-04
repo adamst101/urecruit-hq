@@ -565,7 +565,7 @@ export default function SchoolsManager() {
               ))}
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={visFields.length} style={{ ...styles.td, textAlign: "center", color: "#446", padding: 40 }}>
+                  <td colSpan={visFields.length + 1} style={{ ...styles.td, textAlign: "center", color: "#446", padding: 40 }}>
                     No schools match your filters
                   </td>
                 </tr>
