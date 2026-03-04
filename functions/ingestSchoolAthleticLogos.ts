@@ -388,20 +388,21 @@ async function getLogoViaWikipediaChain(wikipediaUrl) {
   result.athletics_nickname = extractAthleticsName(athInfobox, pageTitle);
 
   // Step 4: Extract the logo
-  const logoFilename = extractInfoboxLogoFilename(athInfobox);
+  const logoCand = extractInfoboxLogoFilename(athInfobox);
 
-  if (!logoFilename) {
+  if (!logoCand) {
     result.status = "no_logo_on_athletics";
     result.debugPath.push("no_logo_in_athletics_infobox");
     return result;
   }
 
-  result.fileName = logoFilename;
-  result.athletic_logo_url = commonsFilePath(logoFilename);
+  result.fileName = logoCand.filename;
+  // Prefer direct upload URL, fall back to Commons FilePath
+  result.athletic_logo_url = logoCand.directUrl || commonsFilePath(logoCand.filename);
   result.source = "wikipedia:institution→nickname_link→athletics_infobox";
   result.status = "found";
 
-  const n = lc(logoFilename);
+  const n = lc(logoCand.filename);
   let confidence = 0.7;
   if (n.endsWith(".svg")) confidence += 0.2;
   else if (n.endsWith(".png")) confidence += 0.05;
@@ -409,7 +410,7 @@ async function getLogoViaWikipediaChain(wikipediaUrl) {
   if (n.includes("wordmark")) confidence += 0.05;
   result.confidence = Math.min(0.99, confidence);
 
-  result.debugPath.push(`found_logo:${logoFilename}:confidence=${result.confidence}`);
+  result.debugPath.push(`found_logo:${logoCand.filename}:confidence=${result.confidence}`);
   return result;
 }
 
@@ -449,19 +450,19 @@ async function getLogoFromStoredAthleticsUrl(athleticsWikiUrl) {
 
   result.athletics_nickname = extractAthleticsName(athInfobox, pageTitle);
 
-  const logoFilename = extractInfoboxLogoFilename(athInfobox);
-  if (!logoFilename) {
+  const logoCand = extractInfoboxLogoFilename(athInfobox);
+  if (!logoCand) {
     result.status = "no_logo_on_athletics";
     result.debugPath.push("no_logo_in_athletics_infobox");
     return result;
   }
 
-  result.fileName = logoFilename;
-  result.athletic_logo_url = commonsFilePath(logoFilename);
+  result.fileName = logoCand.filename;
+  result.athletic_logo_url = logoCand.directUrl || commonsFilePath(logoCand.filename);
   result.source = "wikipedia:stored_athletics_url→athletics_infobox";
   result.status = "found";
 
-  const n = lc(logoFilename);
+  const n = lc(logoCand.filename);
   let confidence = 0.6; // slightly lower since we didn't re-derive the URL
   if (n.endsWith(".svg")) confidence += 0.2;
   else if (n.endsWith(".png")) confidence += 0.05;
@@ -469,7 +470,7 @@ async function getLogoFromStoredAthleticsUrl(athleticsWikiUrl) {
   if (n.includes("wordmark")) confidence += 0.05;
   result.confidence = Math.min(0.95, confidence);
 
-  result.debugPath.push(`found_logo:${logoFilename}:confidence=${result.confidence}`);
+  result.debugPath.push(`found_logo:${logoCand.filename}:confidence=${result.confidence}`);
   return result;
 }
 
