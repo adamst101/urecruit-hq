@@ -1,8 +1,8 @@
 // functions/fetchFootballCampsUSASchoolList.js
-// v3: Diagnostic mode — returns raw HTML snippets around View Site anchors
-// so we can determine the exact card boundary pattern.
+// v4: Proper card-boundary parsing using <div class="listItem"> as delimiter.
+// Each card contains: schoolLogo img, span.school, p (description), a.viewSite.
 
-const VERSION = "fetchFootballCampsUSASchoolList_v3_diag";
+const VERSION = "fetchFootballCampsUSASchoolList_v4";
 
 Deno.serve(async (req) => {
   const started = Date.now();
@@ -23,60 +23,165 @@ Deno.serve(async (req) => {
 
     const html = await resp.text();
 
-    // Count occurrences of candidate patterns
-    function countOccurrences(str, substr) {
-      let count = 0;
-      let pos = 0;
-      while ((pos = str.indexOf(substr, pos)) !== -1) { count++; pos += substr.length; }
-      return count;
+    // Split on <div class="listItem" to get individual card chunks
+    const chunks = html.split('<div class="listItem"');
+    // First chunk is everything before the first card — skip it
+    const cardChunks = chunks.slice(1);
+
+    const programs = [];
+
+    for (var i = 0; i < cardChunks.length; i++) {
+      var card = cardChunks[i];
+
+      // Extract program name from <span class="school">...</span>
+      var nameMatch = /<span class="school">([^<]+)<\/span>/i.exec(card);
+      var name = nameMatch ? nameMatch[1].trim() : null;
+
+      // Extract logo from <img ... class="schoolLogo" ... src="...">
+      var logoMatch = /src="(https:\/\/s3\.amazonaws\.com\/images\.ryzer\.com\/[^"]+)"[^>]*class="schoolLogo"/i.exec(card);
+      if (!logoMatch) {
+        logoMatch = /class="schoolLogo"[^>]*src="(https:\/\/s3\.amazonaws\.com\/images\.ryzer\.com\/[^"]+)"/i.exec(card);
+      }
+      // Also try: src comes before class in the img tag
+      if (!logoMatch) {
+        logoMatch = /<img[^>]*src="(https:\/\/s3\.amazonaws\.com\/images\.ryzer\.com\/[^"]+)"[^>]*>/i.exec(card);
+      }
+      var logoUrl = logoMatch ? logoMatch[1] : null;
+
+      // If name not found from span, try img alt
+      if (!name) {
+        var altMatch = /alt="([^"]+)"/i.exec(card);
+        name = altMatch ? altMatch[1].trim() : "(unknown)";
+      }
+
+      // Extract URL from <a href="..." class="viewSite">
+      var urlMatch = /<a\s+href="([^"]+)"[^>]*class="viewSite"/i.exec(card);
+      if (!urlMatch) {
+        urlMatch = /class="viewSite"[^>]*href="([^"]+)"/i.exec(card);
+      }
+      if (!urlMatch) {
+        urlMatch = /<a[^>]*href="([^"]*)"[^>]*>\s*View Site/i.exec(card);
+      }
+      var url = urlMatch ? urlMatch[1].trim() : null;
+
+      // Extract description from <p>...</p> inside <div class="extraInfo">
+      var descMatch = /<p>([^<]+(?:<[^>]+>[^<]*)*)<\/p>/i.exec(card);
+      var description = descMatch ? stripTags(descMatch[1]).trim() : null;
+
+      // Extract school name + city/state from description
+      var extracted = extractSchoolFromDescription(description);
+
+      programs.push({
+        name: name || "(unknown)",
+        url: url || null,
+        logo_url: logoUrl || null,
+        description: description || null,
+        extracted_school: extracted.school,
+        extracted_city: extracted.city,
+        extracted_state: extracted.state,
+      });
     }
 
-    const counts = {
-      "View Site": countOccurrences(html, "View Site"),
-      "programContainer": countOccurrences(html, "programContainer"),
-      "camp-card": countOccurrences(html, "camp-card"),
-      "card": countOccurrences(html, '"card"'),
-      "viewSiteBtn": countOccurrences(html, "viewSiteBtn"),
-      "view-site": countOccurrences(html, "view-site"),
-      "ryzerevents.com": countOccurrences(html, "ryzerevents.com"),
-      "ourprograms": countOccurrences(html, "ourprograms"),
-      "programDiv": countOccurrences(html, "programDiv"),
-      "program-item": countOccurrences(html, "program-item"),
-      "campListing": countOccurrences(html, "campListing"),
-      "campCard": countOccurrences(html, "campCard"),
-      "col-md": countOccurrences(html, "col-md"),
-      "col-sm": countOccurrences(html, "col-sm"),
-      "col-lg": countOccurrences(html, "col-lg"),
-    };
+    // Dedupe by URL
+    var seen = {};
+    var deduped = [];
+    for (var j = 0; j < programs.length; j++) {
+      var p = programs[j];
+      var key = (p.url || "").toLowerCase().replace(/\/+$/, "");
+      if (!key || seen[key]) continue;
+      seen[key] = true;
+      deduped.push(p);
+    }
 
-    // Find first "View Site" anchor
-    const firstIdx = html.indexOf("View Site");
-    const before200 = firstIdx >= 0 ? html.slice(Math.max(0, firstIdx - 600), firstIdx) : null;
-    const after200 = firstIdx >= 0 ? html.slice(firstIdx, Math.min(html.length, firstIdx + 300)) : null;
-
-    // Find second "View Site" to see the gap between cards
-    const secondIdx = firstIdx >= 0 ? html.indexOf("View Site", firstIdx + 10) : -1;
-    const betweenCards = (firstIdx >= 0 && secondIdx >= 0)
-      ? html.slice(firstIdx, Math.min(html.length, secondIdx + 100))
-      : null;
-
-    // Also get a chunk around the 3rd View Site for confirmation
-    const thirdIdx = secondIdx >= 0 ? html.indexOf("View Site", secondIdx + 10) : -1;
-    const before3rd = thirdIdx >= 0 ? html.slice(Math.max(0, thirdIdx - 600), thirdIdx) : null;
+    var withDesc = deduped.filter(function(p) { return p.description; }).length;
+    var withSchool = deduped.filter(function(p) { return p.extracted_school; }).length;
 
     return Response.json({
       ok: true,
       version: VERSION,
       htmlLength: html.length,
-      counts,
-      firstViewSiteIndex: firstIdx,
-      before_first_ViewSite_600chars: before200,
-      after_first_ViewSite_300chars: after200,
-      between_1st_and_2nd_ViewSite: betweenCards ? betweenCards.slice(0, 2000) : null,
-      before_3rd_ViewSite_600chars: before3rd,
+      cardChunksFound: cardChunks.length,
+      totalFound: deduped.length,
+      withDescription: withDesc,
+      withExtractedSchool: withSchool,
+      sample: deduped.slice(0, 10),
+      allPrograms: deduped,
       durationMs: Date.now() - started,
     });
   } catch (err) {
     return Response.json({ error: String(err.message || err), version: VERSION }, { status: 500 });
   }
 });
+
+function extractSchoolFromDescription(desc) {
+  var result = { school: null, city: null, state: null };
+  if (!desc) return result;
+
+  // Extract city, state: "in City, ST" or "in City, State"
+  var csMatch = /\bin\s+([A-Z][A-Za-z\s.'-]+),\s*([A-Z]{2}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/.exec(desc);
+  if (csMatch) {
+    result.city = csMatch[1].trim();
+    result.state = csMatch[2].trim();
+  }
+
+  // Try patterns in priority order to extract school name:
+
+  // 1. "campus of [School Name]"
+  var m = /campus of\s+(?:the\s+)?(.+?)(?:\s+in\s|\s*[,.])/i.exec(desc);
+  if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
+
+  // 2. "on the [School Name] campus"
+  m = /on the\s+(.+?)\s+campus/i.exec(desc);
+  if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
+
+  // 3. "held at [Venue] at [School]" or "held at [School's Something]"
+  m = /held at\s+(?:the\s+)?(.+?)(?:\s+in\s|\s*[,.])/i.exec(desc);
+  if (m && m[1]) {
+    // The "held at" might reference a venue, so look for university/college within it
+    var venueText = m[1];
+    var uniInVenue = /((?:University of [A-Za-z\s.&'-]+|[A-Za-z\s.&'-]+ University|[A-Za-z\s.&'-]+ College|[A-Za-z\s.&'-]+ Institute))/i.exec(venueText);
+    if (uniInVenue) {
+      result.school = cleanSchoolName(uniInVenue[1]);
+      if (result.school) return result;
+    }
+  }
+
+  // 4. "led by the [School] football/coaching staff"
+  m = /led by the\s+(.+?)\s+(?:football|coaching)\s+staff/i.exec(desc);
+  if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
+
+  // 5. General: find "University of X" or "X University" or "X College" anywhere in description
+  m = /(University of [A-Za-z\s.&'-]+|[A-Z][A-Za-z\s.&'-]+ University|[A-Z][A-Za-z\s.&'-]+ College(?!\s+Football))/i.exec(desc);
+  if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
+
+  return result;
+}
+
+function cleanSchoolName(raw) {
+  if (!raw) return null;
+  var s = raw.trim();
+  // Remove trailing "Football" and everything after
+  s = s.replace(/\s+Football.*$/i, "");
+  // Remove trailing keywords
+  s = s.replace(/\s+(campus|staff|coaching|camp|camps|stadium).*$/i, "");
+  // Remove leading "the"
+  s = s.replace(/^the\s+/i, "");
+  // Remove punctuation at end
+  s = s.replace(/[.,;:!]+$/, "").trim();
+  if (s.length < 3) return null;
+  return s;
+}
+
+function stripTags(html) {
+  if (!html) return "";
+  return String(html)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
