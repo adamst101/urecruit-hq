@@ -140,7 +140,8 @@ function parseWikiTable(html) {
     let rm;
     while ((rm = rowRe.exec(bodyHtml)) !== null) {
       const rowHtml = rm[1];
-      // Skip header rows
+      // Skip pure header rows (rows that have ONLY <th> and no <td>)
+      // But keep data rows that use <th scope="row"> for the school name
       if (rowHtml.includes("<th") && !rowHtml.includes("<td")) continue;
 
       // Extract cells (both <th> and <td>) — handle both self-closing and content cells
