@@ -1,31 +1,9 @@
 // src/components/hooks/useSchoolIdentity.jsx
 //
 // Resolves the best available school identity (logo, name, division) for a set of Camp rows.
-//
-// Priority chain per field:
-//
-//   logo:     School.athletics_logo_url → School.team_logo_url → School.logo_url
-//             → School.school_logo_url → Camp.school_logo_url → Camp.athletics_logo_url
-//             → Camp.logo_url
-//             (Ryzer placeholder and vendor logos are always rejected)
-//
-//   name:     School.school_name → School.name → Camp.school_name
-//             (never "unknown", "n/a", etc.)
-//
-//   division: School.division → School.ncaa_division → School.athletics_division
-//             → School.school_division → Camp.division → Camp.school_division
-//             (normalized to "Division I / II / III" format)
-//
-// Returns: { schoolById: Map<schoolId, { name, logoUrl, division }>, loading }
-//
-// Usage:
-//   const { resolveIdentity } = useSchoolIdentity(campRows);
-//   const { name, logoUrl, division } = resolveIdentity(schoolId, campRow);
 
 import { useEffect, useState } from "react";
 import { base44 } from "../../api/base44Client";
-
-// ─── url / text guards ────────────────────────────────────────────────────────
 
 const BAD_TEXT = new Set(["unknown", "n/a", "na", "none", "null", "undefined", "-", ""]);
 
@@ -37,10 +15,7 @@ function isBadLogoUrl(url) {
   const u = String(url || "").trim().toLowerCase();
   if (!u) return true;
   if (!u.startsWith("http://") && !u.startsWith("https://")) return true;
-  // Vendor / source placeholders — never a real school identity logo
   if (u.includes("ryzer")) return true;
-  if (u.includes("sportsusa")) return true;
-  if (u.includes("sportscamps")) return true;
   if (u.includes("placeholder")) return true;
   return false;
 }
@@ -63,14 +38,12 @@ function pickBestText(...candidates) {
   return null;
 }
 
-// ─── division normalization ───────────────────────────────────────────────────
-
 export function normalizeDivisionLabel(v) {
   const s = String(v ?? "").trim();
   if (!s || isBadText(s)) return null;
   const u = s.toUpperCase();
-  if (u === "D1" || u === "DI")   return "Division I";
-  if (u === "D2" || u === "DII")  return "Division II";
+  if (u === "D1" || u === "DI") return "Division I";
+  if (u === "D2" || u === "DII") return "Division II";
   if (u === "D3" || u === "DIII") return "Division III";
   if (u.startsWith("DIVISION ")) return `Division ${u.replace("DIVISION", "").trim()}`;
   return s;
@@ -84,8 +57,6 @@ function pickBestDivision(...candidates) {
   return null;
 }
 
-// ─── id normalization ─────────────────────────────────────────────────────────
-
 function normId(x) {
   if (!x) return null;
   if (typeof x === "string") return x;
@@ -96,7 +67,15 @@ function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
-// ─── fetch helpers ────────────────────────────────────────────────────────────
+function uniq(arr) {
+  return Array.from(new Set((arr || []).map((x) => String(x)).filter(Boolean)));
+}
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
 
 function isRateLimitError(e) {
   const msg = String(e?.message || e || "").toLowerCase();
@@ -117,35 +96,61 @@ async function safeFilter(entity, where, sort, limit, retries = 2) {
     } catch (e) {
       last = e;
       if (!isRateLimitError(e) || i === retries) break;
-      await sleep(350 * Math.pow(2, i));
+      await sleep(300 * Math.pow(2, i));
     }
   }
   console.warn("[useSchoolIdentity] safeFilter failed:", last?.message || last);
   return [];
 }
 
-function chunk(arr, size) {
+async function fetchSchoolsByIds(School, ids) {
+  const clean = uniq(ids);
+  if (!School?.filter || clean.length === 0) return [];
+
   const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
+  for (const part of chunk(clean, 60)) {
+    const tries = [
+      { id: { in: part } },
+      { id: { $in: part } },
+      { _id: { in: part } },
+      { _id: { $in: part } },
+      { id: part },
+    ];
+
+    let rows = [];
+    for (const where of tries) {
+      rows = await safeFilter(School, where, "school_name", 2000);
+      if (rows.length) break;
+    }
+    out.push(...rows);
+  }
+
+  if (!out.length) {
+    const all = await safeFilter(School, {}, "school_name", 5000);
+    const wanted = new Set(clean);
+    return asArray(all).filter((s) => {
+      const id = String(normId(s) || "");
+      return id && wanted.has(id);
+    });
+  }
+
+  const seen = new Set();
+  const deduped = [];
+  for (const r of out) {
+    const id = String(normId(r) || "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    deduped.push(r);
+  }
+  return deduped;
 }
 
-// ─── identity builder ─────────────────────────────────────────────────────────
-
-/**
- * Build the best identity object from a School row + Camp row.
- * Either arg can be null — always returns a safe object.
- */
 export function buildIdentity(schoolRow, campRow) {
   const s = schoolRow || {};
-  const r = campRow  || {};
+  const r = campRow || {};
 
-  const name = pickBestText(
-    s.school_name,
-    s.name,
-    r.school_name,
-    r.camp_name,   // last-resort: at least show something
-  ) || "School";
+  const name =
+    pickBestText(s.school_name, s.name, r.school_name, r.camp_name) || "School";
 
   const logoUrl = pickBestLogo(
     s.athletics_logo_url,
@@ -157,7 +162,7 @@ export function buildIdentity(schoolRow, campRow) {
     r.school_logo_url,
     r.athletics_logo_url,
     r.logo_url,
-    r.logo,
+    r.logo
   );
 
   const division = pickBestDivision(
@@ -166,29 +171,18 @@ export function buildIdentity(schoolRow, campRow) {
     s.athletics_division,
     s.school_division,
     r.division,
-    r.school_division,
+    r.school_division
   );
 
-  const city  = pickBestText(s.city,  r.city)  || null;
+  const city = pickBestText(s.city, r.city) || null;
   const state = pickBestText(s.state, r.state) || null;
 
   return { name, logoUrl, division, city, state };
 }
 
-// ─── hook ─────────────────────────────────────────────────────────────────────
-
-/**
- * useSchoolIdentity(campRows)
- *
- * Fetches School rows for all unique school_ids in campRows.
- * Returns:
- *   schoolById  — { [schoolId]: schoolRow }  (raw School rows for direct access)
- *   resolveIdentity(schoolId, campRow) → { name, logoUrl, division, city, state }
- *   loading     — true while fetching
- */
 export function useSchoolIdentity(campRows) {
   const [schoolById, setSchoolById] = useState({});
-  const [loading, setLoading]       = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const rows = asArray(campRows);
@@ -197,9 +191,7 @@ export function useSchoolIdentity(campRows) {
       return;
     }
 
-    const ids = Array.from(
-      new Set(rows.map((r) => normId(r?.school_id)).filter(Boolean).map(String))
-    );
+    const ids = uniq(rows.map((r) => normId(r?.school_id)).filter(Boolean));
     if (!ids.length) {
       setSchoolById({});
       return;
@@ -213,16 +205,11 @@ export function useSchoolIdentity(campRows) {
         const School = base44?.entities?.School;
         if (!School?.filter) return;
 
+        const fetched = await fetchSchoolsByIds(School, ids);
         const out = {};
-        const groups = chunk(ids, 50);
-
-        for (const g of groups) {
-          if (cancelled) break;
-          const srows = await safeFilter(School, { id: g }, "school_name", 2000);
-          for (const s of asArray(srows)) {
-            const sid = String(s?.id ?? "");
-            if (sid) out[sid] = s;
-          }
+        for (const s of fetched) {
+          const sid = String(normId(s) || "");
+          if (sid) out[sid] = s;
         }
 
         if (!cancelled) setSchoolById(out);
@@ -234,20 +221,16 @@ export function useSchoolIdentity(campRows) {
     }
 
     fetchSchools();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [
-    // Re-run when the set of school ids changes (stable JSON key)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    JSON.stringify(
-      Array.from(
-        new Set(asArray(campRows).map((r) => normId(r?.school_id)).filter(Boolean).map(String))
-      ).sort()
-    ),
+    JSON.stringify(uniq(asArray(campRows).map((r) => normId(r?.school_id)).filter(Boolean)).sort()),
   ]);
 
   function resolveIdentity(schoolId, campRow) {
-    const sid   = String(schoolId || "");
-    const srow  = sid ? (schoolById[sid] || null) : null;
+    const sid = String(schoolId || "");
+    const srow = sid ? schoolById[sid] || null : null;
     return buildIdentity(srow, campRow);
   }
 
@@ -255,3 +238,4 @@ export function useSchoolIdentity(campRows) {
 }
 
 export default useSchoolIdentity;
+

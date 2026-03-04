@@ -181,7 +181,7 @@ function LogoAvatar({ schoolName, logoUrl }) {
   const showImg = !!logoUrl && !imgErr;
 
   return (
-    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center flex-shrink-0">
+    <div className="w-10 h-10 rounded-lg bg-[#0f172a] border border-[#1f2937] overflow-hidden flex items-center justify-center flex-shrink-0">
       {showImg ? (
         <img
           src={logoUrl}
@@ -191,7 +191,7 @@ function LogoAvatar({ schoolName, logoUrl }) {
           onError={() => setImgErr(true)}
         />
       ) : (
-        <div className="text-xs font-semibold text-slate-500">{initialBadge(schoolName)}</div>
+        <div className="text-xs font-semibold text-[#9ca3af]">{initialBadge(schoolName)}</div>
       )}
     </div>
   );
@@ -424,12 +424,12 @@ export default function Discover() {
 
     if (campErr) {
       return (
-        <Card className="p-5 border-slate-200">
-          <div className="text-lg font-semibold text-deep-navy">Camps not available</div>
-          <div className="mt-1 text-sm text-slate-700">{campErr}</div>
+        <Card className="p-5 border-[#1f2937] bg-[#111827]">
+          <div className="text-lg font-semibold text-[#f9fafb]">Camps not available</div>
+          <div className="mt-1 text-sm text-[#9ca3af]">{campErr}</div>
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" onClick={() => loadCamps()}>Retry</Button>
-            <Button variant="outline" onClick={() => nav("/AdminOps")}>Open Admin Ops</Button>
+            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={() => loadCamps()}>Retry</Button>
+            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={() => nav("/AdminOps")}>Open Admin Ops</Button>
           </div>
         </Card>
       );
@@ -439,18 +439,18 @@ export default function Discover() {
       return (
         <div className="space-y-3">
           {[1, 2, 3, 4].map((n) => (
-            <Card key={n} className="p-4 border-slate-200 bg-white">
+            <Card key={n} className="p-4 border-[#1f2937] bg-[#111827]">
               <div className="animate-pulse">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex-shrink-0" />
+                    <div className="w-10 h-10 rounded-lg bg-[#0f172a] border border-[#1f2937] flex-shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <div className="h-3 w-28 bg-slate-200 rounded" />
-                      <div className="mt-2 h-5 w-56 bg-slate-200 rounded" />
-                      <div className="mt-2 h-4 w-40 bg-slate-200 rounded" />
+                      <div className="h-3 w-28 bg-[#1f2937] rounded" />
+                      <div className="mt-2 h-5 w-56 bg-[#1f2937] rounded" />
+                      <div className="mt-2 h-4 w-40 bg-[#1f2937] rounded" />
                     </div>
                   </div>
-                  <div className="h-9 w-9 bg-slate-200 rounded flex-shrink-0" />
+                  <div className="h-9 w-9 bg-[#1f2937] rounded flex-shrink-0" />
                 </div>
               </div>
             </Card>
@@ -461,14 +461,14 @@ export default function Discover() {
 
     if (!rows.length) {
       return (
-        <Card className="p-5 border-slate-200">
-          <div className="text-lg font-semibold text-deep-navy">No camps found</div>
-          <div className="mt-1 text-sm text-slate-600">
+        <Card className="p-5 border-[#1f2937] bg-[#111827]">
+          <div className="text-lg font-semibold text-[#f9fafb]">No camps found</div>
+          <div className="mt-1 text-sm text-[#9ca3af]">
             No camps found for season {seasonYear} (or filters excluded them).
           </div>
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" onClick={clearFilters}>Clear filters</Button>
-            <Button onClick={() => setIsFiltersOpen(true)}>Edit filters</Button>
+            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={clearFilters}>Clear filters</Button>
+            <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={() => setIsFiltersOpen(true)}>Edit filters</Button>
           </div>
         </Card>
       );
@@ -502,7 +502,7 @@ export default function Discover() {
           return (
             <Card
               key={campId}
-              className="p-4 border-slate-200 bg-white cursor-pointer hover:shadow-sm transition"
+              className="p-4 border-[#1f2937] bg-[#111827] cursor-pointer hover:border-[#374151] transition"
               role="button"
               tabIndex={0}
               onClick={() =>
@@ -519,28 +519,28 @@ export default function Discover() {
                     {/* Division badge — only rendered when non-null / non-"unknown" */}
                     <div className="flex items-center gap-2 flex-wrap">
                       {divisionLabel && (
-                        <Badge className="bg-slate-900 text-white text-xs">{divisionLabel}</Badge>
+                        <Badge className="bg-[#0f172a] text-[#f9fafb] border border-[#374151] text-xs">{divisionLabel}</Badge>
                       )}
                       {!isPaid && (
-                        <Badge variant="outline" className="text-xs">Demo</Badge>
+                        <Badge variant="outline" className="text-xs border-[#374151] text-[#9ca3af]">Demo</Badge>
                       )}
                     </div>
 
                     {/* School name — never "unknown" */}
-                    <div className="text-lg font-semibold text-deep-navy truncate mt-1">
+                    <div className="text-lg font-semibold text-[#f9fafb] truncate mt-1">
                       {schoolName}
                     </div>
 
-                    <div className="text-sm text-slate-700 truncate">
+                    <div className="text-sm text-[#9ca3af] truncate">
                       {r?.camp_name ?? r?.name ?? "Camp"}
                     </div>
 
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
-                      <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-[#9ca3af]">
+                      <span className="rounded-md bg-[#0f172a] border border-[#1f2937] px-2 py-1">
                         {dateLabel}
                       </span>
                       {(schoolCity || schoolState) && (
-                        <span className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1">
+                        <span className="rounded-md bg-[#0f172a] border border-[#1f2937] px-2 py-1">
                           {[schoolCity, schoolState].filter(Boolean).join(", ")}
                         </span>
                       )}
@@ -553,18 +553,16 @@ export default function Discover() {
                   variant="ghost"
                   size="sm"
                   className="h-10 w-10 p-0 flex-shrink-0"
-                  disabled={!isPaid}
                   onClick={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (!isPaid) return;
-                    const ok = await (writeGate?.ensure ? writeGate.ensure("favorite") : true);
+                    const ok = await (writeGate?.ensure ? writeGate.ensure("favorite", { campId }) : true);
                     if (!ok) return;
                     await upsertIntent(intentKey, isFavorite ? "" : "favorite");
                   }}
-                  aria-label={isPaid ? (isFavorite ? "Remove favorite" : "Add favorite") : "Favorites locked"}
+                  aria-label={isFavorite ? "Remove favorite" : "Add favorite"}
                 >
-                  <span className={(isFavorite ? "text-amber-500" : "text-slate-400") + " text-2xl leading-none"}>
+                  <span className={(isFavorite ? "text-amber-500" : "text-[#9ca3af]") + " text-2xl leading-none"}>
                     {isFavorite ? "★" : "☆"}
                   </span>
                 </Button>
@@ -574,16 +572,20 @@ export default function Discover() {
                 <Button
                   type="button"
                   size="sm"
+                  className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
                   disabled={!linkUrl}
                   onClick={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     if (!linkUrl) return;
+
+                    const ok = await (writeGate?.ensure
+                      ? writeGate.ensure("register", { campId })
+                      : true);
+                    if (!ok) return;
+
                     try { window.open(String(linkUrl), "_blank", "noopener,noreferrer"); } catch { /* ignore */ }
-                    if (isPaid) {
-                      const ok = await (writeGate?.ensure ? writeGate.ensure("register") : true);
-                      if (ok) await upsertIntent(intentKey, "registered");
-                    }
+                    await upsertIntent(intentKey, "registered");
                   }}
                 >
                   Register
@@ -599,20 +601,20 @@ export default function Discover() {
   /* ─── render ──────────────────────────────────────────────────────────── */
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-2xl font-bold text-deep-navy">Discover</div>
+            <div className="text-2xl font-bold text-[#f9fafb]">Discover</div>
             <div className="mt-1 flex items-center gap-2 flex-wrap">
-              <Badge variant="secondary" className="bg-slate-100 text-slate-700">
+              <Badge variant="secondary" className="bg-[#111827] text-[#9ca3af] border border-[#1f2937]">
                 Season {seasonYear}
               </Badge>
               {isPaid
-                ? <Badge className="bg-deep-navy text-white">Paid</Badge>
-                : <Badge variant="outline">Demo</Badge>
+                ? <Badge className="bg-[#e8a020] text-[#0a0e1a]">Paid</Badge>
+                : <Badge variant="outline" className="border-[#374151] text-[#9ca3af]">Demo</Badge>
               }
-              <span className="text-xs text-slate-500">{resultsCountLabel}</span>
+              <span className="text-xs text-[#9ca3af]">{resultsCountLabel}</span>
             </div>
           </div>
 
@@ -622,7 +624,7 @@ export default function Discover() {
                 variant="outline"
                 onClick={() => nav("/MyCamps")}
                 aria-label="Go to My Camps"
-                className="whitespace-nowrap"
+                className="whitespace-nowrap border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#111827]"
               >
                 My Camps
                 {favoriteCount > 0 && (
@@ -632,7 +634,7 @@ export default function Discover() {
                 )}
               </Button>
             )}
-            <Button variant="outline" onClick={() => setIsFiltersOpen(true)} aria-label="Open filters">
+            <Button variant="outline" onClick={() => setIsFiltersOpen(true)} aria-label="Open filters" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#111827]">
               <SlidersHorizontal className="w-4 h-4 mr-2" />
               Filters
             </Button>
@@ -645,7 +647,7 @@ export default function Discover() {
               <button
                 key={k}
                 type="button"
-                className="text-xs px-2 py-1 rounded-full border border-slate-200 bg-white hover:bg-slate-50"
+                className="text-xs px-2 py-1 rounded-full border border-[#374151] bg-[#111827] text-[#f9fafb] hover:bg-[#1f2937]"
                 onClick={() => setIsFiltersOpen(true)}
               >
                 {chipsLabel(k)}
@@ -653,7 +655,7 @@ export default function Discover() {
             ))}
             <button
               type="button"
-              className="text-xs px-2 py-1 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-500"
+              className="text-xs px-2 py-1 rounded-full border border-[#374151] bg-[#111827] hover:bg-[#1f2937] text-[#9ca3af]"
               onClick={clearFilters}
             >
               Clear
@@ -685,3 +687,14 @@ export default function Discover() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
