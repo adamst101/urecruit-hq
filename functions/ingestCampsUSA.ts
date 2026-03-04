@@ -1497,7 +1497,10 @@ Deno.serve(async function(req) {
         }
         // Randomized delay between camp pages: 1.5-3s
         await sleep(1500 + rand(0, 1500));
-      } else if (alreadyIngested) {
+      } else if (skipDetail) {
+        stats.detailFetchesSkipped++;
+      } else if (existingCamp && !existingCampIsComplete(existingCamp)) {
+        // Existing camp has junk data but detail fetch was skipped due to skipDetailFetch flag
         stats.detailFetchesSkipped++;
       }
 
