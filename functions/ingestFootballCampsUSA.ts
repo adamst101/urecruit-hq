@@ -1027,7 +1027,7 @@ Deno.serve(async function(req) {
 
   // ── If step = matchSchools, return early ──
   if (step === "matchschools") {
-    return json({
+    var responseObj = {
       ok: true,
       version: VERSION,
       step: "matchSchools",
@@ -1037,11 +1037,15 @@ Deno.serve(async function(req) {
       totalAmbiguous: ambiguous.length,
       matchRate: Math.round((matched.length / programs.length) * 1000) / 10,
       matchByMethod: matchByMethod,
-      matched: matched,
       unmatched: unmatched,
       ambiguous: ambiguous,
       elapsedMs: elapsed(),
-    });
+    };
+    // Only include matched list if not compact mode
+    if (!body.compact) {
+      responseObj.matched = matched;
+    }
+    return json(responseObj);
   }
 
   // ── 4. INGEST: Process schools slice ──
