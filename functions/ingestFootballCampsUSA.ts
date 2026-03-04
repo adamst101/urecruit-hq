@@ -9,10 +9,29 @@
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 
-var VERSION = "ingestFootballCampsUSA_v3";
+var VERSION = "ingestFootballCampsUSA_v4";
 var FOOTBALL_SPORT_ID = "69407156fe19c3615944865f";
 var MATCH_CONFIDENCE_THRESHOLD = 0.7;
 var SOURCE_PLATFORM = "footballcampsusa";
+
+// ─── Non-football keyword filter ────────────────────────────────────────────
+var NON_FOOTBALL_KEYWORDS = [
+  "soccer", "basketball", "baseball", "softball", "volleyball",
+  "lacrosse", "tennis", "golf", "swimming", "wrestling",
+  "track", "cross country", "hockey", "rugby", "cricket",
+  "yoga", "theater", "theatre", "arts", "music", "stem", "medicare",
+  "hunter", "family", "sliced", "diced", "cheerleading", "cheer camp",
+  "dance camp", "band camp", "cooking"
+];
+
+function containsNonFootballKeyword(text) {
+  if (!text) return null;
+  var t = lc(text);
+  for (var i = 0; i < NON_FOOTBALL_KEYWORDS.length; i++) {
+    if (t.indexOf(NON_FOOTBALL_KEYWORDS[i]) >= 0) return NON_FOOTBALL_KEYWORDS[i];
+  }
+  return null;
+}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -1229,6 +1248,19 @@ Deno.serve(async function(req) {
   var Camp = base44.entities.Camp;
   var LastIngestRun = base44.entities.LastIngestRun;
 
+  // ── Load blocklist (CampBlockList) ──
+  var blockedKeys = {};
+  try {
+    var CampBlockList = base44.entities.CampBlockList;
+    if (CampBlockList && CampBlockList.filter) {
+      var blockRows = await CampBlockList.filter({}, "source_key", 99999);
+      for (var bi = 0; bi < (blockRows || []).length; bi++) {
+        var bk = safeStr((blockRows[bi] || {}).source_key);
+        if (bk) blockedKeys[bk] = true;
+      }
+    }
+  } catch (e) { /* CampBlockList may not exist yet — ignore */ }
+
   var allCamps = await Camp.filter({}, "source_key", 99999);
   var existingBySourceKey = {};
   for (var ci = 0; ci < allCamps.length; ci++) {
@@ -1239,7 +1271,7 @@ Deno.serve(async function(req) {
   var slice = programs.slice(startAt, startAt + maxSchools);
   var stats = { schoolsProcessed: 0, schoolsWithCamps: 0, schoolsNoCamps: 0, schoolsFetchError: 0,
     campsInserted: 0, campsUpdated: 0, campsSkipped: 0, campsErrors: 0, campsPastSkipped: 0,
-    schoolsMatched: 0, schoolsUnmatched: 0 };
+    schoolsMatched: 0, schoolsUnmatched: 0, blocked: 0, skippedWrongSport: 0 };
   var sampleCamps = [];
   var sampleErrors = [];
   var schoolResults = [];
@@ -1301,6 +1333,12 @@ Deno.serve(async function(req) {
       var regUrl = listing.reg_url;
       var sourceKey = SOURCE_PLATFORM + ":" + ryzerId;
 
+      // ── Blocklist check ──
+      if (blockedKeys[sourceKey]) {
+        stats.blocked++;
+        continue;
+      }
+
       var campName = listing.camp_name_from_listing;
       var startDate = listing.start_date;
       var endDate = listing.end_date;
@@ -1351,6 +1389,18 @@ Deno.serve(async function(req) {
       }
 
       if (!campName) campName = prog2.name + " Camp";
+
+      // ── Non-football keyword filter ──
+      var badKeyword = containsNonFootballKeyword(campName)
+        || containsNonFootballKeyword(hostOrg)
+        || containsNonFootballKeyword(notes);
+      if (badKeyword) {
+        stats.skippedWrongSport++;
+        if (sampleErrors.length < 10) {
+          sampleErrors.push({ source_key: sourceKey, reason: "wrong_sport", camp_name: campName, keyword: badKeyword });
+        }
+        continue;
+      }
 
       var seasonYear = parseInt(startDate.substring(0, 4));
 

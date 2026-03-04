@@ -68,6 +68,7 @@ import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
 import CampsManager from './pages/CampsManager';
+import BlockListManager from './pages/BlockListManager';
 import __Layout from './Layout.jsx';
 
 
@@ -93,6 +94,7 @@ export const PAGES = {
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
     "CampsManager": CampsManager,
+    "BlockListManager": BlockListManager,
 }
 
 export const pagesConfig = {

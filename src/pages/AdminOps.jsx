@@ -52,6 +52,13 @@ const TOOLS = [
         icon: "⚗️",
         color: "#3a5a6b",
       },
+      {
+        title: "Block List",
+        description: "View and manage blocked camp source_keys. Blocked camps are never re-ingested.",
+        route: "/BlockListManager",
+        icon: "🚫",
+        color: "#6b1a3a",
+      },
     ],
   },
   {

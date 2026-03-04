@@ -3,6 +3,7 @@ import { base44 } from "@/api/base44Client";
 
 const Camp   = base44.entities.Camp;
 const School = base44.entities.School;
+const CampBlockList = base44.entities.CampBlockList;
 
 // ─── Field definitions ────────────────────────────────────────────────────────
 
@@ -223,7 +224,9 @@ export default function CampsManager() {
   const [editing, setEditing]       = useState(null);
   const [saving, setSaving]         = useState({});
   const [saveMsg, setSaveMsg]       = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null); // null | { id, mode: "choose" | "block_reason" }
+  const BLOCK_REASONS = ["Wrong sport", "Not a college program", "Duplicate", "Spam / junk listing", "Other"];
+  const [blockReason, setBlockReason] = useState(BLOCK_REASONS[0]);
   const [visibleCols, setVisibleCols] = useState(() => new Set([
     "camp_name", "school_id", "start_date", "end_date", "city", "state",
     "price", "grades", "venue_name", "host_org", "link_url",
@@ -332,6 +335,34 @@ export default function CampsManager() {
       setCamps(prev => prev.filter(c => c.id !== campId));
       setSaveMsg("Deleted ✓");
       setTimeout(() => setSaveMsg(null), 1500);
+    } catch (e) {
+      setSaveMsg("Error: " + String(e?.message || e));
+      setTimeout(() => setSaveMsg(null), 3000);
+    } finally {
+      setSaving(s => { const n = { ...s }; delete n[`del:${campId}`]; return n; });
+      setConfirmDelete(null);
+    }
+  };
+
+  const handleBlock = async (campId, reason) => {
+    setSaving(s => ({ ...s, [`del:${campId}`]: true }));
+    try {
+      const camp = camps.find(c => c.id === campId);
+      if (camp?.source_key) {
+        await CampBlockList.create({
+          source_key: camp.source_key,
+          source_platform: camp.source_platform || "footballcampsusa",
+          reason: reason,
+          blocked_at: new Date().toISOString(),
+          blocked_by: "manual_delete",
+          camp_name: camp.camp_name || null,
+          notes: null,
+        });
+      }
+      await Camp.delete(campId);
+      setCamps(prev => prev.filter(c => c.id !== campId));
+      setSaveMsg("Blocked + Deleted ✓");
+      setTimeout(() => setSaveMsg(null), 2000);
     } catch (e) {
       setSaveMsg("Error: " + String(e?.message || e));
       setTimeout(() => setSaveMsg(null), 3000);
@@ -463,20 +494,38 @@ export default function CampsManager() {
             <tbody>
               {pageRows.map((row, ri) => (
                 <tr key={row.id} style={{ background: ri % 2 === 0 ? "#FFFFFF" : "#F9FAFB" }}>
-                  <td style={{ ...styles.td, width: 50, minWidth: 50, textAlign: "center", padding: "4px 6px" }}>
+                  <td style={{ ...styles.td, width: 120, minWidth: 120, textAlign: "center", padding: "4px 6px" }}>
                     {saving[`del:${row.id}`] ? (
                       <span style={{ color: "#DC2626", fontSize: 12 }}>…</span>
-                    ) : confirmDelete === row.id ? (
-                      <span style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                    ) : confirmDelete?.id === row.id && confirmDelete?.mode === "block_reason" ? (
+                      <span style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "center" }}>
+                        <select value={blockReason} onChange={e => setBlockReason(e.target.value)}
+                          style={{ fontSize: 11, padding: "2px 4px", borderRadius: 3, border: "1px solid #E5E7EB", width: 110 }}>
+                          {BLOCK_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                        <span style={{ display: "flex", gap: 3 }}>
+                          <button onClick={() => handleBlock(row.id, blockReason)}
+                            style={{ background: "#DC2626", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, padding: "2px 6px", borderRadius: 3 }}
+                            title="Confirm block">Block</button>
+                          <button onClick={() => setConfirmDelete(null)}
+                            style={{ background: "none", border: "1px solid #E5E7EB", color: "#6B7280", cursor: "pointer", fontSize: 11, padding: "2px 6px", borderRadius: 3 }}
+                            title="Cancel">✗</button>
+                        </span>
+                      </span>
+                    ) : confirmDelete?.id === row.id && confirmDelete?.mode === "choose" ? (
+                      <span style={{ display: "flex", gap: 3, justifyContent: "center", flexWrap: "wrap" }}>
+                        <button onClick={() => { setBlockReason(BLOCK_REASONS[0]); setConfirmDelete({ id: row.id, mode: "block_reason" }); }}
+                          style={{ background: "#DC2626", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, padding: "2px 6px", borderRadius: 3 }}
+                          title="Block (never re-ingest) + delete">🚫</button>
                         <button onClick={() => handleDelete(row.id)}
-                          style={{ background: "none", border: "none", color: "#059669", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}
-                          title="Confirm delete">✓</button>
+                          style={{ background: "#F59E0B", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, padding: "2px 6px", borderRadius: 3 }}
+                          title="Delete only (will re-ingest)">🗑</button>
                         <button onClick={() => setConfirmDelete(null)}
-                          style={{ background: "none", border: "none", color: "#DC2626", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}
+                          style={{ background: "none", border: "1px solid #E5E7EB", color: "#6B7280", cursor: "pointer", fontSize: 11, padding: "2px 6px", borderRadius: 3 }}
                           title="Cancel">✗</button>
                       </span>
                     ) : (
-                      <button onClick={() => setConfirmDelete(row.id)}
+                      <button onClick={() => setConfirmDelete({ id: row.id, mode: "choose" })}
                         style={{ background: "none", border: "none", color: "#9CA3AF", cursor: "pointer", fontSize: 15, padding: "2px 4px" }}
                         title="Delete this camp">⌫</button>
                     )}
