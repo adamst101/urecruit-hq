@@ -59,6 +59,13 @@ const TOOLS = [
         icon: "🚫",
         color: "#6b1a3a",
       },
+      {
+        title: "Host Org Mappings",
+        description: "Map host_org / Ryzer program names to schools. Auto-links camps during ingestion.",
+        route: "/HostOrgMappingManager",
+        icon: "🔗",
+        color: "#1a4e6b",
+      },
     ],
   },
   {

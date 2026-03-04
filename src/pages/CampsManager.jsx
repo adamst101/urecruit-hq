@@ -4,6 +4,17 @@ import { base44 } from "@/api/base44Client";
 const Camp   = base44.entities.Camp;
 const School = base44.entities.School;
 const CampBlockList = base44.entities.CampBlockList;
+const HostOrgMapping = base44.entities.HostOrgMapping;
+
+function normalizeHostOrgKey(raw) {
+  if (!raw) return "";
+  var s = (raw || "").toLowerCase().trim();
+  s = s.replace(/\s*-\s*football\s*$/i, "");
+  s = s.replace(/\s+football\s+camps?\s*$/i, "");
+  s = s.replace(/\s+football\s*$/i, "");
+  s = s.replace(/\s+camps?\s*$/i, "");
+  return s.replace(/\s+/g, " ").trim();
+}
 
 // ─── Field definitions ────────────────────────────────────────────────────────
 
@@ -317,6 +328,34 @@ export default function CampsManager() {
       if (fieldKey === "school_id" && newValue) {
         await Camp.update(rowId, { school_manually_verified: true });
         setCamps(prev => prev.map(c => c.id === rowId ? { ...c, school_manually_verified: true } : c));
+        // Auto-create HostOrgMapping entries for host_org and ryzer_program_name
+        const campRow = camps.find(c => c.id === rowId);
+        const schoolRow = schoolIndex[newValue];
+        const schoolName = schoolRow?.school_name || null;
+        const keysToMap = [
+          { raw: campRow?.host_org, type: "host_org" },
+          { raw: campRow?.ryzer_program_name, type: "ryzer_program_name" },
+        ];
+        for (const entry of keysToMap) {
+          const nk = normalizeHostOrgKey(entry.raw);
+          if (!nk) continue;
+          try {
+            const existing = await HostOrgMapping.filter({ lookup_key: nk, key_type: entry.type });
+            if (!existing || existing.length === 0) {
+              await HostOrgMapping.create({
+                lookup_key: nk,
+                raw_value: entry.raw,
+                key_type: entry.type,
+                school_id: newValue,
+                school_name: schoolName,
+                verified: true,
+                confidence: 1.0,
+                match_count: 1,
+                source: "manual_link",
+              });
+            }
+          } catch (e) { /* ignore mapping errors */ }
+        }
       }
       setSaveMsg("Saved ✓");
       setTimeout(() => setSaveMsg(null), 1500);

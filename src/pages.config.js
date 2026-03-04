@@ -69,6 +69,7 @@ import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
 import CampsManager from './pages/CampsManager';
 import BlockListManager from './pages/BlockListManager';
+import HostOrgMappingManager from './pages/HostOrgMappingManager';
 import __Layout from './Layout.jsx';
 
 
@@ -95,6 +96,7 @@ export const PAGES = {
     "Workspace": Workspace,
     "CampsManager": CampsManager,
     "BlockListManager": BlockListManager,
+    "HostOrgMappingManager": HostOrgMappingManager,
 }
 
 export const pagesConfig = {
