@@ -360,6 +360,12 @@ export default function SchoolsManager() {
           </div>
         </div>
         <div style={styles.headerRight}>
+          <button
+            style={{ ...styles.colBtn, marginRight: 8, background: showLogoFill ? "#1a2840" : "#131f30", borderColor: showLogoFill ? "#4a90e2" : "#1e3048" }}
+            onClick={() => setShowLogoFill(v => !v)}
+          >
+            🖼 Fill Missing Logos
+          </button>
           <button style={styles.colBtn} onClick={() => setShowColPicker(v => !v)}>
             ⊞ Columns
           </button>
