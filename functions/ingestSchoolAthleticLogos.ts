@@ -432,17 +432,29 @@ Deno.serve(async (req) => {
           sample.noLogo.push({ schoolId, name: schoolName, status: result.status, debugPath: result.debugPath });
         }
 
-        // Clear bad data if school previously had a logo
+        // If we found the athletics page but just no logo, still save the athletics URL & nickname
+        const partialUpdates = {};
+        if (result.athletics_wikipedia_url) {
+          partialUpdates.athletics_wikipedia_url = result.athletics_wikipedia_url;
+        }
+        if (result.athletics_nickname) {
+          partialUpdates.athletics_nickname = result.athletics_nickname;
+        }
+
+        // Clear logo data but preserve athletics URL if we found it via nickname link
+        const hadLogoData = existing || safeStr(row?.athletic_logo_source);
+        const clearUpdates = {
+          athletic_logo_url: null,
+          athletic_logo_source: null,
+          athletic_logo_updated_at: null,
+          athletic_logo_confidence: null,
+          ...(!result.athletics_wikipedia_url ? { athletics_wikipedia_url: null } : {}),
+          ...(!result.athletics_nickname ? { athletics_nickname: null } : {}),
+          ...partialUpdates,
+        };
         const hadData = existing || safeStr(row?.athletics_wikipedia_url) || safeStr(row?.athletics_nickname);
-        if (hadData) {
-          const clearUpdates = {
-            athletic_logo_url: null,
-            athletic_logo_source: null,
-            athletic_logo_updated_at: null,
-            athletic_logo_confidence: null,
-            athletics_wikipedia_url: null,
-            athletics_nickname: null,
-          };
+        const needsUpdate = hadData || Object.keys(partialUpdates).length > 0;
+        if (needsUpdate) {
 
           if (dryRun) {
             stats.cleared++;
