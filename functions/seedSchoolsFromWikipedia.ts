@@ -113,7 +113,7 @@ function parseWikiTable(html) {
 
     // Find column indices
     const schoolIdx = headerCells.findIndex(h =>
-      h === "school" || h === "institution" || h.includes("school")
+      h === "school" || h === "institution" || h === "common name" || h.includes("school")
     );
     const nicknameIdx = headerCells.findIndex(h =>
       h === "nickname" || h.includes("nickname")
@@ -131,7 +131,9 @@ function parseWikiTable(html) {
       h === "subdivision" || h.includes("subdivision")
     );
 
-    if (schoolIdx === -1) continue; // skip tables without school column
+    if (schoolIdx === -1 && nicknameIdx === -1) continue; // skip tables without school/nickname columns
+    // If school col not found but nickname is, might be a different format — skip
+    if (schoolIdx === -1) continue;
 
     // Parse body rows
     const tbodyMatch = tableHtml.match(/<tbody>([\s\S]*?)<\/tbody>/i);
