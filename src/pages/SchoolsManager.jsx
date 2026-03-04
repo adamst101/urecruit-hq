@@ -453,7 +453,7 @@ export default function SchoolsManager() {
             )}
           </div>
           <div style={{ color: "#506880", fontSize: 12, marginBottom: 8 }}>
-            Scans schools with an Athletics Wiki URL but no athletic logo. Fetches the Wikipedia infobox logo and saves it.
+            Scans schools with an Athletics URL but no athletic logo. Supports both Wikipedia pages (infobox logo) and regular athletics sites (og:image, favicon, header logo).
           </div>
           {logoFillLog.length > 0 && (
             <div style={{ maxHeight: 200, overflowY: "auto", background: "#080e18", borderRadius: 6, padding: "8px 12px", fontSize: 13, fontFamily: "monospace", color: "#7090b0" }}>

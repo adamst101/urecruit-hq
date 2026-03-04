@@ -1,7 +1,11 @@
 // functions/fillMissingLogosFromAthleticsWiki.js
 //
 // Finds schools that have athletics_wikipedia_url but NO athletic_logo_url,
-// fetches the athletics Wikipedia page, extracts the infobox logo, and saves it.
+// fetches the page (Wikipedia or generic athletics site), extracts a logo, and saves it.
+//
+// Supports:
+// - Wikipedia pages: extracts infobox logo
+// - Generic athletics sites: extracts og:image, apple-touch-icon, or large favicon
 //
 // Request body:
 // { "dryRun": false, "cursor": null, "maxRows": 25, "throttleMs": 400, "timeBudgetMs": 55000 }
@@ -29,6 +33,10 @@ function safeStr(x) {
   return s || null;
 }
 
+function isWikipediaUrl(url) {
+  return /^https?:\/\/[a-z]{2,3}\.wikipedia\.org\//i.test(url);
+}
+
 async function fetchHtmlWithRetry(url, tries = 3, backoffMs = 800) {
   let lastErr = null;
   for (let i = 0; i < tries; i++) {
@@ -38,6 +46,7 @@ async function fetchHtmlWithRetry(url, tries = 3, backoffMs = 800) {
       const resp = await fetch(url, {
         headers: { "User-Agent": "CampConnectLogoFillBot/1.0" },
         signal: controller.signal,
+        redirect: "follow",
       });
       clearTimeout(timer);
       if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
@@ -54,6 +63,8 @@ async function fetchHtmlWithRetry(url, tries = 3, backoffMs = 800) {
   }
   throw lastErr;
 }
+
+// ── Wikipedia infobox extraction ──
 
 function extractInfobox(html) {
   const m = html.match(/<table[^>]*class="[^"]*infobox[^"]*"[^>]*>[\s\S]*?<\/table>/i);
@@ -152,6 +163,81 @@ function extractAthleticsName(infoboxHtml, pageTitle) {
   return pageTitle || null;
 }
 
+// ── Generic athletics site logo extraction ──
+
+function resolveUrl(base, relative) {
+  try {
+    return new URL(relative, base).href;
+  } catch {
+    return null;
+  }
+}
+
+function extractLogoFromGenericSite(html, siteUrl) {
+  // Priority order: og:image > apple-touch-icon (large) > shortcut icon/favicon
+  const candidates = [];
+
+  // 1. og:image
+  const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+  if (ogMatch) {
+    const url = resolveUrl(siteUrl, ogMatch[1]);
+    if (url) candidates.push({ url, source: "og:image", score: 0.8 });
+  }
+
+  // 2. apple-touch-icon (prefer largest)
+  const touchRegex = /<link[^>]+rel=["']apple-touch-icon[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>/gi;
+  let tm;
+  while ((tm = touchRegex.exec(html)) !== null) {
+    const url = resolveUrl(siteUrl, tm[1]);
+    if (url) {
+      const sizeMatch = tm[0].match(/sizes=["'](\d+)/i);
+      const size = sizeMatch ? parseInt(sizeMatch[1]) : 0;
+      candidates.push({ url, source: "apple-touch-icon", score: 0.6 + Math.min(size / 1000, 0.15) });
+    }
+  }
+
+  // 3. <link rel="icon"> or <link rel="shortcut icon">
+  const iconRegex = /<link[^>]+rel=["'](?:shortcut\s+)?icon["'][^>]*href=["']([^"']+)["'][^>]*>/gi;
+  let im;
+  while ((im = iconRegex.exec(html)) !== null) {
+    const url = resolveUrl(siteUrl, im[1]);
+    if (url) {
+      const sizeMatch = im[0].match(/sizes=["'](\d+)/i);
+      const size = sizeMatch ? parseInt(sizeMatch[1]) : 16;
+      // Only use if reasonably sized (>= 64px) or SVG
+      const isSvg = /\.svg/i.test(url);
+      if (size >= 64 || isSvg) {
+        candidates.push({ url, source: "favicon", score: 0.4 + (isSvg ? 0.15 : Math.min(size / 1000, 0.1)) });
+      }
+    }
+  }
+
+  // 4. Look for <img> with "logo" in class/id/alt/src in the header area
+  const headerArea = (html.match(/<header[\s\S]*?<\/header>/i) || [null])[0]
+    || (html.match(/<nav[\s\S]*?<\/nav>/i) || [null])[0]
+    || html.substring(0, 15000); // fallback: first 15k chars
+  const logoImgRegex = /<img[^>]+(?:class|id|alt|src)=["'][^"']*logo[^"']*["'][^>]*src=["']([^"']+)["']/gi;
+  const logoImgRegex2 = /<img[^>]+src=["']([^"']+)["'][^>]*(?:class|id|alt)=["'][^"']*logo[^"']*["']/gi;
+  for (const regex of [logoImgRegex, logoImgRegex2]) {
+    let lm;
+    while ((lm = regex.exec(headerArea)) !== null) {
+      const url = resolveUrl(siteUrl, lm[1]);
+      if (url && !/tracking|pixel|spacer|1x1/i.test(url)) {
+        candidates.push({ url, source: "header-logo-img", score: 0.7 });
+      }
+    }
+  }
+
+  if (candidates.length === 0) return null;
+
+  // Pick best
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0];
+}
+
+// ── Main handler ──
+
 Deno.serve(async (req) => {
   const t0 = Date.now();
   const elapsed = () => Date.now() - t0;
@@ -208,43 +294,68 @@ Deno.serve(async (req) => {
 
       try {
         const html = await fetchHtmlWithRetry(athUrl);
-        const infobox = extractInfobox(html);
+        const isWiki = isWikipediaUrl(athUrl);
 
-        if (!infobox) {
-          stats.noLogo++;
-          if (sample.noLogo.length < 10) sample.noLogo.push({ schoolId, name: schoolName, reason: "no_infobox" });
-          if (throttleMs > 0) await sleep(throttleMs);
-          continue;
+        let logoUrl = null;
+        let logoSource = null;
+        let confidence = 0;
+        let nickname = null;
+
+        if (isWiki) {
+          // ── Wikipedia path ──
+          const infobox = extractInfobox(html);
+
+          if (!infobox) {
+            stats.noLogo++;
+            if (sample.noLogo.length < 10) sample.noLogo.push({ schoolId, name: schoolName, url: athUrl, reason: "no_infobox" });
+            if (throttleMs > 0) await sleep(throttleMs);
+            continue;
+          }
+
+          const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+          const pageTitle = titleMatch
+            ? titleMatch[1].replace(/ - Wikipedia$/, "").replace(/ — Wikipedia$/, "").trim()
+            : null;
+
+          const logoCand = extractInfoboxLogoCandidate(infobox);
+
+          if (!logoCand) {
+            stats.noLogo++;
+            if (sample.noLogo.length < 10) sample.noLogo.push({ schoolId, name: schoolName, url: athUrl, reason: "no_logo_in_infobox" });
+            if (throttleMs > 0) await sleep(throttleMs);
+            continue;
+          }
+
+          logoUrl = logoCand.directUrl || commonsFilePath(logoCand.filename);
+          const n = lc(logoCand.filename);
+          confidence = 0.65;
+          if (n.endsWith(".svg")) confidence += 0.2;
+          else if (n.endsWith(".png")) confidence += 0.05;
+          if (n.includes("logo")) confidence += 0.1;
+          if (n.includes("wordmark")) confidence += 0.05;
+          confidence = Math.min(0.95, confidence);
+
+          nickname = extractAthleticsName(infobox, pageTitle);
+          logoSource = "wikipedia:manual_athletics_url→infobox";
+        } else {
+          // ── Generic athletics site path ──
+          const logoCand = extractLogoFromGenericSite(html, athUrl);
+
+          if (!logoCand) {
+            stats.noLogo++;
+            if (sample.noLogo.length < 10) sample.noLogo.push({ schoolId, name: schoolName, url: athUrl, reason: "no_logo_on_site" });
+            if (throttleMs > 0) await sleep(throttleMs);
+            continue;
+          }
+
+          logoUrl = logoCand.url;
+          confidence = Math.min(0.8, logoCand.score);
+          logoSource = `athletics_site:${logoCand.source}`;
         }
-
-        const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-        const pageTitle = titleMatch
-          ? titleMatch[1].replace(/ - Wikipedia$/, "").replace(/ — Wikipedia$/, "").trim()
-          : null;
-
-        const logoCand = extractInfoboxLogoCandidate(infobox);
-
-        if (!logoCand) {
-          stats.noLogo++;
-          if (sample.noLogo.length < 10) sample.noLogo.push({ schoolId, name: schoolName, reason: "no_logo_in_infobox" });
-          if (throttleMs > 0) await sleep(throttleMs);
-          continue;
-        }
-
-        const logoUrl = logoCand.directUrl || commonsFilePath(logoCand.filename);
-        const n = lc(logoCand.filename);
-        let confidence = 0.65;
-        if (n.endsWith(".svg")) confidence += 0.2;
-        else if (n.endsWith(".png")) confidence += 0.05;
-        if (n.includes("logo")) confidence += 0.1;
-        if (n.includes("wordmark")) confidence += 0.05;
-        confidence = Math.min(0.95, confidence);
-
-        const nickname = extractAthleticsName(infobox, pageTitle);
 
         const updates = {
           athletic_logo_url: logoUrl,
-          athletic_logo_source: "wikipedia:manual_athletics_url→infobox",
+          athletic_logo_source: logoSource,
           athletic_logo_updated_at: new Date().toISOString(),
           athletic_logo_confidence: confidence,
         };
@@ -258,7 +369,7 @@ Deno.serve(async (req) => {
 
         stats.updated++;
         if (sample.updated.length < 15) {
-          sample.updated.push({ schoolId, name: schoolName, logo: logoUrl, file: logoCand.filename, confidence, dryRun });
+          sample.updated.push({ schoolId, name: schoolName, logo: logoUrl, source: logoSource, confidence, dryRun });
         }
       } catch (e) {
         stats.errors++;
