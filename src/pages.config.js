@@ -66,12 +66,12 @@ import LogoutDebug from './pages/LogoutDebug';
 import MyCamps from './pages/MyCamps';
 import Profile from './pages/Profile';
 import SchoolAthleticsCleanup from './pages/SchoolAthleticsCleanup';
+import SchoolsManager from './pages/SchoolsManager';
 import Subscribe from './pages/Subscribe';
 import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
-import SchoolsManager from './pages/SchoolsManager';
 import __Layout from './Layout.jsx';
 
 
@@ -95,12 +95,12 @@ export const PAGES = {
     "MyCamps": MyCamps,
     "Profile": Profile,
     "SchoolAthleticsCleanup": SchoolAthleticsCleanup,
+    "SchoolsManager": SchoolsManager,
     "Subscribe": Subscribe,
     "TestFunctions": TestFunctions,
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
-    "SchoolsManager": SchoolsManager,
 }
 
 export const pagesConfig = {

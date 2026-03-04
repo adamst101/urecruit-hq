@@ -197,6 +197,76 @@ export default function SchoolsManager() {
   const [page, setPage]             = useState(0);
   const PAGE_SIZE = 100;
 
+  // Logo fill state
+  const [logoFillRunning, setLogoFillRunning] = useState(false);
+  const [logoFillDry, setLogoFillDry] = useState(true);
+  const [logoFillLog, setLogoFillLog] = useState([]);
+  const [logoFillStats, setLogoFillStats] = useState(null);
+  const [showLogoFill, setShowLogoFill] = useState(false);
+  const logoFillStop = useRef(false);
+
+  const runLogoFill = useCallback(async () => {
+    logoFillStop.current = false;
+    setLogoFillRunning(true);
+    setLogoFillLog([]);
+    setLogoFillStats(null);
+
+    let cursor = null;
+    let totalUpdated = 0;
+    let totalNoLogo = 0;
+    let totalErrors = 0;
+    let totalEligible = 0;
+    let batchNum = 0;
+
+    try {
+      while (!logoFillStop.current) {
+        batchNum++;
+        setLogoFillLog(prev => [...prev, `Batch ${batchNum} — cursor ${cursor ?? "start"}…`]);
+        const resp = await base44.functions.invoke("fillMissingLogosFromAthleticsWiki", {
+          dryRun: logoFillDry,
+          cursor,
+          maxRows: 25,
+          throttleMs: 400,
+          timeBudgetMs: 50000,
+        });
+        const d = resp.data;
+        if (!d?.ok) {
+          setLogoFillLog(prev => [...prev, `❌ Error: ${d?.error || "unknown"}`]);
+          break;
+        }
+        totalUpdated += d.stats.updated || 0;
+        totalNoLogo += d.stats.noLogo || 0;
+        totalErrors += d.stats.errors || 0;
+        if (batchNum === 1) totalEligible = d.stats.eligible || 0;
+
+        const names = (d.sample?.updated || []).map(u => u.name).join(", ");
+        setLogoFillLog(prev => [...prev,
+          `✓ Batch ${batchNum}: ${d.stats.updated} updated, ${d.stats.noLogo} no logo, ${d.stats.errors} errors` +
+          (names ? ` — ${names}` : "")
+        ]);
+        setLogoFillStats({ totalEligible, totalUpdated, totalNoLogo, totalErrors });
+
+        if (d.done || !d.next_cursor) {
+          setLogoFillLog(prev => [...prev, `🏁 Done! ${totalUpdated} logos filled.`]);
+          break;
+        }
+        cursor = d.next_cursor;
+      }
+      if (logoFillStop.current) {
+        setLogoFillLog(prev => [...prev, "⏹ Stopped by user."]);
+      }
+    } catch (e) {
+      setLogoFillLog(prev => [...prev, `❌ ${String(e?.message || e)}`]);
+    } finally {
+      setLogoFillRunning(false);
+      // Reload schools to reflect changes
+      if (!logoFillDry) {
+        const all = await School.filter({}, "school_name", 99999);
+        setSchools(all || []);
+      }
+    }
+  }, [logoFillDry]);
+
   // Load all schools
   useEffect(() => {
     setLoading(true);
