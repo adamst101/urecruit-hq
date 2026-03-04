@@ -262,6 +262,15 @@ async function getLogoViaWikipediaChain(wikipediaUrl) {
     result.debugPath.push(`nickname_link_is_animal_page:${athleticsPath}`);
     return result;
   }
+  // Reject generic animal/mascot term pages (not school athletics pages).
+  // School athletics pages always include a proper noun (school name).
+  // e.g. "Yellow_Jacket" → generic insect; "Georgia_Tech_Yellow_Jackets" → athletics.
+  const GENERIC_MASCOT_TERMS = /^(yellow[_ ]?jacket|blue[_ ]?jay|blue[_ ]?devil|red[_ ]?hawk|red[_ ]?fox|gray[_ ]?wolf|golden[_ ]?eagle|bald[_ ]?eagle|black[_ ]?bear|grizzly[_ ]?bear|timber[_ ]?wolf|jack[_ ]?rabbit|road[_ ]?runner|horned[_ ]?frog|mountain[_ ]?lion|wild[_ ]?cat)s?$/i;
+  if (GENERIC_MASCOT_TERMS.test(pathTitle)) {
+    result.status = "nickname_no_link";
+    result.debugPath.push(`nickname_link_is_generic_mascot:${athleticsPath}`);
+    return result;
+  }
 
   result.debugPath.push(`found_nickname_link:${athleticsPath}`);
 
