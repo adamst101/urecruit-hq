@@ -102,6 +102,8 @@ export default function AutoBatchRunner({
       }
 
       const batchElapsed = Date.now() - batchStart;
+      // Debug: log the actual shape we're working with
+      console.log("[AutoBatch] batch", batchCount, "data keys:", Object.keys(data || {}), "stats:", data?.stats, "pagination:", data?.pagination);
       const done = getNestedValue(data, doneKey);
       const nextCursor = getNestedValue(data, cursorKey);
       const lineText = (formatLogLine || defaultFormatLine)(batchCount, data, batchElapsed);
