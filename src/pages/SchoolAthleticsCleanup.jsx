@@ -136,6 +136,22 @@ export default function SchoolAthleticsCleanup() {
 
       {/* Controls */}
       <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5 flex flex-col gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs text-gray-500">Resume from row</Label>
+            <input
+              type="number"
+              min={0}
+              step={50}
+              value={resumeAt}
+              onChange={e => setResumeAt(Number(e.target.value))}
+              disabled={running}
+              className="w-28 border border-gray-300 rounded px-2 py-1 text-sm"
+              placeholder="0"
+            />
+          </div>
+        </div>
+
         <div className="flex items-center gap-3">
           <Switch
             id="dry-run"
