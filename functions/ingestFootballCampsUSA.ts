@@ -1297,6 +1297,20 @@ Deno.serve(async function(req) {
     }
   } catch (e) { /* CampBlockList may not exist yet — ignore */ }
 
+  // ── Load HostOrgMapping for METHOD 0 lookup ──
+  var hostOrgMappingByKey = {};
+  try {
+    var HostOrgMapping = base44.entities.HostOrgMapping;
+    if (HostOrgMapping && HostOrgMapping.filter) {
+      var mapRows = await HostOrgMapping.filter({}, "lookup_key", 99999);
+      for (var mi = 0; mi < (mapRows || []).length; mi++) {
+        var mr = mapRows[mi] || {};
+        var mk = safeStr(mr.lookup_key);
+        if (mk && mr.school_id) hostOrgMappingByKey[mk] = { school_id: mr.school_id, school_name: mr.school_name || null, verified: !!mr.verified };
+      }
+    }
+  } catch (e) { /* HostOrgMapping may not exist yet — ignore */ }
+
   var allCamps = await Camp.filter({}, "source_key", 99999);
   var existingBySourceKey = {};
   for (var ci = 0; ci < allCamps.length; ci++) {
@@ -1387,6 +1401,7 @@ Deno.serve(async function(req) {
       var venueAddress = null;
       var grades = null;
       var hostOrg = null;
+      var ryzerProgramName = null;
       var priceOptions = [];
 
       if (!skipDetailFetch) {
@@ -1405,6 +1420,7 @@ Deno.serve(async function(req) {
             if (details.venue_address) venueAddress = details.venue_address;
             if (details.grades) grades = details.grades;
             if (details.host_org) hostOrg = details.host_org;
+            if (details.ryzer_program_name) ryzerProgramName = details.ryzer_program_name;
             if (details.price_options) priceOptions = details.price_options;
           }
         }
@@ -1465,11 +1481,26 @@ Deno.serve(async function(req) {
         venue_address: venueAddress || null,
         grades: grades || null,
         host_org: hostOrg || null,
+        ryzer_program_name: ryzerProgramName || null,
         school_id: (match2.school_id && match2.confidence >= MATCH_CONFIDENCE_THRESHOLD) ? match2.school_id : null,
         school_match_method: match2.method || null,
         school_match_confidence: match2.confidence || 0,
         school_manually_verified: false,
       };
+
+      // ── METHOD 0: HostOrgMapping lookup (most reliable — from manual links) ──
+      if (!payload.school_id) {
+        var rpnKey = normalizeHostOrgKey(ryzerProgramName);
+        var hoKey = normalizeHostOrgKey(hostOrg);
+        var mappingHit = (rpnKey && hostOrgMappingByKey[rpnKey]) || (hoKey && hostOrgMappingByKey[hoKey]) || null;
+        if (mappingHit && mappingHit.school_id) {
+          payload.school_id = mappingHit.school_id;
+          payload.school_match_method = "host_org_mapping";
+          payload.school_match_confidence = mappingHit.verified ? 1.0 : 0.9;
+          payload.ingestion_status = "active";
+          stats.hostOrgMapped = (stats.hostOrgMapped || 0) + 1;
+        }
+      }
 
       if (!payload.school_id) {
         payload.ingestion_status = "needs_review";
