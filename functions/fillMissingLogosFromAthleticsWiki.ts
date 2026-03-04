@@ -365,6 +365,9 @@ Deno.serve(async (req) => {
           logoSource = `athletics_site:${logoCand.source}`;
         }
 
+        // Decode any HTML entities in the final URL
+        logoUrl = decodeHtmlEntities(logoUrl);
+
         const updates = {
           athletic_logo_url: logoUrl,
           athletic_logo_source: logoSource,
