@@ -169,6 +169,19 @@ function extractInfoboxLogoFilename(infoboxHtml) {
     if (n.includes("flag")) score -= 0.3;
     if (n.includes("stadium")) score -= 0.3;
     if (n.includes("photo")) score -= 0.3;
+    if (n.includes("conservation")) score -= 1.0;
+    if (n.includes("iucn")) score -= 1.0;
+    if (n.includes("status_iucn")) score -= 1.0;
+    if (n.includes("range")) score -= 0.5;
+    if (n.includes("distribution")) score -= 0.5;
+    if (n.includes("locator")) score -= 0.5;
+    if (n.includes("coat_of_arms")) score -= 0.5;
+    if (n.includes("emblem")) score -= 0.3;
+    if (n.includes("crest")) score -= 0.3;
+    if (n.includes("oojs_ui")) score -= 1.0;
+    if (n.includes("edit-ltr")) score -= 1.0;
+    if (n.includes("taxonomy")) score -= 1.0;
+    if (n.includes("phylogeny")) score -= 0.5;
     if (n.endsWith(".jpg") || n.endsWith(".jpeg")) score -= 0.5;
 
     if (score > bestScore) {
