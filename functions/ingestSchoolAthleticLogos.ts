@@ -255,6 +255,13 @@ async function getLogoViaWikipediaChain(wikipediaUrl) {
     result.debugPath.push(`nickname_link_too_generic:${athleticsPath}`);
     return result;
   }
+  // Also reject if the raw path contains parenthetical qualifiers — these are disambiguation
+  // pages for animals/terms, never athletics program pages
+  if (/\(animal|bird|insect|fish|mammal|reptile|disambiguation|genus|species|mytholog|creature\)/i.test(rawPathTitle)) {
+    result.status = "nickname_no_link";
+    result.debugPath.push(`nickname_link_is_animal_page:${athleticsPath}`);
+    return result;
+  }
 
   result.debugPath.push(`found_nickname_link:${athleticsPath}`);
 
