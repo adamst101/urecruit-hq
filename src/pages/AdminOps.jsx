@@ -101,14 +101,16 @@ export default function AdminOps() {
                   }}
                   onClick={() => nav(tool.route)}
                   onMouseEnter={e => {
-                    e.currentTarget.style.background = tool.color + "22";
-                    e.currentTarget.style.borderColor = tool.color + "99";
+                    e.currentTarget.style.background = tool.color + "11";
+                    e.currentTarget.style.borderColor = tool.color + "66";
                     e.currentTarget.style.transform = "translateY(-2px)";
+                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)";
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.background = tool.danger ? "#1a0a0a" : "#0d1a28";
-                    e.currentTarget.style.borderColor = tool.color + "55";
+                    e.currentTarget.style.background = tool.danger ? "#FEF2F2" : "#FFFFFF";
+                    e.currentTarget.style.borderColor = "#E5E7EB";
                     e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)";
                   }}
                 >
                   <div style={styles.tileIcon}>{tool.icon}</div>
@@ -129,24 +131,24 @@ export default function AdminOps() {
 
 const styles = {
   root: {
-    background: "#080e18",
+    background: "#F3F4F6",
     minHeight: "100vh",
-    fontFamily: "'IBM Plex Mono', 'Fira Code', monospace",
-    color: "#c8d8f0",
+    fontFamily: "Inter, system-ui, sans-serif",
+    color: "#111827",
   },
   header: {
     padding: "28px 32px 16px",
-    borderBottom: "1px solid #1a2535",
+    borderBottom: "1px solid #E5E7EB",
   },
   title: {
     fontSize: 26,
     fontWeight: 700,
-    color: "#e8f4ff",
-    letterSpacing: 1,
+    color: "#0B1F3B",
+    letterSpacing: 0.5,
   },
   subtitle: {
     fontSize: 14,
-    color: "#4a6080",
+    color: "#6B7280",
     marginTop: 4,
   },
   content: {
@@ -161,10 +163,10 @@ const styles = {
     fontWeight: 700,
     letterSpacing: "0.12em",
     textTransform: "uppercase",
-    color: "#3a5070",
+    color: "#6B7280",
     marginBottom: 14,
     paddingBottom: 6,
-    borderBottom: "1px solid #111d2a",
+    borderBottom: "1px solid #E5E7EB",
   },
   grid: {
     display: "grid",
@@ -172,20 +174,21 @@ const styles = {
     gap: 14,
   },
   tile: {
-    background: "#0d1a28",
-    border: "1px solid #1e3048",
+    background: "#FFFFFF",
+    border: "1px solid #E5E7EB",
     borderRadius: 10,
     padding: "20px 22px",
     textAlign: "left",
     cursor: "pointer",
-    transition: "background 0.15s, border-color 0.15s, transform 0.15s",
+    transition: "background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s",
     display: "flex",
     flexDirection: "column",
     gap: 6,
     position: "relative",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
   },
   dangerTile: {
-    background: "#1a0a0a",
+    background: "#FEF2F2",
   },
   tileIcon: {
     fontSize: 24,
@@ -198,7 +201,7 @@ const styles = {
   },
   tileDesc: {
     fontSize: 12,
-    color: "#4a6080",
+    color: "#6B7280",
     lineHeight: 1.6,
     marginTop: 2,
   },

@@ -44,7 +44,7 @@ const DIVISION_COLORS = {
 };
 
 function Badge({ value }) {
-  if (!value) return <span style={{ color: "#666", fontSize: 13 }}>—</span>;
+  if (!value) return <span style={{ color: "#9CA3AF", fontSize: 13 }}>—</span>;
   const color = DIVISION_COLORS[value] || "#444";
   return (
     <span style={{
@@ -62,15 +62,15 @@ function Badge({ value }) {
 }
 
 const AUDIT_STYLES = {
-  "confirmed":     { bg: "#1a3d1a", color: "#4caf82", border: "#2a6b2a", label: "✓ Confirmed" },
-  "no_athletics":  { bg: "#3d1a1a", color: "#e05c5c", border: "#6b2a2a", label: "✗ No Athletics" },
-  "wiki_not_found":{ bg: "#2a2a1a", color: "#c0a030", border: "#5a5a1a", label: "? Wiki Not Found" },
-  "pending":       { bg: "#1a1a2a", color: "#6070a0", border: "#2a2a4a", label: "· Pending" },
+  "confirmed":     { bg: "#ECFDF5", color: "#059669", border: "#A7F3D0", label: "✓ Confirmed" },
+  "no_athletics":  { bg: "#FEF2F2", color: "#DC2626", border: "#FECACA", label: "✗ No Athletics" },
+  "wiki_not_found":{ bg: "#FFFBEB", color: "#D97706", border: "#FDE68A", label: "? Wiki Not Found" },
+  "pending":       { bg: "#F0F4FF", color: "#6B7280", border: "#D1D5DB", label: "· Pending" },
 };
 
 function AuditStatusBadge({ value }) {
-  if (!value) return <span style={{ color: "#444", fontSize: 13 }}>—</span>;
-  const s = AUDIT_STYLES[value] || { bg: "#222", color: "#888", border: "#333", label: value };
+  if (!value) return <span style={{ color: "#9CA3AF", fontSize: 13 }}>—</span>;
+  const s = AUDIT_STYLES[value] || { bg: "#F3F4F6", color: "#6B7280", border: "#D1D5DB", label: value };
   return (
     <span style={{
       background: s.bg, color: s.color, border: `1px solid ${s.border}`,
@@ -82,7 +82,7 @@ function AuditStatusBadge({ value }) {
 
 function ImageThumb({ src }) {
   const [err, setErr] = useState(false);
-  if (!src || err) return <span style={{ color: "#666", fontSize: 13 }}>—</span>;
+  if (!src || err) return <span style={{ color: "#9CA3AF", fontSize: 13 }}>—</span>;
   return (
     <img
       src={src}
@@ -135,13 +135,13 @@ function CellEditor({ field, value, onSave, onCancel }) {
 }
 
 const editorStyle = {
-  background: "#1a2235",
-  color: "#e8f0ff",
-  border: "1.5px solid #4a90e2",
+  background: "#FFFFFF",
+  color: "#111827",
+  border: "1.5px solid #0B1F3B",
   borderRadius: 4,
   padding: "5px 9px",
   fontSize: 14,
-  fontFamily: "monospace",
+  fontFamily: "Inter, system-ui, sans-serif",
   outline: "none",
   width: "100%",
   boxSizing: "border-box",
@@ -149,30 +149,30 @@ const editorStyle = {
 
 function CellValue({ field, value }) {
   if (value === null || value === undefined || value === "") {
-    return <span style={{ color: "#444", fontSize: 13 }}>—</span>;
+    return <span style={{ color: "#9CA3AF", fontSize: 13 }}>—</span>;
   }
   if (field.type === "image") return <ImageThumb src={value} />;
   if (field.key === "division") return <Badge value={value} />;
   if (field.type === "auditstatus") return <AuditStatusBadge value={value} />;
   if (field.type === "boolean") return (
-    <span style={{ color: value ? "#4caf82" : "#e05c5c", fontSize: 13, fontWeight: 600 }}>
+    <span style={{ color: value ? "#059669" : "#DC2626", fontSize: 13, fontWeight: 600 }}>
       {value ? "✓" : "✗"}
     </span>
   );
   if (field.type === "url") return (
     <a href={value} target="_blank" rel="noreferrer"
-      style={{ color: "#4a90e2", fontSize: 13, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: field.width - 16 }}
+      style={{ color: "#0B1F3B", fontSize: 13, textDecoration: "underline", textDecorationColor: "#D1D5DB", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: field.width - 16 }}
       onClick={e => e.stopPropagation()}>
       {value.replace(/^https?:\/\//, "").substring(0, 30)}{value.length > 36 ? "…" : ""}
     </a>
   );
   if (field.type === "number") return (
-    <span style={{ color: "#a0c4ff", fontSize: 13, fontFamily: "monospace" }}>
+    <span style={{ color: "#0B1F3B", fontSize: 13, fontFamily: "monospace" }}>
       {typeof value === "number" ? value.toFixed(2) : value}
     </span>
   );
   return (
-    <span style={{ fontSize: 14, color: "#c8d8f0", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: field.width - 16, whiteSpace: "nowrap" }}>
+    <span style={{ fontSize: 14, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: field.width - 16, whiteSpace: "nowrap" }}>
       {String(value)}
     </span>
   );
@@ -384,12 +384,12 @@ export default function SchoolsManager() {
           <div style={styles.title}>Schools</div>
           <div style={styles.subtitle}>
             {filtered.length.toLocaleString()} of {schools.length.toLocaleString()} records
-            {saveMsg && <span style={{ marginLeft: 16, color: saveMsg.startsWith("Error") ? "#e05c5c" : "#4caf82", fontSize: 14 }}>{saveMsg}</span>}
+            {saveMsg && <span style={{ marginLeft: 16, color: saveMsg.startsWith("Error") ? "#DC2626" : "#059669", fontSize: 14 }}>{saveMsg}</span>}
           </div>
         </div>
         <div style={styles.headerRight}>
           <button
-            style={{ ...styles.colBtn, marginRight: 8, background: showLogoFill ? "#1a2840" : "#131f30", borderColor: showLogoFill ? "#4a90e2" : "#1e3048" }}
+            style={{ ...styles.colBtn, marginRight: 8, background: showLogoFill ? "#EEF2FF" : "#FFFFFF", borderColor: showLogoFill ? "#0B1F3B" : "#E5E7EB" }}
             onClick={() => setShowLogoFill(v => !v)}
           >
             🖼 Fill Missing Logos
@@ -452,39 +452,39 @@ export default function SchoolsManager() {
 
       {/* Logo Fill Panel */}
       {showLogoFill && (
-        <div style={{ background: "#0d1a28", border: "1px solid #1e3048", borderRadius: 8, margin: "10px 24px", padding: "14px 18px" }}>
+        <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 8, margin: "10px 24px", padding: "14px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-            <span style={{ color: "#a0c4ff", fontWeight: 600, fontSize: 15 }}>Fill logos from Athletics Wiki URLs</span>
-            <label style={{ color: "#7090b0", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ color: "#0B1F3B", fontWeight: 600, fontSize: 15 }}>Fill logos from Athletics Wiki URLs</span>
+            <label style={{ color: "#6B7280", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
               <input type="checkbox" checked={logoFillDry} onChange={e => setLogoFillDry(e.target.checked)} disabled={logoFillRunning} />
               Dry run
             </label>
             {!logoFillRunning ? (
               <button
                 onClick={runLogoFill}
-                style={{ ...styles.colBtn, background: "#1a3d1a", borderColor: "#2a6b2a", color: "#4caf82" }}
+                style={{ ...styles.colBtn, background: "#ECFDF5", borderColor: "#A7F3D0", color: "#059669" }}
               >
                 ▶ Run
               </button>
             ) : (
               <button
                 onClick={() => { logoFillStop.current = true; }}
-                style={{ ...styles.colBtn, background: "#3d1a1a", borderColor: "#6b2a2a", color: "#e05c5c" }}
+                style={{ ...styles.colBtn, background: "#FEF2F2", borderColor: "#FECACA", color: "#DC2626" }}
               >
                 ■ Stop
               </button>
             )}
             {logoFillStats && (
-              <span style={{ color: "#7090b0", fontSize: 13, marginLeft: 8 }}>
+              <span style={{ color: "#6B7280", fontSize: 13, marginLeft: 8 }}>
                 Eligible: {logoFillStats.totalEligible} · Updated: {logoFillStats.totalUpdated} · No logo: {logoFillStats.totalNoLogo} · Errors: {logoFillStats.totalErrors}
               </span>
             )}
           </div>
-          <div style={{ color: "#506880", fontSize: 12, marginBottom: 8 }}>
+          <div style={{ color: "#6B7280", fontSize: 12, marginBottom: 8 }}>
             Scans schools with an Athletics URL but no athletic logo. Supports both Wikipedia pages (infobox logo) and regular athletics sites (og:image, favicon, header logo).
           </div>
           {logoFillLog.length > 0 && (
-            <div style={{ maxHeight: 200, overflowY: "auto", background: "#080e18", borderRadius: 6, padding: "8px 12px", fontSize: 13, fontFamily: "monospace", color: "#7090b0" }}>
+            <div style={{ maxHeight: 200, overflowY: "auto", background: "#F3F4F6", borderRadius: 6, padding: "8px 12px", fontSize: 13, fontFamily: "monospace", color: "#374151" }}>
               {logoFillLog.map((line, i) => <div key={i}>{line}</div>)}
             </div>
           )}
@@ -516,27 +516,27 @@ export default function SchoolsManager() {
             </thead>
             <tbody>
               {pageRows.map((row, ri) => (
-                <tr key={row.id} style={{ background: ri % 2 === 0 ? "#0d1520" : "#101b2a" }}>
+                <tr key={row.id} style={{ background: ri % 2 === 0 ? "#FFFFFF" : "#F9FAFB" }}>
                   <td style={{ ...styles.td, width: 50, minWidth: 50, textAlign: "center", padding: "4px 6px" }}>
                     {saving[`del:${row.id}`] ? (
-                      <span style={{ color: "#e05c5c", fontSize: 12 }}>…</span>
+                      <span style={{ color: "#DC2626", fontSize: 12 }}>…</span>
                     ) : confirmDelete === row.id ? (
                       <span style={{ display: "flex", gap: 4, justifyContent: "center" }}>
                         <button
                           onClick={() => handleDelete(row.id)}
-                          style={{ background: "none", border: "none", color: "#4caf82", cursor: "pointer", fontSize: 16, padding: "2px 4px", lineHeight: 1 }}
+                          style={{ background: "none", border: "none", color: "#059669", cursor: "pointer", fontSize: 16, padding: "2px 4px", lineHeight: 1 }}
                           title="Confirm delete"
                         >✓</button>
                         <button
                           onClick={() => setConfirmDelete(null)}
-                          style={{ background: "none", border: "none", color: "#e05c5c", cursor: "pointer", fontSize: 16, padding: "2px 4px", lineHeight: 1 }}
+                          style={{ background: "none", border: "none", color: "#DC2626", cursor: "pointer", fontSize: 16, padding: "2px 4px", lineHeight: 1 }}
                           title="Cancel"
                         >✗</button>
                       </span>
                     ) : (
                       <button
                         onClick={() => setConfirmDelete(row.id)}
-                        style={{ background: "none", border: "none", color: "#5a3030", cursor: "pointer", fontSize: 15, padding: "2px 4px", lineHeight: 1 }}
+                        style={{ background: "none", border: "none", color: "#9CA3AF", cursor: "pointer", fontSize: 15, padding: "2px 4px", lineHeight: 1 }}
                         title="Delete this school"
                       >⌫</button>
                     )}
@@ -551,7 +551,7 @@ export default function SchoolsManager() {
                           ...styles.td,
                           width: f.width,
                           minWidth: f.width,
-                          background: isEditing ? "#1a2840" : isSaving ? "#1a2820" : undefined,
+                          background: isEditing ? "#EEF2FF" : isSaving ? "#ECFDF5" : undefined,
                           cursor: f.key === "source_key" ? "default" : "pointer",
                         }}
                         onDoubleClick={() => startEdit(row.id, f.key)}
@@ -565,7 +565,7 @@ export default function SchoolsManager() {
                             onCancel={cancelEdit}
                           />
                         ) : isSaving ? (
-                          <span style={{ color: "#4caf82", fontSize: 13 }}>saving…</span>
+                          <span style={{ color: "#059669", fontSize: 13 }}>saving…</span>
                         ) : (
                           <CellValue field={f} value={row[f.key]} />
                         )}
@@ -576,7 +576,7 @@ export default function SchoolsManager() {
               ))}
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={visFields.length + 1} style={{ ...styles.td, textAlign: "center", color: "#446", padding: 40 }}>
+                  <td colSpan={visFields.length + 1} style={{ ...styles.td, textAlign: "center", color: "#9CA3AF", padding: 40 }}>
                     No schools match your filters
                   </td>
                 </tr>
@@ -588,7 +588,7 @@ export default function SchoolsManager() {
 
       {/* Footer pagination */}
       <div style={styles.footer}>
-        <span style={{ color: "#446", fontSize: 13 }}>Double-click any cell to edit • Enter to save • Esc to cancel</span>
+        <span style={{ color: "#9CA3AF", fontSize: 13 }}>Double-click any cell to edit • Enter to save • Esc to cancel</span>
         <div style={styles.paginator}>
           <button type="button" style={{ ...styles.pageBtn, ...(page === 0 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page > 0) { setPage(0); tableWrapRef.current?.scrollTo(0,0); } }}>«</button>
           <button type="button" style={{ ...styles.pageBtn, ...(page === 0 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page > 0) { setPage(p => p - 1); tableWrapRef.current?.scrollTo(0,0); } }}>‹</button>
@@ -605,10 +605,10 @@ export default function SchoolsManager() {
 
 const styles = {
   root: {
-    background: "#080e18",
+    background: "#F3F4F6",
     height: "100vh",
-    fontFamily: "'IBM Plex Mono', 'Fira Code', monospace",
-    color: "#c8d8f0",
+    fontFamily: "Inter, system-ui, sans-serif",
+    color: "#111827",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
@@ -618,27 +618,28 @@ const styles = {
     alignItems: "flex-start",
     justifyContent: "space-between",
     padding: "20px 24px 12px",
-    borderBottom: "1px solid #1a2535",
+    borderBottom: "1px solid #E5E7EB",
+    background: "#FFFFFF",
     position: "relative",
   },
   title: {
     fontSize: 24,
     fontWeight: 700,
-    color: "#e8f4ff",
-    letterSpacing: 1,
+    color: "#0B1F3B",
+    letterSpacing: 0.5,
   },
   subtitle: {
     fontSize: 14,
-    color: "#4a6080",
+    color: "#6B7280",
     marginTop: 3,
   },
   headerRight: {
     position: "relative",
   },
   colBtn: {
-    background: "#131f30",
-    color: "#7090b0",
-    border: "1px solid #1e3048",
+    background: "#FFFFFF",
+    color: "#374151",
+    border: "1px solid #E5E7EB",
     borderRadius: 6,
     padding: "6px 14px",
     fontSize: 14,
@@ -650,8 +651,8 @@ const styles = {
     right: 0,
     top: "100%",
     marginTop: 4,
-    background: "#0d1a28",
-    border: "1px solid #1e3048",
+    background: "#FFFFFF",
+    border: "1px solid #E5E7EB",
     borderRadius: 8,
     padding: "10px 14px",
     zIndex: 100,
@@ -661,11 +662,11 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: 6,
-    boxShadow: "0 8px 32px #00000088",
+    boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
   },
   colPickerItem: {
     fontSize: 14,
-    color: "#a0b8d0",
+    color: "#374151",
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
@@ -676,14 +677,15 @@ const styles = {
     alignItems: "center",
     gap: 10,
     padding: "10px 24px",
-    borderBottom: "1px solid #111d2a",
+    borderBottom: "1px solid #E5E7EB",
+    background: "#FFFFFF",
     flexWrap: "wrap",
   },
   searchInput: {
-    background: "#0d1a28",
-    border: "1px solid #1e3048",
+    background: "#F9FAFB",
+    border: "1px solid #E5E7EB",
     borderRadius: 6,
-    color: "#c8d8f0",
+    color: "#111827",
     padding: "7px 14px",
     fontSize: 15,
     fontFamily: "inherit",
@@ -691,10 +693,10 @@ const styles = {
     width: 280,
   },
   filterSelect: {
-    background: "#0d1a28",
-    border: "1px solid #1e3048",
+    background: "#F9FAFB",
+    border: "1px solid #E5E7EB",
     borderRadius: 6,
-    color: "#a0b8d0",
+    color: "#374151",
     padding: "7px 12px",
     fontSize: 14,
     fontFamily: "inherit",
@@ -707,10 +709,10 @@ const styles = {
     marginLeft: "auto",
   },
   pageBtn: {
-    background: "#0d1a28",
-    border: "1px solid #1e3048",
+    background: "#FFFFFF",
+    border: "1px solid #E5E7EB",
     borderRadius: 4,
-    color: "#5080a0",
+    color: "#0B1F3B",
     padding: "4px 9px",
     fontSize: 15,
     cursor: "pointer",
@@ -735,15 +737,15 @@ const styles = {
     minWidth: "100%",
   },
   th: {
-    background: "#0a1525",
-    color: "#4a7090",
+    background: "#F9FAFB",
+    color: "#6B7280",
     fontWeight: 600,
     fontSize: 13,
     textTransform: "uppercase",
     letterSpacing: "0.06em",
     padding: "11px 12px",
     textAlign: "left",
-    borderBottom: "2px solid #1a2e44",
+    borderBottom: "2px solid #E5E7EB",
     position: "sticky",
     top: 0,
     cursor: "pointer",
@@ -755,7 +757,7 @@ const styles = {
   },
   td: {
     padding: "9px 12px",
-    borderBottom: "1px solid #0f1c2a",
+    borderBottom: "1px solid #F3F4F6",
     verticalAlign: "middle",
     overflow: "hidden",
     whiteSpace: "nowrap",
@@ -763,13 +765,13 @@ const styles = {
   loading: {
     padding: 60,
     textAlign: "center",
-    color: "#446",
+    color: "#9CA3AF",
     fontSize: 16,
   },
   errMsg: {
     padding: 40,
     textAlign: "center",
-    color: "#e05c5c",
+    color: "#DC2626",
     fontSize: 15,
   },
   footer: {
@@ -777,7 +779,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "8px 24px",
-    borderTop: "1px solid #111d2a",
-    background: "#080e18",
+    borderTop: "1px solid #E5E7EB",
+    background: "#FFFFFF",
   },
 };
