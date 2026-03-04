@@ -429,13 +429,13 @@ export default function SchoolsManager() {
           <option value="pending">· Pending (not yet audited)</option>
         </select>
         <div style={styles.paginator}>
-          <button style={styles.pageBtn} disabled={page === 0} onClick={() => setPage(0)}>«</button>
-          <button style={styles.pageBtn} disabled={page === 0} onClick={() => setPage(p => p - 1)}>‹</button>
+          <button style={{ ...styles.pageBtn, ...(page === 0 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page > 0) setPage(0); }}>«</button>
+          <button style={{ ...styles.pageBtn, ...(page === 0 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page > 0) setPage(p => p - 1); }}>‹</button>
           <span style={{ color: "#7090b0", fontSize: 14, padding: "0 8px" }}>
             {page + 1} / {totalPages || 1}
           </span>
-          <button style={styles.pageBtn} disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>›</button>
-          <button style={styles.pageBtn} disabled={page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>»</button>
+          <button style={{ ...styles.pageBtn, ...(page >= totalPages - 1 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page < totalPages - 1) setPage(p => p + 1); }}>›</button>
+          <button style={{ ...styles.pageBtn, ...(page >= totalPages - 1 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page < totalPages - 1) setPage(totalPages - 1); }}>»</button>
         </div>
       </div>
 
