@@ -60,7 +60,7 @@ export default function TestFunctions() {
           params={{
             sport_key: sportKey,
             dryRun: dryRun,
-            maxSchools: 261,
+            maxSchools: maxSchools,
           }}
           batchDelayMs={2000}
           maxBatches={100}
