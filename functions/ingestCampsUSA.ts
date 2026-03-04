@@ -1460,9 +1460,10 @@ Deno.serve(async function(req) {
 
       if (blockedKeys[sourceKey]) { stats.blocked++; continue; }
 
-      // KEY OPTIMIZATION: Skip detail fetch for camps already ingested
-      // Only fetch Ryzer detail page if this is a NEW camp we haven't seen before
-      var alreadyIngested = !!existingBySourceKey[sourceKey];
+      // SMART SKIP: Only skip detail fetch if existing camp has complete data
+      // If camp exists but has junk name, missing price, or missing city → re-fetch
+      var existingCamp = existingBySourceKey[sourceKey] || null;
+      var skipDetail = existingCamp && existingCampIsComplete(existingCamp);
 
       var campName = listing.camp_name_from_listing;
       var startDate = listing.start_date;
@@ -1470,7 +1471,7 @@ Deno.serve(async function(req) {
       var price = null; var city2 = null; var state2 = null; var notes = null;
       var venueName = null; var venueAddress = null; var grades = null; var hostOrg = null; var ryzerProgramName = null; var priceOptions = [];
 
-      if (!skipDetailFetch && !alreadyIngested) {
+      if (!skipDetailFetch && !skipDetail) {
         // PAGE 3 fetch: Ryzer registration page (only for NEW camps)
         var detailResult = await stealthFetch(regUrl, 12000, prog2.url);
         if (detailResult.ok) {
