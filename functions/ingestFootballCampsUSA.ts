@@ -1397,6 +1397,7 @@ Deno.serve(async function(req) {
       var venueAddress = null;
       var grades = null;
       var hostOrg = null;
+      var priceOptions = [];
 
       if (!skipDetailFetch) {
         var detailResult = await fetchWithTimeout(regUrl, 12000);
@@ -1406,7 +1407,7 @@ Deno.serve(async function(req) {
             if (details.camp_name) campName = details.camp_name;
             if (details.start_date) startDate = details.start_date;
             if (details.end_date) endDate = details.end_date;
-            if (details.price) price = details.price;
+            if (details.price != null) price = details.price;
             if (details.city) city = details.city;
             if (details.state) state2 = details.state;
             if (details.description) notes = details.description;
@@ -1414,6 +1415,7 @@ Deno.serve(async function(req) {
             if (details.venue_address) venueAddress = details.venue_address;
             if (details.grades) grades = details.grades;
             if (details.host_org) hostOrg = details.host_org;
+            if (details.price_options) priceOptions = details.price_options;
           }
         }
         await sleep(Math.max(300, sleepMs / 2));
