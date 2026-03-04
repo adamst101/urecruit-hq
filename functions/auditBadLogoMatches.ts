@@ -95,9 +95,20 @@ function isSuspiciousAthleticsUrl(url) {
   }
   
   // Adjective + Animal pattern without school prefix (e.g. "Snowy owl", "Golden eagle")
+  // But allow known school/location prefixes like "American Eagles", "Boston Terriers"
+  const KNOWN_SCHOOL_PREFIXES = new Set([
+    "american", "boston", "coastal", "central", "eastern", "western", "northern",
+    "southern", "pacific", "atlantic", "liberty", "national", "royal", "imperial",
+    "auburn", "stanford", "harvard", "yale", "duke", "rice", "temple", "navy",
+    "army", "air force", "tulane", "gonzaga", "villanova", "marquette", "creighton",
+    "xavier", "dayton", "butler", "depaul", "drake", "bradley", "loyola", "fordham",
+    "cornell", "brown", "dartmouth", "columbia", "princeton", "penn",
+  ]);
   if (words.length === 2 && ADJECTIVE_ANIMAL_PATTERN.test(rawTitle)) {
+    const firstWord = lc(words[0]);
     const lastWord = lc(words[words.length - 1]);
-    if (ANIMAL_WORDS.has(lastWord) || ANIMAL_WORDS.has(lastWord + "s")) {
+    // Only flag if the first word is NOT a known school/location name
+    if (!KNOWN_SCHOOL_PREFIXES.has(firstWord) && (ANIMAL_WORDS.has(lastWord) || ANIMAL_WORDS.has(lastWord + "s"))) {
       return { suspicious: true, reason: `adjective_animal: ${rawTitle}` };
     }
   }
