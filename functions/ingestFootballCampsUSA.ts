@@ -1496,6 +1496,7 @@ Deno.serve(async function(req) {
             start_date: startDate,
             end_date: endDate,
             price: price,
+            price_options: priceOptions,
             city: city,
             state: state2,
             venue_name: venueName,
