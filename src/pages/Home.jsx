@@ -107,7 +107,7 @@ export default function Home() {
       </nav>
 
       {/* ── HERO ── */}
-      <section style={{ position: "relative", overflow: "hidden", minHeight: "calc(100vh - 48px)", display: "flex", alignItems: "center" }}>
+      <section style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "flex-start" }}>
         {/* Background effects */}
         <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 60% 50% at 80% 20%, rgba(232,160,32,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.015) 60px, rgba(255,255,255,0.015) 61px)", pointerEvents: "none" }} />
