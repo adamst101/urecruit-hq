@@ -453,10 +453,42 @@ function generateExtraCandidates(programName, programUrl) {
   return extra;
 }
 
+// Hardcoded mappings for programs with unusual naming
+var HARDCODED_PROGRAM_TO_SCHOOL = {
+  "alabama crimson tide football camps": "university of alabama",
+  "floridagatorscamps": "university of florida",
+  "levi camps": "purdue university",
+};
+// Programs where the description says a specific school but parsing can't get it
+var HARDCODED_DESCRIPTION_SCHOOL = {
+  "andy mccollum football camps": "university of the south",  // Sewanee
+};
+
 function matchProgramToSchool(idx, program) {
   var programName = program.name;
   var programUrl = program.url;
   var logoUrl = program.logo_url;
+  var descSchool = program.desc_school || null;
+  var descCity = program.desc_city || null;
+  var descState = program.desc_state || null;
+  var descNickname = program.desc_nickname || null;
+
+  // METHOD 0: Hardcoded overrides → confidence 1.0
+  var hardKey = lc(programName);
+  if (HARDCODED_PROGRAM_TO_SCHOOL[hardKey]) {
+    var hardNN = normalizeName(HARDCODED_PROGRAM_TO_SCHOOL[hardKey]);
+    var hardMatch = idx.byNormName[hardNN];
+    if (hardMatch && hardMatch.length === 1) {
+      return { school_id: hardMatch[0].id, school_name: hardMatch[0].school.school_name, method: "hardcoded", confidence: 1.0 };
+    }
+  }
+  if (HARDCODED_DESCRIPTION_SCHOOL[hardKey]) {
+    var hardNN2 = normalizeName(HARDCODED_DESCRIPTION_SCHOOL[hardKey]);
+    var hardMatch2 = idx.byNormName[hardNN2];
+    if (hardMatch2 && hardMatch2.length === 1) {
+      return { school_id: hardMatch2[0].id, school_name: hardMatch2[0].school.school_name, method: "hardcoded", confidence: 1.0 };
+    }
+  }
 
   // METHOD 1: Logo URL match → confidence 1.0
   if (logoUrl) {
@@ -467,17 +499,100 @@ function matchProgramToSchool(idx, program) {
     }
   }
 
-  // Build candidate names to try
+  // METHOD 5: Description-extracted school name → confidence 0.95
+  if (descSchool) {
+    var descNN = normalizeName(descSchool);
+    if (descNN) {
+      var descExact = idx.byNormName[descNN];
+      if (descExact && descExact.length === 1) {
+        return { school_id: descExact[0].id, school_name: descExact[0].school.school_name, method: "desc_school", confidence: 0.95 };
+      }
+      // Try common variations
+      var descVars = [
+        descNN.replace(/ university$/, "").replace(/ college$/, ""),
+        descNN + " university", descNN + " college",
+        descNN.replace(/^university of /, ""), "university of " + descNN,
+        "the " + descNN, descNN.replace(/^the /, ""),
+      ];
+      for (var dvi = 0; dvi < descVars.length; dvi++) {
+        var dvn = descVars[dvi].trim();
+        if (dvn && dvn !== descNN) {
+          var dvMatch = idx.byNormName[dvn];
+          if (dvMatch && dvMatch.length === 1) {
+            return { school_id: dvMatch[0].id, school_name: dvMatch[0].school.school_name, method: "desc_school", confidence: 0.9 };
+          }
+        }
+      }
+    }
+  }
+
+  // METHOD 6: Nickname from description ("led by the [Nickname] coaching staff") → confidence 0.9
+  if (descNickname) {
+    var nickLower = lc(descNickname);
+    // Try full nickname match
+    var nickAloneMatches = idx.byNicknameAlone[nickLower];
+    if (nickAloneMatches && nickAloneMatches.length === 1) {
+      return { school_id: nickAloneMatches[0].id, school_name: nickAloneMatches[0].school.school_name, method: "desc_nickname", confidence: 0.9 };
+    }
+    // Try full nickname in byNickname
+    var fullNickMatches = idx.byNickname[nickLower];
+    if (fullNickMatches && fullNickMatches.length === 1) {
+      return { school_id: fullNickMatches[0].id, school_name: fullNickMatches[0].school.school_name, method: "desc_nickname", confidence: 0.9 };
+    }
+    // If multiple matches but we have city+state, narrow down
+    var nickCandidates = nickAloneMatches || fullNickMatches;
+    if (nickCandidates && nickCandidates.length > 1 && descCity && descState) {
+      var nst = normalizeState(descState);
+      var nci = lc(descCity);
+      for (var nfi = 0; nfi < nickCandidates.length; nfi++) {
+        var ns = nickCandidates[nfi].school;
+        if (lc(ns.city || "") === nci && normalizeState(ns.state) === nst) {
+          return { school_id: nickCandidates[nfi].id, school_name: ns.school_name, method: "desc_nickname_city", confidence: 0.9 };
+        }
+      }
+    }
+  }
+
+  // METHOD 7: City+State from description → confidence 0.85
+  if (descCity && descState) {
+    var csKey = lc(descCity) + "|" + normalizeState(descState);
+    var csMatches = idx.byCityState[csKey];
+    if (csMatches && csMatches.length === 1) {
+      return { school_id: csMatches[0].id, school_name: csMatches[0].school.school_name, method: "desc_city_state", confidence: 0.85 };
+    }
+    // Multiple schools in same city — try to narrow with program name words
+    if (csMatches && csMatches.length > 1) {
+      var pnWords = lc(programName).split(/[\s\-]+/).filter(function(w) { return w.length > 2; });
+      for (var csi = 0; csi < csMatches.length; csi++) {
+        var csSchool = csMatches[csi].school;
+        var csNN = lc(csSchool.normalized_name || csSchool.school_name || "");
+        for (var pwi = 0; pwi < pnWords.length; pwi++) {
+          if (csNN.indexOf(pnWords[pwi]) >= 0) {
+            return { school_id: csMatches[csi].id, school_name: csSchool.school_name, method: "desc_city_state_name", confidence: 0.85 };
+          }
+        }
+      }
+    }
+  }
+
+  // Build candidate names to try (from program name)
   var schoolPortion = extractSchoolFromProgramName(programName);
   var subdomainPortion = extractSchoolFromSubdomain(programUrl);
   var extraCandidates = generateExtraCandidates(programName, programUrl);
 
   var candidates = [];
+  if (descSchool) candidates.push(descSchool); // description school as candidate too
   if (schoolPortion) candidates.push(schoolPortion);
   if (subdomainPortion) candidates.push(subdomainPortion);
   candidates.push(programName);
   for (var ei = 0; ei < extraCandidates.length; ei++) {
     if (extraCandidates[ei]) candidates.push(extraCandidates[ei]);
+  }
+
+  // METHOD 8: Aggressive program name stripping for no-description cases → confidence 0.8
+  if (!program.description) {
+    var stripped = stripProgramNameHard(programName);
+    if (stripped) candidates.push(stripped);
   }
 
   // METHOD 2: Exact normalized name match → confidence 0.95
@@ -502,10 +617,8 @@ function matchProgramToSchool(idx, program) {
       nn.replace(/ st$/, " state"),
       nn.replace(/ state university$/, " state"),
       nn.replace(/ state$/, " state university"),
-      // "the X" prefix
       "the " + nn,
       nn.replace(/^the /, ""),
-      // common alternate forms
       nn.replace(/ at /, " "),
       nn + " at " + nn.split(" ")[nn.split(" ").length - 1],
     ];
@@ -533,13 +646,12 @@ function matchProgramToSchool(idx, program) {
   // METHOD 3b: Check if program name contains a known nickname
   var allNicknames = Object.keys(idx.byNickname);
   for (var nki = 0; nki < allNicknames.length; nki++) {
-    var nick = allNicknames[nki];
-    if (nick.length < 4) continue; // skip very short nicknames
-    var nickEntries = idx.byNickname[nick];
+    var nick2 = allNicknames[nki];
+    if (nick2.length < 4) continue;
+    var nickEntries = idx.byNickname[nick2];
     if (!nickEntries || nickEntries.length !== 1) continue;
-    // Check if any candidate contains this nickname
     var pnLc = lc(programName);
-    if (pnLc.indexOf(nick) >= 0) {
+    if (pnLc.indexOf(nick2) >= 0) {
       return { school_id: nickEntries[0].id, school_name: nickEntries[0].school.school_name, method: "nickname_contains", confidence: 0.8 };
     }
   }
@@ -571,6 +683,21 @@ function matchProgramToSchool(idx, program) {
   }
 
   return { school_id: null, school_name: null, method: null, confidence: 0 };
+}
+
+// Aggressive stripping for programs with no description
+function stripProgramNameHard(name) {
+  if (!name) return null;
+  var s = safeStr(name);
+  // Remove common noise words
+  var noise = ["Football", "Camps", "Camp", "LLC", "Sports", "Elite", "FCA", "East", "TN", "FC", "NC", "Prospect", "-"];
+  for (var i = 0; i < noise.length; i++) {
+    var re = new RegExp("\\b" + noise[i] + "\\b", "gi");
+    s = s.replace(re, " ");
+  }
+  s = s.replace(/\s+/g, " ").trim();
+  if (s.length < 2) return null;
+  return s;
 }
 
 // ─── STEP 3: Extract camps from a program's Ryzer site ──────────────────────
