@@ -242,12 +242,14 @@ async function getLogoViaWikipediaChain(wikipediaUrl) {
   }
 
   // Guard: The nickname link must point to an athletics program page, not a generic
-  // animal/term article. Athletics pages typically contain the school name or end
-  // with a collective noun. Reject links to single-word generic articles like
-  // /wiki/Cougars, /wiki/Eagles, /wiki/Bears etc.
-  const pathTitle = athleticsPath.replace("/wiki/", "").replace(/_/g, " ");
-  const pathWords = pathTitle.split(" ").filter(w => w.length > 0);
-  // If the link is just one word (or two very generic words), it's probably the animal article
+  // animal/term article. Athletics pages typically contain the school name.
+  // Reject links like /wiki/Cougars, /wiki/Eagles, /wiki/Gopher_(animal), etc.
+  const rawPathTitle = decodeURIComponent(athleticsPath.replace("/wiki/", ""));
+  // Strip parenthetical qualifiers like (animal), (mascot), (bird)
+  const pathTitle = rawPathTitle.replace(/_/g, " ").replace(/\s*\([^)]*\)\s*/g, " ").trim();
+  const pathWords = pathTitle.split(/\s+/).filter(w => w.length > 1);
+  // Athletics pages virtually always have 2+ meaningful words (e.g. "Auburn Tigers", "Cornell Big Red")
+  // Single-word links like "Cougars", "Eagles", "Gophers" are animal/term articles
   if (pathWords.length <= 1) {
     result.status = "nickname_no_link";
     result.debugPath.push(`nickname_link_too_generic:${athleticsPath}`);
