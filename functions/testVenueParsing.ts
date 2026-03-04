@@ -123,6 +123,22 @@ Deno.serve(async (req) => {
           }
         }
       }
+
+      // Pattern 3: <p><strong>Location</strong><br>venue text</p>
+      if (!venueName && !venueAddress) {
+        const samePMatch = /<(?:p|div)[^>]*>\s*<strong>\s*Location\s*<\/strong>\s*<br\s*\/?>([\s\S]*?)<\/(?:p|div)>/i.exec(campInfoHtml);
+        if (samePMatch && samePMatch[1]) {
+          const spLines = samePMatch[1].split(/<br\s*\/?>/i)
+            .map(l => stripTags(l).replace(/&nbsp;/gi, " ").trim())
+            .filter(l => l.length > 0 && !/^[.,;:!]+$/.test(l));
+          if (spLines.length >= 1) {
+            const spFirst = spLines[0];
+            if (/^\d/.test(spFirst)) venueAddress = spFirst;
+            else venueName = spFirst;
+          }
+          if (spLines.length >= 2 && !venueAddress) venueAddress = spLines[1];
+        }
+      }
     }
 
     // Fallback: city/state from venueAddress
