@@ -372,13 +372,15 @@ function extractRyzerCampId(url) {
 }
 
 function normalizeRyzerRow(row, sportId, runIso) {
-  var title = stripNonAscii(row.eventTitle || row.EventTitle || row.title || row.Name || row.name || "Camp");
-  var url = safeStrOrNull(row.registrationUrl || row.RegistrationUrl || row.registration_url ||
-    row.eventUrl || row.EventUrl || row.url || row.Url || row.rlink || row.RLink);
+  var title = stripNonAscii(row.eventTitle || row.EventTitle || row.title || row.name || row.Name || "Camp");
+  var url = safeStrOrNull(row.rlink || row.RLink || row.registrationUrl || row.RegistrationUrl ||
+    row.registration_url || row.eventUrl || row.EventUrl || row.url || row.Url);
   var city = safeStrOrNull(row.city || row.City || row.locationCity || row.LocationCity);
   var state = safeStrOrNull(row.state || row.State || row.locationState || row.LocationState);
   var host = safeStrOrNull(row.organizer || row.Organizer || row.accountName || row.AccountName ||
-    row.hostName || row.HostName || row.organizationName || row.OrganizationName);
+    row.hostName || row.HostName || row.organizationName || row.OrganizationName ||
+    row.schoolName || row.SchoolName);
+  var logoUrl = safeStrOrNull(row.logo || row.Logo); // S3 school logo from Ryzer
   var dateRange = safeStrOrNull(row.daterange || row.startdate || row.startDate || row.StartDate);
   var price = row.cost ? parseFloat(String(row.cost).replace(/[^0-9.]/g, "")) : null;
   if (price !== null && (isNaN(price) || price <= 0)) price = null;
