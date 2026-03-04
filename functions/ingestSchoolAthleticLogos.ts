@@ -387,6 +387,66 @@ async function getLogoViaWikipediaChain(wikipediaUrl) {
   return result;
 }
 
+// ─── Second-chance: use stored athletics_wikipedia_url directly ────────────
+
+async function getLogoFromStoredAthleticsUrl(athleticsWikiUrl) {
+  const result = {
+    athletic_logo_url: null,
+    athletics_wikipedia_url: athleticsWikiUrl,
+    athletics_nickname: null,
+    source: null,
+    confidence: 0,
+    fileName: null,
+    status: "pending",
+    debugPath: ["second_chance_via_stored_url"],
+  };
+
+  if (!athleticsWikiUrl) {
+    result.status = "no_wikipedia";
+    return result;
+  }
+
+  result.debugPath.push(`fetching_athletics_page:${athleticsWikiUrl}`);
+  const athHtml = await fetchHtmlWithRetry(athleticsWikiUrl);
+  const athInfobox = extractInfobox(athHtml);
+
+  if (!athInfobox) {
+    result.status = "no_logo_on_athletics";
+    result.debugPath.push("no_infobox_on_athletics_page");
+    return result;
+  }
+
+  const titleMatch = athHtml.match(/<title>([^<]+)<\/title>/i);
+  const pageTitle = titleMatch
+    ? titleMatch[1].replace(/ - Wikipedia$/, "").replace(/ — Wikipedia$/, "").trim()
+    : null;
+
+  result.athletics_nickname = extractAthleticsName(athInfobox, pageTitle);
+
+  const logoFilename = extractInfoboxLogoFilename(athInfobox);
+  if (!logoFilename) {
+    result.status = "no_logo_on_athletics";
+    result.debugPath.push("no_logo_in_athletics_infobox");
+    return result;
+  }
+
+  result.fileName = logoFilename;
+  result.athletic_logo_url = commonsFilePath(logoFilename);
+  result.source = "wikipedia:stored_athletics_url→athletics_infobox";
+  result.status = "found";
+
+  const n = lc(logoFilename);
+  let confidence = 0.6; // slightly lower since we didn't re-derive the URL
+  if (n.endsWith(".svg")) confidence += 0.2;
+  else if (n.endsWith(".png")) confidence += 0.05;
+  if (n.includes("logo")) confidence += 0.1;
+  if (n.includes("wordmark")) confidence += 0.05;
+  result.confidence = Math.min(0.95, confidence);
+
+  result.debugPath.push(`found_logo:${logoFilename}:confidence=${result.confidence}`);
+  return result;
+}
+
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
