@@ -104,9 +104,19 @@ function cleanTextField(s) {
   return v || null;
 }
 
+function normalizeUnicode(s) {
+  // Normalize unicode dashes to space and non-breaking spaces to regular space
+  // \u2011 non-breaking hyphen, \u2012 figure dash, \u2013 en-dash, \u2014 em-dash, \u2015 horizontal bar, \u2212 minus
+  return s.replace(/[\u2011\u2012\u2013\u2014\u2015\u2212\u2010]/g, " ").replace(/\u00a0/g, " ");
+}
+
 function normalizeName(name) {
-  // Replace unicode dashes with space before stripping non-alphanum
-  return lc(name).replace(/[\u2010-\u2015\u2212\u2013\u2014]/g, " ").replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+  // 1. Normalize unicode dashes/spaces first
+  // 2. Lowercase
+  // 3. Strip non-alphanumeric (except spaces)
+  // 4. Collapse whitespace
+  var s = normalizeUnicode(lc(name));
+  return s.replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function hashLite(s) {
@@ -497,7 +507,6 @@ var HARDCODED_PROGRAM_TO_SCHOOL = {
   "tony gibson football camps": "marshall university",
   "chad walker football camps": "pace university",
   "avante mitchell football camps": "olivet nazarene university",
-  "maurice flowers football camps": "johnson c. smith university",
   "dodge city community college - football": "dodge city community college",
   "iowa central cc - football": "iowa central community college",
   "southwest mississippi cc - football": "southwest mississippi community college",
