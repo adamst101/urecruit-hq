@@ -103,7 +103,10 @@ export default function AutoBatchRunner({
 
       const batchElapsed = Date.now() - batchStart;
       // Debug: log the actual shape we're working with
-      console.log("[AutoBatch] batch", batchCount, "data keys:", Object.keys(data || {}), "stats:", data?.stats, "pagination:", data?.pagination);
+      console.log("[AutoBatch] raw res type:", typeof res, "res keys:", Object.keys(res || {}));
+      console.log("[AutoBatch] data type:", typeof data, "data keys:", Object.keys(data || {}));
+      console.log("[AutoBatch] data.stats:", data?.stats, "data.pagination:", data?.pagination);
+      console.log("[AutoBatch] data.data?:", data?.data ? Object.keys(data.data) : "none");
       const done = getNestedValue(data, doneKey);
       const nextCursor = getNestedValue(data, cursorKey);
       const lineText = (formatLogLine || defaultFormatLine)(batchCount, data, batchElapsed);
