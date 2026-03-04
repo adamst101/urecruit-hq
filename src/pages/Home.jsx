@@ -216,7 +216,7 @@ export default function Home() {
                     alt="URecruit HQ"
                     onError={() => setLogoOk(false)}
                     style={{
-                      height: 96, // increase/decrease to taste (try 88–120)
+                      height: "clamp(160px, 22vw, 288px)",
                       width: "auto",
                       objectFit: "contain",
                       filter: "drop-shadow(0 10px 24px rgba(0,0,0,0.35))"
