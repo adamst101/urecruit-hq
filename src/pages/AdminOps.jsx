@@ -55,9 +55,9 @@ const TOOLS = [
       },
       {
         title: "Generate Demo Camps",
-        description: "Full auto-batch ingest for demo / seed data generation.",
+        description: "Clone current camps with shifted dates to create prior-season demo data.",
         route: "/GenerateDemoCamps",
-        icon: "🎲",
+        icon: "🎭",
         color: "#5a3a6b",
       },
       {

@@ -332,7 +332,9 @@ export default function Discover() {
     setCampErr(null);
 
     try {
-      const CampEntity = base44?.entities?.Camp;
+      // In demo mode, query DemoCamp entity instead of Camp
+      const useDemoEntity = isDemoMode;
+      const CampEntity = useDemoEntity ? base44?.entities?.DemoCamp : base44?.entities?.Camp;
       if (!CampEntity?.filter) {
         setRawRows([]);
         setCampErr("Camps not available.");
@@ -340,11 +342,12 @@ export default function Discover() {
       }
 
       let rows = [];
+      const filterField = useDemoEntity ? "demo_season_year" : "season_year";
       try {
-        rows = await safeFilter(CampEntity, { season_year: seasonYear }, "-start_date", 2000);
+        rows = await safeFilter(CampEntity, { [filterField]: seasonYear }, "-start_date", 2000);
       } catch (e1) {
         try {
-          rows = await safeFilter(CampEntity, { season_year: String(seasonYear) }, "-start_date", 2000);
+          rows = await safeFilter(CampEntity, { [filterField]: String(seasonYear) }, "-start_date", 2000);
         } catch (e2) {
           throw e2 || e1;
         }
