@@ -98,9 +98,9 @@ export default function SportIngestConfigManager() {
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>
             <thead>
               <tr>
-                {["Sport", "Directory URL", "Source Platform", "Active", "Last Run", "Actions"].map(h => (
-                  <th key={h} style={S.th}>{h}</th>
-                ))}
+                {["Sport", "Gender", "Directory URL", "Source Platform", "Active", "Last Run", "Actions"].map(h => (
+                   <th key={h} style={S.th}>{h}</th>
+                 ))}
               </tr>
             </thead>
             <tbody>
@@ -108,9 +108,22 @@ export default function SportIngestConfigManager() {
                 <tr key={cfg.id} style={{ background: i % 2 === 0 ? "#FFF" : "#F9FAFB" }}>
                   <td style={{ ...S.td, fontWeight: 700 }}>
                     <span style={{ fontSize: 16, marginRight: 6 }}>
-                      {cfg.sport_key === "football" ? "🏈" : cfg.sport_key === "basketball" ? "🏀" : cfg.sport_key === "baseball" ? "⚾" : cfg.sport_key === "softball" ? "🥎" : cfg.sport_key === "soccer" ? "⚽" : cfg.sport_key === "volleyball" ? "🏐" : cfg.sport_key === "lacrosse" ? "🥍" : cfg.sport_key === "wrestling" ? "🤼" : cfg.sport_key === "tennis" ? "🎾" : "🏆"}
+                      {cfg.sport_key === "football" ? "🏈" : cfg.sport_key.startsWith("basketball") ? "🏀" : cfg.sport_key === "baseball" ? "⚾" : cfg.sport_key === "softball" ? "🥎" : cfg.sport_key.startsWith("soccer") ? "⚽" : cfg.sport_key === "volleyball" ? "🏐" : cfg.sport_key.startsWith("lacrosse") ? "🥍" : cfg.sport_key === "gymnastics" ? "🤸" : "🏆"}
                     </span>
                     {cfg.display_name}
+                  </td>
+                  <td style={S.td}>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600,
+                      background: cfg.gender === "mens" ? "#DBEAFE" : cfg.gender === "womens" ? "#FCE7F3" : "#F3F4F6",
+                      color: cfg.gender === "mens" ? "#1D4ED8" : cfg.gender === "womens" ? "#BE185D" : "#6B7280",
+                    }}>
+                      {cfg.gender === "mens" ? "♂ Men's" : cfg.gender === "womens" ? "♀ Women's" : "⚥ Both"}
+                    </span>
+                    {["basketballcampsusa_mens","basketballcampsusa_womens","lacrossecampsusa_mens","lacrossecampsusa_womens","soccercampsus_mens","soccercampsus_womens"].includes(cfg.source_platform) && (
+                      <span title="Shares directory URL with opposite gender config — gender filtering is active" style={{ marginLeft: 6, cursor: "help", fontSize: 14 }}>⚠️</span>
+                    )}
                   </td>
                   <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12, maxWidth: 250, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     <a href={cfg.directory_url} target="_blank" rel="noopener" style={{ color: "#2563EB" }}>{cfg.directory_url}</a>
