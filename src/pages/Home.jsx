@@ -32,7 +32,8 @@ export default function Home() {
   const [logoOk, setLogoOk] = useState(true);
 
   const isAuthed = !!season?.accountId;
-  const isMember = !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
+  const isMember =
+    !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
 
   useEffect(() => {
     const key = "evt_home_viewed_v24";
@@ -45,7 +46,7 @@ export default function Home() {
       event_name: "home_view",
       source: "home",
       auth_state: isAuthed ? "authed" : "anon",
-      mode: isMember ? "paid" : "demo",
+      mode: isMember ? "paid" : "demo"
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -81,25 +82,71 @@ export default function Home() {
   }
 
   return (
-    <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
+    <div
+      style={{
+        background: "#0a0e1a",
+        color: "#f9fafb",
+        minHeight: "100vh",
+        fontFamily: "'DM Sans', Inter, system-ui, sans-serif"
+      }}
+    >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
       {/* ── NAV ── */}
-      <nav style={{ position: "sticky", top: 0, zIndex: 50, background: "rgba(10,14,26,0.95)", backdropFilter: "blur(12px)", borderBottom: "1px solid #1f2937", height: 48 }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 24px", height: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <nav
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 50,
+          background: "rgba(10,14,26,0.95)",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid #1f2937",
+          height: 48
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 1100,
+            margin: "0 auto",
+            padding: "0 24px",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between"
+          }}
+        >
+          {/* Wordmark only (logo moved into hero) */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {logoOk && <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 40, width: "auto", objectFit: "contain" }} />}
-            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>URECRUIT HQ</span>
+            <span
+              style={{
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 22,
+                letterSpacing: 1,
+                color: "#f9fafb"
+              }}
+            >
+              URECRUIT HQ
+            </span>
           </div>
+
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {isAuthed && isMember ? (
-              <button onClick={handleContinue} style={S.navBtnAmber}>Go to HQ <ArrowRight style={{ width: 16, height: 16, marginLeft: 4 }} /></button>
+              <button onClick={handleContinue} style={S.navBtnAmber}>
+                Go to HQ <ArrowRight style={{ width: 16, height: 16, marginLeft: 4 }} />
+              </button>
             ) : isAuthed && !isMember ? (
-              <button onClick={handlePricingSignup} style={S.navBtnAmber}>Subscribe</button>
+              <button onClick={handlePricingSignup} style={S.navBtnAmber}>
+                Subscribe
+              </button>
             ) : (
               <>
-                <button onClick={handleMemberLogin} style={S.navBtnGhost}><LogIn style={{ width: 14, height: 14, marginRight: 6 }} />Member Login</button>
-                <button onClick={handlePricingSignup} style={S.navBtnAmber}>Get Started</button>
+                <button onClick={handleMemberLogin} style={S.navBtnGhost}>
+                  <LogIn style={{ width: 14, height: 14, marginRight: 6 }} />
+                  Member Login
+                </button>
+                <button onClick={handlePricingSignup} style={S.navBtnAmber}>
+                  Get Started
+                </button>
               </>
             )}
           </div>
@@ -107,52 +154,208 @@ export default function Home() {
       </nav>
 
       {/* ── HERO ── */}
-      <section style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "flex-start" }}>
+      <section
+        style={{
+          position: "relative",
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "flex-start"
+        }}
+      >
         {/* Background effects */}
-        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 60% 50% at 80% 20%, rgba(232,160,32,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.015) 60px, rgba(255,255,255,0.015) 61px)", pointerEvents: "none" }} />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(ellipse 60% 50% at 80% 20%, rgba(232,160,32,0.08) 0%, transparent 70%)",
+            pointerEvents: "none"
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundImage:
+              "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.015) 60px, rgba(255,255,255,0.015) 61px)",
+            pointerEvents: "none"
+          }}
+        />
 
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 24px 40px", width: "100%", position: "relative", zIndex: 1 }}>
+        <div
+          style={{
+            maxWidth: 1100,
+            margin: "0 auto",
+            padding: "6px 24px 40px",
+            width: "100%",
+            position: "relative",
+            zIndex: 1
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 60 }}>
-          {/* Left */}
-          <div style={{ flex: "1 1 55%", minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-              <div style={{ width: 3, height: 28, background: "#e8a020", borderRadius: 2 }} />
-              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 3, color: "#e8a020", textTransform: "uppercase" }}>College Football Recruiting Camps</span>
-            </div>
+            {/* Left */}
+            <div style={{ flex: "1 1 55%", minWidth: 0 }}>
+              {/* Hero Logo (NOT in nav) */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  marginBottom: 14,
+                  marginTop: 2
+                }}
+              >
+                {logoOk && (
+                  <img
+                    src={LOGO_URL}
+                    alt="URecruit HQ"
+                    onError={() => setLogoOk(false)}
+                    style={{
+                      height: 72,
+                      width: "auto",
+                      objectFit: "contain",
+                      filter: "drop-shadow(0 10px 24px rgba(0,0,0,0.35))"
+                    }}
+                  />
+                )}
+                <div style={{ lineHeight: 1 }}>
+                  <div
+                    style={{
+                      fontFamily: "'Bebas Neue', sans-serif",
+                      fontSize: 34,
+                      letterSpacing: 2,
+                      color: "#f9fafb"
+                    }}
+                  >
+                    URECRUIT HQ
+                  </div>
+                  <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 4 }}>
+                    Recruiting camp planning for serious families
+                  </div>
+                </div>
+              </div>
 
-            <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(48px, 7vw, 84px)", lineHeight: 0.95, margin: 0, color: "#f9fafb", letterSpacing: 1 }}>
-              STOP MISSING<br />THE CAMPS THAT<br />MATTER.
-            </h1>
-
-            <p style={{ fontSize: 20, color: "#9ca3af", lineHeight: 1.6, marginTop: 24, maxWidth: 540 }}>
-              759 college football camps. One place to discover, plan, and track your recruiting journey — without the spreadsheet chaos.
-            </p>
-
-            <div style={{ display: "flex", gap: 14, marginTop: 32, flexWrap: "wrap" }}>
-              <button onClick={handleTryDemo} style={S.ctaPrimary}>
-                Start Free Demo <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
-              </button>
-              <button onClick={handlePricingSignup} style={S.ctaOutline}>
-                View Pricing
-              </button>
-            </div>
-
-            <div style={{ display: "flex", gap: 20, marginTop: 28, flexWrap: "wrap" }}>
-              {["759 camps", "260 college programs", "All divisions", "Updated weekly"].map(t => (
-                <span key={t} style={{ fontSize: 15, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ color: "#e8a020", fontSize: 17 }}>✓</span> {t}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  marginBottom: 12
+                }}
+              >
+                <div
+                  style={{
+                    width: 3,
+                    height: 28,
+                    background: "#e8a020",
+                    borderRadius: 2
+                  }}
+                />
+                <span
+                  style={{
+                    fontFamily: "'Bebas Neue', sans-serif",
+                    fontSize: 16,
+                    letterSpacing: 3,
+                    color: "#e8a020",
+                    textTransform: "uppercase"
+                  }}
+                >
+                  College Football Recruiting Camps
                 </span>
-              ))}
-            </div>
-          </div>
+              </div>
 
-          {/* Right — mock camp cards (hidden on mobile) */}
-          <div className="hidden md:block" style={{ flex: "1 1 45%", position: "relative", minHeight: 380 }}>
-            <MockCard top={0} left={30} rotate={-2} school="Ohio State Football" date="June 14 · Columbus OH" price="$75 · Grades 9-12" badge="Registered" badgeColor="#10b981" />
-            <MockCard top={50} left={10} rotate={1} school="Alabama Crimson Tide" date="June 21 · Tuscaloosa AL" price="$65" badge="Favorited" badgeColor="#e8a020" />
-            <MockCard top={100} left={50} rotate={3} school="Penn State Football" date="July 5 · State College PA" price="$60" badge="" badgeColor="" />
-          </div>
+              <h1
+                style={{
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: "clamp(48px, 7vw, 84px)",
+                  lineHeight: 0.95,
+                  margin: 0,
+                  color: "#f9fafb",
+                  letterSpacing: 1
+                }}
+              >
+                STOP MISSING
+                <br />
+                THE CAMPS THAT
+                <br />
+                MATTER.
+              </h1>
+
+              <p
+                style={{
+                  fontSize: 20,
+                  color: "#9ca3af",
+                  lineHeight: 1.6,
+                  marginTop: 16,
+                  maxWidth: 540
+                }}
+              >
+                759 college football camps. One place to discover, plan, and track your
+                recruiting journey — without the spreadsheet chaos.
+              </p>
+
+              <div style={{ display: "flex", gap: 14, marginTop: 22, flexWrap: "wrap" }}>
+                <button onClick={handleTryDemo} style={S.ctaPrimary}>
+                  Start Free Demo <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
+                </button>
+                <button onClick={handlePricingSignup} style={S.ctaOutline}>
+                  View Pricing
+                </button>
+              </div>
+
+              <div style={{ display: "flex", gap: 20, marginTop: 22, flexWrap: "wrap" }}>
+                {["759 camps", "260 college programs", "All divisions", "Updated weekly"].map(
+                  (t) => (
+                    <span
+                      key={t}
+                      style={{
+                        fontSize: 15,
+                        color: "#9ca3af",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6
+                      }}
+                    >
+                      <span style={{ color: "#e8a020", fontSize: 17 }}>✓</span> {t}
+                    </span>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Right — mock camp cards (hidden on mobile) */}
+            <div className="hidden md:block" style={{ flex: "1 1 45%", position: "relative", minHeight: 380 }}>
+              <MockCard
+                top={0}
+                left={30}
+                rotate={-2}
+                school="Ohio State Football"
+                date="June 14 · Columbus OH"
+                price="$75 · Grades 9-12"
+                badge="Registered"
+                badgeColor="#10b981"
+              />
+              <MockCard
+                top={50}
+                left={10}
+                rotate={1}
+                school="Alabama Crimson Tide"
+                date="June 21 · Tuscaloosa AL"
+                price="$65"
+                badge="Favorited"
+                badgeColor="#e8a020"
+              />
+              <MockCard
+                top={100}
+                left={50}
+                rotate={3}
+                school="Penn State Football"
+                date="July 5 · State College PA"
+                price="$60"
+                badge=""
+                badgeColor=""
+              />
+            </div>
           </div>
         </div>
       </section>
@@ -167,7 +370,7 @@ export default function Home() {
             { num: "260", label: "College Programs" },
             { num: "98%", label: "School Match Rate" },
             { num: "Free", label: "Demo Access" },
-          ].map(s => (
+          ].map((s) => (
             <div key={s.label}>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 60, color: "#0a0e1a", lineHeight: 1 }}>{s.num}</div>
               <div style={{ fontSize: 15, fontWeight: 600, color: "#0a0e1a", opacity: 0.75, marginTop: 6, textTransform: "uppercase", letterSpacing: 1 }}>{s.label}</div>
@@ -185,7 +388,7 @@ export default function Home() {
               { n: "01", t: "DISCOVER", d: "Browse 759 football camps filtered by division, state, and date." },
               { n: "02", t: "PLAN", d: "Overlay your target schools, spot conflicts, build the perfect sequence." },
               { n: "03", t: "TRACK", d: "Mark favorites, track registrations, never miss a deadline." },
-            ].map(step => (
+            ].map((step) => (
               <div key={step.n}>
                 <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 64, color: "#e8a020", lineHeight: 1, opacity: 0.8 }}>{step.n}</div>
                 <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 30, color: "#f9fafb", marginTop: 8, letterSpacing: 1 }}>{step.t}</div>
@@ -216,14 +419,22 @@ export default function Home() {
                 "Unlimited favorites & registration tracking",
                 "Calendar conflict detection",
                 "Multiple athletes under one account",
-              ].map(f => (
+              ].map((f) => (
                 <div key={f} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 16, color: "#f9fafb" }}>
                   <span style={{ color: "#e8a020", fontSize: 18, flexShrink: 0 }}>✓</span> {f}
                 </div>
               ))}
             </div>
 
-            <button onClick={handlePricingSignup} style={{ ...S.ctaPrimary, width: "100%", justifyContent: "center", marginTop: 28 }}>
+            <button
+              onClick={handlePricingSignup}
+              style={{
+                ...S.ctaPrimary,
+                width: "100%",
+                justifyContent: "center",
+                marginTop: 28
+              }}
+            >
               Get Started <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
             </button>
           </div>
@@ -231,7 +442,18 @@ export default function Home() {
           <p style={{ color: "#9ca3af", fontSize: 16, marginTop: 20 }}>
             Or try a free demo with last season's data — no signup required
           </p>
-          <button onClick={handleTryDemo} style={{ background: "none", border: "none", color: "#e8a020", fontSize: 16, fontWeight: 600, cursor: "pointer", marginTop: 8 }}>
+          <button
+            onClick={handleTryDemo}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#e8a020",
+              fontSize: 16,
+              fontWeight: 600,
+              cursor: "pointer",
+              marginTop: 8
+            }}
+          >
             Access Demo →
           </button>
         </div>
@@ -250,21 +472,55 @@ export default function Home() {
 /* ── Mock camp card ── */
 function MockCard({ top, left, rotate, school, date, price, badge, badgeColor }) {
   return (
-    <div style={{
-      position: "absolute", top, left, transform: `rotate(${rotate}deg)`,
-      background: "#111827", border: "1px solid #1f2937", borderRadius: 12,
-      padding: "18px 20px", width: 280, boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-    }}>
+    <div
+      style={{
+        position: "absolute",
+        top,
+        left,
+        transform: `rotate(${rotate}deg)`,
+        background: "#111827",
+        border: "1px solid #1f2937",
+        borderRadius: 12,
+        padding: "18px 20px",
+        width: 280,
+        boxShadow: "0 8px 32px rgba(0,0,0,0.4)"
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(232,160,32,0.15)", border: "1px solid rgba(232,160,32,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ color: "#e8a020", fontSize: 16, fontWeight: 700 }}>{school.charAt(0)}</span>
+        <div
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            background: "rgba(232,160,32,0.15)",
+            border: "1px solid rgba(232,160,32,0.3)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center"
+          }}
+        >
+          <span style={{ color: "#e8a020", fontSize: 16, fontWeight: 700 }}>
+            {school.charAt(0)}
+          </span>
         </div>
         <div style={{ fontWeight: 700, fontSize: 14, color: "#f9fafb" }}>{school}</div>
       </div>
       <div style={{ fontSize: 12, color: "#9ca3af" }}>{date}</div>
       <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{price}</div>
       {badge && (
-        <div style={{ marginTop: 10, display: "inline-block", background: badgeColor + "22", color: badgeColor, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, border: `1px solid ${badgeColor}44` }}>
+        <div
+          style={{
+            marginTop: 10,
+            display: "inline-block",
+            background: badgeColor + "22",
+            color: badgeColor,
+            fontSize: 11,
+            fontWeight: 700,
+            padding: "3px 10px",
+            borderRadius: 20,
+            border: `1px solid ${badgeColor}44`
+          }}
+        >
           {badge}
         </div>
       )}
@@ -275,22 +531,49 @@ function MockCard({ top, left, rotate, school, date, price, badge, badgeColor })
 /* ── Shared styles ── */
 const S = {
   navBtnAmber: {
-    background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8,
-    padding: "10px 20px", fontSize: 16, fontWeight: 700, cursor: "pointer",
-    display: "flex", alignItems: "center",
+    background: "#e8a020",
+    color: "#0a0e1a",
+    border: "none",
+    borderRadius: 8,
+    padding: "10px 20px",
+    fontSize: 16,
+    fontWeight: 700,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center"
   },
   navBtnGhost: {
-    background: "transparent", color: "#f9fafb", border: "1px solid #1f2937", borderRadius: 8,
-    padding: "10px 18px", fontSize: 16, fontWeight: 500, cursor: "pointer",
-    display: "flex", alignItems: "center",
+    background: "transparent",
+    color: "#f9fafb",
+    border: "1px solid #1f2937",
+    borderRadius: 8,
+    padding: "10px 18px",
+    fontSize: 16,
+    fontWeight: 500,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center"
   },
   ctaPrimary: {
-    background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10,
-    padding: "16px 32px", fontSize: 18, fontWeight: 700, cursor: "pointer",
-    display: "flex", alignItems: "center",
+    background: "#e8a020",
+    color: "#0a0e1a",
+    border: "none",
+    borderRadius: 10,
+    padding: "16px 32px",
+    fontSize: 18,
+    fontWeight: 700,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center"
   },
   ctaOutline: {
-    background: "transparent", color: "#f9fafb", border: "1px solid rgba(249,250,251,0.25)", borderRadius: 10,
-    padding: "16px 32px", fontSize: 18, fontWeight: 600, cursor: "pointer",
-  },
+    background: "transparent",
+    color: "#f9fafb",
+    border: "1px solid rgba(249,250,251,0.25)",
+    borderRadius: 10,
+    padding: "16px 32px",
+    fontSize: 18,
+    fontWeight: 600,
+    cursor: "pointer"
+  }
 };
