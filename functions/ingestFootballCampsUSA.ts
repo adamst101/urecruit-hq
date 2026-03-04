@@ -1392,9 +1392,18 @@ Deno.serve(async function(req) {
             price: price,
             city: city,
             state: state2,
+            venue_name: venueName,
+            venue_address: venueAddress,
+            grades: grades,
+            host_org: hostOrg,
+            notes: notes ? notes.substring(0, 200) : null,
+            ryzer_camp_id: ryzerId,
+            link_url: regUrl,
+            sport_id: FOOTBALL_SPORT_ID,
             school_id: payload.school_id,
             school_name: match2.school_name,
             match_method: match2.method,
+            active: true,
             result: result,
           });
         }
