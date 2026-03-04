@@ -1550,13 +1550,15 @@ Deno.serve(async function(req) {
       if (!payload.school_id) payload.ingestion_status = "needs_review";
 
       try {
-        var result = await upsertCamp(Camp, payload, existingBySourceKey, dryRun);
-        if (result === "inserted") { stats.campsInserted++; schoolResult.camps_ingested++; existingBySourceKey[sourceKey] = payload; }
-        else if (result === "updated") { stats.campsUpdated++; schoolResult.camps_ingested++; }
+        var upsertResult = await upsertCamp(Camp, payload, existingBySourceKey, dryRun);
+        if (upsertResult.result === "inserted") { stats.campsInserted++; schoolResult.camps_ingested++; existingBySourceKey[sourceKey] = payload; }
+        else if (upsertResult.result === "updated") { stats.campsUpdated++; schoolResult.camps_ingested++; }
         else stats.campsSkipped++;
 
         if (sampleCamps.length < 15) {
-          sampleCamps.push({ source_key: sourceKey, camp_name: campName, start_date: startDate, end_date: endDate, price: price, city: city2, state: state2, venue_name: venueName, host_org: hostOrg, ryzer_camp_id: ryzerId, link_url: regUrl, sport_id: SPORT_ID, school_id: payload.school_id, school_name: match2.school_name, match_method: match2.method, active: true, result: result });
+          // Show what was ACTUALLY written (or would be written), not raw incoming data
+          var actualData = upsertResult.writtenPayload || payload;
+          sampleCamps.push({ source_key: sourceKey, camp_name: actualData.camp_name, start_date: actualData.start_date, end_date: actualData.end_date, price: actualData.price, city: actualData.city, state: actualData.state, venue_name: actualData.venue_name, host_org: actualData.host_org, ryzer_camp_id: ryzerId, link_url: regUrl, sport_id: SPORT_ID, school_id: actualData.school_id, school_name: match2.school_name, match_method: match2.method, active: true, result: upsertResult.result, detailFetched: !skipDetail && !skipDetailFetch });
         }
       } catch (e) {
         stats.campsErrors++;
