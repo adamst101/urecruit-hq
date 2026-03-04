@@ -52,16 +52,30 @@ export default function HostOrgMappingManager() {
     finally { setSaving(s => { const n = { ...s }; delete n[id]; return n; }); }
   };
 
+  async function processBatch(items, processFn, label) {
+    const BATCH_SIZE = 5;
+    const DELAY_MS = 300;
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = items.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(processFn));
+      setProgress(`${label}… ${Math.min(i + BATCH_SIZE, items.length)} / ${items.length}`);
+      if (i + BATCH_SIZE < items.length) {
+        await new Promise(r => setTimeout(r, DELAY_MS));
+      }
+    }
+    setProgress(null);
+  }
+
   const handleVerifyAll = async () => {
     const unverified = filtered.filter(r => !r.verified);
     if (!unverified.length) return;
     if (!confirm(`Verify ${unverified.length} suggested mappings?`)) return;
-    for (const r of unverified) {
+    await processBatch(unverified, async (r) => {
       try {
         await HostOrgMapping.update(r.id, { verified: true });
         setRows(prev => prev.map(x => x.id === r.id ? { ...x, verified: true } : x));
       } catch (e) { /* skip */ }
-    }
+    }, "Verifying");
   };
 
   const S = {
