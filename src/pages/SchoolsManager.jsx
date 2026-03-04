@@ -337,6 +337,22 @@ export default function SchoolsManager() {
     }
   };
 
+  const handleDelete = async (schoolId) => {
+    setSaving(s => ({ ...s, [`del:${schoolId}`]: true }));
+    try {
+      await School.delete(schoolId);
+      setSchools(prev => prev.filter(s => s.id !== schoolId));
+      setSaveMsg("Deleted ✓");
+      setTimeout(() => setSaveMsg(null), 1500);
+    } catch (e) {
+      setSaveMsg("Error: " + String(e?.message || e));
+      setTimeout(() => setSaveMsg(null), 3000);
+    } finally {
+      setSaving(s => { const n = { ...s }; delete n[`del:${schoolId}`]; return n; });
+      setConfirmDelete(null);
+    }
+  };
+
   const toggleCol = key => setVisibleCols(prev => {
     const n = new Set(prev);
     if (n.has(key)) { if (n.size > 1) n.delete(key); }
