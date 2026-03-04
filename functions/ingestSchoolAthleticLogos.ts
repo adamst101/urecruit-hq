@@ -135,26 +135,52 @@ function hasNicknameRow(infoboxHtml) {
 function extractInfoboxLogoFilename(infoboxHtml) {
   if (!infoboxHtml) return null;
 
-  const fileLinks = [];
-  const fileLinkRegex = /(?:href|src)="[^"]*?(?:\/wiki\/File:|\/wikipedia\/(?:commons|en)\/(?:thumb\/)?[a-f0-9]\/[a-f0-9]{2}\/)([^/"]+\.(svg|png|gif))/gi;
+  // Collect candidates as { filename, srcUrl } where srcUrl is the actual image src if available
+  const candidates = [];
+  const seenFiles = new Set();
+
+  // Match src attributes to get the actual hosted URL + filename
+  const srcRegex = /src="((?:https?:)?\/\/upload\.wikimedia\.org\/wikipedia\/[^"]*\/([^/"]+\.(svg|png|gif)(?:\.png)?))/gi;
   let m;
+  while ((m = srcRegex.exec(infoboxHtml)) !== null) {
+    let fullSrc = m[1];
+    if (fullSrc.startsWith("//")) fullSrc = "https:" + fullSrc;
+    // Extract original filename (strip thumbnail prefix like "250px-")
+    let fn = decodeURIComponent(m[2].replace(/^\d+px-/, ""));
+    // Strip double extension from SVG thumbnails (e.g. "Foo.svg.png" → "Foo.svg")
+    fn = fn.replace(/\.(svg|png|gif)\.(png|jpg)$/i, ".$1");
+    if (!seenFiles.has(fn)) {
+      seenFiles.add(fn);
+      // Build the direct URL: for /en/ hosted files, use upload.wikimedia.org direct path
+      // Extract the wiki (commons or en) and hash path to build a non-thumb URL
+      const directUrlMatch = fullSrc.match(/upload\.wikimedia\.org\/wikipedia\/(commons|en)\/(?:thumb\/)?([a-f0-9]\/[a-f0-9]{2})\//i);
+      let directUrl = null;
+      if (directUrlMatch) {
+        const wiki = directUrlMatch[1];
+        const hashPath = directUrlMatch[2];
+        const encodedFn = encodeURIComponent(fn.replace(/ /g, "_")).replace(/%2F/g, "/");
+        directUrl = `https://upload.wikimedia.org/wikipedia/${wiki}/${hashPath}/${encodedFn}`;
+      }
+      candidates.push({ filename: fn, directUrl, srcUrl: fullSrc });
+    }
+  }
+
+  // Also match href to File: links
+  const fileLinkRegex = /href="[^"]*?\/wiki\/File:([^"#]+\.(svg|png|gif))"/gi;
   while ((m = fileLinkRegex.exec(infoboxHtml)) !== null) {
-    const fn = decodeURIComponent(m[1].replace(/^\d+px-/, ""));
-    fileLinks.push(fn);
+    const fn = decodeURIComponent(m[1].replace(/ /g, "_"));
+    if (!seenFiles.has(fn)) {
+      seenFiles.add(fn);
+      candidates.push({ filename: fn, directUrl: null, srcUrl: null });
+    }
   }
 
-  const imgSrcRegex = /src="[^"]*upload\.wikimedia\.org\/wikipedia\/[^"]*\/([^/"]+\.(svg|png|gif))/gi;
-  while ((m = imgSrcRegex.exec(infoboxHtml)) !== null) {
-    const fn = decodeURIComponent(m[1].replace(/^\d+px-/, ""));
-    if (!fileLinks.includes(fn)) fileLinks.push(fn);
-  }
+  if (candidates.length === 0) return null;
 
-  if (fileLinks.length === 0) return null;
-
-  let bestFile = null;
+  let bestCandidate = null;
   let bestScore = -1;
-  for (const fn of fileLinks) {
-    const n = lc(fn);
+  for (const cand of candidates) {
+    const n = lc(cand.filename);
     let score = 0.5;
     if (n.endsWith(".svg")) score += 0.3;
     else if (n.endsWith(".png")) score += 0.1;
@@ -186,11 +212,11 @@ function extractInfoboxLogoFilename(infoboxHtml) {
 
     if (score > bestScore) {
       bestScore = score;
-      bestFile = fn;
+      bestCandidate = cand;
     }
   }
 
-  return bestFile;
+  return bestCandidate;
 }
 
 function extractAthleticsName(infoboxHtml, pageTitle) {
