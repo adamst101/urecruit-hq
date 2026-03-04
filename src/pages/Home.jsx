@@ -205,7 +205,7 @@ export default function Home() {
               <div
                 style={{
                   marginTop: 2,
-                  marginBottom: 10,
+                  marginBottom: 2,
                   display: "flex",
                   alignItems: "center"
                 }}
@@ -230,7 +230,7 @@ export default function Home() {
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
-                  marginBottom: 12
+                  marginBottom: 6
                 }}
               >
                 <div
