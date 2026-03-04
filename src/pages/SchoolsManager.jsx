@@ -422,6 +422,47 @@ export default function SchoolsManager() {
         </div>
       </div>
 
+      {/* Logo Fill Panel */}
+      {showLogoFill && (
+        <div style={{ background: "#0d1a28", border: "1px solid #1e3048", borderRadius: 8, margin: "10px 24px", padding: "14px 18px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+            <span style={{ color: "#a0c4ff", fontWeight: 600, fontSize: 15 }}>Fill logos from Athletics Wiki URLs</span>
+            <label style={{ color: "#7090b0", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="checkbox" checked={logoFillDry} onChange={e => setLogoFillDry(e.target.checked)} disabled={logoFillRunning} />
+              Dry run
+            </label>
+            {!logoFillRunning ? (
+              <button
+                onClick={runLogoFill}
+                style={{ ...styles.colBtn, background: "#1a3d1a", borderColor: "#2a6b2a", color: "#4caf82" }}
+              >
+                ▶ Run
+              </button>
+            ) : (
+              <button
+                onClick={() => { logoFillStop.current = true; }}
+                style={{ ...styles.colBtn, background: "#3d1a1a", borderColor: "#6b2a2a", color: "#e05c5c" }}
+              >
+                ■ Stop
+              </button>
+            )}
+            {logoFillStats && (
+              <span style={{ color: "#7090b0", fontSize: 13, marginLeft: 8 }}>
+                Eligible: {logoFillStats.totalEligible} · Updated: {logoFillStats.totalUpdated} · No logo: {logoFillStats.totalNoLogo} · Errors: {logoFillStats.totalErrors}
+              </span>
+            )}
+          </div>
+          <div style={{ color: "#506880", fontSize: 12, marginBottom: 8 }}>
+            Scans schools with an Athletics Wiki URL but no athletic logo. Fetches the Wikipedia infobox logo and saves it.
+          </div>
+          {logoFillLog.length > 0 && (
+            <div style={{ maxHeight: 200, overflowY: "auto", background: "#080e18", borderRadius: 6, padding: "8px 12px", fontSize: 13, fontFamily: "monospace", color: "#7090b0" }}>
+              {logoFillLog.map((line, i) => <div key={i}>{line}</div>)}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <div style={styles.loading}>Loading schools…</div>
