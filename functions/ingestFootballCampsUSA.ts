@@ -105,7 +105,8 @@ function cleanTextField(s) {
 }
 
 function normalizeName(name) {
-  return lc(name).replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+  // Replace unicode dashes with space before stripping non-alphanum
+  return lc(name).replace(/[\u2010-\u2015\u2212\u2013\u2014]/g, " ").replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function hashLite(s) {
