@@ -430,7 +430,8 @@ function normalizeRyzerRow(row, sportId, runIso) {
     last_ingested_at: runIso,
     position_ids: [],
     notes: null,
-    _host_name: host, // transient, for school matching only
+    _host_name: host,    // transient, for school matching only
+    _logo_url: logoUrl,  // transient, for school matching only
   };
 }
 
