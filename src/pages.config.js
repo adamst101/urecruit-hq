@@ -47,22 +47,17 @@
  *
  * The mainPage value must match a key in the PAGES object exactly.
  */
-import AdminBackfill from './pages/AdminBackfill';
 import AdminFactoryReset from './pages/AdminFactoryReset';
-import AdminImport from './pages/AdminImport';
 import AdminOps from './pages/AdminOps';
 import AdminSeedSchoolLogos from './pages/AdminSeedSchoolLogos';
 import AdminSeedSchoolsMaster from './pages/AdminSeedSchoolsMaster';
 import AuthRedirect from './pages/AuthRedirect';
 import Calendar from './pages/Calendar';
 import CampDetail from './pages/CampDetail';
-import CampDetailDemo from './pages/CampDetailDemo';
 import Checkout from './pages/Checkout';
-import DemoSetup from './pages/DemoSetup';
 import Discover from './pages/Discover';
 import Home from './pages/Home';
 import Index from './pages/Index';
-import LogoutDebug from './pages/LogoutDebug';
 import MyCamps from './pages/MyCamps';
 import Profile from './pages/Profile';
 import SchoolAthleticsCleanup from './pages/SchoolAthleticsCleanup';
@@ -77,22 +72,17 @@ import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
-    "AdminBackfill": AdminBackfill,
     "AdminFactoryReset": AdminFactoryReset,
-    "AdminImport": AdminImport,
     "AdminOps": AdminOps,
     "AdminSeedSchoolLogos": AdminSeedSchoolLogos,
     "AdminSeedSchoolsMaster": AdminSeedSchoolsMaster,
     "AuthRedirect": AuthRedirect,
     "Calendar": Calendar,
     "CampDetail": CampDetail,
-    "CampDetailDemo": CampDetailDemo,
     "Checkout": Checkout,
-    "DemoSetup": DemoSetup,
     "Discover": Discover,
     "Home": Home,
     "Index": Index,
-    "LogoutDebug": LogoutDebug,
     "MyCamps": MyCamps,
     "Profile": Profile,
     "SchoolAthleticsCleanup": SchoolAthleticsCleanup,
