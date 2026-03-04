@@ -1278,12 +1278,12 @@ async function upsertCamp(Camp, payload, existingBySourceKey, dryRun) {
     // Build a safe update payload that never overwrites good data with null
     var update = buildSafeUpdatePayload(existing, payload);
     var changed = campFieldsChanged(existing, update);
-    if (!changed) return "skipped";
+    if (!changed) return { result: "skipped", writtenPayload: update };
     if (!dryRun) await Camp.update(String(existing.id), update);
-    return "updated";
+    return { result: "updated", writtenPayload: update };
   } else {
     if (!dryRun) await Camp.create(payload);
-    return "inserted";
+    return { result: "inserted", writtenPayload: payload };
   }
 }
 
