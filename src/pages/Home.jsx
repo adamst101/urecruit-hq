@@ -87,12 +87,7 @@ export default function Home() {
       {/* ── NAV ── */}
       <nav style={{ position: "sticky", top: 0, zIndex: 50, background: "rgba(10,14,26,0.95)", backdropFilter: "blur(12px)", borderBottom: "1px solid #1f2937" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {logoOk && (
-              <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 36, width: "auto", objectFit: "contain" }} />
-            )}
-            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>URECRUIT HQ</span>
-          </div>
+          <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>URECRUIT HQ</span>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {isAuthed && isMember ? (
               <button onClick={handleContinue} style={S.navBtnAmber}>Go to HQ <ArrowRight style={{ width: 16, height: 16, marginLeft: 4 }} /></button>
@@ -114,19 +109,27 @@ export default function Home() {
         <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 60% 50% at 80% 20%, rgba(232,160,32,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.015) 60px, rgba(255,255,255,0.015) 61px)", pointerEvents: "none" }} />
 
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "80px 24px 60px", display: "flex", alignItems: "center", gap: 60, width: "100%", position: "relative", zIndex: 1 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "60px 24px 60px", width: "100%", position: "relative", zIndex: 1 }}>
+          {/* Large logo above hero content */}
+          {logoOk && (
+            <div style={{ textAlign: "center", marginBottom: 48 }}>
+              <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 120, width: "auto", objectFit: "contain", margin: "0 auto", display: "block" }} />
+            </div>
+          )}
+
+          <div style={{ display: "flex", alignItems: "center", gap: 60 }}>
           {/* Left */}
           <div style={{ flex: "1 1 58%", minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
               <div style={{ width: 3, height: 28, background: "#e8a020", borderRadius: 2 }} />
-              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 3, color: "#e8a020", textTransform: "uppercase" }}>College Football Recruiting Camps</span>
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 3, color: "#e8a020", textTransform: "uppercase" }}>College Football Recruiting Camps</span>
             </div>
 
             <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(48px, 7vw, 84px)", lineHeight: 0.95, margin: 0, color: "#f9fafb", letterSpacing: 1 }}>
               STOP MISSING<br />THE CAMPS THAT<br />MATTER.
             </h1>
 
-            <p style={{ fontSize: 18, color: "#9ca3af", lineHeight: 1.6, marginTop: 24, maxWidth: 520 }}>
+            <p style={{ fontSize: 20, color: "#9ca3af", lineHeight: 1.6, marginTop: 24, maxWidth: 540 }}>
               759 college football camps. One place to discover, plan, and track your recruiting journey — without the spreadsheet chaos.
             </p>
 
@@ -141,8 +144,8 @@ export default function Home() {
 
             <div style={{ display: "flex", gap: 20, marginTop: 28, flexWrap: "wrap" }}>
               {["759 camps", "260 college programs", "All divisions", "Updated weekly"].map(t => (
-                <span key={t} style={{ fontSize: 13, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ color: "#e8a020", fontSize: 15 }}>✓</span> {t}
+                <span key={t} style={{ fontSize: 15, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: "#e8a020", fontSize: 17 }}>✓</span> {t}
                 </span>
               ))}
             </div>
@@ -153,6 +156,7 @@ export default function Home() {
             <MockCard top={0} left={30} rotate={-2} school="Ohio State Football" date="June 14 · Columbus OH" price="$75 · Grades 9-12" badge="Registered" badgeColor="#10b981" />
             <MockCard top={50} left={10} rotate={1} school="Alabama Crimson Tide" date="June 21 · Tuscaloosa AL" price="$65" badge="Favorited" badgeColor="#e8a020" />
             <MockCard top={100} left={50} rotate={3} school="Penn State Football" date="July 5 · State College PA" price="$60" badge="" badgeColor="" />
+          </div>
           </div>
         </div>
       </section>
@@ -169,8 +173,8 @@ export default function Home() {
             { num: "Free", label: "Demo Access" },
           ].map(s => (
             <div key={s.label}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 52, color: "#0a0e1a", lineHeight: 1 }}>{s.num}</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#0a0e1a", opacity: 0.75, marginTop: 4, textTransform: "uppercase", letterSpacing: 1 }}>{s.label}</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 60, color: "#0a0e1a", lineHeight: 1 }}>{s.num}</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "#0a0e1a", opacity: 0.75, marginTop: 6, textTransform: "uppercase", letterSpacing: 1 }}>{s.label}</div>
             </div>
           ))}
         </div>
@@ -179,7 +183,7 @@ export default function Home() {
       {/* ── HOW IT WORKS ── */}
       <section style={{ background: "#0a0e1a", padding: "80px 24px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 42, textAlign: "center", marginBottom: 48, color: "#f9fafb" }}>HOW IT WORKS</h2>
+          <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, textAlign: "center", marginBottom: 48, color: "#f9fafb" }}>HOW IT WORKS</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 40 }}>
             {[
               { n: "01", t: "DISCOVER", d: "Browse 759 football camps filtered by division, state, and date." },
@@ -188,8 +192,8 @@ export default function Home() {
             ].map(step => (
               <div key={step.n}>
                 <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 64, color: "#e8a020", lineHeight: 1, opacity: 0.8 }}>{step.n}</div>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#f9fafb", marginTop: 8, letterSpacing: 1 }}>{step.t}</div>
-                <p style={{ color: "#9ca3af", fontSize: 15, lineHeight: 1.6, marginTop: 8 }}>{step.d}</p>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 30, color: "#f9fafb", marginTop: 8, letterSpacing: 1 }}>{step.t}</div>
+                <p style={{ color: "#9ca3af", fontSize: 17, lineHeight: 1.6, marginTop: 8 }}>{step.d}</p>
               </div>
             ))}
           </div>
@@ -199,13 +203,13 @@ export default function Home() {
       {/* ── PRICING ── */}
       <section style={{ background: "#111827", padding: "80px 24px" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center" }}>
-          <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 42, color: "#f9fafb", marginBottom: 32 }}>ONE SEASON. ONE PRICE.</h2>
+          <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "#f9fafb", marginBottom: 32 }}>ONE SEASON. ONE PRICE.</h2>
 
           <div style={{ background: "#0a0e1a", border: "2px solid #e8a020", borderRadius: 16, padding: "36px 28px", textAlign: "left" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "#e8a020", letterSpacing: 2, textTransform: "uppercase" }}>Season Pass</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "#e8a020", letterSpacing: 2, textTransform: "uppercase" }}>Season Pass</div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
               <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 64, color: "#f9fafb", lineHeight: 1 }}>$49</span>
-              <span style={{ color: "#9ca3af", fontSize: 14 }}>per season · all camps · all features</span>
+              <span style={{ color: "#9ca3af", fontSize: 16 }}>per season · all camps · all features</span>
             </div>
 
             <div style={{ height: 1, background: "rgba(232,160,32,0.3)", margin: "24px 0" }} />
@@ -217,8 +221,8 @@ export default function Home() {
                 "Calendar conflict detection",
                 "Multiple athletes under one account",
               ].map(f => (
-                <div key={f} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "#f9fafb" }}>
-                  <span style={{ color: "#e8a020", fontSize: 16, flexShrink: 0 }}>✓</span> {f}
+                <div key={f} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 16, color: "#f9fafb" }}>
+                  <span style={{ color: "#e8a020", fontSize: 18, flexShrink: 0 }}>✓</span> {f}
                 </div>
               ))}
             </div>
@@ -228,10 +232,10 @@ export default function Home() {
             </button>
           </div>
 
-          <p style={{ color: "#9ca3af", fontSize: 14, marginTop: 20 }}>
+          <p style={{ color: "#9ca3af", fontSize: 16, marginTop: 20 }}>
             Or try a free demo with last season's data — no signup required
           </p>
-          <button onClick={handleTryDemo} style={{ background: "none", border: "none", color: "#e8a020", fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 8 }}>
+          <button onClick={handleTryDemo} style={{ background: "none", border: "none", color: "#e8a020", fontSize: 16, fontWeight: 600, cursor: "pointer", marginTop: 8 }}>
             Access Demo →
           </button>
         </div>
@@ -239,7 +243,7 @@ export default function Home() {
 
       {/* ── FOOTER ── */}
       <footer style={{ borderTop: "1px solid #1f2937", padding: "28px 24px", textAlign: "center" }}>
-        <p style={{ fontSize: 13, color: "#6b7280" }}>
+        <p style={{ fontSize: 14, color: "#6b7280" }}>
           URecruit HQ · Independent planning tool · Not affiliated with any camp or school
         </p>
       </footer>
@@ -276,21 +280,21 @@ function MockCard({ top, left, rotate, school, date, price, badge, badgeColor })
 const S = {
   navBtnAmber: {
     background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8,
-    padding: "8px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer",
+    padding: "10px 20px", fontSize: 16, fontWeight: 700, cursor: "pointer",
     display: "flex", alignItems: "center",
   },
   navBtnGhost: {
     background: "transparent", color: "#f9fafb", border: "1px solid #1f2937", borderRadius: 8,
-    padding: "8px 16px", fontSize: 14, fontWeight: 500, cursor: "pointer",
+    padding: "10px 18px", fontSize: 16, fontWeight: 500, cursor: "pointer",
     display: "flex", alignItems: "center",
   },
   ctaPrimary: {
     background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10,
-    padding: "14px 28px", fontSize: 16, fontWeight: 700, cursor: "pointer",
+    padding: "16px 32px", fontSize: 18, fontWeight: 700, cursor: "pointer",
     display: "flex", alignItems: "center",
   },
   ctaOutline: {
     background: "transparent", color: "#f9fafb", border: "1px solid rgba(249,250,251,0.25)", borderRadius: 10,
-    padding: "14px 28px", fontSize: 16, fontWeight: 600, cursor: "pointer",
+    padding: "16px 32px", fontSize: 18, fontWeight: 600, cursor: "pointer",
   },
 };

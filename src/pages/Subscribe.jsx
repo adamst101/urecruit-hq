@@ -188,13 +188,13 @@ export default function Subscribe() {
 
       {/* ── HERO ── */}
       <section style={{ textAlign: "center", padding: "64px 24px 40px", maxWidth: 600, margin: "0 auto" }}>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 3, color: "#e8a020", textTransform: "uppercase", marginBottom: 16 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 3, color: "#e8a020", textTransform: "uppercase", marginBottom: 16 }}>
           SEASON PASS {soldYear}
         </div>
         <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(40px, 6vw, 64px)", lineHeight: 0.95, margin: 0, color: "#f9fafb", letterSpacing: 1 }}>
           UNLOCK EVERY CAMP.<br />ONE SEASON. ONE PRICE.
         </h1>
-        <p style={{ color: "#9ca3af", fontSize: 16, marginTop: 20, lineHeight: 1.6 }}>
+        <p style={{ color: "#9ca3af", fontSize: 18, marginTop: 20, lineHeight: 1.6 }}>
           Everything you need to plan the perfect recruiting camp sequence.
         </p>
       </section>
@@ -206,11 +206,11 @@ export default function Subscribe() {
           <div style={{ height: 4, background: "#e8a020" }} />
 
           <div style={{ padding: "32px 28px" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#e8a020", letterSpacing: 2, textTransform: "uppercase" }}>Season Pass {soldYear}</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#e8a020", letterSpacing: 2, textTransform: "uppercase" }}>Season Pass {soldYear}</div>
 
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 12 }}>
               <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 80, color: "#f9fafb", lineHeight: 1 }}>$49</span>
-              <span style={{ color: "#9ca3af", fontSize: 14 }}>per season</span>
+              <span style={{ color: "#9ca3af", fontSize: 16 }}>per season</span>
             </div>
 
             <div style={{ height: 1, background: "rgba(232,160,32,0.3)", margin: "28px 0" }} />
@@ -224,19 +224,19 @@ export default function Subscribe() {
                 "Multiple athletes under one account",
                 "Weekly camp updates",
               ].map(f => (
-                <div key={f} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, color: "#f9fafb" }}>
-                  <span style={{ color: "#e8a020", fontSize: 16, lineHeight: "20px", flexShrink: 0 }}>✓</span>
+                <div key={f} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 16, color: "#f9fafb" }}>
+                  <span style={{ color: "#e8a020", fontSize: 18, lineHeight: "22px", flexShrink: 0 }}>✓</span>
                   <span>{f}</span>
                 </div>
               ))}
             </div>
 
-            <button onClick={handleCheckout} style={{ width: "100%", background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "16px 0", fontSize: 17, fontWeight: 700, cursor: "pointer", marginTop: 32, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <button onClick={handleCheckout} style={{ width: "100%", background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "18px 0", fontSize: 19, fontWeight: 700, cursor: "pointer", marginTop: 32, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               Get Season Pass — $49 <ArrowRight style={{ width: 18, height: 18 }} />
             </button>
 
             <div style={{ textAlign: "center", marginTop: 12 }}>
-              <span style={{ fontSize: 12, color: "#6b7280" }}>🔒 Secure checkout</span>
+              <span style={{ fontSize: 14, color: "#6b7280" }}>🔒 Secure checkout</span>
             </div>
           </div>
         </div>
@@ -244,27 +244,27 @@ export default function Subscribe() {
 
       {/* ── DEMO OPTION ── */}
       <section style={{ textAlign: "center", padding: "0 24px 48px", maxWidth: 480, margin: "0 auto" }}>
-        <p style={{ color: "#6b7280", fontSize: 14 }}>Not ready to commit?</p>
-        <p style={{ color: "#9ca3af", fontSize: 14, marginTop: 4 }}>
+        <p style={{ color: "#6b7280", fontSize: 16 }}>Not ready to commit?</p>
+        <p style={{ color: "#9ca3af", fontSize: 16, marginTop: 4 }}>
           Try a free demo with {demoYear || "last"} season data
         </p>
-        <button onClick={handleKeepDemo} style={{ background: "transparent", border: "1px solid #1f2937", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, color: "#f9fafb", cursor: "pointer", marginTop: 12 }}>
+        <button onClick={handleKeepDemo} style={{ background: "transparent", border: "1px solid #1f2937", borderRadius: 8, padding: "12px 24px", fontSize: 16, fontWeight: 600, color: "#f9fafb", cursor: "pointer", marginTop: 12 }}>
           Access Free Demo →
         </button>
       </section>
 
       {/* ── FAQ ── */}
       <section style={{ padding: "0 24px 48px", maxWidth: 480, margin: "0 auto" }}>
-        <h3 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#f9fafb", letterSpacing: 1, marginBottom: 16 }}>FAQ</h3>
+        <h3 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "#f9fafb", letterSpacing: 1, marginBottom: 16 }}>FAQ</h3>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {faqs.map((f, i) => (
             <div key={i} style={{ background: "#111827", borderRadius: 10, overflow: "hidden", border: "1px solid #1f2937" }}>
-              <button onClick={() => setOpenFaq(openFaq === i ? null : i)} style={{ width: "100%", background: "none", border: "none", color: "#f9fafb", padding: "14px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>
+              <button onClick={() => setOpenFaq(openFaq === i ? null : i)} style={{ width: "100%", background: "none", border: "none", color: "#f9fafb", padding: "16px 20px", fontSize: 16, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>
                 {f.q}
                 {openFaq === i ? <ChevronUp style={{ width: 16, height: 16, color: "#9ca3af" }} /> : <ChevronDown style={{ width: 16, height: 16, color: "#9ca3af" }} />}
               </button>
               {openFaq === i && (
-                <div style={{ padding: "0 18px 14px", fontSize: 14, color: "#9ca3af", lineHeight: 1.6 }}>
+                <div style={{ padding: "0 20px 16px", fontSize: 16, color: "#9ca3af", lineHeight: 1.6 }}>
                   {f.a}
                 </div>
               )}
@@ -275,7 +275,7 @@ export default function Subscribe() {
 
       {/* ── TRUST BAR ── */}
       <footer style={{ borderTop: "1px solid #1f2937", padding: "28px 24px", textAlign: "center" }}>
-        <p style={{ fontSize: 13, color: "#6b7280" }}>
+        <p style={{ fontSize: 15, color: "#6b7280" }}>
           759 camps · 260 programs · Updated weekly · Independent tool · Not affiliated with camps
         </p>
       </footer>

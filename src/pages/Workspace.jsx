@@ -174,8 +174,8 @@ export default function Workspace() {
           <div style={{ width: 3, height: 32, background: "#e8a020", borderRadius: 2 }} />
           <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(36px, 5vw, 56px)", lineHeight: 1, margin: 0, letterSpacing: 1 }}>YOUR RECRUITING HQ</h1>
         </div>
-        {meEmail && <p style={{ color: "#9ca3af", fontSize: 14, margin: 0 }}>Welcome back, {displayName}</p>}
-        <p style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>
+        {meEmail && <p style={{ color: "#9ca3af", fontSize: 17, margin: 0 }}>Welcome back, {displayName}</p>}
+        <p style={{ color: "#6b7280", fontSize: 15, marginTop: 4 }}>
           {isMember
             ? `Season ${memberSeason} · Active`
             : `Demo Mode · ${demoYear} Season`}
@@ -185,8 +185,8 @@ export default function Workspace() {
         {!isMember && (
           <div style={{ marginTop: 20, background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.25)", borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#e8a020" }}>📋 You're viewing {demoYear} demo data</div>
-              <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 4 }}>Subscribe to unlock {currentYear} camps, save favorites, and track registrations.</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: "#e8a020" }}>📋 You're viewing {demoYear} demo data</div>
+              <div style={{ fontSize: 15, color: "#9ca3af", marginTop: 4 }}>Subscribe to unlock {currentYear} camps, save favorites, and track registrations.</div>
             </div>
             <button onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_banner`)} style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
               Subscribe Now <ArrowRight style={{ width: 16, height: 16 }} />
@@ -216,13 +216,13 @@ export default function Workspace() {
       {!isMember && (
         <section style={{ padding: "0 24px 48px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ background: "#111827", border: "2px solid #e8a020", borderRadius: 16, padding: "36px 28px", textAlign: "center" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "#f9fafb", letterSpacing: 1 }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#f9fafb", letterSpacing: 1 }}>
               🔓 UNLOCK THE {currentYear} SEASON
             </div>
-            <p style={{ color: "#9ca3af", fontSize: 15, marginTop: 12, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
+            <p style={{ color: "#9ca3af", fontSize: 17, marginTop: 12, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
               You're in demo mode. Subscribe for $49 to access current camps, save favorites, and track registrations.
             </p>
-            <button onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_cta`)} style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 16, fontWeight: 700, cursor: "pointer", marginTop: 24 }}>
+            <button onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_cta`)} style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "16px 36px", fontSize: 18, fontWeight: 700, cursor: "pointer", marginTop: 24 }}>
               Subscribe — $49/season
             </button>
           </div>
@@ -270,11 +270,11 @@ function WorkspaceTile({ icon, title, desc, btnLabel, onClick, highlight }) {
     >
       <div>
         <div style={{ fontSize: 28, marginBottom: 12 }}>{icon}</div>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#f9fafb", letterSpacing: 1 }}>{title}</div>
-        <p style={{ fontSize: 14, color: "#9ca3af", marginTop: 8, lineHeight: 1.5 }}>{desc}</p>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#f9fafb", letterSpacing: 1 }}>{title}</div>
+        <p style={{ fontSize: 16, color: "#9ca3af", marginTop: 8, lineHeight: 1.5 }}>{desc}</p>
       </div>
       <div style={{ marginTop: 20 }}>
-        <span style={{ color: "#e8a020", fontSize: 14, fontWeight: 700 }}>{btnLabel}</span>
+        <span style={{ color: "#e8a020", fontSize: 16, fontWeight: 700 }}>{btnLabel}</span>
       </div>
     </div>
   );
