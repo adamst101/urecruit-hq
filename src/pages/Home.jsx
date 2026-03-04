@@ -1,6 +1,6 @@
 // src/pages/Home.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
@@ -9,7 +9,7 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
-import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
+import { getDemoDefaults, setDemoMode, clearDemoMode } from "../components/hooks/demoMode.jsx";
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 
 const LOGO_URL =
@@ -26,13 +26,21 @@ function trackEvent(payload) {
 
 export default function Home() {
   const nav = useNavigate();
+  const loc = useLocation();
 
   const season = useSeasonAccess();
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
 
-  const isAuthed = !!season?.accountId;
-  const isMember =
+  // ?preview=anon forces anonymous UI for testing
+  const previewAnon = useMemo(() => {
+    try {
+      return new URLSearchParams(loc?.search || "").get("preview") === "anon";
+    } catch { return false; }
+  }, [loc?.search]);
+
+  const isAuthed = previewAnon ? false : !!season?.accountId;
+  const isMember = previewAnon ? false :
     !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
 
   useEffect(() => {
@@ -97,6 +105,15 @@ export default function Home() {
     nav(`/Subscribe?source=home_pricing`);
   }
 
+  async function handleLogout() {
+    clearDemoMode();
+    try {
+      if (base44?.auth?.logout) { await base44.auth.logout("/Home"); return; }
+      if (base44?.auth?.signOut) { await base44.auth.signOut(); }
+    } catch {}
+    window.location.assign("/Home");
+  }
+
   return (
     <div
       style={{
@@ -139,14 +156,20 @@ export default function Home() {
 
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {isAuthed && isMember ? (
-              <button onClick={handleContinue} style={S.navBtnAmber}>
-                Go to HQ{" "}
-                <ArrowRight style={{ width: 16, height: 16, marginLeft: 4 }} />
-              </button>
+              <>
+                <button onClick={handleContinue} style={S.navBtnAmber}>
+                  Go to HQ{" "}
+                  <ArrowRight style={{ width: 16, height: 16, marginLeft: 4 }} />
+                </button>
+                <button onClick={handleLogout} style={S.navBtnLogout}>Log out</button>
+              </>
             ) : isAuthed && !isMember ? (
-              <button onClick={handlePricingSignup} style={S.navBtnAmber}>
-                Subscribe
-              </button>
+              <>
+                <button onClick={handlePricingSignup} style={S.navBtnAmber}>
+                  Subscribe
+                </button>
+                <button onClick={handleLogout} style={S.navBtnLogout}>Log out</button>
+              </>
             ) : (
               <>
                 <button onClick={handleMemberLogin} style={S.navBtnGhost}>
@@ -744,5 +767,17 @@ const S = {
     fontSize: 18,
     fontWeight: 600,
     cursor: "pointer"
+  },
+  navBtnLogout: {
+    background: "transparent",
+    color: "#9ca3af",
+    border: "none",
+    borderRadius: 8,
+    padding: "10px 12px",
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: "pointer",
+    textDecoration: "underline",
+    textUnderlineOffset: 2
   }
 };
