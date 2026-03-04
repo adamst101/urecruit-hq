@@ -596,11 +596,12 @@ export default function SchoolsManager() {
 const styles = {
   root: {
     background: "#080e18",
-    minHeight: "100vh",
+    height: "100vh",
     fontFamily: "'IBM Plex Mono', 'Fira Code', monospace",
     color: "#c8d8f0",
     display: "flex",
     flexDirection: "column",
+    overflow: "hidden",
   },
   header: {
     display: "flex",
