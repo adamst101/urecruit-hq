@@ -15,22 +15,26 @@ function shiftDate(dateStr, targetYear, offsetDays) {
   if (!dateStr) return null;
   const parts = dateStr.split("-");
   if (parts.length !== 3) return null;
-  const origYear = parseInt(parts[0]);
-  const month = parseInt(parts[1]);
-  const day = parseInt(parts[2]);
-  if (!origYear || !month || !day) return null;
+  const origMonth = parseInt(parts[1]);
+  const origDay = parseInt(parts[2]);
+  if (!origMonth || !origDay) return null;
 
-  // Shift to targetYear
-  const d = new Date(Date.UTC(targetYear, month - 1, day));
-  // Apply random offset
-  d.setUTCDate(d.getUTCDate() + offsetDays);
+  // Keep same month, but randomize the day within that month
+  // First clamp month to Apr(4)–Aug(8) range
+  let month = origMonth;
+  if (month < 4) month = 4;   // Jan-Mar → April
+  if (month > 8) month = 8;   // Sep-Dec → August
 
-  // Clamp to Apr 1 - Aug 31 of targetYear
-  const minDate = new Date(Date.UTC(targetYear, 3, 1));  // Apr 1
-  const maxDate = new Date(Date.UTC(targetYear, 7, 31)); // Aug 31
-  if (d < minDate) return formatDate(minDate);
-  if (d > maxDate) return formatDate(maxDate);
-  return formatDate(d);
+  // Figure out how many days are in this month for targetYear
+  const daysInMonth = new Date(Date.UTC(targetYear, month, 0)).getUTCDate(); // month is 1-based here, Date(y,m,0) gives last day of month-1... need to adjust
+  const lastDay = new Date(Date.UTC(targetYear, month, 0)).getUTCDate();
+
+  // Pick a new day: original day + offset, clamped to valid range
+  let newDay = origDay + offsetDays;
+  if (newDay < 1) newDay = 1;
+  if (newDay > lastDay) newDay = lastDay;
+
+  return `${targetYear}-${String(month).padStart(2, "0")}-${String(newDay).padStart(2, "0")}`;
 }
 
 function formatDate(d) {
