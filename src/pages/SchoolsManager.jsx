@@ -704,6 +704,11 @@ const styles = {
     cursor: "pointer",
     fontFamily: "inherit",
     margin: "0 2px",
+    opacity: 1,
+  },
+  pageBtnDisabled: {
+    opacity: 0.3,
+    cursor: "not-allowed",
   },
   tableWrap: {
     flex: 1,
