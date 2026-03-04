@@ -1153,11 +1153,16 @@ function parseFlexibleDates(s) {
 
 function campFieldsChanged(existing, incoming) {
   var fields = ["camp_name", "start_date", "end_date", "city", "state", "price",
-    "link_url", "source_url", "ryzer_camp_id", "season_year"];
+    "link_url", "source_url", "ryzer_camp_id", "season_year",
+    "venue_name", "venue_address", "grades", "host_org"];
   for (var i = 0; i < fields.length; i++) {
     var f = fields[i];
     if (safeStr(existing[f]) !== safeStr(incoming[f])) return true;
   }
+  // Check price_options array changed
+  var existingPO = JSON.stringify(existing.price_options || []);
+  var incomingPO = JSON.stringify(incoming.price_options || []);
+  if (existingPO !== incomingPO) return true;
   return false;
 }
 
