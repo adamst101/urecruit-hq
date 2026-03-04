@@ -6,6 +6,7 @@ export default function TestFunctions() {
   const nav = useNavigate();
   const [dryRun, setDryRun] = useState(true);
   const [sportKey, setSportKey] = useState("football");
+  const [maxSchools, setMaxSchools] = useState(20);
 
   const S = {
     root: { background: "#F3F4F6", minHeight: "100vh", fontFamily: "Inter, system-ui, sans-serif", color: "#111827" },
