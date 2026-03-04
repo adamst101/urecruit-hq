@@ -104,15 +104,15 @@ export default function Home() {
       </nav>
 
       {/* ── HERO ── */}
-      <section style={{ position: "relative", overflow: "hidden", minHeight: "90vh", display: "flex", alignItems: "center" }}>
+      <section style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "flex-start" }}>
         {/* Background effects */}
         <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 60% 50% at 80% 20%, rgba(232,160,32,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.015) 60px, rgba(255,255,255,0.015) 61px)", pointerEvents: "none" }} />
 
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 24px 60px", width: "100%", position: "relative", zIndex: 1 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 24px 60px", width: "100%", position: "relative", zIndex: 1 }}>
           {/* Large logo above hero content */}
           {logoOk && (
-            <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <div style={{ textAlign: "center", marginBottom: 32 }}>
               <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 540, maxWidth: "100%", width: "auto", objectFit: "contain", margin: "0 auto", display: "block" }} />
             </div>
           )}
