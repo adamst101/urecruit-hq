@@ -248,24 +248,76 @@ async function getLogoViaWikipediaChain(wikipediaUrl) {
   // Strip parenthetical qualifiers like (animal), (mascot), (bird)
   const pathTitle = rawPathTitle.replace(/_/g, " ").replace(/\s*\([^)]*\)\s*/g, " ").trim();
   const pathWords = pathTitle.split(/\s+/).filter(w => w.length > 1);
-  // Athletics pages virtually always have 2+ meaningful words (e.g. "Auburn Tigers", "Cornell Big Red")
-  // Single-word links like "Cougars", "Eagles", "Gophers" are animal/term articles
+
+  // ── STRICT REJECTION RULES ──────────────────────────────────────────────────
+
+  // 1. Single-word links are animal/term articles (e.g. "Cougars", "Eagles", "Bear")
   if (pathWords.length <= 1) {
     result.status = "nickname_no_link";
     result.debugPath.push(`nickname_link_too_generic:${athleticsPath}`);
     return result;
   }
-  // Also reject if the raw path contains parenthetical qualifiers — these are disambiguation
-  // pages for animals/terms, never athletics program pages
-  if (/\(animal|bird|insect|fish|mammal|reptile|disambiguation|genus|species|mytholog|creature\)/i.test(rawPathTitle)) {
+
+  // 2. Parenthetical qualifiers indicate non-athletics pages
+  if (/\((animal|bird|insect|fish|mammal|reptile|disambiguation|genus|species|mytholog|creature|plant|arachnid|amphibian)\)/i.test(rawPathTitle)) {
     result.status = "nickname_no_link";
     result.debugPath.push(`nickname_link_is_animal_page:${athleticsPath}`);
     return result;
   }
-  // Reject generic animal/mascot term pages (not school athletics pages).
-  // School athletics pages always include a proper noun (school name).
-  // e.g. "Yellow_Jacket" → generic insect; "Georgia_Tech_Yellow_Jackets" → athletics.
-  const GENERIC_MASCOT_TERMS = /^(yellow[_ ]?jacket|blue[_ ]?jay|blue[_ ]?devil|red[_ ]?hawk|red[_ ]?fox|gray[_ ]?wolf|golden[_ ]?eagle|bald[_ ]?eagle|black[_ ]?bear|grizzly[_ ]?bear|timber[_ ]?wolf|jack[_ ]?rabbit|road[_ ]?runner|horned[_ ]?frog|mountain[_ ]?lion|wild[_ ]?cat)s?$/i;
+
+  // 3. Taxonomy / conservation / species keywords in title
+  if (/\b(conservation|taxonomy|species|subspecies|genus|temporal range|pleistocene|holocene)\b/i.test(rawPathTitle)) {
+    result.status = "nickname_no_link";
+    result.debugPath.push(`nickname_link_taxonomy_keyword:${athleticsPath}`);
+    return result;
+  }
+
+  // 4. Known animal words set — single animals or animal plurals
+  const ANIMAL_WORDS = new Set([
+    "eagle","eagles","falcon","falcons","hawk","hawks","owl","owls",
+    "tiger","tigers","lion","lions","bear","bears","wolf","wolves",
+    "panther","panthers","cougar","cougars","jaguar","jaguars",
+    "mustang","mustangs","bronco","broncos","stallion","stallions",
+    "ram","rams","bull","bulls","bison","buffalo","buffaloes",
+    "wildcat","wildcats","bobcat","bobcats","hornet","hornets",
+    "bee","bees","wasp","wasps","cardinal","cardinals",
+    "raven","ravens","jay","jays","osprey","ospreys",
+    "pelican","pelicans","penguin","penguins","dolphin","dolphins",
+    "shark","sharks","gator","gators","alligator","alligators",
+    "cobra","cobras","fox","foxes","coyote","coyotes","badger","badgers",
+    "otter","otters","beaver","beavers","rabbit","rabbits",
+    "jackrabbit","jackrabbits","deer","moose","elk","terrapin","terrapins",
+    "turtle","turtles","gopher","gophers","squirrel","squirrels",
+  ]);
+
+  // 5. Adjective + Animal pattern (e.g. "Snowy owl", "Golden eagle", "Black panther")
+  //    But allow known school prefixes like "American Eagles", "Boston Terriers"
+  const ADJECTIVE_ANIMAL_RE = /^(snowy|golden|bald|gray|grey|red|blue|black|white|great|northern|southern|eastern|western|arctic|polar|mountain|timber|prairie|common|african|asian|european)[_ ]/i;
+
+  const KNOWN_SCHOOL_PREFIXES = new Set([
+    "american","boston","coastal","central","pacific","atlantic","liberty","national",
+    "auburn","stanford","harvard","yale","duke","rice","temple","navy","army",
+    "tulane","gonzaga","villanova","marquette","creighton","xavier","dayton",
+    "butler","depaul","drake","bradley","loyola","fordham",
+    "cornell","brown","dartmouth","columbia","princeton","penn",
+  ]);
+
+  if (pathWords.length === 2) {
+    const firstWordLc = lc(pathWords[0]);
+    const lastWordLc = lc(pathWords[1]);
+
+    // Check if it's an adjective + animal pair
+    if (ADJECTIVE_ANIMAL_RE.test(pathTitle) && !KNOWN_SCHOOL_PREFIXES.has(firstWordLc)) {
+      if (ANIMAL_WORDS.has(lastWordLc) || ANIMAL_WORDS.has(lastWordLc + "s") || ANIMAL_WORDS.has(lastWordLc.replace(/s$/, ""))) {
+        result.status = "nickname_no_link";
+        result.debugPath.push(`nickname_link_adjective_animal:${athleticsPath}`);
+        return result;
+      }
+    }
+  }
+
+  // 6. Generic mascot terms without school prefix
+  const GENERIC_MASCOT_TERMS = /^(yellow[_ ]?jacket|blue[_ ]?jay|blue[_ ]?devil|red[_ ]?hawk|red[_ ]?fox|gray[_ ]?wolf|golden[_ ]?eagle|bald[_ ]?eagle|black[_ ]?bear|grizzly[_ ]?bear|timber[_ ]?wolf|jack[_ ]?rabbit|road[_ ]?runner|horned[_ ]?frog|mountain[_ ]?lion|wild[_ ]?cat|sea[_ ]?wolf|black[_ ]?panther|snow[_ ]?leopard|snowy[_ ]?owl)s?$/i;
   if (GENERIC_MASCOT_TERMS.test(pathTitle)) {
     result.status = "nickname_no_link";
     result.debugPath.push(`nickname_link_is_generic_mascot:${athleticsPath}`);
