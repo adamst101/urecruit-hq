@@ -52,8 +52,10 @@ import AdminOps from './pages/AdminOps';
 import AdminSeedSchoolLogos from './pages/AdminSeedSchoolLogos';
 import AdminSeedSchoolsMaster from './pages/AdminSeedSchoolsMaster';
 import AuthRedirect from './pages/AuthRedirect';
+import BlockListManager from './pages/BlockListManager';
 import Calendar from './pages/Calendar';
 import CampDetail from './pages/CampDetail';
+import CampsManager from './pages/CampsManager';
 import Checkout from './pages/Checkout';
 import Discover from './pages/Discover';
 import Home from './pages/Home';
@@ -67,9 +69,8 @@ import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
-import CampsManager from './pages/CampsManager';
-import BlockListManager from './pages/BlockListManager';
 import HostOrgMappingManager from './pages/HostOrgMappingManager';
+import BackfillRyzerProgramName from './pages/BackfillRyzerProgramName';
 import __Layout from './Layout.jsx';
 
 
@@ -79,8 +80,10 @@ export const PAGES = {
     "AdminSeedSchoolLogos": AdminSeedSchoolLogos,
     "AdminSeedSchoolsMaster": AdminSeedSchoolsMaster,
     "AuthRedirect": AuthRedirect,
+    "BlockListManager": BlockListManager,
     "Calendar": Calendar,
     "CampDetail": CampDetail,
+    "CampsManager": CampsManager,
     "Checkout": Checkout,
     "Discover": Discover,
     "Home": Home,
@@ -94,9 +97,8 @@ export const PAGES = {
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
-    "CampsManager": CampsManager,
-    "BlockListManager": BlockListManager,
     "HostOrgMappingManager": HostOrgMappingManager,
+    "BackfillRyzerProgramName": BackfillRyzerProgramName,
 }
 
 export const pagesConfig = {

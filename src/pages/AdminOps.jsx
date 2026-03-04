@@ -66,6 +66,13 @@ const TOOLS = [
         icon: "🔗",
         color: "#1a4e6b",
       },
+      {
+        title: "Backfill Ryzer Program Names",
+        description: "Re-fetch Ryzer pages to fill missing ryzer_program_name, venue, and fix city data on existing camps.",
+        route: "/BackfillRyzerProgramName",
+        icon: "🔄",
+        color: "#3a6b1a",
+      },
     ],
   },
   {
