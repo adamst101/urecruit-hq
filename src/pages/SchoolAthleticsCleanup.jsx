@@ -33,6 +33,7 @@ export default function SchoolAthleticsCleanup() {
   const [running, setRunning]   = useState(false);
   const [mode, setMode]         = useState(null); // "update" | "delete"
   const [dryRun, setDryRun]     = useState(true);
+  const [resumeAt, setResumeAt] = useState(0);
   const [stats, setStats]       = useState(INITIAL_STATS);
   const [log, setLog]           = useState([]);
   const [done, setDone]         = useState(false);
