@@ -9,7 +9,7 @@
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 
-var VERSION = "ingestFootballCampsUSA_v4";
+var VERSION = "ingestFootballCampsUSA_v5";
 var FOOTBALL_SPORT_ID = "69407156fe19c3615944865f";
 var MATCH_CONFIDENCE_THRESHOLD = 0.7;
 var SOURCE_PLATFORM = "footballcampsusa";
