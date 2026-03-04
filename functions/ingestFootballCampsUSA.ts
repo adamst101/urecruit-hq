@@ -497,6 +497,7 @@ var HARDCODED_PROGRAM_TO_SCHOOL = {
   "tony gibson football camps": "marshall university",
   "chad walker football camps": "pace university",
   "avante mitchell football camps": "olivet nazarene university",
+  "maurice flowers football camps": "johnson c. smith university",
   "dodge city community college - football": "dodge city community college",
   "iowa central cc - football": "iowa central community college",
   "southwest mississippi cc - football": "southwest mississippi community college",
