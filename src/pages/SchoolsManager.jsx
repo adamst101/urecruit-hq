@@ -487,7 +487,7 @@ export default function SchoolsManager() {
       ) : error ? (
         <div style={styles.errMsg}>{error}</div>
       ) : (
-        <div style={styles.tableWrap}>
+        <div ref={tableWrapRef} style={styles.tableWrap}>
           <table style={styles.table}>
             <thead>
               <tr>
