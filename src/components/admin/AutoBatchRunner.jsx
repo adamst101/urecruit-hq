@@ -89,11 +89,18 @@ export default function AutoBatchRunner({
 
       const batchStart = Date.now();
       let data;
-      let rawRes;
       try {
         const callParams = { ...params, [cursorParam]: cursor };
-        rawRes = await base44.functions.invoke(functionName, callParams);
-        data = rawRes.data || rawRes;
+        const rawRes = await base44.functions.invoke(functionName, callParams);
+        // Unwrap Axios: rawRes is {data, status, headers}. rawRes.data is the function's JSON response.
+        // But rawRes.data could itself have a .data wrapper in some cases.
+        let unwrapped = rawRes?.data ?? rawRes;
+        // If the unwrapped response itself looks like an Axios wrapper (has .data and .status), unwrap again
+        if (unwrapped && typeof unwrapped === "object" && unwrapped.data && unwrapped.status && !unwrapped.stats && !unwrapped.pagination) {
+          unwrapped = unwrapped.data;
+        }
+        data = unwrapped;
+        console.log("[AutoBatch] batch", batchCount, "data keys:", Object.keys(data || {}), "has stats:", !!data?.stats, "has pagination:", !!data?.pagination);
       } catch (e) {
         const errMsg = e?.response?.data?.error || e?.message || String(e);
         setLastError(errMsg);
