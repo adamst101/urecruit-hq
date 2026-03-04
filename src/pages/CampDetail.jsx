@@ -24,6 +24,7 @@ import { Badge } from "../components/ui/badge";
 import BottomNav from "../components/navigation/BottomNav";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { readDemoMode } from "../components/hooks/demoMode";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
 import { useDemoProfile } from "../components/hooks/useDemoProfile";
@@ -102,6 +103,10 @@ function CampDetailInner() {
   const queryClient = useQueryClient();
 
   const { mode, isLoading: accessLoading, seasonYear } = useSeasonAccess();
+  const dm = readDemoMode();
+  const isDemoMode = dm?.mode === "demo";
+  const demoSeasonYear = Number.isFinite(Number(dm?.seasonYear)) ? Number(dm.seasonYear) : null;
+  const currentYear = new Date().getFullYear();
   const {
     athleteProfile,
     isLoading: identityLoading,
@@ -449,9 +454,9 @@ function CampDetailInner() {
       {/* Body */}
       <div className="max-w-md mx-auto p-4 space-y-4">
         {!paid ? (
-          <Card className="p-3 border-slate-200 bg-slate-50">
-            <div className="text-xs text-slate-600">
-              Demo mode: favorites and registrations are saved locally on this device (no account writes).
+          <Card className="p-3 border-amber-100 bg-amber-50">
+            <div className="text-sm text-amber-800 font-medium">
+              📅 You're viewing demo data from the {demoSeasonYear || seasonYear} season. Subscribe to see current {currentYear} camps.
             </div>
           </Card>
         ) : null}
@@ -529,7 +534,15 @@ function CampDetailInner() {
             )}
           </Button>
 
-          {summary.link_url && (
+          {!paid && !summary.link_url ? (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => navigate("/Subscribe")}
+            >
+              Subscribe to Register
+            </Button>
+          ) : summary.link_url ? (
             <Button
               variant="outline"
               className="w-full"
@@ -537,7 +550,7 @@ function CampDetailInner() {
             >
               Open Camp Link
             </Button>
-          )}
+          ) : null}
         </div>
       </div>
 
