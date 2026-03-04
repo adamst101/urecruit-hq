@@ -53,7 +53,7 @@ export default function SchoolAthleticsCleanup() {
     setDone(false);
     setError(null);
 
-    let currentStartAt = 0;
+    let currentStartAt = Math.max(0, Number(resumeAt) || 0);
     let totals = { ...INITIAL_STATS };
 
     appendLog(`▶ Starting ${selectedMode.toUpperCase()} — dryRun: ${dryRun}`);
