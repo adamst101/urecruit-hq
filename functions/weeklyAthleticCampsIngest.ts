@@ -76,7 +76,6 @@ Deno.serve(async function(req) {
           dryRun: dryRun,
           startAt: cursor,
           maxSchools: 261,
-          sleepMs: 0,
           timeBudgetMs: 55000,
         });
 
