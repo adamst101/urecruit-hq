@@ -240,6 +240,8 @@ function buildSchoolIndex(schools) {
   var byNicknameState = {};
   var byLogoUrl = {};
   var byNickname = {}; // nickname alone (no state)
+  var byCityState = {}; // "city|state" → [schools]
+  var byNicknameAlone = {}; // just the nickname word(s) from athletics_nickname, e.g. "wildcats"
 
   for (var i = 0; i < schools.length; i++) {
     var s = schools[i];
@@ -262,6 +264,36 @@ function buildSchoolIndex(schools) {
     if (nick) {
       if (!byNickname[nick]) byNickname[nick] = [];
       byNickname[nick].push({ id: sid, school: s });
+
+      // Extract just the mascot/team name portion (last word(s) after school name)
+      // e.g. "Alabama Crimson Tide" → "crimson tide", "Iowa Western Reivers" → "reivers"
+      var nickWords = nick.split(/\s+/);
+      // Try last 2 words, then last 1 word as mascot keys
+      if (nickWords.length >= 2) {
+        var last2 = nickWords.slice(-2).join(" ");
+        if (!byNicknameAlone[last2]) byNicknameAlone[last2] = [];
+        byNicknameAlone[last2].push({ id: sid, school: s });
+      }
+      if (nickWords.length >= 1) {
+        var last1 = nickWords[nickWords.length - 1];
+        if (last1.length >= 4) { // skip very short like "owls" could be ambiguous — actually keep all
+          if (!byNicknameAlone[last1]) byNicknameAlone[last1] = [];
+          byNicknameAlone[last1].push({ id: sid, school: s });
+        }
+      }
+      // Also index the full nickname string
+      if (!byNicknameAlone[nick]) byNicknameAlone[nick] = [];
+      // avoid dupe
+      var already = byNicknameAlone[nick].some(function(e) { return e.id === sid; });
+      if (!already) byNicknameAlone[nick].push({ id: sid, school: s });
+    }
+
+    // City+State index
+    var city = lc(s.city || "");
+    if (city && st) {
+      var csKey = city + "|" + st;
+      if (!byCityState[csKey]) byCityState[csKey] = [];
+      byCityState[csKey].push({ id: sid, school: s });
     }
 
     // Logo URLs (both fields)
@@ -276,7 +308,14 @@ function buildSchoolIndex(schools) {
     }
   }
 
-  return { byNormName: byNormName, byNicknameState: byNicknameState, byLogoUrl: byLogoUrl, byNickname: byNickname };
+  return {
+    byNormName: byNormName,
+    byNicknameState: byNicknameState,
+    byLogoUrl: byLogoUrl,
+    byNickname: byNickname,
+    byNicknameAlone: byNicknameAlone,
+    byCityState: byCityState,
+  };
 }
 
 // Strip football camp noise from program name to get the school portion
