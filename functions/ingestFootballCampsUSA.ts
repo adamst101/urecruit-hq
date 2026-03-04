@@ -5,11 +5,11 @@
 // Usage:
 //   Step 1 (school match only):  { "step": "matchSchools" }
 //   Step 2 (dry run 5 schools):  { "dryRun": true, "maxSchools": 5, "startAt": 0, "sleepMs": 1000 }
-//   Step 3 (live batch):         { "dryRun": false, "maxSchools": 20, "startAt": 0, "sleepMs": 1000 }
+//   Step 3 (live batch):         { "dryRun": false, "maxSchools": 10, "startAt": 0, "sleepMs": 1000 }
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 
-var VERSION = "ingestFootballCampsUSA_v2";
+var VERSION = "ingestFootballCampsUSA_v3";
 var FOOTBALL_SPORT_ID = "69407156fe19c3615944865f";
 var MATCH_CONFIDENCE_THRESHOLD = 0.7;
 var SOURCE_PLATFORM = "footballcampsusa";
@@ -59,7 +59,6 @@ function stripTags(html) {
   ).replace(/\s+/g, " ").trim();
 }
 
-// Apply entity decoding to a clean text field (already stripped of tags)
 function cleanTextField(s) {
   if (!s) return null;
   var v = decodeHtmlEntities(String(s)).replace(/\s+/g, " ").trim();
@@ -121,44 +120,35 @@ async function fetchWithTimeout(url, timeoutMs) {
 }
 
 // ─── STEP 1: Fetch program list from footballcampsusa.com ───────────────────
-// v2: Card-boundary parsing using <div class="listItem"> as delimiter.
-// Each card contains: schoolLogo img, span.school, p (description), a.viewSite.
 
 function parseFootballCampsUSADirectory(html) {
   var programs = [];
   if (!html) return programs;
 
-  // Split on card boundaries
   var chunks = html.split('<div class="listItem"');
-  var cardChunks = chunks.slice(1); // first chunk is pre-cards HTML
+  var cardChunks = chunks.slice(1);
 
   for (var i = 0; i < cardChunks.length; i++) {
     var card = cardChunks[i];
 
-    // Name from <span class="school">
     var nameMatch = /<span class="school">([^<]+)<\/span>/i.exec(card);
     var name = nameMatch ? nameMatch[1].trim() : null;
 
-    // Logo from first <img> with Ryzer S3 src
     var logoMatch = /<img[^>]*src="(https:\/\/s3\.amazonaws\.com\/images\.ryzer\.com\/[^"]+)"[^>]*>/i.exec(card);
     var logoUrl = logoMatch ? logoMatch[1] : null;
 
-    // Fallback name from img alt
     if (!name) {
       var altMatch = /alt="([^"]+)"/i.exec(card);
       name = altMatch ? altMatch[1].trim() : "(unknown)";
     }
 
-    // URL from "View Site" anchor
     var urlMatch = /<a[^>]*href="([^"]*)"[^>]*>\s*View Site/i.exec(card);
     if (!urlMatch) urlMatch = /<a\s+href="([^"]+)"[^>]*class="viewSite"/i.exec(card);
     var url = urlMatch ? urlMatch[1].trim() : null;
 
-    // Description from <p> inside extraInfo div
     var descMatch = /<p>([^<]+(?:<[^>]+>[^<]*)*)<\/p>/i.exec(card);
     var description = descMatch ? stripTags(descMatch[1]).trim() : null;
 
-    // Extract school info from description
     var descExtracted = extractSchoolFromDescription(description);
 
     programs.push({
@@ -173,7 +163,6 @@ function parseFootballCampsUSADirectory(html) {
     });
   }
 
-  // Dedupe by URL
   var seen = {};
   var deduped = [];
   for (var j = 0; j < programs.length; j++) {
@@ -185,19 +174,16 @@ function parseFootballCampsUSADirectory(html) {
   return deduped;
 }
 
-// Extract school name, city, state, and nickname from description text
 function extractSchoolFromDescription(desc) {
   var result = { school: null, city: null, state: null, nickname: null };
   if (!desc) return result;
 
-  // Extract city, state: "in City, ST" or "in City, State"
   var csMatch = /\bin\s+([A-Z][A-Za-z\s.'-]+),\s*([A-Z]{2}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/.exec(desc);
   if (csMatch) {
     result.city = csMatch[1].trim();
     result.state = csMatch[2].trim();
   }
 
-  // Extract nickname from "led by the [Nickname] (football|coaching) staff"
   var nickMatch = /led by (?:the |its )?(.+?)\s+(?:Football\s+)?(?:coaching\s+)?staff/i.exec(desc);
   if (nickMatch && nickMatch[1]) {
     var nick = nickMatch[1].trim()
@@ -210,17 +196,12 @@ function extractSchoolFromDescription(desc) {
     }
   }
 
-  // Try patterns in priority order to extract school name:
-
-  // 1. "campus of [School Name]"
   var m = /campus of\s+(?:the\s+)?(.+?)(?:\s+in\s|\s*[,.])/i.exec(desc);
   if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
 
-  // 2. "on the [School Name] campus"
   m = /on the\s+(.+?)\s+campus/i.exec(desc);
   if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
 
-  // 3. "held at [Venue] at [School]" — look for university/college within it
   m = /held at\s+(?:the\s+)?(.+?)(?:\s+in\s|\s*[,.])/i.exec(desc);
   if (m && m[1]) {
     var uniInVenue = /((?:University of [A-Za-z\s.&'-]+|[A-Za-z\s.&'-]+ University|[A-Za-z\s.&'-]+ College|[A-Za-z\s.&'-]+ Institute))/i.exec(m[1]);
@@ -230,11 +211,9 @@ function extractSchoolFromDescription(desc) {
     }
   }
 
-  // 4. "led by the [School] football/coaching staff"
   m = /led by the\s+(.+?)\s+(?:football|coaching)\s+staff/i.exec(desc);
   if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
 
-  // 5. General: find "University of X" or "X University" or "X College" anywhere
   m = /(University of [A-Za-z\s.&'-]+|[A-Z][A-Za-z\s.&'-]+ University|[A-Z][A-Za-z\s.&'-]+ College(?!\s+Football))/i.exec(desc);
   if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
 
@@ -258,9 +237,9 @@ function buildSchoolIndex(schools) {
   var byNormName = {};
   var byNicknameState = {};
   var byLogoUrl = {};
-  var byNickname = {}; // nickname alone (no state)
-  var byCityState = {}; // "city|state" → [schools]
-  var byNicknameAlone = {}; // just the nickname word(s) from athletics_nickname, e.g. "wildcats"
+  var byNickname = {};
+  var byCityState = {};
+  var byNicknameAlone = {};
 
   for (var i = 0; i < schools.length; i++) {
     var s = schools[i];
@@ -284,10 +263,7 @@ function buildSchoolIndex(schools) {
       if (!byNickname[nick]) byNickname[nick] = [];
       byNickname[nick].push({ id: sid, school: s });
 
-      // Extract just the mascot/team name portion (last word(s) after school name)
-      // e.g. "Alabama Crimson Tide" → "crimson tide", "Iowa Western Reivers" → "reivers"
       var nickWords = nick.split(/\s+/);
-      // Try last 2 words, then last 1 word as mascot keys
       if (nickWords.length >= 2) {
         var last2 = nickWords.slice(-2).join(" ");
         if (!byNicknameAlone[last2]) byNicknameAlone[last2] = [];
@@ -295,19 +271,16 @@ function buildSchoolIndex(schools) {
       }
       if (nickWords.length >= 1) {
         var last1 = nickWords[nickWords.length - 1];
-        if (last1.length >= 4) { // skip very short like "owls" could be ambiguous — actually keep all
+        if (last1.length >= 4) {
           if (!byNicknameAlone[last1]) byNicknameAlone[last1] = [];
           byNicknameAlone[last1].push({ id: sid, school: s });
         }
       }
-      // Also index the full nickname string
       if (!byNicknameAlone[nick]) byNicknameAlone[nick] = [];
-      // avoid dupe
       var already = byNicknameAlone[nick].some(function(e) { return e.id === sid; });
       if (!already) byNicknameAlone[nick].push({ id: sid, school: s });
     }
 
-    // City+State index
     var city = lc(s.city || "");
     if (city && st) {
       var csKey = city + "|" + st;
@@ -315,7 +288,6 @@ function buildSchoolIndex(schools) {
       byCityState[csKey].push({ id: sid, school: s });
     }
 
-    // Logo URLs (both fields)
     var logos = [s.logo_url, s.athletic_logo_url];
     for (var li = 0; li < logos.length; li++) {
       var lu = safeStrOrNull(logos[li]);
@@ -337,10 +309,8 @@ function buildSchoolIndex(schools) {
   };
 }
 
-// Strip football camp noise from program name to get the school portion
 function extractSchoolFromProgramName(programName) {
   var n = safeStr(programName);
-  // Strip common suffixes
   n = n.replace(/\s*-\s*Football$/i, "");
   n = n.replace(/\s+Football\s+Camps?$/i, "");
   n = n.replace(/\s+Football\s+Clinics?$/i, "");
@@ -349,17 +319,14 @@ function extractSchoolFromProgramName(programName) {
   n = n.replace(/\s+Camps?$/i, "");
   n = n.replace(/\s+Camp$/i, "");
   n = n.replace(/\s+LLC$/i, "");
-  n = n.replace(/\s+@\s+\w+$/i, ""); // "Mark Nofri Football Camp @ SHU"
+  n = n.replace(/\s+@\s+\w+$/i, "");
   return n.trim();
 }
 
-// Extract subdomain school name from ryzerevents URL
 function extractSchoolFromSubdomain(url) {
   if (!url) return null;
   try {
     var hostname = new URL(url).hostname.toLowerCase();
-    // e.g. "alabamafootballcamps.ryzerevents.com" → "alabama"
-    // e.g. "wesleyanfootballcamps.ryzerevents.com" → "wesleyan"
     if (!hostname.includes("ryzerevents.com")) return null;
     var sub = hostname.split(".")[0];
     sub = sub.replace(/footballcamps?/gi, "");
@@ -394,7 +361,6 @@ function fuzzyNameScore(a, b) {
   return ratio >= 0.5 ? ratio : 0;
 }
 
-// Build additional name candidates from abbreviations/acronyms
 function expandAbbreviations(name) {
   var ABBREVS = {
     "usc": "university of southern california",
@@ -434,35 +400,26 @@ function expandAbbreviations(name) {
   return ABBREVS[n] || null;
 }
 
-// Additional school name extraction patterns
 function generateExtraCandidates(programName, programUrl) {
   var extra = [];
 
-  // Handle "University of X" patterns in program name
   var uofMatch = /University\s+of\s+([\w\s]+?)(?:\s*[-–]\s*Football|\s+Football|\s+Camps?)/i.exec(programName);
   if (uofMatch) extra.push("University of " + uofMatch[1].trim());
 
-  // Handle "X State" or "X State University" 
   var stateMatch = /([\w\s]+State)\s+(?:University\s+)?(?:Football|Camps?)/i.exec(programName);
   if (stateMatch) {
     extra.push(stateMatch[1].trim());
     extra.push(stateMatch[1].trim() + " University");
   }
 
-  // Handle abbreviated forms like "Univ." or "U." 
-  var n = programName.replace(/\bUniv\.?\b/gi, "University").replace(/\bU\.\s/g, "University ");
-
-  // Handle "The X" prefix (e.g. "The Citadel")
   if (/^The\s+/i.test(programName)) {
     extra.push(programName.replace(/^The\s+/i, "").replace(/\s*[-–]\s*Football.*$/i, "").replace(/\s+Football.*$/i, "").trim());
   }
 
-  // Expand abbreviation from the stripped name
   var stripped = extractSchoolFromProgramName(programName);
   var expanded = expandAbbreviations(stripped);
   if (expanded) extra.push(expanded);
 
-  // Expand from subdomain
   var sub = extractSchoolFromSubdomain(programUrl);
   if (sub) {
     var expSub = expandAbbreviations(sub);
@@ -472,7 +429,6 @@ function generateExtraCandidates(programName, programUrl) {
   return extra;
 }
 
-// Hardcoded mappings for programs with unusual naming
 var HARDCODED_PROGRAM_TO_SCHOOL = {
   "alabama crimson tide football camps": "university of alabama",
   "floridagatorscamps": "university of florida",
@@ -488,9 +444,8 @@ var HARDCODED_PROGRAM_TO_SCHOOL = {
   "panther football camps": "prairie view a&m university",
   "arizona christian university football": "arizona christian university",
 };
-// Programs where the description says a specific school but parsing can't get it
 var HARDCODED_DESCRIPTION_SCHOOL = {
-  "andy mccollum football camps": "university of the south",  // Sewanee
+  "andy mccollum football camps": "university of the south",
 };
 
 function matchProgramToSchool(idx, program) {
@@ -502,7 +457,7 @@ function matchProgramToSchool(idx, program) {
   var descState = program.desc_state || null;
   var descNickname = program.desc_nickname || null;
 
-  // METHOD 0: Hardcoded overrides → confidence 1.0
+  // METHOD 0: Hardcoded overrides
   var hardKey = lc(programName);
   if (HARDCODED_PROGRAM_TO_SCHOOL[hardKey]) {
     var hardNN = normalizeName(HARDCODED_PROGRAM_TO_SCHOOL[hardKey]);
@@ -519,7 +474,7 @@ function matchProgramToSchool(idx, program) {
     }
   }
 
-  // METHOD 1: Logo URL match → confidence 1.0
+  // METHOD 1: Logo URL match
   if (logoUrl) {
     var luKey = lc(logoUrl);
     var logoMatches = idx.byLogoUrl[luKey];
@@ -528,7 +483,7 @@ function matchProgramToSchool(idx, program) {
     }
   }
 
-  // METHOD 5: Description-extracted school name → confidence 0.95
+  // METHOD 5: Description-extracted school name
   if (descSchool) {
     var descNN = normalizeName(descSchool);
     if (descNN) {
@@ -536,7 +491,6 @@ function matchProgramToSchool(idx, program) {
       if (descExact && descExact.length === 1) {
         return { school_id: descExact[0].id, school_name: descExact[0].school.school_name, method: "desc_school", confidence: 0.95 };
       }
-      // Try common variations
       var descVars = [
         descNN.replace(/ university$/, "").replace(/ college$/, ""),
         descNN + " university", descNN + " college",
@@ -555,20 +509,17 @@ function matchProgramToSchool(idx, program) {
     }
   }
 
-  // METHOD 6: Nickname from description ("led by the [Nickname] coaching staff") → confidence 0.9
+  // METHOD 6: Nickname from description
   if (descNickname) {
     var nickLower = lc(descNickname);
-    // Try full nickname match
     var nickAloneMatches = idx.byNicknameAlone[nickLower];
     if (nickAloneMatches && nickAloneMatches.length === 1) {
       return { school_id: nickAloneMatches[0].id, school_name: nickAloneMatches[0].school.school_name, method: "desc_nickname", confidence: 0.9 };
     }
-    // Try full nickname in byNickname
     var fullNickMatches = idx.byNickname[nickLower];
     if (fullNickMatches && fullNickMatches.length === 1) {
       return { school_id: fullNickMatches[0].id, school_name: fullNickMatches[0].school.school_name, method: "desc_nickname", confidence: 0.9 };
     }
-    // If multiple matches but we have city+state, narrow down
     var nickCandidates = nickAloneMatches || fullNickMatches;
     if (nickCandidates && nickCandidates.length > 1 && descCity && descState) {
       var nst = normalizeState(descState);
@@ -582,14 +533,13 @@ function matchProgramToSchool(idx, program) {
     }
   }
 
-  // METHOD 7: City+State from description → confidence 0.85
+  // METHOD 7: City+State from description
   if (descCity && descState) {
     var csKey = lc(descCity) + "|" + normalizeState(descState);
     var csMatches = idx.byCityState[csKey];
     if (csMatches && csMatches.length === 1) {
       return { school_id: csMatches[0].id, school_name: csMatches[0].school.school_name, method: "desc_city_state", confidence: 0.85 };
     }
-    // Multiple schools in same city — try to narrow with program name words
     if (csMatches && csMatches.length > 1) {
       var pnWords = lc(programName).split(/[\s\-]+/).filter(function(w) { return w.length > 2; });
       for (var csi = 0; csi < csMatches.length; csi++) {
@@ -604,13 +554,13 @@ function matchProgramToSchool(idx, program) {
     }
   }
 
-  // Build candidate names to try (from program name)
+  // Build candidate names
   var schoolPortion = extractSchoolFromProgramName(programName);
   var subdomainPortion = extractSchoolFromSubdomain(programUrl);
   var extraCandidates = generateExtraCandidates(programName, programUrl);
 
   var candidates = [];
-  if (descSchool) candidates.push(descSchool); // description school as candidate too
+  if (descSchool) candidates.push(descSchool);
   if (schoolPortion) candidates.push(schoolPortion);
   if (subdomainPortion) candidates.push(subdomainPortion);
   candidates.push(programName);
@@ -618,13 +568,13 @@ function matchProgramToSchool(idx, program) {
     if (extraCandidates[ei]) candidates.push(extraCandidates[ei]);
   }
 
-  // METHOD 8: Aggressive program name stripping for no-description cases → confidence 0.8
+  // METHOD 8: Aggressive program name stripping
   if (!program.description) {
-    var stripped = stripProgramNameHard(programName);
-    if (stripped) candidates.push(stripped);
+    var stripped2 = stripProgramNameHard(programName);
+    if (stripped2) candidates.push(stripped2);
   }
 
-  // METHOD 2: Exact normalized name match → confidence 0.95
+  // METHOD 2: Exact normalized name match
   for (var ci = 0; ci < candidates.length; ci++) {
     var nn = normalizeName(candidates[ci]);
     if (!nn) continue;
@@ -634,20 +584,16 @@ function matchProgramToSchool(idx, program) {
       return { school_id: exact[0].id, school_name: exact[0].school.school_name, method: "exact_name", confidence: 0.95 };
     }
 
-    // Common variations
     var variations = [
       nn.replace(/ university$/, "").replace(/ college$/, ""),
-      nn + " university",
-      nn + " college",
-      nn.replace(/^university of /, ""),
-      "university of " + nn,
+      nn + " university", nn + " college",
+      nn.replace(/^university of /, ""), "university of " + nn,
       nn.replace(/^univ /, "university of "),
       nn.replace(/ univ$/, " university"),
       nn.replace(/ st$/, " state"),
       nn.replace(/ state university$/, " state"),
       nn.replace(/ state$/, " state university"),
-      "the " + nn,
-      nn.replace(/^the /, ""),
+      "the " + nn, nn.replace(/^the /, ""),
       nn.replace(/ at /, " "),
       nn + " at " + nn.split(" ")[nn.split(" ").length - 1],
     ];
@@ -662,7 +608,7 @@ function matchProgramToSchool(idx, program) {
     }
   }
 
-  // METHOD 3: Nickname match → confidence 0.85
+  // METHOD 3: Nickname match
   for (var ni = 0; ni < candidates.length; ni++) {
     var nickLc = lc(candidates[ni]);
     if (!nickLc) continue;
@@ -714,11 +660,9 @@ function matchProgramToSchool(idx, program) {
   return { school_id: null, school_name: null, method: null, confidence: 0 };
 }
 
-// Aggressive stripping for programs with no description
 function stripProgramNameHard(name) {
   if (!name) return null;
   var s = safeStr(name);
-  // Remove common noise words
   var noise = ["Football", "Camps", "Camp", "LLC", "Sports", "Elite", "FCA", "East", "TN", "FC", "NC", "Prospect", "-"];
   for (var i = 0; i < noise.length; i++) {
     var re = new RegExp("\\b" + noise[i] + "\\b", "gi");
@@ -740,22 +684,16 @@ function parseMDY(s) {
 }
 
 function extractCampsFromProgramSiteHtml(html, siteUrl) {
-  // Parse the events table / camp listings from a Ryzer-powered site
-  // These sites have tables or card listings with:
-  //   Event name | Dates | Grades | Cost | Register link
   var camps = [];
   if (!html) return camps;
 
-  // Strategy: Find all registration links (register.ryzer.com/camp.cfm?id=XXXXX)
   var regLinks = [];
   var seen = {};
 
-  // Find camp.cfm links with IDs
   var reLink = /href=["']([^"']*camp\.cfm[^"']*)["']/gi;
   var lm;
   while ((lm = reLink.exec(html)) !== null) {
     var href = lm[1];
-    // Normalize
     if (href.startsWith("//")) href = "https:" + href;
     else if (!href.startsWith("http")) {
       try { href = new URL(href, siteUrl).toString(); } catch(e) { continue; }
@@ -768,19 +706,14 @@ function extractCampsFromProgramSiteHtml(html, siteUrl) {
     if (seen[ryzerId]) continue;
     seen[ryzerId] = true;
 
-    // Try to extract the camp name and date from the surrounding HTML
     var linkIdx = html.indexOf(lm[0]);
     var windowStart = Math.max(0, linkIdx - 1500);
     var windowEnd = Math.min(html.length, linkIdx + 500);
     var windowHtml = html.slice(windowStart, windowEnd);
     var windowText = stripTags(windowHtml);
 
-    // Find camp name: look for text in a table row or heading near the link
     var campName = null;
 
-    // Try table row: <td>Camp Name</td><td>date</td>...<td><a href="...camp.cfm?id=XXX">
-    // The camp name is typically the first substantial text in the same row
-    // Strategy: find the nearest heading or strong text before the link
     var namePatterns = [
       /<h[1-5][^>]*>([\s\S]{4,200}?)<\/h[1-5]>/gi,
       /<strong>([\s\S]{4,200}?)<\/strong>/gi,
@@ -792,7 +725,6 @@ function extractCampsFromProgramSiteHtml(html, siteUrl) {
       var lastGood = null;
       while ((nm = np.exec(windowHtml)) !== null) {
         var t = stripTags(nm[1]);
-        // Skip if it looks like date, grade, cost, or "Register"
         if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(t)) continue;
         if (/^(register|see prices|grades?|cost|\$)/i.test(t)) continue;
         if (/^\d+(st|nd|rd|th)\s/i.test(t)) continue;
@@ -802,22 +734,18 @@ function extractCampsFromProgramSiteHtml(html, siteUrl) {
       if (lastGood) { campName = lastGood; break; }
     }
 
-    // Extract dates from the window text
     var startDate = null;
     var endDate = null;
 
-    // Try date range: MM/DD/YYYY - MM/DD/YYYY
     var dateRange = /(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/.exec(windowText);
     if (dateRange) {
       startDate = parseMDY(dateRange[1]);
       endDate = parseMDY(dateRange[2]);
     } else {
-      // Single date
       var singleDate = /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(windowText);
       if (singleDate) startDate = parseMDY(singleDate[1]);
     }
 
-    // Also try "Month Day" format
     if (!startDate) {
       var monthNames = "(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)";
       var reMonth = new RegExp("(" + monthNames + ")\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:[,\\s]+(\\d{4}))?", "i");
@@ -855,7 +783,6 @@ function extractRyzerCampDetails(html, regUrl) {
   if (!html) return null;
   var text = stripTags(html);
 
-  // ── Camp name: first <h1> inside .campDetailsContent ──
   var campName = null;
   var h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
   if (h1 && h1[1]) {
@@ -875,15 +802,12 @@ function extractRyzerCampDetails(html, regUrl) {
     }
   }
 
-  // ── Host organization from .campDetailsCustomer ──
   var hostOrg = null;
   var hostMatch = /<div class="campDetailsCustomer">([^<]+)<\/div>/i.exec(html);
   if (hostMatch && hostMatch[1]) {
     hostOrg = stripNonAscii(hostMatch[1]).trim() || null;
   }
 
-  // ── Structured fields from .campDetailsTable spans ──
-  // Each span block: <span>Location</span>\n Value  OR  <span>Event Date(s)</span>\n Value
   var locationRaw = null;
   var eventDateRaw = null;
   var gradesRaw = null;
@@ -891,14 +815,12 @@ function extractRyzerCampDetails(html, regUrl) {
   var detailsBlock = html.match(/<div class="row campDetailsTable">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/i);
   if (detailsBlock) {
     var block = detailsBlock[1];
-    // Extract labeled sections: look for <span>Label</span> followed by value text
     var spanSections = block.split(/<span>\s*<div class="leftflt campDetailsIcon">/i);
     for (var si2 = 0; si2 < spanSections.length; si2++) {
       var sec = spanSections[si2];
       var labelMatch = /<span>([^<]+)<\/span>/i.exec(sec);
       if (!labelMatch) continue;
       var label = lc(labelMatch[1]);
-      // Value is the text after the closing </span> but before next <span> or end
       var afterLabel = sec.substring(sec.indexOf(labelMatch[0]) + labelMatch[0].length);
       var val2 = stripTags(afterLabel).trim();
 
@@ -908,14 +830,12 @@ function extractRyzerCampDetails(html, regUrl) {
     }
   }
 
-  // ── City, State from structured location ──
   var city = null;
   var state = null;
   if (locationRaw) {
     var csMatch = /([A-Za-z .'-]{2,}),\s*([A-Z]{2})\b/.exec(locationRaw);
     if (csMatch) { city = csMatch[1].trim(); state = csMatch[2].trim(); }
   }
-  // Fallback: parse from full text
   if (!city) {
     var locFallback = /Location\s+(.{0,140}?)(?:Event Date|Grades|Register By|Select a price|We Accept|$)/i.exec(text);
     if (locFallback && locFallback[1]) {
@@ -925,32 +845,26 @@ function extractRyzerCampDetails(html, regUrl) {
     }
   }
 
-  // ── Venue name and address from description HTML ──
   var venueName = null;
   var venueAddress = null;
-  // Look for address patterns: street number + street name + city, state zip
   var addrLinkMatch = /<a[^>]*href="https:\/\/maps[^"]*"[^>]*(?:title="([^"]*)")?[^>]*>([^<]+)<\/a>/i.exec(html);
   if (addrLinkMatch) {
     venueAddress = stripNonAscii(addrLinkMatch[2]).trim() || null;
     if (addrLinkMatch[1]) venueName = stripNonAscii(addrLinkMatch[1]).trim() || null;
   }
-  // Also look for venue name before the address link — often in preceding div
   if (!venueName) {
     var venueDiv = /<h3[^>]*>\s*<strong>\s*Location:?\s*<\/strong>\s*<\/h3>\s*(?:<div[^>]*>)?\s*([^<]+)/i.exec(html);
     if (venueDiv && venueDiv[1]) venueName = stripNonAscii(venueDiv[1]).trim() || null;
   }
 
-  // ── Dates from structured field, then fallback to text scan ──
   var startDate = null;
   var endDate = null;
 
-  // Parse structured eventDateRaw like "Jun 3, 2026" or "Jun 3, 2026 - Jun 5, 2026"
   if (eventDateRaw) {
     var parsed = parseFlexibleDates(eventDateRaw);
     if (parsed.start) startDate = parsed.start;
     if (parsed.end) endDate = parsed.end;
   }
-  // Fallback: MM/DD/YYYY range in full text
   if (!startDate) {
     var dateRange = /(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/.exec(text);
     if (dateRange) {
@@ -962,7 +876,6 @@ function extractRyzerCampDetails(html, regUrl) {
     }
   }
 
-  // ── Description from .CampInfo div (rich text), fallback to meta ──
   var desc = null;
   var campInfoDescMatch = /<div class="CampInfo">([\s\S]*?)<\/div>\s*(?:<\/div>|$)/i.exec(html);
   if (campInfoDescMatch && campInfoDescMatch[1]) {
@@ -977,7 +890,6 @@ function extractRyzerCampDetails(html, regUrl) {
     }
   }
 
-  // ── Price options extraction ──
   var priceOptions = extractPriceOptions(html);
   var price = null;
   if (priceOptions.length > 0) {
@@ -985,13 +897,12 @@ function extractRyzerCampDetails(html, regUrl) {
     price = allPrices.length > 0 ? Math.min.apply(null, allPrices) : null;
   }
 
-  // ── Grades / age group ──
   var grades = cleanTextField(gradesRaw);
 
   return {
     camp_name: cleanTextField(campName),
     host_org: cleanTextField(hostOrg),
-    description: desc, // already cleaned below
+    description: desc,
     start_date: startDate,
     end_date: endDate,
     price: price,
@@ -1004,14 +915,11 @@ function extractRyzerCampDetails(html, regUrl) {
   };
 }
 
-// Extract all price options with labels from the Ryzer camp page
 function extractPriceOptions(html) {
   if (!html) return [];
   var options = [];
   var seen = {};
 
-  // Strategy 1: <form> pricing area — look for radio/select options with price
-  // Ryzer uses <div class="priceOption"> or <label> with price text
   var optionBlocks = html.match(/<(?:div|label|li|tr)[^>]*class="[^"]*(?:price|option|campPrice)[^"]*"[^>]*>[\s\S]*?<\/(?:div|label|li|tr)>/gi);
   if (optionBlocks) {
     for (var i = 0; i < optionBlocks.length; i++) {
@@ -1031,11 +939,9 @@ function extractPriceOptions(html) {
     }
   }
 
-  // Strategy 2: Table rows in .CampInfo description that contain "$"
   var campInfoMatch = /<div class="CampInfo">([\s\S]*?)<\/div>\s*(?:<\/div>|$)/i.exec(html);
   if (campInfoMatch) {
     var infoHtml = campInfoMatch[1];
-    // Find table rows or <td> cells with prices
     var tds = infoHtml.match(/<t[dr][^>]*>[\s\S]*?<\/t[dr]>/gi) || [];
     for (var ti = 0; ti < tds.length; ti++) {
       var tdText = stripTags(tds[ti]);
@@ -1054,7 +960,6 @@ function extractPriceOptions(html) {
     }
   }
 
-  // Strategy 3: Fallback — scan full page text for "$XXX" patterns with nearby context
   if (options.length === 0) {
     var text = stripTags(html);
     var reFallback = /([A-Za-z][^$]{0,60}?)\$\s*(\d{1,5})(?:\.(\d{2}))?/g;
@@ -1063,10 +968,8 @@ function extractPriceOptions(html) {
       var fpval = parseFloat(fm[2] + (fm[3] ? "." + fm[3] : ""));
       if (fpval <= 0 || fpval >= 20000) continue;
       var fctx = fm[1].trim();
-      // Get last meaningful phrase before the $
       var flabel = fctx.split(/[.!?;]/).pop().trim();
       if (!flabel || flabel.length < 2) flabel = "Registration";
-      // Skip noise labels
       if (/^(we accept|copyright|terms|privacy)/i.test(flabel)) continue;
       flabel = flabel.substring(0, 100);
       var fkey = fpval + "";
@@ -1077,11 +980,9 @@ function extractPriceOptions(html) {
     }
   }
 
-  // Dedupe by price if labels are very similar
   return options;
 }
 
-// Parse flexible date strings like "Jun 3, 2026", "Jun 3 - Jun 5, 2026", "6/3/2026"
 function parseFlexibleDates(s) {
   var result = { start: null, end: null };
   if (!s) return result;
@@ -1094,7 +995,6 @@ function parseFlexibleDates(s) {
 
   function pad(n) { return n < 10 ? "0" + n : String(n); }
 
-  // Try "Month Day, Year - Month Day, Year"
   var rangeM = /([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?\s*[-–]\s*([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/i.exec(s);
   if (rangeM) {
     var m1 = MONTHS[lc(rangeM[1])];
@@ -1110,7 +1010,6 @@ function parseFlexibleDates(s) {
     return result;
   }
 
-  // Try "Month Day - Day, Year" (same month)
   var sameMonthRange = /([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?\s*[-–]\s*(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/i.exec(s);
   if (sameMonthRange) {
     var sm = MONTHS[lc(sameMonthRange[1])];
@@ -1122,7 +1021,6 @@ function parseFlexibleDates(s) {
     return result;
   }
 
-  // Try "Month Day, Year" (single date)
   var singleM = /([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/i.exec(s);
   if (singleM) {
     var sm2 = MONTHS[lc(singleM[1])];
@@ -1132,7 +1030,6 @@ function parseFlexibleDates(s) {
     return result;
   }
 
-  // Try MM/DD/YYYY range
   var mdyRange = /(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/.exec(s);
   if (mdyRange) {
     result.start = parseMDY(mdyRange[1]);
@@ -1140,7 +1037,6 @@ function parseFlexibleDates(s) {
     return result;
   }
 
-  // Try single MM/DD/YYYY
   var mdySingle = /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(s);
   if (mdySingle) {
     result.start = parseMDY(mdySingle[1]);
@@ -1149,7 +1045,7 @@ function parseFlexibleDates(s) {
   return result;
 }
 
-// ─── STEP 4: Upsert logic ──────────────────────────────────────────────────
+// ─── STEP 4: Upsert logic (v3 — skip DB write when no meaningful change) ───
 
 function campFieldsChanged(existing, incoming) {
   var fields = ["camp_name", "start_date", "end_date", "city", "state", "price",
@@ -1163,6 +1059,10 @@ function campFieldsChanged(existing, incoming) {
   var existingPO = JSON.stringify(existing.price_options || []);
   var incomingPO = JSON.stringify(incoming.price_options || []);
   if (existingPO !== incomingPO) return true;
+  // Notes: compare trimmed first 497 chars to avoid trivial whitespace diffs
+  var existNotes = safeStr(existing.notes).substring(0, 497).trim();
+  var incomNotes = safeStr(incoming.notes).substring(0, 497).trim();
+  if (existNotes !== incomNotes) return true;
   return false;
 }
 
@@ -1178,11 +1078,11 @@ async function upsertCamp(Camp, payload, existingBySourceKey, dryRun, runIso) {
       payload.school_manually_verified = true;
     }
 
-    if (!campFieldsChanged(existing, payload) &&
-        safeStr(existing.school_id) === safeStr(payload.school_id)) {
-      if (!dryRun) {
-        await Camp.update(String(existing.id), { last_seen_at: runIso, last_ingested_at: runIso });
-      }
+    var meaningfulChange = campFieldsChanged(existing, payload);
+    var schoolChanged = safeStr(existing.school_id) !== safeStr(payload.school_id);
+
+    if (!meaningfulChange && !schoolChanged) {
+      // No meaningful diff — skip entirely (no DB write, saves credits on re-runs)
       return "skipped";
     }
     if (!dryRun) {
@@ -1215,15 +1115,14 @@ Deno.serve(async function(req) {
     return json({ error: "Forbidden: Admin access required" }, 403);
   }
 
-  var step = lc(body.step || "ingest"); // "matchSchools" or "ingest" (default)
-  // matchOnly is an alias for step=matchSchools
+  var step = lc(body.step || "ingest");
   if (body.matchOnly) step = "matchschools";
   var dryRun = body.dryRun !== false && body.dryRun !== "false";
   var maxSchools = Math.max(1, Number(body.maxSchools || 259));
   var startAt = Math.max(0, Number(body.startAt || 0));
   var sleepMs = Math.max(1000, Number(body.sleepMs || 1000));
   var timeBudgetMs = Math.max(10000, Number(body.timeBudgetMs || 55000));
-  var skipDetailFetch = !!(body.skipDetailFetch); // skip fetching individual camp pages
+  var skipDetailFetch = !!(body.skipDetailFetch);
 
   var elapsed = function() { return Date.now() - t0; };
 
@@ -1297,7 +1196,6 @@ Deno.serve(async function(req) {
       ambiguous: ambiguous,
       elapsedMs: elapsed(),
     };
-    // Only include matched list if not compact mode
     if (!body.compact) {
       responseObj.matched = matched;
     }
@@ -1308,7 +1206,6 @@ Deno.serve(async function(req) {
   var Camp = base44.entities.Camp;
   var LastIngestRun = base44.entities.LastIngestRun;
 
-  // Load existing camps for idempotency
   var allCamps = await Camp.filter({}, "source_key", 99999);
   var existingBySourceKey = {};
   for (var ci = 0; ci < allCamps.length; ci++) {
@@ -1352,7 +1249,6 @@ Deno.serve(async function(req) {
       error: null,
     };
 
-    // Fetch the program's Ryzer site
     var siteResult = await fetchWithTimeout(prog2.url, 15000);
     if (!siteResult.ok) {
       stats.schoolsFetchError++;
@@ -1362,7 +1258,6 @@ Deno.serve(async function(req) {
       continue;
     }
 
-    // Extract camp listings from the site
     var campListings = extractCampsFromProgramSiteHtml(siteResult.html, prog2.url);
     schoolResult.camps_found = campListings.length;
 
@@ -1375,7 +1270,6 @@ Deno.serve(async function(req) {
 
     stats.schoolsWithCamps++;
 
-    // Process each camp
     for (var cli = 0; cli < campListings.length; cli++) {
       if (elapsed() >= timeBudgetMs) { stats.stoppedEarly = true; break; }
 
@@ -1384,7 +1278,6 @@ Deno.serve(async function(req) {
       var regUrl = listing.reg_url;
       var sourceKey = SOURCE_PLATFORM + ":" + ryzerId;
 
-      // Fetch individual camp detail page for authoritative data
       var campName = listing.camp_name_from_listing;
       var startDate = listing.start_date;
       var endDate = listing.end_date;
@@ -1422,7 +1315,6 @@ Deno.serve(async function(req) {
       }
 
       if (!startDate) {
-        // No date available — skip
         stats.campsErrors++;
         if (sampleErrors.length < 10) {
           sampleErrors.push({ source_key: sourceKey, reason: "no_start_date", camp_name: campName, reg_url: regUrl });
@@ -1430,7 +1322,6 @@ Deno.serve(async function(req) {
         continue;
       }
 
-      // Skip past camps
       if (startDate < todayIso) {
         stats.campsPastSkipped++;
         continue;
@@ -1480,7 +1371,6 @@ Deno.serve(async function(req) {
         if (result === "inserted") {
           stats.campsInserted++;
           schoolResult.camps_ingested++;
-          // Also add to existing index for idempotency within this run
           existingBySourceKey[sourceKey] = payload;
         } else if (result === "updated") {
           stats.campsUpdated++;
