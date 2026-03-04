@@ -286,6 +286,84 @@ function fuzzyNameScore(a, b) {
   return ratio >= 0.5 ? ratio : 0;
 }
 
+// Build additional name candidates from abbreviations/acronyms
+function expandAbbreviations(name) {
+  var ABBREVS = {
+    "usc": "university of southern california",
+    "ucf": "university of central florida",
+    "unc": "university of north carolina",
+    "msu": "michigan state university",
+    "osu": "ohio state university",
+    "lsu": "louisiana state university",
+    "fau": "florida atlantic university",
+    "fiu": "florida international university",
+    "utep": "university of texas el paso",
+    "utsa": "university of texas san antonio",
+    "sdsu": "san diego state university",
+    "sjsu": "san jose state university",
+    "bgsu": "bowling green state university",
+    "cmu": "central michigan university",
+    "emu": "eastern michigan university",
+    "wmu": "western michigan university",
+    "niu": "northern illinois university",
+    "smu": "southern methodist university",
+    "tcu": "texas christian university",
+    "byu": "brigham young university",
+    "uab": "university of alabama birmingham",
+    "unlv": "university of nevada las vegas",
+    "shu": "sacred heart university",
+    "etsu": "east tennessee state university",
+    "mtsu": "middle tennessee state university",
+    "apsu": "austin peay state university",
+    "siu": "southern illinois university",
+    "wku": "western kentucky university",
+    "ecu": "east carolina university",
+    "umass": "university of massachusetts",
+    "uconn": "university of connecticut",
+    "ole miss": "university of mississippi",
+  };
+  var n = lc(name);
+  return ABBREVS[n] || null;
+}
+
+// Additional school name extraction patterns
+function generateExtraCandidates(programName, programUrl) {
+  var extra = [];
+
+  // Handle "University of X" patterns in program name
+  var uofMatch = /University\s+of\s+([\w\s]+?)(?:\s*[-–]\s*Football|\s+Football|\s+Camps?)/i.exec(programName);
+  if (uofMatch) extra.push("University of " + uofMatch[1].trim());
+
+  // Handle "X State" or "X State University" 
+  var stateMatch = /([\w\s]+State)\s+(?:University\s+)?(?:Football|Camps?)/i.exec(programName);
+  if (stateMatch) {
+    extra.push(stateMatch[1].trim());
+    extra.push(stateMatch[1].trim() + " University");
+  }
+
+  // Handle abbreviated forms like "Univ." or "U." 
+  var n = programName.replace(/\bUniv\.?\b/gi, "University").replace(/\bU\.\s/g, "University ");
+
+  // Handle "The X" prefix (e.g. "The Citadel")
+  if (/^The\s+/i.test(programName)) {
+    extra.push(programName.replace(/^The\s+/i, "").replace(/\s*[-–]\s*Football.*$/i, "").replace(/\s+Football.*$/i, "").trim());
+  }
+
+  // Expand abbreviation from the stripped name
+  var stripped = extractSchoolFromProgramName(programName);
+  var expanded = expandAbbreviations(stripped);
+  if (expanded) extra.push(expanded);
+
+  // Expand from subdomain
+  var sub = extractSchoolFromSubdomain(programUrl);
+  if (sub) {
+    var expSub = expandAbbreviations(sub);
+    if (expSub) extra.push(expSub);
+  }
+
+  return extra;
+}
+
 function matchProgramToSchool(idx, program) {
   var programName = program.name;
   var programUrl = program.url;
@@ -303,12 +381,15 @@ function matchProgramToSchool(idx, program) {
   // Build candidate names to try
   var schoolPortion = extractSchoolFromProgramName(programName);
   var subdomainPortion = extractSchoolFromSubdomain(programUrl);
+  var extraCandidates = generateExtraCandidates(programName, programUrl);
 
   var candidates = [];
   if (schoolPortion) candidates.push(schoolPortion);
   if (subdomainPortion) candidates.push(subdomainPortion);
-  // Also try the full program name
   candidates.push(programName);
+  for (var ei = 0; ei < extraCandidates.length; ei++) {
+    if (extraCandidates[ei]) candidates.push(extraCandidates[ei]);
+  }
 
   // METHOD 2: Exact normalized name match → confidence 0.95
   for (var ci = 0; ci < candidates.length; ci++) {
@@ -332,6 +413,12 @@ function matchProgramToSchool(idx, program) {
       nn.replace(/ st$/, " state"),
       nn.replace(/ state university$/, " state"),
       nn.replace(/ state$/, " state university"),
+      // "the X" prefix
+      "the " + nn,
+      nn.replace(/^the /, ""),
+      // common alternate forms
+      nn.replace(/ at /, " "),
+      nn + " at " + nn.split(" ")[nn.split(" ").length - 1],
     ];
     for (var vi = 0; vi < variations.length; vi++) {
       var vn = variations[vi].trim();
@@ -351,6 +438,20 @@ function matchProgramToSchool(idx, program) {
     var nickMatches = idx.byNickname[nickLc];
     if (nickMatches && nickMatches.length === 1) {
       return { school_id: nickMatches[0].id, school_name: nickMatches[0].school.school_name, method: "nickname", confidence: 0.85 };
+    }
+  }
+
+  // METHOD 3b: Check if program name contains a known nickname
+  var allNicknames = Object.keys(idx.byNickname);
+  for (var nki = 0; nki < allNicknames.length; nki++) {
+    var nick = allNicknames[nki];
+    if (nick.length < 4) continue; // skip very short nicknames
+    var nickEntries = idx.byNickname[nick];
+    if (!nickEntries || nickEntries.length !== 1) continue;
+    // Check if any candidate contains this nickname
+    var pnLc = lc(programName);
+    if (pnLc.indexOf(nick) >= 0) {
+      return { school_id: nickEntries[0].id, school_name: nickEntries[0].school.school_name, method: "nickname_contains", confidence: 0.8 };
     }
   }
 
