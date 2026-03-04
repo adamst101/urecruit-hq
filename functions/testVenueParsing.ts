@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
     let city = null;
     let state = null;
     if (locationRaw) {
-      const csMatch = /([A-Za-z .'-]{2,}),\s*([A-Z]{2})\b/.exec(locationRaw);
+      const csMatch = /([A-Za-z .'-]{2,}),+\s*([A-Z]{2})\b/.exec(locationRaw);
       if (csMatch) {
         city = csMatch[1].replace(/,+$/, "").trim();
         state = csMatch[2].trim();
