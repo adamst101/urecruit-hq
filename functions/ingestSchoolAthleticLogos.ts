@@ -545,6 +545,27 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      // Second-chance: if the chain didn't find a logo but the school already has
+      // a stored athletics_wikipedia_url (from a prior audit), try fetching the logo
+      // directly from that stored URL.
+      const storedAthUrl = safeStr(row?.athletics_wikipedia_url);
+      if (result.status !== "found" && storedAthUrl) {
+        // Only try if the chain didn't already fetch this same URL
+        const chainAthUrl = safeStr(result.athletics_wikipedia_url);
+        if (!chainAthUrl || chainAthUrl !== storedAthUrl) {
+          try {
+            const secondResult = await getLogoFromStoredAthleticsUrl(storedAthUrl);
+            if (secondResult.status === "found" && secondResult.athletic_logo_url) {
+              result = secondResult;
+            }
+          } catch (e) {
+            // Non-fatal: just couldn't fetch the stored URL
+            result.debugPath.push(`second_chance_error:${String(e?.message || e).slice(0, 80)}`);
+          }
+          if (throttleMs > 0) await sleep(throttleMs);
+        }
+      }
+
       if (result.status === "found" && result.athletic_logo_url) {
         // SUCCESS — update with new logo
         const updates = {
