@@ -580,13 +580,13 @@ export default function SchoolsManager() {
       <div style={styles.footer}>
         <span style={{ color: "#446", fontSize: 13 }}>Double-click any cell to edit • Enter to save • Esc to cancel</span>
         <div style={styles.paginator}>
-          <button style={{ ...styles.pageBtn, ...(page === 0 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page > 0) setPage(0); }}>«</button>
-          <button style={{ ...styles.pageBtn, ...(page === 0 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page > 0) setPage(p => p - 1); }}>‹</button>
+          <button type="button" style={{ ...styles.pageBtn, ...(page === 0 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page > 0) { setPage(0); tableWrapRef.current?.scrollTo(0,0); } }}>«</button>
+          <button type="button" style={{ ...styles.pageBtn, ...(page === 0 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page > 0) { setPage(p => p - 1); tableWrapRef.current?.scrollTo(0,0); } }}>‹</button>
           <span style={{ color: "#7090b0", fontSize: 14, padding: "0 8px" }}>
-            Rows {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+            Rows {filtered.length > 0 ? page * PAGE_SIZE + 1 : 0}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
           </span>
-          <button style={{ ...styles.pageBtn, ...(page >= totalPages - 1 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page < totalPages - 1) setPage(p => p + 1); }}>›</button>
-          <button style={{ ...styles.pageBtn, ...(page >= totalPages - 1 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page < totalPages - 1) setPage(totalPages - 1); }}>»</button>
+          <button type="button" style={{ ...styles.pageBtn, ...(page >= totalPages - 1 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page < totalPages - 1) { setPage(p => p + 1); tableWrapRef.current?.scrollTo(0,0); } }}>›</button>
+          <button type="button" style={{ ...styles.pageBtn, ...(page >= totalPages - 1 ? styles.pageBtnDisabled : {}) }} onClick={() => { if (page < totalPages - 1) { setPage(totalPages - 1); tableWrapRef.current?.scrollTo(0,0); } }}>»</button>
         </div>
       </div>
     </div>
