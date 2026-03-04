@@ -96,22 +96,37 @@ function extractInfobox(html) {
 }
 
 // From the institution's infobox, find the "Nickname" row and extract the link
-// The infobox typically has: <th>Nickname</th><td><a href="/wiki/Arizona_Wildcats">Wildcats</a></td>
+// Wikipedia infobox rows: <tr><th>Nickname</th><td><a href="/wiki/Arizona_Wildcats">Wildcats</a></td></tr>
+// But the HTML can have nested elements, attributes, whitespace, etc.
 function extractNicknameLink(infoboxHtml) {
   if (!infoboxHtml) return null;
 
-  // Look for a row containing "Nickname" in a <th> or header cell
-  // Then grab the <a href="/wiki/..."> from the corresponding <td>
-  const nicknamePattern = /<t[hd][^>]*>[^<]*(?:Nickname|Athletic\s*nickname)[^<]*<\/t[hd]>\s*<td[^>]*>([\s\S]*?)<\/td>/i;
-  const match = infoboxHtml.match(nicknamePattern);
-  if (!match) return null;
+  // Strategy 1: Find <tr> containing "Nickname" text in a <th>, then get <a> from <td>
+  // Split infobox into rows
+  const rows = infoboxHtml.match(/<tr[\s>][\s\S]*?<\/tr>/gi) || [];
+  for (const row of rows) {
+    // Check if this row's header contains "Nickname" or "Athletic nickname"
+    const thMatch = row.match(/<th[^>]*>([\s\S]*?)<\/th>/i);
+    if (!thMatch) continue;
+    
+    const thText = thMatch[1].replace(/<[^>]+>/g, "").trim().toLowerCase();
+    if (!thText.includes("nickname")) continue;
 
-  const tdContent = match[1];
-  // Extract the first wiki link from the cell
-  const linkMatch = tdContent.match(/<a[^>]*href="(\/wiki\/[^"#]+)"[^>]*>/i);
-  if (!linkMatch) return null;
+    // Found a Nickname row — extract wiki link from the <td>
+    const tdMatch = row.match(/<td[^>]*>([\s\S]*?)<\/td>/i);
+    if (!tdMatch) continue;
 
-  return linkMatch[1]; // e.g. /wiki/Arizona_Wildcats
+    const tdContent = tdMatch[1];
+    const linkMatch = tdContent.match(/<a[^>]*href="(\/wiki\/[^"#]+)"[^>]*>/i);
+    if (linkMatch) return linkMatch[1]; // e.g. /wiki/Arizona_Wildcats
+  }
+
+  // Strategy 2: Broader regex in case row splitting failed
+  const broadPattern = /nickname[\s\S]{0,200}?<a[^>]*href="(\/wiki\/[^"#]+)"[^>]*>/i;
+  const broadMatch = infoboxHtml.match(broadPattern);
+  if (broadMatch) return broadMatch[1];
+
+  return null;
 }
 
 // From the athletics program page's infobox, extract the logo image filename
