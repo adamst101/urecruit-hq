@@ -13,7 +13,7 @@ import { getDemoDefaults, setDemoMode } from "../components/hooks/demoMode.jsx";
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 
 const LOGO_URL =
-  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
+  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/f3ee1058c_2e6caa2c-a149-4031-83db-38b917c5a134.png";
 
 function trackEvent(payload) {
   try {
@@ -109,11 +109,11 @@ export default function Home() {
         <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 60% 50% at 80% 20%, rgba(232,160,32,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.015) 60px, rgba(255,255,255,0.015) 61px)", pointerEvents: "none" }} />
 
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "60px 24px 60px", width: "100%", position: "relative", zIndex: 1 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 24px 60px", width: "100%", position: "relative", zIndex: 1 }}>
           {/* Large logo above hero content */}
           {logoOk && (
-            <div style={{ textAlign: "center", marginBottom: 48 }}>
-              <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 120, width: "auto", objectFit: "contain", margin: "0 auto", display: "block" }} />
+            <div style={{ textAlign: "center", marginBottom: 40 }}>
+              <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 180, maxWidth: "90%", width: "auto", objectFit: "contain", margin: "0 auto", display: "block" }} />
             </div>
           )}
 
