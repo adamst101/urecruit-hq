@@ -766,7 +766,7 @@ Deno.serve(async function(req) {
           normalizedCamps.push({
             camp: normalized,
             hostName: normalized._host_name,
-            logoUrl: null,
+            logoUrl: normalized._logo_url || null,
           });
         }
 
