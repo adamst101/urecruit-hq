@@ -536,17 +536,6 @@ function matchProgramToSchool(idx, program) {
     if (hardMatch && hardMatch.length === 1) {
       return { school_id: hardMatch[0].id, school_name: hardMatch[0].school.school_name, method: "hardcoded", confidence: 1.0 };
     }
-    // Fallback: try with dashes/special chars stripped, or search all normalized names for substring match
-    var allNN = Object.keys(idx.byNormName);
-    for (var hfi = 0; hfi < allNN.length; hfi++) {
-      var nnKey = allNN[hfi];
-      // Normalize both sides: strip unicode dashes to plain hyphens for comparison
-      var nnFlat = nnKey.replace(/[\u2010-\u2015\u2212]/g, "-");
-      var htFlat = hardNN.replace(/[\u2010-\u2015\u2212]/g, "-");
-      if (nnFlat === htFlat && idx.byNormName[nnKey].length === 1) {
-        return { school_id: idx.byNormName[nnKey][0].id, school_name: idx.byNormName[nnKey][0].school.school_name, method: "hardcoded", confidence: 1.0 };
-      }
-    }
   }
   if (HARDCODED_DESCRIPTION_SCHOOL[hardKey]) {
     var hardNN2 = normalizeName(HARDCODED_DESCRIPTION_SCHOOL[hardKey]);
