@@ -1128,7 +1128,42 @@ function parseFlexibleDates(s) {
   return result;
 }
 
+// ─── Junk camp name detection ───────────────────────────────────────────────
+
+var JUNK_NAME_PATTERNS = [
+  /^upcoming\b/i,
+  /^20\d{2}\s+events?\s*$/i,
+  /^events?\s*$/i,
+  /^camps?\s*$/i,
+  /^camp\s*$/i,
+];
+
+function isJunkCampName(name) {
+  if (!name) return true;
+  var n = safeStr(name);
+  if (!n) return true;
+  for (var i = 0; i < JUNK_NAME_PATTERNS.length; i++) {
+    if (JUNK_NAME_PATTERNS[i].test(n)) return true;
+  }
+  return false;
+}
+
+// Returns true if existing camp has good enough data to skip detail fetch
+function existingCampIsComplete(camp) {
+  if (!camp) return false;
+  if (isJunkCampName(camp.camp_name)) return false;
+  if (camp.price == null) return false;
+  if (!camp.city) return false;
+  return true;
+}
+
 // ─── Upsert logic ───────────────────────────────────────────────────────────
+
+var PROTECTED_FIELDS = [
+  "camp_name", "price", "price_options", "city", "state",
+  "venue_name", "venue_address", "host_org", "grades",
+  "notes", "ryzer_program_name"
+];
 
 function normalizeForCompare(s) {
   return safeStr(s).replace(/[^\x20-\x7E]/g, " ").replace(/\s+/g, " ").trim();
@@ -1138,32 +1173,105 @@ function normalizePriceOptions(po) {
   var prices = po.map(function(o) { return o.price || 0; }).sort(function(a,b) { return a - b; });
   return JSON.stringify(prices);
 }
-function campFieldsChanged(existing, incoming) {
+
+function buildSafeUpdatePayload(existing, incoming) {
+  // Start with fields that should always update
+  var update = {
+    last_seen_at: incoming.last_seen_at,
+    last_ingested_at: incoming.last_ingested_at,
+    active: incoming.active,
+    source_url: incoming.source_url || existing.source_url,
+    link_url: incoming.link_url || existing.link_url,
+    sport_id: incoming.sport_id || existing.sport_id,
+    position_ids: incoming.position_ids || existing.position_ids || [],
+    season_year: incoming.season_year || existing.season_year,
+    ryzer_camp_id: incoming.ryzer_camp_id || existing.ryzer_camp_id,
+    source_platform: incoming.source_platform || existing.source_platform,
+    source_key: incoming.source_key,
+  };
+
+  // Dates: update if incoming has a value
+  if (incoming.start_date) update.start_date = incoming.start_date;
+  else update.start_date = existing.start_date;
+  if (incoming.end_date) update.end_date = incoming.end_date;
+  else update.end_date = existing.end_date;
+
+  // School fields: preserve if manually verified
+  if (existing.school_manually_verified) {
+    update.school_id = existing.school_id;
+    update.school_match_method = existing.school_match_method;
+    update.school_match_confidence = existing.school_match_confidence;
+    update.school_manually_verified = true;
+  } else {
+    // Only update school if incoming has a better or equal match
+    if (incoming.school_id) {
+      update.school_id = incoming.school_id;
+      update.school_match_method = incoming.school_match_method;
+      update.school_match_confidence = incoming.school_match_confidence;
+    } else {
+      update.school_id = existing.school_id;
+      update.school_match_method = existing.school_match_method;
+      update.school_match_confidence = existing.school_match_confidence;
+    }
+    update.school_manually_verified = false;
+  }
+
+  // Ingestion status: don't downgrade from "active"
+  if (existing.ingestion_status === "active") {
+    update.ingestion_status = "active";
+  } else {
+    update.ingestion_status = incoming.ingestion_status || existing.ingestion_status;
+  }
+
+  // Protected fields: NEVER overwrite non-null with null
+  for (var i = 0; i < PROTECTED_FIELDS.length; i++) {
+    var field = PROTECTED_FIELDS[i];
+    var newVal = incoming[field];
+    var oldVal = existing[field];
+
+    if (field === "price") {
+      // Price: only update if incoming is non-null
+      update.price = (newVal != null) ? newVal : oldVal;
+    } else if (field === "price_options") {
+      // Price options: only update if incoming is non-empty array
+      update.price_options = (Array.isArray(newVal) && newVal.length > 0) ? newVal : (oldVal || []);
+    } else {
+      // String fields: only update if incoming is non-null and non-empty
+      var newStr = safeStr(newVal);
+      if (newStr) {
+        update[field] = newVal;
+      } else {
+        update[field] = oldVal || null;
+      }
+    }
+  }
+
+  return update;
+}
+
+function campFieldsChanged(existing, update) {
   var exactFields = ["camp_name","start_date","end_date","city","state","link_url","source_url","ryzer_camp_id","season_year"];
-  for (var i = 0; i < exactFields.length; i++) { if (safeStr(existing[exactFields[i]]) !== safeStr(incoming[exactFields[i]])) return true; }
+  for (var i = 0; i < exactFields.length; i++) { if (safeStr(existing[exactFields[i]]) !== safeStr(update[exactFields[i]])) return true; }
   var ep = existing.price != null ? Number(existing.price) : null;
-  var ip = incoming.price != null ? Number(incoming.price) : null;
+  var ip = update.price != null ? Number(update.price) : null;
   if (ep !== ip) return true;
   var normFields = ["venue_name","venue_address","grades","host_org"];
-  for (var j = 0; j < normFields.length; j++) { if (normalizeForCompare(existing[normFields[j]]) !== normalizeForCompare(incoming[normFields[j]])) return true; }
-  if (normalizePriceOptions(existing.price_options) !== normalizePriceOptions(incoming.price_options)) return true;
-  if (normalizeForCompare(existing.notes).substring(0,200) !== normalizeForCompare(incoming.notes).substring(0,200)) return true;
+  for (var j = 0; j < normFields.length; j++) { if (normalizeForCompare(existing[normFields[j]]) !== normalizeForCompare(update[normFields[j]])) return true; }
+  if (normalizePriceOptions(existing.price_options) !== normalizePriceOptions(update.price_options)) return true;
+  if (normalizeForCompare(existing.notes).substring(0,200) !== normalizeForCompare(update.notes).substring(0,200)) return true;
+  if (safeStr(existing.school_id) !== safeStr(update.school_id)) return true;
   return false;
 }
+
 async function upsertCamp(Camp, payload, existingBySourceKey, dryRun) {
   var sourceKey = payload.source_key;
   var existing = existingBySourceKey[sourceKey] || null;
   if (existing) {
-    if (existing.school_manually_verified) {
-      payload.school_id = existing.school_id || payload.school_id;
-      payload.school_match_method = existing.school_match_method || payload.school_match_method;
-      payload.school_match_confidence = existing.school_match_confidence || payload.school_match_confidence;
-      payload.school_manually_verified = true;
-    }
-    var meaningfulChange = campFieldsChanged(existing, payload);
-    var schoolChanged = safeStr(existing.school_id) !== safeStr(payload.school_id);
-    if (!meaningfulChange && !schoolChanged) return "skipped";
-    if (!dryRun) await Camp.update(String(existing.id), payload);
+    // Build a safe update payload that never overwrites good data with null
+    var update = buildSafeUpdatePayload(existing, payload);
+    var changed = campFieldsChanged(existing, update);
+    if (!changed) return "skipped";
+    if (!dryRun) await Camp.update(String(existing.id), update);
     return "updated";
   } else {
     if (!dryRun) await Camp.create(payload);
