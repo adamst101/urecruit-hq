@@ -977,33 +977,108 @@ function extractRyzerCampDetails(html, regUrl) {
     }
   }
 
-  // ── Price from description text ──
-  var prices = [];
-  var rePrice = /\$\s*(\d{1,5})(?:\.(\d{2}))?/g;
-  var pm;
-  while ((pm = rePrice.exec(text)) !== null) {
-    var pval = parseFloat(pm[1] + (pm[2] ? "." + pm[2] : ""));
-    if (pval > 0 && pval < 20000) prices.push(pval);
-    if (prices.length >= 10) break;
+  // ── Price options extraction ──
+  var priceOptions = extractPriceOptions(html);
+  var price = null;
+  if (priceOptions.length > 0) {
+    var allPrices = priceOptions.map(function(o) { return o.price; }).filter(function(p) { return p > 0; });
+    price = allPrices.length > 0 ? Math.min.apply(null, allPrices) : null;
   }
-  var price = prices.length ? Math.max.apply(null, prices) : null;
 
   // ── Grades / age group ──
-  var grades = gradesRaw || null;
+  var grades = cleanTextField(gradesRaw);
 
   return {
-    camp_name: campName || null,
-    host_org: hostOrg,
-    description: desc,
+    camp_name: cleanTextField(campName),
+    host_org: cleanTextField(hostOrg),
+    description: desc, // already cleaned below
     start_date: startDate,
     end_date: endDate,
     price: price,
+    price_options: priceOptions,
     city: city,
     state: state,
-    venue_name: venueName,
-    venue_address: venueAddress,
+    venue_name: cleanTextField(venueName),
+    venue_address: cleanTextField(venueAddress),
     grades: grades,
   };
+}
+
+// Extract all price options with labels from the Ryzer camp page
+function extractPriceOptions(html) {
+  if (!html) return [];
+  var options = [];
+  var seen = {};
+
+  // Strategy 1: <form> pricing area — look for radio/select options with price
+  // Ryzer uses <div class="priceOption"> or <label> with price text
+  var optionBlocks = html.match(/<(?:div|label|li|tr)[^>]*class="[^"]*(?:price|option|campPrice)[^"]*"[^>]*>[\s\S]*?<\/(?:div|label|li|tr)>/gi);
+  if (optionBlocks) {
+    for (var i = 0; i < optionBlocks.length; i++) {
+      var blockText = stripTags(optionBlocks[i]);
+      var priceM = /\$\s*(\d{1,5})(?:\.(\d{2}))?/.exec(blockText);
+      if (priceM) {
+        var pval = parseFloat(priceM[1] + (priceM[2] ? "." + priceM[2] : ""));
+        var label = blockText.replace(/\$\s*\d+(?:\.\d{2})?/, "").replace(/\s+/g, " ").trim();
+        if (!label || label.length < 2) label = "Registration";
+        label = label.substring(0, 100);
+        var key = pval + "|" + label;
+        if (!seen[key] && pval > 0 && pval < 20000) {
+          seen[key] = true;
+          options.push({ label: cleanTextField(label), price: pval });
+        }
+      }
+    }
+  }
+
+  // Strategy 2: Table rows in .CampInfo description that contain "$"
+  var campInfoMatch = /<div class="CampInfo">([\s\S]*?)<\/div>\s*(?:<\/div>|$)/i.exec(html);
+  if (campInfoMatch) {
+    var infoHtml = campInfoMatch[1];
+    // Find table rows or <td> cells with prices
+    var tds = infoHtml.match(/<t[dr][^>]*>[\s\S]*?<\/t[dr]>/gi) || [];
+    for (var ti = 0; ti < tds.length; ti++) {
+      var tdText = stripTags(tds[ti]);
+      var tdPriceM = /\$\s*(\d{1,5})(?:\.(\d{2}))?/.exec(tdText);
+      if (tdPriceM) {
+        var tpval = parseFloat(tdPriceM[1] + (tdPriceM[2] ? "." + tdPriceM[2] : ""));
+        var tlabel = tdText.replace(/\$\s*\d+(?:\.\d{2})?/g, "").replace(/\(\$?\d+[^)]*\)/g, "").replace(/\s+/g, " ").trim();
+        if (!tlabel || tlabel.length < 2) tlabel = "Registration";
+        tlabel = tlabel.substring(0, 100);
+        var tkey = tpval + "|" + tlabel;
+        if (!seen[tkey] && tpval > 0 && tpval < 20000) {
+          seen[tkey] = true;
+          options.push({ label: cleanTextField(tlabel), price: tpval });
+        }
+      }
+    }
+  }
+
+  // Strategy 3: Fallback — scan full page text for "$XXX" patterns with nearby context
+  if (options.length === 0) {
+    var text = stripTags(html);
+    var reFallback = /([A-Za-z][^$]{0,60}?)\$\s*(\d{1,5})(?:\.(\d{2}))?/g;
+    var fm;
+    while ((fm = reFallback.exec(text)) !== null && options.length < 10) {
+      var fpval = parseFloat(fm[2] + (fm[3] ? "." + fm[3] : ""));
+      if (fpval <= 0 || fpval >= 20000) continue;
+      var fctx = fm[1].trim();
+      // Get last meaningful phrase before the $
+      var flabel = fctx.split(/[.!?;]/).pop().trim();
+      if (!flabel || flabel.length < 2) flabel = "Registration";
+      // Skip noise labels
+      if (/^(we accept|copyright|terms|privacy)/i.test(flabel)) continue;
+      flabel = flabel.substring(0, 100);
+      var fkey = fpval + "";
+      if (!seen[fkey]) {
+        seen[fkey] = true;
+        options.push({ label: cleanTextField(flabel), price: fpval });
+      }
+    }
+  }
+
+  // Dedupe by price if labels are very similar
+  return options;
 }
 
 // Parse flexible date strings like "Jun 3, 2026", "Jun 3 - Jun 5, 2026", "6/3/2026"
