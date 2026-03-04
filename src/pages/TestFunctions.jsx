@@ -42,6 +42,10 @@ export default function TestFunctions() {
               <option value="false">Live (write)</option>
             </select>
           </div>
+          <div>
+            <span style={S.label}>Schools per batch</span>
+            <input type="number" value={maxSchools} onChange={e => setMaxSchools(Math.max(1, parseInt(e.target.value) || 1))} style={{ ...S.input, width: 80 }} min={1} />
+          </div>
           {dryRun && (
             <div style={{ color: "#D97706", fontSize: 13, fontWeight: 600, paddingBottom: 2 }}>
               ⚠ DRY RUN — no data will be written
