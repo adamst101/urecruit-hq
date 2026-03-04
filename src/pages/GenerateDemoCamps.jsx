@@ -2,10 +2,10 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AutoBatchRunner from "../components/admin/AutoBatchRunner";
 
-export default function TestFunctions() {
+export default function GenerateDemoCamps() {
   const nav = useNavigate();
-  const [dryRun, setDryRun] = useState(true);
   const [sportKey, setSportKey] = useState("football");
+  const [dryRun, setDryRun] = useState(true);
 
   const S = {
     root: { background: "#F3F4F6", minHeight: "100vh", fontFamily: "Inter, system-ui, sans-serif", color: "#111827" },
@@ -19,16 +19,15 @@ export default function TestFunctions() {
     <div style={S.root}>
       <div style={S.header}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: "#0B1F3B" }}>Ingest Runner</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: "#0B1F3B" }}>Generate Demo Camps</div>
           <div style={{ fontSize: 13, color: "#6B7280", marginTop: 2 }}>
-            Auto-batch ingestCampsUSA to completion
+            Full auto-batch ingest for demo / seed data
           </div>
         </div>
         <button onClick={() => nav("/AdminOps")} style={S.btn}>← Admin</button>
       </div>
 
       <div style={{ padding: "20px 24px", maxWidth: 900 }}>
-        {/* Config */}
         <div style={{ background: "#FFF", border: "1px solid #E5E7EB", borderRadius: 8, padding: "16px 20px", marginBottom: 16, display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
             <span style={S.label}>Sport Key</span>
@@ -48,9 +47,8 @@ export default function TestFunctions() {
           )}
         </div>
 
-        {/* Auto batch runner for ingestCampsUSA */}
         <AutoBatchRunner
-          title={`ingestCampsUSA (${sportKey})`}
+          title={`Demo Ingest — ${sportKey}`}
           functionName="ingestCampsUSA"
           params={{
             sport_key: sportKey,

@@ -66,12 +66,13 @@ import MyCamps from './pages/MyCamps';
 import Profile from './pages/Profile';
 import SchoolAthleticsCleanup from './pages/SchoolAthleticsCleanup';
 import SchoolsManager from './pages/SchoolsManager';
+import SportIngestConfigManager from './pages/SportIngestConfigManager';
 import Subscribe from './pages/Subscribe';
 import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
-import SportIngestConfigManager from './pages/SportIngestConfigManager';
+import GenerateDemoCamps from './pages/GenerateDemoCamps';
 import __Layout from './Layout.jsx';
 
 
@@ -95,12 +96,13 @@ export const PAGES = {
     "Profile": Profile,
     "SchoolAthleticsCleanup": SchoolAthleticsCleanup,
     "SchoolsManager": SchoolsManager,
+    "SportIngestConfigManager": SportIngestConfigManager,
     "Subscribe": Subscribe,
     "TestFunctions": TestFunctions,
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
-    "SportIngestConfigManager": SportIngestConfigManager,
+    "GenerateDemoCamps": GenerateDemoCamps,
 }
 
 export const pagesConfig = {
