@@ -836,7 +836,7 @@ function extractRyzerCampDetails(html, regUrl) {
   if (!html) return null;
   var text = stripTags(html);
 
-  // Camp name from h1 or title
+  // ── Camp name: first <h1> inside .campDetailsContent ──
   var campName = null;
   var h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
   if (h1 && h1[1]) {
@@ -856,56 +856,203 @@ function extractRyzerCampDetails(html, regUrl) {
     }
   }
 
-  // Description from meta
-  var desc = null;
-  var metaDesc = /<meta[^>]*name="description"[^>]*content="([^"]*)"/i.exec(html);
-  if (metaDesc && metaDesc[1]) {
-    desc = stripNonAscii(metaDesc[1]);
-    if (desc.length > 500) desc = desc.substring(0, 497) + "...";
+  // ── Host organization from .campDetailsCustomer ──
+  var hostOrg = null;
+  var hostMatch = /<div class="campDetailsCustomer">([^<]+)<\/div>/i.exec(html);
+  if (hostMatch && hostMatch[1]) {
+    hostOrg = stripNonAscii(hostMatch[1]).trim() || null;
   }
 
-  // Dates
+  // ── Structured fields from .campDetailsTable spans ──
+  // Each span block: <span>Location</span>\n Value  OR  <span>Event Date(s)</span>\n Value
+  var locationRaw = null;
+  var eventDateRaw = null;
+  var gradesRaw = null;
+
+  var detailsBlock = html.match(/<div class="row campDetailsTable">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/i);
+  if (detailsBlock) {
+    var block = detailsBlock[1];
+    // Extract labeled sections: look for <span>Label</span> followed by value text
+    var spanSections = block.split(/<span>\s*<div class="leftflt campDetailsIcon">/i);
+    for (var si2 = 0; si2 < spanSections.length; si2++) {
+      var sec = spanSections[si2];
+      var labelMatch = /<span>([^<]+)<\/span>/i.exec(sec);
+      if (!labelMatch) continue;
+      var label = lc(labelMatch[1]);
+      // Value is the text after the closing </span> but before next <span> or end
+      var afterLabel = sec.substring(sec.indexOf(labelMatch[0]) + labelMatch[0].length);
+      var val2 = stripTags(afterLabel).trim();
+
+      if (label.indexOf("location") >= 0 && val2) locationRaw = val2;
+      else if (label.indexOf("event date") >= 0 && val2) eventDateRaw = val2;
+      else if (label.indexOf("grade") >= 0 && val2) gradesRaw = val2;
+    }
+  }
+
+  // ── City, State from structured location ──
+  var city = null;
+  var state = null;
+  if (locationRaw) {
+    var csMatch = /([A-Za-z .'-]{2,}),\s*([A-Z]{2})\b/.exec(locationRaw);
+    if (csMatch) { city = csMatch[1].trim(); state = csMatch[2].trim(); }
+  }
+  // Fallback: parse from full text
+  if (!city) {
+    var locFallback = /Location\s+(.{0,140}?)(?:Event Date|Grades|Register By|Select a price|We Accept|$)/i.exec(text);
+    if (locFallback && locFallback[1]) {
+      var seg = locFallback[1].indexOf("|") >= 0 ? locFallback[1].split("|").pop().trim() : locFallback[1].trim();
+      var csMatch2 = /([A-Za-z .'-]{2,}),\s*([A-Z]{2})\b/.exec(seg);
+      if (csMatch2) { city = csMatch2[1].trim(); state = csMatch2[2].trim(); }
+    }
+  }
+
+  // ── Venue name and address from description HTML ──
+  var venueName = null;
+  var venueAddress = null;
+  // Look for address patterns: street number + street name + city, state zip
+  var addrLinkMatch = /<a[^>]*href="https:\/\/maps[^"]*"[^>]*(?:title="([^"]*)")?[^>]*>([^<]+)<\/a>/i.exec(html);
+  if (addrLinkMatch) {
+    venueAddress = stripNonAscii(addrLinkMatch[2]).trim() || null;
+    if (addrLinkMatch[1]) venueName = stripNonAscii(addrLinkMatch[1]).trim() || null;
+  }
+  // Also look for venue name before the address link — often in preceding div
+  if (!venueName) {
+    var venueDiv = /<h3[^>]*>\s*<strong>\s*Location:?\s*<\/strong>\s*<\/h3>\s*(?:<div[^>]*>)?\s*([^<]+)/i.exec(html);
+    if (venueDiv && venueDiv[1]) venueName = stripNonAscii(venueDiv[1]).trim() || null;
+  }
+
+  // ── Dates from structured field, then fallback to text scan ──
   var startDate = null;
   var endDate = null;
-  var dateRange = /(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/.exec(text);
-  if (dateRange) {
-    startDate = parseMDY(dateRange[1]);
-    endDate = parseMDY(dateRange[2]);
-  } else {
-    var singleDate = /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(text);
-    if (singleDate) startDate = parseMDY(singleDate[1]);
+
+  // Parse structured eventDateRaw like "Jun 3, 2026" or "Jun 3, 2026 - Jun 5, 2026"
+  if (eventDateRaw) {
+    var parsed = parseFlexibleDates(eventDateRaw);
+    if (parsed.start) startDate = parsed.start;
+    if (parsed.end) endDate = parsed.end;
+  }
+  // Fallback: MM/DD/YYYY range in full text
+  if (!startDate) {
+    var dateRange = /(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/.exec(text);
+    if (dateRange) {
+      startDate = parseMDY(dateRange[1]);
+      endDate = parseMDY(dateRange[2]);
+    } else {
+      var singleDate = /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(text);
+      if (singleDate) startDate = parseMDY(singleDate[1]);
+    }
   }
 
-  // Price
+  // ── Description from .CampInfo div (rich text), fallback to meta ──
+  var desc = null;
+  var campInfoMatch = /<div class="CampInfo">([\s\S]*?)<\/div>\s*(?:<\/div>|$)/i.exec(html);
+  if (campInfoMatch && campInfoMatch[1]) {
+    desc = stripTags(campInfoMatch[1]).trim();
+    if (desc.length > 500) desc = desc.substring(0, 497) + "...";
+  }
+  if (!desc || desc.length < 10) {
+    var metaDesc = /<meta[^>]*name="description"[^>]*content="([^"]*)"/i.exec(html);
+    if (metaDesc && metaDesc[1]) {
+      desc = stripNonAscii(metaDesc[1]);
+      if (desc.length > 500) desc = desc.substring(0, 497) + "...";
+    }
+  }
+
+  // ── Price from description text ──
   var prices = [];
   var rePrice = /\$\s*(\d{1,5})(?:\.(\d{2}))?/g;
   var pm;
   while ((pm = rePrice.exec(text)) !== null) {
-    var val = parseFloat(pm[1] + (pm[2] ? "." + pm[2] : ""));
-    if (val > 0 && val < 20000) prices.push(val);
+    var pval = parseFloat(pm[1] + (pm[2] ? "." + pm[2] : ""));
+    if (pval > 0 && pval < 20000) prices.push(pval);
     if (prices.length >= 10) break;
   }
   var price = prices.length ? Math.max.apply(null, prices) : null;
 
-  // Location: "Location ... City, ST"
-  var city = null;
-  var state = null;
-  var locMatch = /Location\s+(.{0,140}?)(?:Event Date|Grades|Register By|Select a price|We Accept|$)/i.exec(text);
-  if (locMatch && locMatch[1]) {
-    var seg = locMatch[1].indexOf("|") >= 0 ? locMatch[1].split("|").pop().trim() : locMatch[1].trim();
-    var csMatch = /([A-Za-z .'-]{2,}),\s*([A-Z]{2})\b/.exec(seg);
-    if (csMatch) { city = csMatch[1].trim(); state = csMatch[2].trim(); }
-  }
+  // ── Grades / age group ──
+  var grades = gradesRaw || null;
 
   return {
     camp_name: campName || null,
+    host_org: hostOrg,
     description: desc,
     start_date: startDate,
     end_date: endDate,
     price: price,
     city: city,
     state: state,
+    venue_name: venueName,
+    venue_address: venueAddress,
+    grades: grades,
   };
+}
+
+// Parse flexible date strings like "Jun 3, 2026", "Jun 3 - Jun 5, 2026", "6/3/2026"
+function parseFlexibleDates(s) {
+  var result = { start: null, end: null };
+  if (!s) return result;
+
+  var MONTHS = {
+    jan:1,january:1,feb:2,february:2,mar:3,march:3,apr:4,april:4,may:5,
+    jun:6,june:6,jul:7,july:7,aug:8,august:8,sep:9,sept:9,september:9,
+    oct:10,october:10,nov:11,november:11,dec:12,december:12
+  };
+
+  function pad(n) { return n < 10 ? "0" + n : String(n); }
+
+  // Try "Month Day, Year - Month Day, Year"
+  var rangeM = /([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?\s*[-–]\s*([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/i.exec(s);
+  if (rangeM) {
+    var m1 = MONTHS[lc(rangeM[1])];
+    var d1 = parseInt(rangeM[2]);
+    var y1 = rangeM[3] ? parseInt(rangeM[3]) : null;
+    var m2 = MONTHS[lc(rangeM[4])];
+    var d2 = parseInt(rangeM[5]);
+    var y2 = rangeM[6] ? parseInt(rangeM[6]) : null;
+    var year = y2 || y1 || new Date().getFullYear();
+    if (!y1) y1 = year;
+    if (m1 && d1) result.start = y1 + "-" + pad(m1) + "-" + pad(d1);
+    if (m2 && d2) result.end = year + "-" + pad(m2) + "-" + pad(d2);
+    return result;
+  }
+
+  // Try "Month Day - Day, Year" (same month)
+  var sameMonthRange = /([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?\s*[-–]\s*(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/i.exec(s);
+  if (sameMonthRange) {
+    var sm = MONTHS[lc(sameMonthRange[1])];
+    var sd1 = parseInt(sameMonthRange[2]);
+    var sd2 = parseInt(sameMonthRange[3]);
+    var sy = sameMonthRange[4] ? parseInt(sameMonthRange[4]) : new Date().getFullYear();
+    if (sm && sd1) result.start = sy + "-" + pad(sm) + "-" + pad(sd1);
+    if (sm && sd2) result.end = sy + "-" + pad(sm) + "-" + pad(sd2);
+    return result;
+  }
+
+  // Try "Month Day, Year" (single date)
+  var singleM = /([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/i.exec(s);
+  if (singleM) {
+    var sm2 = MONTHS[lc(singleM[1])];
+    var sd = parseInt(singleM[2]);
+    var sy2 = singleM[3] ? parseInt(singleM[3]) : new Date().getFullYear();
+    if (sm2 && sd) result.start = sy2 + "-" + pad(sm2) + "-" + pad(sd);
+    return result;
+  }
+
+  // Try MM/DD/YYYY range
+  var mdyRange = /(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/.exec(s);
+  if (mdyRange) {
+    result.start = parseMDY(mdyRange[1]);
+    result.end = parseMDY(mdyRange[2]);
+    return result;
+  }
+
+  // Try single MM/DD/YYYY
+  var mdySingle = /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(s);
+  if (mdySingle) {
+    result.start = parseMDY(mdySingle[1]);
+  }
+
+  return result;
 }
 
 // ─── STEP 4: Upsert logic ──────────────────────────────────────────────────
