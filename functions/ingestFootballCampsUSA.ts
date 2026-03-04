@@ -102,85 +102,135 @@ async function fetchWithTimeout(url, timeoutMs) {
 }
 
 // ─── STEP 1: Fetch program list from footballcampsusa.com ───────────────────
+// v2: Card-boundary parsing using <div class="listItem"> as delimiter.
+// Each card contains: schoolLogo img, span.school, p (description), a.viewSite.
 
 function parseFootballCampsUSADirectory(html) {
   var programs = [];
   if (!html) return programs;
 
-  // Find all "View Site" anchor tags
-  var viewSitePattern = /<a[^>]*href="([^"]*)"[^>]*>\s*View Site\s*<\/a>/gi;
-  var vsMatch;
-  var viewSiteEntries = [];
-  while ((vsMatch = viewSitePattern.exec(html)) !== null) {
-    viewSiteEntries.push({ href: vsMatch[1], index: vsMatch.index, fullMatch: vsMatch[0] });
-  }
+  // Split on card boundaries
+  var chunks = html.split('<div class="listItem"');
+  var cardChunks = chunks.slice(1); // first chunk is pre-cards HTML
 
-  for (var i = 0; i < viewSiteEntries.length; i++) {
-    var vs = viewSiteEntries[i];
-    var windowStart = Math.max(0, vs.index - 2000);
-    var windowHtml = html.slice(windowStart, vs.index + vs.fullMatch.length);
+  for (var i = 0; i < cardChunks.length; i++) {
+    var card = cardChunks[i];
 
-    // Extract name from nearest heading or img alt/title
-    var name = null;
+    // Name from <span class="school">
+    var nameMatch = /<span class="school">([^<]+)<\/span>/i.exec(card);
+    var name = nameMatch ? nameMatch[1].trim() : null;
 
-    // Headings
-    var reH = /<h[2-5][^>]*>([\s\S]*?)<\/h[2-5]>/gi;
-    var hm;
-    var headings = [];
-    while ((hm = reH.exec(windowHtml)) !== null) {
-      var t = stripTags(hm[1]);
-      if (t && t.length > 2 && t.length < 200) headings.push(t);
-    }
-    if (headings.length) name = headings[headings.length - 1];
+    // Logo from first <img> with Ryzer S3 src
+    var logoMatch = /<img[^>]*src="(https:\/\/s3\.amazonaws\.com\/images\.ryzer\.com\/[^"]+)"[^>]*>/i.exec(card);
+    var logoUrl = logoMatch ? logoMatch[1] : null;
 
-    // Strongs
+    // Fallback name from img alt
     if (!name) {
-      var reSt = /<(?:strong|b)[^>]*>([\s\S]*?)<\/(?:strong|b)>/gi;
-      var sm;
-      while ((sm = reSt.exec(windowHtml)) !== null) {
-        var t2 = stripTags(sm[1]);
-        if (t2 && t2.length > 4 && t2.length < 200) { name = t2; }
-      }
+      var altMatch = /alt="([^"]+)"/i.exec(card);
+      name = altMatch ? altMatch[1].trim() : "(unknown)";
     }
 
-    // Img alt/title
-    if (!name) {
-      var reImg = /<img[^>]*(?:alt|title)="([^"]+)"[^>]*>/gi;
-      var im;
-      while ((im = reImg.exec(windowHtml)) !== null) {
-        var t3 = (im[1] || "").trim();
-        if (t3 && t3.length > 3 && t3.length < 200) name = t3;
-      }
-    }
+    // URL from "View Site" anchor
+    var urlMatch = /<a[^>]*href="([^"]*)"[^>]*>\s*View Site/i.exec(card);
+    if (!urlMatch) urlMatch = /<a\s+href="([^"]+)"[^>]*class="viewSite"/i.exec(card);
+    var url = urlMatch ? urlMatch[1].trim() : null;
 
-    // URL normalization
-    var url = vs.href;
-    if (url && !url.startsWith("http")) {
-      if (url.startsWith("//")) url = "https:" + url;
-      else url = "https://www.footballcampsusa.com/" + url.replace(/^\//, "");
-    }
+    // Description from <p> inside extraInfo div
+    var descMatch = /<p>([^<]+(?:<[^>]+>[^<]*)*)<\/p>/i.exec(card);
+    var description = descMatch ? stripTags(descMatch[1]).trim() : null;
 
-    // Logo from Ryzer S3
-    var logoUrl = null;
-    var reLogoImg = /<img[^>]*src="(https:\/\/s3\.amazonaws\.com\/images\.ryzer\.com\/[^"]+)"[^>]*>/gi;
-    var lm;
-    while ((lm = reLogoImg.exec(windowHtml)) !== null) {
-      logoUrl = lm[1];
-    }
+    // Extract school info from description
+    var descExtracted = extractSchoolFromDescription(description);
 
-    programs.push({ name: name || "(unknown)", url: url || null, logo_url: logoUrl || null });
+    programs.push({
+      name: name || "(unknown)",
+      url: url || null,
+      logo_url: logoUrl || null,
+      description: description || null,
+      desc_school: descExtracted.school || null,
+      desc_city: descExtracted.city || null,
+      desc_state: descExtracted.state || null,
+      desc_nickname: descExtracted.nickname || null,
+    });
   }
 
   // Dedupe by URL
   var seen = {};
   var deduped = [];
   for (var j = 0; j < programs.length; j++) {
-    var key = lc(programs[j].url || "").replace(/\/+$/, "");
-    if (!key || seen[key]) continue;
+    var key = lc(programs[j].url || programs[j].name || "").replace(/\/+$/, "");
+    if (seen[key]) continue;
     seen[key] = true;
     deduped.push(programs[j]);
   }
   return deduped;
+}
+
+// Extract school name, city, state, and nickname from description text
+function extractSchoolFromDescription(desc) {
+  var result = { school: null, city: null, state: null, nickname: null };
+  if (!desc) return result;
+
+  // Extract city, state: "in City, ST" or "in City, State"
+  var csMatch = /\bin\s+([A-Z][A-Za-z\s.'-]+),\s*([A-Z]{2}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/.exec(desc);
+  if (csMatch) {
+    result.city = csMatch[1].trim();
+    result.state = csMatch[2].trim();
+  }
+
+  // Extract nickname from "led by the [Nickname] (football|coaching) staff"
+  var nickMatch = /led by (?:the |its )?(.+?)\s+(?:Football\s+)?(?:coaching\s+)?staff/i.exec(desc);
+  if (nickMatch && nickMatch[1]) {
+    var nick = nickMatch[1].trim()
+      .replace(/^Head Coach\s+\w+\s+and the\s+/i, "")
+      .replace(/^Head Coach\s+and the\s+/i, "")
+      .replace(/^its\s+/i, "")
+      .replace(/\s+Football$/i, "");
+    if (nick.length >= 3 && nick.length < 50) {
+      result.nickname = nick;
+    }
+  }
+
+  // Try patterns in priority order to extract school name:
+
+  // 1. "campus of [School Name]"
+  var m = /campus of\s+(?:the\s+)?(.+?)(?:\s+in\s|\s*[,.])/i.exec(desc);
+  if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
+
+  // 2. "on the [School Name] campus"
+  m = /on the\s+(.+?)\s+campus/i.exec(desc);
+  if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
+
+  // 3. "held at [Venue] at [School]" — look for university/college within it
+  m = /held at\s+(?:the\s+)?(.+?)(?:\s+in\s|\s*[,.])/i.exec(desc);
+  if (m && m[1]) {
+    var uniInVenue = /((?:University of [A-Za-z\s.&'-]+|[A-Za-z\s.&'-]+ University|[A-Za-z\s.&'-]+ College|[A-Za-z\s.&'-]+ Institute))/i.exec(m[1]);
+    if (uniInVenue) {
+      result.school = cleanSchoolName(uniInVenue[1]);
+      if (result.school) return result;
+    }
+  }
+
+  // 4. "led by the [School] football/coaching staff"
+  m = /led by the\s+(.+?)\s+(?:football|coaching)\s+staff/i.exec(desc);
+  if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
+
+  // 5. General: find "University of X" or "X University" or "X College" anywhere
+  m = /(University of [A-Za-z\s.&'-]+|[A-Z][A-Za-z\s.&'-]+ University|[A-Z][A-Za-z\s.&'-]+ College(?!\s+Football))/i.exec(desc);
+  if (m && m[1]) { result.school = cleanSchoolName(m[1]); if (result.school) return result; }
+
+  return result;
+}
+
+function cleanSchoolName(raw) {
+  if (!raw) return null;
+  var s = raw.trim();
+  s = s.replace(/\s+Football.*$/i, "");
+  s = s.replace(/\s+(campus|staff|coaching|camp|camps|stadium).*$/i, "");
+  s = s.replace(/^the\s+/i, "");
+  s = s.replace(/[.,;:!]+$/, "").trim();
+  if (s.length < 3) return null;
+  return s;
 }
 
 // ─── STEP 2: School matching ────────────────────────────────────────────────
