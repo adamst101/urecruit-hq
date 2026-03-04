@@ -100,12 +100,28 @@ export default function AutoBatchRunner({
           unwrapped = unwrapped.data;
         }
         data = unwrapped;
-        console.log("[AutoBatch] batch", batchCount, "data keys:", Object.keys(data || {}), "has stats:", !!data?.stats, "has pagination:", !!data?.pagination);
+        console.log("[AutoBatch] batch", batchCount, "data keys:", Object.keys(data || {}));
       } catch (e) {
         const errMsg = e?.response?.data?.error || e?.message || String(e);
         setLastError(errMsg);
         setState("error");
         if (onError) onError(errMsg);
+        return;
+      }
+
+      // If function returned an error response (has .error but no .stats), treat as error
+      if (data?.error && !data?.stats) {
+        setLastError(data.error);
+        setBatchLog(prev => [...prev, {
+          num: batchCount,
+          text: `ERROR: ${data.error}`,
+          done: false,
+          elapsed: Date.now() - batchStart,
+          data: data,
+          isError: true,
+        }]);
+        setState("error");
+        if (onError) onError(data.error);
         return;
       }
 
