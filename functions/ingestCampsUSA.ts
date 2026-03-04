@@ -1084,8 +1084,9 @@ Deno.serve(async function(req) {
   var dirResult = await fetchWithTimeout(DIRECTORY_URL, 20000);
   if (!dirResult.ok) return json({ error: "Failed to fetch " + DIRECTORY_URL + ": HTTP " + dirResult.status, version: VERSION, sport_key: sportKey });
 
-  var programs = parseDirectoryHtml(dirResult.html);
-  if (programs.length === 0) return json({ error: "No programs found on " + DIRECTORY_URL, htmlLength: dirResult.html.length, version: VERSION, sport_key: sportKey });
+  var genderFilter = config.gender || "both";
+  var programs = parseDirectoryHtml(dirResult.html, genderFilter);
+  if (programs.length === 0) return json({ error: "No programs found on " + DIRECTORY_URL, htmlLength: dirResult.html.length, version: VERSION, sport_key: sportKey, genderFilter: genderFilter });
 
   // ── 2. Load schools + build index ──
   var allSchools = await base44.entities.School.filter({}, "school_name", 99999);
