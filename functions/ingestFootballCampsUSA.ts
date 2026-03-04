@@ -36,15 +36,34 @@ function stripNonAscii(s) {
   return String(s || "").replace(/[^\x20-\x7E]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function stripTags(html) {
-  if (!html) return "";
-  return String(html)
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
+function decodeHtmlEntities(s) {
+  if (!s) return "";
+  return String(s)
+    .replace(/&ndash;/gi, "\u2013").replace(/&mdash;/gi, "\u2014")
     .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
-    .replace(/\s+/g, " ").trim();
+    .replace(/&rsquo;/gi, "\u2019").replace(/&lsquo;/gi, "\u2018")
+    .replace(/&rdquo;/gi, "\u201D").replace(/&ldquo;/gi, "\u201C")
+    .replace(/&bull;/gi, "\u2022").replace(/&hellip;/gi, "\u2026")
+    .replace(/&#(\d+);/gi, function(_, n) { return String.fromCharCode(parseInt(n)); })
+    .replace(/&#x([0-9a-f]+);/gi, function(_, h) { return String.fromCharCode(parseInt(h, 16)); });
+}
+
+function stripTags(html) {
+  if (!html) return "";
+  return decodeHtmlEntities(
+    String(html)
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+  ).replace(/\s+/g, " ").trim();
+}
+
+// Apply entity decoding to a clean text field (already stripped of tags)
+function cleanTextField(s) {
+  if (!s) return null;
+  var v = decodeHtmlEntities(String(s)).replace(/\s+/g, " ").trim();
+  return v || null;
 }
 
 function normalizeName(name) {
