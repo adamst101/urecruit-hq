@@ -190,6 +190,7 @@ export default function SchoolsManager() {
   const [editing, setEditing]       = useState(null); // { rowId, fieldKey }
   const [saving, setSaving]         = useState({});
   const [saveMsg, setSaveMsg]       = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null); // schoolId or null
   const [visibleCols, setVisibleCols] = useState(() => new Set(FIELDS.map(f => f.key)));
   const [showColPicker, setShowColPicker] = useState(false);
   const [sortField, setSortField]   = useState("school_name");
