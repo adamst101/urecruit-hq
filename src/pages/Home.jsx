@@ -57,22 +57,38 @@ export default function Home() {
       demoSeasonYear ||
       (season?.currentYear ? season.currentYear - 1 : null);
 
-    trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoYear });
+    trackEvent({
+      event_name: "cta_demo_click",
+      source: "home",
+      demo_season: demoYear
+    });
 
     if (demoYear) setDemoMode(demoYear);
 
-    trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
+    trackEvent({
+      event_name: "demo_entered",
+      source: "home",
+      demo_season: demoYear
+    });
 
     nav(`/Workspace?mode=demo&src=home_demo`);
   }
 
   function handleMemberLogin() {
-    trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
+    trackEvent({
+      event_name: "cta_login_click",
+      source: "home",
+      via: "hero_login"
+    });
     startMemberLogin({ nextPath: "/Workspace", source: "home_member_login" });
   }
 
   function handleContinue() {
-    trackEvent({ event_name: "cta_continue_click", source: "home", dest: "workspace" });
+    trackEvent({
+      event_name: "cta_continue_click",
+      source: "home",
+      dest: "workspace"
+    });
     nav("/Workspace");
   }
 
@@ -115,24 +131,14 @@ export default function Home() {
             justifyContent: "space-between"
           }}
         >
-          {/* Wordmark only (logo moved into hero) */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span
-              style={{
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: 22,
-                letterSpacing: 1,
-                color: "#f9fafb"
-              }}
-            >
-              URECRUIT HQ
-            </span>
-          </div>
+          {/* Left placeholder (keeps spacing) */}
+          <div />
 
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {isAuthed && isMember ? (
               <button onClick={handleContinue} style={S.navBtnAmber}>
-                Go to HQ <ArrowRight style={{ width: 16, height: 16, marginLeft: 4 }} />
+                Go to HQ{" "}
+                <ArrowRight style={{ width: 16, height: 16, marginLeft: 4 }} />
               </button>
             ) : isAuthed && !isMember ? (
               <button onClick={handlePricingSignup} style={S.navBtnAmber}>
@@ -195,14 +201,13 @@ export default function Home() {
           <div style={{ display: "flex", alignItems: "center", gap: 60 }}>
             {/* Left */}
             <div style={{ flex: "1 1 55%", minWidth: 0 }}>
-              {/* Hero Logo (NOT in nav) */}
+              {/* Hero Logo only (large, top, no text beside it) */}
               <div
                 style={{
+                  marginTop: 2,
+                  marginBottom: 10,
                   display: "flex",
-                  alignItems: "center",
-                  gap: 14,
-                  marginBottom: 14,
-                  marginTop: 2
+                  alignItems: "center"
                 }}
               >
                 {logoOk && (
@@ -211,28 +216,13 @@ export default function Home() {
                     alt="URecruit HQ"
                     onError={() => setLogoOk(false)}
                     style={{
-                      height: 72,
+                      height: 96, // increase/decrease to taste (try 88–120)
                       width: "auto",
                       objectFit: "contain",
                       filter: "drop-shadow(0 10px 24px rgba(0,0,0,0.35))"
                     }}
                   />
                 )}
-                <div style={{ lineHeight: 1 }}>
-                  <div
-                    style={{
-                      fontFamily: "'Bebas Neue', sans-serif",
-                      fontSize: 34,
-                      letterSpacing: 2,
-                      color: "#f9fafb"
-                    }}
-                  >
-                    URECRUIT HQ
-                  </div>
-                  <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 4 }}>
-                    Recruiting camp planning for serious families
-                  </div>
-                </div>
               </div>
 
               <div
@@ -290,20 +280,30 @@ export default function Home() {
                   maxWidth: 540
                 }}
               >
-                759 college football camps. One place to discover, plan, and track your
-                recruiting journey — without the spreadsheet chaos.
+                759 college football camps. One place to discover, plan, and
+                track your recruiting journey — without the spreadsheet chaos.
               </p>
 
-              <div style={{ display: "flex", gap: 14, marginTop: 22, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 14,
+                  marginTop: 22,
+                  flexWrap: "wrap"
+                }}
+              >
                 <button onClick={handleTryDemo} style={S.ctaPrimary}>
-                  Start Free Demo <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
+                  Start Free Demo{" "}
+                  <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
                 </button>
                 <button onClick={handlePricingSignup} style={S.ctaOutline}>
                   View Pricing
                 </button>
               </div>
 
-              <div style={{ display: "flex", gap: 20, marginTop: 22, flexWrap: "wrap" }}>
+              <div
+                style={{ display: "flex", gap: 20, marginTop: 22, flexWrap: "wrap" }}
+              >
                 {["759 camps", "260 college programs", "All divisions", "Updated weekly"].map(
                   (t) => (
                     <span
@@ -324,7 +324,10 @@ export default function Home() {
             </div>
 
             {/* Right — mock camp cards (hidden on mobile) */}
-            <div className="hidden md:block" style={{ flex: "1 1 45%", position: "relative", minHeight: 380 }}>
+            <div
+              className="hidden md:block"
+              style={{ flex: "1 1 45%", position: "relative", minHeight: 380 }}
+            >
               <MockCard
                 top={0}
                 left={30}
@@ -361,19 +364,78 @@ export default function Home() {
       </section>
 
       {/* ── STATS BAR ── */}
-      <section style={{ position: "relative", background: "#e8a020", padding: "48px 24px", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: -1, left: 0, right: 0, height: 40, background: "#0a0e1a", clipPath: "polygon(0 0, 100% 0, 100% 60%, 0 100%)" }} />
-        <div style={{ position: "absolute", bottom: -1, left: 0, right: 0, height: 40, background: "#0a0e1a", clipPath: "polygon(0 40%, 100% 0, 100% 100%, 0 100%)" }} />
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 24, textAlign: "center", position: "relative", zIndex: 1 }}>
+      <section
+        style={{
+          position: "relative",
+          background: "#e8a020",
+          padding: "48px 24px",
+          overflow: "hidden"
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: -1,
+            left: 0,
+            right: 0,
+            height: 40,
+            background: "#0a0e1a",
+            clipPath: "polygon(0 0, 100% 0, 100% 60%, 0 100%)"
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: -1,
+            left: 0,
+            right: 0,
+            height: 40,
+            background: "#0a0e1a",
+            clipPath: "polygon(0 40%, 100% 0, 100% 100%, 0 100%)"
+          }}
+        />
+        <div
+          style={{
+            maxWidth: 1100,
+            margin: "0 auto",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: 24,
+            textAlign: "center",
+            position: "relative",
+            zIndex: 1
+          }}
+        >
           {[
             { num: "759", label: "Football Camps" },
             { num: "260", label: "College Programs" },
             { num: "98%", label: "School Match Rate" },
-            { num: "Free", label: "Demo Access" },
+            { num: "Free", label: "Demo Access" }
           ].map((s) => (
             <div key={s.label}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 60, color: "#0a0e1a", lineHeight: 1 }}>{s.num}</div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: "#0a0e1a", opacity: 0.75, marginTop: 6, textTransform: "uppercase", letterSpacing: 1 }}>{s.label}</div>
+              <div
+                style={{
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: 60,
+                  color: "#0a0e1a",
+                  lineHeight: 1
+                }}
+              >
+                {s.num}
+              </div>
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: "#0a0e1a",
+                  opacity: 0.75,
+                  marginTop: 6,
+                  textTransform: "uppercase",
+                  letterSpacing: 1
+                }}
+              >
+                {s.label}
+              </div>
             </div>
           ))}
         </div>
@@ -382,17 +444,74 @@ export default function Home() {
       {/* ── HOW IT WORKS ── */}
       <section style={{ background: "#0a0e1a", padding: "80px 24px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, textAlign: "center", marginBottom: 48, color: "#f9fafb" }}>HOW IT WORKS</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 40 }}>
+          <h2
+            style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 48,
+              textAlign: "center",
+              marginBottom: 48,
+              color: "#f9fafb"
+            }}
+          >
+            HOW IT WORKS
+          </h2>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+              gap: 40
+            }}
+          >
             {[
-              { n: "01", t: "DISCOVER", d: "Browse 759 football camps filtered by division, state, and date." },
-              { n: "02", t: "PLAN", d: "Overlay your target schools, spot conflicts, build the perfect sequence." },
-              { n: "03", t: "TRACK", d: "Mark favorites, track registrations, never miss a deadline." },
+              {
+                n: "01",
+                t: "DISCOVER",
+                d: "Browse 759 football camps filtered by division, state, and date."
+              },
+              {
+                n: "02",
+                t: "PLAN",
+                d: "Overlay your target schools, spot conflicts, build the perfect sequence."
+              },
+              {
+                n: "03",
+                t: "TRACK",
+                d: "Mark favorites, track registrations, never miss a deadline."
+              }
             ].map((step) => (
               <div key={step.n}>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 64, color: "#e8a020", lineHeight: 1, opacity: 0.8 }}>{step.n}</div>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 30, color: "#f9fafb", marginTop: 8, letterSpacing: 1 }}>{step.t}</div>
-                <p style={{ color: "#9ca3af", fontSize: 17, lineHeight: 1.6, marginTop: 8 }}>{step.d}</p>
+                <div
+                  style={{
+                    fontFamily: "'Bebas Neue', sans-serif",
+                    fontSize: 64,
+                    color: "#e8a020",
+                    lineHeight: 1,
+                    opacity: 0.8
+                  }}
+                >
+                  {step.n}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "'Bebas Neue', sans-serif",
+                    fontSize: 30,
+                    color: "#f9fafb",
+                    marginTop: 8,
+                    letterSpacing: 1
+                  }}
+                >
+                  {step.t}
+                </div>
+                <p
+                  style={{
+                    color: "#9ca3af",
+                    fontSize: 17,
+                    lineHeight: 1.6,
+                    marginTop: 8
+                  }}
+                >
+                  {step.d}
+                </p>
               </div>
             ))}
           </div>
@@ -402,13 +521,51 @@ export default function Home() {
       {/* ── PRICING ── */}
       <section style={{ background: "#111827", padding: "80px 24px" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center" }}>
-          <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "#f9fafb", marginBottom: 32 }}>ONE SEASON. ONE PRICE.</h2>
+          <h2
+            style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 48,
+              color: "#f9fafb",
+              marginBottom: 32
+            }}
+          >
+            ONE SEASON. ONE PRICE.
+          </h2>
 
-          <div style={{ background: "#0a0e1a", border: "2px solid #e8a020", borderRadius: 16, padding: "36px 28px", textAlign: "left" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "#e8a020", letterSpacing: 2, textTransform: "uppercase" }}>Season Pass</div>
+          <div
+            style={{
+              background: "#0a0e1a",
+              border: "2px solid #e8a020",
+              borderRadius: 16,
+              padding: "36px 28px",
+              textAlign: "left"
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 24,
+                color: "#e8a020",
+                letterSpacing: 2,
+                textTransform: "uppercase"
+              }}
+            >
+              Season Pass
+            </div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
-              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 64, color: "#f9fafb", lineHeight: 1 }}>$49</span>
-              <span style={{ color: "#9ca3af", fontSize: 16 }}>per season · all camps · all features</span>
+              <span
+                style={{
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: 64,
+                  color: "#f9fafb",
+                  lineHeight: 1
+                }}
+              >
+                $49
+              </span>
+              <span style={{ color: "#9ca3af", fontSize: 16 }}>
+                per season · all camps · all features
+              </span>
             </div>
 
             <div style={{ height: 1, background: "rgba(232,160,32,0.3)", margin: "24px 0" }} />
@@ -418,9 +575,18 @@ export default function Home() {
                 "Current season camp data",
                 "Unlimited favorites & registration tracking",
                 "Calendar conflict detection",
-                "Multiple athletes under one account",
+                "Multiple athletes under one account"
               ].map((f) => (
-                <div key={f} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 16, color: "#f9fafb" }}>
+                <div
+                  key={f}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    fontSize: 16,
+                    color: "#f9fafb"
+                  }}
+                >
                   <span style={{ color: "#e8a020", fontSize: 18, flexShrink: 0 }}>✓</span> {f}
                 </div>
               ))}
