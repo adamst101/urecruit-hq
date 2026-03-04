@@ -70,6 +70,8 @@ function safeStr(x) {
 }
 function safeStrOrNull(x) { var s = safeStr(x); return s || null; }
 function lc(x) { return safeStr(x).toLowerCase(); }
+// lc + unicode normalization for name comparisons
+function lcn(x) { return normalizeUnicode(lc(x)); }
 
 function stripNonAscii(s) {
   return String(s || "").replace(/[^\x20-\x7E]/g, " ").replace(/\s+/g, " ").trim();
