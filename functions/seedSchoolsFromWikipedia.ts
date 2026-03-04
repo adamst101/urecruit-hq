@@ -83,9 +83,9 @@ function extractAllWikiLinks(html) {
 
 // Parse table rows from HTML — finds <table> with class "wikitable sortable" or "wikitable"
 function parseWikiTable(html) {
-  // Find all sortable wikitables
+  // Find all wikitables (both "wikitable sortable" and "sortable wikitable" class orders)
   const tables = [];
-  const tableRe = /<table\s+class="[^"]*wikitable[^"]*sortable[^"]*"[^>]*>([\s\S]*?)<\/table>/gi;
+  const tableRe = /<table\s+class="[^"]*wikitable[^"]*"[^>]*>([\s\S]*?)<\/table>/gi;
   let tm;
   while ((tm = tableRe.exec(html)) !== null) {
     tables.push(tm[1]);
