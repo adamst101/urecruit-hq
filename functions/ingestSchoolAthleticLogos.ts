@@ -387,10 +387,9 @@ Deno.serve(async (req) => {
     }
     debug.schemaProbe = schemaProbe;
 
-    // Filter at query level to only athletics schools (have division or conference)
-    // This avoids paginating through thousands of trade/vocational schools
+    // Fetch all schools sorted by name
     const allRows: any[] = await School.filter(
-      { division__exists: true },
+      {},
       "school_name",
       pageLimit
     );
