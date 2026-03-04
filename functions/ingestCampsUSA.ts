@@ -1223,13 +1223,21 @@ function buildSafeUpdatePayload(existing, incoming) {
     update.ingestion_status = incoming.ingestion_status || existing.ingestion_status;
   }
 
-  // Protected fields: NEVER overwrite non-null with null
+  // Protected fields: NEVER overwrite non-null with null or junk
   for (var i = 0; i < PROTECTED_FIELDS.length; i++) {
     var field = PROTECTED_FIELDS[i];
     var newVal = incoming[field];
     var oldVal = existing[field];
 
-    if (field === "price") {
+    if (field === "camp_name") {
+      // Camp name: NEVER overwrite with junk; only update if incoming is non-junk
+      var newNameStr = safeStr(newVal);
+      if (newNameStr && !isJunkCampName(newNameStr)) {
+        update.camp_name = newVal;
+      } else {
+        update.camp_name = oldVal || newVal || null;
+      }
+    } else if (field === "price") {
       // Price: only update if incoming is non-null
       update.price = (newVal != null) ? newVal : oldVal;
     } else if (field === "price_options") {
