@@ -104,9 +104,19 @@ function cleanTextField(s) {
   return v || null;
 }
 
+function normalizeUnicode(s) {
+  // Normalize unicode dashes to space and non-breaking spaces to regular space
+  // \u2011 non-breaking hyphen, \u2012 figure dash, \u2013 en-dash, \u2014 em-dash, \u2015 horizontal bar, \u2212 minus
+  return s.replace(/[\u2011\u2012\u2013\u2014\u2015\u2212\u2010]/g, " ").replace(/\u00a0/g, " ");
+}
+
 function normalizeName(name) {
-  // Replace unicode dashes with space before stripping non-alphanum
-  return lc(name).replace(/[\u2010-\u2015\u2212\u2013\u2014]/g, " ").replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+  // 1. Normalize unicode dashes/spaces first
+  // 2. Lowercase
+  // 3. Strip non-alphanumeric (except spaces)
+  // 4. Collapse whitespace
+  var s = normalizeUnicode(lc(name));
+  return s.replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function hashLite(s) {
@@ -286,7 +296,8 @@ function buildSchoolIndex(schools) {
     var sid = safeStr(s.id);
     if (!sid) continue;
 
-    var nn = lc(s.normalized_name || s.school_name || "");
+    // Use normalizeName so keys match the same function used at query time
+    var nn = normalizeName(s.normalized_name || s.school_name || "");
     if (nn) {
       if (!byNormName[nn]) byNormName[nn] = [];
       byNormName[nn].push({ id: sid, school: s });
@@ -497,7 +508,6 @@ var HARDCODED_PROGRAM_TO_SCHOOL = {
   "tony gibson football camps": "marshall university",
   "chad walker football camps": "pace university",
   "avante mitchell football camps": "olivet nazarene university",
-  "maurice flowers football camps": "johnson c. smith university",
   "dodge city community college - football": "dodge city community college",
   "iowa central cc - football": "iowa central community college",
   "southwest mississippi cc - football": "southwest mississippi community college",
@@ -519,25 +529,19 @@ function matchProgramToSchool(idx, program) {
   var hardKey = lc(programName);
   if (HARDCODED_PROGRAM_TO_SCHOOL[hardKey]) {
     var hardTarget = HARDCODED_PROGRAM_TO_SCHOOL[hardKey];
-    // Try exact lc match first (index uses lc of normalized_name)
-    var hardLc = lc(hardTarget);
-    var hardMatchLc = idx.byNormName[hardLc];
-    if (hardMatchLc && hardMatchLc.length === 1) {
-      return { school_id: hardMatchLc[0].id, school_name: hardMatchLc[0].school.school_name, method: "hardcoded", confidence: 1.0 };
-    }
-    // Try stripped normalizeName (removes punctuation)
     var hardNN = normalizeName(hardTarget);
     var hardMatch = idx.byNormName[hardNN];
     if (hardMatch && hardMatch.length === 1) {
       return { school_id: hardMatch[0].id, school_name: hardMatch[0].school.school_name, method: "hardcoded", confidence: 1.0 };
     }
-    // Fallback: normalize both sides (strip unicode dashes + punctuation) and compare
+    // Fallback: try with dashes/special chars stripped, or search all normalized names for substring match
     var allNN = Object.keys(idx.byNormName);
     for (var hfi = 0; hfi < allNN.length; hfi++) {
       var nnKey = allNN[hfi];
-      if (idx.byNormName[nnKey].length !== 1) continue;
-      var nnFlat = normalizeName(nnKey);
-      if (nnFlat === hardNN) {
+      // Normalize both sides: strip unicode dashes to plain hyphens for comparison
+      var nnFlat = nnKey.replace(/[\u2010-\u2015\u2212]/g, "-");
+      var htFlat = hardNN.replace(/[\u2010-\u2015\u2212]/g, "-");
+      if (nnFlat === htFlat && idx.byNormName[nnKey].length === 1) {
         return { school_id: idx.byNormName[nnKey][0].id, school_name: idx.byNormName[nnKey][0].school.school_name, method: "hardcoded", confidence: 1.0 };
       }
     }
