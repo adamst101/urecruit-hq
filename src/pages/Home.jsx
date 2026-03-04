@@ -273,7 +273,7 @@ export default function Home() {
 
               <p
                 style={{
-                  fontSize: 20,
+                  fontSize: 24,
                   color: "#9ca3af",
                   lineHeight: 1.6,
                   marginTop: 16,
