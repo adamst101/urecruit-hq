@@ -113,7 +113,7 @@ export default function Home() {
           {/* Large logo above hero content */}
           {logoOk && (
             <div style={{ textAlign: "center", marginBottom: 40 }}>
-              <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 180, maxWidth: "90%", width: "auto", objectFit: "contain", margin: "0 auto", display: "block" }} />
+              <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 540, maxWidth: "100%", width: "auto", objectFit: "contain", margin: "0 auto", display: "block" }} />
             </div>
           )}
 
