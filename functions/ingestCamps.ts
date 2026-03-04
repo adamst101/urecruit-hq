@@ -272,8 +272,12 @@ async function fetchRyzerPage(auth, activityTypeId, accountTypeId, page, records
     RecordsPerPage: recordsPerPage,
     SoldOut: 0,
     Proximity: "10000",
-    accountTypeList: [accountTypeId],
   };
+  // accountTypeList filters to college accounts only
+  if (accountTypeId) {
+    payload.accountTypeList = [accountTypeId];
+  }
+  // ActivityTypes filters by sport — only add if we have a real ID
   if (activityTypeId) {
     payload.ActivityTypes = [activityTypeId];
   }
