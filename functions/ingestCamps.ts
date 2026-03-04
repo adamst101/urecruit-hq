@@ -340,16 +340,24 @@ function isFootballEvent(row) {
 
 function isCollegeHost(row) {
   var host = lc(row.organizer || row.Organizer || row.accountName || row.AccountName ||
-    row.hostName || row.HostName || row.organizationName || row.OrganizationName || "");
+    row.hostName || row.HostName || row.organizationName || row.OrganizationName ||
+    row.schoolName || row.SchoolName || "");
   if (!host || host.length < 4) return false;
-  if (host.indexOf("university") >= 0 || host.indexOf("college") >= 0 ||
-      host.indexOf("athletics") >= 0 || host.indexOf("state") >= 0) return true;
+
   // Reject obvious non-college
-  var rejectPatterns = ["middle school", "high school", "elementary", "youth league", "rec center"];
+  var rejectPatterns = ["middle school", "high school", "elementary", "youth league",
+    "rec center", "pee wee", "little league", "pop warner", "youth athletics"];
   for (var i = 0; i < rejectPatterns.length; i++) {
     if (host.indexOf(rejectPatterns[i]) >= 0) return false;
   }
-  return false; // fail-closed: only accept if college-like
+
+  // Accept college-like
+  if (host.indexOf("university") >= 0 || host.indexOf("college") >= 0 ||
+      host.indexOf("athletics") >= 0 || host.indexOf("institute") >= 0) return true;
+
+  // Broader accept: many college programs just use their name (e.g. "Michigan State")
+  // Since accountTypeList already filters to college accounts on Ryzer, be more permissive
+  return true;
 }
 
 function extractRyzerCampId(url) {
