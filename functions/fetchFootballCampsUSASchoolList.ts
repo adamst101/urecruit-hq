@@ -1,8 +1,9 @@
 // functions/fetchFootballCampsUSASchoolList.js
-// Fetches footballcampsusa.com server-side, parses all program entries
-// and returns the school/program list with "View Site" URLs.
+// v2: Now also extracts description text for each program entry.
+// The description contains "held at/on the campus of [School]" which
+// lets us resolve coach-named / nickname camps to their actual school.
 
-const VERSION = "fetchFootballCampsUSASchoolList_v1";
+const VERSION = "fetchFootballCampsUSASchoolList_v2";
 
 Deno.serve(async (req) => {
   const started = Date.now();
@@ -13,13 +14,12 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const dryRun = !!(body && body.dryRun);
 
-    // 1. Fetch the full page server-side (no truncation)
+    // 1. Fetch the full page server-side
     const resp = await fetch("https://www.footballcampsusa.com/", {
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)",
-        "Accept": "text/html,*/*",
+        Accept: "text/html,*/*",
       },
     });
 
@@ -33,16 +33,13 @@ Deno.serve(async (req) => {
     const html = await resp.text();
     const htmlLen = html.length;
 
+    // ──────────────────────────────────────────────
     // 2. Parse program entries
-    //    The site uses a "programContainer" or similar card structure.
-    //    Each program card has: program name, logo image, and a "View Site" link.
-    //    We'll try multiple strategies to find the structure.
-
+    // ──────────────────────────────────────────────
     const programs = [];
     const parseNotes = [];
 
-    // Strategy A: Look for <div class="programContainer"> or similar wrappers
-    //   containing an <a> with "View Site" text
+    // Find all "View Site" anchors
     const viewSitePattern = /<a[^>]*href="([^"]*)"[^>]*>\s*View Site\s*<\/a>/gi;
     let vsMatch;
     const viewSiteUrls = [];
@@ -51,16 +48,16 @@ Deno.serve(async (req) => {
     }
     parseNotes.push(`Found ${viewSiteUrls.length} "View Site" anchors`);
 
-    // For each View Site link, look backwards in the HTML for the nearest
-    // program name (h-tag, strong, or title/alt text)
     for (const vs of viewSiteUrls) {
-      // Grab a window of HTML before the View Site link
-      const windowStart = Math.max(0, vs.index - 2000);
-      const windowHtml = html.slice(windowStart, vs.index + vs.fullMatch.length);
+      // Grab a window of HTML around the View Site link
+      const windowStart = Math.max(0, vs.index - 3000);
+      const windowEnd = Math.min(html.length, vs.index + vs.fullMatch.length + 500);
+      const windowHtml = html.slice(windowStart, windowEnd);
 
+      // ── Extract program name ──
       let name = null;
 
-      // Try: heading tags (h2, h3, h4, h5) nearest to the link
+      // Try heading tags nearest to the link
       const headings = [];
       const reH = /<h[2-5][^>]*>([\s\S]*?)<\/h[2-5]>/gi;
       let hm;
@@ -68,9 +65,9 @@ Deno.serve(async (req) => {
         const t = stripTags(hm[1]).trim();
         if (t && t.length > 2 && t.length < 200) headings.push(t);
       }
-      if (headings.length) name = headings[headings.length - 1]; // closest heading
+      if (headings.length) name = headings[headings.length - 1];
 
-      // Try: <strong> or <b> tags
+      // Try <strong> or <b> tags
       if (!name) {
         const strongs = [];
         const reSt = /<(?:strong|b)[^>]*>([\s\S]*?)<\/(?:strong|b)>/gi;
@@ -82,7 +79,7 @@ Deno.serve(async (req) => {
         if (strongs.length) name = strongs[strongs.length - 1];
       }
 
-      // Try: <img alt="..." or title="..." near the link
+      // Try img alt/title
       if (!name) {
         const imgs = [];
         const reImg = /<img[^>]*(?:alt|title)="([^"]+)"[^>]*>/gi;
@@ -94,14 +91,87 @@ Deno.serve(async (req) => {
         if (imgs.length) name = imgs[imgs.length - 1];
       }
 
-      // Try: any prominent text block (div with class containing "name" or "title")
-      if (!name) {
-        const reName = /class="[^"]*(?:name|title|program)[^"]*"[^>]*>([\s\S]*?)<\//gi;
-        let nm;
-        while ((nm = reName.exec(windowHtml)) !== null) {
-          const t = stripTags(nm[1]).trim();
-          if (t && t.length > 3 && t.length < 200) { name = t; break; }
+      // ── Extract description paragraph ──
+      // The description is in a <p> tag (or sometimes <div>) near the View Site link.
+      // It typically contains phrases like "held at", "campus of", etc.
+      let description = null;
+
+      // Collect all <p> tags in the window
+      const allParagraphs = [];
+      const reP = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+      let pm;
+      while ((pm = reP.exec(windowHtml)) !== null) {
+        const t = stripTags(pm[1]).trim();
+        if (t && t.length > 20 && t.length < 2000) {
+          allParagraphs.push(t);
         }
+      }
+
+      // Pick the best paragraph — prefer ones with school-related keywords
+      const schoolKeywords = [
+        "campus of", "held at", "held on", "held in", "university",
+        "college", "football staff", "head coach", "led by",
+      ];
+      for (const p of allParagraphs) {
+        const pl = p.toLowerCase();
+        for (const kw of schoolKeywords) {
+          if (pl.includes(kw)) {
+            description = p;
+            break;
+          }
+        }
+        if (description) break;
+      }
+      // Fallback: if no keyword match, take the longest paragraph as description
+      if (!description && allParagraphs.length > 0) {
+        description = allParagraphs.reduce((a, b) => a.length >= b.length ? a : b);
+      }
+
+      // ── Extract school name from description ──
+      let extractedSchool = null;
+      let extractedCity = null;
+      let extractedState = null;
+
+      if (description) {
+        const d = description;
+
+        // Pattern 1: "on the campus of [School Name]"
+        // Pattern 2: "held at [School Name/Location]"
+        // Pattern 3: "at the [School Name]"
+        // Pattern 4: "[Name] Football Camps are ... [School] ... in [City], [State]"
+        const schoolPatterns = [
+          /(?:on the campus of|campus of)\s+(?:the\s+)?([A-Z][A-Za-z\s.&'-]+?)(?:\s+in\s+|\s*[,.]|\s+and\b)/,
+          /(?:held at|held on)\s+(?:the\s+)?([A-Z][A-Za-z\s.&'-]+?(?:University|College|Institute|Academy|School))(?:\s|[,.])/,
+          /(?:led by|run by)\s+(?:the\s+)?([A-Z][A-Za-z\s.&'-]+?(?:University|College|Institute))\s+(?:football|coaching)/i,
+          /(?:University of [A-Z][A-Za-z\s.&'-]+|[A-Z][A-Za-z\s.&'-]+ University|[A-Z][A-Za-z\s.&'-]+ College)/,
+        ];
+
+        for (const pat of schoolPatterns) {
+          const m = pat.exec(d);
+          if (m) {
+            extractedSchool = (m[1] || m[0]).trim()
+              .replace(/\s+/g, " ")
+              .replace(/[.,;:!]+$/, "")
+              .trim();
+            if (extractedSchool.length > 3) break;
+            extractedSchool = null;
+          }
+        }
+
+        // Extract "in City, ST" or "in City, State"
+        const cityStateMatch = /\bin\s+([A-Z][A-Za-z\s.'-]+),\s*([A-Z]{2}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/.exec(d);
+        if (cityStateMatch) {
+          extractedCity = cityStateMatch[1].trim();
+          extractedState = cityStateMatch[2].trim();
+        }
+      }
+
+      // ── Extract logo URL ──
+      let logoUrl = null;
+      const reLogoImg = /<img[^>]*src="(https:\/\/s3\.amazonaws\.com\/images\.ryzer\.com\/[^"]+)"[^>]*>/gi;
+      let lm;
+      while ((lm = reLogoImg.exec(windowHtml)) !== null) {
+        logoUrl = lm[1];
       }
 
       // Normalize URL
@@ -111,29 +181,24 @@ Deno.serve(async (req) => {
         else url = "https://www.footballcampsusa.com/" + url.replace(/^\//, "");
       }
 
-      // Extract logo from nearby img tags (Ryzer S3 logos)
-      let logoUrl = null;
-      const reLogoImg = /<img[^>]*src="(https:\/\/s3\.amazonaws\.com\/images\.ryzer\.com\/[^"]+)"[^>]*>/gi;
-      let lm;
-      while ((lm = reLogoImg.exec(windowHtml)) !== null) {
-        logoUrl = lm[1]; // take the last/closest one
-      }
-
       programs.push({
         name: name || "(unknown)",
         url: url || null,
         logo_url: logoUrl || null,
+        description: description || null,
+        extracted_school: extractedSchool || null,
+        extracted_city: extractedCity || null,
+        extracted_state: extractedState || null,
       });
     }
 
-    // Strategy B fallback: if no "View Site" found, try looking for
-    // programContainer or card-like divs with links to *.ryzerevents.com
+    // Strategy B fallback: ryzerevents links
     if (programs.length === 0) {
       parseNotes.push("Trying fallback: ryzerevents.com links");
       const reRyzer = /<a[^>]*href="(https?:\/\/[^"]*ryzerevents\.com[^"]*)"[^>]*>/gi;
       let rm;
       while ((rm = reRyzer.exec(html)) !== null) {
-        programs.push({ name: "(from ryzer link)", url: rm[1], logo_url: null });
+        programs.push({ name: "(from ryzer link)", url: rm[1], logo_url: null, description: null, extracted_school: null, extracted_city: null, extracted_state: null });
       }
       parseNotes.push(`Fallback found ${programs.length} ryzerevents links`);
     }
@@ -148,45 +213,21 @@ Deno.serve(async (req) => {
       deduped.push(p);
     }
 
-    // Raw HTML snippet around first program entry for verification
-    let firstSnippet = null;
-    if (viewSiteUrls.length > 0) {
-      const idx = viewSiteUrls[0].index;
-      const start = Math.max(0, idx - 800);
-      const end = Math.min(html.length, idx + 400);
-      firstSnippet = html.slice(start, end);
-    }
-
-    // Also grab a snippet to understand the card structure
-    let structureSnippet = null;
-    const cardIdx = html.indexOf("programContainer");
-    if (cardIdx >= 0) {
-      structureSnippet = html.slice(Math.max(0, cardIdx - 200), cardIdx + 1200);
-      parseNotes.push(`Found "programContainer" class at index ${cardIdx}`);
-    } else {
-      // Try other class names
-      for (const cls of ["ourprograms", "program-card", "campcard", "school-card", "View Site"]) {
-        const ci = html.indexOf(cls);
-        if (ci >= 0) {
-          structureSnippet = html.slice(Math.max(0, ci - 300), ci + 1200);
-          parseNotes.push(`Found "${cls}" at index ${ci}`);
-          break;
-        }
-      }
-    }
+    // Stats
+    const withDescription = deduped.filter(p => p.description).length;
+    const withExtractedSchool = deduped.filter(p => p.extracted_school).length;
 
     return Response.json({
       ok: true,
       version: VERSION,
-      dryRun,
       htmlLength: htmlLen,
       totalFound: deduped.length,
       totalRaw: programs.length,
+      withDescription,
+      withExtractedSchool,
       sample: deduped.slice(0, 10),
-      allPrograms: dryRun ? deduped : deduped, // always return full list for now
+      allPrograms: deduped,
       parseNotes,
-      firstEntryHtmlSnippet: firstSnippet ? firstSnippet.slice(0, 2000) : null,
-      structureSnippet: structureSnippet ? structureSnippet.slice(0, 2000) : null,
       durationMs: Date.now() - started,
     });
   } catch (err) {
