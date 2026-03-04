@@ -888,19 +888,28 @@ function extractRyzerCampDetails(html, regUrl) {
   var state = null;
   if (locationRaw) {
     var csMatch = /([A-Za-z .'-]{2,}),\s*([A-Z]{2})\b/.exec(locationRaw);
-    if (csMatch) { city = csMatch[1].trim(); state = csMatch[2].trim(); }
+    if (csMatch) {
+      city = csMatch[1].replace(/,+$/, "").trim();
+      state = csMatch[2].trim();
+    }
   }
   if (!city) {
     var locFallback = /Location\s+(.{0,140}?)(?:Event Date|Grades|Register By|Select a price|We Accept|$)/i.exec(text);
     if (locFallback && locFallback[1]) {
       var seg = locFallback[1].indexOf("|") >= 0 ? locFallback[1].split("|").pop().trim() : locFallback[1].trim();
       var csMatch2 = /([A-Za-z .'-]{2,}),\s*([A-Z]{2})\b/.exec(seg);
-      if (csMatch2) { city = csMatch2[1].trim(); state = csMatch2[2].trim(); }
+      if (csMatch2) {
+        city = csMatch2[1].replace(/,+$/, "").trim();
+        state = csMatch2[2].trim();
+      }
     }
   }
 
+  // ── Extract venue from LOCATION section in CampInfo description ──
   var venueName = null;
   var venueAddress = null;
+
+  // Try maps link first (existing logic)
   var addrLinkMatch = /<a[^>]*href="https:\/\/maps[^"]*"[^>]*(?:title="([^"]*)")?[^>]*>([^<]+)<\/a>/i.exec(html);
   if (addrLinkMatch) {
     venueAddress = stripNonAscii(addrLinkMatch[2]).trim() || null;
@@ -909,6 +918,71 @@ function extractRyzerCampDetails(html, regUrl) {
   if (!venueName) {
     var venueDiv = /<h3[^>]*>\s*<strong>\s*Location:?\s*<\/strong>\s*<\/h3>\s*(?:<div[^>]*>)?\s*([^<]+)/i.exec(html);
     if (venueDiv && venueDiv[1]) venueName = stripNonAscii(venueDiv[1]).trim() || null;
+  }
+
+  // Try CampInfo description LOCATION section (most common pattern on Ryzer pages)
+  if (!venueName) {
+    var campInfoHtml = "";
+    var campInfoBlock = /<div class="CampInfo">([\s\S]*?)<\/div>\s*(?:<\/div>|$)/i.exec(html);
+    if (campInfoBlock) campInfoHtml = campInfoBlock[1];
+
+    if (campInfoHtml) {
+      // Look for bold/strong "LOCATION" heading followed by venue text
+      // Pattern 1: <strong>LOCATION</strong>:</span> text  (inline in table cell)
+      var inlineLocMatch = /<strong>\s*LOCATION\s*<\/strong>\s*:?\s*<\/span>([^<]*)/i.exec(campInfoHtml);
+      if (!inlineLocMatch) {
+        // Pattern 1b: <strong>Location</strong>:</span>&nbsp;text
+        inlineLocMatch = /<strong>\s*Location\s*<\/strong>\s*:?\s*<\/span>\s*(?:&nbsp;|\s)*([^<]+)/i.exec(campInfoHtml);
+      }
+      if (inlineLocMatch && inlineLocMatch[1]) {
+        var inlineVal = stripNonAscii(inlineLocMatch[1]).trim();
+        if (inlineVal && inlineVal.length >= 3 && inlineVal.length < 200) {
+          // Check if it looks like an address (has digits) or a venue name
+          if (/^\d/.test(inlineVal)) {
+            venueAddress = inlineVal;
+          } else {
+            venueName = inlineVal;
+          }
+        }
+      }
+
+      // Pattern 2: <p><strong>LOCATION</strong></p><p>venue name<br>address</p>
+      // Or: <p style="..."><strong>LOCATION</strong></p><p style="...">venue<br>addr</p>
+      if (!venueName && !venueAddress) {
+        var locBlockMatch = /<(?:p|div)[^>]*>\s*(?:<[^>]*>)*\s*LOCATION\s*(?:<[^>]*>)*\s*<\/(?:p|div)>\s*<(?:p|div)[^>]*>([\s\S]*?)<\/(?:p|div)>/i.exec(campInfoHtml);
+        if (locBlockMatch && locBlockMatch[1]) {
+          var locContent = locBlockMatch[1];
+          // Split on <br> tags to get lines
+          var locLines = locContent.split(/<br\s*\/?>/i)
+            .map(function(l) { return stripTags(l).replace(/&nbsp;/gi, " ").trim(); })
+            .filter(function(l) { return l.length > 0 && !/^[.,;:!]+$/.test(l); });
+
+          if (locLines.length >= 1) {
+            var firstLine = locLines[0];
+            if (/^\d/.test(firstLine)) {
+              venueAddress = firstLine;
+            } else {
+              venueName = firstLine;
+            }
+          }
+          if (locLines.length >= 2) {
+            var secondLine = locLines[1];
+            if (!venueAddress) {
+              venueAddress = secondLine;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── Fallback: extract city/state from venue_address if missing ──
+  if ((!city || !state) && venueAddress) {
+    var vaCsMatch = /([A-Za-z .'-]{2,}),\s*([A-Z]{2})\b/.exec(venueAddress);
+    if (vaCsMatch) {
+      if (!city) city = vaCsMatch[1].replace(/,+$/, "").trim();
+      if (!state) state = vaCsMatch[2].trim();
+    }
   }
 
   var startDate = null;
