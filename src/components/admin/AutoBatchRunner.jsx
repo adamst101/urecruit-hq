@@ -89,10 +89,11 @@ export default function AutoBatchRunner({
 
       const batchStart = Date.now();
       let data;
+      let rawRes;
       try {
         const callParams = { ...params, [cursorParam]: cursor };
-        const res = await base44.functions.invoke(functionName, callParams);
-        data = res.data || res;
+        rawRes = await base44.functions.invoke(functionName, callParams);
+        data = rawRes.data || rawRes;
       } catch (e) {
         const errMsg = e?.response?.data?.error || e?.message || String(e);
         setLastError(errMsg);
