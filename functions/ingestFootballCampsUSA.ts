@@ -1047,22 +1047,43 @@ function parseFlexibleDates(s) {
 
 // ─── STEP 4: Upsert logic (v3 — skip DB write when no meaningful change) ───
 
+function normalizeForCompare(s) {
+  // Collapse all whitespace, strip non-ASCII, lowercase for comparison only
+  return safeStr(s).replace(/[^\x20-\x7E]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizePriceOptions(po) {
+  // Only compare price values (labels come from scraping and vary between runs)
+  if (!po || !Array.isArray(po) || po.length === 0) return "[]";
+  var prices = po.map(function(o) { return o.price || 0; }).sort(function(a,b) { return a - b; });
+  return JSON.stringify(prices);
+}
+
 function campFieldsChanged(existing, incoming) {
-  var fields = ["camp_name", "start_date", "end_date", "city", "state", "price",
-    "link_url", "source_url", "ryzer_camp_id", "season_year",
-    "venue_name", "venue_address", "grades", "host_org"];
-  for (var i = 0; i < fields.length; i++) {
-    var f = fields[i];
+  // Core structural fields — exact match after safeStr
+  var exactFields = ["camp_name", "start_date", "end_date", "city", "state",
+    "link_url", "source_url", "ryzer_camp_id", "season_year"];
+  for (var i = 0; i < exactFields.length; i++) {
+    var f = exactFields[i];
     if (safeStr(existing[f]) !== safeStr(incoming[f])) return true;
   }
-  // Check price_options array changed
-  var existingPO = JSON.stringify(existing.price_options || []);
-  var incomingPO = JSON.stringify(incoming.price_options || []);
-  if (existingPO !== incomingPO) return true;
-  // Notes: compare trimmed first 497 chars to avoid trivial whitespace diffs
-  var existNotes = safeStr(existing.notes).substring(0, 497).trim();
-  var incomNotes = safeStr(incoming.notes).substring(0, 497).trim();
+  // Price: compare as numbers (null == null, 0 == 0)
+  var ep = existing.price != null ? Number(existing.price) : null;
+  var ip = incoming.price != null ? Number(incoming.price) : null;
+  if (ep !== ip) return true;
+  // Venue / grades / host_org — normalize whitespace for comparison
+  var normFields = ["venue_name", "venue_address", "grades", "host_org"];
+  for (var j = 0; j < normFields.length; j++) {
+    var nf = normFields[j];
+    if (normalizeForCompare(existing[nf]) !== normalizeForCompare(incoming[nf])) return true;
+  }
+  // Price options: compare only prices (labels are noisy scraped text)
+  if (normalizePriceOptions(existing.price_options) !== normalizePriceOptions(incoming.price_options)) return true;
+  // Notes: normalize and compare first 200 chars (scraped descriptions vary in whitespace/encoding)
+  var existNotes = normalizeForCompare(existing.notes).substring(0, 200);
+  var incomNotes = normalizeForCompare(incoming.notes).substring(0, 200);
   if (existNotes !== incomNotes) return true;
+  // INTENTIONALLY NOT comparing: last_seen_at, last_ingested_at, ingestion_status, active
   return false;
 }
 
