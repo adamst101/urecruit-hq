@@ -1,7 +1,7 @@
 // src/pages/Subscribe.jsx
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { CheckCircle2, ArrowRight, Lock } from "lucide-react";
+import { CheckCircle2, ArrowRight, Lock, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
@@ -50,27 +50,16 @@ function safeDecode(x) {
 
 function safeNext(n) {
   const s = safeDecode(n || "");
-  // Only allow internal relative paths
   if (!s) return null;
   if (s.startsWith("http://") || s.startsWith("https://")) return null;
   if (!s.startsWith("/")) return null;
   return s;
 }
 
-function Feature({ children }) {
-  return (
-    <div className="flex items-start gap-2">
-      <CheckCircle2 className="w-4 h-4 mt-0.5" />
-      <span>{children}</span>
-    </div>
-  );
-}
-
 export default function Subscribe() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ Standard contract
   const { isLoading, mode, hasAccess, seasonYear, currentYear, demoYear, accountId } =
     useSeasonAccess();
 
@@ -78,7 +67,6 @@ export default function Subscribe() {
   const force = params.get("force") === "1";
   const source = params.get("source") || "subscribe_page";
 
-  // preserve "next" but sanitize + strip demo flags if present
   const rawNext = params.get("next");
   const next = useMemo(() => {
     const candidate = safeNext(rawNext);
@@ -95,7 +83,6 @@ export default function Subscribe() {
     }
   }, [rawNext]);
 
-  // derive which season we're selling
   const requestedSeason = useMemo(() => {
     const s = params.get("season");
     const n = Number(s);
@@ -107,14 +94,12 @@ export default function Subscribe() {
   // ✅ REQUIRED GUARD: entitled users never see Subscribe
   useEffect(() => {
     if (isLoading) return;
-
-    // If they're entitled, never show Subscribe
     if (mode === "paid" && hasAccess) {
       navigate(next || createPageUrl("Discover"), { replace: true });
     }
   }, [isLoading, mode, hasAccess, next, navigate]);
 
-  // ✅ Subscribe viewed (dedupe) — only for non-entitled experiences
+  // ✅ Subscribe viewed (dedupe)
   useEffect(() => {
     if (isLoading) return;
     if (mode === "paid" && hasAccess) return;
@@ -138,140 +123,162 @@ export default function Subscribe() {
     });
   }, [isLoading, mode, hasAccess, soldYear, source, accountId, force, next, demoYear]);
 
-  // While redirecting paid users, render nothing (prevents flicker)
+  const [openFaq, setOpenFaq] = useState(null);
+
   if (isLoading) return null;
   if (mode === "paid" && hasAccess) return null;
 
+  const handleCheckout = () => {
+    trackEvent({
+      event_name: "checkout_cta_clicked",
+      mode: mode || "demo",
+      season_year: soldYear || null,
+      source,
+      account_id: accountId || null,
+      force: force ? 1 : 0,
+      next: next || null,
+      has_access: !!hasAccess,
+    });
+
+    const targetNext = next || createPageUrl("Profile");
+    const checkoutUrl =
+      createPageUrl("Checkout") +
+      `?season=${encodeURIComponent(soldYear || "")}` +
+      `&source=${encodeURIComponent(source)}` +
+      `&next=${encodeURIComponent(targetNext)}`;
+
+    navigate(checkoutUrl);
+  };
+
+  const handleKeepDemo = () => {
+    trackEvent({
+      event_name: "subscribe_keep_demo_clicked",
+      mode: mode || "demo",
+      season_year: soldYear || null,
+      source,
+      account_id: accountId || null,
+      force: force ? 1 : 0,
+      next: next || null,
+      has_access: !!hasAccess,
+    });
+
+    if (next) navigate(next);
+    else navigate(createPageUrl("Discover"));
+  };
+
+  const faqs = [
+    { q: "Can I add multiple kids?", a: "Yes — one email can manage multiple athletes under one subscription." },
+    { q: "Do I need to create a profile first?", a: "No — you create athlete profiles after purchase. Buy first, set up later." },
+    { q: "What does "Demo" mean?", a: "Demo shows last season's data so you can explore the platform. Subscribe to unlock current camps." },
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-50 p-4">
-      <div className="max-w-md mx-auto space-y-4">
-        <div className="pt-2">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-deep-navy">Subscribe</h1>
+    <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
-            {mode === "demo" ? (
-              <Badge className="bg-slate-900 text-white">Demo {demoYear || ""}</Badge>
-            ) : (
-              <Badge className="bg-emerald-700 text-white">Member</Badge>
-            )}
-          </div>
+      {/* ── NAV ── */}
+      <nav style={{ borderBottom: "1px solid #1f2937", padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1100, margin: "0 auto" }}>
+        <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#9ca3af" }}>URECRUIT HQ</span>
+        {next && (
+          <button onClick={() => navigate(next)} style={{ background: "none", border: "1px solid #1f2937", borderRadius: 8, padding: "6px 14px", fontSize: 13, color: "#9ca3af", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            <ArrowLeft style={{ width: 14, height: 14 }} /> Back
+          </button>
+        )}
+      </nav>
 
-          <p className="text-slate-600 mt-1">
-            Unlock the current season ({soldYear || "—"}) and planning tools.
-          </p>
+      {/* ── HERO ── */}
+      <section style={{ textAlign: "center", padding: "64px 24px 40px", maxWidth: 600, margin: "0 auto" }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 3, color: "#e8a020", textTransform: "uppercase", marginBottom: 16 }}>
+          SEASON PASS {soldYear}
         </div>
+        <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(40px, 6vw, 64px)", lineHeight: 0.95, margin: 0, color: "#f9fafb", letterSpacing: 1 }}>
+          UNLOCK EVERY CAMP.<br />ONE SEASON. ONE PRICE.
+        </h1>
+        <p style={{ color: "#9ca3af", fontSize: 16, marginTop: 20, lineHeight: 1.6 }}>
+          Everything you need to plan the perfect recruiting camp sequence.
+        </p>
+      </section>
 
-        <Card className="p-4 border-amber-200 bg-amber-50">
-          <div className="flex items-start gap-3">
-            <Lock className="w-5 h-5 text-amber-700 mt-0.5" />
-            <div className="flex-1">
-              <div className="font-semibold text-amber-900">Season Pass</div>
-              <div className="text-sm text-amber-900/80 mt-1">
-                Current-year camp data + full planning experience for families.
-              </div>
+      {/* ── PRICING CARD ── */}
+      <section style={{ padding: "0 24px 48px", maxWidth: 480, margin: "0 auto" }}>
+        <div style={{ background: "#111827", borderRadius: 16, overflow: "hidden", border: "1px solid #1f2937" }}>
+          {/* Amber top accent */}
+          <div style={{ height: 4, background: "#e8a020" }} />
 
-              <div className="mt-3 space-y-2 text-sm text-amber-900/90">
-                <Feature>Current-year camps & updates</Feature>
-                <Feature>Unlimited favorites + registrations tracking</Feature>
-                <Feature>Calendar planning overlays & conflict detection</Feature>
-                <Feature>Multi-athlete support (one email, multiple kids)</Feature>
-              </div>
+          <div style={{ padding: "32px 28px" }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#e8a020", letterSpacing: 2, textTransform: "uppercase" }}>Season Pass {soldYear}</div>
 
-              <div className="mt-4 bg-white/70 border border-amber-200 rounded-xl p-3">
-                <div className="flex items-baseline justify-between">
-                  <div className="font-semibold text-amber-900">Season Pass</div>
-                  <div className="text-2xl font-bold text-amber-900">$49</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 12 }}>
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 80, color: "#f9fafb", lineHeight: 1 }}>$49</span>
+              <span style={{ color: "#9ca3af", fontSize: 14 }}>per season</span>
+            </div>
+
+            <div style={{ height: 1, background: "rgba(232,160,32,0.3)", margin: "28px 0" }} />
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {[
+                `Full access to 759 football camps`,
+                "Current season dates & details",
+                "Unlimited favorites & registration tracking",
+                "Calendar view with conflict detection",
+                "Multiple athletes under one account",
+                "Weekly camp updates",
+              ].map(f => (
+                <div key={f} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, color: "#f9fafb" }}>
+                  <span style={{ color: "#e8a020", fontSize: 16, lineHeight: "20px", flexShrink: 0 }}>✓</span>
+                  <span>{f}</span>
                 </div>
-                <div className="text-xs text-amber-900/70 mt-1">
-                  Per season. Add multiple athletes under one email.
-                </div>
-              </div>
+              ))}
+            </div>
 
-              <div className="mt-4 space-y-2">
-                <Button
-                  className="w-full"
-                  onClick={() => {
-                    trackEvent({
-                      event_name: "checkout_cta_clicked",
-                      mode: mode || "demo",
-                      season_year: soldYear || null,
-                      source,
-                      account_id: accountId || null,
-                      force: force ? 1 : 0,
-                      next: next || null,
-                      has_access: !!hasAccess,
-                    });
+            <button onClick={handleCheckout} style={{ width: "100%", background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "16px 0", fontSize: 17, fontWeight: 700, cursor: "pointer", marginTop: 32, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              Get Season Pass — $49 <ArrowRight style={{ width: 18, height: 18 }} />
+            </button>
 
-                    // ✅ Pass season to Checkout so it creates Entitlement for that season
-                    const targetNext = next || createPageUrl("Profile");
-                    const checkoutUrl =
-                      createPageUrl("Checkout") +
-                      `?season=${encodeURIComponent(soldYear || "")}` +
-                      `&source=${encodeURIComponent(source)}` +
-                      `&next=${encodeURIComponent(targetNext)}`;
-
-                    navigate(checkoutUrl);
-                  }}
-                >
-                  Continue to Checkout
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => {
-                    trackEvent({
-                      event_name: "subscribe_keep_demo_clicked",
-                      mode: mode || "demo",
-                      season_year: soldYear || null,
-                      source,
-                      account_id: accountId || null,
-                      force: force ? 1 : 0,
-                      next: next || null,
-                      has_access: !!hasAccess,
-                    });
-
-                    // If a next exists, honor it; otherwise go discover (demo)
-                    if (next) navigate(next);
-                    else navigate(createPageUrl("Discover"));
-                  }}
-                >
-                  Keep Browsing Demo
-                </Button>
-
-                {next ? (
-                  <Button variant="ghost" className="w-full" onClick={() => navigate(next)}>
-                    Back
-                  </Button>
-                ) : null}
-              </div>
-
-              <div className="mt-3 text-xs text-amber-900/70">
-                No athlete profile required before purchase. You’ll add athletes after checkout.
-              </div>
+            <div style={{ textAlign: "center", marginTop: 12 }}>
+              <span style={{ fontSize: 12, color: "#6b7280" }}>🔒 Secure checkout</span>
             </div>
           </div>
-        </Card>
+        </div>
+      </section>
 
-        <Card className="p-4">
-          <div className="font-semibold text-deep-navy">FAQ</div>
-          <div className="mt-2 text-sm text-slate-600 space-y-2">
-            <div>
-              <span className="font-medium text-slate-700">Can I add multiple kids?</span>{" "}
-              Yes — one email can manage multiple athletes.
+      {/* ── DEMO OPTION ── */}
+      <section style={{ textAlign: "center", padding: "0 24px 48px", maxWidth: 480, margin: "0 auto" }}>
+        <p style={{ color: "#6b7280", fontSize: 14 }}>Not ready to commit?</p>
+        <p style={{ color: "#9ca3af", fontSize: 14, marginTop: 4 }}>
+          Try a free demo with {demoYear || "last"} season data
+        </p>
+        <button onClick={handleKeepDemo} style={{ background: "transparent", border: "1px solid #1f2937", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, color: "#f9fafb", cursor: "pointer", marginTop: 12 }}>
+          Access Free Demo →
+        </button>
+      </section>
+
+      {/* ── FAQ ── */}
+      <section style={{ padding: "0 24px 48px", maxWidth: 480, margin: "0 auto" }}>
+        <h3 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#f9fafb", letterSpacing: 1, marginBottom: 16 }}>FAQ</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {faqs.map((f, i) => (
+            <div key={i} style={{ background: "#111827", borderRadius: 10, overflow: "hidden", border: "1px solid #1f2937" }}>
+              <button onClick={() => setOpenFaq(openFaq === i ? null : i)} style={{ width: "100%", background: "none", border: "none", color: "#f9fafb", padding: "14px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>
+                {f.q}
+                {openFaq === i ? <ChevronUp style={{ width: 16, height: 16, color: "#9ca3af" }} /> : <ChevronDown style={{ width: 16, height: 16, color: "#9ca3af" }} />}
+              </button>
+              {openFaq === i && (
+                <div style={{ padding: "0 18px 14px", fontSize: 14, color: "#9ca3af", lineHeight: 1.6 }}>
+                  {f.a}
+                </div>
+              )}
             </div>
-            <div>
-              <span className="font-medium text-slate-700">Do I need to create a profile first?</span>{" "}
-              No — you create athletes after purchase.
-            </div>
-            <div>
-              <span className="font-medium text-slate-700">What does “Demo” mean?</span>{" "}
-              Demo shows last season’s data and blocks write actions.
-            </div>
-          </div>
-        </Card>
-      </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── TRUST BAR ── */}
+      <footer style={{ borderTop: "1px solid #1f2937", padding: "28px 24px", textAlign: "center" }}>
+        <p style={{ fontSize: 13, color: "#6b7280" }}>
+          759 camps · 260 programs · Updated weekly · Independent tool · Not affiliated with camps
+        </p>
+      </footer>
     </div>
   );
 }

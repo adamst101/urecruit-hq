@@ -1,7 +1,7 @@
 // src/pages/Workspace.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarDays, Search, User, Shield, LogOut } from "lucide-react";
+import { CalendarDays, Search, User, Shield, LogOut, Star, ArrowRight } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 
@@ -21,7 +21,13 @@ const ROUTES = {
   Calendar: "/Calendar",
   Profile: "/Profile",
   Subscribe: "/Subscribe",
+  MyCamps: "/MyCamps",
   AdminImport: "/AdminImport",
+  AdminOps: "/AdminOps",
+  CampsManager: "/CampsManager",
+  SchoolsManager: "/SchoolsManager",
+  TestFunctions: "/TestFunctions",
+  GenerateDemoCamps: "/GenerateDemoCamps",
 };
 
 // --- tiny helpers ---
@@ -65,6 +71,9 @@ async function safeLogout() {
   return false;
 }
 
+const LOGO_URL =
+  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
+
 export default function Workspace() {
   const nav = useNavigate();
 
@@ -73,6 +82,8 @@ export default function Workspace() {
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
 
   const [meEmail, setMeEmail] = useState("");
+  const [meName, setMeName] = useState("");
+  const [logoOk, setLogoOk] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
@@ -81,6 +92,7 @@ export default function Workspace() {
       const me = await safeMe();
       if (cancelled) return;
       setMeEmail(String(me?.email || me?.user_metadata?.email || "").toLowerCase());
+      setMeName(String(me?.full_name || me?.user_metadata?.full_name || ""));
     })();
     return () => {
       cancelled = true;
@@ -97,17 +109,17 @@ export default function Workspace() {
 
   const isMember = !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
   const memberSeason = Number(season?.entitlement?.season_year) || season?.seasonYear || null;
+  const currentYear = season?.currentYear || new Date().getFullYear();
+  const demoYear = season?.demoYear || (currentYear - 1);
 
   async function handleLogout() {
     if (loggingOut) return;
     setLoggingOut(true);
 
-    // ✅ Clear demo stickiness (preferred: shared helper) + legacy keys
     try {
-      clearDemoMode(); // clears demoMode_v1 (current)
+      clearDemoMode();
     } catch {}
 
-    // Legacy cleanup (safe to keep for backward compatibility)
     try {
       sessionStorage.removeItem("demo_mode_v1");
     } catch {}
@@ -120,149 +132,149 @@ export default function Workspace() {
 
     await safeLogout();
 
-    // Hard redirect to avoid stale in-memory state after auth changes
     window.location.assign(`${window.location.origin}${ROUTES.Home}?signin=1&src=logout`);
   }
 
-  if (loading) return <div className="min-h-screen bg-slate-50" />;
+  if (loading) return <div style={{ minHeight: "100vh", background: "#0a0e1a" }} />;
+
+  const displayName = meName || athleteProfile?.athlete_name || meEmail || "Athlete";
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-10">
-      <div className="max-w-5xl mx-auto px-4 pt-8">
-        {/* Header row with logout */}
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <div className="text-3xl font-extrabold text-brand">Workspace</div>
-            <div className="text-sm text-slate-600 mt-1">
-              Your home base after login — jump into Discover, Calendar, and Profile.
-            </div>
+    <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
-            {meEmail ? (
-              <div className="mt-1 text-xs text-slate-500">
-                Signed in as <span className="font-medium">{meEmail}</span>
-              </div>
-            ) : null}
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              {isMember ? (
-                <Badge className="bg-emerald-700 text-white">Member</Badge>
-              ) : (
-                <Badge className="bg-slate-900 text-white">Demo</Badge>
-              )}
-
-              {memberSeason ? (
-                <Badge className="bg-white text-slate-700 border border-slate-200">
-                  Season {memberSeason}
-                </Badge>
-              ) : null}
-            </div>
+      {/* ── TOP BAR ── */}
+      <div style={{ background: "rgba(10,14,26,0.95)", borderBottom: "1px solid #1f2937", position: "sticky", top: 0, zIndex: 50, backdropFilter: "blur(12px)" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={() => nav(ROUTES.Home)}>
+            {logoOk && <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 28, width: "auto" }} />}
+            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#9ca3af" }}>URECRUIT HQ</span>
           </div>
 
-          <Button
-            variant="outline"
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className="whitespace-nowrap"
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            {loggingOut ? "Logging out…" : "Log out"}
-          </Button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {isMember ? (
+              <span style={{ background: "rgba(232,160,32,0.15)", color: "#e8a020", fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 20, border: "1px solid rgba(232,160,32,0.3)" }}>MEMBER</span>
+            ) : (
+              <span style={{ background: "rgba(156,163,175,0.1)", color: "#9ca3af", fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, border: "1px solid #1f2937" }}>DEMO</span>
+            )}
+            {memberSeason && (
+              <span style={{ fontSize: 12, color: "#6b7280" }}>Season {memberSeason}</span>
+            )}
+            <button onClick={handleLogout} disabled={loggingOut} style={{ background: "none", border: "1px solid #1f2937", borderRadius: 8, padding: "6px 14px", fontSize: 13, color: "#9ca3af", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+              <LogOut style={{ width: 14, height: 14 }} />
+              {loggingOut ? "…" : "Log out"}
+            </button>
+          </div>
         </div>
+      </div>
 
-        {/* Primary tiles */}
-        <div className="grid md:grid-cols-3 gap-4">
-          <Card className="p-5">
-            <div className="flex items-center gap-2 font-semibold text-deep-navy">
-              <Search className="w-4 h-4" />
-              Discover
-            </div>
-            <div className="mt-1 text-sm text-slate-600">
-              Browse camps for your season. Filter by position and school.
-            </div>
-            <div className="mt-4">
-              <Button className="w-full btn-brand" onClick={() => nav(ROUTES.Discover)}>
-                Go to Discover
-              </Button>
-            </div>
-          </Card>
-
-          <Card className="p-5">
-            <div className="flex items-center gap-2 font-semibold text-deep-navy">
-              <CalendarDays className="w-4 h-4" />
-              Calendar
-            </div>
-            <div className="mt-1 text-sm text-slate-600">See your plan and avoid date conflicts.</div>
-            <div className="mt-4">
-              <Button className="w-full btn-brand" onClick={() => nav(ROUTES.Calendar)}>
-                Go to Calendar
-              </Button>
-            </div>
-          </Card>
-
-          <Card className="p-5">
-            <div className="flex items-center gap-2 font-semibold text-deep-navy">
-              <User className="w-4 h-4" />
-              Profile
-            </div>
-            <div className="mt-1 text-sm text-slate-600">
-              Add athletes and manage your athlete profile setup.
-            </div>
-            <div className="mt-4">
-              <Button className="w-full btn-brand" onClick={() => nav(ROUTES.Profile)}>
-                {athleteId ? "View Profile" : "Create Athlete Profile"}
-              </Button>
-            </div>
-          </Card>
+      {/* ── HERO GREETING ── */}
+      <section style={{ padding: "48px 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <div style={{ width: 3, height: 32, background: "#e8a020", borderRadius: 2 }} />
+          <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(36px, 5vw, 56px)", lineHeight: 1, margin: 0, letterSpacing: 1 }}>YOUR RECRUITING HQ</h1>
         </div>
+        {meEmail && <p style={{ color: "#9ca3af", fontSize: 14, margin: 0 }}>Welcome back, {displayName}</p>}
+        <p style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>
+          {isMember
+            ? `Season ${memberSeason} · Active`
+            : `Demo Mode · ${demoYear} Season`}
+        </p>
 
-        {/* Status callout */}
-        <Card className="mt-4 p-4 border-slate-200 bg-white">
-          {isMember ? (
-            <div className="text-sm text-slate-700">
-              <b>Member access is active.</b> You’re seeing current-season data based on your entitlement.
+        {/* Demo banner */}
+        {!isMember && (
+          <div style={{ marginTop: 20, background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.25)", borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#e8a020" }}>📋 You're viewing {demoYear} demo data</div>
+              <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 4 }}>Subscribe to unlock {currentYear} camps, save favorites, and track registrations.</div>
             </div>
-          ) : (
-            <div className="text-sm text-slate-700">
-              <b>You’re in demo mode.</b> To unlock the current season and save planning items, subscribe.
-              <div className="mt-3">
-                <Button
-                  className="btn-brand"
-                  onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_cta`)}
-                >
-                  View pricing / Subscribe
-                </Button>
-              </div>
-            </div>
-          )}
-        </Card>
+            <button onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_banner`)} style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+              Subscribe Now <ArrowRight style={{ width: 16, height: 16 }} />
+            </button>
+          </div>
+        )}
+      </section>
 
-        {/* Admin tools (only for allowlisted accounts) */}
-        {isAdmin ? (
-          <div className="mt-6">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-2">
-              <Shield className="w-4 h-4" />
-              Admin tools
-            </div>
+      {/* ── MAIN TILES ── */}
+      <section style={{ padding: "0 24px 40px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+          <WorkspaceTile icon="🔍" title="DISCOVER CAMPS" desc="Browse football camps by division, state, and date" btnLabel="Go →" onClick={() => nav(ROUTES.Discover)} />
+          <WorkspaceTile icon="📅" title="MY CALENDAR" desc="View your schedule · Spot conflicts" btnLabel="Go →" onClick={() => nav(ROUTES.Calendar)} />
+          <WorkspaceTile icon="⭐" title="MY CAMPS" desc="Favorites & registrations" btnLabel="Go →" onClick={() => nav(ROUTES.MyCamps)} />
+          <WorkspaceTile
+            icon="👤"
+            title="ATHLETE PROFILE"
+            desc={athleteId ? (athleteProfile?.athlete_name || "Profile set up") : "Set up your athlete profile"}
+            btnLabel={athleteId ? "View Profile" : "Create Profile"}
+            onClick={() => nav(ROUTES.Profile)}
+            highlight={!athleteId}
+          />
+        </div>
+      </section>
 
-            <div className="grid md:grid-cols-3 gap-4">
-              <Card className="p-5">
-                <div className="font-semibold text-deep-navy">Admin Import</div>
-                <div className="mt-1 text-sm text-slate-600">
-                  Promote CampDemo → Camp and run ingestion utilities.
-                </div>
-                <div className="mt-4">
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => nav(ROUTES.AdminImport)}
-                  >
-                    Go to Admin Import
-                  </Button>
-                </div>
-              </Card>
+      {/* ── SUBSCRIBE CALLOUT (only if not member) ── */}
+      {!isMember && (
+        <section style={{ padding: "0 24px 48px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ background: "#111827", border: "2px solid #e8a020", borderRadius: 16, padding: "36px 28px", textAlign: "center" }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "#f9fafb", letterSpacing: 1 }}>
+              🔓 UNLOCK THE {currentYear} SEASON
+            </div>
+            <p style={{ color: "#9ca3af", fontSize: 15, marginTop: 12, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
+              You're in demo mode. Subscribe for $49 to access current camps, save favorites, and track registrations.
+            </p>
+            <button onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_cta`)} style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 16, fontWeight: 700, cursor: "pointer", marginTop: 24 }}>
+              Subscribe — $49/season
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* ── ADMIN SECTION ── */}
+      {isAdmin && (
+        <section style={{ padding: "0 24px 48px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "24px 20px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <Shield style={{ width: 16, height: 16, color: "#9ca3af" }} />
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#9ca3af", letterSpacing: 1 }}>ADMIN TOOLS</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+              {[
+                { label: "Admin Ops", route: ROUTES.AdminOps },
+                { label: "Camps Manager", route: ROUTES.CampsManager },
+                { label: "Schools Manager", route: ROUTES.SchoolsManager },
+                { label: "Ingest Runner", route: ROUTES.TestFunctions },
+                { label: "Demo Generator", route: ROUTES.GenerateDemoCamps },
+              ].map(t => (
+                <button key={t.label} onClick={() => nav(t.route)} style={{ background: "#0a0e1a", border: "1px solid #1f2937", borderRadius: 8, padding: "12px 16px", color: "#9ca3af", fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left" }}>
+                  {t.label} →
+                </button>
+              ))}
             </div>
           </div>
-        ) : null}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function WorkspaceTile({ icon, title, desc, btnLabel, onClick, highlight }) {
+  return (
+    <div style={{
+      background: "#111827", border: highlight ? "1px solid #e8a020" : "1px solid #1f2937",
+      borderRadius: 14, padding: "24px 22px", display: "flex", flexDirection: "column", justifyContent: "space-between",
+      transition: "border-color 0.15s, transform 0.15s", cursor: "pointer",
+    }}
+      onClick={onClick}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = highlight ? "#e8a020" : "#1f2937"; e.currentTarget.style.transform = "translateY(0)"; }}
+    >
+      <div>
+        <div style={{ fontSize: 28, marginBottom: 12 }}>{icon}</div>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#f9fafb", letterSpacing: 1 }}>{title}</div>
+        <p style={{ fontSize: 14, color: "#9ca3af", marginTop: 8, lineHeight: 1.5 }}>{desc}</p>
+      </div>
+      <div style={{ marginTop: 20 }}>
+        <span style={{ color: "#e8a020", fontSize: 14, fontWeight: 700 }}>{btnLabel}</span>
       </div>
     </div>
   );
