@@ -964,15 +964,15 @@ function extractRyzerCampDetails(html, regUrl) {
 
   // ── Description from .CampInfo div (rich text), fallback to meta ──
   var desc = null;
-  var campInfoMatch = /<div class="CampInfo">([\s\S]*?)<\/div>\s*(?:<\/div>|$)/i.exec(html);
-  if (campInfoMatch && campInfoMatch[1]) {
-    desc = stripTags(campInfoMatch[1]).trim();
+  var campInfoDescMatch = /<div class="CampInfo">([\s\S]*?)<\/div>\s*(?:<\/div>|$)/i.exec(html);
+  if (campInfoDescMatch && campInfoDescMatch[1]) {
+    desc = stripTags(campInfoDescMatch[1]).trim();
     if (desc.length > 500) desc = desc.substring(0, 497) + "...";
   }
   if (!desc || desc.length < 10) {
     var metaDesc = /<meta[^>]*name="description"[^>]*content="([^"]*)"/i.exec(html);
     if (metaDesc && metaDesc[1]) {
-      desc = stripNonAscii(metaDesc[1]);
+      desc = decodeHtmlEntities(stripTags(metaDesc[1])).trim();
       if (desc.length > 500) desc = desc.substring(0, 497) + "...";
     }
   }
