@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { base44 } from "@/api/base44Client";
+
+const School = base44.entities.School;
 
 const FIELDS = [
   { key: "school_name",             label: "School Name",            type: "string",  width: 260, required: true },
@@ -199,7 +202,6 @@ export default function SchoolsManager() {
     setLoading(true);
     const load = async () => {
       try {
-        const { School } = await import("@/entities/School");
         const all = await School.filter({}, "school_name", 99999);
         setSchools(all || []);
       } catch (e) {
@@ -252,7 +254,6 @@ export default function SchoolsManager() {
     const key = `${rowId}:${fieldKey}`;
     setSaving(s => ({ ...s, [key]: true }));
     try {
-      const { School } = await import("@/entities/School");
       await School.update(rowId, { [fieldKey]: newValue });
       setSchools(prev => prev.map(s => s.id === rowId ? { ...s, [fieldKey]: newValue } : s));
       setSaveMsg("Saved ✓");
