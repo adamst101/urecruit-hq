@@ -9,7 +9,7 @@
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 
-var VERSION = "ingestFootballCampsUSA_v5";
+var VERSION = "ingestFootballCampsUSA_v6";
 var FOOTBALL_SPORT_ID = "69407156fe19c3615944865f";
 var MATCH_CONFIDENCE_THRESHOLD = 0.7;
 var SOURCE_PLATFORM = "footballcampsusa";
@@ -1457,6 +1457,17 @@ Deno.serve(async function(req) {
     var match2 = prog2._match;
     stats.schoolsProcessed++;
 
+    // ── Program blocklist — skip entire program site ──
+    if (PROGRAM_BLOCKLIST.indexOf(lc(prog2.name)) >= 0) {
+      stats.programBlocked = (stats.programBlocked || 0) + 1;
+      schoolResults.push({
+        program_name: prog2.name, url: prog2.url, school_id: null, school_name: null,
+        match_method: null, match_confidence: 0, camps_found: 0, camps_ingested: 0,
+        error: "program_blocklist",
+      });
+      continue;
+    }
+
     if (match2.school_id && match2.confidence >= MATCH_CONFIDENCE_THRESHOLD) {
       stats.schoolsMatched++;
     } else {
@@ -1562,6 +1573,15 @@ Deno.serve(async function(req) {
       }
 
       if (!campName) campName = prog2.name + " Camp";
+
+      // ── "Family" prefix filter (catches "Family | ..." camp names) ──
+      if (campName && /^Family\s*\|/i.test(campName)) {
+        stats.skippedWrongSport++;
+        if (sampleErrors.length < 10) {
+          sampleErrors.push({ source_key: sourceKey, reason: "family_prefix", camp_name: campName });
+        }
+        continue;
+      }
 
       // ── Non-football keyword filter ──
       var badKeyword = containsNonFootballKeyword(campName)
