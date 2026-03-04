@@ -627,6 +627,15 @@ export default function Discover() {
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
+        {/* ← HQ navigation */}
+        <button
+          type="button"
+          onClick={() => nav("/Workspace")}
+          className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
+        >
+          ← HQ
+        </button>
+
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-2xl font-bold text-[#f9fafb]">Discover</div>
@@ -711,20 +720,3 @@ export default function Discover() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

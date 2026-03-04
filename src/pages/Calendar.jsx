@@ -289,18 +289,18 @@ export default function Calendar() {
   const title = "Calendar";
 
   const renderBody = () => {
-    if (loading) return <div className="py-10 text-center text-slate-500">Loading…</div>;
+    if (loading) return <div className="py-10 text-center text-[#9ca3af]">Loading…</div>;
 
     // Paid mode needs profile to be meaningful
     if (isPaid && !athleteId) {
       return (
-        <Card className="p-5 border-slate-200">
-          <div className="text-lg font-semibold text-deep-navy">Complete your athlete profile</div>
-          <div className="mt-1 text-sm text-slate-600">
+        <Card className="p-5 border-[#1f2937] bg-[#111827]">
+          <div className="text-lg font-semibold text-[#f9fafb]">Complete your athlete profile</div>
+          <div className="mt-1 text-sm text-[#9ca3af]">
             Your paid workspace needs an athlete profile to personalize camps, targets, and intent.
           </div>
           <div className="mt-4">
-            <Button onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
+            <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
           </div>
         </Card>
       );
@@ -309,13 +309,13 @@ export default function Calendar() {
     // ✅ Paid mode: athlete exists but sport missing
     if (paidMissingSport) {
       return (
-        <Card className="p-5 border-slate-200">
-          <div className="text-lg font-semibold text-deep-navy">Complete your profile</div>
-          <div className="mt-1 text-sm text-slate-600">
+        <Card className="p-5 border-[#1f2937] bg-[#111827]">
+          <div className="text-lg font-semibold text-[#f9fafb]">Complete your profile</div>
+          <div className="mt-1 text-sm text-[#9ca3af]">
             Add your sport so Calendar can lock results to the right camps.
           </div>
           <div className="mt-4">
-            <Button onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
+            <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
           </div>
         </Card>
       );
@@ -323,17 +323,17 @@ export default function Calendar() {
 
     if (!rows.length) {
       return (
-        <Card className="p-5 border-slate-200">
-          <div className="text-lg font-semibold text-deep-navy">No camps found</div>
-          <div className="mt-1 text-sm text-slate-600">
+        <Card className="p-5 border-[#1f2937] bg-[#111827]">
+          <div className="text-lg font-semibold text-[#f9fafb]">No camps found</div>
+          <div className="mt-1 text-sm text-[#9ca3af]">
             Try clearing filters or widening your date range.
           </div>
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" onClick={clearFilters}>
+            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={clearFilters}>
               <XCircle className="w-4 h-4 mr-2" />
               Clear filters
             </Button>
-            <Button onClick={openFiltersOrProfile}>
+            <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={openFiltersOrProfile}>
               <SlidersHorizontal className="w-4 h-4 mr-2" />
               {paidMissingSport ? "Complete Profile" : "Edit filters"}
             </Button>
@@ -406,19 +406,19 @@ export default function Calendar() {
   };
 
   return (
-    <div className="min-h-screen bg-surface">
+    <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb]">
       <div className="max-w-md mx-auto px-4 pt-5 pb-24">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <div className="text-xl font-bold text-deep-navy">{title}</div>
-            <div className="text-xs text-slate-500">
+            <div className="text-xl font-bold text-[#f9fafb]">{title}</div>
+            <div className="text-xs text-[#9ca3af]">
               {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
             </div>
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={openFiltersOrProfile}>
+            <Button variant="outline" onClick={openFiltersOrProfile} className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#111827]">
               <SlidersHorizontal className="w-4 h-4 mr-2" />
               {paidMissingSport ? "Complete Profile" : "Filter"}
             </Button>
@@ -434,42 +434,42 @@ export default function Calendar() {
             nf?.startDate ||
             nf?.endDate) ? (
             <>
-              <span className="text-xs text-slate-500">Active filters:</span>
+              <span className="text-xs text-[#9ca3af]">Active filters:</span>
 
               {nf?.state && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
+                <span className="text-xs px-2 py-1 rounded bg-[#111827] text-[#f9fafb] border border-[#1f2937]">
                   State: {nf.state}
                 </span>
               )}
 
               {(nf?.divisions || []).length > 0 && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
+                <span className="text-xs px-2 py-1 rounded bg-[#111827] text-[#f9fafb] border border-[#1f2937]">
                   Divisions: {nf.divisions.length}
                 </span>
               )}
 
               {(nf?.positionIds || []).length > 0 && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
+                <span className="text-xs px-2 py-1 rounded bg-[#111827] text-[#f9fafb] border border-[#1f2937]">
                   Positions: {nf.positionIds.length}
                 </span>
               )}
 
               {(nf?.startDate || nf?.endDate) && (
-                <span className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">
+                <span className="text-xs px-2 py-1 rounded bg-[#111827] text-[#f9fafb] border border-[#1f2937]">
                   Dates: {nf.startDate || "…"} → {nf.endDate || "…"}
                 </span>
               )}
 
               <button
                 type="button"
-                className="text-xs underline text-slate-600"
+                className="text-xs underline text-[#e8a020]"
                 onClick={clearFilters}
               >
                 Clear
               </button>
             </>
           ) : (
-            <span className="text-xs text-slate-500">No filters applied.</span>
+            <span className="text-xs text-[#9ca3af]">No filters applied.</span>
           )}
         </div>
 
@@ -496,5 +496,3 @@ export default function Calendar() {
     </div>
   );
 }
-
-

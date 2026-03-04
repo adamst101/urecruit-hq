@@ -124,6 +124,7 @@ export default function AuthRedirect() {
     }
 
     // Authenticated: clear demo stickiness (user chose to log in)
+    try { sessionStorage.removeItem("demoMode_v1"); } catch {}
     try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
     try { sessionStorage.removeItem("demo_year_v1"); } catch {}
 
