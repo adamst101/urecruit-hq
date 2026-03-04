@@ -47,11 +47,18 @@ const TOOLS = [
         color: "#1a6b5a",
       },
       {
-        title: "Test Functions",
-        description: "Run and test backend functions manually with custom parameters.",
+        title: "Ingest Runner",
+        description: "Auto-batch ingestCampsUSA to completion. Run full ingest with progress tracking.",
         route: "/TestFunctions",
         icon: "⚗️",
         color: "#3a5a6b",
+      },
+      {
+        title: "Generate Demo Camps",
+        description: "Full auto-batch ingest for demo / seed data generation.",
+        route: "/GenerateDemoCamps",
+        icon: "🎲",
+        color: "#5a3a6b",
       },
       {
         title: "Block List",
