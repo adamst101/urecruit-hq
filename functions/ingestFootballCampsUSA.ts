@@ -952,7 +952,6 @@ function extractRyzerCampDetails(html, regUrl) {
         var locBlockMatch = /<(?:p|div)[^>]*>\s*(?:<[^>]*>)*\s*LOCATION\s*(?:<[^>]*>)*\s*<\/(?:p|div)>\s*<(?:p|div)[^>]*>([\s\S]*?)<\/(?:p|div)>/i.exec(campInfoHtml);
         if (locBlockMatch && locBlockMatch[1]) {
           var locContent = locBlockMatch[1];
-          // Split on <br> tags to get lines
           var locLines = locContent.split(/<br\s*\/?>/i)
             .map(function(l) { return stripTags(l).replace(/&nbsp;/gi, " ").trim(); })
             .filter(function(l) { return l.length > 0 && !/^[.,;:!]+$/.test(l); });
@@ -970,6 +969,28 @@ function extractRyzerCampDetails(html, regUrl) {
             if (!venueAddress) {
               venueAddress = secondLine;
             }
+          }
+        }
+      }
+
+      // Pattern 3: <p><strong>Location</strong><br>venue text</p> (heading + venue in same <p>)
+      if (!venueName && !venueAddress) {
+        var samePMatch = /<(?:p|div)[^>]*>\s*<strong>\s*Location\s*<\/strong>\s*<br\s*\/?>([\s\S]*?)<\/(?:p|div)>/i.exec(campInfoHtml);
+        if (samePMatch && samePMatch[1]) {
+          var spLines = samePMatch[1].split(/<br\s*\/?>/i)
+            .map(function(l) { return stripTags(l).replace(/&nbsp;/gi, " ").trim(); })
+            .filter(function(l) { return l.length > 0 && !/^[.,;:!]+$/.test(l); });
+
+          if (spLines.length >= 1) {
+            var spFirst = spLines[0];
+            if (/^\d/.test(spFirst)) {
+              venueAddress = spFirst;
+            } else {
+              venueName = spFirst;
+            }
+          }
+          if (spLines.length >= 2 && !venueAddress) {
+            venueAddress = spLines[1];
           }
         }
       }
