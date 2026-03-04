@@ -506,6 +506,30 @@ export default function SchoolsManager() {
             <tbody>
               {pageRows.map((row, ri) => (
                 <tr key={row.id} style={{ background: ri % 2 === 0 ? "#0d1520" : "#101b2a" }}>
+                  <td style={{ ...styles.td, width: 50, minWidth: 50, textAlign: "center", padding: "4px 6px" }}>
+                    {saving[`del:${row.id}`] ? (
+                      <span style={{ color: "#e05c5c", fontSize: 12 }}>…</span>
+                    ) : confirmDelete === row.id ? (
+                      <span style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                        <button
+                          onClick={() => handleDelete(row.id)}
+                          style={{ background: "none", border: "none", color: "#4caf82", cursor: "pointer", fontSize: 16, padding: "2px 4px", lineHeight: 1 }}
+                          title="Confirm delete"
+                        >✓</button>
+                        <button
+                          onClick={() => setConfirmDelete(null)}
+                          style={{ background: "none", border: "none", color: "#e05c5c", cursor: "pointer", fontSize: 16, padding: "2px 4px", lineHeight: 1 }}
+                          title="Cancel"
+                        >✗</button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDelete(row.id)}
+                        style={{ background: "none", border: "none", color: "#5a3030", cursor: "pointer", fontSize: 15, padding: "2px 4px", lineHeight: 1 }}
+                        title="Delete this school"
+                      >⌫</button>
+                    )}
+                  </td>
                   {visFields.map(f => {
                     const isEditing = editing?.rowId === row.id && editing?.fieldKey === f.key;
                     const isSaving  = saving[`${row.id}:${f.key}`];
