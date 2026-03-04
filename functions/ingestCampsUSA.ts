@@ -1,15 +1,13 @@
 // functions/ingestCampsUSA.js
 // Generic multi-sport ingest: reads SportIngestConfig, then runs the same
-// directory → school-match → Ryzer-crawl → upsert pipeline as v7.
+// directory → school-match → Ryzer-crawl → upsert pipeline.
 //
-// Usage:
-//   { "sport_key": "football", "step": "matchSchools" }
-//   { "sport_key": "football", "dryRun": true, "maxSchools": 5 }
-//   { "sport_key": "football", "dryRun": false, "maxSchools": 10 }
+// v2: Stealth mode — realistic headers, randomized delays, rate limiting,
+//     skip-already-ingested, consecutive error circuit breaker.
 
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 
-var VERSION = "ingestCampsUSA_v1";
+var VERSION = "ingestCampsUSA_v2";
 var MATCH_CONFIDENCE_THRESHOLD = 0.7;
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -22,6 +20,7 @@ function json(obj, status) {
 }
 
 function sleep(ms) { return new Promise(function(r) { setTimeout(r, Math.max(0, Number(ms) || 0)); }); }
+function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 
 function safeStr(x) {
   if (x === null || x === undefined) return "";
@@ -94,22 +93,187 @@ function normalizeState(s) {
   return v;
 }
 
-async function fetchWithTimeout(url, timeoutMs) {
+// ─── Stealth fetch infrastructure ───────────────────────────────────────────
+
+var BROWSER_HEADERS_BASE = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apcompat/q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Connection": "keep-alive",
+  "Upgrade-Insecure-Requests": "1",
+  "Cache-Control": "max-age=0",
+};
+
+// Global rate-limiting state for this run
+var _rateState = {
+  ryzerTotal: 0,           // total ryzer requests this run
+  registerTotal: 0,        // total register.ryzer.com requests this run
+  hourStart: Date.now(),
+  ryzerThisHour: 0,
+  registerThisHour: 0,
+  consecutiveErrors: 0,    // consecutive ryzer errors
+  fetchedUrls: {},         // dedup: never fetch same URL twice per run
+  totalRequests: 0,        // overall request counter for "every Nth" pauses
+  circuitBroken: false,    // true if we hit 3 consecutive errors
+  circuitBrokenReason: "",
+};
+
+var RYZER_HOURLY_LIMIT = 120;
+var REGISTER_HOURLY_LIMIT = 30;
+var CONSECUTIVE_ERROR_LIMIT = 3;
+
+function isRyzerUrl(url) {
+  return /ryzer\.com/i.test(url || "");
+}
+function isRegisterRyzerUrl(url) {
+  return /register\.ryzer\.com/i.test(url || "");
+}
+
+function resetHourlyCountersIfNeeded() {
+  var now = Date.now();
+  if (now - _rateState.hourStart >= 3600000) {
+    _rateState.hourStart = now;
+    _rateState.ryzerThisHour = 0;
+    _rateState.registerThisHour = 0;
+  }
+}
+
+// Adaptive delay: if approaching rate limits, slow down
+function getRateLimitDelay() {
+  resetHourlyCountersIfNeeded();
+  var delay = 0;
+  if (_rateState.ryzerThisHour >= RYZER_HOURLY_LIMIT * 0.8) {
+    delay = Math.max(delay, 15000 + rand(0, 10000)); // 15-25s
+  } else if (_rateState.ryzerThisHour >= RYZER_HOURLY_LIMIT * 0.6) {
+    delay = Math.max(delay, 5000 + rand(0, 5000)); // 5-10s
+  }
+  if (_rateState.registerThisHour >= REGISTER_HOURLY_LIMIT * 0.8) {
+    delay = Math.max(delay, 20000 + rand(0, 15000)); // 20-35s
+  } else if (_rateState.registerThisHour >= REGISTER_HOURLY_LIMIT * 0.6) {
+    delay = Math.max(delay, 8000 + rand(0, 7000)); // 8-15s
+  }
+  return delay;
+}
+
+async function stealthFetch(url, timeoutMs, refererUrl) {
+  if (_rateState.circuitBroken) {
+    return { ok: false, status: 0, html: "", error: "Circuit broken: " + _rateState.circuitBrokenReason, circuitBroken: true };
+  }
+
+  // Dedup: never fetch same URL twice in one run
+  var urlKey = (url || "").split("#")[0].split("?").sort().join("?");
+  if (_rateState.fetchedUrls[urlKey]) {
+    return { ok: false, status: 0, html: "", error: "Already fetched this URL in this run", skippedDupe: true };
+  }
+
+  // Rate limit check — wait if approaching limits
+  var rateLimitDelay = getRateLimitDelay();
+  if (rateLimitDelay > 0) {
+    await sleep(rateLimitDelay);
+  }
+
+  // Build headers
+  var headers = Object.assign({}, BROWSER_HEADERS_BASE);
+  if (refererUrl) {
+    headers["Referer"] = refererUrl;
+  }
+
+  // Track
+  _rateState.fetchedUrls[urlKey] = true;
+  _rateState.totalRequests++;
+  if (isRyzerUrl(url)) {
+    _rateState.ryzerTotal++;
+    _rateState.ryzerThisHour++;
+    resetHourlyCountersIfNeeded();
+  }
+  if (isRegisterRyzerUrl(url)) {
+    _rateState.registerTotal++;
+    _rateState.registerThisHour++;
+  }
+
+  // Every 10th request: long "human reading" pause
+  if (_rateState.totalRequests > 1 && _rateState.totalRequests % 10 === 0) {
+    await sleep(8000 + rand(0, 7000)); // 8-15s
+  }
+
   var controller = new AbortController();
   var timer = setTimeout(function() { controller.abort(); }, timeoutMs || 15000);
   try {
     var resp = await fetch(url, {
       method: "GET",
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Base44Bot/1.0)", Accept: "text/html,*/*" },
+      headers: headers,
       signal: controller.signal,
       redirect: "follow",
     });
     clearTimeout(timer);
-    if (!resp.ok) return { ok: false, status: resp.status, html: "" };
+
+    var status = resp.status;
+
+    // Handle Ryzer-specific error codes
+    if (isRyzerUrl(url)) {
+      if (status === 403) {
+        // Blocked — stop immediately
+        _rateState.circuitBroken = true;
+        _rateState.circuitBrokenReason = "403 Forbidden from Ryzer — possible IP block";
+        return { ok: false, status: 403, html: "", error: "403 Forbidden — stopped", blocked: true };
+      }
+      if (status === 429) {
+        // Rate limited — back off 10 min, retry once
+        _rateState.consecutiveErrors++;
+        if (_rateState.consecutiveErrors >= CONSECUTIVE_ERROR_LIMIT) {
+          _rateState.circuitBroken = true;
+          _rateState.circuitBrokenReason = "Stopping: possible IP block or Ryzer outage (" + CONSECUTIVE_ERROR_LIMIT + " consecutive errors)";
+          return { ok: false, status: 429, html: "", error: _rateState.circuitBrokenReason };
+        }
+        await sleep(600000); // 10 minutes
+        // Retry once
+        delete _rateState.fetchedUrls[urlKey]; // allow re-fetch
+        var retry = await stealthFetch(url, timeoutMs, refererUrl);
+        return retry;
+      }
+      if (status === 503) {
+        // Overloaded — back off 5 min, retry once
+        _rateState.consecutiveErrors++;
+        if (_rateState.consecutiveErrors >= CONSECUTIVE_ERROR_LIMIT) {
+          _rateState.circuitBroken = true;
+          _rateState.circuitBrokenReason = "Stopping: possible IP block or Ryzer outage (" + CONSECUTIVE_ERROR_LIMIT + " consecutive errors)";
+          return { ok: false, status: 503, html: "", error: _rateState.circuitBrokenReason };
+        }
+        await sleep(300000); // 5 minutes
+        delete _rateState.fetchedUrls[urlKey];
+        var retry2 = await stealthFetch(url, timeoutMs, refererUrl);
+        return retry2;
+      }
+    }
+
+    if (!resp.ok) {
+      if (isRyzerUrl(url)) {
+        _rateState.consecutiveErrors++;
+        if (_rateState.consecutiveErrors >= CONSECUTIVE_ERROR_LIMIT) {
+          _rateState.circuitBroken = true;
+          _rateState.circuitBrokenReason = "Stopping: possible IP block or Ryzer outage (" + CONSECUTIVE_ERROR_LIMIT + " consecutive errors)";
+        }
+      }
+      return { ok: false, status: status, html: "" };
+    }
+
+    // Success — reset consecutive error counter
+    if (isRyzerUrl(url)) {
+      _rateState.consecutiveErrors = 0;
+    }
+
     var html = await resp.text();
-    return { ok: true, status: resp.status, html: html };
+    return { ok: true, status: status, html: html };
   } catch (e) {
     clearTimeout(timer);
+    if (isRyzerUrl(url)) {
+      _rateState.consecutiveErrors++;
+      if (_rateState.consecutiveErrors >= CONSECUTIVE_ERROR_LIMIT) {
+        _rateState.circuitBroken = true;
+        _rateState.circuitBrokenReason = "Stopping: possible IP block or Ryzer outage (" + CONSECUTIVE_ERROR_LIMIT + " consecutive errors)";
+      }
+    }
     return { ok: false, status: 0, html: "", error: String(e.message || e) };
   }
 }
@@ -119,7 +283,6 @@ async function fetchWithTimeout(url, timeoutMs) {
 function normalizeHostOrgKey(raw, sportKey) {
   if (!raw) return "";
   var s = normalizeUnicode(lc(raw));
-  // Strip sport name + common suffixes
   var sportRe = sportKey || "football";
   s = s.replace(new RegExp("\\s*-\\s*" + sportRe + "\\s*$", "i"), "");
   s = s.replace(new RegExp("\\s+" + sportRe + "\\s+camps?\\s*$", "i"), "");
@@ -159,7 +322,7 @@ function detectCardGender(cardText) {
   }
   if (hasWomens) return "womens";
   if (hasMens) return "mens";
-  return null; // no indicator found
+  return null;
 }
 
 // ─── Directory parser (same HTML structure across all *campsusa.com) ────────
@@ -174,10 +337,8 @@ function parseDirectoryHtml(html, genderFilter) {
   for (var i = 0; i < cardChunks.length; i++) {
     var card = cardChunks[i];
 
-    // Gender filtering for shared directories (basketball, lacrosse, soccer)
     if (genderFilter && genderFilter !== "both") {
       var cardGender = detectCardGender(stripTags(card));
-      // If card has a gender indicator and it doesn't match → skip
       if (cardGender && cardGender !== genderFilter) continue;
     }
 
@@ -234,7 +395,6 @@ function extractSchoolFromDescription(desc) {
     result.state = csMatch[2].trim();
   }
 
-  // Generic: "led by ... staff" — sport name is variable
   var nickMatch = /led by (?:the |its )?(.+?)\s+(?:\w+\s+)?(?:coaching\s+)?staff/i.exec(desc);
   if (nickMatch && nickMatch[1]) {
     var nick = nickMatch[1].trim()
@@ -355,7 +515,6 @@ function buildSchoolIndex(schools) {
 
 function extractSchoolFromProgramName(programName) {
   var n = safeStr(programName);
-  // Strip any sport name + common suffixes
   n = n.replace(/\s*-\s*(?:Football|Basketball|Baseball|Softball|Soccer|Volleyball|Lacrosse|Wrestling|Tennis)$/i, "");
   n = n.replace(/\s+(?:Football|Basketball|Baseball|Softball|Soccer|Volleyball|Lacrosse|Wrestling|Tennis)\s+(?:Camps?|Clinics?|Prospect\s+Camps?)$/i, "");
   n = n.replace(/\s+(?:Football|Basketball|Baseball|Softball|Soccer|Volleyball|Lacrosse|Wrestling|Tennis)$/i, "");
@@ -372,7 +531,6 @@ function extractSchoolFromSubdomain(url) {
     var hostname = new URL(url).hostname.toLowerCase();
     if (!hostname.includes("ryzerevents.com")) return null;
     var sub = hostname.split(".")[0];
-    // Strip common sport + camp patterns
     sub = sub.replace(/(?:football|basketball|baseball|softball|soccer|volleyball|lacrosse|wrestling|tennis)camps?/gi, "");
     sub = sub.replace(/(?:football|basketball|baseball|softball|soccer|volleyball|lacrosse|wrestling|tennis)clinics?/gi, "");
     sub = sub.replace(/(?:football|basketball|baseball|softball|soccer|volleyball|lacrosse|wrestling|tennis)/gi, "");
@@ -457,7 +615,6 @@ function matchProgramToSchool(idx, program, hardcodedMap, hardcodedDescMap) {
   var descState = program.desc_state || null;
   var descNickname = program.desc_nickname || null;
 
-  // METHOD 0: Hardcoded overrides (from config)
   var hardKey = lc(programName);
   if (hardcodedMap[hardKey]) {
     var hardNN = normalizeName(hardcodedMap[hardKey]);
@@ -474,7 +631,6 @@ function matchProgramToSchool(idx, program, hardcodedMap, hardcodedDescMap) {
     }
   }
 
-  // METHOD 1: Logo URL match
   if (logoUrl) {
     var luKey = lc(logoUrl);
     var logoMatches = idx.byLogoUrl[luKey];
@@ -483,7 +639,6 @@ function matchProgramToSchool(idx, program, hardcodedMap, hardcodedDescMap) {
     }
   }
 
-  // METHOD 5: Description-extracted school name
   if (descSchool) {
     var descNN = normalizeName(descSchool);
     if (descNN) {
@@ -509,7 +664,6 @@ function matchProgramToSchool(idx, program, hardcodedMap, hardcodedDescMap) {
     }
   }
 
-  // METHOD 6: Nickname from description
   if (descNickname) {
     var nickLower = lc(descNickname);
     var nickAloneMatches = idx.byNicknameAlone[nickLower];
@@ -533,7 +687,6 @@ function matchProgramToSchool(idx, program, hardcodedMap, hardcodedDescMap) {
     }
   }
 
-  // METHOD 7: City+State from description
   if (descCity && descState) {
     var csKey2 = lc(descCity) + "|" + normalizeState(descState);
     var csMatches = idx.byCityState[csKey2];
@@ -554,7 +707,6 @@ function matchProgramToSchool(idx, program, hardcodedMap, hardcodedDescMap) {
     }
   }
 
-  // Build candidate names
   var schoolPortion = extractSchoolFromProgramName(programName);
   var subdomainPortion = extractSchoolFromSubdomain(programUrl);
   var extraCandidates = generateExtraCandidates(programName, programUrl);
@@ -568,13 +720,11 @@ function matchProgramToSchool(idx, program, hardcodedMap, hardcodedDescMap) {
     if (extraCandidates[ei]) candidates.push(extraCandidates[ei]);
   }
 
-  // METHOD 8: Aggressive program name stripping
   if (!program.description) {
     var stripped2 = stripProgramNameHard(programName);
     if (stripped2) candidates.push(stripped2);
   }
 
-  // METHOD 2: Exact normalized name match
   for (var ci = 0; ci < candidates.length; ci++) {
     var nn2 = normalizeName(candidates[ci]);
     if (!nn2) continue;
@@ -606,7 +756,6 @@ function matchProgramToSchool(idx, program, hardcodedMap, hardcodedDescMap) {
     }
   }
 
-  // METHOD 3: Nickname match
   for (var ni = 0; ni < candidates.length; ni++) {
     var nickLc = lc(candidates[ni]);
     if (!nickLc) continue;
@@ -616,7 +765,6 @@ function matchProgramToSchool(idx, program, hardcodedMap, hardcodedDescMap) {
     }
   }
 
-  // METHOD 3b: program name contains a known nickname
   var allNicknames = Object.keys(idx.byNickname);
   for (var nki = 0; nki < allNicknames.length; nki++) {
     var nick2 = allNicknames[nki];
@@ -629,7 +777,6 @@ function matchProgramToSchool(idx, program, hardcodedMap, hardcodedDescMap) {
     }
   }
 
-  // METHOD 4: Fuzzy name match
   var bestFuzzy = null;
   var bestScore = 0;
   var allNormNames = Object.keys(idx.byNormName);
@@ -666,7 +813,7 @@ function stripProgramNameHard(name) {
   return s;
 }
 
-// ─── Ryzer camp extraction (identical to v7) ────────────────────────────────
+// ─── Ryzer camp extraction ──────────────────────────────────────────────────
 
 function parseMDY(s) {
   var m = /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s);
@@ -1054,7 +1201,6 @@ Deno.serve(async function(req) {
   var NON_SPORT_KEYWORDS = config.non_sport_keywords || [];
   var PROGRAM_BLOCKLIST = config.program_blocklist || [];
 
-  // Build hardcoded maps from config arrays
   var hardcodedMap = {};
   var hardcodedDescMap = {};
   if (config.hardcoded_mappings && Array.isArray(config.hardcoded_mappings)) {
@@ -1075,13 +1221,12 @@ Deno.serve(async function(req) {
   var dryRun = body.dryRun !== false && body.dryRun !== "false";
   var maxSchools = Math.max(1, Number(body.maxSchools || 999));
   var startAt = Math.max(0, Number(body.startAt || 0));
-  var sleepMs = Math.max(1000, Number(body.sleepMs || 1000));
   var timeBudgetMs = Math.max(10000, Number(body.timeBudgetMs || 55000));
   var skipDetailFetch = !!(body.skipDetailFetch);
   var elapsed = function() { return Date.now() - t0; };
 
-  // ── 1. Fetch directory ──
-  var dirResult = await fetchWithTimeout(DIRECTORY_URL, 20000);
+  // ── 1. Fetch directory (non-Ryzer site, still use stealth headers) ──
+  var dirResult = await stealthFetch(DIRECTORY_URL, 20000, "https://www.google.com/");
   if (!dirResult.ok) return json({ error: "Failed to fetch " + DIRECTORY_URL + ": HTTP " + dirResult.status, version: VERSION, sport_key: sportKey });
 
   var genderFilter = config.gender || "both";
@@ -1154,13 +1299,15 @@ Deno.serve(async function(req) {
   var slice = programs.slice(startAt, startAt + maxSchools);
   var stats = { schoolsProcessed:0, schoolsWithCamps:0, schoolsNoCamps:0, schoolsFetchError:0,
     campsInserted:0, campsUpdated:0, campsSkipped:0, campsErrors:0, campsPastSkipped:0,
-    schoolsMatched:0, schoolsUnmatched:0, blocked:0, skippedWrongSport:0 };
+    schoolsMatched:0, schoolsUnmatched:0, blocked:0, skippedWrongSport:0,
+    detailFetchesSkipped: 0, detailFetchesMade: 0 };
   var sampleCamps = [];
   var sampleErrors = [];
   var schoolResults = [];
 
   for (var sli = 0; sli < slice.length; sli++) {
     if (elapsed() >= timeBudgetMs) { stats.stoppedEarly = true; break; }
+    if (_rateState.circuitBroken) { stats.circuitBroken = true; stats.circuitBrokenReason = _rateState.circuitBrokenReason; break; }
 
     var prog2 = slice[sli];
     var match2 = prog2._match;
@@ -1177,22 +1324,27 @@ Deno.serve(async function(req) {
 
     var schoolResult = { program_name: prog2.name, url: prog2.url, school_id: match2.school_id, school_name: match2.school_name, match_method: match2.method, match_confidence: match2.confidence, camps_found: 0, camps_ingested: 0, error: null };
 
-    var siteResult = await fetchWithTimeout(prog2.url, 15000);
+    // PAGE 2 fetch: school program site
+    var siteResult = await stealthFetch(prog2.url, 15000, DIRECTORY_URL);
     if (!siteResult.ok) {
+      if (siteResult.circuitBroken) { stats.circuitBroken = true; stats.circuitBrokenReason = _rateState.circuitBrokenReason; break; }
       stats.schoolsFetchError++;
       schoolResult.error = "HTTP " + siteResult.status;
       schoolResults.push(schoolResult);
-      await sleep(sleepMs);
+      // Randomized delay between school sites: 2-4s
+      await sleep(2000 + rand(0, 2000));
       continue;
     }
 
     var campListings = extractCampsFromProgramSiteHtml(siteResult.html, prog2.url);
     schoolResult.camps_found = campListings.length;
-    if (campListings.length === 0) { stats.schoolsNoCamps++; schoolResults.push(schoolResult); await sleep(sleepMs); continue; }
+    if (campListings.length === 0) { stats.schoolsNoCamps++; schoolResults.push(schoolResult); await sleep(2000 + rand(0, 2000)); continue; }
     stats.schoolsWithCamps++;
 
     for (var cli = 0; cli < campListings.length; cli++) {
       if (elapsed() >= timeBudgetMs) { stats.stoppedEarly = true; break; }
+      if (_rateState.circuitBroken) { stats.circuitBroken = true; stats.circuitBrokenReason = _rateState.circuitBrokenReason; break; }
+
       var listing = campListings[cli];
       var ryzerId = listing.ryzer_camp_id;
       var regUrl = listing.reg_url;
@@ -1200,15 +1352,21 @@ Deno.serve(async function(req) {
 
       if (blockedKeys[sourceKey]) { stats.blocked++; continue; }
 
+      // KEY OPTIMIZATION: Skip detail fetch for camps already ingested
+      // Only fetch Ryzer detail page if this is a NEW camp we haven't seen before
+      var alreadyIngested = !!existingBySourceKey[sourceKey];
+
       var campName = listing.camp_name_from_listing;
       var startDate = listing.start_date;
       var endDate = listing.end_date;
       var price = null; var city2 = null; var state2 = null; var notes = null;
       var venueName = null; var venueAddress = null; var grades = null; var hostOrg = null; var ryzerProgramName = null; var priceOptions = [];
 
-      if (!skipDetailFetch) {
-        var detailResult = await fetchWithTimeout(regUrl, 12000);
+      if (!skipDetailFetch && !alreadyIngested) {
+        // PAGE 3 fetch: Ryzer registration page (only for NEW camps)
+        var detailResult = await stealthFetch(regUrl, 12000, prog2.url);
         if (detailResult.ok) {
+          stats.detailFetchesMade++;
           var details = extractRyzerCampDetails(detailResult.html, regUrl);
           if (details) {
             if (details.camp_name) campName = details.camp_name;
@@ -1225,18 +1383,21 @@ Deno.serve(async function(req) {
             if (details.ryzer_program_name) ryzerProgramName = details.ryzer_program_name;
             if (details.price_options) priceOptions = details.price_options;
           }
+        } else if (detailResult.circuitBroken) {
+          stats.circuitBroken = true; stats.circuitBrokenReason = _rateState.circuitBrokenReason; break;
         }
-        await sleep(Math.max(300, sleepMs / 2));
+        // Randomized delay between camp pages: 1.5-3s
+        await sleep(1500 + rand(0, 1500));
+      } else if (alreadyIngested) {
+        stats.detailFetchesSkipped++;
       }
 
       if (!startDate) { stats.campsErrors++; if (sampleErrors.length < 10) sampleErrors.push({ source_key: sourceKey, reason: "no_start_date", camp_name: campName, reg_url: regUrl }); continue; }
       if (startDate < todayIso) { stats.campsPastSkipped++; continue; }
       if (!campName) campName = prog2.name + " Camp";
 
-      // "Family" prefix filter
       if (campName && /^Family\s*\|/i.test(campName)) { stats.skippedWrongSport++; if (sampleErrors.length < 10) sampleErrors.push({ source_key: sourceKey, reason: "family_prefix", camp_name: campName }); continue; }
 
-      // Non-sport keyword filter
       var badKeyword = containsKeyword(campName, NON_SPORT_KEYWORDS) || containsKeyword(hostOrg, NON_SPORT_KEYWORDS) || containsKeyword(notes, NON_SPORT_KEYWORDS);
       if (badKeyword) { stats.skippedWrongSport++; if (sampleErrors.length < 10) sampleErrors.push({ source_key: sourceKey, reason: "wrong_sport", camp_name: campName, keyword: badKeyword }); continue; }
 
@@ -1254,7 +1415,6 @@ Deno.serve(async function(req) {
         school_manually_verified: false,
       };
 
-      // HostOrgMapping lookup
       if (!payload.school_id) {
         var rpnKey = normalizeHostOrgKey(ryzerProgramName, sportKey);
         var hoKey = normalizeHostOrgKey(hostOrg, sportKey);
@@ -1284,7 +1444,8 @@ Deno.serve(async function(req) {
       }
     }
     schoolResults.push(schoolResult);
-    await sleep(sleepMs);
+    // Randomized delay between school sites: 2-4s
+    await sleep(2000 + rand(0, 2000));
   }
 
   // Record run history + update config last_run_at
@@ -1297,7 +1458,7 @@ Deno.serve(async function(req) {
         camps_inserted: stats.campsInserted, camps_updated: stats.campsUpdated,
         camps_skipped: stats.campsSkipped, camps_errors: stats.campsErrors,
         match_rate: campMatchRate, dry_run: false, duration_ms: elapsed(),
-        notes: "Programs " + startAt + "-" + (startAt + stats.schoolsProcessed) + " of " + programs.length + ". Inserted=" + stats.campsInserted + " Updated=" + stats.campsUpdated + " Skipped=" + stats.campsSkipped,
+        notes: "Programs " + startAt + "-" + (startAt + stats.schoolsProcessed) + " of " + programs.length + ". Inserted=" + stats.campsInserted + " Updated=" + stats.campsUpdated + " Skipped=" + stats.campsSkipped + " DetailFetches=" + stats.detailFetchesMade + " DetailSkipped=" + stats.detailFetchesSkipped,
       });
     } catch (e) { /* ignore */ }
     try {
@@ -1311,6 +1472,7 @@ Deno.serve(async function(req) {
     totalProgramsOnSite: programs.length,
     matchSummary: { totalMatched: matched.length, totalUnmatched: unmatched.length, totalAmbiguous: ambiguous.length, matchRate: Math.round((matched.length / programs.length) * 1000) / 10, matchByMethod: matchByMethod },
     stats: stats,
+    stealth: { ryzerRequestsTotal: _rateState.ryzerTotal, registerRequestsTotal: _rateState.registerTotal, circuitBroken: _rateState.circuitBroken, circuitBrokenReason: _rateState.circuitBrokenReason || null },
     pagination: { startAt: startAt, processed: stats.schoolsProcessed, nextStartAt: nextStartAt, done: nextStartAt >= programs.length },
     sampleCamps: sampleCamps, sampleErrors: sampleErrors, schoolResults: schoolResults,
     unmatchedPrograms: unmatched.slice(0, 30), ambiguousPrograms: ambiguous.slice(0, 20), elapsedMs: elapsed(),
