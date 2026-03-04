@@ -241,6 +241,19 @@ async function getLogoViaWikipediaChain(wikipediaUrl) {
     return result;
   }
 
+  // Guard: The nickname link must point to an athletics program page, not a generic
+  // animal/term article. Athletics pages typically contain the school name or end
+  // with a collective noun. Reject links to single-word generic articles like
+  // /wiki/Cougars, /wiki/Eagles, /wiki/Bears etc.
+  const pathTitle = athleticsPath.replace("/wiki/", "").replace(/_/g, " ");
+  const pathWords = pathTitle.split(" ").filter(w => w.length > 0);
+  // If the link is just one word (or two very generic words), it's probably the animal article
+  if (pathWords.length <= 1) {
+    result.status = "nickname_no_link";
+    result.debugPath.push(`nickname_link_too_generic:${athleticsPath}`);
+    return result;
+  }
+
   result.debugPath.push(`found_nickname_link:${athleticsPath}`);
 
   // Step 3: Fetch the athletics program page
