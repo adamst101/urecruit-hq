@@ -11,6 +11,7 @@ export default function HostOrgMappingManager() {
   const [search, setSearch] = useState("");
   const [filterVerified, setFilterVerified] = useState("");
   const [saving, setSaving] = useState({});
+  const [progress, setProgress] = useState(null);
 
   useEffect(() => {
     setLoading(true);
