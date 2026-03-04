@@ -1,25 +1,19 @@
 // functions/ingestSchoolAthleticLogos.ts
-// Base44 server function (Deno.serve) to enrich ATHLETIC logos (update-only).
+// Enriches School.athletic_logo_url by following the Wikipedia link chain:
 //
-// Writes to School fields:
-// - athletic_logo_url
-// - athletic_logo_source
-// - athletic_logo_updated_at
-// - athletic_logo_confidence
-// - athletics_nickname       (bonus: stores the Wikidata athletics entity name e.g. "Arizona Wildcats")
+//   1. School.wikipedia_url  →  fetch institution Wikipedia page
+//   2. Parse infobox "Nickname" row → extract link to athletics program page
+//      (e.g. /wiki/Arizona_Wildcats)
+//   3. Fetch the athletics program Wikipedia page
+//   4. Parse infobox logo image (first image in the infobox)
+//   5. Build Commons FilePath URL from the image filename
 //
-// LOOKUP CHAIN (per school):
-//   1. Search Wikidata for school name → university entity (Q)
-//   2. Read P6364 (athletic department) from university entity → athletics entity (Q)
-//   3. Read P154 (logo image) from athletics entity → logo file
+// Also extracts from the athletics infobox:
+//   - athletics_nickname (the page title / infobox heading, e.g. "Arizona Wildcats")
+//   - athletics_wikipedia_url (full URL of the athletics page)
 //
-//   Fallback if P6364 missing:
-//   4. Read P742 (nickname) or P1813 (short name) from university entity
-//   5. Search Wikidata for "{school} {nickname}" e.g. "Arizona Wildcats"
-//   6. Read P154 from that entity
-//
-// WHY: University Wikidata pages rarely have P154 logos. The athletic department
-// entity (e.g. Q4796711 "Arizona Wildcats") reliably has the athletics logo via P154.
+// This avoids Wikidata search which mismatches common nicknames
+// (e.g. "Tigers" → "Detroit Tigers", "Bears" → "Chicago Bears").
 //
 // Request body:
 // {
@@ -29,51 +23,33 @@
 //   "throttleMs": 500,
 //   "timeBudgetMs": 25000,
 //   "onlyMissing": true,
-//   "force": false,
-//   "minConfidence": 0.70
+//   "force": false
 // }
-//
-// Page by passing next_cursor back as cursor until done: true.
 
-import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
+import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 
-type Cursor = any;
-
-function json(obj: any, status = 200) {
+function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
 }
 
-function sleep(ms: number) {
+function sleep(ms) {
   return new Promise((r) => setTimeout(r, Math.max(0, ms || 0)));
 }
 
-function lc(x: any) {
+function lc(x) {
   return String(x || "").toLowerCase().trim();
 }
 
-function safeStr(x: any): string | null {
+function safeStr(x) {
   if (x == null) return null;
   const s = String(x).trim();
   return s || null;
 }
 
-function extractRows(resp: any) {
-  if (!resp) return [];
-  if (Array.isArray(resp)) return resp;
-  const cands = [resp.data, resp.items, resp.records];
-  for (const c of cands) if (Array.isArray(c)) return c;
-  return [];
-}
-
-function extractCursor(resp: any): Cursor | null {
-  if (!resp || Array.isArray(resp)) return null;
-  return resp.next_cursor ?? resp.nextCursor ?? null;
-}
-
-function isRetryable(e: any) {
+function isRetryable(e) {
   const msg = lc(e?.message || e);
   return (
     msg.includes("429") ||
@@ -87,19 +63,19 @@ function isRetryable(e: any) {
   );
 }
 
-async function fetchJsonWithRetry(url: string, tries = 3, backoffMs = 800) {
-  let lastErr: any = null;
+async function fetchHtmlWithRetry(url, tries = 3, backoffMs = 800) {
+  let lastErr = null;
   for (let i = 0; i < tries; i++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
+    const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const resp = await fetch(url, {
-        headers: { "User-Agent": "CampConnectAthleticLogoBot/2.0" },
+        headers: { "User-Agent": "CampConnectAthleticLogoBot/3.0" },
         signal: controller.signal,
       });
       clearTimeout(timer);
       if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
-      return await resp.json();
+      return await resp.text();
     } catch (e) {
       clearTimeout(timer);
       lastErr = e;
@@ -110,241 +86,228 @@ async function fetchJsonWithRetry(url: string, tries = 3, backoffMs = 800) {
   throw lastErr;
 }
 
-// ─── Wikidata helpers ─────────────────────────────────────────────────────────
+// ─── HTML Parsing Helpers ─────────────────────────────────────────────────────
 
-async function wdSearch(query: string, limit = 5): Promise<Array<{ id: string; label: string; description: string }>> {
-  const url =
-    `https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&uselang=en` +
-    `&limit=${limit}&search=${encodeURIComponent(query)}&origin=*`;
-  const data = await fetchJsonWithRetry(url, 3, 800);
-  return (data?.search || []).map((r: any) => ({
-    id:          String(r?.id || ""),
-    label:       String(r?.label || ""),
-    description: String(r?.description || ""),
-  }));
+// Extract the infobox HTML block from a Wikipedia page
+function extractInfobox(html) {
+  // Wikipedia infoboxes use class="infobox" on a <table> element
+  const infoboxMatch = html.match(/<table[^>]*class="[^"]*infobox[^"]*"[^>]*>[\s\S]*?<\/table>/i);
+  return infoboxMatch ? infoboxMatch[0] : null;
 }
 
-async function wdGetClaims(qid: string): Promise<Record<string, any[]>> {
-  const url =
-    `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json` +
-    `&ids=${encodeURIComponent(qid)}&props=claims%7Clabels&languages=en&origin=*`;
-  const data = await fetchJsonWithRetry(url, 3, 800);
-  return data?.entities?.[qid]?.claims || {};
+// From the institution's infobox, find the "Nickname" row and extract the link
+// The infobox typically has: <th>Nickname</th><td><a href="/wiki/Arizona_Wildcats">Wildcats</a></td>
+function extractNicknameLink(infoboxHtml) {
+  if (!infoboxHtml) return null;
+
+  // Look for a row containing "Nickname" in a <th> or header cell
+  // Then grab the <a href="/wiki/..."> from the corresponding <td>
+  const nicknamePattern = /<t[hd][^>]*>[^<]*(?:Nickname|Athletic\s*nickname)[^<]*<\/t[hd]>\s*<td[^>]*>([\s\S]*?)<\/td>/i;
+  const match = infoboxHtml.match(nicknamePattern);
+  if (!match) return null;
+
+  const tdContent = match[1];
+  // Extract the first wiki link from the cell
+  const linkMatch = tdContent.match(/<a[^>]*href="(\/wiki\/[^"#]+)"[^>]*>/i);
+  if (!linkMatch) return null;
+
+  return linkMatch[1]; // e.g. /wiki/Arizona_Wildcats
 }
 
-function claimStringValue(claims: Record<string, any[]>, prop: string): string | null {
-  const arr = claims[prop];
-  if (!Array.isArray(arr) || arr.length === 0) return null;
-  const dv = arr[0]?.mainsnak?.datavalue?.value;
-  return typeof dv === "string" ? dv : null;
+// From the athletics program page's infobox, extract the logo image filename
+// The logo is typically the first image in the infobox, often in the header area
+function extractInfoboxLogoFilename(infoboxHtml) {
+  if (!infoboxHtml) return null;
+
+  // Look for image files in the infobox. The logo is usually the primary image.
+  // Wikipedia uses: src="//upload.wikimedia.org/wikipedia/commons/thumb/X/XX/Filename.svg/250px-Filename.svg.png"
+  // Or: <a href="/wiki/File:Arizona_Wildcats_logo.svg">
+  
+  // Strategy 1: Find File: links which are the canonical references
+  const fileLinks = [];
+  const fileLinkRegex = /(?:href|src)="[^"]*?(?:\/wiki\/File:|\/wikipedia\/(?:commons|en)\/(?:thumb\/)?[a-f0-9]\/[a-f0-9]{2}\/)([^/"]+\.(svg|png|gif))/gi;
+  let m;
+  while ((m = fileLinkRegex.exec(infoboxHtml)) !== null) {
+    const fn = decodeURIComponent(m[1].replace(/^\d+px-/, ""));
+    fileLinks.push(fn);
+  }
+
+  // Strategy 2: Also check <img> src attributes for upload.wikimedia.org paths
+  const imgSrcRegex = /src="[^"]*upload\.wikimedia\.org\/wikipedia\/[^"]*\/([^/"]+\.(svg|png|gif))/gi;
+  while ((m = imgSrcRegex.exec(infoboxHtml)) !== null) {
+    const fn = decodeURIComponent(m[1].replace(/^\d+px-/, ""));
+    if (!fileLinks.includes(fn)) fileLinks.push(fn);
+  }
+
+  if (fileLinks.length === 0) return null;
+
+  // Score each candidate — prefer files with "logo" in the name, SVGs, etc.
+  let bestFile = null;
+  let bestScore = -1;
+  for (const fn of fileLinks) {
+    const n = lc(fn);
+    let score = 0.5;
+    if (n.endsWith(".svg")) score += 0.3;
+    else if (n.endsWith(".png")) score += 0.1;
+    
+    if (n.includes("logo")) score += 0.3;
+    if (n.includes("wordmark")) score += 0.15;
+    if (n.includes("athletic")) score += 0.1;
+    if (n.includes("seal")) score -= 0.3;
+    if (n.includes("map")) score -= 0.5;
+    if (n.includes("location")) score -= 0.5;
+    if (n.includes("conference")) score -= 0.2;
+    if (n.includes("flag")) score -= 0.3;
+    if (n.includes("stadium")) score -= 0.3;
+    if (n.includes("photo")) score -= 0.3;
+    if (n.endsWith(".jpg") || n.endsWith(".jpeg")) score -= 0.5;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestFile = fn;
+    }
+  }
+
+  return bestFile;
 }
 
-function claimEntityId(claims: Record<string, any[]>, prop: string): string | null {
-  const arr = claims[prop];
-  if (!Array.isArray(arr) || arr.length === 0) return null;
-  const dv = arr[0]?.mainsnak?.datavalue?.value;
-  return dv?.id ? String(dv.id) : null;
+// Extract the title / heading of the athletics page from the infobox
+function extractAthleticsName(infoboxHtml, pageTitle) {
+  if (!infoboxHtml) return pageTitle || null;
+
+  // The infobox header usually has the athletics program name in a <th> with colspan
+  const headerMatch = infoboxHtml.match(/<th[^>]*colspan[^>]*>([\s\S]*?)<\/th>/i);
+  if (headerMatch) {
+    // Strip HTML tags
+    const text = headerMatch[1].replace(/<[^>]+>/g, "").trim();
+    if (text.length > 2 && text.length < 100) return text;
+  }
+
+  return pageTitle || null;
 }
 
-function commonsFilePath(fileName: string): string {
+function commonsFilePath(fileName) {
   const safe = encodeURIComponent(String(fileName).replace(/ /g, "_"));
   return `https://commons.wikimedia.org/wiki/Special:FilePath/${safe}`;
 }
 
-function scoreCandidate(fileName: string): number {
-  const n = lc(fileName);
-  let score = 0.55;
-  if (n.endsWith(".svg"))                              score += 0.30;
-  if (n.endsWith(".png") || n.endsWith(".webp"))       score += 0.12;
-  if (n.endsWith(".jpg") || n.endsWith(".jpeg"))       score -= 0.55;
-  const hits = ["logo", "wordmark", "athletic", "athletics", "sports", "mark", "branding"]
-    .filter((k) => n.includes(k)).length;
-  score += Math.min(0.25, hits * 0.07);
-  return Math.max(0, Math.min(0.99, score));
-}
+// ─── Main lookup: Institution Wikipedia → Nickname link → Athletics page → Logo
 
-// ─── Main lookup chain ────────────────────────────────────────────────────────
+async function getLogoViaWikipediaChain(wikipediaUrl, existingAthleticsUrl) {
+  const result = {
+    athletic_logo_url: null,
+    athletics_wikipedia_url: null,
+    athletics_nickname: null,
+    source: null,
+    confidence: 0,
+    fileName: null,
+    debugPath: [],
+  };
 
-interface LogoResult {
-  url: string;
-  source: string;
-  confidence: number;
-  fileName: string;
-  athleticsEntityId: string | null;
-  athleticsLabel: string | null;   // e.g. "Arizona Wildcats"
-}
+  // Step 1: If we already have the athletics Wikipedia URL, go directly there
+  let athleticsPath = null;
 
-async function getAthleticLogoFromWikidata(
-  schoolName: string,
-  existingNickname?: string | null,
-  athleticsWikipediaUrl?: string | null
-): Promise<LogoResult | null> {
+  if (existingAthleticsUrl) {
+    const pathMatch = existingAthleticsUrl.match(/(\/wiki\/[^#?]+)/);
+    if (pathMatch) {
+      athleticsPath = pathMatch[1];
+      result.debugPath.push("used_existing_athletics_url");
+    }
+  }
 
-  // ── Step 0: Direct athletics Wikipedia URL (most reliable path) ───────────
-  // If auditSchoolsAthletics stored the athletics program Wikipedia URL
-  // (e.g. https://en.wikipedia.org/wiki/Arizona_Wildcats), use it directly
-  // to search Wikidata — this bypasses university entity lookup entirely.
-  if (athleticsWikipediaUrl) {
-    const titleMatch = athleticsWikipediaUrl.match(/\/wiki\/([^#?]+)$/);
-    if (titleMatch) {
-      const athleticsTitle = decodeURIComponent(titleMatch[1].replace(/_/g, " "));
-      const results = await wdSearch(athleticsTitle, 3);
-      if (results.length) {
-        const match = results[0]; // top result for exact athletics title should be correct
-        const mClaims = await wdGetClaims(match.id);
-        const fileName = claimStringValue(mClaims, "P154");
-        if (fileName) {
-          const confidence = scoreCandidate(fileName);
-          return {
-            url:               commonsFilePath(fileName),
-            source:            `wikidata:athletics_wiki:${match.id}:P154`,
-            confidence,
-            fileName,
-            athleticsEntityId: match.id,
-            athleticsLabel:    match.label,
-          };
-        }
+  // Step 2: If no athletics URL yet, fetch the institution page and find the Nickname link
+  if (!athleticsPath && wikipediaUrl) {
+    result.debugPath.push("fetching_institution_page");
+    const instHtml = await fetchHtmlWithRetry(wikipediaUrl);
+    const instInfobox = extractInfobox(instHtml);
+    
+    if (instInfobox) {
+      athleticsPath = extractNicknameLink(instInfobox);
+      if (athleticsPath) {
+        result.debugPath.push(`found_nickname_link:${athleticsPath}`);
+      } else {
+        result.debugPath.push("no_nickname_link_in_infobox");
+        return result;
       }
+    } else {
+      result.debugPath.push("no_infobox_found");
+      return result;
     }
   }
 
-  // ── Step 1: Find university Wikidata entity ───────────────────────────────
-  const searchResults = await wdSearch(schoolName, 5);
-  if (!searchResults.length) return null;
-
-  const target = lc(schoolName);
-  const universityEntity =
-    searchResults.find((r) => lc(r.label) === target) ??
-    searchResults.find((r) =>
-      r.description.toLowerCase().includes("university") ||
-      r.description.toLowerCase().includes("college")
-    ) ??
-    searchResults[0];
-
-  const universityQid = universityEntity?.id;
-  if (!universityQid) return null;
-
-  const uClaims = await wdGetClaims(universityQid);
-
-  // ── Step 2: P6364 → athletics department entity ───────────────────────────
-  const athleticsQid = claimEntityId(uClaims, "P6364");
-
-  if (athleticsQid) {
-    const aClaims = await wdGetClaims(athleticsQid);
-    const fileName = claimStringValue(aClaims, "P154");
-    if (fileName) {
-      const confidence = scoreCandidate(fileName);
-      // Try to get the athletics entity label (e.g. "Arizona Wildcats")
-      const aLabelUrl =
-        `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json` +
-        `&ids=${athleticsQid}&props=labels&languages=en&origin=*`;
-      let athleticsLabel: string | null = null;
-      try {
-        const aLabelData = await fetchJsonWithRetry(aLabelUrl);
-        athleticsLabel = aLabelData?.entities?.[athleticsQid]?.labels?.en?.value ?? null;
-      } catch { /* non-fatal */ }
-
-      return {
-        url:               commonsFilePath(fileName),
-        source:            `wikidata:${universityQid}:P6364:${athleticsQid}:P154`,
-        confidence,
-        fileName,
-        athleticsEntityId: athleticsQid,
-        athleticsLabel,
-      };
-    }
+  if (!athleticsPath) {
+    result.debugPath.push("no_athletics_path_available");
+    return result;
   }
 
-  // ── Step 3: Nickname fallback ─────────────────────────────────────────────
-  // Try P742 (nickname) or P1813 (short name) on the university entity,
-  // or use the existing stored nickname if we have one.
-  let nickname: string | null = existingNickname ?? null;
+  // Step 3: Fetch the athletics program page
+  const athleticsUrl = `https://en.wikipedia.org${athleticsPath}`;
+  result.athletics_wikipedia_url = athleticsUrl;
+  result.debugPath.push(`fetching_athletics_page:${athleticsUrl}`);
 
-  if (!nickname) {
-    nickname =
-      claimStringValue(uClaims, "P742")  ??  // nickname
-      claimStringValue(uClaims, "P1813") ??  // short name
-      null;
+  const athHtml = await fetchHtmlWithRetry(athleticsUrl);
+  const athInfobox = extractInfobox(athHtml);
+
+  if (!athInfobox) {
+    result.debugPath.push("no_infobox_on_athletics_page");
+    return result;
   }
 
-  if (nickname) {
-    // Search for e.g. "Arizona Wildcats" or just "Wildcats" prefixed with school short name
-    const shortName = schoolName
-      .replace(/^university of /i, "")
-      .replace(/\s+university$/i, "")
-      .replace(/\s+college$/i, "")
-      .trim();
+  // Extract the page title from <title> tag
+  const titleMatch = athHtml.match(/<title>([^<]+)<\/title>/i);
+  const pageTitle = titleMatch 
+    ? titleMatch[1].replace(/ - Wikipedia$/, "").replace(/ — Wikipedia$/, "").trim()
+    : null;
 
-    const queries = [
-      `${shortName} ${nickname}`,   // "Arizona Wildcats"
-      nickname,                       // "Wildcats" (less reliable)
-    ];
+  // Extract athletics name from infobox header
+  result.athletics_nickname = extractAthleticsName(athInfobox, pageTitle);
 
-    for (const q of queries) {
-      const results = await wdSearch(q, 5);
-      const match = results.find((r) =>
-        r.description.toLowerCase().includes("athletic") ||
-        r.description.toLowerCase().includes("ncaa") ||
-        r.description.toLowerCase().includes("sport") ||
-        r.description.toLowerCase().includes("team")
-      ) ?? null;
+  // Step 4: Extract the logo filename from the athletics infobox
+  const logoFilename = extractInfoboxLogoFilename(athInfobox);
 
-      if (match) {
-        const mClaims = await wdGetClaims(match.id);
-        const fileName = claimStringValue(mClaims, "P154");
-        if (fileName) {
-          const confidence = scoreCandidate(fileName);
-          return {
-            url:               commonsFilePath(fileName),
-            source:            `wikidata:${universityQid}:nickname:${match.id}:P154`,
-            confidence,
-            fileName,
-            athleticsEntityId: match.id,
-            athleticsLabel:    match.label,
-          };
-        }
-      }
-    }
+  if (!logoFilename) {
+    result.debugPath.push("no_logo_in_athletics_infobox");
+    return result;
   }
 
-  // ── Step 4: P154 directly on university entity (last resort) ─────────────
-  const directFileName = claimStringValue(uClaims, "P154");
-  if (directFileName) {
-    const confidence = scoreCandidate(directFileName) * 0.8; // discount — likely a seal/crest
-    return {
-      url:               commonsFilePath(directFileName),
-      source:            `wikidata:${universityQid}:P154:direct`,
-      confidence,
-      fileName:          directFileName,
-      athleticsEntityId: null,
-      athleticsLabel:    null,
-    };
-  }
+  result.fileName = logoFilename;
+  result.athletic_logo_url = commonsFilePath(logoFilename);
+  result.source = `wikipedia:institution→nickname→athletics_infobox`;
 
-  return null;
+  // Score confidence
+  const n = lc(logoFilename);
+  let confidence = 0.7;
+  if (n.endsWith(".svg")) confidence += 0.2;
+  else if (n.endsWith(".png")) confidence += 0.05;
+  if (n.includes("logo")) confidence += 0.1;
+  if (n.includes("wordmark")) confidence += 0.05;
+  result.confidence = Math.min(0.99, confidence);
+
+  result.debugPath.push(`found_logo:${logoFilename}:confidence=${result.confidence}`);
+  return result;
 }
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
   const t0 = Date.now();
-  const debug: any = {
-    version: "ingestSchoolAthleticLogos_2026-03-v3_p6364_chain",
+  const debug = {
+    version: "ingestSchoolAthleticLogos_v4_wikipedia_chain",
     notes: [],
   };
-  const stats: any = {
+  const stats = {
     scanned: 0,
     eligible: 0,
     updated: 0,
-    skippedMissing: 0,
-    skippedConfidence: 0,
-    skippedPhoto: 0,
-    notFound: 0,
+    skippedNoWikipedia: 0,
+    skippedAlreadyHasLogo: 0,
+    skippedNoDivision: 0,
+    noNicknameLink: 0,
+    noLogoFound: 0,
     errors: 0,
-    sources: { p6364: 0, nickname_fallback: 0, direct_p154: 0 },
     elapsedMs: 0,
   };
-  const sample: any = { updated: [], errors: [], notFound: [] };
+  const sample = { updated: [], errors: [], noLogo: [] };
 
   const elapsed = () => Date.now() - t0;
 
@@ -357,42 +320,18 @@ Deno.serve(async (req) => {
     const cursor       = body?.cursor ?? null;
     const maxRows      = Math.max(1, Number(body?.maxRows ?? 25));
     const throttleMs   = Math.max(0, Number(body?.throttleMs ?? 500));
-    const timeBudgetMs = Math.max(5000, Number(body?.timeBudgetMs ?? 25000));
+    const timeBudgetMs = Math.max(5000, Number(body?.timeBudgetMs ?? 55000));
     const onlyMissing  = body?.onlyMissing !== false;
     const force        = !!body?.force;
-    const minConfidence = Math.max(0, Math.min(0.99, Number(body?.minConfidence ?? 0.70)));
 
     const base44 = createClientFromRequest(req);
-    const School = (base44 as any)?.entities?.School ?? (base44 as any)?.entities?.Schools;
+    const School = base44.entities.School;
 
-    if (!School || typeof School.list !== "function" || typeof School.update !== "function") {
-      return json({ ok: false, error: "School entity not available" }, 500);
-    }
-
-    // Base44 uses filter() not list() — paginate via startAt offset
+    // Paginate via offset
     const startAt = cursor ? Number(cursor) : 0;
     const pageLimit = startAt + maxRows;
 
-    // Schema probe: confirm entity is reachable and check field names
-    let schemaProbe: any = null;
-    try {
-      const probeRows: any[] = await School.filter({}, "school_name", 3);
-      schemaProbe = {
-        rowCount: probeRows?.length ?? 0,
-        firstRowKeys: probeRows?.[0] ? Object.keys(probeRows[0]).slice(0, 20) : [],
-        sample: probeRows?.[0] ?? null,
-      };
-    } catch (e: any) {
-      schemaProbe = { error: String(e?.message || e) };
-    }
-    debug.schemaProbe = schemaProbe;
-
-    // Fetch all schools sorted by name
-    const allRows: any[] = await School.filter(
-      {},
-      "school_name",
-      pageLimit
-    );
+    const allRows = await School.filter({}, "school_name", pageLimit);
     const rows = (allRows || []).slice(startAt, startAt + maxRows);
     const nextOffset = startAt + rows.length;
     const next_cursor = rows.length === maxRows ? String(nextOffset) : null;
@@ -406,32 +345,37 @@ Deno.serve(async (req) => {
         break;
       }
 
-      const schoolId   = String(row?.id ?? row?._id ?? row?.uuid ?? "");
-      const schoolName = String(row?.name ?? row?.school_name ?? "");
-      const existing   = String(row?.athletic_logo_url ?? "");
-      const nickname   = String(row?.athletics_nickname ?? row?.nickname ?? "");
+      const schoolId   = String(row?.id || "");
+      const schoolName = String(row?.school_name || "");
+      const existing   = safeStr(row?.athletic_logo_url);
+      const wikiUrl    = safeStr(row?.wikipedia_url);
+      const existingAthUrl = safeStr(row?.athletics_wikipedia_url);
 
-      if (!schoolId || !schoolName) { stats.skippedMissing++; continue; }
+      if (!schoolId || !schoolName) { stats.skippedNoDivision++; continue; }
 
-      // Skip non-athletics schools — must have division or conference populated
-      // (scorecard import includes trade schools, beauty academies, etc. that have unitid
-      // but are not NCAA/NAIA members and won't have Wikidata athletics entries)
-      const hasDivision  = !!(row?.division  || row?.subdivision);
+      // Must have division or conference to be an athletics school
+      const hasDivision  = !!(row?.division || row?.subdivision);
       const hasConference = !!row?.conference;
-      if (!hasDivision && !hasConference) { stats.skippedMissing++; continue; }
+      if (!hasDivision && !hasConference) { stats.skippedNoDivision++; continue; }
 
+      // Skip if already has logo (unless force)
       if (onlyMissing && existing && !force) {
-        stats.skippedMissing++;
+        stats.skippedAlreadyHasLogo++;
+        continue;
+      }
+
+      // Need either wikipedia_url or athletics_wikipedia_url
+      if (!wikiUrl && !existingAthUrl) {
+        stats.skippedNoWikipedia++;
         continue;
       }
 
       stats.eligible++;
 
-      let result: LogoResult | null = null;
+      let result = null;
       try {
-        const athleticsWikiUrl = safeStr(row?.athletics_wikipedia_url);
-        result = await getAthleticLogoFromWikidata(schoolName, nickname || null, athleticsWikiUrl);
-      } catch (e: any) {
+        result = await getLogoViaWikipediaChain(wikiUrl, existingAthUrl);
+      } catch (e) {
         stats.errors++;
         if (sample.errors.length < 10) {
           sample.errors.push({ schoolId, name: schoolName, error: String(e?.message || e) });
@@ -440,58 +384,47 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      if (!result?.url) {
-        stats.notFound++;
-        if (sample.notFound.length < 10) sample.notFound.push({ schoolId, name: schoolName });
+      if (!result?.athletic_logo_url) {
+        if (result?.debugPath?.includes("no_nickname_link_in_infobox")) {
+          stats.noNicknameLink++;
+        } else {
+          stats.noLogoFound++;
+        }
+        if (sample.noLogo.length < 10) {
+          sample.noLogo.push({ schoolId, name: schoolName, debugPath: result?.debugPath });
+        }
         if (throttleMs > 0) await sleep(throttleMs);
         continue;
       }
 
-      const fn         = lc(result.fileName || "");
-      const confidence = Number(result.confidence ?? 0);
-
-      if (!force && confidence < minConfidence) {
-        stats.skippedConfidence++;
-        if (throttleMs > 0) await sleep(throttleMs);
-        continue;
-      }
-
-      if (!force && (fn.endsWith(".jpg") || fn.endsWith(".jpeg"))) {
-        stats.skippedPhoto++;
-        if (throttleMs > 0) await sleep(throttleMs);
-        continue;
-      }
-
-      // Track which path found the logo
-      if (result.source.includes("P6364"))       stats.sources.p6364++;
-      else if (result.source.includes("nickname")) stats.sources.nickname_fallback++;
-      else                                          stats.sources.direct_p154++;
-
-      const updates: any = {
-        athletic_logo_url:        result.url,
+      const updates = {
+        athletic_logo_url:        result.athletic_logo_url,
         athletic_logo_source:     result.source,
         athletic_logo_updated_at: new Date().toISOString(),
-        athletic_logo_confidence: confidence,
+        athletic_logo_confidence: result.confidence,
       };
 
-      // Bonus: store the athletics entity label as nickname if we found one
-      if (result.athleticsLabel && !row?.athletics_nickname) {
-        updates.athletics_nickname = result.athleticsLabel;
+      // Also update athletics_wikipedia_url and nickname if we found them
+      if (result.athletics_wikipedia_url && !existingAthUrl) {
+        updates.athletics_wikipedia_url = result.athletics_wikipedia_url;
+      }
+      if (result.athletics_nickname && !row?.athletics_nickname) {
+        updates.athletics_nickname = result.athletics_nickname;
       }
 
       if (dryRun) {
         stats.updated++;
         if (sample.updated.length < 10) {
-          sample.updated.push({ schoolId, name: schoolName, athleticsLabel: result.athleticsLabel, ...updates, dryRun: true });
+          sample.updated.push({ schoolId, name: schoolName, ...updates, debugPath: result.debugPath, dryRun: true });
         }
       } else {
         try {
           await School.update(schoolId, updates);
           stats.updated++;
           if (sample.updated.length < 10) {
-            sample.updated.push({ schoolId, name: schoolName, athleticsLabel: result.athleticsLabel, ...updates });
+            sample.updated.push({ schoolId, name: schoolName, ...updates, debugPath: result.debugPath });
           }
-        } catch (e: any) {
+        } catch (e) {
           stats.errors++;
           if (sample.errors.length < 10) {
             sample.errors.push({ schoolId, name: schoolName, error: String(e?.message || e) });
@@ -506,7 +439,7 @@ Deno.serve(async (req) => {
 
     return json({ ok: true, dryRun, done, next_cursor, stats, sample, debug });
 
-  } catch (e: any) {
+  } catch (e) {
     return json({ ok: false, error: String(e?.message || e), stats, sample, debug }, 500);
   }
 });
