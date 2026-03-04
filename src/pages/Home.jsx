@@ -244,7 +244,7 @@ export default function Home() {
                 <span
                   style={{
                     fontFamily: "'Bebas Neue', sans-serif",
-                    fontSize: 16,
+                    fontSize: 20,
                     letterSpacing: 3,
                     color: "#e8a020",
                     textTransform: "uppercase"
@@ -273,7 +273,7 @@ export default function Home() {
 
               <p
                 style={{
-                  fontSize: 24,
+                  fontSize: 20,
                   color: "#9ca3af",
                   lineHeight: 1.6,
                   marginTop: 16,
