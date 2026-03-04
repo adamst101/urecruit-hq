@@ -139,9 +139,32 @@ function containsKeyword(text, keywords) {
   return null;
 }
 
+// ─── Gender detection for shared directories ───────────────────────────────
+
+var MENS_INDICATORS = ["men's", "mens", "men\u2019s", "boys", "male"];
+var WOMENS_INDICATORS = ["women's", "womens", "women\u2019s", "girls", "female", "lady"];
+
+function detectCardGender(cardText) {
+  if (!cardText) return null;
+  var t = lc(cardText);
+  var hasMens = false;
+  var hasWomens = false;
+  for (var i = 0; i < WOMENS_INDICATORS.length; i++) {
+    if (t.indexOf(WOMENS_INDICATORS[i]) >= 0) { hasWomens = true; break; }
+  }
+  if (!hasWomens) {
+    for (var j = 0; j < MENS_INDICATORS.length; j++) {
+      if (t.indexOf(MENS_INDICATORS[j]) >= 0) { hasMens = true; break; }
+    }
+  }
+  if (hasWomens) return "womens";
+  if (hasMens) return "mens";
+  return null; // no indicator found
+}
+
 // ─── Directory parser (same HTML structure across all *campsusa.com) ────────
 
-function parseDirectoryHtml(html) {
+function parseDirectoryHtml(html, genderFilter) {
   var programs = [];
   if (!html) return programs;
 
@@ -150,6 +173,13 @@ function parseDirectoryHtml(html) {
 
   for (var i = 0; i < cardChunks.length; i++) {
     var card = cardChunks[i];
+
+    // Gender filtering for shared directories (basketball, lacrosse, soccer)
+    if (genderFilter && genderFilter !== "both") {
+      var cardGender = detectCardGender(stripTags(card));
+      // If card has a gender indicator and it doesn't match → skip
+      if (cardGender && cardGender !== genderFilter) continue;
+    }
 
     var nameMatch = /<span class="school">([^<]+)<\/span>/i.exec(card);
     var name = nameMatch ? nameMatch[1].trim() : null;
