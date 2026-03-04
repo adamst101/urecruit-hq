@@ -197,6 +197,7 @@ export default function SchoolsManager() {
   const [sortDir, setSortDir]       = useState("asc");
   const [page, setPage]             = useState(0);
   const PAGE_SIZE = 100;
+  const tableWrapRef = useRef(null);
 
   // Logo fill state
   const [logoFillRunning, setLogoFillRunning] = useState(false);
