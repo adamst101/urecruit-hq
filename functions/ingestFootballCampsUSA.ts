@@ -1294,6 +1294,11 @@ Deno.serve(async function(req) {
       var state2 = null;
       var notes = null;
 
+      var venueName = null;
+      var venueAddress = null;
+      var grades = null;
+      var hostOrg = null;
+
       if (!skipDetailFetch) {
         var detailResult = await fetchWithTimeout(regUrl, 12000);
         if (detailResult.ok) {
@@ -1306,6 +1311,10 @@ Deno.serve(async function(req) {
             if (details.city) city = details.city;
             if (details.state) state2 = details.state;
             if (details.description) notes = details.description;
+            if (details.venue_name) venueName = details.venue_name;
+            if (details.venue_address) venueAddress = details.venue_address;
+            if (details.grades) grades = details.grades;
+            if (details.host_org) hostOrg = details.host_org;
           }
         }
         await sleep(Math.max(300, sleepMs / 2));
