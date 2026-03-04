@@ -148,7 +148,7 @@ export default function Home() {
           </div>
 
           {/* Right — mock camp cards (hidden on mobile) */}
-          <div className="hidden md:block" style={{ flex: "1 1 40%", position: "relative", minHeight: 380 }}>
+          <div className="hidden md:block" style={{ flex: "1 1 45%", position: "relative", minHeight: 380 }}>
             <MockCard top={0} left={30} rotate={-2} school="Ohio State Football" date="June 14 · Columbus OH" price="$75 · Grades 9-12" badge="Registered" badgeColor="#10b981" />
             <MockCard top={50} left={10} rotate={1} school="Alabama Crimson Tide" date="June 21 · Tuscaloosa AL" price="$65" badge="Favorited" badgeColor="#e8a020" />
             <MockCard top={100} left={50} rotate={3} school="Penn State Football" date="July 5 · State College PA" price="$60" badge="" badgeColor="" />
