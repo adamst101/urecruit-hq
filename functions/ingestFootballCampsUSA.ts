@@ -31,8 +31,17 @@ var NON_FOOTBALL_KEYWORDS = [
   "lacrosse", "tennis", "golf", "swimming", "wrestling",
   "track", "cross country", "hockey", "rugby", "cricket",
   "yoga", "theater", "theatre", "arts", "music", "stem", "medicare",
-  "hunter", "family", "sliced", "diced", "cheerleading", "cheer camp",
+  "hunter", "sliced", "diced", "cheerleading", "cheer camp",
   "dance camp", "band camp", "cooking"
+];
+
+// Programs to permanently skip during ingestion (entire site is skipped)
+var PROGRAM_BLOCKLIST = [
+  "big blue sports llc",
+  "central wyoming college - recreation",
+  "naperville championship football camps",
+  "texas spartan athletics",
+  "tnt football camps",
 ];
 
 function containsNonFootballKeyword(text) {
