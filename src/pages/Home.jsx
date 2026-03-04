@@ -112,7 +112,7 @@ export default function Home() {
         <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 60% 50% at 80% 20%, rgba(232,160,32,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.015) 60px, rgba(255,255,255,0.015) 61px)", pointerEvents: "none" }} />
 
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 24px 60px", width: "100%", position: "relative", zIndex: 1 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 24px 40px", width: "100%", position: "relative", zIndex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 60 }}>
           {/* Left */}
           <div style={{ flex: "1 1 55%", minWidth: 0 }}>
