@@ -11,7 +11,6 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
-import { getCurrentSoldSeason, getCurrentActiveSeason, isEarlyBirdPeriod } from "../components/utils/seasonUtils";
 
 function trackEvent(payload) {
   try {
@@ -52,17 +51,14 @@ function seasonEndsAtUtc(seasonYear) {
   }
 }
 
-const BASE_PRICE = 49;
-
 export default function Checkout() {
   const navigate = useNavigate();
   const location = useLocation();
 
   const { isLoading, mode, accountId } = useSeasonAccess();
 
-  const soldSeason = useMemo(() => getCurrentSoldSeason(), []);
-  const activeSeason = useMemo(() => getCurrentActiveSeason(), []);
-  const earlyBird = useMemo(() => isEarlyBirdPeriod(), []);
+  const [seasonConfig, setSeasonConfig] = useState(null);
+  const [seasonLoading, setSeasonLoading] = useState(true);
 
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState(null);
@@ -80,7 +76,26 @@ export default function Checkout() {
   const params = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
   const next = params.get("next");
   const source = params.get("source") || "checkout_page";
-  const soldYear = soldSeason;
+  const isAddOn = params.get("addon") === "1";
+
+  // Fetch dynamic season config
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await base44.functions.invoke("getActiveSeason", {});
+        if (!cancelled && res.data?.ok && res.data?.season) {
+          setSeasonConfig(res.data.season);
+        }
+      } catch {}
+      if (!cancelled) setSeasonLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const soldYear = seasonConfig?.season_year || new Date().getFullYear();
+  const BASE_PRICE = isAddOn ? (seasonConfig?.price_add_on || 39) : (seasonConfig?.price_primary || 49);
+  const earlyBird = false; // Will be derived from seasonConfig if needed
 
   // Is this the BETA100 free bypass code?
   const isBetaFreeCode = appliedCoupon?.code?.toUpperCase() === "BETA100";
@@ -96,26 +111,27 @@ export default function Checkout() {
 
   const discountAmount = BASE_PRICE - discountedPrice;
 
-  // Guardrail: paid users should NEVER see Checkout
+  // Guardrail: paid users should NEVER see Checkout (unless buying add-on)
   useEffect(() => {
     if (isLoading) return;
-    if (mode === "paid") {
+    if (mode === "paid" && !isAddOn) {
       navigate(discoverTarget, { replace: true });
     }
-  }, [isLoading, mode, discoverTarget, navigate]);
+  }, [isLoading, mode, discoverTarget, navigate, isAddOn]);
 
   // No login redirect — anonymous users can checkout. Stripe collects their email.
 
   // Track checkout viewed
   useEffect(() => {
-    if (isLoading || mode === "paid") return;
-    const key = `evt_checkout_viewed_${soldYear}`;
+    if (isLoading || seasonLoading) return;
+    if (mode === "paid" && !isAddOn) return;
+    const key = `evt_checkout_viewed_${soldYear}_${isAddOn ? "addon" : "primary"}`;
     try {
       if (sessionStorage.getItem(key) === "1") return;
       sessionStorage.setItem(key, "1");
     } catch {}
-    trackEvent({ event_name: "checkout_viewed", mode: "demo", season_year: soldYear, source, account_id: accountId || null, next: next || null });
-  }, [isLoading, mode, signedIn, soldYear, source, accountId, next]);
+    trackEvent({ event_name: "checkout_viewed", mode: isAddOn ? "addon" : "demo", season_year: soldYear, source, account_id: accountId || null, next: next || null, is_add_on: isAddOn });
+  }, [isLoading, seasonLoading, mode, signedIn, soldYear, source, accountId, next, isAddOn]);
 
   // Apply coupon — validate via Stripe by attempting a checkout with coupon
   async function handleApplyCoupon() {
@@ -206,6 +222,7 @@ export default function Checkout() {
         userEmail: "",
         successUrl: window.location.origin + createPageUrl("CheckoutSuccess"),
         cancelUrl: window.location.origin + createPageUrl("Subscribe"),
+        isAddOn,
       });
 
       const result = res.data;
@@ -221,16 +238,23 @@ export default function Checkout() {
     }
   }
 
-  if (isLoading) return null;
-  if (mode === "paid") return null;
+  if (isLoading || seasonLoading) return null;
+  if (mode === "paid" && !isAddOn) return null;
 
-  const features = [
-    `Full access to ${soldYear} camp season`,
-    "759+ college football camps",
-    "Conflict & travel detection",
-    "Multiple athletes per account",
-    "Updated every Monday",
-  ];
+  const features = isAddOn
+    ? [
+        `Add another athlete to ${soldYear} season`,
+        "Own favorites & registration tracking",
+        "Conflict & travel detection",
+        "Independent calendar view",
+      ]
+    : [
+        `Full access to ${soldYear} camp season`,
+        "759+ college football camps",
+        "Conflict & travel detection",
+        "Multiple athletes per account",
+        "Updated every Monday",
+      ];
 
   return (
     <div style={{ background: "#0a0e1a", minHeight: "100vh", padding: "24px 16px", fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
@@ -255,7 +279,7 @@ export default function Checkout() {
           <div style={{ padding: "28px 24px" }}>
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 3, color: "#e8a020", textTransform: "uppercase" }}>Order Summary</div>
             <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "#f9fafb", margin: "8px 0 0", lineHeight: 1 }}>
-              Season Pass {soldYear}
+              {isAddOn ? `Add-On Athlete ${soldYear}` : `Season Pass ${soldYear}`}
             </h2>
 
             {earlyBird && (
@@ -267,7 +291,7 @@ export default function Checkout() {
             {/* Price breakdown */}
             <div style={{ marginTop: 24 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, color: "#d1d5db", padding: "8px 0" }}>
-                <span>Season Pass {soldYear}</span>
+                <span>{isAddOn ? `Add-On Athlete ${soldYear}` : `Season Pass ${soldYear}`}</span>
                 <span>${BASE_PRICE.toFixed(2)}</span>
               </div>
 
