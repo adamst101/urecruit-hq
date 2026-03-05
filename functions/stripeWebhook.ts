@@ -3,6 +3,49 @@ import Stripe from 'npm:stripe@17.7.0';
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY"));
 
+async function createOrUpdateEntitlement(base44, {
+  accountId, athleteId, seasonYear, isPrimary, amountPaid, endsAt, startsAt
+}) {
+  const filter = { account_id: accountId, season_year: seasonYear };
+  if (athleteId) filter.athlete_id = athleteId;
+
+  const existing = await base44.asServiceRole.entities.Entitlement.filter(filter);
+
+  // Dedupe: don't create if already active for this athlete+season
+  if (existing && existing.length > 0) {
+    const activeOne = existing.find(e => e.status === "active");
+    if (activeOne) {
+      console.log("Entitlement already active for athlete " + athleteId + ", season " + seasonYear);
+      return activeOne;
+    }
+    // Update the first found
+    await base44.asServiceRole.entities.Entitlement.update(existing[0].id, {
+      status: "active",
+      is_primary: isPrimary,
+      amount_paid: amountPaid,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      product: "RecruitMeSeasonAccess",
+    });
+    console.log("Updated entitlement " + existing[0].id);
+    return existing[0];
+  }
+
+  const created = await base44.asServiceRole.entities.Entitlement.create({
+    account_id: accountId,
+    athlete_id: athleteId || "",
+    season_year: seasonYear,
+    status: "active",
+    is_primary: isPrimary,
+    amount_paid: amountPaid,
+    starts_at: startsAt,
+    ends_at: endsAt,
+    product: "RecruitMeSeasonAccess",
+  });
+  console.log("Created entitlement for account " + accountId + ", athlete " + athleteId + ", season " + seasonYear);
+  return created;
+}
+
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
@@ -37,8 +80,11 @@ Deno.serve(async (req) => {
     const athleteId = session.metadata?.athlete_id || "";
     const couponCode = session.metadata?.coupon_code || "";
     const isAddOn = session.metadata?.is_add_on === "true";
+    const hasSecondAthlete = session.metadata?.has_second_athlete === "true";
+    const athleteTwoName = session.metadata?.athlete_2_name || "";
+    const athleteTwoGradYear = session.metadata?.athlete_2_grad_year || "";
     const email = session.customer_email || "";
-    const amountPaid = (session.amount_total || 0) / 100;
+    const amountTotal = (session.amount_total || 0) / 100;
     const seasonYear = parseInt(session.metadata?.season_year) || new Date().getFullYear();
 
     // Look up SeasonConfig for proper access dates
@@ -60,35 +106,91 @@ Deno.serve(async (req) => {
     }
 
     try {
-      // Check for existing entitlement
-      const existingFilter = { account_id: accountId, season_year: seasonYear };
-      if (athleteId) existingFilter.athlete_id = athleteId;
-
-      const existing = await base44.asServiceRole.entities.Entitlement.filter(existingFilter);
-
-      if (existing && existing.length > 0) {
-        await base44.asServiceRole.entities.Entitlement.update(existing[0].id, {
-          status: "active",
-          is_primary: !isAddOn,
-          amount_paid: amountPaid,
-          starts_at: accessStartsAt,
-          ends_at: accessEndsAt,
-          product: "RecruitMeSeasonAccess",
+      // SCENARIO A — Primary athlete purchase (or standalone add-on)
+      if (!isAddOn) {
+        const primaryAmount = hasSecondAthlete ? 49 : amountTotal;
+        await createOrUpdateEntitlement(base44, {
+          accountId,
+          athleteId,
+          seasonYear,
+          isPrimary: true,
+          amountPaid: primaryAmount,
+          startsAt: accessStartsAt,
+          endsAt: accessEndsAt,
         });
-        console.log("Updated entitlement " + existing[0].id + " for account " + accountId + ", season " + seasonYear);
-      } else {
-        await base44.asServiceRole.entities.Entitlement.create({
-          account_id: accountId,
-          athlete_id: athleteId || "",
-          season_year: seasonYear,
-          status: "active",
-          is_primary: !isAddOn,
-          amount_paid: amountPaid,
-          starts_at: accessStartsAt,
-          ends_at: accessEndsAt,
-          product: "RecruitMeSeasonAccess",
+      }
+
+      // SCENARIO B — Second athlete bundled with primary
+      if (!isAddOn && hasSecondAthlete && athleteTwoName) {
+        try {
+          const newAthlete = await base44.asServiceRole.entities.AthleteProfile.create({
+            account_id: accountId,
+            first_name: athleteTwoName.split(" ")[0] || athleteTwoName,
+            last_name: athleteTwoName.split(" ").slice(1).join(" ") || "",
+            athlete_name: athleteTwoName,
+            display_name: athleteTwoName,
+            is_primary: false,
+            grad_year: parseInt(athleteTwoGradYear) || null,
+            sport_id: "",
+            primary_position_id: "",
+            active: true,
+          });
+          console.log("Created secondary athlete profile:", newAthlete.id);
+
+          await createOrUpdateEntitlement(base44, {
+            accountId,
+            athleteId: newAthlete.id,
+            seasonYear,
+            isPrimary: false,
+            amountPaid: 39,
+            startsAt: accessStartsAt,
+            endsAt: accessEndsAt,
+          });
+        } catch (e) {
+          console.error("Failed to create secondary athlete from checkout:", e.message);
+        }
+      }
+
+      // SCENARIO C — Standalone add-on athlete purchase
+      if (isAddOn && athleteTwoName) {
+        try {
+          const newAthlete = await base44.asServiceRole.entities.AthleteProfile.create({
+            account_id: accountId,
+            first_name: athleteTwoName.split(" ")[0] || athleteTwoName,
+            last_name: athleteTwoName.split(" ").slice(1).join(" ") || "",
+            athlete_name: athleteTwoName,
+            display_name: athleteTwoName,
+            is_primary: false,
+            grad_year: parseInt(athleteTwoGradYear) || null,
+            sport_id: "",
+            primary_position_id: "",
+            active: true,
+          });
+          console.log("Created add-on athlete profile:", newAthlete.id);
+
+          await createOrUpdateEntitlement(base44, {
+            accountId,
+            athleteId: newAthlete.id,
+            seasonYear,
+            isPrimary: false,
+            amountPaid: amountTotal,
+            startsAt: accessStartsAt,
+            endsAt: accessEndsAt,
+          });
+        } catch (e) {
+          console.error("Failed to create add-on athlete:", e.message);
+        }
+      } else if (isAddOn && !athleteTwoName) {
+        // Fallback: add-on purchase without athlete name (just create entitlement)
+        await createOrUpdateEntitlement(base44, {
+          accountId,
+          athleteId,
+          seasonYear,
+          isPrimary: false,
+          amountPaid: amountTotal,
+          startsAt: accessStartsAt,
+          endsAt: accessEndsAt,
         });
-        console.log("Created entitlement for account " + accountId + ", season " + seasonYear);
       }
 
       // Auto-invite user if they don't have an account yet
@@ -111,7 +213,7 @@ Deno.serve(async (req) => {
         await base44.asServiceRole.entities.Event.create({
           source_platform: "stripe",
           event_type: "purchase_completed",
-          title: "Season Pass " + seasonYear + " purchased" + (isAddOn ? " (add-on)" : ""),
+          title: "Season Pass " + seasonYear + " purchased" + (isAddOn ? " (add-on)" : "") + (hasSecondAthlete ? " (+2nd athlete)" : ""),
           source_key: "stripe:" + session.id,
           start_date: new Date().toISOString().slice(0, 10),
           payload_json: JSON.stringify({
@@ -119,10 +221,12 @@ Deno.serve(async (req) => {
             account_id: accountId,
             athlete_id: athleteId,
             email,
-            amount_paid: amountPaid,
+            amount_paid: amountTotal,
             coupon_code: couponCode,
             season_year: seasonYear,
             is_add_on: isAddOn,
+            has_second_athlete: hasSecondAthlete,
+            athlete_2_name: athleteTwoName,
           }),
           ts: new Date().toISOString(),
         });
@@ -130,7 +234,7 @@ Deno.serve(async (req) => {
         console.warn("Event logging failed (non-critical):", e.message);
       }
     } catch (err) {
-      console.error("Failed to create/update entitlement:", err.message);
+      console.error("Failed to process checkout:", err.message);
       return Response.json({ ok: false, error: err.message }, { status: 500 });
     }
   }

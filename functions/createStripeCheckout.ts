@@ -31,9 +31,14 @@ Deno.serve(async (req) => {
     user = await base44.auth.me();
   } catch {}
 
-  const { couponCode, athleteId, userEmail, successUrl, cancelUrl, isAddOn } = await req.json();
+  const {
+    couponCode, athleteId, userEmail, successUrl, cancelUrl,
+    isAddOn, addSecondAthlete,
+    athleteOneName, athleteTwoName, athleteTwoGradYear
+  } = await req.json();
 
   const email = userEmail || user?.email || "";
+  const accountId = user?.id || "";
 
   // Get active season from DB
   const season = await getActiveSeason(base44);
@@ -43,7 +48,38 @@ Deno.serve(async (req) => {
 
   const soldSeason = season.season_year;
 
-  // Pick the right price ID: add-on ($39) vs primary ($49)
+  // Abuse prevention: max 5 athletes per account
+  if (accountId && (isAddOn || addSecondAthlete)) {
+    try {
+      const existingAthletes = await base44.asServiceRole.entities.AthleteProfile.filter({
+        account_id: accountId,
+      });
+      if (existingAthletes && existingAthletes.length >= 5) {
+        return Response.json({ ok: false, error: "Maximum 5 athletes per account" });
+      }
+    } catch (e) {
+      console.warn("Athlete count check failed:", e.message);
+    }
+  }
+
+  // Additional athlete requires active primary entitlement
+  if (isAddOn && accountId) {
+    try {
+      const primaryEnt = await base44.asServiceRole.entities.Entitlement.filter({
+        account_id: accountId,
+        is_primary: true,
+        season_year: soldSeason,
+        status: "active",
+      });
+      if (!primaryEnt || primaryEnt.length === 0) {
+        return Response.json({ ok: false, error: "A Season Pass is required before adding athletes" });
+      }
+    } catch (e) {
+      console.warn("Primary entitlement check failed:", e.message);
+    }
+  }
+
+  // Pick the right price ID
   const priceId = isAddOn ? season.stripe_price_add_on : season.stripe_price_primary;
   if (!priceId) {
     return Response.json({ ok: false, error: "Price not configured for this season" });
@@ -86,17 +122,29 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Build line items
+  const lineItems = [{ price: priceId, quantity: 1 }];
+
+  // If adding a second athlete at the same time as the primary
+  if (addSecondAthlete && !isAddOn && season.stripe_price_add_on) {
+    lineItems.push({ price: season.stripe_price_add_on, quantity: 1 });
+  }
+
   const sessionParams = {
     payment_method_types: ["card"],
     mode: "payment",
     customer_email: email || undefined,
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: lineItems,
     metadata: {
       athlete_id: athleteId || "",
-      account_id: user?.id || "",
+      account_id: accountId,
       coupon_code: couponCode || "",
       season_year: soldSeason.toString(),
       is_add_on: isAddOn ? "true" : "false",
+      has_second_athlete: addSecondAthlete ? "true" : "false",
+      athlete_1_name: athleteOneName || "",
+      athlete_2_name: athleteTwoName || "",
+      athlete_2_grad_year: athleteTwoGradYear || "",
     },
     success_url: successUrl + "?session_id={CHECKOUT_SESSION_ID}",
     cancel_url: cancelUrl,

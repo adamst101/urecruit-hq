@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "You must be logged in to activate free access" }, { status: 401 });
   }
 
-  // Check for existing entitlement
+  // Check for existing active entitlement
   try {
     const existing = await base44.asServiceRole.entities.Entitlement.filter({
       account_id: resolvedAccountId,
@@ -116,6 +116,7 @@ Deno.serve(async (req) => {
 
   return Response.json({
     ok: true,
+    free: true,
     seasonYear: soldSeason,
     accountId: resolvedAccountId,
     email: resolvedEmail,

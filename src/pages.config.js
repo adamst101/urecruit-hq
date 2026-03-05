@@ -75,6 +75,8 @@ import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
+import SeasonManager from './pages/SeasonManager';
+import AthleteManager from './pages/AthleteManager';
 import __Layout from './Layout.jsx';
 
 
@@ -107,6 +109,8 @@ export const PAGES = {
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
+    "SeasonManager": SeasonManager,
+    "AthleteManager": AthleteManager,
 }
 
 export const pagesConfig = {
