@@ -519,9 +519,16 @@ export default function Discover() {
       }
       grouped[key].camps.push(camp);
     }
-    return Object.values(grouped).sort((a, b) =>
-      String(a.school_name).toLowerCase().localeCompare(String(b.school_name).toLowerCase())
-    );
+    // Preserve the division → alphabetical order from rawRows (already sorted)
+    const DIV_ORDER = { "D1 (FBS)": 0, "D1 (FCS)": 1, "D2": 2, "D3": 3, "NAIA": 4, "JUCO": 5 };
+    return Object.values(grouped).sort((a, b) => {
+      const da = normalizeDivisionForSort(a.division || "", "");
+      const db = normalizeDivisionForSort(b.division || "", "");
+      const oa = DIV_ORDER[da] ?? 99;
+      const ob = DIV_ORDER[db] ?? 99;
+      if (oa !== ob) return oa - ob;
+      return String(a.school_name).toLowerCase().localeCompare(String(b.school_name).toLowerCase());
+    });
   }, [rawRows, resolveIdentity]);
 
   function isCampFavorite(campId) {
