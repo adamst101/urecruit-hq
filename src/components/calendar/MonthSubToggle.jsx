@@ -3,12 +3,13 @@ import React from "react";
 export default function MonthSubToggle({ subView, setSubView }) {
   const views = [
     { key: "week", label: "📅 Week" },
-    { key: "month", label: "📆 Month" },
+    { key: "agenda", label: "📆 Agenda" },
+    { key: "grid", label: "🗓 Grid" },
   ];
 
   return (
     <div className="flex gap-0 justify-end mb-4">
-      {views.map((v) => {
+      {views.map((v, i) => {
         const isActive = subView === v.key;
         return (
           <button
@@ -24,7 +25,7 @@ export default function MonthSubToggle({ subView, setSubView }) {
               fontWeight: isActive ? 700 : 500,
               cursor: "pointer",
               transition: "all 0.15s",
-              marginLeft: v.key === "month" ? -1 : 0,
+              marginLeft: i > 0 ? -1 : 0,
             }}
           >
             {v.label}

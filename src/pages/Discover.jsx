@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SlidersHorizontal } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { base44 } from "../api/base44Client";
 
@@ -226,9 +227,15 @@ function LogoAvatar({ schoolName, logoUrl }) {
    Page
 ═══════════════════════════════════════════════════════════════════════════════ */
 
+function invalidateCampCaches(qc) {
+  qc.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+  qc.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+}
+
 export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
+  const queryClient = useQueryClient();
 
   const { identity: athleteProfile } = useAthleteIdentity();
   const { demoProfileId } = useDemoProfile();
@@ -632,10 +639,12 @@ export default function Discover() {
     if (!isPaid) {
       const next = toggleDemoFavorite(demoProfileId, campId, seasonYear);
       setDemoFavoriteIds(next);
+      invalidateCampCaches(queryClient);
       return;
     }
     const isFav = isCampFavorite(campId);
     upsertIntent(campId, isFav ? "" : "favorite");
+    invalidateCampCaches(queryClient);
   }
 
   async function handleFavoriteToggle(campId) {
@@ -669,10 +678,11 @@ export default function Discover() {
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, campId);
       setDemoFavoriteIds(getDemoFavorites(demoProfileId, seasonYear));
-      // force re-render by updating intentByKey
       setIntentByKey((p) => ({ ...p }));
+      invalidateCampCaches(queryClient);
     } else {
       upsertIntent(campId, "registered");
+      invalidateCampCaches(queryClient);
     }
   }
 
@@ -697,6 +707,7 @@ export default function Discover() {
     } else {
       upsertIntent(campId, "");
     }
+    invalidateCampCaches(queryClient);
     setUnregisterModal({ open: false, camp: null });
   }
 
