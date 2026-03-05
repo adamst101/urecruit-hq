@@ -1,7 +1,8 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { base44 } from "../../api/base44Client";
 import { createPageUrl } from "../../utils";
-import { Lock, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 export default function GuidePaywall({ isAuthenticated }) {
   const nav = useNavigate();
