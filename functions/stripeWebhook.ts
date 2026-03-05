@@ -91,6 +91,21 @@ Deno.serve(async (req) => {
         console.log("Created entitlement for account " + accountId + ", season " + seasonYear);
       }
 
+      // Auto-invite user if they don't have an account yet
+      if (email) {
+        try {
+          const existingUsers = await base44.asServiceRole.entities.User.filter({ email: email });
+          if (!existingUsers || existingUsers.length === 0) {
+            await base44.users.inviteUser(email, "user");
+            console.log("Auto-invited new user:", email);
+          } else {
+            console.log("User already exists:", email);
+          }
+        } catch (e) {
+          console.warn("Auto-invite failed (non-critical):", e.message);
+        }
+      }
+
       // Log the event
       try {
         await base44.asServiceRole.entities.Event.create({
