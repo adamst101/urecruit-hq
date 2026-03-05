@@ -24,16 +24,16 @@ export default function SupportButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`fixed bottom-24 right-4 z-[9999] w-13 h-13 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110 ${pulse ? "animate-pulse" : ""}`}
+        className={`fixed bottom-32 right-4 z-[9999] w-[4.5rem] h-[4.5rem] rounded-full flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110 ${pulse ? "animate-pulse" : ""}`}
         style={{
           background: "#e8a020",
           boxShadow: pulse
-            ? "0 0 0 6px rgba(232,160,32,0.3), 0 4px 16px rgba(0,0,0,0.3)"
-            : "0 4px 16px rgba(0,0,0,0.3)",
+            ? "0 0 0 8px rgba(232,160,32,0.3), 0 6px 24px rgba(0,0,0,0.4)"
+            : "0 6px 24px rgba(0,0,0,0.4)",
         }}
         aria-label="Help & Feedback"
       >
-        <MessageCircleQuestion className="w-6 h-6 text-[#0a0e1a]" />
+        <MessageCircleQuestion className="w-9 h-9 text-[#0a0e1a]" />
       </button>
 
       {open && <SupportModal onClose={() => setOpen(false)} />}
