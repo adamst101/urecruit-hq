@@ -205,10 +205,9 @@ export default function SchoolGroupCard({
               <div
                 key={campId}
                 className={
-                  "flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-[#1a2235] transition " +
+                  "flex items-center gap-3 px-5 py-3 hover:bg-[#1a2235] transition " +
                   (idx % 2 === 1 ? "bg-[#0f172a]/40" : "")
                 }
-                onClick={() => onCampClick?.(campId)}
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
