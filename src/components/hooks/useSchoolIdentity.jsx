@@ -103,18 +103,45 @@ async function safeFilter(entity, where, sort, limit, retries = 2) {
   return [];
 }
 
+// Module-level school cache — survives across re-renders and navigations
+const _schoolCache = new Map();
+const _schoolCacheTime = { ts: 0 };
+const SCHOOL_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getSchoolFromCache(id) {
+  if (Date.now() - _schoolCacheTime.ts > SCHOOL_CACHE_TTL) {
+    _schoolCache.clear();
+    _schoolCacheTime.ts = 0;
+    return undefined;
+  }
+  return _schoolCache.get(id);
+}
+
+function setSchoolCache(id, data) {
+  _schoolCache.set(id, data);
+  if (!_schoolCacheTime.ts) _schoolCacheTime.ts = Date.now();
+}
+
 async function fetchSchoolsByIds(School, ids) {
   const clean = uniq(ids);
   if (!School?.filter || clean.length === 0) return [];
 
+  // Check cache first — only fetch missing IDs
+  const cached = [];
+  const missing = [];
+  for (const id of clean) {
+    const hit = getSchoolFromCache(id);
+    if (hit) cached.push(hit);
+    else missing.push(id);
+  }
+
+  if (missing.length === 0) return cached;
+
   const out = [];
-  for (const part of chunk(clean, 60)) {
+  for (const part of chunk(missing, 60)) {
     const tries = [
-      { id: { in: part } },
       { id: { $in: part } },
-      { _id: { in: part } },
-      { _id: { $in: part } },
-      { id: part },
+      { id: { in: part } },
     ];
 
     let rows = [];
@@ -125,22 +152,15 @@ async function fetchSchoolsByIds(School, ids) {
     out.push(...rows);
   }
 
-  if (!out.length) {
-    const all = await safeFilter(School, {}, "school_name", 5000);
-    const wanted = new Set(clean);
-    return asArray(all).filter((s) => {
-      const id = String(normId(s) || "");
-      return id && wanted.has(id);
-    });
-  }
-
+  // Cache fetched results
   const seen = new Set();
   const deduped = [];
-  for (const r of out) {
+  for (const r of [...cached, ...out]) {
     const id = String(normId(r) || "");
     if (!id || seen.has(id)) continue;
     seen.add(id);
     deduped.push(r);
+    setSchoolCache(id, r);
   }
   return deduped;
 }
