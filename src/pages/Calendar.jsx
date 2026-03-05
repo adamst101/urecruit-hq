@@ -17,7 +17,7 @@ import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
-import { useDemoCampSummaries } from "../components/hooks/useDemoCampSummaries.jsx";
+import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 
 import {
   normalizeFilters,
