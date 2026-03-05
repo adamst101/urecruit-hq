@@ -56,13 +56,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Send confirmation to user
-    await base44.asServiceRole.integrations.Core.SendEmail({
-      to: String(userEmail).trim(),
-      from_name: "URecruit HQ Support",
-      subject: `URecruit HQ Support — Ticket #${ticketNumber}`,
-      body: `Hi ${userName || "there"},\n\nWe received your ${type || "support request"} and will get back to you within 24-48 hours.\n\nTicket: #${ticketNumber}\nSubject: ${subject}\n\nThanks,\nURecruit HQ Support\nsupport@urecruithq.com`,
-    });
+    // Send confirmation to user (non-blocking — may fail for non-app users)
+    try {
+      await base44.asServiceRole.integrations.Core.SendEmail({
+        to: String(userEmail).trim(),
+        from_name: "URecruit HQ Support",
+        subject: `URecruit HQ Support — Ticket #${ticketNumber}`,
+        body: `Hi ${userName || "there"},\n\nWe received your ${type || "support request"} and will get back to you within 24-48 hours.\n\nTicket: #${ticketNumber}\nSubject: ${subject}\n\nThanks,\nURecruit HQ Support\nsupport@urecruithq.com`,
+      });
+    } catch (emailErr) {
+      console.log("User confirmation email skipped:", emailErr.message);
+    }
 
     return Response.json({ ok: true, ticketNumber });
   } catch (error) {
