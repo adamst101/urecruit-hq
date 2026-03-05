@@ -1,11 +1,8 @@
 // src/Layout.jsx  (Base44 shared layout must be named Layout.jsx in /src root)
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { LogIn } from "lucide-react";
-
 import { base44 } from "./api/base44Client";
 import { createPageUrl } from "./utils";
-import { startMemberLogin } from "./components/utils/memberLogin.jsx";
 import SupportButton from "./components/support/SupportButton.jsx";
 
 const LOGO_URL =
@@ -51,10 +48,6 @@ export default function Layout({ children }) {
 
   function goWorkspace() {
     navigate(createPageUrl("Workspace"));
-  }
-
-  function handleMemberLogin() {
-    startMemberLogin({ nextPath: createPageUrl("Workspace"), source: "layout_member_login" });
   }
 
   function handleSubscribe() {
