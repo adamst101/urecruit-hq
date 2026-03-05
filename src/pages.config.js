@@ -57,7 +57,6 @@ import BlockListManager from './pages/BlockListManager';
 import Calendar from './pages/Calendar';
 import CampDetail from './pages/CampDetail';
 import CampsManager from './pages/CampsManager';
-import Checkout from './pages/Checkout';
 import CheckoutSuccess from './pages/CheckoutSuccess';
 import Discover from './pages/Discover';
 import GenerateDemoCamps from './pages/GenerateDemoCamps';
@@ -91,7 +90,6 @@ export const PAGES = {
     "Calendar": Calendar,
     "CampDetail": CampDetail,
     "CampsManager": CampsManager,
-    "Checkout": Checkout,
     "CheckoutSuccess": CheckoutSuccess,
     "Discover": Discover,
     "GenerateDemoCamps": GenerateDemoCamps,
