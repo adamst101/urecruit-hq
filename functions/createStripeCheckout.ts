@@ -33,27 +33,39 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "Price not configured for this season" });
   }
 
-  // Validate coupon if provided
+  // Validate promotion code if provided
   let discounts = [];
   if (couponCode && couponCode.trim()) {
+    const code = couponCode.trim().toUpperCase();
+    console.log("Received couponCode:", couponCode, "Uppercased:", code);
+
     try {
-      const coupon = await stripe.coupons.retrieve(couponCode.trim().toUpperCase());
-      if (coupon.valid) {
-        discounts = [{ coupon: coupon.id }];
+      const promoCodes = await stripe.promotionCodes.list({
+        code,
+        active: true,
+        limit: 1,
+      });
+      console.log("Stripe promotionCodes.list response:", JSON.stringify(promoCodes.data));
+
+      if (promoCodes.data.length > 0) {
+        discounts = [{ promotion_code: promoCodes.data[0].id }];
+        console.log("Applying promotion_code:", promoCodes.data[0].id);
       } else {
-        return Response.json({ ok: false, error: "Coupon is expired or invalid" });
+        return Response.json({ ok: false, error: "Invalid or expired promo code" });
       }
-    } catch {
-      return Response.json({ ok: false, error: "Invalid coupon code" });
+    } catch (err) {
+      console.error("Promo code validation error:", err.message);
+      return Response.json({ ok: false, error: "Could not validate promo code" });
     }
   }
 
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card"],
     mode: "payment",
+    allow_promotion_codes: discounts.length === 0,
     customer_email: email || undefined,
     line_items: [{ price: priceId, quantity: 1 }],
-    discounts,
+    discounts: discounts.length > 0 ? discounts : undefined,
     metadata: {
       athlete_id: athleteId || "",
       account_id: user?.id || "",
