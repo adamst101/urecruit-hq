@@ -33,7 +33,7 @@ const DISTANCE_OPTIONS = [
   { value: "500", label: "Within 500 mi" },
 ];
 
-export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, onDistanceChange, selectedMonth, onMonthChange }) {
+export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, distanceWarning, onDistanceChange, selectedMonth, onMonthChange }) {
   const currentState = nf?.state || "";
   const currentDivision = Array.isArray(nf?.divisions) && nf.divisions.length === 1
     ? nf.divisions[0]
@@ -117,6 +117,11 @@ export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, onDi
             ))}
           </SelectContent>
         </Select>
+      )}
+
+      {/* Distance warning */}
+      {distanceWarning && (
+        <div className="w-full text-xs text-amber-400 mt-1">{distanceWarning}</div>
       )}
     </div>
   );
