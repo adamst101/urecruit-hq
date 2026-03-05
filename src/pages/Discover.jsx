@@ -749,9 +749,7 @@ export default function Discover() {
             isCampRegistered={isCampRegistered}
             onFavoriteToggle={handleFavoriteToggle}
             onRegisterClick={handleRegisterClick}
-            onCampClick={(campId) =>
-              nav(`/CampDetail?id=${encodeURIComponent(campId)}${!isPaid ? "&mode=demo" : ""}`)
-            }
+            onCampClick={() => {}}
             getWarningsForCamp={(campId) => {
               const existing = getSavedCamps();
               if (!existing.some((r) => String(r?.id) === String(campId))) return [];
