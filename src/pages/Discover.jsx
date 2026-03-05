@@ -259,6 +259,7 @@ export default function Discover() {
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [demoFavoriteIds, setDemoFavoriteIds] = useState([]);
   const [distanceMiles, setDistanceMiles] = useState(null);
+  const [distanceWarning, setDistanceWarning] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("all");
   const [visibleCount, setVisibleCount]   = useState(50);
 
@@ -840,7 +841,16 @@ export default function Discover() {
             setNF={filtersApi?.setNF}
             isPaid={isPaid}
             distanceMiles={distanceMiles}
-            onDistanceChange={setDistanceMiles}
+            distanceWarning={distanceWarning}
+            onDistanceChange={(val) => {
+              if (val && !hasHomeLocation) {
+                setDistanceWarning("Set your city & state in Profile to use distance filter.");
+                setDistanceMiles(null);
+                return;
+              }
+              setDistanceWarning("");
+              setDistanceMiles(val);
+            }}
             selectedMonth={selectedMonth}
             onMonthChange={setSelectedMonth}
           />
