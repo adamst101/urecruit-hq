@@ -94,9 +94,9 @@ export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, onDi
             <SelectValue placeholder="Distance" />
           </SelectTrigger>
           <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f9fafb]">
-            <SelectItem value="__all__" className="text-xs">Any Distance</SelectItem>
+            <SelectItem value="__all__" className="text-xs hover:!text-[#e8a020] data-[state=checked]:!text-[#e8a020]">Any Distance</SelectItem>
             {DISTANCE_OPTIONS.map((d) => (
-              <SelectItem key={d.value} value={d.value} className="text-xs">{d.label}</SelectItem>
+              <SelectItem key={d.value} value={d.value} className="text-xs hover:!text-[#e8a020] data-[state=checked]:!text-[#e8a020]">{d.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
