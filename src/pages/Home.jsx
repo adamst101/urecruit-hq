@@ -355,11 +355,19 @@ export default function Home() {
                 </button>
                 <button
                   onClick={handleTryDemo}
-                  style={S.ctaOutline}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
+                  style={{
+                    background: "transparent",
+                    color: "#e8a020",
+                    border: "none",
+                    padding: "16px 8px",
+                    fontSize: 16,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                    textUnderlineOffset: 3,
+                  }}
                 >
-                  Try Free Demo
+                  or try the free demo →
                 </button>
               </div>
 
