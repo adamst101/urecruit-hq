@@ -11,7 +11,6 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
-import { getCurrentSoldSeason, getCurrentActiveSeason, isEarlyBirdPeriod } from "../components/utils/seasonUtils";
 
 function trackEvent(payload) {
   try {
@@ -61,12 +60,29 @@ export default function Subscribe() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { isLoading, mode, hasAccess, seasonYear, currentYear, demoYear, accountId } =
+  const { isLoading, mode, hasAccess, seasonYear, currentYear, demoYear, accountId, soldSeason: hookSoldSeason, activeSeason: hookActiveSeason } =
     useSeasonAccess();
 
-  const soldSeason = useMemo(() => getCurrentSoldSeason(), []);
-  const activeSeason = useMemo(() => getCurrentActiveSeason(), []);
-  const earlyBird = useMemo(() => isEarlyBirdPeriod(), []);
+  const [seasonConfig, setSeasonConfig] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await base44.functions.invoke("getActiveSeason", {});
+        if (!cancelled && res.data?.ok && res.data?.season) {
+          setSeasonConfig(res.data.season);
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const soldSeason = seasonConfig?.season_year || hookSoldSeason || currentYear;
+  const activeSeason = hookActiveSeason || currentYear;
+  const earlyBird = soldSeason > activeSeason;
+  const pricePrimary = seasonConfig?.price_primary || 49;
+  const priceAddOn = seasonConfig?.price_add_on || 39;
 
   const params = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
   const force = params.get("force") === "1";
@@ -166,7 +182,7 @@ export default function Subscribe() {
   };
 
   const faqs = [
-    { q: "Can I add multiple kids?", a: "Yes — one email can manage multiple athletes under one subscription." },
+    { q: "Can I add multiple kids?", a: `Yes — your first athlete is $${pricePrimary}, then add more for $${priceAddOn} each. All managed under one account.` },
     { q: "Do I need to create a profile first?", a: "No — you create athlete profiles after purchase. Buy first, set up later." },
     { q: "What does 'Demo' mean?", a: "Demo shows last season's data so you can explore the platform. Subscribe to unlock current camps." },
   ];
@@ -214,8 +230,11 @@ export default function Subscribe() {
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#e8a020", letterSpacing: 2, textTransform: "uppercase" }}>Season Pass {soldSeason}</div>
 
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 12 }}>
-              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 80, color: "#f9fafb", lineHeight: 1 }}>$49</span>
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 80, color: "#f9fafb", lineHeight: 1 }}>${pricePrimary}</span>
               <span style={{ color: "#9ca3af", fontSize: 16 }}>per season</span>
+            </div>
+            <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 6 }}>
+              + ${priceAddOn}/season for each additional athlete
             </div>
 
             <div style={{ height: 1, background: "rgba(232,160,32,0.3)", margin: "28px 0" }} />
@@ -237,7 +256,7 @@ export default function Subscribe() {
             </div>
 
             <button onClick={handleCheckout} style={{ width: "100%", background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "18px 0", fontSize: 19, fontWeight: 700, cursor: "pointer", marginTop: 32, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              Get Season Pass — $49 <ArrowRight style={{ width: 18, height: 18 }} />
+              Get Season Pass — ${pricePrimary} <ArrowRight style={{ width: 18, height: 18 }} />
             </button>
 
             <div style={{ textAlign: "center", marginTop: 12 }}>
