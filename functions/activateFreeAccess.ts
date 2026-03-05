@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
     product: "RecruitMeSeasonAccess",
   });
 
-  console.log(`BETA100 free access activated for account ${resolvedAccountId}, season ${soldSeason}`);
+  console.log("BETA100 free access activated for account " + resolvedAccountId + ", season " + soldSeason);
 
   return Response.json({
     ok: true,
