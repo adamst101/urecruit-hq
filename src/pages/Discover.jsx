@@ -806,7 +806,7 @@ export default function Discover() {
           </div>
         )}
 
-        {!isPaid && <DemoBanner seasonYear={seasonYear} />}
+        {!isPaid && <div className="mt-5 mb-2"><DemoBanner seasonYear={seasonYear} /></div>}
 
         {/* Inline filter dropdowns */}
         <div className="mt-4">
