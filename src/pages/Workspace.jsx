@@ -223,6 +223,8 @@ export default function Workspace() {
             onClick={() => nav(ROUTES.Profile)}
             highlight={!athleteId}
           />
+          <WorkspaceTile icon="📖" title="RECRUITING GUIDE" desc="Step-by-step recruiting roadmap for families" btnLabel="Read →" onClick={() => nav(ROUTES.RecruitingGuide)} />
+          <WorkspaceTile icon="📋" title="CAMP PLAYBOOK" desc="How to prepare, what to expect, and how to stand out" btnLabel="Read →" onClick={() => nav(ROUTES.CampPlaybook)} />
         </div>
       </section>
 
