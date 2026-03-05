@@ -49,6 +49,7 @@ export default function CampCard({
   onClick,
   mode,
   disabledFavorite,
+  warningBadge,
 }) {
   const division = school?.division || school?.school_division || null;
   const schoolName = school?.school_name || school?.name || "Unknown School";
@@ -84,6 +85,7 @@ export default function CampCard({
           {/* Row 1: School name + badges */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-base font-bold text-[#f9fafb] truncate">{schoolName}</span>
+            {warningBadge}
             {division && (
               <Badge className="bg-[#0f172a] text-[#f9fafb] border border-[#374151] text-[10px] px-1.5 py-0">{division}</Badge>
             )}
