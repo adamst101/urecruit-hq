@@ -53,8 +53,19 @@ export default function Layout({ children }) {
   }
 
   function handleMemberLogin() {
-    // ✅ Always land at Workspace after login (single destination)
     startMemberLogin({ nextPath: createPageUrl("Workspace"), source: "layout_member_login" });
+  }
+
+  function handleSubscribe() {
+    navigate(createPageUrl("Subscribe") + "?source=layout_nav");
+  }
+
+  async function handleLogout() {
+    try {
+      if (base44?.auth?.logout) { await base44.auth.logout("/Home"); return; }
+      if (base44?.auth?.signOut) { await base44.auth.signOut(); }
+    } catch {}
+    window.location.assign("/Home");
   }
 
   return (
