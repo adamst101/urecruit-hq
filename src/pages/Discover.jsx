@@ -702,11 +702,22 @@ export default function Discover() {
             onToggle={() => setExpandedSchools((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}
             isPaid={isPaid}
             isCampFavorite={isCampFavorite}
+            isCampRegistered={isCampRegistered}
             onFavoriteToggle={handleFavoriteToggle}
             onRegisterClick={handleRegisterClick}
             onCampClick={(campId) =>
               nav(`/CampDetail?id=${encodeURIComponent(campId)}${!isPaid ? "&mode=demo" : ""}`)
             }
+            getWarningsForCamp={(campId) => {
+              const existing = getSavedCamps();
+              if (!existing.some((r) => String(r?.id) === String(campId))) return [];
+              return detectConflicts({
+                camps: existing,
+                homeCity: athleteProfile?.home_city || null,
+                homeState: athleteProfile?.home_state || null,
+                isPaid,
+              }).filter((w) => w.campIds?.includes(String(campId)));
+            }}
           />
         ))}
       </div>
