@@ -41,7 +41,7 @@ export default function CampCard({
   return (
     <Card
       className={cn(
-        "p-4 border-slate-200 bg-white cursor-pointer hover:shadow-sm transition",
+        "p-4 border-[#1f2937] bg-[#111827] cursor-pointer hover:border-[#374151] transition",
         isRegistered ? "opacity-90" : ""
       )}
       role="button"
@@ -56,15 +56,15 @@ export default function CampCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             {division && (
-              <Badge className="bg-slate-900 text-white text-xs">{division}</Badge>
+              <Badge className="bg-[#0f172a] text-[#f9fafb] border border-[#374151] text-xs">{division}</Badge>
             )}
 
             {sportName && (
-              <span className="text-xs text-slate-500 font-medium">{sportName}</span>
+              <span className="text-xs text-[#9ca3af] font-medium">{sportName}</span>
             )}
 
             {isDemo && (
-              <Badge variant="outline" className="text-xs">
+              <Badge variant="outline" className="text-xs border-[#374151] text-[#9ca3af]">
                 Demo
               </Badge>
             )}
@@ -78,10 +78,10 @@ export default function CampCard({
             )}
           </div>
 
-          <div className="text-lg font-semibold text-deep-navy truncate">
+          <div className="text-lg font-semibold text-[#f9fafb] truncate">
             {school?.school_name || school?.name || "Unknown School"}
           </div>
-          <div className="text-sm text-slate-600 truncate">
+          <div className="text-sm text-[#9ca3af] truncate">
             {camp?.camp_name || "Camp"}
           </div>
         </div>
@@ -110,16 +110,16 @@ export default function CampCard({
           <Star
             className={cn(
               "w-5 h-5",
-              isFavorite ? "fill-amber-400 text-amber-400" : "text-slate-400"
+              isFavorite ? "fill-amber-400 text-amber-400" : "text-[#9ca3af]"
             )}
           />
         </Button>
       </div>
 
       {/* Details */}
-      <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
+      <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-[#9ca3af]">
         <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-slate-400" />
+          <Calendar className="w-4 h-4 text-[#6b7280]" />
           <span>
             {safeFormatDate(camp?.start_date)}
             {camp?.end_date && camp?.end_date !== camp?.start_date
@@ -130,7 +130,7 @@ export default function CampCard({
 
         {(camp?.city || camp?.state) && (
           <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-slate-400" />
+            <MapPin className="w-4 h-4 text-[#6b7280]" />
             <span className="truncate">
               {[camp?.city, camp?.state].filter(Boolean).join(", ")}
             </span>
@@ -139,7 +139,7 @@ export default function CampCard({
 
         {showPrice && (
           <div className="flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-slate-400" />
+            <DollarSign className="w-4 h-4 text-[#6b7280]" />
             <span>{camp.price > 0 ? `$${camp.price}` : "Free"}</span>
           </div>
         )}
@@ -152,13 +152,13 @@ export default function CampCard({
             const key = p?.position_id || p?.id || `${idx}`;
             const label = p?.position_code || p?.code || p?.position_name || "POS";
             return (
-              <Badge key={key} variant="secondary" className="bg-slate-100 text-slate-700">
+              <Badge key={key} variant="secondary" className="bg-[#0f172a] text-[#9ca3af] border border-[#1f2937]">
                 {label}
               </Badge>
             );
           })}
           {positions.length > 6 && (
-            <Badge variant="secondary" className="bg-slate-100 text-slate-700">
+            <Badge variant="secondary" className="bg-[#0f172a] text-[#9ca3af] border border-[#1f2937]">
               +{positions.length - 6}
             </Badge>
           )}

@@ -1,12 +1,13 @@
 // src/components/navigation/BottomNav.jsx
 import React, { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Search, CalendarDays, User, LayoutGrid } from "lucide-react";
+import { Search, CalendarDays, User, LayoutGrid, Heart } from "lucide-react";
 
 const ROUTES = {
   Workspace: "/Workspace",
   Discover: "/Discover",
   Calendar: "/Calendar",
+  MyCamps: "/MyCamps",
   Profile: "/Profile",
 };
 
@@ -25,6 +26,7 @@ export default function BottomNav() {
       { label: "HQ", to: ROUTES.Workspace, Icon: LayoutGrid },
       { label: "Discover", to: ROUTES.Discover, Icon: Search },
       { label: "Calendar", to: ROUTES.Calendar, Icon: CalendarDays },
+      { label: "My Camps", to: ROUTES.MyCamps, Icon: Heart },
       { label: "Profile", to: ROUTES.Profile, Icon: User },
     ],
     []
