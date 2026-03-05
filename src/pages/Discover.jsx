@@ -814,6 +814,51 @@ export default function Discover() {
         </div>
       </div>
 
+      {/* Conflict warning modal */}
+      <ConflictWarningModal
+        open={conflictModal.open}
+        warnings={conflictModal.warnings}
+        onClose={() => setConflictModal({ open: false, warnings: [], campId: null, action: null })}
+        confirmLabel={conflictModal.action === "favorite" ? "Favorite Anyway" : "Register Anyway"}
+        onConfirm={() => {
+          if (conflictModal.action === "favorite") {
+            doFavoriteToggle(conflictModal.campId);
+          }
+          setConflictModal({ open: false, warnings: [], campId: null, action: null });
+        }}
+      />
+
+      {/* Register confirm modal */}
+      <RegisterConfirmModal
+        open={registerModal.open}
+        onClose={() => setRegisterModal({ open: false, camp: null })}
+        campName={registerModal.camp?.camp_name || "this camp"}
+        isPaid={isPaid}
+        linkUrl={registerModal.camp?.link_url || registerModal.camp?.source_url || null}
+        onMarkRegistered={() => {
+          doRegister(registerModal.camp);
+          setRegisterModal({ open: false, camp: null });
+        }}
+        onGoToLink={() => {
+          const url = registerModal.camp?.link_url || registerModal.camp?.source_url;
+          if (url) window.open(String(url), "_blank", "noopener,noreferrer");
+          doRegister(registerModal.camp);
+          setRegisterModal({ open: false, camp: null });
+        }}
+        onSubscribe={() => {
+          window.open("https://camp-connect-698c00ef.base44.app/Subscribe?source=workspace_banner", "_blank", "noopener,noreferrer");
+          setRegisterModal({ open: false, camp: null });
+        }}
+      />
+
+      {/* Unregister confirm modal */}
+      <UnregisterConfirmModal
+        open={unregisterModal.open}
+        onClose={() => setUnregisterModal({ open: false, camp: null })}
+        campName={unregisterModal.camp?.camp_name || "this camp"}
+        onRemove={() => handleUnregister(unregisterModal.camp)}
+      />
+
       <FilterSheet
         isOpen={isFiltersOpen}
         onClose={() => setIsFiltersOpen(false)}
