@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "../api/base44Client";
 import { ArrowLeft, Plus, Save, Trash2, Star } from "lucide-react";
+import AdminRoute from "../components/auth/AdminRoute";
 
 export default function SeasonManager() {
   const nav = useNavigate();
@@ -95,6 +96,7 @@ export default function SeasonManager() {
   const labelStyle = { fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4, display: "block" };
 
   return (
+    <AdminRoute>
     <div style={{ background: "#F3F4F6", minHeight: "100vh", fontFamily: "Inter, system-ui, sans-serif", color: "#111827" }}>
       <div style={{ padding: "20px 32px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", gap: 12 }}>
         <button onClick={() => nav("/AdminOps")} style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280", display: "flex", alignItems: "center", gap: 4 }}>
@@ -238,5 +240,6 @@ export default function SeasonManager() {
         )}
       </div>
     </div>
+    </AdminRoute>
   );
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { base44 } from "@/api/base44Client";
+import AdminRoute from "../components/auth/AdminRoute";
 
 const School = base44.entities.School;
 
@@ -377,6 +378,7 @@ export default function SchoolsManager() {
   const divisions = [...new Set(schools.map(s => s.division).filter(Boolean))].sort();
 
   return (
+    <AdminRoute>
     <div style={styles.root}>
       {/* Header */}
       <div style={styles.header}>
@@ -600,6 +602,7 @@ export default function SchoolsManager() {
         </div>
       </div>
     </div>
+    </AdminRoute>
   );
 }
 

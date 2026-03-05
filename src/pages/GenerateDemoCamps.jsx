@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import AdminRoute from "../components/auth/AdminRoute";
 
 export default function GenerateDemoCamps() {
   const nav = useNavigate();
@@ -58,6 +59,7 @@ export default function GenerateDemoCamps() {
   };
 
   return (
+    <AdminRoute>
     <div style={S.root}>
       <div style={S.header}>
         <div>
@@ -159,6 +161,7 @@ export default function GenerateDemoCamps() {
         )}
       </div>
     </div>
+    </AdminRoute>
   );
 }
 

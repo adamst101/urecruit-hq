@@ -7,6 +7,7 @@ import { Button } from "../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { ChevronDown, ChevronUp, ArrowLeft } from "lucide-react";
 import { createPageUrl } from "../utils";
+import AdminRoute from "../components/auth/AdminRoute";
 
 const TYPE_COLORS = { support: "bg-red-600", bug: "bg-orange-500", feedback: "bg-blue-500", feature_request: "bg-purple-500" };
 const STATUS_COLORS = { open: "bg-red-600", in_progress: "bg-amber-500", resolved: "bg-green-600", closed: "bg-gray-500" };
@@ -69,6 +70,7 @@ export default function SupportDashboard() {
   const selectCls = "bg-[#111827] border-[#1f2937] text-[#f9fafb]";
 
   return (
+    <AdminRoute>
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
       <div className="max-w-6xl mx-auto px-4 pt-6">
         <button type="button" onClick={() => nav(createPageUrl("AdminOps"))} className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1">
@@ -188,5 +190,6 @@ export default function SupportDashboard() {
         )}
       </div>
     </div>
+    </AdminRoute>
   );
 }

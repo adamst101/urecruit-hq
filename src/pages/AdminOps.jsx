@@ -1,6 +1,7 @@
 // src/pages/AdminOps.jsx
 import { useNavigate } from "react-router-dom";
 import IngestStatusPanel from "../components/admin/IngestStatusPanel";
+import AdminRoute from "../components/auth/AdminRoute";
 
 const TOOLS = [
   {
@@ -140,6 +141,7 @@ export default function AdminOps() {
   const nav = useNavigate();
 
   return (
+    <AdminRoute>
     <div style={styles.root}>
       <div style={styles.header}>
         <div style={styles.title}>Admin</div>
@@ -189,6 +191,7 @@ export default function AdminOps() {
         ))}
       </div>
     </div>
+    </AdminRoute>
   );
 }
 

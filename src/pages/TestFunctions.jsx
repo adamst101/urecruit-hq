@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AutoBatchRunner from "../components/admin/AutoBatchRunner";
+import AdminRoute from "../components/auth/AdminRoute";
 
 export default function TestFunctions() {
   const nav = useNavigate();
@@ -17,6 +18,7 @@ export default function TestFunctions() {
   };
 
   return (
+    <AdminRoute>
     <div style={S.root}>
       <div style={S.header}>
         <div>
@@ -70,5 +72,6 @@ export default function TestFunctions() {
         />
       </div>
     </div>
+    </AdminRoute>
   );
 }

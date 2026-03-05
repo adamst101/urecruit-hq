@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { base44 } from "@/api/base44Client";
+import AdminRoute from "../components/auth/AdminRoute";
 
 const Camp   = base44.entities.Camp;
 const School = base44.entities.School;
@@ -426,6 +427,7 @@ export default function CampsManager() {
   const needsReview = camps.filter(c => c.ingestion_status === "needs_review").length;
 
   return (
+    <AdminRoute>
     <div style={styles.root}>
 
       {/* Header */}
@@ -634,6 +636,7 @@ export default function CampsManager() {
         </div>
       </div>
     </div>
+    </AdminRoute>
   );
 }
 
