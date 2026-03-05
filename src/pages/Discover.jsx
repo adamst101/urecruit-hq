@@ -11,6 +11,7 @@ import { Badge } from "../components/ui/badge";
 
 import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
+import SchoolGroupCard from "../components/camps/SchoolGroupCard.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
@@ -494,11 +495,73 @@ export default function Discover() {
     return chipLabel(k, nf);
   };
 
+  /* ─── School grouping ──────────────────────────────────────────────────── */
+
+  const [expandedSchools, setExpandedSchools] = useState({});
+
+  const schoolGroups = useMemo(() => {
+    const rows = asArray(rawRows);
+    const grouped = {};
+    for (const camp of rows) {
+      const schoolId = String(normId(camp?.school_id) || normId(camp?.school) || "");
+      const key = schoolId || camp?.camp_name || camp?.id || Math.random().toString();
+      const identity = resolveIdentity(schoolId, camp);
+      if (!grouped[key]) {
+        grouped[key] = {
+          key,
+          school_name: identity.name || camp?._school_name || "Unknown",
+          school_id: schoolId,
+          school_logo_url: identity.logoUrl || null,
+          division: identity.division || null,
+          camps: [],
+        };
+      }
+      grouped[key].camps.push(camp);
+    }
+    return Object.values(grouped).sort((a, b) =>
+      String(a.school_name).toLowerCase().localeCompare(String(b.school_name).toLowerCase())
+    );
+  }, [rawRows, resolveIdentity]);
+
+  function isCampFavorite(campId) {
+    if (isPaid) {
+      return String(intentByKey?.[campId]?.status || "").toLowerCase() === "favorite";
+    }
+    return demoFavoriteIds.includes(campId);
+  }
+
+  async function handleFavoriteToggle(campId) {
+    if (!isPaid) {
+      const next = toggleDemoFavorite(demoProfileId, campId, seasonYear);
+      setDemoFavoriteIds(next);
+      return;
+    }
+    const ok = await (writeGate?.ensure ? writeGate.ensure("favorite", { campId }) : true);
+    if (!ok) return;
+    const isFav = isCampFavorite(campId);
+    await upsertIntent(campId, isFav ? "" : "favorite");
+  }
+
+  async function handleRegisterClick(camp) {
+    const campId = String(camp?.id ?? "");
+    const linkUrl = camp?.link_url ?? camp?.source_url ?? camp?.url ?? null;
+    if (!linkUrl) return;
+
+    if (!isPaid) {
+      nav(`/Subscribe?source=home_pricing`);
+      return;
+    }
+
+    const ok = await (writeGate?.ensure ? writeGate.ensure("register", { campId }) : true);
+    if (!ok) return;
+
+    try { window.open(String(linkUrl), "_blank", "noopener,noreferrer"); } catch { /* ignore */ }
+    await upsertIntent(campId, "registered");
+  }
+
   /* ─── CampList ────────────────────────────────────────────────────────── */
 
   const CampList = () => {
-    const rows = asArray(rawRows);
-
     if (campErr) {
       return (
         <Card className="p-5 border-[#1f2937] bg-[#111827]">
@@ -536,7 +599,7 @@ export default function Discover() {
       );
     }
 
-    if (!rows.length) {
+    if (!schoolGroups.length) {
       return (
         <Card className="p-5 border-[#1f2937] bg-[#111827]">
           <div className="text-lg font-semibold text-[#f9fafb]">No camps found</div>
@@ -553,133 +616,21 @@ export default function Discover() {
 
     return (
       <div className="space-y-3">
-        {rows.map((r) => {
-          const campId    = String(r?.id ?? "");
-          const intentKey = campId;
-          const schoolId  = String(normId(r?.school_id) || normId(r?.school) || normId(r?.school_ref) || "");
-
-          // ✅ FIX 2: resolveIdentity pulls School row fields + Camp row fallbacks.
-          //    Returns name (never "unknown"), logoUrl (never Ryzer placeholder),
-          //    division (normalized), city, state.
-          const { name: schoolName, logoUrl: schoolLogo, division: divisionLabel, city: schoolCity, state: schoolState } =
-            resolveIdentity(schoolId, r);
-
-          const linkUrl   = r?.link_url ?? r?.source_url ?? r?.url ?? null;
-          const startIso  = toISODate(r?.start_date);
-          const endIso    = toISODate(r?.end_date);
-          const dateLabel =
-            startIso && endIso && endIso !== startIso
-              ? `${startIso} → ${endIso}`
-              : startIso || "TBD";
-
-          const intent     = intentByKey?.[intentKey] || null;
-          const isFavorite = isPaid
-            ? String(intent?.status || "").toLowerCase() === "favorite"
-            : demoFavoriteIds.includes(campId);
-
-          return (
-            <Card
-              key={campId}
-              className="p-4 border-[#1f2937] bg-[#111827] cursor-pointer hover:border-[#374151] transition"
-              role="button"
-              tabIndex={0}
-              onClick={() =>
-                nav(`/CampDetail?id=${encodeURIComponent(campId)}${!isPaid ? '&mode=demo' : ''}`)
-              }
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3 min-w-0 flex-1">
-                  <LogoAvatar schoolName={schoolName} logoUrl={schoolLogo} />
-
-                  <div className="min-w-0 flex-1">
-                    {/* Division badge — only rendered when non-null / non-"unknown" */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {divisionLabel && (
-                        <Badge className="bg-[#0f172a] text-[#f9fafb] border border-[#374151] text-xs">{divisionLabel}</Badge>
-                      )}
-                      {!isPaid && (
-                        <Badge variant="outline" className="text-xs border-[#374151] text-[#9ca3af]">Demo</Badge>
-                      )}
-                    </div>
-
-                    {/* School name — never "unknown" */}
-                    <div className="text-lg font-semibold text-[#f9fafb] truncate mt-1">
-                      {schoolName}
-                    </div>
-
-                    <div className="text-sm text-[#9ca3af] truncate">
-                      {r?.camp_name ?? r?.name ?? "Camp"}
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-[#9ca3af]">
-                      <span className="rounded-md bg-[#0f172a] border border-[#1f2937] px-2 py-1">
-                        {dateLabel}
-                      </span>
-                      {(schoolCity || schoolState) && (
-                        <span className="rounded-md bg-[#0f172a] border border-[#1f2937] px-2 py-1">
-                          {[schoolCity, schoolState].filter(Boolean).join(", ")}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-10 w-10 p-0 flex-shrink-0"
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (!isPaid) {
-                      const next = toggleDemoFavorite(demoProfileId, campId, seasonYear);
-                      setDemoFavoriteIds(next);
-                      return;
-                    }
-                    const ok = await (writeGate?.ensure ? writeGate.ensure("favorite", { campId }) : true);
-                    if (!ok) return;
-                    await upsertIntent(intentKey, isFavorite ? "" : "favorite");
-                  }}
-                  aria-label={isFavorite ? "Remove favorite" : "Add favorite"}
-                >
-                  <span className={(isFavorite ? "text-amber-500" : "text-[#9ca3af]") + " text-2xl leading-none"}>
-                    {isFavorite ? "★" : "☆"}
-                  </span>
-                </Button>
-              </div>
-
-              <div className="mt-4 flex items-center justify-end gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
-                  disabled={!linkUrl}
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (!linkUrl) return;
-
-                    if (!isPaid) {
-                      nav(`/Subscribe?source=home_pricing`);
-                      return;
-                    }
-
-                    const ok = await (writeGate?.ensure
-                      ? writeGate.ensure("register", { campId })
-                      : true);
-                    if (!ok) return;
-
-                    try { window.open(String(linkUrl), "_blank", "noopener,noreferrer"); } catch { /* ignore */ }
-                    await upsertIntent(intentKey, "registered");
-                  }}
-                >
-                  Register
-                </Button>
-              </div>
-            </Card>
-          );
-        })}
+        {schoolGroups.map((group) => (
+          <SchoolGroupCard
+            key={group.key}
+            group={group}
+            isExpanded={!!expandedSchools[group.key]}
+            onToggle={() => setExpandedSchools((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}
+            isPaid={isPaid}
+            isCampFavorite={isCampFavorite}
+            onFavoriteToggle={handleFavoriteToggle}
+            onRegisterClick={handleRegisterClick}
+            onCampClick={(campId) =>
+              nav(`/CampDetail?id=${encodeURIComponent(campId)}${!isPaid ? "&mode=demo" : ""}`)
+            }
+          />
+        ))}
       </div>
     );
   };
