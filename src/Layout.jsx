@@ -66,6 +66,9 @@ export default function Layout({ children }) {
 
   return (
     <div className="min-h-screen bg-surface">
+      {/* Persistent banner for logged-in users without paid access */}
+      <NoAccessBanner />
+
       {/* Shared header (hide on Home because Home has its own hero header) */}
       {!isHomePage && (
         <div className="bg-white border-b border-default sticky top-0 z-50">
