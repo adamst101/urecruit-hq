@@ -12,8 +12,17 @@ export default function CheckoutSuccess() {
 
   const params = new URLSearchParams(window.location.search);
   const sessionId = params.get("session_id");
+  const isFree = params.get("free") === "true";
+  const freeSeason = params.get("season");
 
   useEffect(() => {
+    // BETA100 free activation — no Stripe session to verify
+    if (isFree) {
+      setData({ seasonYear: freeSeason || "", amountPaid: 0, couponUsed: "BETA100", email: "" });
+      setStatus("paid");
+      return;
+    }
+
     if (!sessionId) {
       navigate(createPageUrl("Workspace"), { replace: true });
       return;
@@ -36,7 +45,7 @@ export default function CheckoutSuccess() {
     }
 
     verify();
-  }, [sessionId, navigate]);
+  }, [sessionId, navigate, isFree, freeSeason]);
 
   if (status === "loading") {
     return (
