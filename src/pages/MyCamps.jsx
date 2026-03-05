@@ -154,15 +154,21 @@ export default function MyCamps() {
     });
   }, [isDemoMode, paidQuery?.data, demoQuery?.data]);
 
+  const sortByDate = (a, b) => {
+    const da = String(a?.start_date || "9999").slice(0, 10);
+    const db = String(b?.start_date || "9999").slice(0, 10);
+    return da.localeCompare(db);
+  };
+
   const registered = useMemo(() => {
     return rows.filter((r) => {
       const st = String(r?.intent_status || "").toLowerCase();
       return st === "registered" || st === "completed";
-    });
+    }).sort(sortByDate);
   }, [rows]);
 
   const favorites = useMemo(() => {
-    return rows.filter((r) => String(r?.intent_status || "").toLowerCase() === "favorite");
+    return rows.filter((r) => String(r?.intent_status || "").toLowerCase() === "favorite").sort(sortByDate);
   }, [rows]);
 
   const showEmpty = registered.length === 0 && favorites.length === 0;

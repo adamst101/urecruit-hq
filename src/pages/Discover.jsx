@@ -397,11 +397,10 @@ export default function Discover() {
   // Reactively apply filters whenever nf, allRows, or schoolById change.
   // We enrich each camp row with school division/state so filters work correctly.
   useEffect(() => {
-    const filtered = allRows.filter((r) => {
-      // Enrich row with school data for filtering
+    const enrichedRows = allRows.map((r) => {
       const sid = String(normId(r?.school_id) || "");
       const sch = sid ? schoolById[sid] : null;
-      const enriched = sch ? {
+      return sch ? {
         ...r,
         division: r?.division || sch?.division || sch?.school_division || null,
         school_division: r?.school_division || sch?.division || sch?.school_division || null,
@@ -411,8 +410,11 @@ export default function Discover() {
         school_state: r?.school_state || sch?.state || null,
         _school_lat: sch?.lat ?? sch?.home_lat ?? null,
         _school_lng: sch?.lng ?? sch?.home_lng ?? null,
-      } : r;
+        _school_name: sch?.school_name || sch?.name || r?.camp_name || "",
+      } : { ...r, _school_name: r?.camp_name || "" };
+    });
 
+    const filtered = enrichedRows.filter((enriched) => {
       if (isPaid) {
         if (!matchesSport(enriched, [athleteSportId].filter(Boolean))) return false;
       } else {
@@ -429,15 +431,29 @@ export default function Discover() {
 
       // Distance filter (paid mode only)
       if (isPaid && distanceMiles && homeLat != null && homeLng != null) {
-        const campLat = enriched?._school_lat ?? sch?.lat ?? null;
-        const campLng = enriched?._school_lng ?? sch?.lng ?? null;
-        if (campLat == null || campLng == null) return true; // no coords, keep it
+        const campLat = enriched?._school_lat ?? null;
+        const campLng = enriched?._school_lng ?? null;
+        if (campLat == null || campLng == null) return true;
         const dist = haversine(homeLat, homeLng, campLat, campLng);
         if (dist > distanceMiles) return false;
       }
 
       return true;
     });
+
+    // Sort: division tier then alphabetically by school name
+    const DIV_ORDER = { "D1 (FBS)": 0, "D1 (FCS)": 1, "D2": 2, "D3": 3, "NAIA": 4, "JUCO": 5 };
+    filtered.sort((a, b) => {
+      const da = String(a?.division || a?.school_division || "").trim();
+      const db = String(b?.division || b?.school_division || "").trim();
+      const oa = DIV_ORDER[da] ?? 99;
+      const ob = DIV_ORDER[db] ?? 99;
+      if (oa !== ob) return oa - ob;
+      const na = String(a?._school_name || "").toLowerCase();
+      const nb = String(b?._school_name || "").toLowerCase();
+      return na.localeCompare(nb);
+    });
+
     setRawRows(filtered);
   }, [allRows, nf, isPaid, athleteSportId, schoolById, distanceMiles, homeLat, homeLng]);
 

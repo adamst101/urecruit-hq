@@ -236,7 +236,7 @@ export default function Calendar() {
     const wantedDivisions = asArray(nf?.divisions).map(String).filter(Boolean);
     const wantedPositions = asArray(nf?.positionIds).map(String).filter(Boolean);
 
-    return base
+    const result = base
       .filter((c) => readActiveFlag(c) === true)
       .filter((c) => {
         // In demo mode, only show camps the user has favorited or registered
@@ -267,6 +267,15 @@ export default function Calendar() {
 
         return true;
       });
+
+    // Sort by camp start date ascending
+    result.sort((a, b) => {
+      const da = String(a?.start_date || "9999").slice(0, 10);
+      const db = String(b?.start_date || "9999").slice(0, 10);
+      return da.localeCompare(db);
+    });
+
+    return result;
   }, [isPaid, paidQuery?.data, demoQuery?.data, nf]);
 
   const title = "Calendar";
