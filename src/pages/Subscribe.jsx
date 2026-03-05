@@ -242,7 +242,11 @@ export default function Subscribe() {
 
       {/* ── PRICING CARD ── */}
       <section style={{ padding: "0 24px 48px", maxWidth: 480, margin: "0 auto" }}>
-        <div style={{ background: "#111827", borderRadius: 16, overflow: "hidden", border: "1px solid #1f2937" }}>
+        <div style={{
+          background: "#111827", borderRadius: 16, overflow: "hidden",
+          border: params.get("newAccount") === "true" ? "2px solid #e8a020" : "1px solid #1f2937",
+          boxShadow: params.get("newAccount") === "true" ? "0 0 24px rgba(232,160,32,0.15)" : "none",
+        }}>
           {/* Amber top accent */}
           <div style={{ height: 4, background: "#e8a020" }} />
 
