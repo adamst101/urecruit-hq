@@ -85,6 +85,8 @@ export function useAthleteIdentity() {
       height_ft: ap.height_ft ?? null,
       height_in: ap.height_in ?? null,
       weight_lbs: ap.weight_lbs ?? null,
+      home_city: ap.home_city ?? null,
+      home_state: ap.home_state ?? null,
       active: true,
     };
 
