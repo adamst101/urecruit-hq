@@ -176,15 +176,7 @@ export default function Subscribe() {
     <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
-      {/* ── NAV ── */}
-      <nav style={{ borderBottom: "1px solid #1f2937", padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1100, margin: "0 auto" }}>
-        <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#9ca3af" }}>URECRUIT HQ</span>
-        {next && (
-          <button onClick={() => navigate(next)} style={{ background: "none", border: "1px solid #1f2937", borderRadius: 8, padding: "6px 14px", fontSize: 13, color: "#9ca3af", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            <ArrowLeft style={{ width: 14, height: 14 }} /> Back
-          </button>
-        )}
-      </nav>
+
 
       {/* ── HERO ── */}
       <section style={{ textAlign: "center", padding: "64px 24px 40px", maxWidth: 600, margin: "0 auto" }}>
