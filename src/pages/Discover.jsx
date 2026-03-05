@@ -338,7 +338,10 @@ export default function Discover() {
 
   async function upsertIntent(intentKey, nextStatus) {
     const CampIntent = base44?.entities?.CampIntent;
-    if (!CampIntent?.create) return;
+    if (!CampIntent?.create) {
+      console.error("[upsertIntent] CampIntent entity not available");
+      return;
+    }
     const key = String(intentKey || "");
     if (!key) return;
 
@@ -346,6 +349,8 @@ export default function Discover() {
 
     // Resolve athlete_id for CampIntent records
     const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
+
+    console.log("[upsertIntent]", { key, nextStatus, aId, existingId: existing?.id });
 
     if (!nextStatus) {
       if (existing?.id && CampIntent?.update) {
