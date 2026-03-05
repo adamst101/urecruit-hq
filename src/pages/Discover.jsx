@@ -11,7 +11,7 @@ import { Badge } from "../components/ui/badge";
 
 import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
-import CampCard from "../components/camps/CampCard.jsx";
+import SchoolGroupCard from "../components/camps/SchoolGroupCard.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
@@ -496,20 +496,32 @@ export default function Discover() {
     return chipLabel(k, nf);
   };
 
-  /* ─── Flat camp list sorted by date ──────────────────────────────────── */
+  /* ─── School grouping ──────────────────────────────────────────────────── */
 
-  const flatCamps = useMemo(() => {
-    return asArray(rawRows)
-      .map((camp) => {
-        const schoolId = String(normId(camp?.school_id) || normId(camp?.school) || "");
-        const identity = resolveIdentity(schoolId, camp);
-        return { camp, schoolId, identity };
-      })
-      .sort((a, b) => {
-        const da = String(a.camp?.start_date || "9999").slice(0, 10);
-        const db = String(b.camp?.start_date || "9999").slice(0, 10);
-        return da.localeCompare(db);
-      });
+  const [expandedSchools, setExpandedSchools] = useState({});
+
+  const schoolGroups = useMemo(() => {
+    const rows = asArray(rawRows);
+    const grouped = {};
+    for (const camp of rows) {
+      const schoolId = String(normId(camp?.school_id) || normId(camp?.school) || "");
+      const key = schoolId || camp?.camp_name || camp?.id || Math.random().toString();
+      const identity = resolveIdentity(schoolId, camp);
+      if (!grouped[key]) {
+        grouped[key] = {
+          key,
+          school_name: identity.name || camp?._school_name || "Unknown",
+          school_id: schoolId,
+          school_logo_url: identity.logoUrl || null,
+          division: identity.division || null,
+          camps: [],
+        };
+      }
+      grouped[key].camps.push(camp);
+    }
+    return Object.values(grouped).sort((a, b) =>
+      String(a.school_name).toLowerCase().localeCompare(String(b.school_name).toLowerCase())
+    );
   }, [rawRows, resolveIdentity]);
 
   function isCampFavorite(campId) {
@@ -588,7 +600,7 @@ export default function Discover() {
       );
     }
 
-    if (!flatCamps.length) {
+    if (!schoolGroups.length) {
       return (
         <Card className="p-5 border-[#1f2937] bg-[#111827]">
           <div className="text-lg font-semibold text-[#f9fafb]">No camps found</div>
@@ -605,40 +617,21 @@ export default function Discover() {
 
     return (
       <div className="space-y-3">
-        {flatCamps.map(({ camp, schoolId, identity }) => {
-          const campId = String(camp?.id ?? "");
-          const isFav = isCampFavorite(campId);
-          return (
-            <CampCard
-              key={campId}
-              camp={{
-                id: campId,
-                camp_name: camp?.camp_name,
-                start_date: camp?.start_date,
-                end_date: camp?.end_date,
-                price: camp?.price ?? null,
-                link_url: camp?.link_url ?? null,
-                city: camp?.city ?? null,
-                state: camp?.state ?? null,
-              }}
-              school={{
-                id: schoolId,
-                school_name: identity.name || camp?._school_name || "Unknown",
-                division: identity.division || null,
-                logo_url: identity.logoUrl || null,
-              }}
-              sport={{}}
-              positions={[]}
-              isFavorite={isFav}
-              isRegistered={false}
-              mode={isPaid ? "paid" : "demo"}
-              onClick={() =>
-                nav(`/CampDetail?id=${encodeURIComponent(campId)}${!isPaid ? "&mode=demo" : ""}`)
-              }
-              onFavoriteToggle={() => handleFavoriteToggle(campId)}
-            />
-          );
-        })}
+        {schoolGroups.map((group) => (
+          <SchoolGroupCard
+            key={group.key}
+            group={group}
+            isExpanded={!!expandedSchools[group.key]}
+            onToggle={() => setExpandedSchools((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}
+            isPaid={isPaid}
+            isCampFavorite={isCampFavorite}
+            onFavoriteToggle={handleFavoriteToggle}
+            onRegisterClick={handleRegisterClick}
+            onCampClick={(campId) =>
+              nav(`/CampDetail?id=${encodeURIComponent(campId)}${!isPaid ? "&mode=demo" : ""}`)
+            }
+          />
+        ))}
       </div>
     );
   };
