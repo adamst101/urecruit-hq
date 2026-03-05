@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { MONTH_OPTIONS } from "./filterUtils.jsx";
 
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
@@ -32,12 +33,13 @@ const DISTANCE_OPTIONS = [
   { value: "500", label: "Within 500 mi" },
 ];
 
-export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, onDistanceChange }) {
+export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, onDistanceChange, selectedMonth, onMonthChange }) {
   const currentState = nf?.state || "";
   const currentDivision = Array.isArray(nf?.divisions) && nf.divisions.length === 1
     ? nf.divisions[0]
     : "";
 
+  const monthActive = !!selectedMonth && selectedMonth !== "all";
   const stateActive = !!currentState;
   const divActive = !!currentDivision;
   const distActive = !!distanceMiles;
@@ -48,6 +50,21 @@ export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, onDi
 
   return (
     <div className="flex flex-wrap gap-2 items-center">
+      {/* Month */}
+      <Select
+        value={selectedMonth || "all"}
+        onValueChange={(v) => onMonthChange?.(v)}
+      >
+        <SelectTrigger className={`w-[130px] ${monthActive ? activeCls : inactiveCls}`}>
+          <SelectValue placeholder="Month" />
+        </SelectTrigger>
+        <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f9fafb] max-h-60">
+          {MONTH_OPTIONS.map((m) => (
+            <SelectItem key={m.value} value={m.value} className="text-xs hover:!text-[#e8a020] data-[state=checked]:!text-[#e8a020]">{m.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
       {/* State */}
       <Select
         value={currentState || "__all__"}

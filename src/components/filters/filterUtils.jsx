@@ -255,3 +255,54 @@ export function matchesState(camp, statesOrOne) {
 export function matchesDateRange(camp, startDate, endDate) {
   return withinDateRange(camp?.start_date, startDate, endDate, camp?.end_date);
 }
+
+/* ----------------------------
+   Month filter helpers
+   (shared across Calendar, Discover, MyCamps)
+---------------------------- */
+export const MONTH_OPTIONS = [
+  { value: "all", label: "All Months" },
+  { value: "1",  label: "January" },
+  { value: "2",  label: "February" },
+  { value: "3",  label: "March" },
+  { value: "4",  label: "April" },
+  { value: "5",  label: "May" },
+  { value: "6",  label: "June" },
+  { value: "7",  label: "July" },
+  { value: "8",  label: "August" },
+  { value: "9",  label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" },
+];
+
+export const DIVISION_FILTER_OPTIONS = [
+  { value: "all",  label: "All Divisions" },
+  { value: "D1 (FBS)",  label: "FBS (D1)" },
+  { value: "D1 (FCS)",  label: "FCS (D1)" },
+  { value: "D2",   label: "Division II" },
+  { value: "D3",   label: "Division III" },
+  { value: "NAIA", label: "NAIA" },
+  { value: "JUCO", label: "JUCO" },
+];
+
+export function matchesMonth(camp, selectedMonth) {
+  if (!selectedMonth || selectedMonth === "all") return true;
+  if (!camp?.start_date) return false;
+  const m = new Date(camp.start_date).getMonth() + 1;
+  return m === parseInt(selectedMonth, 10);
+}
+
+export function matchesStateSimple(camp, selectedState) {
+  if (!selectedState || selectedState === "all") return true;
+  const campState = normalizeState(camp?.state || camp?.camp_state || camp?.school_state);
+  if (!campState) return false;
+  return campState === selectedState;
+}
+
+export function matchesDivisionSimple(camp, selectedDivision) {
+  if (!selectedDivision || selectedDivision === "all") return true;
+  const rawDiv = camp?.division || camp?.school_division || "";
+  const rawSub = camp?.subdivision || camp?.school_subdivision || "";
+  return matchesDivision(camp, [selectedDivision]);
+}
