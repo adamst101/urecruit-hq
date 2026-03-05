@@ -631,6 +631,9 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── CONFLICT DETECTION ── */}
+      <ConflictDetectionSection />
+
       {/* ── PRICING ── */}
       <section style={{ background: "#111827", padding: "80px 24px" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center" }}>
