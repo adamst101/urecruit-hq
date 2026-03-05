@@ -344,7 +344,7 @@ export default function Home() {
                   maxWidth: 540
                 }}
               >
-                759 college football camps. One place to discover, plan, and
+                {campDisplay} college football camps. One place to discover, plan, and
                 track your recruiting journey — without the spreadsheet chaos.
               </p>
 
@@ -368,7 +368,7 @@ export default function Home() {
               <div
                 style={{ display: "flex", gap: 20, marginTop: 22, flexWrap: "wrap" }}
               >
-                {["759 camps", "260 college programs", "All divisions", "Updated weekly"].map(
+                {[`${campDisplay} camps`, `${schoolDisplay} college programs`, "All divisions", "Updated weekly"].map(
                   (t) => (
                     <span
                       key={t}
@@ -509,6 +509,39 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── MARQUEE ── */}
+      <div style={{
+        background: "#e8a020",
+        overflow: "hidden",
+        whiteSpace: "nowrap",
+        position: "relative",
+        zIndex: 2
+      }}>
+        <div style={{
+          display: "inline-block",
+          animation: "marquee-scroll 20s linear infinite",
+          paddingLeft: "100%"
+        }}>
+          <span style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: "#0a0e1a",
+            letterSpacing: 1,
+            textTransform: "uppercase",
+            padding: "10px 0",
+            display: "inline-block"
+          }}>
+            🏈 COLLEGE CAMPS ONLY · {campDisplay} verified college football programs · All divisions: FBS · FCS · D2 · D3 · NAIA · JUCO · Updated weekly from official sources · 🏈 COLLEGE CAMPS ONLY · {campDisplay} verified college football programs · All divisions: FBS · FCS · D2 · D3 · NAIA · JUCO · Updated weekly from official sources ·&nbsp;&nbsp;&nbsp;&nbsp;
+          </span>
+        </div>
+        <style>{`
+          @keyframes marquee-scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
+        `}</style>
+      </div>
+
       {/* ── STATS BAR ── */}
       <section
         style={{
@@ -553,8 +586,8 @@ export default function Home() {
           }}
         >
           {[
-            { num: "759", label: "Football Camps" },
-            { num: "260", label: "College Programs" },
+            { num: campDisplay, label: "Football Camps" },
+            { num: schoolDisplay, label: "College Programs" },
             { num: "98%", label: "School Match Rate" },
             { num: "Free", label: "Demo Access" }
           ].map((s) => (
@@ -612,7 +645,7 @@ export default function Home() {
               {
                 n: "01",
                 t: "DISCOVER",
-                d: "Browse 759 football camps filtered by division, state, and date."
+                d: `Browse ${campDisplay} football camps filtered by division, state, and date.`
               },
               {
                 n: "02",
