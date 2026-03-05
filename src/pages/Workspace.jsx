@@ -12,6 +12,7 @@ import { Badge } from "../components/ui/badge";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 import { clearDemoMode } from "../components/hooks/demoMode.jsx";
+import { isAdminEmail } from "../components/auth/adminEmails.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import AddAthleteModal from "../components/workspace/AddAthleteModal.jsx";
 
