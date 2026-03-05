@@ -1,10 +1,9 @@
 // src/components/camps/CampCard.jsx
-import React from "react";
-import { Calendar, MapPin, DollarSign, Star } from "lucide-react";
+import React, { useState } from "react";
+import { Star } from "lucide-react";
 import { format } from "date-fns";
 
 import { cn } from "../../lib/utils";
-import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 
@@ -17,6 +16,28 @@ function safeFormatDate(d) {
   }
 }
 
+function LogoAvatar({ schoolName, logoUrl }) {
+  const [imgErr, setImgErr] = useState(false);
+  const showImg = !!logoUrl && !imgErr;
+  const letter = (String(schoolName || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 1) || "?").toUpperCase();
+
+  return (
+    <div className="w-11 h-11 rounded-lg bg-[#0f172a] border border-[#1f2937] overflow-hidden flex items-center justify-center flex-shrink-0">
+      {showImg ? (
+        <img
+          src={logoUrl}
+          alt={`${schoolName} logo`}
+          className="w-full h-full object-contain"
+          loading="lazy"
+          onError={() => setImgErr(true)}
+        />
+      ) : (
+        <div className="text-sm font-semibold text-[#9ca3af]">{letter}</div>
+      )}
+    </div>
+  );
+}
+
 export default function CampCard({
   camp,
   school,
@@ -26,22 +47,24 @@ export default function CampCard({
   isRegistered,
   onFavoriteToggle,
   onClick,
-  // optional flags for demo/paid UI (won’t break existing callers)
-  mode, // "demo" | "paid" (optional)
-  disabledFavorite, // optional: force-disable favorite button
+  mode,
+  disabledFavorite,
 }) {
   const division = school?.division || school?.school_division || null;
+  const schoolName = school?.school_name || school?.name || "Unknown School";
+  const logoUrl = school?.logo_url || school?.athletic_logo_url || null;
   const sportName = sport?.sport_name || sport?.name || null;
-
-  const priceIsNumber = typeof camp?.price === "number" && !Number.isNaN(camp.price);
-  const showPrice = priceIsNumber;
-
   const isDemo = mode === "demo";
 
+  const startLabel = safeFormatDate(camp?.start_date);
+  const endLabel = camp?.end_date && camp?.end_date !== camp?.start_date ? safeFormatDate(camp?.end_date) : null;
+  const city = [camp?.city, camp?.state].filter(Boolean).join(", ");
+  const priceLabel = typeof camp?.price === "number" && camp.price > 0 ? `$${camp.price}` : null;
+
   return (
-    <Card
+    <div
       className={cn(
-        "p-4 border-[#1f2937] bg-[#111827] cursor-pointer hover:border-[#374151] transition",
+        "rounded-xl border transition-colors border-[#1f2937] hover:border-[#e8a020]/60 bg-[#111827] overflow-hidden cursor-pointer",
         isRegistered ? "opacity-90" : ""
       )}
       role="button"
@@ -51,46 +74,65 @@ export default function CampCard({
         if (e.key === "Enter" || e.key === " ") onClick?.();
       }}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
+      <div className="flex items-center gap-3 p-4">
+        {/* Amber accent bar */}
+        <div className="w-[3px] self-stretch rounded-full bg-[#e8a020] flex-shrink-0" />
+
+        <LogoAvatar schoolName={schoolName} logoUrl={logoUrl} />
+
+        <div className="min-w-0 flex-1">
+          {/* Row 1: School name + badges */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-base font-bold text-[#f9fafb] truncate">{schoolName}</span>
             {division && (
-              <Badge className="bg-[#0f172a] text-[#f9fafb] border border-[#374151] text-xs">{division}</Badge>
+              <Badge className="bg-[#0f172a] text-[#f9fafb] border border-[#374151] text-[10px] px-1.5 py-0">{division}</Badge>
             )}
-
             {sportName && (
-              <span className="text-xs text-[#9ca3af] font-medium">{sportName}</span>
+              <span className="text-[10px] text-[#9ca3af] font-medium">{sportName}</span>
             )}
-
             {isDemo && (
-              <Badge variant="outline" className="text-xs border-[#374151] text-[#9ca3af]">
-                Demo
-              </Badge>
+              <Badge variant="outline" className="text-[10px] border-[#374151] text-[#9ca3af] px-1.5 py-0">Demo</Badge>
             )}
-
             {isRegistered && (
-              <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>
+              <Badge className="bg-emerald-600 text-white text-[10px] px-1.5 py-0">Registered</Badge>
             )}
-
             {!isRegistered && isFavorite && (
-              <Badge className="bg-amber-500 text-white text-xs">★ Favorite</Badge>
+              <Badge className="bg-amber-500 text-white text-[10px] px-1.5 py-0">★ Favorite</Badge>
             )}
           </div>
 
-          <div className="text-lg font-semibold text-[#f9fafb] truncate">
-            {school?.school_name || school?.name || "Unknown School"}
-          </div>
-          <div className="text-sm text-[#9ca3af] truncate">
+          {/* Row 2: Camp name */}
+          <div className="text-sm text-[#9ca3af] truncate mt-0.5">
             {camp?.camp_name || "Camp"}
+          </div>
+
+          {/* Row 3: Date · City · Price */}
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#9ca3af]">
+            <span className="flex items-center gap-1">
+              <span className="text-[#6b7280]">📅</span>
+              {startLabel}{endLabel ? ` — ${endLabel}` : ""}
+            </span>
+            {city && (
+              <span className="flex items-center gap-1">
+                <span className="text-[#6b7280]">📍</span>
+                {city}
+              </span>
+            )}
+            {priceLabel && (
+              <span className="flex items-center gap-1">
+                <span className="text-[#6b7280]">💰</span>
+                {priceLabel}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Favorite */}
+        {/* Favorite star */}
         <Button
           type="button"
           variant="ghost"
           size="icon"
+          className="flex-shrink-0"
           disabled={!!disabledFavorite}
           onClick={(e) => {
             e.preventDefault();
@@ -99,13 +141,6 @@ export default function CampCard({
             onFavoriteToggle?.();
           }}
           aria-label={isFavorite ? "Remove favorite" : "Add favorite"}
-          title={
-            disabledFavorite
-              ? "Favorites are disabled"
-              : isFavorite
-              ? "Remove favorite"
-              : "Add favorite"
-          }
         >
           <Star
             className={cn(
@@ -115,55 +150,6 @@ export default function CampCard({
           />
         </Button>
       </div>
-
-      {/* Details */}
-      <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-[#9ca3af]">
-        <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-[#6b7280]" />
-          <span>
-            {safeFormatDate(camp?.start_date)}
-            {camp?.end_date && camp?.end_date !== camp?.start_date
-              ? `–${safeFormatDate(camp?.end_date)}`
-              : ""}
-          </span>
-        </div>
-
-        {(camp?.city || camp?.state) && (
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-[#6b7280]" />
-            <span className="truncate">
-              {[camp?.city, camp?.state].filter(Boolean).join(", ")}
-            </span>
-          </div>
-        )}
-
-        {showPrice && (
-          <div className="flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-[#6b7280]" />
-            <span>{camp.price > 0 ? `$${camp.price}` : "Free"}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Positions */}
-      {Array.isArray(positions) && positions.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {positions.slice(0, 6).map((p, idx) => {
-            const key = p?.position_id || p?.id || `${idx}`;
-            const label = p?.position_code || p?.code || p?.position_name || "POS";
-            return (
-              <Badge key={key} variant="secondary" className="bg-[#0f172a] text-[#9ca3af] border border-[#1f2937]">
-                {label}
-              </Badge>
-            );
-          })}
-          {positions.length > 6 && (
-            <Badge variant="secondary" className="bg-[#0f172a] text-[#9ca3af] border border-[#1f2937]">
-              +{positions.length - 6}
-            </Badge>
-          )}
-        </div>
-      )}
-    </Card>
+    </div>
   );
 }
