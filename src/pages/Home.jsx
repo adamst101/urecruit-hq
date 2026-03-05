@@ -25,6 +25,13 @@ function trackEvent(payload) {
   } catch {}
 }
 
+function formatCount(n) {
+  if (n == null) return null;
+  const rounded = Math.floor(n / 10) * 10;
+  if (rounded >= 1000) return rounded.toLocaleString() + "+";
+  return rounded + "+";
+}
+
 export default function Home() {
   const nav = useNavigate();
   const loc = useLocation();
@@ -32,6 +39,35 @@ export default function Home() {
   const season = useSeasonAccess();
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
+
+  const [campCount, setCampCount] = useState(null);
+  const [schoolCount, setSchoolCount] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const allCamps = await base44.entities.Camp.filter({ active: true });
+        if (cancelled) return;
+        setCampCount(allCamps.length);
+        const uniqueSchools = new Set(
+          allCamps.filter(c => c.school_id).map(c => c.school_id)
+        );
+        setSchoolCount(uniqueSchools.size);
+      } catch {
+        if (!cancelled) {
+          setCampCount(760);
+          setSchoolCount(260);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const campDisplay = formatCount(campCount) || "750+";
+  const schoolDisplay = formatCount(schoolCount) || "250+";
+  const campRaw = campCount || 750;
+  const schoolRaw = schoolCount || 250;
 
   // ?preview=anon forces anonymous UI for testing
   const previewAnon = useMemo(() => {
