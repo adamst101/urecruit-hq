@@ -15,9 +15,6 @@ Deno.serve(async (req) => {
   const { couponCode, athleteId, userEmail, successUrl, cancelUrl } = await req.json();
 
   const email = userEmail || user?.email || "";
-  if (!email) {
-    // Stripe will collect email during checkout if not provided
-  }
 
   // Determine correct season and price ID
   const now = new Date();
@@ -64,15 +61,7 @@ Deno.serve(async (req) => {
     mode: "payment",
     customer_email: email || undefined,
     line_items: [{ price: priceId, quantity: 1 }],
-  };
-
-  if (discounts.length > 0) {
-    sessionParams.discounts = discounts;
-  } else {
-    sessionParams.allow_promotion_codes = true;
-  }
-
-  sessionParams.metadata = {
+    metadata: {
       athlete_id: athleteId || "",
       account_id: user?.id || "",
       coupon_code: couponCode || "",
@@ -81,6 +70,12 @@ Deno.serve(async (req) => {
     success_url: successUrl + "?session_id={CHECKOUT_SESSION_ID}",
     cancel_url: cancelUrl,
   };
+
+  if (discounts.length > 0) {
+    sessionParams.discounts = discounts;
+  } else {
+    sessionParams.allow_promotion_codes = true;
+  }
 
   try {
     const session = await stripe.checkout.sessions.create(sessionParams);
@@ -95,10 +90,4 @@ Deno.serve(async (req) => {
     console.error("Stripe session creation error:", err.message);
     return Response.json({ ok: false, error: err.message });
   }
-});
-    ok: true,
-    sessionUrl: session.url,
-    sessionId: session.id,
-    soldSeason,
-  });
 });
