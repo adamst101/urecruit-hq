@@ -172,10 +172,9 @@ export default function Home() {
           position: "sticky",
           top: 0,
           zIndex: 50,
-          background: "rgba(10,14,26,0.95)",
-          backdropFilter: "blur(12px)",
-          borderBottom: "1px solid #1f2937",
-          height: 52
+          background: "#ffffff",
+          borderBottom: "1px solid #e5e7eb",
+          height: 56
         }}
       >
         <div
@@ -189,15 +188,16 @@ export default function Home() {
             justifyContent: "space-between"
           }}
         >
-          {/* Left: brand */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="#e8a020">
-              <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V7L12 2z"/>
-            </svg>
-            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, letterSpacing: 1, lineHeight: 1 }}>
-              <span style={{ color: "#f9fafb", fontWeight: 700 }}>URecruit</span>
-              <span style={{ color: "#e8a020", fontWeight: 700 }}>HQ</span>
-            </span>
+          {/* Left: logo */}
+          <div>
+            {logoOk && (
+              <img
+                src={LOGO_URL}
+                alt="URecruit HQ"
+                onError={() => setLogoOk(false)}
+                style={{ height: 40, width: "auto", objectFit: "contain" }}
+              />
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -856,8 +856,8 @@ const S = {
   },
   navBtnGhost: {
     background: "transparent",
-    color: "#f9fafb",
-    border: "1px solid #1f2937",
+    color: "#111827",
+    border: "1px solid #e5e7eb",
     borderRadius: 8,
     padding: "10px 18px",
     fontSize: 16,
@@ -891,7 +891,7 @@ const S = {
   },
   navBtnLogout: {
     background: "transparent",
-    color: "#9ca3af",
+    color: "#6b7280",
     border: "none",
     borderRadius: 8,
     padding: "10px 12px",
