@@ -359,76 +359,76 @@ export default function Home() {
               style={{
                 flex: "1 1 45%",
                 position: "relative",
-                minHeight: 300,
+                minHeight: 480,
                 perspective: 800
               }}
             >
               {/* Card 3 — back */}
               <div style={{
-                position: "absolute", top: 40, left: 30,
+                position: "absolute", top: 280, left: 40,
                 transform: "rotate(3deg)",
                 background: "#111827", borderRadius: 16,
                 borderLeft: "4px solid #e8a020",
-                padding: 16, width: 280,
+                padding: 20, width: 340,
                 boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
                 opacity: 0.7, zIndex: 1
               }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
                   <div style={{
-                    width: 36, height: 36, borderRadius: "50%",
+                    width: 40, height: 40, borderRadius: "50%",
                     background: "linear-gradient(135deg, #e8a020, #c4841d)",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontWeight: 700, fontSize: 16, color: "#fff"
+                    fontWeight: 700, fontSize: 18, color: "#fff", flexShrink: 0
                   }}>P</div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: "#f9fafb", flex: 1 }}>Penn State Football</div>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: "#f9fafb", flex: 1 }}>Penn State Football</div>
                   <span style={{
                     background: "#e8a020", color: "#0a0e1a",
-                    fontSize: 10, fontWeight: 700, padding: "2px 7px",
+                    fontSize: 11, fontWeight: 700, padding: "3px 9px",
                     borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5
                   }}>FBS</span>
                 </div>
-                <div style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ fontSize: 14, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
                   <span>📅</span> July 5, 2026 · <span>📍</span> State College, PA
                 </div>
-                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
                   <span>💰</span> $60
                 </div>
               </div>
 
               {/* Card 2 — middle */}
               <div style={{
-                position: "absolute", top: 20, left: 15,
+                position: "absolute", top: 140, left: 20,
                 transform: "rotate(1deg)",
                 background: "#111827", borderRadius: 16,
                 borderLeft: "4px solid #e8a020",
-                padding: 16, width: 280,
+                padding: 20, width: 340,
                 boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
                 zIndex: 2
               }}>
                 <div style={{
-                  position: "absolute", top: 10, right: 10,
+                  position: "absolute", top: 12, right: 12,
                   background: "#e8a020", color: "#0a0e1a",
-                  fontSize: 11, fontWeight: 700, padding: "3px 10px",
+                  fontSize: 12, fontWeight: 700, padding: "4px 12px",
                   borderRadius: 20
                 }}>★ Favorited</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
                   <div style={{
-                    width: 36, height: 36, borderRadius: "50%",
+                    width: 40, height: 40, borderRadius: "50%",
                     background: "linear-gradient(135deg, #e8a020, #c4841d)",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontWeight: 700, fontSize: 16, color: "#fff"
+                    fontWeight: 700, fontSize: 18, color: "#fff", flexShrink: 0
                   }}>A</div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: "#f9fafb", flex: 1 }}>Alabama Crimson Tide</div>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: "#f9fafb", flex: 1 }}>Alabama Crimson Tide</div>
                   <span style={{
                     background: "#e8a020", color: "#0a0e1a",
-                    fontSize: 10, fontWeight: 700, padding: "2px 7px",
+                    fontSize: 11, fontWeight: 700, padding: "3px 9px",
                     borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5
                   }}>FBS</span>
                 </div>
-                <div style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ fontSize: 14, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
                   <span>📅</span> June 21, 2026 · <span>📍</span> Tuscaloosa, AL
                 </div>
-                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
                   <span>💰</span> $65 · <span>🎓</span> Grades 9-12
                 </div>
               </div>
@@ -439,34 +439,34 @@ export default function Home() {
                 transform: "rotate(-2deg)",
                 background: "#111827", borderRadius: 16,
                 borderLeft: "4px solid #e8a020",
-                padding: 16, width: 280,
+                padding: 20, width: 340,
                 boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
                 zIndex: 3
               }}>
                 <div style={{
-                  position: "absolute", top: 10, right: 10,
+                  position: "absolute", top: 12, right: 12,
                   background: "#10b981", color: "#fff",
-                  fontSize: 11, fontWeight: 700, padding: "3px 10px",
+                  fontSize: 12, fontWeight: 700, padding: "4px 12px",
                   borderRadius: 20
                 }}>✓ Registered</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
                   <div style={{
-                    width: 36, height: 36, borderRadius: "50%",
+                    width: 40, height: 40, borderRadius: "50%",
                     background: "linear-gradient(135deg, #e8a020, #c4841d)",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontWeight: 700, fontSize: 16, color: "#fff"
+                    fontWeight: 700, fontSize: 18, color: "#fff", flexShrink: 0
                   }}>O</div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: "#f9fafb", flex: 1 }}>Ohio State Football</div>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: "#f9fafb", flex: 1 }}>Ohio State Football</div>
                   <span style={{
                     background: "#e8a020", color: "#0a0e1a",
-                    fontSize: 10, fontWeight: 700, padding: "2px 7px",
+                    fontSize: 11, fontWeight: 700, padding: "3px 9px",
                     borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5
                   }}>FBS</span>
                 </div>
-                <div style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ fontSize: 14, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
                   <span>📅</span> June 14, 2026 · <span>📍</span> Columbus, OH
                 </div>
-                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
                   <span>💰</span> $75 · <span>🎓</span> Grades 9-12
                 </div>
               </div>
