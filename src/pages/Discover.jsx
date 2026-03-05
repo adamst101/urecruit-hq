@@ -239,7 +239,7 @@ export default function Discover() {
   const { demoProfileId } = useDemoProfile();
   const athleteSportId = athleteProfile?.sport_id != null ? String(athleteProfile.sport_id) : "";
 
-  const { hasAccess, seasonYear: accessSeasonYear } = useSeasonAccess();
+  const { hasAccess, seasonYear: accessSeasonYear, accountId: seasonAccountId } = useSeasonAccess();
   const writeGate = useWriteGate();
 
   const isPaid = !!hasAccess && !isDemoMode;
