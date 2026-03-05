@@ -436,11 +436,7 @@ export default function Calendar() {
                 isRegistered={String(r?.intent_status || "").toLowerCase() === "registered"}
                 mode={isPaid ? "paid" : "demo"}
                 disabledFavorite={!isPaid}
-                onClick={() => {
-                  try {
-                    nav(`${ROUTES.CampDetail}?id=${encodeURIComponent(campId)}`);
-                  } catch {}
-                }}
+                onClick={undefined}
                 onFavoriteToggle={() => {}}
                 warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
               />
