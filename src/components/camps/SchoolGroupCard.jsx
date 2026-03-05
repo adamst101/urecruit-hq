@@ -232,12 +232,12 @@ export default function SchoolGroupCard({
                       {isFav ? "★" : "☆"}
                     </span>
                   </button>
-                  <Button
+                  <button
                     type="button"
-                    size="sm"
-                    className={isReg
-                      ? "bg-emerald-600 text-white hover:bg-emerald-700 text-xs h-7 px-3"
-                      : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f] text-xs h-7 px-3"}
+                    className={"text-xs h-7 px-3 rounded-md font-medium " + (isReg
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                      : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]")}
+                    style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -245,7 +245,7 @@ export default function SchoolGroupCard({
                     }}
                   >
                     {isReg ? "✓ Registered" : "Register"}
-                  </Button>
+                  </button>
                 </div>
               </div>
             );
