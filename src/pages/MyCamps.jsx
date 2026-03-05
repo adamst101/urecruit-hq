@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
+import CampCard from "../components/camps/CampCard.jsx";
 
 import BottomNav from "../components/navigation/BottomNav";
 
@@ -33,87 +34,7 @@ function toISODate(dateInput) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-function initialBadge(name) {
-  const s = String(name || "").trim();
-  return (s.replace(/[^A-Za-z0-9]/g, "").slice(0, 1) || "?").toUpperCase();
-}
 
-function LogoAvatar({ schoolName, logoUrl }) {
-  return (
-    <div className="w-10 h-10 rounded-lg bg-[#0f172a] border border-[#1f2937] overflow-hidden flex items-center justify-center flex-shrink-0">
-      {logoUrl ? (
-        <img
-          src={logoUrl}
-          alt={`${schoolName} logo`}
-          className="w-full h-full object-contain"
-          loading="lazy"
-        />
-      ) : (
-        <div className="text-xs font-semibold text-[#9ca3af]">{initialBadge(schoolName)}</div>
-      )}
-    </div>
-  );
-}
-
-function CampRow({ row, isDemo }) {
-  const schoolName = row?.school_name || "School";
-  const schoolLogo = row?.school_logo_url || null;
-  const divisionLabel = row?.school_division || row?.division || null;
-  const dateLabel = (() => {
-    const s = toISODate(row?.start_date);
-    const e = toISODate(row?.end_date);
-    if (s && e && e !== s) return `${s} ? ${e}`;
-    return s || "TBD";
-  })();
-
-  const st = String(row?.intent_status || "").toLowerCase();
-  const isRegistered = st === "registered" || st === "completed";
-  const isFavorite = st === "favorite";
-
-  return (
-    <Card className="p-4 border-[#1f2937] bg-[#111827]">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3 min-w-0 flex-1">
-          <LogoAvatar schoolName={schoolName} logoUrl={schoolLogo} />
-
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              {divisionLabel ? (
-                <Badge className="bg-[#0f172a] text-[#f9fafb] border border-[#374151] text-xs">
-                  {divisionLabel}
-                </Badge>
-              ) : null}
-              {isDemo ? (
-                <Badge variant="outline" className="text-xs border-[#374151] text-[#9ca3af]">
-                  Demo
-                </Badge>
-              ) : null}
-              {isRegistered ? (
-                <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>
-              ) : isFavorite ? (
-                <Badge className="bg-amber-500 text-white text-xs">★ Favorite</Badge>
-              ) : (
-                <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-xs">Potential</Badge>
-              )}
-            </div>
-
-            <div className="text-lg font-semibold text-[#f9fafb] truncate mt-1">{schoolName}</div>
-            <div className="text-sm text-[#9ca3af] truncate">{row?.camp_name || row?.name || "Camp"}</div>
-
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-[#9ca3af]">
-              <span className="rounded-md bg-[#0f172a] border border-[#1f2937] px-2 py-1">{dateLabel}</span>
-              {(row?.city || row?.state) ? (
-                <span className="rounded-md bg-[#0f172a] border border-[#1f2937] px-2 py-1">
-                  {[row?.city, row?.state].filter(Boolean).join(", ")}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
 
 export default function MyCamps() {
   const nav = useNavigate();
@@ -154,24 +75,15 @@ export default function MyCamps() {
     });
   }, [isDemoMode, paidQuery?.data, demoQuery?.data]);
 
-  const sortByDate = (a, b) => {
-    const da = String(a?.start_date || "9999").slice(0, 10);
-    const db = String(b?.start_date || "9999").slice(0, 10);
-    return da.localeCompare(db);
-  };
-
-  const registered = useMemo(() => {
-    return rows.filter((r) => {
-      const st = String(r?.intent_status || "").toLowerCase();
-      return st === "registered" || st === "completed";
-    }).sort(sortByDate);
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      const da = String(a?.start_date || "9999").slice(0, 10);
+      const db = String(b?.start_date || "9999").slice(0, 10);
+      return da.localeCompare(db);
+    });
   }, [rows]);
 
-  const favorites = useMemo(() => {
-    return rows.filter((r) => String(r?.intent_status || "").toLowerCase() === "favorite").sort(sortByDate);
-  }, [rows]);
-
-  const showEmpty = registered.length === 0 && favorites.length === 0;
+  const showEmpty = sortedRows.length === 0;
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
@@ -212,28 +124,43 @@ export default function MyCamps() {
             </div>
           </Card>
         ) : (
-          <div className="space-y-6">
-            {registered.length > 0 ? (
-              <div>
-                <h2 className="text-sm font-semibold text-[#9ca3af] mb-2">Registered</h2>
-                <div className="space-y-3">
-                  {registered.map((r) => (
-                    <CampRow key={String(r?.camp_id || r?.id || Math.random())} row={r} isDemo={isDemoMode} />
-                  ))}
-                </div>
-              </div>
-            ) : null}
+          <div className="space-y-3">
+            {sortedRows.map((r) => {
+              const campId = String(r?.camp_id || r?.id || "");
+              const st = String(r?.intent_status || "").toLowerCase();
+              const isRegistered = st === "registered" || st === "completed";
+              const isFavorite = st === "favorite";
 
-            {favorites.length > 0 ? (
-              <div>
-                <h2 className="text-sm font-semibold text-[#9ca3af] mb-2">★ Favorites</h2>
-                <div className="space-y-3">
-                  {favorites.map((r) => (
-                    <CampRow key={String(r?.camp_id || r?.id || Math.random())} row={r} isDemo={isDemoMode} />
-                  ))}
-                </div>
-              </div>
-            ) : null}
+              return (
+                <CampCard
+                  key={campId}
+                  camp={{
+                    id: campId,
+                    camp_name: r?.camp_name || r?.name || "Camp",
+                    start_date: r?.start_date,
+                    end_date: r?.end_date,
+                    price: r?.price ?? null,
+                    link_url: r?.link_url ?? null,
+                    city: r?.city ?? null,
+                    state: r?.state ?? null,
+                  }}
+                  school={{
+                    id: r?.school_id ? String(r.school_id) : null,
+                    school_name: r?.school_name ?? null,
+                    division: r?.school_division ?? r?.division ?? null,
+                    logo_url: r?.school_logo_url ?? null,
+                  }}
+                  sport={{}}
+                  positions={[]}
+                  isFavorite={isFavorite}
+                  isRegistered={isRegistered}
+                  mode={isDemoMode ? "demo" : "paid"}
+                  disabledFavorite={true}
+                  onClick={() => nav(`/CampDetail?id=${encodeURIComponent(campId)}`)}
+                  onFavoriteToggle={() => {}}
+                />
+              );
+            })}
           </div>
         )}
       </div>
