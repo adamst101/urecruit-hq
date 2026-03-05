@@ -246,10 +246,9 @@ export default function Discover() {
   }, [isPaid, demoProfileId, seasonYear]);
   const nf = filtersApi?.nf || null;
 
-  // ✅ FIX 2: School identity via dedicated hook
-  // Fetches School rows for all camp school_ids, exposes resolveIdentity(schoolId, campRow)
-  // which returns { name, logoUrl, division, city, state } — never "unknown", never Ryzer placeholder
-  const { resolveIdentity } = useSchoolIdentity(rawRows);
+  // ✅ School identity via dedicated hook — uses allRows so school data
+  // is available for filtering (division, state) before display
+  const { resolveIdentity, schoolById } = useSchoolIdentity(allRows);
 
   const campKeyForRow = (r) => {
     return String(r?.id ?? "");
