@@ -549,33 +549,92 @@ export default function Discover() {
     return demoFavoriteIds.includes(campId);
   }
 
-  async function handleFavoriteToggle(campId) {
+  function isCampRegistered(campId) {
+    if (isPaid) {
+      const st = String(intentByKey?.[campId]?.status || "").toLowerCase();
+      return st === "registered" || st === "completed";
+    }
+    return isDemoRegistered(demoProfileId, campId);
+  }
+
+  // Build list of all camps the user has saved (for conflict detection)
+  function getSavedCamps() {
+    return asArray(rawRows).filter((r) => {
+      const cid = String(r?.id ?? "");
+      return isCampFavorite(cid) || isCampRegistered(cid);
+    });
+  }
+
+  function doFavoriteToggle(campId) {
     if (!isPaid) {
       const next = toggleDemoFavorite(demoProfileId, campId, seasonYear);
       setDemoFavoriteIds(next);
       return;
     }
-    const ok = await (writeGate?.ensure ? writeGate.ensure("favorite", { campId }) : true);
-    if (!ok) return;
     const isFav = isCampFavorite(campId);
-    await upsertIntent(campId, isFav ? "" : "favorite");
+    upsertIntent(campId, isFav ? "" : "favorite");
   }
 
-  async function handleRegisterClick(camp) {
-    const campId = String(camp?.id ?? "");
-    const linkUrl = camp?.link_url ?? camp?.source_url ?? camp?.url ?? null;
-    if (!linkUrl) return;
-
-    if (!isPaid) {
-      window.open("https://camp-connect-698c00ef.base44.app/Subscribe?source=workspace_banner", "_blank", "noopener,noreferrer");
+  async function handleFavoriteToggle(campId) {
+    // If already favorited, just unfavorite (no conflict check)
+    if (isCampFavorite(campId)) {
+      doFavoriteToggle(campId);
       return;
     }
 
-    const ok = await (writeGate?.ensure ? writeGate.ensure("register", { campId }) : true);
-    if (!ok) return;
+    // Check for conflicts before adding
+    const camp = rawRows.find((r) => String(r?.id) === String(campId));
+    if (!camp) { doFavoriteToggle(campId); return; }
 
-    try { window.open(String(linkUrl), "_blank", "noopener,noreferrer"); } catch { /* ignore */ }
-    await upsertIntent(campId, "registered");
+    const existing = getSavedCamps();
+    const warnings = detectConflicts({
+      camps: [...existing, camp],
+      homeCity: athleteProfile?.home_city || null,
+      homeState: athleteProfile?.home_state || null,
+      isPaid,
+    }).filter((w) => w.campIds?.includes(String(campId)));
+
+    if (warnings.length > 0) {
+      setConflictModal({ open: true, warnings, campId, action: "favorite" });
+    } else {
+      doFavoriteToggle(campId);
+    }
+  }
+
+  function doRegister(camp) {
+    const campId = String(camp?.id ?? "");
+    if (!isPaid) {
+      toggleDemoRegistered(demoProfileId, campId);
+      setDemoFavoriteIds(getDemoFavorites(demoProfileId, seasonYear));
+      // force re-render by updating intentByKey
+      setIntentByKey((p) => ({ ...p }));
+    } else {
+      upsertIntent(campId, "registered");
+    }
+  }
+
+  function handleRegisterClick(camp) {
+    const campId = String(camp?.id ?? "");
+
+    // If already registered, show unregister modal
+    if (isCampRegistered(campId)) {
+      setUnregisterModal({ open: true, camp });
+      return;
+    }
+
+    // Show register confirm modal
+    setRegisterModal({ open: true, camp });
+  }
+
+  function handleUnregister(camp) {
+    const campId = String(camp?.id ?? "");
+    if (!isPaid) {
+      toggleDemoRegistered(demoProfileId, campId);
+      setIntentByKey((p) => ({ ...p }));
+    } else {
+      upsertIntent(campId, "");
+    }
+    setUnregisterModal({ open: false, camp: null });
   }
 
   /* ─── CampList ────────────────────────────────────────────────────────── */
