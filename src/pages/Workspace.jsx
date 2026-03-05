@@ -42,15 +42,6 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
-async function safeMe() {
-  try {
-    const me = await base44.auth.me();
-    return me || null;
-  } catch {
-    return null;
-  }
-}
-
 async function safeLogout() {
   try {
     if (base44?.auth?.logout) {
