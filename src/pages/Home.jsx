@@ -11,6 +11,7 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode, clearDemoMode } from "../components/hooks/demoMode.jsx";
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
+import ConflictDetectionSection from "../components/home/ConflictDetectionSection.jsx";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/f3ee1058c_2e6caa2c-a149-4031-83db-38b917c5a134.png";
