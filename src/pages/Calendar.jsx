@@ -13,7 +13,6 @@ import FilterSheet from "../components/filters/FilterSheet.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
-// demoFavorites/demoRegistered are handled inside useDemoCampSummaries
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
@@ -37,6 +36,12 @@ import WarningBadge from "../components/camps/WarningBadge.jsx";
 import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
 
+import CalendarViewToggle from "../components/calendar/CalendarViewToggle.jsx";
+import MonthSubToggle from "../components/calendar/MonthSubToggle.jsx";
+import WeekView from "../components/calendar/WeekView.jsx";
+import MonthOverview from "../components/calendar/MonthOverview.jsx";
+import CampDetailPanel from "../components/calendar/CampDetailPanel.jsx";
+
 /* -------------------------
    Helpers (MVP-safe)
 ------------------------- */
@@ -48,11 +53,6 @@ function normId(x) {
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
-}
-
-function safeNumber(x) {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : null;
 }
 
 function getUrlParams(search) {
@@ -73,15 +73,14 @@ function readActiveFlag(row) {
   if (typeof row?.active === "boolean") return row.active;
   if (typeof row?.is_active === "boolean") return row.is_active;
   if (typeof row?.isActive === "boolean") return row.isActive;
-
   const st = String(row?.status || "").toLowerCase().trim();
   if (st === "inactive") return false;
   if (st === "active") return true;
-  return true; // default to shown
+  return true;
 }
 
 /* -------------------------
-   Routes (no createPageUrl)
+   Routes
 ------------------------- */
 const ROUTES = {
   Profile: "/Profile",
@@ -96,49 +95,34 @@ export default function Calendar() {
   const { demoProfileId } = useDemoProfile();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // ---- effective mode (URL ?mode=demo always wins) ----
+  // ---- effective mode ----
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const forceDemo = url.mode === "demo";
-  const effectiveMode = forceDemo ? "demo" : season?.mode; // "demo" | "paid"
+  const effectiveMode = forceDemo ? "demo" : season?.mode;
   const isPaid = effectiveMode === "paid";
 
-  // Demo seasonYear can be overridden by URL ?season=
   const seasonYear = useMemo(() => {
     if (forceDemo && url.seasonYear) return url.seasonYear;
     return season?.seasonYear;
   }, [forceDemo, url.seasonYear, season?.seasonYear]);
 
-  // ---- filters (FilterSheet contract) ----
+  // ---- filters ----
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState({
-    sport: "",
-    state: "",
-    divisions: [],
-    positions: [],
-    startDate: "",
-    endDate: "",
+    sport: "", state: "", divisions: [], positions: [], startDate: "", endDate: "",
   });
 
-  // Inline filter state (Month / State / Division)
   const [selectedMonth, setSelectedMonth] = useState("all");
   const [inlineState, setInlineState] = useState("all");
   const [inlineDivision, setInlineDivision] = useState("all");
 
   const clearFilters = () => {
-    setFilters({
-      sport: "",
-      state: "",
-      divisions: [],
-      positions: [],
-      startDate: "",
-      endDate: "",
-    });
+    setFilters({ sport: "", state: "", divisions: [], positions: [], startDate: "", endDate: "" });
     setSelectedMonth("all");
     setInlineState("all");
     setInlineDivision("all");
   };
 
-  // ✅ Paid Calendar: lock sport to athlete profile sport_id
   const athleteId = useMemo(() => {
     if (!isPaid) return null;
     const id = athleteProfile?.id ?? athleteProfile?._id ?? athleteProfile?.uuid ?? null;
@@ -154,35 +138,27 @@ export default function Calendar() {
     return isPaid && !!athleteId && !athleteSportId;
   }, [isPaid, athleteId, athleteSportId]);
 
-  // ✅ HARD ENFORCE sport in paid mode (prevents localStorage / stale filter drift)
   useEffect(() => {
     if (!isPaid) return;
     if (!athleteSportId) return;
-
     const cur = String(filters?.sport || "");
     if (cur !== athleteSportId) {
       setFilters((prev) => ({ ...prev, sport: athleteSportId }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPaid, athleteSportId]);
 
   const openFiltersOrProfile = () => {
-    if (paidMissingSport) {
-      nav(ROUTES.Profile);
-      return;
-    }
+    if (paidMissingSport) { nav(ROUTES.Profile); return; }
     setFilterOpen(true);
   };
 
-  // ---- load filter picklists: sports + positions ----
+  // ---- picklists ----
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
 
   useEffect(() => {
     let mounted = true;
-
     (async () => {
-      // Sports
       try {
         const rows = await base44?.entities?.Sport?.list?.();
         if (mounted) setSports(Array.isArray(rows) ? rows : []);
@@ -190,12 +166,8 @@ export default function Calendar() {
         try {
           const rows2 = await base44?.entities?.Sport?.filter?.({});
           if (mounted) setSports(Array.isArray(rows2) ? rows2 : []);
-        } catch {
-          if (mounted) setSports([]);
-        }
+        } catch { if (mounted) setSports([]); }
       }
-
-      // Positions
       try {
         const rows = await base44?.entities?.Position?.list?.();
         if (mounted) setPositions(Array.isArray(rows) ? rows : []);
@@ -203,15 +175,10 @@ export default function Calendar() {
         try {
           const rows2 = await base44?.entities?.Position?.filter?.({});
           if (mounted) setPositions(Array.isArray(rows2) ? rows2 : []);
-        } catch {
-          if (mounted) setPositions([]);
-        }
+        } catch { if (mounted) setPositions([]); }
       }
     })();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   const positionsMap = useMemo(() => {
@@ -224,17 +191,15 @@ export default function Calendar() {
     return m;
   }, [positions]);
 
-  // ---- normalize filters once (single source of truth) ----
   const nf = useMemo(() => normalizeFilters(filters), [filters]);
 
-  // ---- data source: paid vs demo ----
+  // ---- data source ----
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId || undefined,
     sportId: nf?.sportId || undefined,
     enabled: isPaid && !!athleteId,
   });
 
-  // Demo query: uses DemoCamp entity via useDemoCampSummaries
   const demoQuery = useDemoCampSummaries({
     seasonYear,
     demoProfileId: demoProfileId || "default",
@@ -246,7 +211,7 @@ export default function Calendar() {
     (isPaid && identityLoading) ||
     (isPaid ? !!paidQuery?.isLoading : !!demoQuery?.isLoading);
 
-  // ---- apply filters client-side (source-agnostic) ----
+  // ---- apply filters ----
   const rows = useMemo(() => {
     const base = isPaid ? asArray(paidQuery?.data) : asArray(demoQuery?.data);
     const wantedState = nf?.state ? String(nf.state) : null;
@@ -256,51 +221,40 @@ export default function Calendar() {
     const result = base
       .filter((c) => readActiveFlag(c) === true)
       .filter((c) => {
-        // In demo mode, only show camps the user has favorited or registered
         if (!isPaid) {
           const st = String(c?.intent_status || "").toLowerCase();
           if (st !== "favorite" && st !== "registered" && st !== "completed") return false;
         }
-
         if (wantedState) {
-          const campState =
-            normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
+          const campState = normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
           if (campState !== wantedState) return false;
         }
-
         if (wantedDivisions.length) {
           if (!matchesDivision(c, wantedDivisions)) return false;
         }
-
         if (wantedPositions.length) {
           const campPos = asArray(c?.position_ids).map(String);
           const hasAny = wantedPositions.some((pid) => campPos.includes(pid));
           if (!hasAny) return false;
         }
-
         const campStart = c?.start_date || null;
         const campEnd = c?.end_date || null;
         if (!withinDateRange(campStart, nf?.startDate || "", nf?.endDate || "", campEnd)) return false;
-
-        // Inline filters (Month / State / Division)
         if (!matchesMonth(c, selectedMonth)) return false;
         if (!matchesStateSimple(c, inlineState)) return false;
         if (!matchesDivisionSimple(c, inlineDivision)) return false;
-
         return true;
       });
 
-    // Sort by camp start date ascending
     result.sort((a, b) => {
       const da = String(a?.start_date || "9999").slice(0, 10);
       const db = String(b?.start_date || "9999").slice(0, 10);
       return da.localeCompare(db);
     });
-
     return result;
   }, [isPaid, paidQuery?.data, demoQuery?.data, nf, selectedMonth, inlineState, inlineDivision]);
 
-  // Conflict detection
+  // ---- conflict detection ----
   const favCamps = useMemo(() => rows.filter((r) => String(r?.intent_status || "").toLowerCase() === "favorite"), [rows]);
   const regCamps = useMemo(() => rows.filter((r) => {
     const st = String(r?.intent_status || "").toLowerCase();
@@ -309,32 +263,89 @@ export default function Calendar() {
 
   const { warnings: allWarnings, getWarningsForCamp } = useConflictDetection({
     favoritedCamps: favCamps.map((r) => ({
-      id: r?.camp_id || r?.id,
-      camp_name: r?.camp_name,
-      start_date: r?.start_date,
-      city: r?.city || r?.school_city,
-      state: r?.state || r?.school_state,
-      school_name: r?.school_name,
+      id: r?.camp_id || r?.id, camp_name: r?.camp_name,
+      start_date: r?.start_date, city: r?.city || r?.school_city,
+      state: r?.state || r?.school_state, school_name: r?.school_name,
     })),
     registeredCamps: regCamps.map((r) => ({
-      id: r?.camp_id || r?.id,
-      camp_name: r?.camp_name,
-      start_date: r?.start_date,
-      city: r?.city || r?.school_city,
-      state: r?.state || r?.school_state,
-      school_name: r?.school_name,
+      id: r?.camp_id || r?.id, camp_name: r?.camp_name,
+      start_date: r?.start_date, city: r?.city || r?.school_city,
+      state: r?.state || r?.school_state, school_name: r?.school_name,
     })),
     homeCity: athleteProfile?.home_city || null,
     homeState: athleteProfile?.home_state || null,
     isPaid,
   });
 
-  const title = "Calendar";
+  // ---- Calendar view state ----
+  const [calView, setCalView] = useState("list");
+  const [monthSubView, setMonthSubView] = useState("week");
+  const [currentWeek, setCurrentWeek] = useState(() => {
+    const today = new Date();
+    const day = today.getDay();
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - day);
+    return sunday;
+  });
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedCamp, setSelectedCamp] = useState(null);
+  const [panelOpen, setPanelOpen] = useState(false);
 
-  const renderBody = () => {
+  function openCampDetail(camp) {
+    setSelectedCamp(camp);
+    setPanelOpen(true);
+  }
+  function closeCampDetail() {
+    setPanelOpen(false);
+    setTimeout(() => setSelectedCamp(null), 300);
+  }
+
+  // ---- campsByDate + conflictDates for month views ----
+  const campsByDate = useMemo(() => {
+    const map = {};
+    rows.forEach((c) => {
+      const d = String(c?.start_date || "").slice(0, 10);
+      if (!d) return;
+      if (!map[d]) map[d] = [];
+      map[d].push(c);
+    });
+    return map;
+  }, [rows]);
+
+  const conflictDates = useMemo(() => {
+    const dates = new Set();
+    Object.entries(campsByDate).forEach(([date, camps]) => {
+      if (camps.length > 1) dates.add(date);
+    });
+    return dates;
+  }, [campsByDate]);
+
+  // schoolMap for month views
+  const schoolMap = useMemo(() => {
+    const map = {};
+    rows.forEach((r) => {
+      const campId = String(r?.camp_id || r?.id || "");
+      map[campId] = {
+        school_name: r?.school_name,
+        division: r?.school_division,
+        logo_url: r?.school_logo_url,
+      };
+    });
+    return map;
+  }, [rows]);
+
+  // Find conflict partner for detail panel
+  function getConflictPartner(camp) {
+    if (!camp) return null;
+    const d = String(camp?.start_date || "").slice(0, 10);
+    const others = (campsByDate[d] || []).filter((c) => String(c?.camp_id || c?.id) !== String(camp?.camp_id || camp?.id));
+    return others.length > 0 ? (others[0]?.school_name || "another camp") : null;
+  }
+
+  // ---- list view body (existing, unchanged) ----
+  const renderListBody = () => {
     if (loading) return <div className="py-10 text-center text-[#9ca3af]">Loading…</div>;
 
-    // Paid mode needs profile to be meaningful
     if (isPaid && !athleteId) {
       return (
         <Card className="p-5 border-[#1f2937] bg-[#111827]">
@@ -349,7 +360,6 @@ export default function Calendar() {
       );
     }
 
-    // ✅ Paid mode: athlete exists but sport missing
     if (paidMissingSport) {
       return (
         <Card className="p-5 border-[#1f2937] bg-[#111827]">
@@ -394,44 +404,24 @@ export default function Calendar() {
           const sportId = r?.sport_id ? String(r.sport_id) : null;
 
           const camp = {
-            id: campId,
-            camp_name: r?.camp_name,
-            start_date: r?.start_date,
-            end_date: r?.end_date,
-            price: r?.price ?? null,
-            link_url: r?.link_url ?? null,
-            notes: r?.notes ?? null,
-            city: r?.city ?? null,
-            state: r?.state ?? null,
+            id: campId, camp_name: r?.camp_name,
+            start_date: r?.start_date, end_date: r?.end_date,
+            price: r?.price ?? null, link_url: r?.link_url ?? null,
+            notes: r?.notes ?? null, city: r?.city ?? null, state: r?.state ?? null,
           };
-
           const school = {
-            id: schoolId,
-            school_name: r?.school_name ?? null,
-            division: r?.school_division ?? null,
-            logo_url: r?.school_logo_url ?? null,
-            city: r?.school_city ?? null,
-            state: r?.school_state ?? null,
+            id: schoolId, school_name: r?.school_name ?? null,
+            division: r?.school_division ?? null, logo_url: r?.school_logo_url ?? null,
+            city: r?.school_city ?? null, state: r?.school_state ?? null,
             conference: r?.school_conference ?? null,
           };
-
-          const sport = {
-            id: sportId,
-            name: r?.sport_name ?? null,
-            sport_name: r?.sport_name ?? null,
-          };
-
-          const posObjs = asArray(r?.position_ids)
-            .map((pid) => positionsMap.get(String(pid)))
-            .filter(Boolean);
+          const sport = { id: sportId, name: r?.sport_name ?? null, sport_name: r?.sport_name ?? null };
+          const posObjs = asArray(r?.position_ids).map((pid) => positionsMap.get(String(pid))).filter(Boolean);
 
           return (
             <div key={campId} className="relative">
               <CampCard
-                camp={camp}
-                school={school}
-                sport={sport}
-                positions={posObjs}
+                camp={camp} school={school} sport={sport} positions={posObjs}
                 isFavorite={String(r?.intent_status || "").toLowerCase() === "favorite"}
                 isRegistered={String(r?.intent_status || "").toLowerCase() === "registered"}
                 mode={isPaid ? "paid" : "demo"}
@@ -447,58 +437,107 @@ export default function Calendar() {
     );
   };
 
+  // ---- month view body ----
+  const renderMonthBody = () => {
+    if (loading) return <div className="py-10 text-center text-[#9ca3af]">Loading…</div>;
+
+    if (isPaid && !athleteId) {
+      return (
+        <Card className="p-5 border-[#1f2937] bg-[#111827]">
+          <div className="text-lg font-semibold text-[#f9fafb]">Complete your athlete profile</div>
+          <div className="mt-1 text-sm text-[#9ca3af]">Set up your profile to see camps.</div>
+          <div className="mt-4">
+            <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
+          </div>
+        </Card>
+      );
+    }
+
+    return (
+      <>
+        <MonthSubToggle subView={monthSubView} setSubView={setMonthSubView} />
+        {monthSubView === "week" ? (
+          <WeekView
+            currentWeek={currentWeek}
+            setCurrentWeek={setCurrentWeek}
+            campsByDate={campsByDate}
+            conflictDates={conflictDates}
+            schoolMap={schoolMap}
+            onCampClick={openCampDetail}
+          />
+        ) : (
+          <MonthOverview
+            currentMonth={currentMonth}
+            setCurrentMonth={setCurrentMonth}
+            campsByDate={campsByDate}
+            conflictDates={conflictDates}
+            schoolMap={schoolMap}
+            onCampClick={openCampDetail}
+          />
+        )}
+      </>
+    );
+  };
+
+  // Detail panel data
+  const panelCamp = selectedCamp;
+  const panelCampId = String(panelCamp?.camp_id || panelCamp?.id || "");
+  const panelSchool = schoolMap[panelCampId] || { school_name: panelCamp?.school_name };
+  const panelStatus = String(panelCamp?.intent_status || "").toLowerCase();
+  const panelDateKey = String(panelCamp?.start_date || "").slice(0, 10);
+  const panelIsConflict = conflictDates.has(panelDateKey);
+  const panelConflictWith = getConflictPartner(panelCamp);
+
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb]">
       <div className="max-w-5xl mx-auto px-4 pt-5 pb-24">
         {/* Header */}
-        <div className="mb-4">
-          <div className="text-xl font-bold text-[#f9fafb]">{title}</div>
+        <div className="mb-4 flex items-center justify-between">
+          <div className="text-xl font-bold text-[#f9fafb]">Calendar</div>
+          <CalendarViewToggle calView={calView} setCalView={setCalView} />
         </div>
 
         {!isPaid && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
 
-        {/* Inline filters: Month | State | Division */}
-        <div className="mb-4 flex flex-wrap gap-3 items-center">
-          {/* Month */}
-          <select
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
-          >
-            {MONTH_OPTIONS.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
+        {/* Inline filters (show for list view, hide for month views to reduce clutter) */}
+        {calView === "list" && (
+          <div className="mb-4 flex flex-wrap gap-3 items-center">
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+            >
+              {MONTH_OPTIONS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            <select
+              value={inlineState}
+              onChange={(e) => setInlineState(e.target.value)}
+              className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+            >
+              <option value="all">All States</option>
+              {(() => {
+                const base = isPaid ? asArray(paidQuery?.data) : asArray(demoQuery?.data);
+                const states = [...new Set(base.map((c) => normalizeState(c?.state || c?.camp_state || c?.school_state)).filter(Boolean))].sort();
+                return states.map((st) => <option key={st} value={st}>{st}</option>);
+              })()}
+            </select>
+            <select
+              value={inlineDivision}
+              onChange={(e) => setInlineDivision(e.target.value)}
+              className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+            >
+              {DIVISION_FILTER_OPTIONS.map((d) => (
+                <option key={d.value} value={d.value}>{d.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
-          {/* State */}
-          <select
-            value={inlineState}
-            onChange={(e) => setInlineState(e.target.value)}
-            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
-          >
-            <option value="all">All States</option>
-            {(() => {
-              const base = isPaid ? asArray(paidQuery?.data) : asArray(demoQuery?.data);
-              const states = [...new Set(base.map((c) => normalizeState(c?.state || c?.camp_state || c?.school_state)).filter(Boolean))].sort();
-              return states.map((st) => <option key={st} value={st}>{st}</option>);
-            })()}
-          </select>
+        {calView === "list" && <WarningBanner warnings={allWarnings} />}
 
-          {/* Division */}
-          <select
-            value={inlineDivision}
-            onChange={(e) => setInlineDivision(e.target.value)}
-            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
-          >
-            {DIVISION_FILTER_OPTIONS.map((d) => (
-              <option key={d.value} value={d.value}>{d.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <WarningBanner warnings={allWarnings} />
-
-        {renderBody()}
+        {calView === "list" ? renderListBody() : renderMonthBody()}
 
         <FilterSheet
           isOpen={filterOpen}
@@ -508,16 +547,24 @@ export default function Calendar() {
           sports={sports}
           positions={positions}
           onApply={() => setFilterOpen(false)}
-          onClear={() => {
-            clearFilters();
-            setFilterOpen(false);
-          }}
-          // ✅ Paid: hide sport dropdown + force sport from athlete profile
+          onClear={() => { clearFilters(); setFilterOpen(false); }}
           lockSportId={isPaid && athleteSportId ? athleteSportId : ""}
         />
       </div>
 
       <BottomNav />
+
+      {/* Camp detail panel */}
+      {panelOpen && panelCamp && (
+        <CampDetailPanel
+          camp={panelCamp}
+          school={panelSchool}
+          status={panelStatus}
+          isConflict={panelIsConflict}
+          conflictWith={panelConflictWith}
+          onClose={closeCampDetail}
+        />
+      )}
     </div>
   );
 }
