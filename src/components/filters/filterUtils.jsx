@@ -164,10 +164,53 @@ export function normalizeFilters(raw) {
    Discover matchers
    (Discover.jsx imports these)
 ---------------------------- */
+/**
+ * Normalizes a raw division string (from School entity) to a filter-friendly value.
+ * School stores: "NCAA Division I", "NCAA Division II", "NCAA Division III", "NAIA", "NJCAA"
+ * Filters use:   "D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"
+ */
+function normalizeDivision(rawDiv, rawSubdiv) {
+  const d = String(rawDiv || "").trim().toLowerCase();
+  const sub = String(rawSubdiv || "").trim().toUpperCase();
+
+  if (!d) return "";
+
+  // NAIA
+  if (d.includes("naia")) return "NAIA";
+
+  // JUCO / NJCAA
+  if (d.includes("njcaa") || d.includes("juco")) return "JUCO";
+
+  // NCAA Division III / D3
+  if (d.includes("iii") || d === "d3" || d.includes("division 3")) return "D3";
+
+  // NCAA Division II / D2
+  if (d.includes("ii") && !d.includes("iii")) return "D2";
+  if (d === "d2" || d.includes("division 2")) return "D2";
+
+  // NCAA Division I (need subdivision)
+  if (d.includes("division i") || d === "d1" || d.includes("ncaa d1") || d === "d1 (fbs)" || d === "d1 (fcs)") {
+    if (sub === "FBS" || d.includes("fbs")) return "D1 (FBS)";
+    if (sub === "FCS" || d.includes("fcs")) return "D1 (FCS)";
+    return "D1 (FBS)"; // default D1 to FBS if no subdivision
+  }
+
+  // Already in filter format
+  const upper = String(rawDiv || "").trim();
+  if (["D1 (FBS)", "D1 (FCS)", "D2", "D3", "NAIA", "JUCO"].includes(upper)) return upper;
+
+  return upper; // pass through unknown
+}
+
 export function matchesDivision(camp, divisions) {
   if (!Array.isArray(divisions) || divisions.length === 0) return true;
-  const campDiv = String(camp?.division || camp?.school_division || "");
-  return divisions.some((d) => String(d) === campDiv);
+
+  const rawDiv = camp?.division || camp?.school_division || "";
+  const rawSub = camp?.subdivision || camp?.school_subdivision || "";
+  const normalized = normalizeDivision(rawDiv, rawSub);
+
+  if (!normalized) return false;
+  return divisions.some((d) => String(d) === normalized);
 }
 
 export function matchesSport(camp, sports) {
