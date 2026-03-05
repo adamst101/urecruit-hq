@@ -41,6 +41,7 @@ import CalendarViewToggle from "../components/calendar/CalendarViewToggle.jsx";
 import MonthSubToggle from "../components/calendar/MonthSubToggle.jsx";
 import WeekView from "../components/calendar/WeekView.jsx";
 import MonthOverview from "../components/calendar/MonthOverview.jsx";
+import MonthGridView from "../components/calendar/MonthGridView.jsx";
 import CampDetailPanel from "../components/calendar/CampDetailPanel.jsx";
 
 /* -------------------------
@@ -288,7 +289,7 @@ export default function Calendar() {
 
   // ---- Calendar view state ----
   const [calView, setCalView] = useState("list");
-  const [monthSubView, setMonthSubView] = useState("month");
+  const [monthSubView, setMonthSubView] = useState("agenda");
   const [currentWeek, setCurrentWeek] = useState(() => {
     const today = new Date();
     const day = today.getDay();
@@ -465,7 +466,7 @@ export default function Calendar() {
     return (
       <>
         <MonthSubToggle subView={monthSubView} setSubView={setMonthSubView} />
-        {monthSubView === "week" ? (
+        {monthSubView === "week" && (
           <WeekView
             currentWeek={currentWeek}
             setCurrentWeek={setCurrentWeek}
@@ -474,8 +475,19 @@ export default function Calendar() {
             schoolMap={schoolMap}
             onCampClick={openCampDetail}
           />
-        ) : (
+        )}
+        {monthSubView === "agenda" && (
           <MonthOverview
+            currentMonth={currentMonth}
+            setCurrentMonth={setCurrentMonth}
+            campsByDate={campsByDate}
+            conflictDates={conflictDates}
+            schoolMap={schoolMap}
+            onCampClick={openCampDetail}
+          />
+        )}
+        {monthSubView === "grid" && (
+          <MonthGridView
             currentMonth={currentMonth}
             setCurrentMonth={setCurrentMonth}
             campsByDate={campsByDate}
