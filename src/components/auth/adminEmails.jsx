@@ -1,7 +1,6 @@
 // Single source of truth for admin emails
 export const ADMIN_EMAILS = [
   "tom.adams101@gmail.com",
-  "tom_adams_tx@live.com",
 ];
 
 export function isAdminEmail(email) {
