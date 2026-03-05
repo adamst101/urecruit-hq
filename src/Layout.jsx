@@ -81,27 +81,35 @@ export default function Layout({ children }) {
               <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
             </button>
 
-            {/* Right button: Member login (anon) OR Workspace (authed) */}
-            {!isAuthed ? (
+            {/* Right buttons */}
+            {isAuthed ? (
               <button
                 type="button"
-                onClick={handleMemberLogin}
-                className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
+                onClick={handleLogout}
+                className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium"
               >
-                <LogIn className="w-4 h-4" />
-                <span className="hidden sm:inline">Member login</span>
-                <span className="sm:hidden">Login</span>
+                Log out
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={goWorkspace}
-                className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
-              >
-                <LayoutGrid className="w-4 h-4" />
-                <span className="hidden sm:inline">Workspace</span>
-                <span className="sm:hidden">Work</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleMemberLogin}
+                  className="btn-outline-brand px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span className="hidden sm:inline">Member Login</span>
+                  <span className="sm:hidden">Login</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubscribe}
+                  className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white"
+                  style={{ background: "#e8a020" }}
+                >
+                  Subscribe
+                </button>
+              </div>
             )}
           </div>
         </div>
