@@ -11,6 +11,7 @@ import { Button } from "../components/ui/button";
 import BottomNav from "../components/navigation/BottomNav.jsx";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import DemoBanner from "../components/DemoBanner.jsx";
 
 // ---- routes ----
 const ROUTES = {
@@ -241,6 +242,8 @@ export default function Profile() {
             <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#111827]" onClick={() => nav(ROUTES.Discover)}>Discover</Button>
           </div>
         </div>
+
+        {!isPaidSeason && <DemoBanner />}
 
         {/* Status toast */}
         {status && (

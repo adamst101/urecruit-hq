@@ -26,6 +26,7 @@ import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFa
 import { useSchoolIdentity } from "../components/hooks/useSchoolIdentity.jsx";
 
 import InlineFilterBar from "../components/filters/InlineFilterBar.jsx";
+import DemoBanner from "../components/DemoBanner.jsx";
 import ConflictWarningModal from "../components/camps/ConflictWarningModal.jsx";
 import RegisterConfirmModal from "../components/camps/RegisterConfirmModal.jsx";
 import UnregisterConfirmModal from "../components/camps/UnregisterConfirmModal.jsx";
@@ -793,6 +794,8 @@ export default function Discover() {
             </button>
           </div>
         )}
+
+        {!isPaid && <DemoBanner seasonYear={seasonYear} />}
 
         {/* Inline filter dropdowns */}
         <div className="mt-4">

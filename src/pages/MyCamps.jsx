@@ -20,6 +20,7 @@ import { isDemoRegistered } from "../components/hooks/demoRegistered.jsx";
 import WarningBanner from "../components/camps/WarningBanner.jsx";
 import WarningBadge from "../components/camps/WarningBadge.jsx";
 import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
+import DemoBanner from "../components/DemoBanner.jsx";
 
 function normId(x) {
   if (!x) return null;
@@ -147,6 +148,8 @@ export default function MyCamps() {
             Back to Discover
           </Button>
         </div>
+
+        {isDemoMode && <DemoBanner seasonYear={seasonYear} />}
 
         <WarningBanner warnings={allWarnings} />
 

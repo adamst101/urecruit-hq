@@ -30,6 +30,7 @@ import CampCard from "../components/camps/CampCard.jsx";
 import WarningBanner from "../components/camps/WarningBanner.jsx";
 import WarningBadge from "../components/camps/WarningBadge.jsx";
 import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
+import DemoBanner from "../components/DemoBanner.jsx";
 
 /* -------------------------
    Helpers (MVP-safe)
@@ -499,6 +500,8 @@ export default function Calendar() {
             <span className="text-xs text-[#9ca3af]">No filters applied.</span>
           )}
         </div>
+
+        {!isPaid && <DemoBanner seasonYear={seasonYear} />}
 
         <WarningBanner warnings={allWarnings} />
 
