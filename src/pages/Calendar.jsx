@@ -217,14 +217,10 @@ export default function Calendar() {
     enabled: isPaid && !!athleteId,
   });
 
-  // Demo query can still take server-side filters where supported
-  const demoQuery = usePublicCampSummariesClient({
+  // Demo query: uses DemoCamp entity via useDemoCampSummaries
+  const demoQuery = useDemoCampSummaries({
     seasonYear,
-    sportId: nf?.sportId || null,
-    state: nf?.state || null,
-    // keep passing one division if the server only supports one, but enforce multi-select client-side
-    division: nf?.division || null,
-    positionIds: nf?.positionIds || [],
+    demoProfileId: demoProfileId || "default",
     enabled: !isPaid,
   });
 
@@ -240,13 +236,15 @@ export default function Calendar() {
     const wantedDivisions = asArray(nf?.divisions).map(String).filter(Boolean);
     const wantedPositions = asArray(nf?.positionIds).map(String).filter(Boolean);
 
-    const demoFavoriteSet = !isPaid
-      ? new Set(getDemoFavorites(demoProfileId, seasonYear).map(String))
-      : new Set();
-
     return base
       .filter((c) => readActiveFlag(c) === true)
       .filter((c) => {
+        // In demo mode, only show camps the user has favorited or registered
+        if (!isPaid) {
+          const st = String(c?.intent_status || "").toLowerCase();
+          if (st !== "favorite" && st !== "registered" && st !== "completed") return false;
+        }
+
         if (wantedState) {
           const campState =
             normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
@@ -270,21 +268,8 @@ export default function Calendar() {
         if (!withinDateRange(campStart, nf?.startDate || "", nf?.endDate || "", campEnd)) return false;
 
         return true;
-      })
-      .map((c) => {
-        if (isPaid) return c;
-        const cid = String(c?.camp_id || c?.id || "");
-        const reg = cid ? isDemoRegistered(demoProfileId, cid) : false;
-        const fav = cid ? demoFavoriteSet.has(cid) : false;
-        const intent = reg ? "registered" : fav ? "favorite" : "";
-        return { ...c, intent_status: intent };
-      })
-      .filter((c) => {
-        if (isPaid) return true;
-        const st = String(c?.intent_status || "").toLowerCase();
-        return st === "favorite" || st === "registered" || st === "completed";
       });
-  }, [isPaid, paidQuery?.data, demoQuery?.data, nf, demoProfileId, seasonYear]);
+  }, [isPaid, paidQuery?.data, demoQuery?.data, nf]);
 
   const title = "Calendar";
 
