@@ -1,7 +1,7 @@
 // src/pages/Profile.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { User } from "lucide-react";
+import { User, ArrowRight } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 
@@ -11,17 +11,7 @@ import { Button } from "../components/ui/button";
 import BottomNav from "../components/navigation/BottomNav.jsx";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
-import DemoBanner from "../components/DemoBanner.jsx";
 
-// ---- routes ----
-const ROUTES = {
-  Workspace: "/Workspace",
-  Discover: "/Discover",
-  Home: "/Home",
-  AdminOps: "/AdminOps",
-};
-
-const ADMIN_MODE_KEY = "campapp_admin_enabled_v1";
 const FEET_OPTIONS = [4, 5, 6, 7];
 const INCH_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
 const WEIGHT_OPTIONS = Array.from({ length: 61 }, (_, i) => 100 + i * 5);
@@ -38,10 +28,7 @@ function normId(x) {
   if (typeof x === "string") return x;
   return x.id || x._id || x.uuid || null;
 }
-
-function safeStr(x) {
-  return x == null ? "" : String(x);
-}
+function safeStr(x) { return x == null ? "" : String(x); }
 
 function parseNameParts(ap) {
   const first = safeStr(ap?.first_name || ap?.firstName).trim();
@@ -53,70 +40,44 @@ function parseNameParts(ap) {
   if (parts.length === 1) return { first: parts[0], last: "" };
   return { first: parts[0], last: parts.slice(1).join(" ") };
 }
-
 function parseGradYear(ap) {
   const y = ap?.grad_year ?? ap?.gradYear ?? null;
   const n = Number(y);
   return Number.isFinite(n) ? n : "";
 }
-
 function parseHeightParts(ap) {
   const ft = ap?.height_ft ?? ap?.heightFeet ?? ap?.height_feet ?? null;
   const inch = ap?.height_in ?? ap?.heightInches ?? ap?.height_inches ?? null;
   const ftNum = Number(ft);
   const inNum = Number(inch);
   if (Number.isFinite(ftNum) && Number.isFinite(inNum)) return { heightFt: ftNum, heightIn: inNum };
-  const raw = safeStr(ap?.height).trim();
-  if (!raw) return { heightFt: "", heightIn: "" };
-  const m = raw.match(/(\d)\s*['-]\s*(\d{1,2})/);
-  if (!m) return { heightFt: "", heightIn: "" };
-  return { heightFt: Number(m[1]) || "", heightIn: Number(m[2]) || "" };
+  return { heightFt: "", heightIn: "" };
 }
-
 function parseWeight(ap) {
   const w = ap?.weight_lbs ?? ap?.weightLbs ?? ap?.weight ?? null;
   const n = Number(w);
   return Number.isFinite(n) ? n : "";
 }
-
 function readActiveFlag(row) {
   if (typeof row?.active === "boolean") return row.active;
-  if (typeof row?.is_active === "boolean") return row.is_active;
-  if (typeof row?.isActive === "boolean") return row.isActive;
-  const st = String(row?.status || "").toLowerCase().trim();
-  if (st === "active") return true;
-  if (st === "inactive") return false;
   return true;
 }
-
 function getSportName(r) {
   return String(r?.sport_name || r?.name || r?.sportName || "").trim();
 }
 
-async function resolveFootballSportIdActiveOnly() {
-  const SportEntity = base44?.entities?.Sport || null;
-  if (!SportEntity?.filter) return null;
-  try {
-    const rows = await SportEntity.filter({});
-    const arr = Array.isArray(rows) ? rows : [];
-    const football = arr.find((r) => readActiveFlag(r) && getSportName(r).toLowerCase().includes("football"));
-    return football?.id || football?._id || null;
-  } catch { return null; }
-}
-
-// Dark/amber theme inline styles
-const inputClass = "mt-1 w-full rounded px-3 py-2 text-sm bg-[#1f2937] border border-[#374151] text-[#f9fafb] placeholder-[#6b7280] focus:outline-none focus:border-[#e8a020]";
+const inputClass = "mt-1 w-full rounded px-3 py-2 text-sm bg-[#1f2937] border border-[#374151] text-[#f9fafb] placeholder-[#6b7280] focus:outline-none focus:border-[#e8a020] disabled:opacity-50 disabled:cursor-not-allowed";
 const selectClass = inputClass;
 const labelTextClass = "text-[#9ca3af] text-sm";
+const helperTextClass = "text-[#6b7280] text-xs mt-1";
 
 export default function Profile() {
   const nav = useNavigate();
   const { hasAccess, mode, loading: seasonLoading } = useSeasonAccess();
-  const isPaidSeason = hasAccess && mode === "paid";
+  const isDemo = mode === "demo" || !hasAccess;
   const { identity, loading: identityLoading, saveIdentity } = useAthleteIdentity();
 
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState("");
+  const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'success' | 'error'
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
   const [sportId, setSportId] = useState("");
@@ -129,20 +90,10 @@ export default function Profile() {
   const [weight, setWeight] = useState("");
   const [homeCity, setHomeCity] = useState("");
   const [homeState, setHomeState] = useState("");
-  const [adminEnabled, setAdminEnabled] = useState(false);
+  const [playerEmail, setPlayerEmail] = useState("");
+  const [xHandle, setXHandle] = useState("");
 
-  useEffect(() => {
-    setAdminEnabled(localStorage.getItem(ADMIN_MODE_KEY) === "true");
-  }, []);
-
-  function toggleAdminMode() {
-    const next = !(localStorage.getItem(ADMIN_MODE_KEY) === "true");
-    localStorage.setItem(ADMIN_MODE_KEY, next ? "true" : "false");
-    setAdminEnabled(next);
-    setStatus(`Admin Mode ${next ? "enabled" : "disabled"}`);
-    setTimeout(() => setStatus(""), 2500);
-  }
-
+  // Populate form from identity
   useEffect(() => {
     const ap = identity?.athleteProfile || identity?.athlete_profile || identity || null;
     const np = parseNameParts(ap);
@@ -159,8 +110,11 @@ export default function Profile() {
     setPrimaryPositionId(pos ? String(pos) : "");
     setHomeCity(safeStr(ap?.home_city));
     setHomeState(safeStr(ap?.home_state));
+    setPlayerEmail(safeStr(ap?.player_email));
+    setXHandle(safeStr(ap?.x_handle));
   }, [identity]);
 
+  // Load sports + positions
   useEffect(() => {
     let mounted = true;
     async function load() {
@@ -190,12 +144,12 @@ export default function Profile() {
       .sort((a, b) => String(a?.position_name || "").localeCompare(String(b?.position_name || "")));
   }, [positions, sportId]);
 
-  async function onSave() {
-    setSaving(true);
-    setStatus("");
+  async function handleSave() {
+    setSaveStatus("saving");
     try {
       const fy = Number(gradYear);
       if (gradYear !== "" && !Number.isFinite(fy)) throw new Error("Grad year must be a number.");
+      const cleanHandle = xHandle.replace(/^@/, "").trim();
       await saveIdentity({
         athleteProfile: {
           first_name: firstName.trim() || null,
@@ -208,95 +162,79 @@ export default function Profile() {
           primary_position_id: primaryPositionId ? String(primaryPositionId) : null,
           home_city: homeCity.trim() || null,
           home_state: homeState.trim() || null,
+          player_email: playerEmail.trim() || null,
+          x_handle: cleanHandle || null,
         },
       });
-      setStatus("Saved.");
-      setTimeout(() => setStatus(""), 2500);
-    } catch (e) {
-      setStatus(String(e?.message || e));
-    } finally {
-      setSaving(false);
+      setSaveStatus("success");
+      setTimeout(() => setSaveStatus(null), 4000);
+    } catch {
+      setSaveStatus("error");
     }
   }
 
-  async function onAutoSetFootball() {
-    setStatus("");
-    const id = await resolveFootballSportIdActiveOnly();
-    if (!id) { setStatus("Could not resolve Football sport id."); return; }
-    setSportId(String(id));
-    setPrimaryPositionId("");
-    setStatus("Football selected.");
-    setTimeout(() => setStatus(""), 2500);
-  }
+  const disabled = isDemo;
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         {/* Header */}
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <User className="w-6 h-6 text-[#e8a020]" />
-            <h1 className="text-2xl font-bold text-[#f9fafb]">Profile</h1>
-          </div>
-
+        <div className="flex items-center gap-2">
+          <User className="w-6 h-6 text-[#e8a020]" />
+          <h1 className="text-2xl font-bold text-[#f9fafb]">Profile</h1>
         </div>
 
-        {/* Status toast */}
-        {status && (
-          <Card className="p-3 border-[#1f2937] bg-[#111827]">
-            <div className="text-sm text-[#f9fafb]">{status}</div>
-          </Card>
+        {/* Demo banner */}
+        {isDemo && (
+          <div className="rounded-lg border-l-4 border-[#e8a020] bg-[#111827] border border-[#1f2937] p-4 flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold text-[#f9fafb]">🔒 Profile editing is available to Season Pass members.</div>
+            </div>
+            <button
+              onClick={() => nav("/Subscribe")}
+              className="text-sm font-bold text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1 whitespace-nowrap"
+            >
+              Get Season Pass <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
         )}
 
-        {/* Athlete card */}
+        {/* Save status banners */}
+        {saveStatus === "success" && (
+          <div className="rounded-lg bg-[#064e3b] border border-[#059669] p-3">
+            <div className="text-sm text-[#a7f3d0] font-medium">✓ Profile saved successfully.</div>
+          </div>
+        )}
+        {saveStatus === "error" && (
+          <div className="rounded-lg bg-[#7f1d1d] border border-[#dc2626] p-3">
+            <div className="text-sm text-[#fca5a5] font-medium">Something went wrong. Please try again.</div>
+          </div>
+        )}
+
+        {/* ── SECTION: Athlete Info ── */}
         <Card className="p-4 space-y-4 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">Athlete</div>
+          <div className="text-lg font-semibold text-[#f9fafb]">Athlete Info</div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <label className="text-sm">
               <div className={labelTextClass}>First name</div>
-              <input className={inputClass} value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First" />
+              <input className={inputClass} value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First" disabled={disabled} />
             </label>
             <label className="text-sm">
               <div className={labelTextClass}>Last name</div>
-              <input className={inputClass} value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Last" />
+              <input className={inputClass} value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Last" disabled={disabled} />
             </label>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label className="text-sm">
-              <div className={labelTextClass}>Grad year</div>
-              <input className={inputClass} value={gradYear} onChange={(e) => setGradYear(e.target.value)} placeholder="2027" />
-            </label>
-            <label className="text-sm">
-              <div className={labelTextClass}>Height (ft)</div>
-              <select className={selectClass} value={heightFt} onChange={(e) => setHeightFt(e.target.value)}>
-                <option value="">—</option>
-                {FEET_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-            </label>
-            <label className="text-sm">
-              <div className={labelTextClass}>Height (in)</div>
-              <select className={selectClass} value={heightIn} onChange={(e) => setHeightIn(e.target.value)}>
-                <option value="">—</option>
-                {INCH_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-            </label>
-          </div>
-
-          <label className="text-sm">
-            <div className={labelTextClass}>Weight (lbs)</div>
-            <select className={selectClass} value={weight} onChange={(e) => setWeight(e.target.value)}>
-              <option value="">—</option>
-              {WEIGHT_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </label>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <label className="text-sm">
+              <div className={labelTextClass}>Grad year</div>
+              <input className={inputClass} value={gradYear} onChange={(e) => setGradYear(e.target.value)} placeholder="2027" disabled={disabled} />
+            </label>
+            <label className="text-sm">
               <div className={labelTextClass}>Sport</div>
-              <select className={selectClass} value={sportId} onChange={(e) => setSportId(e.target.value)}>
-                <option value="">—</option>
+              <select className={selectClass} value={sportId} onChange={(e) => { setSportId(e.target.value); setPrimaryPositionId(""); }} disabled={disabled}>
+                <option value="">Select sport</option>
                 {sports.map((s) => {
                   const id = normId(s);
                   const name = getSportName(s) || "(Unnamed sport)";
@@ -304,83 +242,105 @@ export default function Profile() {
                 })}
               </select>
             </label>
+          </div>
+
+          <label className="text-sm">
+            <div className={labelTextClass}>Primary position</div>
+            <select className={selectClass} value={primaryPositionId} onChange={(e) => setPrimaryPositionId(e.target.value)} disabled={disabled || !sportId}>
+              <option value="">{!sportId ? "Select a sport first" : filteredPositions.length ? "Select position" : "No positions found"}</option>
+              {filteredPositions.map((p) => {
+                const id = normId(p);
+                const name = String(p?.position_name || p?.name || "").trim() || "(Unnamed)";
+                return <option key={id || name} value={id || ""}>{name}</option>;
+              })}
+            </select>
+          </label>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label className="text-sm">
-              <div className={labelTextClass}>Primary position</div>
-              <select className={selectClass} value={primaryPositionId} onChange={(e) => setPrimaryPositionId(e.target.value)} disabled={!sportId}>
-                <option value="">{!sportId ? "Select a sport first" : filteredPositions.length ? "—" : "No positions found"}</option>
-                {filteredPositions.map((p) => {
-                  const id = normId(p);
-                  const name = String(p?.position_name || p?.name || "").trim() || "(Unnamed)";
-                  return <option key={id || name} value={id || ""}>{name}</option>;
-                })}
+              <div className={labelTextClass}>Height (ft)</div>
+              <select className={selectClass} value={heightFt} onChange={(e) => setHeightFt(e.target.value)} disabled={disabled}>
+                <option value="">—</option>
+                {FEET_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </label>
+            <label className="text-sm">
+              <div className={labelTextClass}>Height (in)</div>
+              <select className={selectClass} value={heightIn} onChange={(e) => setHeightIn(e.target.value)} disabled={disabled}>
+                <option value="">—</option>
+                {INCH_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </label>
+            <label className="text-sm">
+              <div className={labelTextClass}>Weight (lbs)</div>
+              <select className={selectClass} value={weight} onChange={(e) => setWeight(e.target.value)} disabled={disabled}>
+                <option value="">—</option>
+                {WEIGHT_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
               </select>
             </label>
           </div>
+        </Card>
 
-          {/* Home Location */}
-          <div className="border-t border-[#1f2937] pt-4 mt-2">
-            <div className="text-sm font-semibold text-[#f9fafb] mb-2">Home Location</div>
-            <div className="text-xs text-[#6b7280] mb-2">Used to estimate travel distance to camps</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label className="text-sm">
-                <div className={labelTextClass}>City</div>
-                <input className={inputClass} value={homeCity} onChange={(e) => setHomeCity(e.target.value)} placeholder="e.g. Dallas" />
-              </label>
-              <label className="text-sm">
-                <div className={labelTextClass}>State</div>
-                <select className={selectClass} value={homeState} onChange={(e) => setHomeState(e.target.value)}>
-                  <option value="">—</option>
-                  {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2 pt-2">
-            <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={onSave} disabled={saving || seasonLoading || identityLoading}>
-              {saving ? "Saving..." : "Save"}
-            </Button>
-            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={onAutoSetFootball}>
-              Auto-select Football
-            </Button>
-            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={() => nav(ROUTES.Home)}>
-              Home
-            </Button>
+        {/* ── SECTION: Location ── */}
+        <Card className="p-4 space-y-3 border-[#1f2937] bg-[#111827]">
+          <div className="text-lg font-semibold text-[#f9fafb]">Location</div>
+          <div className="text-xs text-[#6b7280]">Used to estimate travel distance to camps</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="text-sm">
+              <div className={labelTextClass}>City</div>
+              <input className={inputClass} value={homeCity} onChange={(e) => setHomeCity(e.target.value)} placeholder="e.g. Dallas" disabled={disabled} />
+            </label>
+            <label className="text-sm">
+              <div className={labelTextClass}>State</div>
+              <select className={selectClass} value={homeState} onChange={(e) => setHomeState(e.target.value)} disabled={disabled}>
+                <option value="">—</option>
+                {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
           </div>
         </Card>
 
-        {/* Season access */}
+        {/* ── SECTION: Contact & Social ── */}
         <Card className="p-4 space-y-3 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">Season access</div>
-          <div className="text-sm text-[#9ca3af]">
-            {seasonLoading ? "Checking access..." : isPaidSeason ? "Paid season access is active." : "Demo mode (limited)."}
+          <div className="text-lg font-semibold text-[#f9fafb]">Contact & Social</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="text-sm">
+              <div className={labelTextClass}>Player Email</div>
+              <input className={inputClass} type="email" value={playerEmail} onChange={(e) => setPlayerEmail(e.target.value)} placeholder="player@email.com" disabled={disabled} />
+              <div className={helperTextClass}>The athlete's own email — separate from your login email</div>
+            </label>
+            <label className="text-sm">
+              <div className={labelTextClass}>X / Twitter</div>
+              <input className={inputClass} value={xHandle ? `@${xHandle}` : ""} onChange={(e) => setXHandle(e.target.value.replace(/^@/, ""))} placeholder="@username" disabled={disabled} />
+              <div className={helperTextClass}>Your recruiting profile on X — helps coaches find you</div>
+            </label>
           </div>
         </Card>
 
-        {/* Admin */}
-        <Card className="p-4 space-y-3 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">Admin</div>
-          <div className="text-sm text-[#9ca3af]">
-            Use Admin Ops for bulk purge, dedupe, and diagnostics.
-          </div>
-          <div className="flex flex-wrap gap-2">
+        {/* ── Save button (paid only) ── */}
+        {!isDemo && (
+          <div className="pt-2">
             <Button
-              className={adminEnabled ? "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" : "border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]"}
-              variant={adminEnabled ? "default" : "outline"}
-              onClick={toggleAdminMode}
+              className={
+                saveStatus === "success"
+                  ? "bg-[#059669] text-white hover:bg-[#059669] w-full md:w-auto"
+                  : saveStatus === "error"
+                  ? "bg-[#dc2626] text-white hover:bg-[#dc2626] w-full md:w-auto"
+                  : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f] w-full md:w-auto"
+              }
+              onClick={handleSave}
+              disabled={saveStatus === "saving" || saveStatus === "success" || seasonLoading || identityLoading}
             >
-              Admin Mode: {adminEnabled ? "ON" : "OFF"}
-            </Button>
-            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={() => nav(ROUTES.AdminOps)}>
-              Open Admin Ops
+              {saveStatus === "saving"
+                ? "Saving..."
+                : saveStatus === "success"
+                ? "✓ Saved"
+                : saveStatus === "error"
+                ? "Save Failed — Try Again"
+                : "Save Profile"}
             </Button>
           </div>
-          {!adminEnabled && (
-            <div className="text-xs text-[#6b7280]">
-              Admin actions are gated. Turn on Admin Mode before running destructive operations.
-            </div>
-          )}
-        </Card>
+        )}
       </div>
 
       <BottomNav />
