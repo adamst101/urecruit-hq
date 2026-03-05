@@ -321,15 +321,17 @@ export default function Discover() {
 
   /* ─── load camps ──────────────────────────────────────────────────────── */
 
+  const [allRows, setAllRows] = useState([]);
+
   async function loadCamps() {
     setIsLoading(true);
     setCampErr(null);
 
     try {
-      // In demo mode, query DemoCamp entity instead of Camp
       const useDemoEntity = isDemoMode;
       const CampEntity = useDemoEntity ? base44?.entities?.DemoCamp : base44?.entities?.Camp;
       if (!CampEntity?.filter) {
+        setAllRows([]);
         setRawRows([]);
         setCampErr("Camps not available.");
         return;
@@ -347,10 +349,10 @@ export default function Discover() {
         }
       }
 
-      const filtered = applyFilters(rows);
-      setRawRows(filtered);
+      const active = asArray(rows).filter(readActiveFlag);
+      setAllRows(active);
 
-      const keys    = filtered.map(campKeyForRow).filter(Boolean);
+      const keys    = active.map(campKeyForRow).filter(Boolean);
       const intents = await loadIntents(keys);
       setIntentByKey(intents);
 
@@ -360,19 +362,41 @@ export default function Discover() {
         season_year: seasonYear,
         paid:        isPaid,
         raw_camps:   Array.isArray(rows) ? rows.length : 0,
-        shown_camps: filtered.length,
+        shown_camps: active.length,
       });
     } catch (e) {
       const msg = isRateLimitError(e)
         ? "Camps not available: Rate limit exceeded"
         : String(e?.message || e || "Failed to load camps");
       setCampErr(msg);
+      setAllRows([]);
       setRawRows([]);
       trackEvent({ event_name: "discover_error", source: "discover", season_year: seasonYear, paid: isPaid, error: msg });
     } finally {
       setIsLoading(false);
     }
   }
+
+  // Reactively apply filters whenever nf or allRows change
+  useEffect(() => {
+    const filtered = allRows.filter((r) => {
+      if (isPaid) {
+        if (!matchesSport(r, [athleteSportId].filter(Boolean))) return false;
+      } else {
+        if (Array.isArray(nf?.sports) && nf.sports.length > 0 && !matchesSport(r, nf.sports))
+          return false;
+      }
+      if (Array.isArray(nf?.divisions) && nf.divisions.length > 0 && !matchesDivision(r, nf.divisions))
+        return false;
+      if (Array.isArray(nf?.positions) && nf.positions.length > 0 && !matchesPositions(r, nf.positions))
+        return false;
+      if (nf?.state && !matchesState(r, nf.state)) return false;
+      if ((nf?.startDate || nf?.endDate) && !matchesDateRange(r, nf.startDate || "", nf.endDate || ""))
+        return false;
+      return true;
+    });
+    setRawRows(filtered);
+  }, [allRows, nf, isPaid, athleteSportId]);
 
   useEffect(() => {
     loadCamps();
@@ -381,7 +405,6 @@ export default function Discover() {
 
   function clearFilters() {
     filtersApi?.clearFilters?.();
-    setTimeout(() => loadCamps(), 0);
   }
 
   /* ─── derived ─────────────────────────────────────────────────────────── */
