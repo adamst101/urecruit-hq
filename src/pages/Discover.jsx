@@ -557,7 +557,7 @@ export default function Discover() {
     if (!linkUrl) return;
 
     if (!isPaid) {
-      nav(`/Subscribe?source=home_pricing`);
+      window.location.href = "https://camp-connect-698c00ef.base44.app/Subscribe?source=workspace_banner";
       return;
     }
 
