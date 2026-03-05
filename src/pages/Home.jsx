@@ -123,7 +123,11 @@ export default function Home() {
         fontFamily: "'DM Sans', Inter, system-ui, sans-serif"
       }}
     >
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
+        .hero-card-stack { transition: transform 0.3s ease; }
+        .hero-card-stack:hover { transform: translateY(-4px); }
+      `}</style>
 
       {/* ── NAV ── */}
       <nav
@@ -349,41 +353,123 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Right — mock camp cards (hidden on mobile) */}
+            {/* Right — decorative camp card stack (hidden on mobile) */}
             <div
-              className="hidden md:block"
-              style={{ flex: "1 1 45%", position: "relative", minHeight: 380 }}
+              className="hidden md:block hero-card-stack"
+              style={{
+                flex: "1 1 45%",
+                position: "relative",
+                minHeight: 300,
+                perspective: 800
+              }}
             >
-              <MockCard
-                top={0}
-                left={30}
-                rotate={-2}
-                school="Ohio State Football"
-                date="June 14 · Columbus OH"
-                price="$75 · Grades 9-12"
-                badge="Registered"
-                badgeColor="#10b981"
-              />
-              <MockCard
-                top={50}
-                left={10}
-                rotate={1}
-                school="Alabama Crimson Tide"
-                date="June 21 · Tuscaloosa AL"
-                price="$65"
-                badge="Favorited"
-                badgeColor="#e8a020"
-              />
-              <MockCard
-                top={100}
-                left={50}
-                rotate={3}
-                school="Penn State Football"
-                date="July 5 · State College PA"
-                price="$60"
-                badge=""
-                badgeColor=""
-              />
+              {/* Card 3 — back */}
+              <div style={{
+                position: "absolute", top: 40, left: 30,
+                transform: "rotate(3deg)",
+                background: "#111827", borderRadius: 16,
+                borderLeft: "4px solid #e8a020",
+                padding: 16, width: 280,
+                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                opacity: 0.7, zIndex: 1
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: "50%",
+                    background: "linear-gradient(135deg, #e8a020, #c4841d)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontWeight: 700, fontSize: 16, color: "#fff"
+                  }}>P</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "#f9fafb", flex: 1 }}>Penn State Football</div>
+                  <span style={{
+                    background: "#e8a020", color: "#0a0e1a",
+                    fontSize: 10, fontWeight: 700, padding: "2px 7px",
+                    borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5
+                  }}>FBS</span>
+                </div>
+                <div style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>📅</span> July 5, 2026 · <span>📍</span> State College, PA
+                </div>
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>💰</span> $60
+                </div>
+              </div>
+
+              {/* Card 2 — middle */}
+              <div style={{
+                position: "absolute", top: 20, left: 15,
+                transform: "rotate(1deg)",
+                background: "#111827", borderRadius: 16,
+                borderLeft: "4px solid #e8a020",
+                padding: 16, width: 280,
+                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                zIndex: 2
+              }}>
+                <div style={{
+                  position: "absolute", top: 10, right: 10,
+                  background: "#e8a020", color: "#0a0e1a",
+                  fontSize: 11, fontWeight: 700, padding: "3px 10px",
+                  borderRadius: 20
+                }}>★ Favorited</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: "50%",
+                    background: "linear-gradient(135deg, #e8a020, #c4841d)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontWeight: 700, fontSize: 16, color: "#fff"
+                  }}>A</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "#f9fafb", flex: 1 }}>Alabama Crimson Tide</div>
+                  <span style={{
+                    background: "#e8a020", color: "#0a0e1a",
+                    fontSize: 10, fontWeight: 700, padding: "2px 7px",
+                    borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5
+                  }}>FBS</span>
+                </div>
+                <div style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>📅</span> June 21, 2026 · <span>📍</span> Tuscaloosa, AL
+                </div>
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>💰</span> $65 · <span>🎓</span> Grades 9-12
+                </div>
+              </div>
+
+              {/* Card 1 — front */}
+              <div style={{
+                position: "absolute", top: 0, left: 0,
+                transform: "rotate(-2deg)",
+                background: "#111827", borderRadius: 16,
+                borderLeft: "4px solid #e8a020",
+                padding: 16, width: 280,
+                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                zIndex: 3
+              }}>
+                <div style={{
+                  position: "absolute", top: 10, right: 10,
+                  background: "#10b981", color: "#fff",
+                  fontSize: 11, fontWeight: 700, padding: "3px 10px",
+                  borderRadius: 20
+                }}>✓ Registered</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: "50%",
+                    background: "linear-gradient(135deg, #e8a020, #c4841d)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontWeight: 700, fontSize: 16, color: "#fff"
+                  }}>O</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "#f9fafb", flex: 1 }}>Ohio State Football</div>
+                  <span style={{
+                    background: "#e8a020", color: "#0a0e1a",
+                    fontSize: 10, fontWeight: 700, padding: "2px 7px",
+                    borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5
+                  }}>FBS</span>
+                </div>
+                <div style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>📅</span> June 14, 2026 · <span>📍</span> Columbus, OH
+                </div>
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>💰</span> $75 · <span>🎓</span> Grades 9-12
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -661,64 +747,7 @@ export default function Home() {
   );
 }
 
-/* ── Mock camp card ── */
-function MockCard({ top, left, rotate, school, date, price, badge, badgeColor }) {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top,
-        left,
-        transform: `rotate(${rotate}deg)`,
-        background: "#111827",
-        border: "1px solid #1f2937",
-        borderRadius: 12,
-        padding: "18px 20px",
-        width: 280,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.4)"
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            background: "rgba(232,160,32,0.15)",
-            border: "1px solid rgba(232,160,32,0.3)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center"
-          }}
-        >
-          <span style={{ color: "#e8a020", fontSize: 16, fontWeight: 700 }}>
-            {school.charAt(0)}
-          </span>
-        </div>
-        <div style={{ fontWeight: 700, fontSize: 14, color: "#f9fafb" }}>{school}</div>
-      </div>
-      <div style={{ fontSize: 12, color: "#9ca3af" }}>{date}</div>
-      <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{price}</div>
-      {badge && (
-        <div
-          style={{
-            marginTop: 10,
-            display: "inline-block",
-            background: badgeColor + "22",
-            color: badgeColor,
-            fontSize: 11,
-            fontWeight: 700,
-            padding: "3px 10px",
-            borderRadius: 20,
-            border: `1px solid ${badgeColor}44`
-          }}
-        >
-          {badge}
-        </div>
-      )}
-    </div>
-  );
-}
+
 
 /* ── Shared styles ── */
 const S = {
