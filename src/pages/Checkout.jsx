@@ -254,7 +254,8 @@ export default function Checkout() {
         <div>
           <h1 className="text-2xl font-bold text-deep-navy">Checkout</h1>
           <p className="text-slate-600 mt-1">
-            Unlock season ({soldYear}). You’ll add athletes after purchase.
+            Unlock Season Pass {soldYear}. You'll add athletes after purchase.
+            {earlyBird ? ` Includes immediate access to ${activeSeason} camp data.` : ""}
           </p>
         </div>
 
