@@ -135,8 +135,9 @@ export default function MyCamps() {
     enabled: !isDemoMode && !!athleteId,
   });
 
-  const demoQuery = usePublicCampSummariesClient({
+  const demoQuery = useDemoCampSummaries({
     seasonYear,
+    demoProfileId: demoProfileId || "default",
     enabled: isDemoMode,
   });
 
@@ -145,19 +146,13 @@ export default function MyCamps() {
   const rows = useMemo(() => {
     if (!isDemoMode) return Array.isArray(paidQuery?.data) ? paidQuery.data : [];
 
+    // demoQuery already has intent_status baked in from useDemoCampSummaries
     const base = Array.isArray(demoQuery?.data) ? demoQuery.data : [];
-    const favSet = new Set(getDemoFavorites(demoProfileId, seasonYear).map(String));
-
-    return base
-      .map((r) => {
-        const cid = String(r?.camp_id || r?.id || "");
-        const reg = cid ? isDemoRegistered(demoProfileId, cid) : false;
-        const fav = cid ? favSet.has(cid) : false;
-        const intent = reg ? "registered" : fav ? "favorite" : "";
-        return intent ? { ...r, intent_status: intent } : null;
-      })
-      .filter(Boolean);
-  }, [isDemoMode, paidQuery?.data, demoQuery?.data, demoProfileId, seasonYear]);
+    return base.filter((r) => {
+      const st = String(r?.intent_status || "").toLowerCase();
+      return st === "favorite" || st === "registered" || st === "completed";
+    });
+  }, [isDemoMode, paidQuery?.data, demoQuery?.data]);
 
   const registered = useMemo(() => {
     return rows.filter((r) => {
