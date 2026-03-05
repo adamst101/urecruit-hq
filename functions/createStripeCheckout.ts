@@ -3,6 +3,22 @@ import Stripe from 'npm:stripe@17.7.0';
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY"));
 
+async function getActiveSeason(base44) {
+  const seasons = await base44.asServiceRole.entities.SeasonConfig.filter({ active: true });
+  const list = Array.isArray(seasons) ? seasons : [];
+  const now = new Date();
+
+  const currentSeason = list.find(s => {
+    const opens = s.sale_opens_at ? new Date(s.sale_opens_at) : null;
+    const closes = s.sale_closes_at ? new Date(s.sale_closes_at) : null;
+    if (opens && now < opens) return false;
+    if (closes && now > closes) return false;
+    return true;
+  });
+
+  return currentSeason || list.find(s => s.is_current) || null;
+}
+
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
@@ -12,20 +28,20 @@ Deno.serve(async (req) => {
     user = await base44.auth.me();
   } catch {}
 
-  const { couponCode, athleteId, userEmail, successUrl, cancelUrl } = await req.json();
+  const { couponCode, athleteId, userEmail, successUrl, cancelUrl, isAddOn } = await req.json();
 
   const email = userEmail || user?.email || "";
 
-  // Determine correct season and price ID
-  const now = new Date();
-  const month = now.getMonth() + 1;
-  const year = now.getFullYear();
-  const soldSeason = month >= 9 ? year + 1 : year;
+  // Get active season from DB
+  const season = await getActiveSeason(base44);
+  if (!season) {
+    return Response.json({ ok: false, error: "No active season configured. Please contact support." });
+  }
 
-  const priceId = soldSeason === 2026
-    ? Deno.env.get("STRIPE_PRICE_ID_2026")
-    : Deno.env.get("STRIPE_PRICE_ID_2027");
+  const soldSeason = season.season_year;
 
+  // Pick the right price ID: add-on ($39) vs primary ($49)
+  const priceId = isAddOn ? season.stripe_price_add_on : season.stripe_price_primary;
   if (!priceId) {
     return Response.json({ ok: false, error: "Price not configured for this season" });
   }
@@ -66,6 +82,7 @@ Deno.serve(async (req) => {
       account_id: user?.id || "",
       coupon_code: couponCode || "",
       season_year: soldSeason.toString(),
+      is_add_on: isAddOn ? "true" : "false",
     },
     success_url: successUrl + "?session_id={CHECKOUT_SESSION_ID}",
     cancel_url: cancelUrl,
