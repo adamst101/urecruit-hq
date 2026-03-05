@@ -153,11 +153,8 @@ export default function Home() {
             justifyContent: "space-between"
           }}
         >
-          {/* Left: logo + brand */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {logoOk && <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 36, width: "auto", objectFit: "contain" }} />}
-            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f9fafb" }}>URECRUIT HQ</span>
-          </div>
+          {/* Left: spacer */}
+          <div />
 
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {isAuthed && isMember ? (
