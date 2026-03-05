@@ -273,7 +273,8 @@ export default function Discover() {
   const resultsCountLabel = useMemo(() => {
     if (isLoading) return "Loading…";
     if (campErr)   return "Error";
-    return `${Array.isArray(rawRows) ? rawRows.length : 0} camps`;
+    const campCount = Array.isArray(rawRows) ? rawRows.length : 0;
+    return `${campCount} camps`;
   }, [rawRows, isLoading, campErr]);
 
   /* ─── intents ─────────────────────────────────────────────────────────── */
