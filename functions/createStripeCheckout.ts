@@ -3,6 +3,9 @@ import Stripe from 'npm:stripe@17.7.0';
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY"));
 
+const stripeKeyPrefix = (Deno.env.get("STRIPE_SECRET_KEY") || "").slice(0, 7);
+console.log("Stripe mode:", stripeKeyPrefix.startsWith("sk_live") ? "LIVE" : "TEST");
+
 async function getActiveSeason(base44) {
   const seasons = await base44.asServiceRole.entities.SeasonConfig.filter({ active: true });
   const list = Array.isArray(seasons) ? seasons : [];
@@ -46,29 +49,40 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "Price not configured for this season" });
   }
 
-  // Validate promotion code if provided
+  // Validate promotion code if provided (case-insensitive)
   let discounts = [];
   if (couponCode && couponCode.trim()) {
-    const code = couponCode.trim().toUpperCase();
-    console.log("Received couponCode:", couponCode, "Uppercased:", code);
+    const codesToTry = [
+      couponCode.trim(),
+      couponCode.trim().toUpperCase(),
+      couponCode.trim().toLowerCase(),
+    ];
+    console.log("Received couponCode:", couponCode, "Will try:", codesToTry);
 
-    try {
-      const promoCodes = await stripe.promotionCodes.list({
-        code,
-        active: true,
-        limit: 1,
-      });
-      console.log("Stripe promotionCodes.list response:", JSON.stringify(promoCodes.data));
-
-      if (promoCodes.data.length > 0) {
-        discounts = [{ promotion_code: promoCodes.data[0].id }];
-        console.log("Applying promotion_code:", promoCodes.data[0].id);
-      } else {
-        return Response.json({ ok: false, error: "Invalid or expired promo code" });
+    let foundPromo = null;
+    for (const code of codesToTry) {
+      try {
+        const result = await stripe.promotionCodes.list({
+          code: code,
+          active: true,
+          limit: 1,
+        });
+        console.log("Promo lookup for '" + code + "':", result.data.length, "results");
+        if (result.data.length > 0) {
+          foundPromo = result.data[0];
+          break;
+        }
+      } catch (e) {
+        console.error("Promo lookup failed for:", code, e.message);
       }
-    } catch (err) {
-      console.error("Promo code validation error:", err.message);
-      return Response.json({ ok: false, error: "Could not validate promo code" });
+    }
+
+    if (foundPromo) {
+      discounts = [{ promotion_code: foundPromo.id }];
+      console.log("Applying promotion_code:", foundPromo.id, "code:", foundPromo.code);
+    } else {
+      console.error("No promo found for any case variation of:", couponCode);
+      return Response.json({ ok: false, error: "Invalid or expired promo code" });
     }
   }
 

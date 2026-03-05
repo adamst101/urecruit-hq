@@ -3,6 +3,9 @@ import Stripe from 'npm:stripe@17.7.0';
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY"));
 
+const stripeKeyPrefix = (Deno.env.get("STRIPE_SECRET_KEY") || "").slice(0, 7);
+console.log("Stripe mode:", stripeKeyPrefix.startsWith("sk_live") ? "LIVE" : "TEST");
+
 async function getActiveSeason(base44) {
   const seasons = await base44.asServiceRole.entities.SeasonConfig.filter({ active: true });
   const list = Array.isArray(seasons) ? seasons : [];
@@ -34,21 +37,37 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "This code requires card payment" }, { status: 400 });
   }
 
-  // Validate BETA100 exists and is active in Stripe
-  try {
-    const promoCodes = await stripe.promotionCodes.list({
-      code: "BETA100",
-      active: true,
-      limit: 1,
-    });
+  // Case-insensitive promo lookup in Stripe
+  const codesToTry = [
+    promoCode.trim(),
+    promoCode.trim().toUpperCase(),
+    promoCode.trim().toLowerCase(),
+  ];
 
-    if (promoCodes.data.length === 0) {
-      return Response.json({ ok: false, error: "BETA100 code is no longer active" }, { status: 400 });
+  let foundPromo = null;
+  for (const code of codesToTry) {
+    try {
+      const result = await stripe.promotionCodes.list({
+        code: code,
+        active: true,
+        limit: 1,
+      });
+      console.log("Promo lookup for '" + code + "':", result.data.length, "results");
+      if (result.data.length > 0) {
+        foundPromo = result.data[0];
+        break;
+      }
+    } catch (e) {
+      console.error("Promo lookup failed for:", code, e.message);
     }
-  } catch (err) {
-    console.error("Stripe promo validation error:", err.message);
-    return Response.json({ ok: false, error: "Could not validate promo code" }, { status: 500 });
   }
+
+  if (!foundPromo) {
+    console.error("No promo found for any case variation of:", promoCode);
+    return Response.json({ ok: false, error: "BETA100 code is no longer active" }, { status: 400 });
+  }
+
+  console.log("Found promo:", foundPromo.id, "code:", foundPromo.code);
 
   // Get active season from DB
   const season = await getActiveSeason(base44);
