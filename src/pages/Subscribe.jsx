@@ -267,6 +267,16 @@ export default function Subscribe() {
         </div>
       </section>
 
+      {/* ── MULTI-ATHLETE CALLOUT ── */}
+      <section style={{ padding: "0 24px 32px", maxWidth: 480, margin: "0 auto" }}>
+        <div style={{ background: "#111827", borderRadius: 12, borderLeft: "4px solid #e8a020", padding: "20px 24px" }}>
+          <div style={{ fontSize: 17, fontWeight: 700, color: "#f9fafb" }}>👨‍👩‍👦 Got more than one athlete?</div>
+          <p style={{ fontSize: 15, color: "#9ca3af", marginTop: 8, lineHeight: 1.6 }}>
+            Add a second player for just ${priceAddOn} this season — same account, separate camp calendars.
+          </p>
+        </div>
+      </section>
+
       {/* ── DEMO OPTION ── */}
       <section style={{ textAlign: "center", padding: "0 24px 48px", maxWidth: 480, margin: "0 auto" }}>
         <p style={{ color: "#6b7280", fontSize: 16 }}>Not ready to commit?</p>

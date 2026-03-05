@@ -12,6 +12,8 @@ import { Badge } from "../components/ui/badge";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 import { clearDemoMode } from "../components/hooks/demoMode.jsx";
+import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
+import AddAthleteModal from "../components/workspace/AddAthleteModal.jsx";
 
 // ---- routes (no createPageUrl dependency) ----
 const ROUTES = {
@@ -85,6 +87,19 @@ export default function Workspace() {
   const [meName, setMeName] = useState("");
   const [logoOk, setLogoOk] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [showAddAthlete, setShowAddAthlete] = useState(false);
+  const [seasonConfig, setSeasonConfig] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await base44.functions.invoke("getActiveSeason", {});
+        if (!cancelled && res.data?.ok && res.data?.season) setSeasonConfig(res.data.season);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +159,26 @@ export default function Workspace() {
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
 
+
+      {/* ── ATHLETE SWITCHER ── */}
+      {isMember && season?.accountId && (
+        <section style={{ padding: "16px 24px 0", maxWidth: 1100, margin: "0 auto" }}>
+          <AthleteSwitcher
+            accountId={season.accountId}
+            seasonYear={memberSeason || currentYear}
+            onAddAthlete={() => setShowAddAthlete(true)}
+          />
+        </section>
+      )}
+
+      {/* Add Athlete Modal */}
+      {showAddAthlete && (
+        <AddAthleteModal
+          seasonConfig={seasonConfig}
+          accountId={season?.accountId}
+          onClose={() => setShowAddAthlete(false)}
+        />
+      )}
 
       {/* ── HERO GREETING ── */}
       <section style={{ padding: "48px 24px 32px", maxWidth: 1100, margin: "0 auto" }}>

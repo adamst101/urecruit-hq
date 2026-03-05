@@ -91,6 +91,25 @@ const TOOLS = [
     ],
   },
   {
+    section: "Subscription & Athletes",
+    items: [
+      {
+        title: "Season Manager",
+        description: "Create and manage season configs. Dynamic pricing, sale windows, access dates. Zero code changes needed.",
+        route: "/SeasonManager",
+        icon: "📅",
+        color: "#1a6b5a",
+      },
+      {
+        title: "Athletes",
+        description: "View all accounts with athletes. Flag accounts with 3+ athletes for review.",
+        route: "/AthleteManager",
+        icon: "👥",
+        color: "#4a3d8f",
+      },
+    ],
+  },
+  {
     section: "Support",
     items: [
       {
