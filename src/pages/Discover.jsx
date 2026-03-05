@@ -376,26 +376,38 @@ export default function Discover() {
     }
   }
 
-  // Reactively apply filters whenever nf or allRows change
+  // Reactively apply filters whenever nf, allRows, or schoolById change.
+  // We enrich each camp row with school division/state so filters work correctly.
   useEffect(() => {
     const filtered = allRows.filter((r) => {
+      // Enrich row with school data for filtering
+      const sid = String(normId(r?.school_id) || "");
+      const sch = sid ? schoolById[sid] : null;
+      const enriched = sch ? {
+        ...r,
+        division: r?.division || sch?.division || sch?.school_division || null,
+        school_division: r?.school_division || sch?.division || sch?.school_division || null,
+        state: r?.state || sch?.state || null,
+        school_state: r?.school_state || sch?.state || null,
+      } : r;
+
       if (isPaid) {
-        if (!matchesSport(r, [athleteSportId].filter(Boolean))) return false;
+        if (!matchesSport(enriched, [athleteSportId].filter(Boolean))) return false;
       } else {
-        if (Array.isArray(nf?.sports) && nf.sports.length > 0 && !matchesSport(r, nf.sports))
+        if (Array.isArray(nf?.sports) && nf.sports.length > 0 && !matchesSport(enriched, nf.sports))
           return false;
       }
-      if (Array.isArray(nf?.divisions) && nf.divisions.length > 0 && !matchesDivision(r, nf.divisions))
+      if (Array.isArray(nf?.divisions) && nf.divisions.length > 0 && !matchesDivision(enriched, nf.divisions))
         return false;
-      if (Array.isArray(nf?.positions) && nf.positions.length > 0 && !matchesPositions(r, nf.positions))
+      if (Array.isArray(nf?.positions) && nf.positions.length > 0 && !matchesPositions(enriched, nf.positions))
         return false;
-      if (nf?.state && !matchesState(r, nf.state)) return false;
-      if ((nf?.startDate || nf?.endDate) && !matchesDateRange(r, nf.startDate || "", nf.endDate || ""))
+      if (nf?.state && !matchesState(enriched, nf.state)) return false;
+      if ((nf?.startDate || nf?.endDate) && !matchesDateRange(enriched, nf.startDate || "", nf.endDate || ""))
         return false;
       return true;
     });
     setRawRows(filtered);
-  }, [allRows, nf, isPaid, athleteSportId]);
+  }, [allRows, nf, isPaid, athleteSportId, schoolById]);
 
   useEffect(() => {
     loadCamps();
