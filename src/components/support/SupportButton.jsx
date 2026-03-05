@@ -23,25 +23,25 @@ export default function SupportButton() {
     <>
       <style>{`
         @keyframes pulse-ring {
-          0% { box-shadow: 0 0 0 0 rgba(232,160,32,0.6), 0 4px 20px rgba(232,160,32,0.5), 0 2px 8px rgba(0,0,0,0.4); }
-          70% { box-shadow: 0 0 0 12px rgba(232,160,32,0), 0 4px 20px rgba(232,160,32,0.5), 0 2px 8px rgba(0,0,0,0.4); }
-          100% { box-shadow: 0 0 0 0 rgba(232,160,32,0), 0 4px 20px rgba(232,160,32,0.5), 0 2px 8px rgba(0,0,0,0.4); }
+          0% { box-shadow: 0 0 0 0 rgba(37,99,235,0.6), 0 4px 20px rgba(37,99,235,0.5), 0 2px 8px rgba(0,0,0,0.4); }
+          70% { box-shadow: 0 0 0 12px rgba(37,99,235,0), 0 4px 20px rgba(37,99,235,0.5), 0 2px 8px rgba(0,0,0,0.4); }
+          100% { box-shadow: 0 0 0 0 rgba(37,99,235,0), 0 4px 20px rgba(37,99,235,0.5), 0 2px 8px rgba(0,0,0,0.4); }
         }
       `}</style>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed z-[9999] rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 w-7 h-7 top-[60px] right-2 sm:top-auto sm:w-14 sm:h-14 sm:bottom-32 sm:right-4"
+        className="fixed z-[9999] rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 hover:bg-[#1d4ed8] w-7 h-7 top-[60px] right-2 sm:top-auto sm:w-14 sm:h-14 sm:bottom-32 sm:right-4"
         style={{
-          background: "#e8a020",
-          border: "2px solid rgba(255,255,255,0.3)",
-          boxShadow: "0 4px 20px rgba(232,160,32,0.5), 0 2px 8px rgba(0,0,0,0.4)",
+          background: "#2563eb",
+          border: "2px solid rgba(255,255,255,0.2)",
+          boxShadow: "0 4px 20px rgba(37,99,235,0.5), 0 2px 8px rgba(0,0,0,0.4)",
           animation: pulse ? "pulse-ring 1.5s ease-out infinite" : "none",
         }}
         aria-label="Help & Feedback"
       >
-        <span className="hidden sm:block" style={{ color: "#0a0e1a", fontWeight: 800, fontSize: 22, lineHeight: 1 }}>?</span>
-        <MessageCircleQuestion className="block sm:hidden w-4 h-4 text-[#0a0e1a]" />
+        <span className="hidden sm:block" style={{ color: "#ffffff", fontWeight: 800, fontSize: 22, lineHeight: 1 }}>?</span>
+        <MessageCircleQuestion className="block sm:hidden w-4 h-4 text-white" />
       </button>
 
       {open && <SupportModal onClose={() => setOpen(false)} />}
