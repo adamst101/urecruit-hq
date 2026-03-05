@@ -216,22 +216,22 @@ export default function SchoolGroupCard({
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <Button
+                  <button
                     type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0"
+                    className={"h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937] " + (isFav ? "text-amber-500" : "text-[#9ca3af]")}
+                    style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
+                      console.log("[SchoolGroupCard] star clicked", { campId, isFav });
                       onFavoriteToggle?.(campId);
                     }}
                     aria-label={isFav ? "Remove favorite" : "Add favorite"}
                   >
-                    <span className={(isFav ? "text-amber-500" : "text-[#9ca3af]") + " text-lg leading-none"}>
+                    <span className="text-lg leading-none">
                       {isFav ? "★" : "☆"}
                     </span>
-                  </Button>
+                  </button>
                   <Button
                     type="button"
                     size="sm"
