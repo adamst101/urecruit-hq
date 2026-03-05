@@ -25,6 +25,13 @@ const FEET_OPTIONS = [4, 5, 6, 7];
 const INCH_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
 const WEIGHT_OPTIONS = Array.from({ length: 61 }, (_, i) => 100 + i * 5);
 
+const US_STATES = [
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
+  "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+  "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
+  "VA","WA","WV","WI","WY"
+];
+
 function normId(x) {
   if (!x) return null;
   if (typeof x === "string") return x;
@@ -118,6 +125,8 @@ export default function Profile() {
   const [heightFt, setHeightFt] = useState("");
   const [heightIn, setHeightIn] = useState("");
   const [weight, setWeight] = useState("");
+  const [homeCity, setHomeCity] = useState("");
+  const [homeState, setHomeState] = useState("");
   const [adminEnabled, setAdminEnabled] = useState(false);
 
   useEffect(() => {
@@ -146,6 +155,8 @@ export default function Profile() {
     setSportId(sport ? String(sport) : "");
     const pos = ap?.primary_position_id || ap?.primaryPositionId || ap?.primary_position || "";
     setPrimaryPositionId(pos ? String(pos) : "");
+    setHomeCity(safeStr(ap?.home_city));
+    setHomeState(safeStr(ap?.home_state));
   }, [identity]);
 
   useEffect(() => {
@@ -193,6 +204,8 @@ export default function Profile() {
           weight_lbs: weight === "" ? null : Number(weight),
           sport_id: sportId ? String(sportId) : null,
           primary_position_id: primaryPositionId ? String(primaryPositionId) : null,
+          home_city: homeCity.trim() || null,
+          home_state: homeState.trim() || null,
         },
       });
       setStatus("Saved.");
@@ -303,6 +316,25 @@ export default function Profile() {
                 })}
               </select>
             </label>
+          </div>
+
+          {/* Home Location */}
+          <div className="border-t border-[#1f2937] pt-4 mt-2">
+            <div className="text-sm font-semibold text-[#f9fafb] mb-2">Home Location</div>
+            <div className="text-xs text-[#6b7280] mb-2">Used to estimate travel distance to camps</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="text-sm">
+                <div className={labelTextClass}>City</div>
+                <input className={inputClass} value={homeCity} onChange={(e) => setHomeCity(e.target.value)} placeholder="e.g. Dallas" />
+              </label>
+              <label className="text-sm">
+                <div className={labelTextClass}>State</div>
+                <select className={selectClass} value={homeState} onChange={(e) => setHomeState(e.target.value)}>
+                  <option value="">—</option>
+                  {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2 pt-2">
