@@ -24,6 +24,7 @@ import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFa
 
 // ✅ Centralised school identity resolution (logo, name, division)
 import { useSchoolIdentity } from "../components/hooks/useSchoolIdentity.jsx";
+import { getCityCoords } from "../components/hooks/useCityCoords.jsx";
 
 import InlineFilterBar from "../components/filters/InlineFilterBar.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
@@ -267,8 +268,26 @@ export default function Discover() {
   const [unregisterModal, setUnregisterModal] = useState({ open: false, camp: null });
 
   // Home coordinates from athlete profile (paid mode distance filter)
-  const homeLat = athleteProfile?.home_lat ?? null;
-  const homeLng = athleteProfile?.home_lng ?? null;
+  // Try explicit lat/lng first, then fall back to city/state lookup
+  const homeCoords = useMemo(() => {
+    const lat = athleteProfile?.home_lat ?? null;
+    const lng = athleteProfile?.home_lng ?? null;
+    if (lat != null && lng != null) return { lat, lng };
+    // Fallback: resolve from city/state
+    const city = athleteProfile?.home_city || null;
+    const state = athleteProfile?.home_state || null;
+    if (city || state) {
+      const coords = getCityCoords(city, state);
+      if (coords) return coords;
+    }
+    return null;
+  }, [athleteProfile?.home_lat, athleteProfile?.home_lng, athleteProfile?.home_city, athleteProfile?.home_state]);
+
+  const homeLat = homeCoords?.lat ?? null;
+  const homeLng = homeCoords?.lng ?? null;
+
+  // Whether the user has a home location set at all
+  const hasHomeLocation = !!(athleteProfile?.home_city || athleteProfile?.home_state || (athleteProfile?.home_lat != null && athleteProfile?.home_lng != null));
 
   const filtersApi = useCampFilters();
   useEffect(() => {
