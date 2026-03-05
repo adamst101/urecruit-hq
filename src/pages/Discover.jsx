@@ -230,19 +230,21 @@ export default function Discover() {
   const nav = useNavigate();
   const loc = useLocation();
 
-  // ✅ FIX 1: readDemoMode() returns null when not set — always use optional chaining
-  const dm             = readDemoMode();           // null | { mode, seasonYear, setAt }
-  const isDemoMode     = dm?.mode === "demo";
-  const demoSeasonOverride = Number.isFinite(Number(dm?.seasonYear)) ? Number(dm.seasonYear) : null;
-
   const { identity: athleteProfile } = useAthleteIdentity();
   const { demoProfileId } = useDemoProfile();
   const athleteSportId = athleteProfile?.sport_id != null ? String(athleteProfile.sport_id) : "";
 
-  const { hasAccess, seasonYear: accessSeasonYear, accountId: seasonAccountId } = useSeasonAccess();
+  const { hasAccess, seasonYear: accessSeasonYear, accountId: seasonAccountId, mode: seasonMode } = useSeasonAccess();
   const writeGate = useWriteGate();
 
-  const isPaid = !!hasAccess && !isDemoMode;
+  // Use useSeasonAccess as single source of truth for paid vs demo.
+  // readDemoMode() can have stale data before useSeasonAccess clears it.
+  const isPaid = seasonMode === "paid";
+
+  // Read demo mode only for season year override (not for isPaid determination)
+  const dm             = readDemoMode();           // null | { mode, seasonYear, setAt }
+  const isDemoMode     = !isPaid;
+  const demoSeasonOverride = Number.isFinite(Number(dm?.seasonYear)) ? Number(dm.seasonYear) : null;
 
   const urlp = useMemo(() => getUrlParams(loc?.search || ""), [loc?.search]);
   const seasonYear = useMemo(() => {
