@@ -51,11 +51,13 @@ import AdminFactoryReset from './pages/AdminFactoryReset';
 import AdminOps from './pages/AdminOps';
 import AdminSeedSchoolLogos from './pages/AdminSeedSchoolLogos';
 import AdminSeedSchoolsMaster from './pages/AdminSeedSchoolsMaster';
+import AthleteManager from './pages/AthleteManager';
 import AuthRedirect from './pages/AuthRedirect';
 import BackfillRyzerProgramName from './pages/BackfillRyzerProgramName';
 import BlockListManager from './pages/BlockListManager';
 import Calendar from './pages/Calendar';
 import CampDetail from './pages/CampDetail';
+import CampPlaybook from './pages/CampPlaybook';
 import CampsManager from './pages/CampsManager';
 import CheckoutSuccess from './pages/CheckoutSuccess';
 import Discover from './pages/Discover';
@@ -65,8 +67,10 @@ import HostOrgMappingManager from './pages/HostOrgMappingManager';
 import Index from './pages/Index';
 import MyCamps from './pages/MyCamps';
 import Profile from './pages/Profile';
+import RecruitingGuide from './pages/RecruitingGuide';
 import SchoolAthleticsCleanup from './pages/SchoolAthleticsCleanup';
 import SchoolsManager from './pages/SchoolsManager';
+import SeasonManager from './pages/SeasonManager';
 import SportIngestConfigManager from './pages/SportIngestConfigManager';
 import Subscribe from './pages/Subscribe';
 import SupportDashboard from './pages/SupportDashboard';
@@ -74,10 +78,7 @@ import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
-import SeasonManager from './pages/SeasonManager';
-import AthleteManager from './pages/AthleteManager';
-import RecruitingGuide from './pages/RecruitingGuide';
-import CampPlaybook from './pages/CampPlaybook';
+import Checkout from './pages/Checkout';
 import __Layout from './Layout.jsx';
 
 
@@ -86,11 +87,13 @@ export const PAGES = {
     "AdminOps": AdminOps,
     "AdminSeedSchoolLogos": AdminSeedSchoolLogos,
     "AdminSeedSchoolsMaster": AdminSeedSchoolsMaster,
+    "AthleteManager": AthleteManager,
     "AuthRedirect": AuthRedirect,
     "BackfillRyzerProgramName": BackfillRyzerProgramName,
     "BlockListManager": BlockListManager,
     "Calendar": Calendar,
     "CampDetail": CampDetail,
+    "CampPlaybook": CampPlaybook,
     "CampsManager": CampsManager,
     "CheckoutSuccess": CheckoutSuccess,
     "Discover": Discover,
@@ -100,8 +103,10 @@ export const PAGES = {
     "Index": Index,
     "MyCamps": MyCamps,
     "Profile": Profile,
+    "RecruitingGuide": RecruitingGuide,
     "SchoolAthleticsCleanup": SchoolAthleticsCleanup,
     "SchoolsManager": SchoolsManager,
+    "SeasonManager": SeasonManager,
     "SportIngestConfigManager": SportIngestConfigManager,
     "Subscribe": Subscribe,
     "SupportDashboard": SupportDashboard,
@@ -109,10 +114,7 @@ export const PAGES = {
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
-    "SeasonManager": SeasonManager,
-    "AthleteManager": AthleteManager,
-    "RecruitingGuide": RecruitingGuide,
-    "CampPlaybook": CampPlaybook,
+    "Checkout": Checkout,
 }
 
 export const pagesConfig = {
