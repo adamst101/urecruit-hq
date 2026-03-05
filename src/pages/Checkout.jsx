@@ -385,6 +385,8 @@ export default function Checkout() {
         >
           {working ? (
             <><Loader2 className="w-5 h-5 animate-spin" /> Processing...</>
+          ) : promoStatus === "verified_free" ? (
+            <>Get Access — Create Account <ArrowRight style={{ width: 18, height: 18 }} /></>
           ) : (
             <>Continue to Payment <ArrowRight style={{ width: 18, height: 18 }} /></>
           )}
