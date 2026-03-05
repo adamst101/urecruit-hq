@@ -537,9 +537,7 @@ export default function Discover() {
               role="button"
               tabIndex={0}
               onClick={() =>
-                nav(isPaid
-                  ? `/CampDetail?id=${encodeURIComponent(campId)}`
-                  : `/CampDetailDemo?id=${encodeURIComponent(campId)}`)
+                nav(`/CampDetail?id=${encodeURIComponent(campId)}${!isPaid ? '&mode=demo' : ''}`)
               }
             >
               <div className="flex items-start justify-between gap-3">
