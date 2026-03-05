@@ -14,7 +14,7 @@ import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 import ConflictDetectionSection from "../components/home/ConflictDetectionSection.jsx";
 
 const LOGO_URL =
-  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/f3ee1058c_2e6caa2c-a149-4031-83db-38b917c5a134.png";
+  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
 function trackEvent(payload) {
   try {
@@ -273,32 +273,6 @@ export default function Home() {
           <div style={{ display: "flex", alignItems: "center", gap: 60 }}>
             {/* Left */}
             <div style={{ flex: "1 1 55%", minWidth: 0 }}>
-              {/* Hero Logo */}
-              <div
-                style={{
-                  marginTop: 2,
-                  marginBottom: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "flex-start"
-                }}
-                className="justify-center md:justify-start"
-              >
-                {logoOk && (
-                  <img
-                    src={LOGO_URL}
-                    alt="URecruit HQ"
-                    onError={() => setLogoOk(false)}
-                    style={{
-                      width: "auto",
-                      objectFit: "contain",
-                      filter: "drop-shadow(0 10px 24px rgba(0,0,0,0.35))"
-                    }}
-                    className="h-[140px] md:h-[180px]"
-                  />
-                )}
-              </div>
-
               <div
                 style={{
                   display: "flex",
