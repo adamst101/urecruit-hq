@@ -250,7 +250,7 @@ export default function MyCamps() {
                   isRegistered={isRegistered}
                   mode={isDemoMode ? "demo" : "paid"}
                   disabledFavorite={true}
-                  onClick={() => nav(`/CampDetail?id=${encodeURIComponent(campId)}`)}
+                  onClick={undefined}
                   onFavoriteToggle={() => {}}
                 />
               );
