@@ -11,10 +11,8 @@ import { Button } from "../components/ui/button";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode, clearDemoMode } from "../components/hooks/demoMode.jsx";
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
-import ConflictDetectionSection from "../components/home/ConflictDetectionSection.jsx";
-import GuideMarketingSection from "../components/home/GuideMarketingSection.jsx";
 import TestimonialsSection from "../components/home/TestimonialsSection.jsx";
-import FooterCTA from "../components/home/FooterCTA.jsx";
+import DifferentiatorsSection from "../components/home/DifferentiatorsSection.jsx";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -300,33 +298,20 @@ export default function Home() {
           <div style={{ display: "flex", alignItems: "center", gap: 80 }}>
             {/* Left */}
             <div style={{ flex: "1 1 55%", minWidth: 0 }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  marginBottom: 16
-                }}
-              >
-                <div
-                  style={{
-                    width: 3,
-                    height: 28,
-                    background: "#e8a020",
-                    borderRadius: 2
-                  }}
-                />
-                <span
-                  style={{
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <div style={{ width: 3, height: 28, background: "#e8a020", borderRadius: 2 }} />
+                  <span style={{
                     fontFamily: "'Bebas Neue', sans-serif",
-                    fontSize: 20,
-                    letterSpacing: 3,
-                    color: "#e8a020",
-                    textTransform: "uppercase"
-                  }}
-                >
-                  100% College Coaching Staffs · Zero Club Camps
-                </span>
+                    fontSize: 18, letterSpacing: 3,
+                    color: "#e8a020", textTransform: "uppercase",
+                  }}>
+                    THE COLLEGE FOOTBALL CAMP PLANNING PLATFORM
+                  </span>
+                </div>
+                <div style={{ fontSize: 14, color: "#9ca3af", paddingLeft: 13 }}>
+                  100% College Coaching Staffs · Zero Club Camps · All Divisions
+                </div>
               </div>
 
               <h1
@@ -531,182 +516,27 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── MARQUEE ── */}
+      {/* ── STATIC STATS BAR ── */}
       <div style={{
         background: "#e8a020",
+        padding: "14px 24px",
+        textAlign: "center",
+        position: "relative",
+        zIndex: 2,
         overflow: "hidden",
         whiteSpace: "nowrap",
-        position: "relative",
-        zIndex: 2
+        textOverflow: "ellipsis",
       }}>
-        <div style={{
-          display: "inline-block",
-          animation: "marquee-scroll 20s linear infinite",
-          paddingLeft: "100%"
+        <span style={{
+          fontSize: 14, fontWeight: 700, color: "#0a0e1a",
+          textTransform: "uppercase", letterSpacing: 1,
         }}>
-          <span style={{
-            fontSize: 14,
-            fontWeight: 700,
-            color: "#0a0e1a",
-            letterSpacing: 1,
-            textTransform: "uppercase",
-            padding: "10px 0",
-            display: "inline-block"
-          }}>
-            🏈 COLLEGE CAMPS ONLY · {campDisplay} verified college football programs · All divisions: FBS · FCS · D2 · D3 · NAIA · JUCO · Updated weekly from official sources · 🏈 COLLEGE CAMPS ONLY · {campDisplay} verified college football programs · All divisions: FBS · FCS · D2 · D3 · NAIA · JUCO · Updated weekly from official sources ·&nbsp;&nbsp;&nbsp;&nbsp;
-          </span>
-        </div>
-        <style>{`
-          @keyframes marquee-scroll {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(-50%); }
-          }
-        `}</style>
+          🏈&nbsp; {campDisplay} Verified College Football Camps &nbsp;·&nbsp; {schoolDisplay} Programs &nbsp;·&nbsp; FBS · FCS · D2 · D3 · NAIA · JUCO &nbsp;·&nbsp; Updated Every Monday
+        </span>
       </div>
 
-      {/* ── STATS BAR ── */}
-      <section
-        style={{
-          background: "#111827",
-          borderTop: "2px solid #e8a020",
-          padding: "40px 24px"
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 1100,
-            margin: "0 auto",
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-            gap: 24,
-            textAlign: "center"
-          }}
-        >
-          {[
-            { num: campDisplay, label: "Football Camps" },
-            { num: schoolDisplay, label: "College Programs" },
-            { num: "98%", label: "School Match Rate" },
-            { num: "FREE", label: "Demo Access" }
-          ].map((s) => (
-            <div key={s.label}>
-              <div
-                style={{
-                  fontFamily: "'Bebas Neue', sans-serif",
-                  fontSize: 48,
-                  color: "#e8a020",
-                  lineHeight: 1
-                }}
-              >
-                {s.num}
-              </div>
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: "#9ca3af",
-                  marginTop: 6,
-                  textTransform: "uppercase",
-                  letterSpacing: 1
-                }}
-              >
-                {s.label}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── HOW IT WORKS ── */}
-      <section style={{ background: "#0d1117", padding: "80px 24px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <h2
-            style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: 48,
-              textAlign: "center",
-              marginBottom: 48,
-              color: "#f9fafb",
-              letterSpacing: 1
-            }}
-          >
-            HOW IT WORKS
-          </h2>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-              gap: 28
-            }}
-          >
-            {[
-              {
-                n: "01",
-                t: "DISCOVER",
-                d: `Browse ${campDisplay} football camps filtered by division, state, and date.`
-              },
-              {
-                n: "02",
-                t: "PLAN",
-                d: "Overlay your target schools, spot conflicts, build the perfect sequence."
-              },
-              {
-                n: "03",
-                t: "TRACK",
-                d: "Mark favorites, track registrations, never miss a deadline."
-              }
-            ].map((step) => (
-              <div
-                key={step.n}
-                style={{
-                  background: "#111827",
-                  borderRadius: 16,
-                  padding: 28
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: "'Bebas Neue', sans-serif",
-                    fontSize: 64,
-                    color: "#e8a020",
-                    lineHeight: 1
-                  }}
-                >
-                  {step.n}
-                </div>
-                <div style={{ width: 40, height: 3, background: "#e8a020", borderRadius: 2, marginTop: 12, marginBottom: 14 }} />
-                <div
-                  style={{
-                    fontWeight: 700,
-                    fontSize: 20,
-                    color: "#f9fafb",
-                    textTransform: "uppercase",
-                    letterSpacing: 1
-                  }}
-                >
-                  {step.t}
-                </div>
-                <p
-                  style={{
-                    color: "#9ca3af",
-                    fontSize: 15,
-                    lineHeight: 1.6,
-                    marginTop: 8,
-                    maxWidth: 260
-                  }}
-                >
-                  {step.d}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── CONFLICT DETECTION ── */}
-      <ConflictDetectionSection />
-
-      {/* ── GUIDE & PLAYBOOK MARKETING ── */}
-      <GuideMarketingSection onSubscribe={handlePricingSignup} />
+      {/* ── DIFFERENTIATORS ── */}
+      <DifferentiatorsSection campDisplay={campDisplay} schoolDisplay={schoolDisplay} />
 
       {/* ── TESTIMONIALS ── */}
       <TestimonialsSection />
@@ -816,28 +646,18 @@ export default function Home() {
             </div>
           </div>
 
-          <p style={{ color: "#9ca3af", fontSize: 16, marginTop: 24 }}>
-            Or try a free demo with last season's data — no signup required
+          <p style={{ fontSize: 13, color: "#6b7280", textAlign: "center", marginTop: 16 }}>
+            Not sure yet?{" "}
+            <button
+              onClick={handleTryDemo}
+              style={{ color: "#e8a020", background: "none", border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13 }}
+            >
+              Try the free demo
+            </button>
+            {" "}— no account needed.
           </p>
-          <button
-            onClick={handleTryDemo}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#e8a020",
-              fontSize: 16,
-              fontWeight: 600,
-              cursor: "pointer",
-              marginTop: 8
-            }}
-          >
-            Access Free Demo →
-          </button>
         </div>
       </section>
-
-      {/* ── FOOTER CTA ── */}
-      <FooterCTA onTryDemo={handleTryDemo} onSubscribe={handlePricingSignup} />
 
       {/* ── FOOTER ── */}
       <footer style={{ borderTop: "1px solid #1f2937", padding: "28px 24px", textAlign: "center" }}>
