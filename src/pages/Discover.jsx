@@ -387,6 +387,8 @@ export default function Discover() {
         ...r,
         division: r?.division || sch?.division || sch?.school_division || null,
         school_division: r?.school_division || sch?.division || sch?.school_division || null,
+        subdivision: r?.subdivision || sch?.subdivision || null,
+        school_subdivision: r?.school_subdivision || sch?.subdivision || null,
         state: r?.state || sch?.state || null,
         school_state: r?.school_state || sch?.state || null,
       } : r;
