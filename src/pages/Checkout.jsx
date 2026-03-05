@@ -242,13 +242,51 @@ export default function Checkout() {
 
         {/* Promo code */}
         <label style={{ ...S.label, marginTop: 20 }}>Promo Code <span style={{ color: "#6b7280" }}>(optional)</span></label>
-        <input
-          type="text"
-          value={couponCode}
-          onChange={(e) => setCouponCode(e.target.value)}
-          placeholder="Enter code"
-          style={S.input}
-        />
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            value={couponCode}
+            onChange={(e) => {
+              setCouponCode(e.target.value);
+              if (promoStatus) { setPromoStatus(null); setPromoMessage(""); }
+            }}
+            placeholder="Enter code"
+            disabled={promoStatus === "free"}
+            style={{ ...S.input, flex: 1 }}
+          />
+          <button
+            type="button"
+            onClick={handleApplyPromo}
+            disabled={!couponCode.trim() || promoStatus === "checking" || promoStatus === "free"}
+            style={{
+              background: promoStatus === "free" ? "#22c55e" : "#1f2937",
+              color: promoStatus === "free" ? "#fff" : "#f9fafb",
+              border: "1px solid #374151",
+              borderRadius: 8,
+              padding: "12px 16px",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: promoStatus === "checking" || promoStatus === "free" ? "not-allowed" : "pointer",
+              whiteSpace: "nowrap",
+              opacity: !couponCode.trim() ? 0.5 : 1,
+            }}
+          >
+            {promoStatus === "checking" ? "Checking..." : promoStatus === "free" ? "✓ Applied" : "Apply"}
+          </button>
+        </div>
+        {promoMessage && (
+          <div style={{
+            marginTop: 8,
+            fontSize: 14,
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: promoStatus === "free" ? "rgba(34,197,94,0.15)" : promoStatus === "invalid" ? "rgba(239,68,68,0.15)" : "rgba(232,160,32,0.15)",
+            border: `1px solid ${promoStatus === "free" ? "rgba(34,197,94,0.4)" : promoStatus === "invalid" ? "rgba(239,68,68,0.4)" : "rgba(232,160,32,0.4)"}`,
+            color: promoStatus === "free" ? "#86efac" : promoStatus === "invalid" ? "#fca5a5" : "#e8a020",
+          }}>
+            {promoMessage}
+          </div>
+        )}
 
         {/* Price summary */}
         <div style={{ background: "#111827", borderRadius: 12, padding: "16px 20px", marginTop: 24, border: "1px solid #1f2937" }}>
