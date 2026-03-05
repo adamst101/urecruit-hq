@@ -111,7 +111,8 @@ const labelTextClass = "text-[#9ca3af] text-sm";
 
 export default function Profile() {
   const nav = useNavigate();
-  const { isPaidSeason, loading: seasonLoading } = useSeasonAccess();
+  const { hasAccess, mode, loading: seasonLoading } = useSeasonAccess();
+  const isPaidSeason = hasAccess && mode === "paid";
   const { identity, loading: identityLoading, saveIdentity } = useAthleteIdentity();
 
   const [saving, setSaving] = useState(false);
