@@ -277,6 +277,7 @@ export default function Checkout() {
           />
           <button
             type="button"
+            id="auto-apply-promo"
             onClick={handleApplyPromo}
             disabled={!couponCode.trim() || promoStatus === "checking" || promoStatus === "free"}
             style={{
