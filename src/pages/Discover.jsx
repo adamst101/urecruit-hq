@@ -716,7 +716,6 @@ export default function Discover() {
         onClear={clearFilters}
         onApply={() => {
           setIsFiltersOpen(false);
-          loadCamps();
         }}
       />
 
