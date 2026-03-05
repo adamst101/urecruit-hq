@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
   const sessionParams = {
     payment_method_types: ["card"],
     mode: "payment",
-    customer_email: email || undefined,
+    customer_email: email || undefined, // Stripe collects email if not provided
     line_items: lineItems,
     metadata: {
       athlete_id: athleteId || "",
