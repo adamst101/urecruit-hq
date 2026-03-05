@@ -513,7 +513,8 @@ export default function Discover() {
           school_name: identity.name || camp?._school_name || "Unknown",
           school_id: schoolId,
           school_logo_url: identity.logoUrl || null,
-          division: identity.division || null,
+          division: identity.division || camp?.division || camp?.school_division || null,
+          subdivision: identity.subdivision || camp?.subdivision || camp?.school_subdivision || null,
           camps: [],
         };
       }
@@ -522,8 +523,8 @@ export default function Discover() {
     // Preserve the division → alphabetical order from rawRows (already sorted)
     const DIV_ORDER = { "D1 (FBS)": 0, "D1 (FCS)": 1, "D2": 2, "D3": 3, "NAIA": 4, "JUCO": 5 };
     return Object.values(grouped).sort((a, b) => {
-      const da = normalizeDivisionForSort(a.division || "", "");
-      const db = normalizeDivisionForSort(b.division || "", "");
+      const da = normalizeDivisionForSort(a.division || "", a.subdivision || "");
+      const db = normalizeDivisionForSort(b.division || "", b.subdivision || "");
       const oa = DIV_ORDER[da] ?? 99;
       const ob = DIV_ORDER[db] ?? 99;
       if (oa !== ob) return oa - ob;
