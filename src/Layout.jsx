@@ -109,18 +109,7 @@ export default function Layout({ children }) {
                   Log out
                 </button>
               </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSubscribe}
-                  className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white"
-                  style={{ background: "#e8a020" }}
-                >
-                  Subscribe — $49
-                </button>
-              </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}
