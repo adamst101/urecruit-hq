@@ -246,10 +246,6 @@ export default function Discover() {
   }, [isPaid, demoProfileId, seasonYear]);
   const nf = filtersApi?.nf || null;
 
-  // ✅ School identity via dedicated hook — uses allRows so school data
-  // is available for filtering (division, state) before display
-  const { resolveIdentity, schoolById } = useSchoolIdentity(allRows);
-
   const campKeyForRow = (r) => {
     return String(r?.id ?? "");
   };
@@ -321,6 +317,10 @@ export default function Discover() {
   /* ─── load camps ──────────────────────────────────────────────────────── */
 
   const [allRows, setAllRows] = useState([]);
+
+  // ✅ School identity via dedicated hook — uses allRows so school data
+  // is available for filtering (division, state) before display
+  const { resolveIdentity, schoolById } = useSchoolIdentity(allRows);
 
   async function loadCamps() {
     setIsLoading(true);
