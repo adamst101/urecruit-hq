@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { XCircle, SlidersHorizontal } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { base44 } from "../api/base44Client";
 
@@ -90,8 +91,16 @@ const ROUTES = {
 export default function Calendar() {
   const nav = useNavigate();
   const loc = useLocation();
+  const queryClient = useQueryClient();
 
   const season = useSeasonAccess();
+
+  // Invalidate cached camp summaries on mount so we pick up
+  // any favorites/registrations made on the Discover page
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+    queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+  }, [queryClient]);
   const { demoProfileId } = useDemoProfile();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
@@ -279,7 +288,7 @@ export default function Calendar() {
 
   // ---- Calendar view state ----
   const [calView, setCalView] = useState("list");
-  const [monthSubView, setMonthSubView] = useState("week");
+  const [monthSubView, setMonthSubView] = useState("month");
   const [currentWeek, setCurrentWeek] = useState(() => {
     const today = new Date();
     const day = today.getDay();

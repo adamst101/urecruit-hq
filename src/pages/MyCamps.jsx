@@ -1,6 +1,7 @@
 // src/pages/MyCamps.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { Card } from "../components/ui/card";
 
@@ -36,8 +37,16 @@ function normId(x) {
 
 export default function MyCamps() {
   const nav = useNavigate();
+  const queryClient = useQueryClient();
 
   const season = useSeasonAccess();
+
+  // Invalidate cached camp summaries on mount so we pick up
+  // any favorites/registrations made on the Discover page
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+    queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+  }, [queryClient]);
   const { identity: athleteProfile } = useAthleteIdentity();
   const { demoProfileId } = useDemoProfile();
 
