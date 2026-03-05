@@ -65,15 +65,9 @@ export default function CampCard({
   return (
     <div
       className={cn(
-        "rounded-xl border transition-colors border-[#1f2937] hover:border-[#e8a020]/60 bg-[#111827] overflow-hidden cursor-pointer",
+        "rounded-xl border transition-colors border-[#1f2937] bg-[#111827] overflow-hidden",
         isRegistered ? "opacity-90" : ""
       )}
-      role="button"
-      tabIndex={0}
-      onClick={() => onClick?.()}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") onClick?.();
-      }}
     >
       <div className="flex items-center gap-3 p-4">
         {/* Amber accent bar */}
