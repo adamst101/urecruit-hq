@@ -139,9 +139,14 @@ export default function AuthRedirect() {
       return;
     }
 
+    // If returning to Checkout (free-code flow), allow through without entitlement
+    if (isCheckoutReturn) {
+      nav(next, { replace: true });
+      return;
+    }
+
     // NOT entitled -> force Subscribe via HARD redirect (not back to demo)
     (async () => {
-      // Optional: mimic "no login unless paid"
       await safeLogout();
 
       const subscribeUrl =
