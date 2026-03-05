@@ -114,6 +114,11 @@ export default function AuthRedirect() {
     return PATHS.WORKSPACE;
   }, [loc?.search]);
 
+  // Check if next destination is the Checkout page (free-code flow)
+  const isCheckoutReturn = useMemo(() => {
+    return next.startsWith("/Checkout");
+  }, [next]);
+
   useEffect(() => {
     if (season?.isLoading) return;
 
