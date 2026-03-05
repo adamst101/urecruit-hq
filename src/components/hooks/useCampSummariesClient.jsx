@@ -181,7 +181,7 @@ export function useCampSummariesClient({
       return false;
     },
     retryDelay: (attempt) => Math.min(2000, 400 * Math.max(1, attempt)),
-    staleTime: 10_000,
+    staleTime: 5 * 60 * 1000, // 5 min cache
 
     queryFn: async () => {
       const CampEntity = base44.entities?.Camp;
