@@ -96,10 +96,8 @@ async function fetchByIds(entity, ids) {
   if (!entity?.filter || clean.length === 0) return [];
 
   const tries = [
-    { id: { in: clean } },
     { id: { $in: clean } },
-    { _id: { in: clean } },
-    { _id: { $in: clean } },
+    { id: { in: clean } },
   ];
 
   for (const q of tries) {
@@ -110,17 +108,7 @@ async function fetchByIds(entity, ids) {
       // try next
     }
   }
-
-  // Last resort: fetch all then filter (capped by usage elsewhere)
-  try {
-    const all = await entity.filter({});
-    const set = new Set(clean);
-    return (Array.isArray(all) ? all : []).filter((r) =>
-      set.has(String(r?.id ?? r?._id ?? ""))
-    );
-  } catch {
-    return [];
-  }
+  return [];
 }
 
 async function fetchPublicCampSummaries({
@@ -227,7 +215,7 @@ export function usePublicCampSummariesClient({
     ],
     enabled: Boolean(enabled) && !!seasonYear,
     retry: false,
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000, // 5 min cache
     queryFn: () =>
       fetchPublicCampSummaries({
         seasonYear,

@@ -31,8 +31,8 @@ async function fetchByIds(entity, ids) {
   const clean = uniq(ids.map(normId).filter(Boolean).map(String));
   if (!entity?.filter || clean.length === 0) return [];
   const tries = [
-    { id: { in: clean } },
     { id: { $in: clean } },
+    { id: { in: clean } },
   ];
   for (const q of tries) {
     try {
@@ -40,11 +40,7 @@ async function fetchByIds(entity, ids) {
       if (Array.isArray(rows) && rows.length) return rows;
     } catch { /* next */ }
   }
-  try {
-    const all = await entity.filter({});
-    const set = new Set(clean);
-    return (Array.isArray(all) ? all : []).filter((r) => set.has(String(r?.id ?? r?._id ?? "")));
-  } catch { return []; }
+  return [];
 }
 
 async function fetchDemoCampSummaries({ seasonYear, demoProfileId }) {
@@ -126,7 +122,7 @@ export function useDemoCampSummaries({ seasonYear, demoProfileId, enabled = true
     queryKey: ["demoCampSummaries", Number(seasonYear) || null, demoProfileId || "default"],
     enabled: Boolean(enabled) && !!seasonYear,
     retry: false,
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000, // 5 min cache
     queryFn: () => fetchDemoCampSummaries({ seasonYear, demoProfileId }),
   });
 }
