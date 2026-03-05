@@ -12,6 +12,7 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode, clearDemoMode } from "../components/hooks/demoMode.jsx";
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 import ConflictDetectionSection from "../components/home/ConflictDetectionSection.jsx";
+import GuideMarketingSection from "../components/home/GuideMarketingSection.jsx";
 import TestimonialsSection from "../components/home/TestimonialsSection.jsx";
 import FooterCTA from "../components/home/FooterCTA.jsx";
 
@@ -704,6 +705,9 @@ export default function Home() {
 
       {/* ── CONFLICT DETECTION ── */}
       <ConflictDetectionSection />
+
+      {/* ── GUIDE & PLAYBOOK MARKETING ── */}
+      <GuideMarketingSection onSubscribe={handlePricingSignup} />
 
       {/* ── TESTIMONIALS ── */}
       <TestimonialsSection />
