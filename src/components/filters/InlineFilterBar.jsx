@@ -59,9 +59,9 @@ export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, onDi
           <SelectValue placeholder="State" />
         </SelectTrigger>
         <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f9fafb] max-h-60">
-          <SelectItem value="__all__" className="text-xs">All States</SelectItem>
+          <SelectItem value="__all__" className="text-xs hover:!text-[#e8a020] data-[state=checked]:!text-[#e8a020]">All States</SelectItem>
           {US_STATES.map((st) => (
-            <SelectItem key={st} value={st} className="text-xs">{st}</SelectItem>
+            <SelectItem key={st} value={st} className="text-xs hover:!text-[#e8a020] data-[state=checked]:!text-[#e8a020]">{st}</SelectItem>
           ))}
         </SelectContent>
       </Select>
