@@ -5,12 +5,19 @@ const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY"));
 
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
-  const user = await base44.auth.me();
-  if (!user) {
-    return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+
+  // Allow both authenticated and anonymous checkout
+  let user = null;
+  try {
+    user = await base44.auth.me();
+  } catch {}
 
   const { couponCode, athleteId, userEmail, successUrl, cancelUrl } = await req.json();
+
+  const email = userEmail || user?.email || "";
+  if (!email) {
+    // Stripe will collect email during checkout if not provided
+  }
 
   // Determine correct season and price ID
   const now = new Date();
@@ -44,12 +51,12 @@ Deno.serve(async (req) => {
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card"],
     mode: "payment",
-    customer_email: userEmail || user.email,
+    customer_email: email || undefined,
     line_items: [{ price: priceId, quantity: 1 }],
     discounts,
     metadata: {
       athlete_id: athleteId || "",
-      account_id: user.id || "",
+      account_id: user?.id || "",
       coupon_code: couponCode || "",
       season_year: soldSeason.toString(),
     },
