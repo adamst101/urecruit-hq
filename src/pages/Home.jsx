@@ -369,17 +369,17 @@ export default function Home() {
                   flexWrap: "wrap"
                 }}
               >
-                <button onClick={handleTryDemo} style={S.ctaPrimary}>
-                  Start Free Demo{" "}
+                <button onClick={handlePricingSignup} style={S.ctaPrimary}>
+                  Get Season Pass{" "}
                   <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
                 </button>
                 <button
-                  onClick={handlePricingSignup}
+                  onClick={handleTryDemo}
                   style={S.ctaOutline}
                   onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
                 >
-                  View Pricing
+                  Try Free Demo
                 </button>
               </div>
 
