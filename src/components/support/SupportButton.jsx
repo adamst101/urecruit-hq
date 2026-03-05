@@ -24,7 +24,7 @@ export default function SupportButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`fixed z-[9999] rounded-full flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110 w-14 h-14 bottom-32 right-4 sm:bottom-32 sm:right-4 md:bottom-32 ${pulse ? "animate-pulse" : ""}`}
+        className={`fixed z-[9999] rounded-full flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110 w-14 h-14 top-2 right-2 sm:top-auto sm:bottom-32 sm:right-4 ${pulse ? "animate-pulse" : ""}`}
         style={{
           background: "#e8a020",
           boxShadow: pulse
