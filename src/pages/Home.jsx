@@ -877,6 +877,20 @@ const S = {
     display: "flex",
     alignItems: "center"
   },
+  navBtnMemberLogin: {
+    background: "transparent",
+    color: "#6b7280",
+    border: "none",
+    borderRadius: 8,
+    padding: "10px 14px",
+    fontSize: 14,
+    fontWeight: 500,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    textDecoration: "underline",
+    textUnderlineOffset: 2,
+  },
   ctaPrimary: {
     background: "#e8a020",
     color: "#0a0e1a",
