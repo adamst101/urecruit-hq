@@ -80,9 +80,22 @@ Deno.serve(async (req) => {
     },
     success_url: successUrl + "?session_id={CHECKOUT_SESSION_ID}",
     cancel_url: cancelUrl,
-  });
+  };
 
-  return Response.json({
+  try {
+    const session = await stripe.checkout.sessions.create(sessionParams);
+
+    return Response.json({
+      ok: true,
+      sessionUrl: session.url,
+      sessionId: session.id,
+      soldSeason,
+    });
+  } catch (err) {
+    console.error("Stripe session creation error:", err.message);
+    return Response.json({ ok: false, error: err.message });
+  }
+});
     ok: true,
     sessionUrl: session.url,
     sessionId: session.id,
