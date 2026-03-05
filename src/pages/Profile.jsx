@@ -240,8 +240,6 @@ export default function Profile() {
 
         </div>
 
-        {!isPaidSeason && <DemoBanner />}
-
         {/* Status toast */}
         {status && (
           <Card className="p-3 border-[#1f2937] bg-[#111827]">
