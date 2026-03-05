@@ -23,6 +23,7 @@ import {
   normalizeFilters,
   withinDateRange,
   normalizeState,
+  matchesDivision,
 } from "../components/filters/filterUtils.jsx";
 
 import CampCard from "../components/camps/CampCard.jsx";
@@ -251,9 +252,7 @@ export default function Calendar() {
         }
 
         if (wantedDivisions.length) {
-          const div = c?.school_division || c?.division || null;
-          const divStr = div ? String(div) : "";
-          if (!divStr || !wantedDivisions.includes(divStr)) return false;
+          if (!matchesDivision(c, wantedDivisions)) return false;
         }
 
         if (wantedPositions.length) {
