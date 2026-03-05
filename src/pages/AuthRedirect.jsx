@@ -1,25 +1,21 @@
 // src/pages/AuthRedirect.jsx
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 
 /**
- * AuthRedirect.jsx (Base44)
+ * AuthRedirect.jsx
  *
- * Purpose:
- * - Landing page after Base44 login when using /login?from_url=...
- * - Decide where to send the user next based on entitlement
+ * Post-login routing hub. Decides where to send the user:
  *
- * MVP Rules:
- * - If authenticated + entitled -> route to `next` (default /Workspace)
- * - If authenticated + NOT entitled -> HARD redirect to /Subscribe
- * - If not authenticated -> route to /Home (signin prompt)
- *
- * Key fix:
- * - Sanitize `next` to internal paths only and strip demo params (mode/src/source).
- * - Prefer `post_login_next` from sessionStorage to avoid nested encoding issues.
+ * 1. postPaymentSignup in sessionStorage → /Workspace (poll for entitlement if slow)
+ * 2. pendingPromoCode in sessionStorage → /Checkout?promo=CODE
+ * 3. loginReturnUrl in sessionStorage → that URL
+ * 4. Authenticated + entitled → /Workspace (or sanitized next)
+ * 5. Authenticated + NOT entitled → /Subscribe?newAccount=true
+ * 6. Not authenticated → /Home
  */
 
 const PATHS = {
@@ -44,29 +40,17 @@ function getNextFromSearch(search) {
   }
 }
 
-/**
- * Only allow internal paths.
- * Also strips demo-related params so paid users don't get bounced back into demo.
- */
 function sanitizeNext(nextRaw) {
   const fallback = PATHS.WORKSPACE;
   const s = safeString(nextRaw).trim();
   if (!s) return fallback;
-
-  // Block absolute URLs / open redirects
   if (s.startsWith("http://") || s.startsWith("https://")) return fallback;
-
-  // Normalize to leading slash
   const pathish = s.startsWith("/") ? s : `/${s}`;
-
-  // Strip demo flags from next URL (prevents "paid user returns to demo")
   try {
     const u = new URL(pathish, window.location.origin);
-
     u.searchParams.delete("mode");
     u.searchParams.delete("src");
     u.searchParams.delete("source");
-
     const cleaned = `${u.pathname}${u.search ? u.search : ""}`;
     return cleaned || fallback;
   } catch {
@@ -74,95 +58,166 @@ function sanitizeNext(nextRaw) {
   }
 }
 
-async function safeLogout() {
-  try {
-    if (base44?.auth?.logout) {
-      await base44.auth.logout();
-      return true;
-    }
-    if (base44?.auth?.signOut) {
-      await base44.auth.signOut();
-      return true;
-    }
-  } catch {}
-  return false;
+function ssGet(key) {
+  try { return sessionStorage.getItem(key); } catch { return null; }
+}
+function ssRemove(key) {
+  try { sessionStorage.removeItem(key); } catch {}
 }
 
 export default function AuthRedirect() {
   const nav = useNavigate();
   const loc = useLocation();
-
   const season = useSeasonAccess();
 
-  // Next can arrive as query param OR (preferred) via sessionStorage fallback
+  const [statusMsg, setStatusMsg] = useState("Signing you in…");
+  const [showSlowWarning, setShowSlowWarning] = useState(false);
+  const didRoute = useRef(false);
+
   const next = useMemo(() => {
     const qNext = getNextFromSearch(loc?.search);
     if (qNext) return sanitizeNext(qNext);
-
-    // Preferred: next stored by startMemberLogin() to avoid nested encoding issues
-    try {
-      const ss = sessionStorage.getItem("post_login_next");
-      if (ss) {
-        try {
-          sessionStorage.removeItem("post_login_next"); // one-shot
-        } catch {}
-        return sanitizeNext(ss);
-      }
-    } catch {}
-
-    // Default: Workspace (IMPORTANT: no mode=demo here)
+    const ss = ssGet("post_login_next");
+    if (ss) {
+      ssRemove("post_login_next");
+      return sanitizeNext(ss);
+    }
     return PATHS.WORKSPACE;
   }, [loc?.search]);
 
-  // Check if next destination is the Checkout page (free-code flow)
-  const isCheckoutReturn = useMemo(() => {
-    return next.startsWith("/Checkout");
-  }, [next]);
+  const isCheckoutReturn = useMemo(() => next.startsWith("/Checkout"), [next]);
 
   useEffect(() => {
-    if (season?.isLoading) return;
+    if (season?.isLoading || didRoute.current) return;
 
-    // Not authenticated -> go Home with signin prompt
+    // Not authenticated → Home
     if (!season?.accountId) {
+      didRoute.current = true;
       nav(`${PATHS.HOME}?signin=1&next=${encodeURIComponent(next)}`, { replace: true });
       return;
     }
 
-    // Authenticated: clear demo stickiness (user chose to log in)
-    try { sessionStorage.removeItem("demoMode_v1"); } catch {}
-    try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
-    try { sessionStorage.removeItem("demo_year_v1"); } catch {}
+    // Clear demo stickiness
+    ssRemove("demoMode_v1");
+    ssRemove("demo_mode_v1");
+    ssRemove("demo_year_v1");
 
-    // Entitled -> go to sanitized next
+    const accountId = season.accountId;
+
+    // ── Priority 1: Post-payment signup flow ──
+    const postPayment = ssGet("postPaymentSignup");
+    if (postPayment) {
+      ssRemove("postPaymentSignup");
+      ssRemove("paidSeasonYear");
+
+      // Entitlement might already exist (webhook fast)
+      if (season?.hasAccess && season?.entitlement) {
+        didRoute.current = true;
+        nav(PATHS.WORKSPACE, { replace: true });
+        return;
+      }
+
+      // Poll for entitlement (webhook may be slow)
+      setStatusMsg("Setting up your access…");
+      let attempts = 0;
+      const maxAttempts = 5; // 5 × 2s = 10s
+      const interval = setInterval(async () => {
+        attempts++;
+        try {
+          const ents = await base44.entities.Entitlement.filter({
+            account_id: accountId,
+            status: "active",
+          });
+          if (Array.isArray(ents) && ents.length > 0) {
+            clearInterval(interval);
+            didRoute.current = true;
+            nav(PATHS.WORKSPACE, { replace: true });
+            return;
+          }
+        } catch {}
+        if (attempts >= maxAttempts) {
+          clearInterval(interval);
+          setShowSlowWarning(true);
+        }
+      }, 2000);
+      return;
+    }
+
+    // ── Priority 2: Pending promo code (BETA100 flow) ──
+    const pendingPromo = ssGet("pendingPromoCode");
+    if (pendingPromo) {
+      ssRemove("pendingPromoCode");
+      didRoute.current = true;
+      nav(`/Checkout?promo=${encodeURIComponent(pendingPromo)}&activate=true`, { replace: true });
+      return;
+    }
+
+    // ── Priority 3: Return URL from sessionStorage ──
+    const returnUrl = ssGet("loginReturnUrl");
+    if (returnUrl) {
+      ssRemove("loginReturnUrl");
+      didRoute.current = true;
+      nav(sanitizeNext(returnUrl), { replace: true });
+      return;
+    }
+
+    // ── Priority 4: Entitled → next destination ──
     if (season?.hasAccess && season?.entitlement) {
+      didRoute.current = true;
       nav(next, { replace: true });
       return;
     }
 
-    // If returning to Checkout (free-code flow), allow through without entitlement
+    // ── Priority 5: Checkout return (free-code flow) ──
     if (isCheckoutReturn) {
+      didRoute.current = true;
       nav(next, { replace: true });
       return;
     }
 
-    // NOT entitled -> force Subscribe via HARD redirect (not back to demo)
-    (async () => {
-      await safeLogout();
-
-      const subscribeUrl =
-        `${window.location.origin}${PATHS.SUBSCRIBE}` +
-        `?source=auth_gate_no_entitlement&reason=no_entitlement` +
-        `&next=${encodeURIComponent(next || PATHS.DISCOVER)}`;
-
-      window.location.assign(subscribeUrl);
-    })();
+    // ── Priority 6: Not entitled → Subscribe with welcome message ──
+    didRoute.current = true;
+    nav(`${PATHS.SUBSCRIBE}?newAccount=true&source=auth_redirect`, { replace: true });
   }, [season?.isLoading, season?.accountId, season?.hasAccess, season?.entitlement, next, nav, isCheckoutReturn]);
+
+  // Slow webhook warning
+  if (showSlowWarning) {
+    return (
+      <div className="min-h-screen bg-[#0a0e1a] flex items-center justify-center px-6">
+        <div className="text-center max-w-md" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f9fafb", marginBottom: 12 }}>
+            Taking longer than expected
+          </h2>
+          <p style={{ fontSize: 16, color: "#9ca3af", lineHeight: 1.6, marginBottom: 20 }}>
+            Your payment was confirmed but access setup is still processing.
+          </p>
+          <p style={{ fontSize: 14, color: "#9ca3af", lineHeight: 1.6, marginBottom: 24 }}>
+            Please email us at{" "}
+            <a href="mailto:support@urecruithq.com" style={{ color: "#e8a020", textDecoration: "underline" }}>
+              support@urecruithq.com
+            </a>{" "}
+            with your receipt and we'll sort it out right away.
+          </p>
+          <button
+            onClick={() => nav(PATHS.WORKSPACE, { replace: true })}
+            style={{
+              background: "#1f2937", color: "#f9fafb", border: "1px solid #374151",
+              borderRadius: 8, padding: "12px 24px", fontSize: 16, fontWeight: 600, cursor: "pointer",
+            }}
+          >
+            Continue to HQ →
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] flex items-center justify-center">
       <div className="text-center">
         <div className="w-8 h-8 border-2 border-[#e8a020] border-t-transparent rounded-full animate-spin mx-auto" />
-        <p className="mt-4 text-sm text-[#9ca3af]">Signing you in…</p>
+        <p className="mt-4 text-sm text-[#9ca3af]">{statusMsg}</p>
       </div>
     </div>
   );

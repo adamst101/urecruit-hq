@@ -44,7 +44,11 @@ export default function CheckoutSuccess() {
   }, [sessionId, navigate, isFree, freeSeason]);
 
   function handleCreateAccount() {
-    const returnUrl = createPageUrl("Workspace");
+    try {
+      sessionStorage.setItem("postPaymentSignup", "true");
+      if (data?.seasonYear) sessionStorage.setItem("paidSeasonYear", String(data.seasonYear));
+    } catch {}
+    const returnUrl = `${window.location.origin}/AuthRedirect?next=/Workspace&source=post_payment_signup`;
     base44.auth.redirectToLogin(returnUrl);
   }
 
@@ -95,10 +99,23 @@ export default function CheckoutSuccess() {
               borderRadius: 12, padding: "16px 20px", textAlign: "left", marginTop: 24, maxWidth: 400, width: "100%"
             }}>
               <p style={{ fontWeight: 700, color: "#f9fafb", fontSize: 16, margin: "0 0 8px" }}>
-                One last step
+                Now create your account
               </p>
               <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
-                Create your account to log in and access your camps.
+                Create your account to access your Season Pass.
+              </p>
+            </div>
+
+            {/* Email matching tip */}
+            <div style={{
+              background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.25)",
+              borderRadius: 10, padding: "12px 16px", textAlign: "left", marginTop: 12, maxWidth: 400, width: "100%"
+            }}>
+              <p style={{ color: "#e8a020", fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>
+                💡 Tip
+              </p>
+              <p style={{ color: "#9ca3af", fontSize: 13, lineHeight: 1.5, margin: 0 }}>
+                Use the same email address you entered at checkout so your payment is linked automatically.
               </p>
             </div>
 
@@ -108,7 +125,14 @@ export default function CheckoutSuccess() {
 
             <p style={{ color: "#6b7280", fontSize: 14, marginTop: 16 }}>
               Already have an account?{" "}
-              <button onClick={handleCreateAccount} style={{ background: "none", border: "none", color: "#e8a020", cursor: "pointer", textDecoration: "underline", fontSize: 14 }}>
+              <button onClick={() => {
+                try {
+                  sessionStorage.setItem("postPaymentSignup", "true");
+                  if (data?.seasonYear) sessionStorage.setItem("paidSeasonYear", String(data.seasonYear));
+                } catch {}
+                const returnUrl = `${window.location.origin}/AuthRedirect?next=/Workspace&source=post_payment_login`;
+                base44.auth.redirectToLogin(returnUrl);
+              }} style={{ background: "none", border: "none", color: "#e8a020", cursor: "pointer", textDecoration: "underline", fontSize: 14 }}>
                 Log in instead →
               </button>
             </p>

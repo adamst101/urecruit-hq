@@ -194,6 +194,25 @@ export default function Subscribe() {
 
 
 
+      {/* ── WELCOME BANNER (for new accounts redirected here) ── */}
+      {params.get("newAccount") === "true" && (
+        <section style={{ padding: "32px 24px 0", maxWidth: 480, margin: "0 auto" }}>
+          <div style={{
+            background: "#111827",
+            borderLeft: "4px solid #e8a020",
+            borderRadius: 12,
+            padding: "20px 24px",
+          }}>
+            <p style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb", margin: "0 0 8px" }}>
+              👋 Welcome! Your account is set up.
+            </p>
+            <p style={{ fontSize: 15, color: "#9ca3af", lineHeight: 1.6, margin: 0 }}>
+              Complete your Season Pass purchase below to unlock full access to URecruit HQ.
+            </p>
+          </div>
+        </section>
+      )}
+
       {/* ── HERO ── */}
       <section style={{ textAlign: "center", padding: "64px 24px 40px", maxWidth: 600, margin: "0 auto" }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 3, color: "#e8a020", textTransform: "uppercase", marginBottom: 16 }}>

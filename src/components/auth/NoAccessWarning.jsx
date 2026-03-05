@@ -133,21 +133,33 @@ export default function NoAccessWarning() {
               marginTop: 24,
             }}
           >
-            Get My Season Pass →
+            Get Season Pass →
           </button>
 
-          {/* Secondary link */}
+          {/* Secondary CTA */}
+          <button
+            onClick={handleTryDemo}
+            style={{
+              width: "100%", background: "transparent", color: "#f9fafb",
+              border: "1px solid #374151", borderRadius: 12, padding: "14px 0",
+              fontSize: 16, fontWeight: 600, cursor: "pointer",
+              marginTop: 10,
+            }}
+          >
+            Try the Free Demo instead
+          </button>
+
+          {/* Tertiary link */}
           <div style={{ textAlign: "center", marginTop: 16 }}>
-            <button
-              onClick={handleTryDemo}
+            <a
+              href="mailto:support@urecruithq.com"
               style={{
-                background: "none", border: "none",
-                color: "#6b7280", fontSize: 14, cursor: "pointer",
+                color: "#6b7280", fontSize: 13,
                 textDecoration: "underline", textUnderlineOffset: 2,
               }}
             >
-              Just browsing? Try the free demo instead
-            </button>
+              Already purchased? Contact support
+            </a>
           </div>
         </div>
       </div>
