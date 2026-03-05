@@ -257,6 +257,7 @@ export default function Discover() {
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [demoFavoriteIds, setDemoFavoriteIds] = useState([]);
   const [distanceMiles, setDistanceMiles] = useState(null);
+  const [visibleCount, setVisibleCount]   = useState(50);
 
   // Modal states
   const [conflictModal, setConflictModal] = useState({ open: false, warnings: [], campId: null, action: null });
@@ -292,18 +293,18 @@ export default function Discover() {
 
   async function loadIntents(keys) {
     try {
+      if (!isPaid) return {}; // Demo mode doesn't use CampIntent
       const CampIntent = base44?.entities?.CampIntent;
       if (!CampIntent?.filter) return {};
-      const keyArr = asArray(keys).filter(Boolean);
-      if (!keyArr.length) return {};
+      const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
+      if (!aId) return {};
 
+      // Single query by athlete_id — no need to chunk by camp_id
+      const rows = await safeFilter(CampIntent, { athlete_id: String(aId) }, "-updated_date", 2000);
       const out = {};
-      for (const g of chunk(keyArr, 50)) {
-        const rows = await safeFilter(CampIntent, { camp_id: g }, "-updated_date", 2000);
-        for (const r of asArray(rows)) {
-          const k = String(r?.camp_id || "");
-          if (k) out[k] = r;
-        }
+      for (const r of asArray(rows)) {
+        const k = String(r?.camp_id || "");
+        if (k) out[k] = r;
       }
       return out;
     } catch {
@@ -407,6 +408,11 @@ export default function Discover() {
       setIsLoading(false);
     }
   }
+
+  // Reset visible count when filters change
+  useEffect(() => {
+    setVisibleCount(50);
+  }, [nf, distanceMiles]);
 
   // Reactively apply filters whenever nf, allRows, or schoolById change.
   // We enrich each camp row with school division/state so filters work correctly.
@@ -693,9 +699,12 @@ export default function Discover() {
       );
     }
 
+    const visibleGroups = schoolGroups.slice(0, visibleCount);
+    const hasMore = schoolGroups.length > visibleCount;
+
     return (
       <div className="space-y-3">
-        {schoolGroups.map((group) => (
+        {visibleGroups.map((group) => (
           <SchoolGroupCard
             key={group.key}
             group={group}
@@ -721,6 +730,15 @@ export default function Discover() {
             }}
           />
         ))}
+        {hasMore && (
+          <button
+            type="button"
+            onClick={() => setVisibleCount((c) => c + 50)}
+            className="w-full py-3 text-sm font-semibold text-[#e8a020] bg-[#111827] border border-[#1f2937] rounded-lg hover:bg-[#1f2937] transition-colors"
+          >
+            Load more ({schoolGroups.length - visibleCount} remaining)
+          </button>
+        )}
       </div>
     );
   };
