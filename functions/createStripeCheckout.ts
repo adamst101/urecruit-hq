@@ -59,13 +59,11 @@ Deno.serve(async (req) => {
     }
   }
 
-  const session = await stripe.checkout.sessions.create({
+  const sessionParams = {
     payment_method_types: ["card"],
     mode: "payment",
-    allow_promotion_codes: discounts.length === 0,
     customer_email: email || undefined,
     line_items: [{ price: priceId, quantity: 1 }],
-    discounts: discounts.length > 0 ? discounts : undefined,
     metadata: {
       athlete_id: athleteId || "",
       account_id: user?.id || "",
