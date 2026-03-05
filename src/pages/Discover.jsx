@@ -24,6 +24,8 @@ import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFa
 // ✅ Centralised school identity resolution (logo, name, division)
 import { useSchoolIdentity } from "../components/hooks/useSchoolIdentity.jsx";
 
+import InlineFilterBar from "../components/filters/InlineFilterBar.jsx";
+
 import {
   matchesDivision,
   matchesSport,
@@ -110,6 +112,17 @@ function toISODate(dateInput) {
   const d = new Date(dateInput);
   if (Number.isNaN(d.getTime())) return null;
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 3958.8; // Earth radius in miles
+  const toRad = (x) => (x * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function footballSeasonYearForDate(d = new Date()) {
@@ -235,6 +248,11 @@ export default function Discover() {
   const [intentByKey, setIntentByKey]     = useState({});
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [demoFavoriteIds, setDemoFavoriteIds] = useState([]);
+  const [distanceMiles, setDistanceMiles] = useState(null);
+
+  // Home coordinates from athlete profile (paid mode distance filter)
+  const homeLat = athleteProfile?.home_lat ?? null;
+  const homeLng = athleteProfile?.home_lng ?? null;
 
   const filtersApi = useCampFilters();
   useEffect(() => {
@@ -391,6 +409,8 @@ export default function Discover() {
         school_subdivision: r?.school_subdivision || sch?.subdivision || null,
         state: r?.state || sch?.state || null,
         school_state: r?.school_state || sch?.state || null,
+        _school_lat: sch?.lat ?? sch?.home_lat ?? null,
+        _school_lng: sch?.lng ?? sch?.home_lng ?? null,
       } : r;
 
       if (isPaid) {
@@ -406,10 +426,20 @@ export default function Discover() {
       if (nf?.state && !matchesState(enriched, nf.state)) return false;
       if ((nf?.startDate || nf?.endDate) && !matchesDateRange(enriched, nf.startDate || "", nf.endDate || ""))
         return false;
+
+      // Distance filter (paid mode only)
+      if (isPaid && distanceMiles && homeLat != null && homeLng != null) {
+        const campLat = enriched?._school_lat ?? sch?.lat ?? null;
+        const campLng = enriched?._school_lng ?? sch?.lng ?? null;
+        if (campLat == null || campLng == null) return true; // no coords, keep it
+        const dist = haversine(homeLat, homeLng, campLat, campLng);
+        if (dist > distanceMiles) return false;
+      }
+
       return true;
     });
     setRawRows(filtered);
-  }, [allRows, nf, isPaid, athleteSportId, schoolById]);
+  }, [allRows, nf, isPaid, athleteSportId, schoolById, distanceMiles, homeLat, homeLng]);
 
   useEffect(() => {
     loadCamps();
@@ -711,7 +741,18 @@ export default function Discover() {
           </div>
         )}
 
-        <div className="mt-5">
+        {/* Inline filter dropdowns */}
+        <div className="mt-4">
+          <InlineFilterBar
+            nf={nf}
+            setNF={filtersApi?.setNF}
+            isPaid={isPaid}
+            distanceMiles={distanceMiles}
+            onDistanceChange={setDistanceMiles}
+          />
+        </div>
+
+        <div className="mt-4">
           <CampList />
         </div>
       </div>
