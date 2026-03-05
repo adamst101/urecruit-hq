@@ -11,6 +11,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { getCurrentSoldSeason, getCurrentActiveSeason, isEarlyBirdPeriod } from "../components/utils/seasonUtils.js";
 
 function trackEvent(payload) {
   try {
@@ -63,6 +64,10 @@ export default function Subscribe() {
   const { isLoading, mode, hasAccess, seasonYear, currentYear, demoYear, accountId } =
     useSeasonAccess();
 
+  const soldSeason = useMemo(() => getCurrentSoldSeason(), []);
+  const activeSeason = useMemo(() => getCurrentActiveSeason(), []);
+  const earlyBird = useMemo(() => isEarlyBirdPeriod(), []);
+
   const params = useMemo(() => new URLSearchParams(location.search || ""), [location.search]);
   const force = params.get("force") === "1";
   const source = params.get("source") || "subscribe_page";
@@ -83,13 +88,7 @@ export default function Subscribe() {
     }
   }, [rawNext]);
 
-  const requestedSeason = useMemo(() => {
-    const s = params.get("season");
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
-  }, [params]);
-
-  const soldYear = requestedSeason || currentYear || seasonYear || null;
+  const soldYear = soldSeason;
 
   // ✅ REQUIRED GUARD: entitled users never see Subscribe
   useEffect(() => {
@@ -181,15 +180,29 @@ export default function Subscribe() {
       {/* ── HERO ── */}
       <section style={{ textAlign: "center", padding: "64px 24px 40px", maxWidth: 600, margin: "0 auto" }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 3, color: "#e8a020", textTransform: "uppercase", marginBottom: 16 }}>
-          SEASON PASS {soldYear}
+          SEASON PASS {soldSeason}
         </div>
         <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(40px, 6vw, 64px)", lineHeight: 0.95, margin: 0, color: "#f9fafb", letterSpacing: 1 }}>
           UNLOCK EVERY CAMP.<br />ONE SEASON. ONE PRICE.
         </h1>
         <p style={{ color: "#9ca3af", fontSize: 18, marginTop: 20, lineHeight: 1.6 }}>
-          Everything you need to plan the perfect recruiting camp sequence.
+          {earlyBird
+            ? `Full access to the ${soldSeason} camp season (March — August ${soldSeason}) + Immediate access to current ${activeSeason} camp data`
+            : `Full access to ${soldSeason} camp season (March — August ${soldSeason})`}
         </p>
       </section>
+
+      {/* ── EARLY BIRD BONUS (Sep-Dec only) ── */}
+      {earlyBird && (
+        <section style={{ padding: "0 24px 32px", maxWidth: 480, margin: "0 auto" }}>
+          <div style={{ background: "rgba(232,160,32,0.12)", border: "1px solid rgba(232,160,32,0.4)", borderRadius: 12, padding: "16px 20px" }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#e8a020", marginBottom: 6 }}>🎁 Early Bird Bonus</div>
+            <div style={{ fontSize: 15, color: "#f9fafb", lineHeight: 1.6 }}>
+              Buy now and get immediate access to {activeSeason} camp data while you wait for {soldSeason} season to open in March.
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── PRICING CARD ── */}
       <section style={{ padding: "0 24px 48px", maxWidth: 480, margin: "0 auto" }}>
@@ -198,7 +211,7 @@ export default function Subscribe() {
           <div style={{ height: 4, background: "#e8a020" }} />
 
           <div style={{ padding: "32px 28px" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#e8a020", letterSpacing: 2, textTransform: "uppercase" }}>Season Pass {soldYear}</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#e8a020", letterSpacing: 2, textTransform: "uppercase" }}>Season Pass {soldSeason}</div>
 
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 12 }}>
               <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 80, color: "#f9fafb", lineHeight: 1 }}>$49</span>

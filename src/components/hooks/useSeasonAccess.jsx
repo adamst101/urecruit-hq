@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { base44 } from "../../api/base44Client";
 
 import { footballCurrentSeasonYear } from "../utils/seasonEntitlements.jsx";
+import { getCurrentSoldSeason, getCurrentActiveSeason } from "../utils/seasonUtils.js";
 import { readDemoMode } from "./demoMode.jsx";
 
 /**
@@ -96,11 +97,13 @@ function readDemoSeasonOverride({ fallbackDemoYear }) {
 }
 
 export function useSeasonAccess() {
-  // Derived years (football rule, Feb 1 rollover)
+  // Derived years using new season logic
   const currentYear = useMemo(() => footballCurrentSeasonYear(), []);
+  const soldSeason = useMemo(() => getCurrentSoldSeason(), []);
+  const activeSeason = useMemo(() => getCurrentActiveSeason(), []);
   const demoYear = useMemo(
-    () => (typeof currentYear === "number" ? currentYear - 1 : null),
-    [currentYear]
+    () => (typeof activeSeason === "number" ? activeSeason - 1 : null),
+    [activeSeason]
   );
 
   // Demo override from session (set by Home "Access Demo")
@@ -181,10 +184,13 @@ export function useSeasonAccess() {
       }
 
       /**
-       * Guard: Only evaluate entitlement for the CURRENT football season year.
-       * Prevents "future season wins early" even if a row exists for future years.
+       * Check entitlement for EITHER the active season OR the sold season.
+       * This allows early-bird buyers (Sep-Dec) to get access immediately.
        */
-      const ent = await fetchEntitlement({ accountId, seasonYear: currentYear });
+      let ent = await fetchEntitlement({ accountId, seasonYear: activeSeason });
+      if (!ent && soldSeason !== activeSeason) {
+        ent = await fetchEntitlement({ accountId, seasonYear: soldSeason });
+      }
 
       if (ent) {
         // Clear demo mode when user has paid access
@@ -201,9 +207,9 @@ export function useSeasonAccess() {
           mode: "paid",
           hasAccess: true,
 
-          // Paid workspace defaults to current season (or entitlement season_year if present)
-          seasonYear: Number(ent?.season_year) || currentYear || p.seasonYear,
-          season: Number(ent?.season_year) || currentYear || p.season,
+          // Paid workspace always shows the active season's camp data
+          seasonYear: activeSeason || currentYear || p.seasonYear,
+          season: activeSeason || currentYear || p.season,
 
           accountId,
           entitlement: ent,
@@ -250,6 +256,8 @@ export function useSeasonAccess() {
     // keep both flags for backward compatibility
     isLoading: !!state.isLoading,
     loading: !!state.isLoading,
+    soldSeason,
+    activeSeason,
     refresh,
   };
 }

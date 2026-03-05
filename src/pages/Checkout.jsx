@@ -10,6 +10,7 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { getCurrentSoldSeason, getCurrentActiveSeason, isEarlyBirdPeriod } from "../components/utils/seasonUtils.js";
 
 function trackEvent(payload) {
   try {
@@ -66,6 +67,10 @@ export default function Checkout() {
   // ✅ Your hook
   const { isLoading, mode, accountId, currentYear } = useSeasonAccess();
 
+  const soldSeason = useMemo(() => getCurrentSoldSeason(), []);
+  const activeSeason = useMemo(() => getCurrentActiveSeason(), []);
+  const earlyBird = useMemo(() => isEarlyBirdPeriod(), []);
+
   const [working, setWorking] = useState(false);
   const [err, setErr] = useState("");
 
@@ -79,11 +84,8 @@ export default function Checkout() {
   const next = params.get("next");
   const source = params.get("source") || "checkout_page";
 
-  // Sell requested season if present, otherwise fallback to currentYear
-  const soldYear = useMemo(() => {
-    const fromUrl = safeNumber(params.get("season"));
-    return fromUrl || currentYear;
-  }, [params, currentYear]);
+  // Always use the dynamically computed soldSeason
+  const soldYear = soldSeason;
 
   const nextTarget = useMemo(() => {
     return next || createPageUrl("Profile");
@@ -260,9 +262,11 @@ export default function Checkout() {
           <div className="flex items-start gap-3">
             <CreditCard className="w-6 h-6 text-slate-700 mt-0.5" />
             <div className="flex-1">
-              <div className="text-lg font-bold text-deep-navy">Season Pass</div>
+              <div className="text-lg font-bold text-deep-navy">Season Pass {soldYear}</div>
               <div className="text-sm text-slate-600 mt-1">
-                Full access to season {soldYear}: camps + planning tools.
+                {earlyBird
+                  ? `Full access to ${soldYear} camp season (March — August ${soldYear}) + immediate access to ${activeSeason} camp data.`
+                  : `Full access to ${soldYear} camp season: camps + planning tools.`}
               </div>
 
               <div className="mt-4 space-y-2">
