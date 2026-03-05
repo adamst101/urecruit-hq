@@ -769,10 +769,6 @@ export default function Discover() {
                 )}
               </Button>
             )}
-            <Button variant="outline" onClick={() => setIsFiltersOpen(true)} aria-label="Open filters" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#111827]">
-              <SlidersHorizontal className="w-4 h-4 mr-2" />
-              Filters
-            </Button>
           </div>
         </div>
 
