@@ -58,6 +58,7 @@ import Calendar from './pages/Calendar';
 import CampDetail from './pages/CampDetail';
 import CampsManager from './pages/CampsManager';
 import Checkout from './pages/Checkout';
+import CheckoutSuccess from './pages/CheckoutSuccess';
 import Discover from './pages/Discover';
 import GenerateDemoCamps from './pages/GenerateDemoCamps';
 import Home from './pages/Home';
@@ -73,7 +74,6 @@ import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
-import CheckoutSuccess from './pages/CheckoutSuccess';
 import __Layout from './Layout.jsx';
 
 
@@ -89,6 +89,7 @@ export const PAGES = {
     "CampDetail": CampDetail,
     "CampsManager": CampsManager,
     "Checkout": Checkout,
+    "CheckoutSuccess": CheckoutSuccess,
     "Discover": Discover,
     "GenerateDemoCamps": GenerateDemoCamps,
     "Home": Home,
@@ -104,7 +105,6 @@ export const PAGES = {
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
-    "CheckoutSuccess": CheckoutSuccess,
 }
 
 export const pagesConfig = {

@@ -237,10 +237,7 @@ export default function Profile() {
             <User className="w-6 h-6 text-[#e8a020]" />
             <h1 className="text-2xl font-bold text-[#f9fafb]">Profile</h1>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#111827]" onClick={() => nav(ROUTES.Workspace)}>Workspace</Button>
-            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#111827]" onClick={() => nav(ROUTES.Discover)}>Discover</Button>
-          </div>
+
         </div>
 
         {!isPaidSeason && <DemoBanner />}
