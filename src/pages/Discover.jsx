@@ -442,6 +442,9 @@ export default function Discover() {
     const enrichedRows = allRows.map((r) => {
       const sid = String(normId(r?.school_id) || "");
       const sch = sid ? schoolById[sid] : null;
+      const campCity = r?.city || sch?.city || null;
+      const campState = r?.state || sch?.state || null;
+      const campCoords = getCityCoords(campCity, campState);
       return sch ? {
         ...r,
         division: r?.division || sch?.division || sch?.school_division || null,
@@ -450,10 +453,15 @@ export default function Discover() {
         school_subdivision: r?.school_subdivision || sch?.subdivision || null,
         state: r?.state || sch?.state || null,
         school_state: r?.school_state || sch?.state || null,
-        _school_lat: sch?.lat ?? sch?.home_lat ?? null,
-        _school_lng: sch?.lng ?? sch?.home_lng ?? null,
+        _school_lat: campCoords?.lat ?? null,
+        _school_lng: campCoords?.lng ?? null,
         _school_name: sch?.school_name || sch?.name || r?.camp_name || "",
-      } : { ...r, _school_name: r?.camp_name || "" };
+      } : {
+        ...r,
+        _school_lat: campCoords?.lat ?? null,
+        _school_lng: campCoords?.lng ?? null,
+        _school_name: r?.camp_name || "",
+      };
     });
 
     const filtered = enrichedRows.filter((enriched) => {
