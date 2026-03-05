@@ -4,6 +4,7 @@ import { ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import WarningBadge from "./WarningBadge.jsx";
 
 function safeShortDate(d) {
   try {
@@ -51,9 +52,11 @@ export default function SchoolGroupCard({
   onToggle,
   isPaid,
   isCampFavorite,
+  isCampRegistered,
   onFavoriteToggle,
   onRegisterClick,
   onCampClick,
+  getWarningsForCamp,
 }) {
   const { school_name, school_logo_url, division, camps } = group;
   const isSingle = camps.length === 1;
@@ -192,9 +195,11 @@ export default function SchoolGroupCard({
           {camps.map((camp, idx) => {
             const campId = String(camp?.id ?? "");
             const isFav = isCampFavorite(campId);
+            const isReg = isCampRegistered ? isCampRegistered(campId) : false;
             const startLabel = safeShortDate(camp.start_date) || "TBD";
             const city = [camp.city, camp.state].filter(Boolean).join(", ");
             const priceLabel = typeof camp.price === "number" && camp.price > 0 ? `$${camp.price}` : null;
+            const campWarnings = getWarningsForCamp ? getWarningsForCamp(campId) : [];
 
             return (
               <div
@@ -206,8 +211,11 @@ export default function SchoolGroupCard({
                 onClick={() => onCampClick?.(campId)}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-[#f9fafb] truncate">
-                    {camp.camp_name || "Camp"}
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-semibold text-[#f9fafb] truncate">
+                      {camp.camp_name || "Camp"}
+                    </div>
+                    <WarningBadge warnings={campWarnings} />
                   </div>
                   <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[#9ca3af]">
                     <span>{startLabel}</span>
@@ -237,14 +245,16 @@ export default function SchoolGroupCard({
                   <Button
                     type="button"
                     size="sm"
-                    className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f] text-xs h-7 px-3"
+                    className={isReg
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700 text-xs h-7 px-3"
+                      : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f] text-xs h-7 px-3"}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       onRegisterClick?.(camp);
                     }}
                   >
-                    Register
+                    {isReg ? "✓ Registered" : "Register"}
                   </Button>
                 </div>
               </div>
