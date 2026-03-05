@@ -87,6 +87,7 @@ export default function Workspace() {
 
   const [meEmail, setMeEmail] = useState("");
   const [meName, setMeName] = useState("");
+  const [meRole, setMeRole] = useState("");
   const [logoOk, setLogoOk] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
   const [showAddAthlete, setShowAddAthlete] = useState(false);
@@ -108,16 +109,15 @@ export default function Workspace() {
     (async () => {
       const me = await safeMe();
       if (cancelled) return;
+      console.log("[Workspace] auth.me() =>", JSON.stringify({ email: me?.email, role: me?.role, data_role: me?.data?.role, id: me?.id }));
       setMeEmail(String(me?.email || me?.user_metadata?.email || "").toLowerCase());
       setMeName(String(me?.full_name || me?.user_metadata?.full_name || ""));
-      setMeRole(String(me?.role || "").toLowerCase());
+      setMeRole(String(me?.role || me?.data?.role || "").toLowerCase());
     })();
     return () => {
       cancelled = true;
     };
   }, []);
-
-  const [meRole, setMeRole] = useState("");
 
   // Admin check: use role from base44.auth.me() (set on the User entity)
   const isAdmin = useMemo(() => {
