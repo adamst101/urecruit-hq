@@ -13,8 +13,7 @@ import FilterSheet from "../components/filters/FilterSheet.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
-import { getDemoFavorites } from "../components/hooks/demoFavorites.jsx";
-import { isDemoRegistered } from "../components/hooks/demoRegistered.jsx";
+// demoFavorites/demoRegistered are handled inside useDemoCampSummaries
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
