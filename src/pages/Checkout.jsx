@@ -167,8 +167,16 @@ export default function Checkout() {
     }
   }
 
-  // BETA100 free activation (no card required)
+  // BETA100 free activation (no card required) — requires login
   async function handleFreeActivation() {
+    // Must be logged in to activate free access
+    if (!signedIn) {
+      // Redirect to login, then come back to this page with the coupon pre-applied
+      const returnUrl = window.location.pathname + window.location.search;
+      base44.auth.redirectToLogin(returnUrl);
+      return;
+    }
+
     setCheckoutLoading(true);
     setCheckoutError("");
 
