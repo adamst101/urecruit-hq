@@ -26,6 +26,11 @@ import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFa
 import { useSchoolIdentity } from "../components/hooks/useSchoolIdentity.jsx";
 
 import InlineFilterBar from "../components/filters/InlineFilterBar.jsx";
+import ConflictWarningModal from "../components/camps/ConflictWarningModal.jsx";
+import RegisterConfirmModal from "../components/camps/RegisterConfirmModal.jsx";
+import UnregisterConfirmModal from "../components/camps/UnregisterConfirmModal.jsx";
+import { detectConflicts } from "../components/hooks/useConflictDetection.jsx";
+import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
 
 import {
   matchesDivision,
@@ -251,6 +256,11 @@ export default function Discover() {
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [demoFavoriteIds, setDemoFavoriteIds] = useState([]);
   const [distanceMiles, setDistanceMiles] = useState(null);
+
+  // Modal states
+  const [conflictModal, setConflictModal] = useState({ open: false, warnings: [], campId: null, action: null });
+  const [registerModal, setRegisterModal] = useState({ open: false, camp: null });
+  const [unregisterModal, setUnregisterModal] = useState({ open: false, camp: null });
 
   // Home coordinates from athlete profile (paid mode distance filter)
   const homeLat = athleteProfile?.home_lat ?? null;
