@@ -500,6 +500,8 @@ export default function Calendar() {
           )}
         </div>
 
+        <WarningBanner warnings={allWarnings} />
+
         {renderBody()}
 
         <FilterSheet
