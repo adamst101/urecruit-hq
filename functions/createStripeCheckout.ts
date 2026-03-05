@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
     athleteOneName, athleteTwoName, athleteTwoGradYear
   } = await req.json();
 
-  const email = userEmail || user?.email || "";
+  const email = userEmail || user?.email || ""; // optional — Stripe collects if blank
   const accountId = user?.id || "";
 
   // Get active season from DB
