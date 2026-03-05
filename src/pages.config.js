@@ -76,6 +76,8 @@ import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
 import SeasonManager from './pages/SeasonManager';
 import AthleteManager from './pages/AthleteManager';
+import RecruitingGuide from './pages/RecruitingGuide';
+import CampPlaybook from './pages/CampPlaybook';
 import __Layout from './Layout.jsx';
 
 
@@ -109,6 +111,8 @@ export const PAGES = {
     "Workspace": Workspace,
     "SeasonManager": SeasonManager,
     "AthleteManager": AthleteManager,
+    "RecruitingGuide": RecruitingGuide,
+    "CampPlaybook": CampPlaybook,
 }
 
 export const pagesConfig = {
