@@ -68,6 +68,7 @@ function CampRow({ row, isDemo }) {
 
   const st = String(row?.intent_status || "").toLowerCase();
   const isRegistered = st === "registered" || st === "completed";
+  const isFavorite = st === "favorite";
 
   return (
     <Card className="p-4 border-[#1f2937] bg-[#111827]">
@@ -89,6 +90,8 @@ function CampRow({ row, isDemo }) {
               ) : null}
               {isRegistered ? (
                 <Badge className="bg-emerald-600 text-white text-xs">Registered</Badge>
+              ) : isFavorite ? (
+                <Badge className="bg-amber-500 text-white text-xs">★ Favorite</Badge>
               ) : (
                 <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-xs">Potential</Badge>
               )}
@@ -222,7 +225,7 @@ export default function MyCamps() {
 
             {favorites.length > 0 ? (
               <div>
-                <h2 className="text-sm font-semibold text-[#9ca3af] mb-2">Potential</h2>
+                <h2 className="text-sm font-semibold text-[#9ca3af] mb-2">★ Favorites</h2>
                 <div className="space-y-3">
                   {favorites.map((r) => (
                     <CampRow key={String(r?.camp_id || r?.id || Math.random())} row={r} isDemo={isDemoMode} />
