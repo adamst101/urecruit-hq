@@ -759,16 +759,9 @@ export default function Discover() {
 
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-2xl font-bold text-[#f9fafb]">Discover</div>
-            <div className="mt-1 flex items-center gap-2 flex-wrap">
-              <Badge variant="secondary" className="bg-[#111827] text-[#9ca3af] border border-[#1f2937]">
-                Season {seasonYear}
-              </Badge>
-              {isPaid
-                ? <Badge className="bg-[#e8a020] text-[#0a0e1a]">Paid</Badge>
-                : <Badge variant="outline" className="border-[#374151] text-[#9ca3af]">Demo</Badge>
-              }
-              <span className="text-xs text-[#9ca3af]">{resultsCountLabel}</span>
+            <div className="flex items-baseline gap-2">
+              <div className="text-2xl font-bold text-[#f9fafb]">Discover</div>
+              <span className="text-sm text-[#9ca3af]">{resultsCountLabel}</span>
             </div>
           </div>
 
