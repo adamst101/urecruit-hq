@@ -242,7 +242,8 @@ export function matchesPositions(camp, positions) {
 
 export function matchesState(camp, statesOrOne) {
   // supports passing ["TX","OK"] or "TX" or null
-  const wanted = asArray(statesOrOne).map((x) => String(x || "").trim()).filter(Boolean);
+  const raw = Array.isArray(statesOrOne) ? statesOrOne : (statesOrOne ? [statesOrOne] : []);
+  const wanted = raw.map((x) => String(x || "").trim()).filter(Boolean);
   if (wanted.length === 0) return true;
 
   const campState = normalizeState(camp?.state || camp?.camp_state || camp?.school_state);
