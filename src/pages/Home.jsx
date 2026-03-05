@@ -175,7 +175,7 @@ export default function Home() {
           background: "rgba(10,14,26,0.95)",
           backdropFilter: "blur(12px)",
           borderBottom: "1px solid #1f2937",
-          height: 48
+          height: 52
         }}
       >
         <div
@@ -189,8 +189,16 @@ export default function Home() {
             justifyContent: "space-between"
           }}
         >
-          {/* Left: spacer */}
-          <div />
+          {/* Left: brand */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="#e8a020">
+              <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V7L12 2z"/>
+            </svg>
+            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, letterSpacing: 1, lineHeight: 1 }}>
+              <span style={{ color: "#f9fafb", fontWeight: 700 }}>URecruit</span>
+              <span style={{ color: "#e8a020", fontWeight: 700 }}>HQ</span>
+            </span>
+          </div>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {isAuthed && isMember ? (
@@ -265,14 +273,16 @@ export default function Home() {
           <div style={{ display: "flex", alignItems: "center", gap: 60 }}>
             {/* Left */}
             <div style={{ flex: "1 1 55%", minWidth: 0 }}>
-              {/* Hero Logo only (large, top, no text beside it) */}
+              {/* Hero Logo */}
               <div
                 style={{
                   marginTop: 2,
-                  marginBottom:0,
+                  marginBottom: 0,
                   display: "flex",
-                  alignItems: "center"
+                  alignItems: "center",
+                  justifyContent: "flex-start"
                 }}
+                className="justify-center md:justify-start"
               >
                 {logoOk && (
                   <img
@@ -280,11 +290,11 @@ export default function Home() {
                     alt="URecruit HQ"
                     onError={() => setLogoOk(false)}
                     style={{
-                      height: "clamp(160px, 22vw, 288px)",
                       width: "auto",
                       objectFit: "contain",
                       filter: "drop-shadow(0 10px 24px rgba(0,0,0,0.35))"
                     }}
+                    className="h-[140px] md:h-[180px]"
                   />
                 )}
               </div>
@@ -314,7 +324,7 @@ export default function Home() {
                     textTransform: "uppercase"
                   }}
                 >
-                  College Football Recruiting Camps
+                  100% College Coaching Staffs · Zero Club Camps
                 </span>
               </div>
 
@@ -328,11 +338,11 @@ export default function Home() {
                   letterSpacing: 1
                 }}
               >
-                STOP MISSING
+                THE CAMPS THAT GET
                 <br />
-                THE CAMPS THAT
+                ATHLETES RECRUITED.
                 <br />
-                MATTER.
+                ALL IN ONE PLACE.
               </h1>
 
               <p
@@ -344,8 +354,10 @@ export default function Home() {
                   maxWidth: 540
                 }}
               >
-                {campDisplay} college football camps. One place to discover, plan, and
-                track your recruiting journey — without the spreadsheet chaos.
+                Camp dates are scattered across hundreds of school websites.
+                We pull them all together, flag scheduling conflicts, and warn
+                you when back-to-back camps require a flight — so your athlete
+                shows up to every camp that matters.
               </p>
 
               <div
@@ -360,15 +372,24 @@ export default function Home() {
                   Start Free Demo{" "}
                   <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
                 </button>
-                <button onClick={handlePricingSignup} style={S.ctaOutline}>
+                <button
+                  onClick={handlePricingSignup}
+                  style={S.ctaOutline}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
+                >
                   View Pricing
                 </button>
               </div>
 
+              <p style={{ fontSize: 12, color: "#9ca3af", fontStyle: "italic", marginTop: 12 }}>
+                ⚡ Summer camp season opens March–April. Early registrations fill fast.
+              </p>
+
               <div
-                style={{ display: "flex", gap: 20, marginTop: 22, flexWrap: "wrap" }}
+                style={{ display: "flex", gap: 20, marginTop: 16, flexWrap: "wrap" }}
               >
-                {[`${campDisplay} camps`, `${schoolDisplay} college programs`, "All divisions", "Updated weekly"].map(
+                {[`${campDisplay} camps`, `${schoolDisplay} college programs`, "D1 FBS through JUCO", "Updated every Monday"].map(
                   (t) => (
                     <span
                       key={t}
@@ -589,7 +610,7 @@ export default function Home() {
             { num: campDisplay, label: "Football Camps" },
             { num: schoolDisplay, label: "College Programs" },
             { num: "98%", label: "School Match Rate" },
-            { num: "Free", label: "Demo Access" }
+            { num: "FREE", label: "Demo Access" }
           ].map((s) => (
             <div key={s.label}>
               <div
@@ -860,12 +881,13 @@ const S = {
   ctaOutline: {
     background: "transparent",
     color: "#f9fafb",
-    border: "1px solid rgba(249,250,251,0.25)",
+    border: "2px solid #ffffff",
     borderRadius: 10,
     padding: "16px 32px",
     fontSize: 18,
     fontWeight: 600,
-    cursor: "pointer"
+    cursor: "pointer",
+    transition: "background 0.2s, color 0.2s"
   },
   navBtnLogout: {
     background: "transparent",
