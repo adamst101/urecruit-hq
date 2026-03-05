@@ -128,6 +128,7 @@ export default function Layout({ children }) {
       {children}
 
       <SupportButton />
+      <NoAccessWarning />
 
       {/* Theme + utility classes */}
       <style>{`
