@@ -1528,9 +1528,22 @@ Deno.serve(async function(req) {
       if (startDate < todayIso) { stats.campsPastSkipped++; continue; }
       if (!campName) campName = prog2.name + " Camp";
 
+      // ── WRONG-SPORT FILTER (runs on EVERY camp, new or existing) ──
+      var WRONG_SPORT_KEYWORDS = [
+        "soccer", "basketball", "baseball", "softball", "volleyball",
+        "lacrosse", "wrestling", "golf", "tennis", "yoga", "medicare",
+        "special interest", "family |", "mom & me", "mom and me",
+        "hunter", "theater", "theatre", "dance", "cheer", "band",
+        "swim", "track and field", "track & field", "cross country",
+        "hockey", "rugby", "cricket", "field hockey", "water polo",
+        "gymnastics", "rowing", "crew", "fencing", "skiing",
+        "bowling", "equestrian", "figure skating", "martial arts",
+      ];
+      var allKeywords = WRONG_SPORT_KEYWORDS.concat(NON_SPORT_KEYWORDS);
+
       if (campName && /^Family\s*\|/i.test(campName)) { stats.skippedWrongSport++; if (sampleErrors.length < 10) sampleErrors.push({ source_key: sourceKey, reason: "family_prefix", camp_name: campName }); continue; }
 
-      var badKeyword = containsKeyword(campName, NON_SPORT_KEYWORDS) || containsKeyword(hostOrg, NON_SPORT_KEYWORDS) || containsKeyword(notes, NON_SPORT_KEYWORDS);
+      var badKeyword = containsKeyword(campName, allKeywords) || containsKeyword(hostOrg, allKeywords) || containsKeyword(ryzerProgramName, allKeywords);
       if (badKeyword) { stats.skippedWrongSport++; if (sampleErrors.length < 10) sampleErrors.push({ source_key: sourceKey, reason: "wrong_sport", camp_name: campName, keyword: badKeyword }); continue; }
 
       var seasonYear = parseInt(startDate.substring(0, 4));
