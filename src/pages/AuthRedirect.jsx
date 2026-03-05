@@ -156,7 +156,7 @@ export default function AuthRedirect() {
 
       window.location.assign(subscribeUrl);
     })();
-  }, [season?.isLoading, season?.accountId, season?.hasAccess, season?.entitlement, next, nav]);
+  }, [season?.isLoading, season?.accountId, season?.hasAccess, season?.entitlement, next, nav, isCheckoutReturn]);
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] flex items-center justify-center">
