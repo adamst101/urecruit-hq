@@ -18,7 +18,7 @@ import { isDemoRegistered } from "../components/hooks/demoRegistered.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
-import { usePublicCampSummariesClient } from "../components/hooks/usePublicCampSummariesClient.jsx";
+import { useDemoCampSummaries } from "../components/hooks/useDemoCampSummaries.jsx";
 
 import {
   normalizeFilters,
