@@ -85,7 +85,7 @@ export default function Checkout() {
   const totalPrice = addSecond ? pricePrimary + priceAddOn : pricePrimary;
 
   // Check if promo code is a 100%-free code (like BETA100) that bypasses Stripe
-  const [promoStatus, setPromoStatus] = useState(null); // null | "checking" | "free" | "discount" | "invalid"
+  const [promoStatus, setPromoStatus] = useState(null); // null | "checking" | "free" | "verified_free" | "discount" | "invalid"
   const [promoMessage, setPromoMessage] = useState("");
 
   async function handleApplyPromo() {
