@@ -230,7 +230,7 @@ export default function Home() {
                   Member Login
                 </button>
                 <button onClick={handlePricingSignup} style={S.navBtnAmber}>
-                  Subscribe
+                  Get Season Pass
                 </button>
               </>
             )}

@@ -797,23 +797,7 @@ export default function Discover() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {isPaid && (
-              <Button
-                variant="outline"
-                onClick={() => nav("/MyCamps")}
-                aria-label="Go to My Camps"
-                className="whitespace-nowrap border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#111827]"
-              >
-                My Camps
-                {favoriteCount > 0 && (
-                  <span className="ml-2 inline-flex items-center justify-center min-w-[22px] h-[22px] px-2 rounded-full bg-slate-900 text-white text-xs">
-                    {favoriteCount}
-                  </span>
-                )}
-              </Button>
-            )}
-          </div>
+
         </div>
 
         {hasActiveFilters(nf, isPaid) && (

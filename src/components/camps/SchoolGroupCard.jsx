@@ -59,8 +59,7 @@ export default function SchoolGroupCard({
   getWarningsForCamp,
 }) {
   const { school_name, school_logo_url, division, camps } = group;
-  const isSingle = camps.length === 1;
-  const expanded = isSingle || isExpanded;
+  const expanded = isExpanded;
 
   // Aggregate stats
   const dates = camps
@@ -103,7 +102,7 @@ export default function SchoolGroupCard({
       {/* Header — always visible, clickable */}
       <div
         className="flex items-center gap-3 p-4 cursor-pointer select-none"
-        onClick={() => !isSingle && onToggle?.()}
+        onClick={() => onToggle?.()}
         role="button"
         tabIndex={0}
       >
@@ -129,15 +128,8 @@ export default function SchoolGroupCard({
             </Badge>
           </div>
 
-          {/* Row 2: date range · city · price */}
+          {/* Row 2: city · price */}
           <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#9ca3af]">
-            {dateMin && (
-              <span className="flex items-center gap-1">
-                <span className="text-[#6b7280]">📅</span>
-                {safeShortDate(dateMin)}
-                {dateMax && dateMax !== dateMin ? ` — ${safeShortDate(dateMax)}` : ""}
-              </span>
-            )}
             {primaryCity && (
               <span className="flex items-center gap-1">
                 <span className="text-[#6b7280]">📍</span>
@@ -160,7 +152,8 @@ export default function SchoolGroupCard({
 
           {/* Row 3: date pills */}
           {datePills.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-2 flex flex-wrap gap-1.5 items-center">
+              <span className="text-[#9ca3af] text-sm leading-none">📅</span>
               {datePills.map((d, i) => (
                 <span
                   key={`${d}-${i}`}
@@ -179,14 +172,12 @@ export default function SchoolGroupCard({
         </div>
 
         {/* Chevron */}
-        {!isSingle && (
-          <ChevronDown
-            className={
-              "w-5 h-5 text-[#9ca3af] flex-shrink-0 transition-transform duration-200 " +
-              (expanded ? "rotate-180" : "")
-            }
-          />
-        )}
+        <ChevronDown
+          className={
+            "w-5 h-5 text-[#9ca3af] flex-shrink-0 transition-transform duration-200 " +
+            (expanded ? "rotate-180" : "")
+          }
+        />
       </div>
 
       {/* Expanded: individual camps */}

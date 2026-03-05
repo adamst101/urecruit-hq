@@ -37,7 +37,7 @@ export default function DemoBanner({ seasonYear }) {
           whiteSpace: "nowrap",
         }}
       >
-        Subscribe Now
+        Get Season Pass
       </button>
     </div>
   );

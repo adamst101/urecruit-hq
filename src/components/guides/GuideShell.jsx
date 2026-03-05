@@ -72,7 +72,9 @@ export default function GuideShell({ title, subtitle, sections, children }) {
         {/* Back + Header */}
         <button
           onClick={() => nav(createPageUrl("Workspace"))}
-          style={{ background: "none", border: "none", color: "#9ca3af", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 24 }}
+          style={{ background: "none", border: "none", color: "#e8a020", fontSize: 14, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 24 }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "#f3b13f"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = "#e8a020"; }}
         >
           <ArrowLeft style={{ width: 14, height: 14 }} /> HQ
         </button>

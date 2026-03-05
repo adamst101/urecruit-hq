@@ -61,7 +61,7 @@ export default function FooterCTA({ onTryDemo, onSubscribe }) {
             onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
           >
-            Subscribe — $49
+            Get Season Pass — $49
           </button>
         </div>
 

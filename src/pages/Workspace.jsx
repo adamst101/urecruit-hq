@@ -188,10 +188,10 @@ export default function Workspace() {
           <div style={{ marginTop: 20, background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.25)", borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
             <div>
               <div style={{ fontSize: 17, fontWeight: 700, color: "#e8a020" }}>📋 You're viewing {demoYear} demo data</div>
-              <div style={{ fontSize: 15, color: "#9ca3af", marginTop: 4 }}>Subscribe to unlock {currentYear} camps, save favorites, and track registrations.</div>
+              <div style={{ fontSize: 15, color: "#9ca3af", marginTop: 4 }}>Get your Season Pass to unlock {currentYear} camps, save favorites, and track registrations.</div>
             </div>
             <button onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_banner`)} style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
-              Subscribe Now <ArrowRight style={{ width: 16, height: 16 }} />
+              Get Season Pass <ArrowRight style={{ width: 16, height: 16 }} />
             </button>
           </div>
         )}
@@ -216,22 +216,7 @@ export default function Workspace() {
         </div>
       </section>
 
-      {/* ── SUBSCRIBE CALLOUT (only if not member) ── */}
-      {!isMember && (
-        <section style={{ padding: "0 24px 48px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ background: "#111827", border: "2px solid #e8a020", borderRadius: 16, padding: "36px 28px", textAlign: "center" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#f9fafb", letterSpacing: 1 }}>
-              🔓 UNLOCK THE {currentYear} SEASON
-            </div>
-            <p style={{ color: "#9ca3af", fontSize: 17, marginTop: 12, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
-              You're in demo mode. Subscribe for $49 to access current camps, save favorites, and track registrations.
-            </p>
-            <button onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_cta`)} style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "16px 36px", fontSize: 18, fontWeight: 700, cursor: "pointer", marginTop: 24 }}>
-              Subscribe — $49/season
-            </button>
-          </div>
-        </section>
-      )}
+
 
       {/* ── ADMIN SECTION ── */}
       {isAdmin && (
