@@ -218,7 +218,16 @@ export function useSeasonAccess() {
           lastCheckedAt: nowISO(),
         }));
       } else {
-        // Signed in but NOT entitled -> demo (use demo mode seasonYear if set)
+        // Signed in but NOT entitled -> log out and send to Subscribe
+        // Skip enforcement for admin users
+        const isAdmin = me?.role === "admin";
+        if (!isAdmin) {
+          try { await base44.auth.logout("/Subscribe?source=no_entitlement"); } catch {}
+          window.location.assign("/Subscribe?source=no_entitlement");
+          return;
+        }
+
+        // Admin fallback: stay logged in, demo mode
         setState((p) => ({
           ...p,
           isLoading: false,
