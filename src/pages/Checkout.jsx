@@ -48,13 +48,25 @@ export default function Checkout() {
     return () => { cancelled = true; };
   }, []);
 
-  // Pre-fill email from auth
+  // Pre-fill email from auth + auto-apply pending promo code
   useEffect(() => {
     if (!isAuthenticated) return;
     (async () => {
       try {
         const me = await base44.auth.me();
         if (me?.email) setEmail(me.email);
+      } catch {}
+      // Check if there's a pending promo code from before login
+      try {
+        const pending = sessionStorage.getItem("pending_promo");
+        if (pending) {
+          sessionStorage.removeItem("pending_promo");
+          setCouponCode(pending);
+          // Trigger apply after a tick so state is set
+          setTimeout(() => {
+            document.getElementById("auto-apply-promo")?.click();
+          }, 500);
+        }
       } catch {}
     })();
   }, [isAuthenticated]);
