@@ -89,7 +89,6 @@ export default function Layout({ children }) {
                   className="h-9 md:h-10 w-auto object-contain"
                 />
               ) : null}
-              <div className="text-lg md:text-xl font-extrabold text-brand">URecruit HQ</div>
             </button>
 
             {/* Right buttons */}
