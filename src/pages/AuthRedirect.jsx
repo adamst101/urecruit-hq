@@ -148,5 +148,12 @@ export default function AuthRedirect() {
     })();
   }, [season?.isLoading, season?.accountId, season?.hasAccess, season?.entitlement, next, nav]);
 
-  return <div className="min-h-screen bg-slate-50" />;
+  return (
+    <div className="min-h-screen bg-[#0a0e1a] flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-8 h-8 border-2 border-[#e8a020] border-t-transparent rounded-full animate-spin mx-auto" />
+        <p className="mt-4 text-sm text-[#9ca3af]">Signing you in…</p>
+      </div>
+    </div>
+  );
 }
