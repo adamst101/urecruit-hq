@@ -602,8 +602,7 @@ export default function Discover() {
                     if (!linkUrl) return;
 
                     if (!isPaid) {
-                      const nextPath = encodeURIComponent((loc?.pathname || "") + (loc?.search || ""));
-                      nav(`/Subscribe?force=1&source=discover_demo_register&intent=register&camp_id=${encodeURIComponent(campId)}&next=${nextPath}`);
+                      nav(`/Subscribe?source=home_pricing`);
                       return;
                     }
 
