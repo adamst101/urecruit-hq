@@ -107,6 +107,8 @@ async function fetchDemoCampSummaries({ seasonYear, demoProfileId }) {
       sport_id: normId(c?.sport_id) || null,
       school_name: pickSchoolName(sch),
       school_division: pickSchoolDivision(sch),
+      subdivision: sch?.subdivision || null,
+      school_subdivision: sch?.subdivision || null,
       school_logo_url: sch?.athletic_logo_url || sch?.logo_url || null,
       school_city: sch?.city || null,
       school_state: sch?.state || null,
