@@ -17,6 +17,9 @@ import { readDemoMode } from "../components/hooks/demoMode.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { getDemoFavorites } from "../components/hooks/demoFavorites.jsx";
 import { isDemoRegistered } from "../components/hooks/demoRegistered.jsx";
+import WarningBanner from "../components/camps/WarningBanner.jsx";
+import WarningBadge from "../components/camps/WarningBadge.jsx";
+import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
 
 function normId(x) {
   if (!x) return null;
@@ -85,6 +88,39 @@ export default function MyCamps() {
 
   const showEmpty = sortedRows.length === 0;
 
+  // Conflict detection
+  const favCamps = useMemo(() => sortedRows.filter((r) => {
+    const st = String(r?.intent_status || "").toLowerCase();
+    return st === "favorite";
+  }), [sortedRows]);
+
+  const regCamps = useMemo(() => sortedRows.filter((r) => {
+    const st = String(r?.intent_status || "").toLowerCase();
+    return st === "registered" || st === "completed";
+  }), [sortedRows]);
+
+  const { warnings: allWarnings, getWarningsForCamp } = useConflictDetection({
+    favoritedCamps: favCamps.map((r) => ({
+      id: r?.camp_id || r?.id,
+      camp_name: r?.camp_name || r?.name,
+      start_date: r?.start_date,
+      city: r?.city || r?.school_city,
+      state: r?.state || r?.school_state,
+      school_name: r?.school_name,
+    })),
+    registeredCamps: regCamps.map((r) => ({
+      id: r?.camp_id || r?.id,
+      camp_name: r?.camp_name || r?.name,
+      start_date: r?.start_date,
+      city: r?.city || r?.school_city,
+      state: r?.state || r?.school_state,
+      school_name: r?.school_name,
+    })),
+    homeCity: athleteProfile?.home_city || null,
+    homeState: athleteProfile?.home_state || null,
+    isPaid: !isDemoMode,
+  });
+
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
@@ -112,6 +148,8 @@ export default function MyCamps() {
           </Button>
         </div>
 
+        <WarningBanner warnings={allWarnings} />
+
         {loading ? (
           <div className="py-10 text-center text-[#9ca3af]">Loading...</div>
         ) : showEmpty ? (
@@ -130,10 +168,12 @@ export default function MyCamps() {
               const st = String(r?.intent_status || "").toLowerCase();
               const isRegistered = st === "registered" || st === "completed";
               const isFavorite = st === "favorite";
+              const campWarnings = getWarningsForCamp(campId);
 
               return (
                 <CampCard
                   key={campId}
+                  warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
                   camp={{
                     id: campId,
                     camp_name: r?.camp_name || r?.name || "Camp",
