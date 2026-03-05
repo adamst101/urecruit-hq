@@ -24,6 +24,8 @@ const ROUTES = {
   Profile: "/Profile",
   Subscribe: "/Subscribe",
   MyCamps: "/MyCamps",
+  RecruitingGuide: "/RecruitingGuide",
+  CampPlaybook: "/CampPlaybook",
   AdminImport: "/AdminImport",
   AdminOps: "/AdminOps",
   CampsManager: "/CampsManager",
