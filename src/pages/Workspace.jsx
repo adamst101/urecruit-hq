@@ -116,11 +116,15 @@ export default function Workspace() {
     };
   }, []);
 
-  // MVP admin allowlist (edit as needed)
+  const [meRole, setMeRole] = useState("");
+
+  // Admin check: use role from base44.auth.me() (set on the User entity)
   const isAdmin = useMemo(() => {
+    if (meRole === "admin") return true;
+    // Fallback allowlist
     const allow = ["tom_adams_tx@live.com", "tom.adams101@gmail.com"];
     return !!meEmail && allow.includes(meEmail);
-  }, [meEmail]);
+  }, [meEmail, meRole]);
 
   const loading = !!season?.isLoading || !!identityLoading;
 
