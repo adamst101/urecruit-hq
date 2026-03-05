@@ -3,11 +3,12 @@ import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Card } from "../components/ui/card";
-import { Button } from "../components/ui/button";
 
 import CampCard from "../components/camps/CampCard.jsx";
-
 import BottomNav from "../components/navigation/BottomNav";
+import MyCampsSummaryPills from "../components/mycamps/MyCampsSummaryPills.jsx";
+import MyCampsTabs from "../components/mycamps/MyCampsTabs.jsx";
+import MyCampsEmptyState from "../components/mycamps/MyCampsEmptyState.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useAthleteIdentity } from "../components/useAthleteIdentity";
@@ -15,9 +16,6 @@ import { useCampSummariesClient } from "../components/hooks/useCampSummariesClie
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
-import { getDemoFavorites } from "../components/hooks/demoFavorites.jsx";
-import { isDemoRegistered } from "../components/hooks/demoRegistered.jsx";
-import WarningBanner from "../components/camps/WarningBanner.jsx";
 import WarningBadge from "../components/camps/WarningBadge.jsx";
 import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
@@ -35,18 +33,6 @@ function normId(x) {
   if (typeof x === "string") return x;
   return x.id || x._id || x.uuid || null;
 }
-
-function toISODate(dateInput) {
-  if (!dateInput) return null;
-  if (typeof dateInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
-    return dateInput.trim();
-  }
-  const d = new Date(dateInput);
-  if (Number.isNaN(d.getTime())) return null;
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
-
-
 
 export default function MyCamps() {
   const nav = useNavigate();
@@ -78,8 +64,6 @@ export default function MyCamps() {
 
   const rows = useMemo(() => {
     if (!isDemoMode) return Array.isArray(paidQuery?.data) ? paidQuery.data : [];
-
-    // demoQuery already has intent_status baked in from useDemoCampSummaries
     const base = Array.isArray(demoQuery?.data) ? demoQuery.data : [];
     return base.filter((r) => {
       const st = String(r?.intent_status || "").toLowerCase();
@@ -95,30 +79,7 @@ export default function MyCamps() {
     });
   }, [rows]);
 
-  // Inline filter state
-  const [selectedMonth, setSelectedMonth] = useState("all");
-  const [inlineState, setInlineState] = useState("all");
-  const [inlineDivision, setInlineDivision] = useState("all");
-
-  // Build dynamic state options from user's camps
-  const stateOptions = useMemo(() => {
-    return [...new Set(
-      sortedRows.map((c) => normalizeState(c?.state || c?.camp_state || c?.school_state)).filter(Boolean)
-    )].sort();
-  }, [sortedRows]);
-
-  // Apply inline filters
-  const filteredRows = useMemo(() => {
-    return sortedRows.filter((c) =>
-      matchesMonth(c, selectedMonth) &&
-      matchesStateSimple(c, inlineState) &&
-      matchesDivisionSimple(c, inlineDivision)
-    );
-  }, [sortedRows, selectedMonth, inlineState, inlineDivision]);
-
-  const showEmpty = filteredRows.length === 0;
-
-  // Conflict detection — use filteredRows for display but sortedRows for full conflict analysis
+  // Split into favorites and registered
   const favCamps = useMemo(() => sortedRows.filter((r) => {
     const st = String(r?.intent_status || "").toLowerCase();
     return st === "favorite";
@@ -129,6 +90,7 @@ export default function MyCamps() {
     return st === "registered" || st === "completed";
   }), [sortedRows]);
 
+  // Conflict detection
   const { warnings: allWarnings, getWarningsForCamp } = useConflictDetection({
     favoritedCamps: favCamps.map((r) => ({
       id: r?.camp_id || r?.id,
@@ -151,6 +113,123 @@ export default function MyCamps() {
     isPaid: !isDemoMode,
   });
 
+  // Count conflicts: camps that share a date with another camp
+  const conflictCampIds = useMemo(() => {
+    const dateCounts = {};
+    sortedRows.forEach((r) => {
+      const d = String(r?.start_date || "").slice(0, 10);
+      if (!d || d === "") return;
+      if (!dateCounts[d]) dateCounts[d] = [];
+      dateCounts[d].push(String(r?.camp_id || r?.id || ""));
+    });
+    const ids = new Set();
+    Object.values(dateCounts).forEach((arr) => {
+      if (arr.length > 1) arr.forEach((id) => ids.add(id));
+    });
+    return ids;
+  }, [sortedRows]);
+
+  const conflictCount = conflictCampIds.size;
+
+  // UI state
+  const [activeTab, setActiveTab] = useState("favorites");
+  const [pillFilter, setPillFilter] = useState(null);
+
+  // Inline filters
+  const [selectedMonth, setSelectedMonth] = useState("all");
+  const [inlineState, setInlineState] = useState("all");
+  const [inlineDivision, setInlineDivision] = useState("all");
+
+  // Determine which rows to show based on tab + pill filter
+  const displayRows = useMemo(() => {
+    let base;
+    if (pillFilter === "conflict") {
+      base = sortedRows.filter((r) => conflictCampIds.has(String(r?.camp_id || r?.id || "")));
+    } else if (pillFilter === "favorite") {
+      base = favCamps;
+    } else if (pillFilter === "registered") {
+      base = regCamps;
+    } else if (activeTab === "favorites") {
+      base = favCamps;
+    } else {
+      base = regCamps;
+    }
+
+    return base.filter((c) =>
+      matchesMonth(c, selectedMonth) &&
+      matchesStateSimple(c, inlineState) &&
+      matchesDivisionSimple(c, inlineDivision)
+    );
+  }, [pillFilter, activeTab, favCamps, regCamps, sortedRows, conflictCampIds, selectedMonth, inlineState, inlineDivision]);
+
+  // State options from current tab rows
+  const stateOptions = useMemo(() => {
+    const source = activeTab === "favorites" ? favCamps : regCamps;
+    return [...new Set(
+      source.map((c) => normalizeState(c?.state || c?.camp_state || c?.school_state)).filter(Boolean)
+    )].sort();
+  }, [activeTab, favCamps, regCamps]);
+
+  const showEmpty = !loading && displayRows.length === 0 && !pillFilter &&
+    selectedMonth === "all" && inlineState === "all" && inlineDivision === "all";
+
+  const effectiveTab = pillFilter === "favorite" ? "favorites" : pillFilter === "registered" ? "registered" : activeTab;
+
+  function renderCampRow(r) {
+    const campId = String(r?.camp_id || r?.id || "");
+    const st = String(r?.intent_status || "").toLowerCase();
+    const isRegistered = st === "registered" || st === "completed";
+    const isFavorite = st === "favorite";
+    const campWarnings = getWarningsForCamp(campId);
+    const hasConflict = conflictCampIds.has(campId);
+
+    return (
+      <div key={campId} className="relative">
+        {hasConflict && (
+          <div className="absolute top-2 right-12 z-10">
+            <span style={{
+              background: "#7f1d1d",
+              color: "#fca5a5",
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "3px 8px",
+              borderRadius: 12,
+            }}>
+              ⚠ Date conflict
+            </span>
+          </div>
+        )}
+        <CampCard
+          warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
+          camp={{
+            id: campId,
+            camp_name: r?.camp_name || r?.name || "Camp",
+            start_date: r?.start_date,
+            end_date: r?.end_date,
+            price: r?.price ?? null,
+            link_url: r?.link_url ?? null,
+            city: r?.city ?? null,
+            state: r?.state ?? null,
+          }}
+          school={{
+            id: r?.school_id ? String(r.school_id) : null,
+            school_name: r?.school_name ?? null,
+            division: r?.school_division ?? r?.division ?? null,
+            logo_url: r?.school_logo_url ?? null,
+          }}
+          sport={{}}
+          positions={[]}
+          isFavorite={isFavorite}
+          isRegistered={isRegistered}
+          mode={isDemoMode ? "demo" : "paid"}
+          disabledFavorite={true}
+          onClick={undefined}
+          onFavoriteToggle={() => {}}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
@@ -160,7 +239,24 @@ export default function MyCamps() {
 
         {isDemoMode && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
 
-        {/* Inline filters: Month | State | Division */}
+        {/* Summary pills */}
+        <MyCampsSummaryPills
+          favCount={favCamps.length}
+          regCount={regCamps.length}
+          conflictCount={conflictCount}
+          activeFilter={pillFilter}
+          onFilterChange={setPillFilter}
+        />
+
+        {/* Tabs */}
+        <MyCampsTabs
+          activeTab={pillFilter ? effectiveTab : activeTab}
+          onTabChange={(t) => { setActiveTab(t); setPillFilter(null); }}
+          favCount={favCamps.length}
+          regCount={regCamps.length}
+        />
+
+        {/* Inline filters */}
         <div className="mb-4 flex flex-wrap gap-3 items-center">
           <select
             value={selectedMonth}
@@ -171,7 +267,6 @@ export default function MyCamps() {
               <option key={m.value} value={m.value}>{m.label}</option>
             ))}
           </select>
-
           <select
             value={inlineState}
             onChange={(e) => setInlineState(e.target.value)}
@@ -182,7 +277,6 @@ export default function MyCamps() {
               <option key={st} value={st}>{st}</option>
             ))}
           </select>
-
           <select
             value={inlineDivision}
             onChange={(e) => setInlineDivision(e.target.value)}
@@ -194,67 +288,28 @@ export default function MyCamps() {
           </select>
         </div>
 
-        <WarningBanner warnings={allWarnings} />
-
         {loading ? (
           <div className="py-10 text-center text-[#9ca3af]">Loading...</div>
         ) : showEmpty ? (
+          <MyCampsEmptyState
+            tab={activeTab}
+            onSwitchToFavorites={() => setActiveTab("favorites")}
+          />
+        ) : displayRows.length === 0 ? (
           <Card className="p-5 border-[#1f2937] bg-[#111827]">
-            <div className="text-lg font-semibold text-[#f9fafb]">No camps yet</div>
+            <div className="text-lg font-semibold text-[#f9fafb]">No camps match filters</div>
             <div className="mt-1 text-sm text-[#9ca3af]">
-              {sortedRows.length > 0
-                ? `No camps match the current filters (${filteredRows.length} of ${sortedRows.length}).`
-                : isDemoMode
-                  ? "Favorite camps in Discover to see Potential camps here and in Calendar."
-                  : "Favorite or register for camps in Discover to see them here."}
+              Try clearing filters or switching tabs.
             </div>
           </Card>
         ) : (
           <div className="space-y-3">
-            {/* Filter count indicator */}
             {(selectedMonth !== "all" || inlineState !== "all" || inlineDivision !== "all") && (
               <div className="text-xs text-[#9ca3af]">
-                Showing {filteredRows.length} of {sortedRows.length} camps
+                Showing {displayRows.length} camps
               </div>
             )}
-            {filteredRows.map((r) => {
-              const campId = String(r?.camp_id || r?.id || "");
-              const st = String(r?.intent_status || "").toLowerCase();
-              const isRegistered = st === "registered" || st === "completed";
-              const isFavorite = st === "favorite";
-              const campWarnings = getWarningsForCamp(campId);
-
-              return (
-                <CampCard
-                  key={campId}
-                  warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
-                  camp={{
-                    id: campId,
-                    camp_name: r?.camp_name || r?.name || "Camp",
-                    start_date: r?.start_date,
-                    end_date: r?.end_date,
-                    price: r?.price ?? null,
-                    link_url: r?.link_url ?? null,
-                    city: r?.city ?? null,
-                    state: r?.state ?? null,
-                  }}
-                  school={{
-                    id: r?.school_id ? String(r.school_id) : null,
-                    school_name: r?.school_name ?? null,
-                    division: r?.school_division ?? r?.division ?? null,
-                    logo_url: r?.school_logo_url ?? null,
-                  }}
-                  sport={{}}
-                  positions={[]}
-                  isFavorite={isFavorite}
-                  isRegistered={isRegistered}
-                  mode={isDemoMode ? "demo" : "paid"}
-                  disabledFavorite={true}
-                  onClick={undefined}
-                  onFavoriteToggle={() => {}}
-                />
-              );
-            })}
+            {displayRows.map(renderCampRow)}
           </div>
         )}
       </div>
