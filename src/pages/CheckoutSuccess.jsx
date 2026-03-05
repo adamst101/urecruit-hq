@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, Loader2, RefreshCw, AlertCircle } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, AlertCircle, Mail } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
 import { Button } from "../components/ui/button";
@@ -9,11 +9,23 @@ export default function CheckoutSuccess() {
   const navigate = useNavigate();
   const [status, setStatus] = useState("loading"); // loading | paid | pending | error
   const [data, setData] = useState(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const params = new URLSearchParams(window.location.search);
   const sessionId = params.get("session_id");
   const isFree = params.get("free") === "true";
   const freeSeason = params.get("season");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const authed = await base44.auth.isAuthenticated();
+        setIsLoggedIn(authed);
+      } catch {
+        setIsLoggedIn(false);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     // BETA100 free activation — no Stripe session to verify
@@ -86,12 +98,32 @@ export default function CheckoutSuccess() {
             </div>
           </div>
 
-          <button
-            onClick={() => navigate(createPageUrl("Workspace"), { replace: true })}
-            style={{ width: "100%", background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "16px 0", fontSize: 18, fontWeight: 700, cursor: "pointer", marginTop: 24 }}
-          >
-            Go to My HQ →
-          </button>
+          {isLoggedIn ? (
+            <button
+              onClick={() => navigate(createPageUrl("Workspace"), { replace: true })}
+              style={{ width: "100%", background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "16px 0", fontSize: 18, fontWeight: 700, cursor: "pointer", marginTop: 24 }}
+            >
+              Go to My HQ →
+            </button>
+          ) : (
+            <div style={{ marginTop: 24 }}>
+              <div style={{ background: "rgba(232,160,32,0.12)", border: "1px solid rgba(232,160,32,0.4)", borderRadius: 12, padding: "16px 20px", textAlign: "left" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                  <Mail style={{ width: 20, height: 20, color: "#e8a020" }} />
+                  <span style={{ fontWeight: 700, color: "#f9fafb", fontSize: 16 }}>Check your email</span>
+                </div>
+                <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
+                  We've sent a welcome email to set up your password. Once you set it, you can log in and access your HQ.
+                </p>
+              </div>
+              <button
+                onClick={() => window.location.assign("/login")}
+                style={{ width: "100%", background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "16px 0", fontSize: 18, fontWeight: 700, cursor: "pointer", marginTop: 16 }}
+              >
+                Log in to My HQ →
+              </button>
+            </div>
+          )}
 
           <p style={{ color: "#6b7280", fontSize: 13, marginTop: 16 }}>
             A receipt has been sent to {data?.email || "your email"}
