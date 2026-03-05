@@ -110,6 +110,7 @@ export default function Workspace() {
       if (cancelled) return;
       setMeEmail(String(me?.email || me?.user_metadata?.email || "").toLowerCase());
       setMeName(String(me?.full_name || me?.user_metadata?.full_name || ""));
+      setMeRole(String(me?.role || "").toLowerCase());
     })();
     return () => {
       cancelled = true;
