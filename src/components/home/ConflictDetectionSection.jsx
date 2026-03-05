@@ -39,7 +39,7 @@ const WARNING_ROWS = [
 
 export default function ConflictDetectionSection() {
   return (
-    <section style={{ position: "relative", background: "#0a0e1a", padding: "0 0 80px" }}>
+    <section style={{ position: "relative", background: "#0a0e1a", padding: "0 0 80px", overflow: "hidden" }}>
       {/* Diagonal top divider */}
       <div
         style={{
@@ -107,7 +107,7 @@ export default function ConflictDetectionSection() {
             <h2
               style={{
                 fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: "clamp(40px, 5vw, 56px)",
+                fontSize: "clamp(40px, 6vw, 56px)",
                 lineHeight: 1,
                 margin: 0,
                 color: "#f9fafb",
@@ -169,22 +169,23 @@ export default function ConflictDetectionSection() {
             <div
               style={{
                 marginTop: 36,
-                paddingLeft: 18,
-                borderLeft: "3px solid #e8a020",
+                paddingLeft: 20,
+                borderLeft: "4px solid #e8a020",
               }}
             >
               <p
                 style={{
-                  fontSize: 17,
-                  fontStyle: "italic",
-                  color: "#d1d5db",
-                  lineHeight: 1.6,
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: "clamp(24px, 3vw, 32px)",
+                  color: "#f9fafb",
+                  lineHeight: 1.15,
                   margin: 0,
+                  letterSpacing: 0.5,
                 }}
               >
-                "Other tools show you camps.
+                "OTHER TOOLS SHOW YOU CAMPS.
                 <br />
-                We show you which ones you can actually do."
+                WE SHOW YOU WHICH ONES YOU CAN ACTUALLY DO."
               </p>
             </div>
           </div>
@@ -197,8 +198,9 @@ export default function ConflictDetectionSection() {
                 background: "#111827",
                 border: "1px solid rgba(232,160,32,0.5)",
                 borderRadius: 16,
-                padding: "24px 20px",
+                padding: "28px 24px",
                 position: "relative",
+                minWidth: 380,
               }}
             >
               {/* Card header */}
@@ -226,16 +228,16 @@ export default function ConflictDetectionSection() {
               </div>
 
               {/* Warning rows */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                 {WARNING_ROWS.map((w, i) => (
                   <div
                     key={w.badge}
                     className={`cd-row-${i}`}
                     style={{
                       borderLeft: `3px solid ${w.borderColor}`,
-                      paddingLeft: 14,
-                      paddingTop: 2,
-                      paddingBottom: 2,
+                      paddingLeft: 16,
+                      paddingTop: 6,
+                      paddingBottom: 6,
                     }}
                   >
                     <div
@@ -246,10 +248,10 @@ export default function ConflictDetectionSection() {
                         gap: 8,
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: 14 }}>{w.icon}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 16 }}>{w.icon}</span>
                         <span
-                          style={{ fontWeight: 700, fontSize: 14, color: "#f9fafb" }}
+                          style={{ fontWeight: 700, fontSize: 15, color: "#f9fafb" }}
                         >
                           {w.mockTitle}
                         </span>
@@ -258,9 +260,9 @@ export default function ConflictDetectionSection() {
                         style={{
                           background: w.badgeBg,
                           color: "#fff",
-                          fontSize: 10,
+                          fontSize: 11,
                           fontWeight: 700,
-                          padding: "2px 8px",
+                          padding: "3px 10px",
                           borderRadius: 20,
                           textTransform: "uppercase",
                           letterSpacing: 0.5,
@@ -271,15 +273,15 @@ export default function ConflictDetectionSection() {
                         {w.badge}
                       </span>
                     </div>
-                    <p style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.5, marginTop: 4, marginBottom: 0 }}>
+                    <p style={{ fontSize: 14, color: "#9ca3af", lineHeight: 1.5, marginTop: 6, marginBottom: 0 }}>
                       {w.mockLine1}
                     </p>
                     <p
                       style={{
-                        fontSize: 12,
+                        fontSize: 13,
                         color: "#6b7280",
                         lineHeight: 1.4,
-                        marginTop: 2,
+                        marginTop: 3,
                         marginBottom: 0,
                         fontStyle: "italic",
                       }}

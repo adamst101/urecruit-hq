@@ -12,6 +12,8 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode, clearDemoMode } from "../components/hooks/demoMode.jsx";
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 import ConflictDetectionSection from "../components/home/ConflictDetectionSection.jsx";
+import TestimonialsSection from "../components/home/TestimonialsSection.jsx";
+import FooterCTA from "../components/home/FooterCTA.jsx";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -190,13 +192,18 @@ export default function Home() {
         >
           {/* Left: logo */}
           <div>
-            {logoOk && (
+            {logoOk ? (
               <img
                 src={LOGO_URL}
                 alt="URecruit HQ"
                 onError={() => setLogoOk(false)}
-                style={{ height: 40, width: "auto", objectFit: "contain" }}
+                style={{ height: 36, width: "auto", objectFit: "contain" }}
               />
+            ) : (
+              <span style={{ fontSize: 20, fontWeight: 800 }}>
+                <span style={{ color: "#111827" }}>URecruit</span>
+                <span style={{ color: "#e8a020" }}>HQ</span>
+              </span>
             )}
           </div>
 
@@ -224,7 +231,8 @@ export default function Home() {
           position: "relative",
           overflow: "hidden",
           display: "flex",
-          alignItems: "flex-start"
+          alignItems: "center",
+          minHeight: "85vh"
         }}
       >
         {/* Background effects */}
@@ -251,13 +259,13 @@ export default function Home() {
           style={{
             maxWidth: 1100,
             margin: "0 auto",
-            padding: "6px 24px 40px",
+            padding: "48px 24px 60px",
             width: "100%",
             position: "relative",
             zIndex: 1
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 60 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 80 }}>
             {/* Left */}
             <div style={{ flex: "1 1 55%", minWidth: 0 }}>
               <div
@@ -265,7 +273,7 @@ export default function Home() {
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
-                  marginBottom: 6
+                  marginBottom: 16
                 }}
               >
                 <div
@@ -292,7 +300,7 @@ export default function Home() {
               <h1
                 style={{
                   fontFamily: "'Bebas Neue', sans-serif",
-                  fontSize: "clamp(48px, 7vw, 84px)",
+                  fontSize: "clamp(48px, 7vw, 72px)",
                   lineHeight: 0.95,
                   margin: 0,
                   color: "#f9fafb",
@@ -311,7 +319,7 @@ export default function Home() {
                   fontSize: 20,
                   color: "#9ca3af",
                   lineHeight: 1.6,
-                  marginTop: 16,
+                  marginTop: 24,
                   maxWidth: 540
                 }}
               >
@@ -325,7 +333,7 @@ export default function Home() {
                 style={{
                   display: "flex",
                   gap: 14,
-                  marginTop: 22,
+                  marginTop: 32,
                   flexWrap: "wrap"
                 }}
               >
@@ -343,12 +351,12 @@ export default function Home() {
                 </button>
               </div>
 
-              <p style={{ fontSize: 12, color: "#9ca3af", fontStyle: "italic", marginTop: 12 }}>
+              <p style={{ fontSize: 12, color: "#9ca3af", fontStyle: "italic", marginTop: 14 }}>
                 ⚡ Summer camp season opens March–April. Early registrations fill fast.
               </p>
 
               <div
-                style={{ display: "flex", gap: 20, marginTop: 16, flexWrap: "wrap" }}
+                style={{ display: "flex", gap: 20, marginTop: 24, flexWrap: "wrap" }}
               >
                 {[`${campDisplay} camps`, `${schoolDisplay} college programs`, "D1 FBS through JUCO", "Updated every Monday"].map(
                   (t) => (
@@ -375,13 +383,13 @@ export default function Home() {
               style={{
                 flex: "1 1 45%",
                 position: "relative",
-                minHeight: 480,
+                minHeight: 520,
                 perspective: 800
               }}
             >
               {/* Card 3 — back */}
               <div style={{
-                position: "absolute", top: 280, left: 40,
+                position: "absolute", top: 300, left: 60,
                 transform: "rotate(3deg)",
                 background: "#111827", borderRadius: 16,
                 borderLeft: "4px solid #e8a020",
@@ -413,7 +421,7 @@ export default function Home() {
 
               {/* Card 2 — middle */}
               <div style={{
-                position: "absolute", top: 140, left: 20,
+                position: "absolute", top: 150, left: 30,
                 transform: "rotate(1deg)",
                 background: "#111827", borderRadius: 16,
                 borderLeft: "4px solid #e8a020",
@@ -527,34 +535,11 @@ export default function Home() {
       {/* ── STATS BAR ── */}
       <section
         style={{
-          position: "relative",
-          background: "#e8a020",
-          padding: "48px 24px",
-          overflow: "hidden"
+          background: "#111827",
+          borderTop: "2px solid #e8a020",
+          padding: "40px 24px"
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            top: -1,
-            left: 0,
-            right: 0,
-            height: 40,
-            background: "#0a0e1a",
-            clipPath: "polygon(0 0, 100% 0, 100% 60%, 0 100%)"
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            bottom: -1,
-            left: 0,
-            right: 0,
-            height: 40,
-            background: "#0a0e1a",
-            clipPath: "polygon(0 40%, 100% 0, 100% 100%, 0 100%)"
-          }}
-        />
         <div
           style={{
             maxWidth: 1100,
@@ -562,9 +547,7 @@ export default function Home() {
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
             gap: 24,
-            textAlign: "center",
-            position: "relative",
-            zIndex: 1
+            textAlign: "center"
           }}
         >
           {[
@@ -577,8 +560,8 @@ export default function Home() {
               <div
                 style={{
                   fontFamily: "'Bebas Neue', sans-serif",
-                  fontSize: 60,
-                  color: "#0a0e1a",
+                  fontSize: 48,
+                  color: "#e8a020",
                   lineHeight: 1
                 }}
               >
@@ -586,10 +569,9 @@ export default function Home() {
               </div>
               <div
                 style={{
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: 600,
-                  color: "#0a0e1a",
-                  opacity: 0.75,
+                  color: "#9ca3af",
                   marginTop: 6,
                   textTransform: "uppercase",
                   letterSpacing: 1
@@ -603,7 +585,7 @@ export default function Home() {
       </section>
 
       {/* ── HOW IT WORKS ── */}
-      <section style={{ background: "#0a0e1a", padding: "80px 24px" }}>
+      <section style={{ background: "#0d1117", padding: "80px 24px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <h2
             style={{
@@ -611,7 +593,8 @@ export default function Home() {
               fontSize: 48,
               textAlign: "center",
               marginBottom: 48,
-              color: "#f9fafb"
+              color: "#f9fafb",
+              letterSpacing: 1
             }}
           >
             HOW IT WORKS
@@ -619,8 +602,8 @@ export default function Home() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-              gap: 40
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: 28
             }}
           >
             {[
@@ -640,24 +623,31 @@ export default function Home() {
                 d: "Mark favorites, track registrations, never miss a deadline."
               }
             ].map((step) => (
-              <div key={step.n}>
+              <div
+                key={step.n}
+                style={{
+                  background: "#111827",
+                  borderRadius: 16,
+                  padding: 28
+                }}
+              >
                 <div
                   style={{
                     fontFamily: "'Bebas Neue', sans-serif",
                     fontSize: 64,
                     color: "#e8a020",
-                    lineHeight: 1,
-                    opacity: 0.8
+                    lineHeight: 1
                   }}
                 >
                   {step.n}
                 </div>
+                <div style={{ width: 40, height: 3, background: "#e8a020", borderRadius: 2, marginTop: 12, marginBottom: 14 }} />
                 <div
                   style={{
-                    fontFamily: "'Bebas Neue', sans-serif",
-                    fontSize: 30,
+                    fontWeight: 700,
+                    fontSize: 20,
                     color: "#f9fafb",
-                    marginTop: 8,
+                    textTransform: "uppercase",
                     letterSpacing: 1
                   }}
                 >
@@ -666,9 +656,10 @@ export default function Home() {
                 <p
                   style={{
                     color: "#9ca3af",
-                    fontSize: 17,
+                    fontSize: 15,
                     lineHeight: 1.6,
-                    marginTop: 8
+                    marginTop: 8,
+                    maxWidth: 260
                   }}
                 >
                   {step.d}
@@ -681,6 +672,9 @@ export default function Home() {
 
       {/* ── CONFLICT DETECTION ── */}
       <ConflictDetectionSection />
+
+      {/* ── TESTIMONIALS ── */}
+      <TestimonialsSection />
 
       {/* ── PRICING ── */}
       <section style={{ background: "#111827", padding: "80px 24px" }}>
@@ -727,9 +721,14 @@ export default function Home() {
               >
                 $49
               </span>
-              <span style={{ color: "#9ca3af", fontSize: 16 }}>
-                per season · all camps · all features
-              </span>
+              <div>
+                <span style={{ color: "#9ca3af", fontSize: 16 }}>
+                  per season · all camps · all features
+                </span>
+                <div style={{ color: "#6b7280", fontSize: 12, marginTop: 4 }}>
+                  Cancel anytime · Add multiple athletes
+                </div>
+              </div>
             </div>
 
             <div style={{ height: 1, background: "rgba(232,160,32,0.3)", margin: "24px 0" }} />
@@ -767,9 +766,22 @@ export default function Home() {
             >
               Get Started <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
             </button>
+
+            {/* Trust badges */}
+            <div style={{ display: "flex", justifyContent: "center", gap: 20, marginTop: 20, flexWrap: "wrap" }}>
+              {[
+                { icon: "🔒", label: "Secure checkout" },
+                { icon: "↩️", label: "Cancel anytime" },
+                { icon: "👨‍👩‍👧", label: "Multi-athlete" }
+              ].map((b) => (
+                <span key={b.label} style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ fontSize: 14 }}>{b.icon}</span> {b.label}
+                </span>
+              ))}
+            </div>
           </div>
 
-          <p style={{ color: "#9ca3af", fontSize: 16, marginTop: 20 }}>
+          <p style={{ color: "#9ca3af", fontSize: 16, marginTop: 24 }}>
             Or try a free demo with last season's data — no signup required
           </p>
           <button
@@ -784,10 +796,13 @@ export default function Home() {
               marginTop: 8
             }}
           >
-            Access Demo →
+            Access Free Demo →
           </button>
         </div>
       </section>
+
+      {/* ── FOOTER CTA ── */}
+      <FooterCTA onTryDemo={handleTryDemo} onSubscribe={handlePricingSignup} />
 
       {/* ── FOOTER ── */}
       <footer style={{ borderTop: "1px solid #1f2937", padding: "28px 24px", textAlign: "center" }}>
