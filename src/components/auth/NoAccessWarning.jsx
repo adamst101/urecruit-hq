@@ -34,15 +34,15 @@ export default function NoAccessWarning() {
     setShow(false);
     clearDemoMode();
     try {
+      const { demoSeasonYear } = getDemoDefaults();
+      const yr = demoYear || demoSeasonYear;
+      if (yr) setDemoMode(yr);
       if (base44?.auth?.logout) {
-        const { demoSeasonYear } = getDemoDefaults();
-        const yr = demoYear || demoSeasonYear;
-        if (yr) setDemoMode(yr);
-        await base44.auth.logout("/Workspace?mode=demo&src=no_access_popup");
+        await base44.auth.logout("/Discover?mode=demo&src=no_access_popup");
         return;
       }
     } catch {}
-    window.location.assign("/Workspace?mode=demo&src=no_access_popup");
+    window.location.assign("/Discover?mode=demo&src=no_access_popup");
   }
 
   return (
