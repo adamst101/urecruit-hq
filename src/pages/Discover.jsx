@@ -347,31 +347,46 @@ export default function Discover() {
 
     const existing = intentByKey?.[key] || null;
 
-    // Resolve athlete_id for CampIntent records
+    // Resolve athlete_id — use profile id if available, otherwise leave null
     const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
 
-    console.log("[upsertIntent]", { key, nextStatus, aId, existingId: existing?.id });
+    // Optimistic local update FIRST so star fills immediately
+    const optimisticStatus = nextStatus ? String(nextStatus) : "";
+    setIntentByKey((p) => ({
+      ...p,
+      [key]: { ...(existing || { camp_id: key }), status: optimisticStatus },
+    }));
 
-    if (!nextStatus) {
-      if (existing?.id && CampIntent?.update) {
-        await CampIntent.update(existing.id, { status: "" });
-        setIntentByKey((p) => ({ ...p, [key]: { ...existing, status: "" } }));
+    try {
+      if (!nextStatus) {
+        if (existing?.id && CampIntent?.update) {
+          await CampIntent.update(existing.id, { status: "" });
+        }
+        return;
       }
-      return;
-    }
 
-    if (existing?.id && CampIntent?.update) {
-      const updated = await CampIntent.update(existing.id, { status: String(nextStatus) });
-      setIntentByKey((p) => ({ ...p, [key]: updated || { ...existing, status: String(nextStatus) } }));
-      return;
-    }
+      if (existing?.id && CampIntent?.update) {
+        const updated = await CampIntent.update(existing.id, { status: String(nextStatus) });
+        if (updated) setIntentByKey((p) => ({ ...p, [key]: updated }));
+        return;
+      }
 
-    const created = await CampIntent.create({
-      camp_id: key,
-      athlete_id: aId ? String(aId) : null,
-      status: String(nextStatus),
-    });
-    setIntentByKey((p) => ({ ...p, [key]: created || { camp_id: key, status: String(nextStatus) } }));
+      const payload = {
+        camp_id: key,
+        status: String(nextStatus),
+      };
+      if (aId) payload.athlete_id = String(aId);
+
+      const created = await CampIntent.create(payload);
+      if (created) setIntentByKey((p) => ({ ...p, [key]: created }));
+    } catch (err) {
+      console.error("[upsertIntent] DB write failed:", err);
+      // Revert optimistic update on error
+      setIntentByKey((p) => ({
+        ...p,
+        [key]: existing || undefined,
+      }));
+    }
   }
 
   /* ─── filters (derived, reactive to nf changes) ──────────────────────── */
