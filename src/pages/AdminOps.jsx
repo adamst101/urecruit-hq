@@ -91,6 +91,18 @@ const TOOLS = [
     ],
   },
   {
+    section: "Support",
+    items: [
+      {
+        title: "Support Tickets",
+        description: "View, triage, and respond to user support tickets, feedback, and feature requests.",
+        route: "/SupportDashboard",
+        icon: "🎫",
+        color: "#e8a020",
+      },
+    ],
+  },
+  {
     section: "Danger Zone",
     items: [
       {

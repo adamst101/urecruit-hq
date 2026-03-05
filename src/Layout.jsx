@@ -6,6 +6,7 @@ import { LogIn } from "lucide-react";
 import { base44 } from "./api/base44Client";
 import { createPageUrl } from "./utils";
 import { startMemberLogin } from "./components/utils/memberLogin.jsx";
+import SupportButton from "./components/support/SupportButton.jsx";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -126,6 +127,8 @@ export default function Layout({ children }) {
       )}
 
       {children}
+
+      <SupportButton />
 
       {/* Theme + utility classes */}
       <style>{`
