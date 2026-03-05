@@ -39,6 +39,7 @@ import {
   matchesPositions,
   matchesState,
   matchesDateRange,
+  matchesMonth,
   normalizeDivisionForSort,
 } from "../components/filters/filterUtils.jsx";
 
@@ -257,6 +258,7 @@ export default function Discover() {
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [demoFavoriteIds, setDemoFavoriteIds] = useState([]);
   const [distanceMiles, setDistanceMiles] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState("all");
   const [visibleCount, setVisibleCount]   = useState(50);
 
   // Modal states
@@ -412,7 +414,7 @@ export default function Discover() {
   // Reset visible count when filters change
   useEffect(() => {
     setVisibleCount(50);
-  }, [nf, distanceMiles]);
+  }, [nf, distanceMiles, selectedMonth]);
 
   // Reactively apply filters whenever nf, allRows, or schoolById change.
   // We enrich each camp row with school division/state so filters work correctly.
@@ -449,6 +451,9 @@ export default function Discover() {
       if ((nf?.startDate || nf?.endDate) && !matchesDateRange(enriched, nf.startDate || "", nf.endDate || ""))
         return false;
 
+      // Month filter
+      if (!matchesMonth(enriched, selectedMonth)) return false;
+
       // Distance filter (paid mode only)
       if (isPaid && distanceMiles && homeLat != null && homeLng != null) {
         const campLat = enriched?._school_lat ?? null;
@@ -475,7 +480,7 @@ export default function Discover() {
     });
 
     setRawRows(filtered);
-  }, [allRows, nf, isPaid, athleteSportId, schoolById, distanceMiles, homeLat, homeLng]);
+  }, [allRows, nf, isPaid, athleteSportId, schoolById, distanceMiles, selectedMonth, homeLat, homeLng]);
 
   useEffect(() => {
     loadCamps();
@@ -816,6 +821,8 @@ export default function Discover() {
             isPaid={isPaid}
             distanceMiles={distanceMiles}
             onDistanceChange={setDistanceMiles}
+            selectedMonth={selectedMonth}
+            onMonthChange={setSelectedMonth}
           />
         </div>
 

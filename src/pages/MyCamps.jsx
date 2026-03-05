@@ -1,5 +1,5 @@
 // src/pages/MyCamps.jsx
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Card } from "../components/ui/card";
@@ -21,6 +21,14 @@ import WarningBanner from "../components/camps/WarningBanner.jsx";
 import WarningBadge from "../components/camps/WarningBadge.jsx";
 import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
+import {
+  matchesMonth,
+  matchesStateSimple,
+  matchesDivisionSimple,
+  normalizeState,
+  MONTH_OPTIONS,
+  DIVISION_FILTER_OPTIONS,
+} from "../components/filters/filterUtils.jsx";
 
 function normId(x) {
   if (!x) return null;
@@ -87,9 +95,30 @@ export default function MyCamps() {
     });
   }, [rows]);
 
-  const showEmpty = sortedRows.length === 0;
+  // Inline filter state
+  const [selectedMonth, setSelectedMonth] = useState("all");
+  const [inlineState, setInlineState] = useState("all");
+  const [inlineDivision, setInlineDivision] = useState("all");
 
-  // Conflict detection
+  // Build dynamic state options from user's camps
+  const stateOptions = useMemo(() => {
+    return [...new Set(
+      sortedRows.map((c) => normalizeState(c?.state || c?.camp_state || c?.school_state)).filter(Boolean)
+    )].sort();
+  }, [sortedRows]);
+
+  // Apply inline filters
+  const filteredRows = useMemo(() => {
+    return sortedRows.filter((c) =>
+      matchesMonth(c, selectedMonth) &&
+      matchesStateSimple(c, inlineState) &&
+      matchesDivisionSimple(c, inlineDivision)
+    );
+  }, [sortedRows, selectedMonth, inlineState, inlineDivision]);
+
+  const showEmpty = filteredRows.length === 0;
+
+  // Conflict detection — use filteredRows for display but sortedRows for full conflict analysis
   const favCamps = useMemo(() => sortedRows.filter((r) => {
     const st = String(r?.intent_status || "").toLowerCase();
     return st === "favorite";
@@ -125,31 +154,45 @@ export default function MyCamps() {
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div className="min-w-0">
-            <div className="text-2xl font-bold text-[#f9fafb]">My Camps</div>
-            <div className="mt-1 flex items-center gap-2 flex-wrap">
-              <Badge variant="secondary" className="bg-[#111827] text-[#9ca3af] border border-[#1f2937]">
-                Season {seasonYear}
-              </Badge>
-              {isDemoMode ? (
-                <Badge variant="outline" className="border-[#374151] text-[#9ca3af]">Demo</Badge>
-              ) : (
-                <Badge className="bg-[#e8a020] text-[#0a0e1a]">Paid</Badge>
-              )}
-            </div>
-          </div>
-
-          <Button
-            variant="outline"
-            onClick={() => nav("/Discover")}
-            className="whitespace-nowrap border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#111827]"
-          >
-            Back to Discover
-          </Button>
+        <div className="mb-4">
+          <div className="text-2xl font-bold text-[#f9fafb]">My Camps</div>
         </div>
 
-        {isDemoMode && <DemoBanner seasonYear={seasonYear} />}
+        {isDemoMode && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
+
+        {/* Inline filters: Month | State | Division */}
+        <div className="mb-4 flex flex-wrap gap-3 items-center">
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+          >
+            {MONTH_OPTIONS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+
+          <select
+            value={inlineState}
+            onChange={(e) => setInlineState(e.target.value)}
+            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+          >
+            <option value="all">All States</option>
+            {stateOptions.map((st) => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+          </select>
+
+          <select
+            value={inlineDivision}
+            onChange={(e) => setInlineDivision(e.target.value)}
+            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+          >
+            {DIVISION_FILTER_OPTIONS.map((d) => (
+              <option key={d.value} value={d.value}>{d.label}</option>
+            ))}
+          </select>
+        </div>
 
         <WarningBanner warnings={allWarnings} />
 
@@ -159,14 +202,22 @@ export default function MyCamps() {
           <Card className="p-5 border-[#1f2937] bg-[#111827]">
             <div className="text-lg font-semibold text-[#f9fafb]">No camps yet</div>
             <div className="mt-1 text-sm text-[#9ca3af]">
-              {isDemoMode
-                ? "Favorite camps in Discover to see Potential camps here and in Calendar."
-                : "Favorite or register for camps in Discover to see them here."}
+              {sortedRows.length > 0
+                ? `No camps match the current filters (${filteredRows.length} of ${sortedRows.length}).`
+                : isDemoMode
+                  ? "Favorite camps in Discover to see Potential camps here and in Calendar."
+                  : "Favorite or register for camps in Discover to see them here."}
             </div>
           </Card>
         ) : (
           <div className="space-y-3">
-            {sortedRows.map((r) => {
+            {/* Filter count indicator */}
+            {(selectedMonth !== "all" || inlineState !== "all" || inlineDivision !== "all") && (
+              <div className="text-xs text-[#9ca3af]">
+                Showing {filteredRows.length} of {sortedRows.length} camps
+              </div>
+            )}
+            {filteredRows.map((r) => {
               const campId = String(r?.camp_id || r?.id || "");
               const st = String(r?.intent_status || "").toLowerCase();
               const isRegistered = st === "registered" || st === "completed";

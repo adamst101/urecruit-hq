@@ -24,6 +24,11 @@ import {
   withinDateRange,
   normalizeState,
   matchesDivision,
+  matchesMonth,
+  matchesStateSimple,
+  matchesDivisionSimple,
+  MONTH_OPTIONS,
+  DIVISION_FILTER_OPTIONS,
 } from "../components/filters/filterUtils.jsx";
 
 import CampCard from "../components/camps/CampCard.jsx";
@@ -114,6 +119,11 @@ export default function Calendar() {
     endDate: "",
   });
 
+  // Inline filter state (Month / State / Division)
+  const [selectedMonth, setSelectedMonth] = useState("all");
+  const [inlineState, setInlineState] = useState("all");
+  const [inlineDivision, setInlineDivision] = useState("all");
+
   const clearFilters = () => {
     setFilters({
       sport: "",
@@ -123,6 +133,9 @@ export default function Calendar() {
       startDate: "",
       endDate: "",
     });
+    setSelectedMonth("all");
+    setInlineState("all");
+    setInlineDivision("all");
   };
 
   // ✅ Paid Calendar: lock sport to athlete profile sport_id
@@ -269,6 +282,11 @@ export default function Calendar() {
         const campEnd = c?.end_date || null;
         if (!withinDateRange(campStart, nf?.startDate || "", nf?.endDate || "", campEnd)) return false;
 
+        // Inline filters (Month / State / Division)
+        if (!matchesMonth(c, selectedMonth)) return false;
+        if (!matchesStateSimple(c, inlineState)) return false;
+        if (!matchesDivisionSimple(c, inlineDivision)) return false;
+
         return true;
       });
 
@@ -280,7 +298,7 @@ export default function Calendar() {
     });
 
     return result;
-  }, [isPaid, paidQuery?.data, demoQuery?.data, nf]);
+  }, [isPaid, paidQuery?.data, demoQuery?.data, nf, selectedMonth, inlineState, inlineDivision]);
 
   // Conflict detection
   const favCamps = useMemo(() => rows.filter((r) => String(r?.intent_status || "").toLowerCase() === "favorite"), [rows]);
@@ -437,71 +455,50 @@ export default function Calendar() {
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb]">
       <div className="max-w-5xl mx-auto px-4 pt-5 pb-24">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <div className="text-xl font-bold text-[#f9fafb]">{title}</div>
-            <div className="text-xs text-[#9ca3af]">
-              {isPaid ? "Paid workspace" : `Demo season: ${seasonYear}`}
-            </div>
-          </div>
-
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={openFiltersOrProfile} className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#111827]">
-              <SlidersHorizontal className="w-4 h-4 mr-2" />
-              {paidMissingSport ? "Complete Profile" : "Filter"}
-            </Button>
-          </div>
+        <div className="mb-4">
+          <div className="text-xl font-bold text-[#f9fafb]">{title}</div>
         </div>
 
-        {/* Active filter summary */}
-        <div className="mb-4 flex flex-wrap gap-2">
-          {(nf?.sportId ||
-            nf?.state ||
-            (nf?.divisions || []).length ||
-            (nf?.positionIds || []).length ||
-            nf?.startDate ||
-            nf?.endDate) ? (
-            <>
-              <span className="text-xs text-[#9ca3af]">Active filters:</span>
+        {!isPaid && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
 
-              {nf?.state && (
-                <span className="text-xs px-2 py-1 rounded bg-[#111827] text-[#f9fafb] border border-[#1f2937]">
-                  State: {nf.state}
-                </span>
-              )}
+        {/* Inline filters: Month | State | Division */}
+        <div className="mb-4 flex flex-wrap gap-3 items-center">
+          {/* Month */}
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+          >
+            {MONTH_OPTIONS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
 
-              {(nf?.divisions || []).length > 0 && (
-                <span className="text-xs px-2 py-1 rounded bg-[#111827] text-[#f9fafb] border border-[#1f2937]">
-                  Divisions: {nf.divisions.length}
-                </span>
-              )}
+          {/* State */}
+          <select
+            value={inlineState}
+            onChange={(e) => setInlineState(e.target.value)}
+            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+          >
+            <option value="all">All States</option>
+            {(() => {
+              const base = isPaid ? asArray(paidQuery?.data) : asArray(demoQuery?.data);
+              const states = [...new Set(base.map((c) => normalizeState(c?.state || c?.camp_state || c?.school_state)).filter(Boolean))].sort();
+              return states.map((st) => <option key={st} value={st}>{st}</option>);
+            })()}
+          </select>
 
-              {(nf?.positionIds || []).length > 0 && (
-                <span className="text-xs px-2 py-1 rounded bg-[#111827] text-[#f9fafb] border border-[#1f2937]">
-                  Positions: {nf.positionIds.length}
-                </span>
-              )}
-
-              {(nf?.startDate || nf?.endDate) && (
-                <span className="text-xs px-2 py-1 rounded bg-[#111827] text-[#f9fafb] border border-[#1f2937]">
-                  Dates: {nf.startDate || "…"} → {nf.endDate || "…"}
-                </span>
-              )}
-
-              <button
-                type="button"
-                className="text-xs underline text-[#e8a020]"
-                onClick={clearFilters}
-              >
-                Clear
-              </button>
-            </>
-          ) : (
-            <span className="text-xs text-[#9ca3af]">No filters applied.</span>
-          )}
+          {/* Division */}
+          <select
+            value={inlineDivision}
+            onChange={(e) => setInlineDivision(e.target.value)}
+            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+          >
+            {DIVISION_FILTER_OPTIONS.map((d) => (
+              <option key={d.value} value={d.value}>{d.label}</option>
+            ))}
+          </select>
         </div>
-
-        {!isPaid && <DemoBanner seasonYear={seasonYear} />}
 
         <WarningBanner warnings={allWarnings} />
 
