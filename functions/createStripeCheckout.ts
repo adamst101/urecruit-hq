@@ -64,7 +64,15 @@ Deno.serve(async (req) => {
     mode: "payment",
     customer_email: email || undefined,
     line_items: [{ price: priceId, quantity: 1 }],
-    metadata: {
+  };
+
+  if (discounts.length > 0) {
+    sessionParams.discounts = discounts;
+  } else {
+    sessionParams.allow_promotion_codes = true;
+  }
+
+  sessionParams.metadata = {
       athlete_id: athleteId || "",
       account_id: user?.id || "",
       coupon_code: couponCode || "",
