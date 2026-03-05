@@ -9,7 +9,7 @@
  */
 
 function sanitizeNext(next) {
-  const fallback = "/Discover";
+  const fallback = "/Workspace";
   const s = String(next || "").trim();
   if (!s) return fallback;
 
@@ -27,7 +27,7 @@ export function startMemberLogin({ nextPath = null, source = "member_login" } = 
   try { sessionStorage.removeItem("demo_mode_v1"); } catch {}
   try { sessionStorage.removeItem("demo_year_v1"); } catch {}
 
-  const next = sanitizeNext(nextPath || "/Discover");
+  const next = sanitizeNext(nextPath || "/Workspace");
 
   // ✅ Preferred: store next in sessionStorage to avoid nested encoding issues
   // AuthRedirect will consume (and remove) this key.
