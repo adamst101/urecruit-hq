@@ -317,29 +317,7 @@ export default function Discover() {
     setIntentByKey((p) => ({ ...p, [key]: created || { camp_id: key, status: String(nextStatus) } }));
   }
 
-  /* ─── filters ─────────────────────────────────────────────────────────── */
-
-  const applyFilters = useMemo(() => {
-    const paidMode = isPaid;
-    return (rows) =>
-      asArray(rows).filter((r) => {
-        if (!readActiveFlag(r)) return false;
-        if (paidMode) {
-          if (!matchesSport(r, [athleteSportId].filter(Boolean))) return false;
-        } else {
-          if (Array.isArray(nf?.sports) && nf.sports.length > 0 && !matchesSport(r, nf.sports))
-            return false;
-        }
-        if (Array.isArray(nf?.divisions) && nf.divisions.length > 0 && !matchesDivision(r, nf.divisions))
-          return false;
-        if (Array.isArray(nf?.positions) && nf.positions.length > 0 && !matchesPositions(r, nf.positions))
-          return false;
-        if (nf?.state && !matchesState(r, nf.state)) return false;
-        if ((nf?.startDate || nf?.endDate) && !matchesDateRange(r, nf.startDate || "", nf.endDate || ""))
-          return false;
-        return true;
-      });
-  }, [isPaid, athleteSportId, nf]);
+  /* ─── filters (derived, reactive to nf changes) ──────────────────────── */
 
   /* ─── load camps ──────────────────────────────────────────────────────── */
 
