@@ -799,7 +799,7 @@ export default function Home() {
                 marginTop: 28
               }}
             >
-              Get Started <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
+              Get Season Pass <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
             </button>
 
             {/* Trust badges */}

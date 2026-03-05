@@ -29,7 +29,7 @@ export default function FooterCTA({ onTryDemo, onSubscribe }) {
           }}
         >
           <button
-            onClick={onTryDemo}
+            onClick={onSubscribe}
             style={{
               background: "#e8a020",
               color: "#0a0e1a",
@@ -43,10 +43,10 @@ export default function FooterCTA({ onTryDemo, onSubscribe }) {
               alignItems: "center",
             }}
           >
-            Start Free Demo <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
+            Get Season Pass → <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
           </button>
           <button
-            onClick={onSubscribe}
+            onClick={onTryDemo}
             style={{
               background: "transparent",
               color: "#f9fafb",
@@ -61,7 +61,7 @@ export default function FooterCTA({ onTryDemo, onSubscribe }) {
             onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
           >
-            Get Season Pass — $49
+            Try Free Demo
           </button>
         </div>
 
