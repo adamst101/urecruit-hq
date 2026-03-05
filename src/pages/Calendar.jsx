@@ -1,7 +1,7 @@
 // src/pages/Calendar.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { SlidersHorizontal, XCircle } from "lucide-react";
+import { XCircle } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
 
