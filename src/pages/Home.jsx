@@ -526,7 +526,7 @@ export default function Home() {
           fontSize: 14, fontWeight: 700, color: "#0a0e1a",
           textTransform: "uppercase", letterSpacing: 1,
         }}>
-          🏈&nbsp; {campDisplay} Verified College Football Camps &nbsp;·&nbsp; {schoolDisplay} Programs &nbsp;·&nbsp; FBS · FCS · D2 · D3 · NAIA · JUCO &nbsp;·&nbsp; Updated Every Monday
+          {campDisplay} Verified College Football Camps &nbsp;·&nbsp; {schoolDisplay} Programs &nbsp;·&nbsp; FBS · FCS · D2 · D3 · NAIA · JUCO &nbsp;·&nbsp; Updated Every Monday
         </span>
       </div>
 
