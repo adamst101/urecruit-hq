@@ -202,6 +202,10 @@ function normalizeDivision(rawDiv, rawSubdiv) {
   return upper; // pass through unknown
 }
 
+export function normalizeDivisionForSort(rawDiv, rawSubdiv) {
+  return normalizeDivision(rawDiv, rawSubdiv);
+}
+
 export function matchesDivision(camp, divisions) {
   if (!Array.isArray(divisions) || divisions.length === 0) return true;
 

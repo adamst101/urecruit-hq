@@ -32,6 +32,7 @@ import {
   matchesPositions,
   matchesState,
   matchesDateRange,
+  normalizeDivisionForSort,
 } from "../components/filters/filterUtils.jsx";
 
 /* ─── helpers ──────────────────────────────────────────────────────────────── */
@@ -444,8 +445,8 @@ export default function Discover() {
     // Sort: division tier then alphabetically by school name
     const DIV_ORDER = { "D1 (FBS)": 0, "D1 (FCS)": 1, "D2": 2, "D3": 3, "NAIA": 4, "JUCO": 5 };
     filtered.sort((a, b) => {
-      const da = String(a?.division || a?.school_division || "").trim();
-      const db = String(b?.division || b?.school_division || "").trim();
+      const da = normalizeDivisionForSort(a?.division || a?.school_division || "", a?.subdivision || a?.school_subdivision || "");
+      const db = normalizeDivisionForSort(b?.division || b?.school_division || "", b?.subdivision || b?.school_subdivision || "");
       const oa = DIV_ORDER[da] ?? 99;
       const ob = DIV_ORDER[db] ?? 99;
       if (oa !== ob) return oa - ob;

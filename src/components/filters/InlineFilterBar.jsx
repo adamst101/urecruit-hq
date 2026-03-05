@@ -1,5 +1,5 @@
 // src/components/filters/InlineFilterBar.jsx
-import React, { useMemo } from "react";
+import React from "react";
 import {
   Select,
   SelectContent,
@@ -7,7 +7,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { normalizeState } from "./filterUtils.jsx";
 
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
@@ -39,14 +38,24 @@ export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, onDi
     ? nf.divisions[0]
     : "";
 
+  const stateActive = !!currentState;
+  const divActive = !!currentDivision;
+  const distActive = !!distanceMiles;
+
+  const baseCls = "h-9 text-xs border";
+  const inactiveCls = `${baseCls} bg-[#111827] border-[#1f2937] text-[#9ca3af]`;
+  const activeCls = `${baseCls} bg-[#1a2744] border-[#e8a020] text-[#f9fafb]`;
+
   return (
     <div className="flex flex-wrap gap-2 items-center">
       {/* State */}
       <Select
         value={currentState || "__all__"}
-        onValueChange={(v) => setNF({ state: v === "__all__" ? "" : v })}
+        onValueChange={(v) => {
+          if (setNF) setNF({ state: v === "__all__" ? "" : v });
+        }}
       >
-        <SelectTrigger className="w-[120px] h-9 bg-[#111827] border-[#1f2937] text-[#f9fafb] text-xs">
+        <SelectTrigger className={`w-[120px] ${stateActive ? activeCls : inactiveCls}`}>
           <SelectValue placeholder="State" />
         </SelectTrigger>
         <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f9fafb] max-h-60">
@@ -60,9 +69,11 @@ export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, onDi
       {/* Division */}
       <Select
         value={currentDivision || "__all__"}
-        onValueChange={(v) => setNF({ divisions: v === "__all__" ? [] : [v] })}
+        onValueChange={(v) => {
+          if (setNF) setNF({ divisions: v === "__all__" ? [] : [v] });
+        }}
       >
-        <SelectTrigger className="w-[130px] h-9 bg-[#111827] border-[#1f2937] text-[#f9fafb] text-xs">
+        <SelectTrigger className={`w-[130px] ${divActive ? activeCls : inactiveCls}`}>
           <SelectValue placeholder="Division" />
         </SelectTrigger>
         <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f9fafb]">
@@ -79,7 +90,7 @@ export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, onDi
           value={distanceMiles ? String(distanceMiles) : "__all__"}
           onValueChange={(v) => onDistanceChange(v === "__all__" ? null : Number(v))}
         >
-          <SelectTrigger className="w-[140px] h-9 bg-[#111827] border-[#1f2937] text-[#f9fafb] text-xs">
+          <SelectTrigger className={`w-[140px] ${distActive ? activeCls : inactiveCls}`}>
             <SelectValue placeholder="Distance" />
           </SelectTrigger>
           <SelectContent className="bg-[#111827] border-[#1f2937] text-[#f9fafb]">
