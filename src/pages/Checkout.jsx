@@ -72,6 +72,7 @@ export default function Checkout() {
   const [checkoutError, setCheckoutError] = useState("");
 
   const signedIn = !!accountId;
+  const [userEmail, setUserEmail] = useState("");
 
   const backTarget = useMemo(() => createPageUrl("Subscribe"), []);
   const discoverTarget = useMemo(() => createPageUrl("Discover"), []);
@@ -99,27 +100,11 @@ export default function Checkout() {
     }
   }, [isLoading, mode, discoverTarget, navigate]);
 
-  // If not signed in, redirect to login
-  useEffect(() => {
-    if (isLoading) return;
-    if (mode === "paid") return;
-
-    if (!signedIn) {
-      trackEvent({ event_name: "checkout_requires_login", source, season_year: soldYear || null, next: next || null });
-      try {
-        const returnTo = `${window.location.origin}${createPageUrl("Checkout")}${location.search || ""}`;
-        const loginUrl = `${window.location.origin}/login?from_url=${encodeURIComponent(returnTo)}`;
-        window.location.assign(loginUrl);
-      } catch {
-        const currentPath = `${createPageUrl("Checkout")}${location.search || ""}`;
-        navigate(createPageUrl("Home") + `?signin=1&next=${encodeURIComponent(currentPath)}`, { replace: true });
-      }
-    }
-  }, [isLoading, mode, signedIn, source, soldYear, next, location.search, navigate]);
+  // No login redirect — anonymous users can checkout. Stripe collects their email.
 
   // Track checkout viewed
   useEffect(() => {
-    if (isLoading || mode === "paid" || !signedIn) return;
+    if (isLoading || mode === "paid") return;
     const key = `evt_checkout_viewed_${soldYear}`;
     try {
       if (sessionStorage.getItem(key) === "1") return;
@@ -200,7 +185,6 @@ export default function Checkout() {
 
   if (isLoading) return null;
   if (mode === "paid") return null;
-  if (!signedIn) return null;
 
   const features = [
     `Full access to ${soldYear} camp season`,
