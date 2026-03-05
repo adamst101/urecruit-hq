@@ -225,12 +225,11 @@ export default function Home() {
               </>
             ) : (
               <>
-                <button onClick={handleMemberLogin} style={S.navBtnGhost}>
-                  <LogIn style={{ width: 14, height: 14, marginRight: 6 }} />
+                <button onClick={handleMemberLogin} style={S.navBtnMemberLogin}>
                   Member Login
                 </button>
                 <button onClick={handlePricingSignup} style={S.navBtnAmber}>
-                  Get Season Pass
+                  Get Season Pass →
                 </button>
               </>
             )}
