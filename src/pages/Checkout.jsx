@@ -72,6 +72,59 @@ export default function Checkout() {
   const priceAddOn = seasonConfig?.price_add_on || 39;
   const totalPrice = addSecond ? pricePrimary + priceAddOn : pricePrimary;
 
+  // Check if promo code is a 100%-free code (like BETA100) that bypasses Stripe
+  const [promoStatus, setPromoStatus] = useState(null); // null | "checking" | "free" | "discount" | "invalid"
+  const [promoMessage, setPromoMessage] = useState("");
+
+  async function handleApplyPromo() {
+    const code = couponCode.trim();
+    if (!code) {
+      setPromoStatus(null);
+      setPromoMessage("");
+      return;
+    }
+
+    setPromoStatus("checking");
+    setPromoMessage("");
+
+    // First check if this is a free-access code by trying activateFreeAccess
+    // That function only accepts codes like BETA100 that grant 100% free access
+    if (isAuthenticated) {
+      try {
+        const freeRes = await base44.functions.invoke("activateFreeAccess", {
+          promoCode: code,
+          userEmail: email,
+        });
+        const freeData = freeRes.data;
+
+        if (freeData?.ok) {
+          setPromoStatus("free");
+          setPromoMessage(freeData.alreadyActive
+            ? "You already have an active pass! Redirecting..."
+            : `Code "${code}" applied — 100% free access activated!`);
+          // Redirect to success after a brief moment
+          setTimeout(() => {
+            navigate(
+              createPageUrl("CheckoutSuccess") +
+              `?free=true&season=${encodeURIComponent(freeData.seasonYear || soldSeason)}`
+            , { replace: true });
+          }, 1500);
+          return;
+        }
+        // If the error is "This code requires card payment", it's a discount code — not free
+        if (freeData?.error && !freeData.error.includes("card payment")) {
+          setPromoStatus("invalid");
+          setPromoMessage(freeData.error);
+          return;
+        }
+      } catch {}
+    }
+
+    // It's either a discount code or user isn't logged in — mark as discount to apply at Stripe
+    setPromoStatus("discount");
+    setPromoMessage(`Code "${code}" will be applied at checkout`);
+  }
+
   async function handleCheckout() {
     setError(null);
 
@@ -81,6 +134,17 @@ export default function Checkout() {
     }
     if (addSecond && !athleteTwoName.trim()) {
       setError("Please enter the second athlete's name");
+      return;
+    }
+
+    // If promo already activated free access, just redirect
+    if (promoStatus === "free") return;
+
+    // If user entered a promo but hasn't applied it yet, apply it first
+    if (couponCode.trim() && !promoStatus) {
+      await handleApplyPromo();
+      // If it turned out to be free, don't continue to Stripe
+      // We need a small delay to let state update
       return;
     }
 
