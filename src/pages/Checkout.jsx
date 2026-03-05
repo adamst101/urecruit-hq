@@ -87,40 +87,49 @@ export default function Checkout() {
     setPromoStatus("checking");
     setPromoMessage("");
 
-    // First check if this is a free-access code by trying activateFreeAccess
-    // That function only accepts codes like BETA100 that grant 100% free access
-    if (isAuthenticated) {
-      try {
-        const freeRes = await base44.functions.invoke("activateFreeAccess", {
-          promoCode: code,
-          userEmail: email,
-        });
-        const freeData = freeRes.data;
-
-        if (freeData?.ok) {
-          setPromoStatus("free");
-          setPromoMessage(freeData.alreadyActive
-            ? "You already have an active pass! Redirecting..."
-            : `Code "${code}" applied — 100% free access activated!`);
-          // Redirect to success after a brief moment
-          setTimeout(() => {
-            navigate(
-              createPageUrl("CheckoutSuccess") +
-              `?free=true&season=${encodeURIComponent(freeData.seasonYear || soldSeason)}`
-            , { replace: true });
-          }, 1500);
-          return;
-        }
-        // If the error is "This code requires card payment", it's a discount code — not free
-        if (freeData?.error && !freeData.error.includes("card payment")) {
-          setPromoStatus("invalid");
-          setPromoMessage(freeData.error);
-          return;
-        }
-      } catch {}
+    // If user isn't logged in, redirect them to create an account first
+    // so we can activate the free code after they return
+    if (!isAuthenticated) {
+      // Store the promo code so we can auto-apply after login
+      try { sessionStorage.setItem("pending_promo", code); } catch {}
+      setPromoStatus(null);
+      setPromoMessage("");
+      // Redirect to login/signup, then back to this checkout page
+      const returnUrl = window.location.pathname + window.location.search;
+      base44.auth.redirectToLogin(returnUrl);
+      return;
     }
 
-    // It's either a discount code or user isn't logged in — mark as discount to apply at Stripe
+    // User is logged in — try activateFreeAccess
+    try {
+      const freeRes = await base44.functions.invoke("activateFreeAccess", {
+        promoCode: code,
+        userEmail: email,
+      });
+      const freeData = freeRes.data;
+
+      if (freeData?.ok) {
+        setPromoStatus("free");
+        setPromoMessage(freeData.alreadyActive
+          ? "You already have an active pass! Redirecting..."
+          : `Code "${code}" applied — 100% free access activated!`);
+        setTimeout(() => {
+          navigate(
+            createPageUrl("CheckoutSuccess") +
+            `?free=true&season=${encodeURIComponent(freeData.seasonYear || soldSeason)}`
+          , { replace: true });
+        }, 1500);
+        return;
+      }
+      // If the error is "This code requires card payment", it's a discount code — not free
+      if (freeData?.error && !freeData.error.includes("card payment")) {
+        setPromoStatus("invalid");
+        setPromoMessage(freeData.error);
+        return;
+      }
+    } catch {}
+
+    // It's a discount code — will be applied at Stripe checkout
     setPromoStatus("discount");
     setPromoMessage(`Code "${code}" will be applied at checkout`);
   }
