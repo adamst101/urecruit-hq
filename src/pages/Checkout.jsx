@@ -178,6 +178,14 @@ export default function Checkout() {
     // If promo already activated free access, just redirect
     if (promoStatus === "free") return;
 
+    // If verified free code and not logged in, redirect to login to create account
+    if (promoStatus === "verified_free") {
+      try { sessionStorage.setItem("pending_promo", couponCode.trim()); } catch {}
+      const returnUrl = window.location.pathname + window.location.search;
+      base44.auth.redirectToLogin(returnUrl);
+      return;
+    }
+
     // If user entered a promo but hasn't applied it yet, apply it first
     if (couponCode.trim() && !promoStatus) {
       await handleApplyPromo();
