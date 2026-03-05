@@ -130,9 +130,7 @@ export default function Checkout() {
         }
       } catch {}
     } else {
-      // Not logged in — check if it looks like a free code by trying activateFreeAccess
-      // It will fail with auth error, but we can still check the code type
-      // For free codes, redirect to login; for discount codes, just mark as discount
+      // Not logged in — check the code type against the backend
       try {
         const freeRes = await base44.functions.invoke("activateFreeAccess", {
           promoCode: code,
@@ -142,12 +140,9 @@ export default function Checkout() {
 
         // If the backend says the code is valid for free access but user needs auth
         if (freeData?.ok || (freeData?.error && freeData.error.includes("not authenticated"))) {
-          // It's a free code — need to log in first
-          try { sessionStorage.setItem("pending_promo", code); } catch {}
-          setPromoStatus(null);
-          setPromoMessage("");
-          const returnUrl = window.location.pathname + window.location.search;
-          base44.auth.redirectToLogin(returnUrl);
+          // It's a verified free code — show "Get Access" button, user will create account on click
+          setPromoStatus("verified_free");
+          setPromoMessage(`Code "${code}" verified — 100% free access! Create an account to activate.`);
           return;
         }
         // If the error says "card payment" — it's a discount code, no login needed
