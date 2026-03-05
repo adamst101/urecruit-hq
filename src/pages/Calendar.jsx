@@ -27,6 +27,9 @@ import {
 } from "../components/filters/filterUtils.jsx";
 
 import CampCard from "../components/camps/CampCard.jsx";
+import WarningBanner from "../components/camps/WarningBanner.jsx";
+import WarningBadge from "../components/camps/WarningBadge.jsx";
+import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
 
 /* -------------------------
    Helpers (MVP-safe)
@@ -278,6 +281,35 @@ export default function Calendar() {
     return result;
   }, [isPaid, paidQuery?.data, demoQuery?.data, nf]);
 
+  // Conflict detection
+  const favCamps = useMemo(() => rows.filter((r) => String(r?.intent_status || "").toLowerCase() === "favorite"), [rows]);
+  const regCamps = useMemo(() => rows.filter((r) => {
+    const st = String(r?.intent_status || "").toLowerCase();
+    return st === "registered" || st === "completed";
+  }), [rows]);
+
+  const { warnings: allWarnings, getWarningsForCamp } = useConflictDetection({
+    favoritedCamps: favCamps.map((r) => ({
+      id: r?.camp_id || r?.id,
+      camp_name: r?.camp_name,
+      start_date: r?.start_date,
+      city: r?.city || r?.school_city,
+      state: r?.state || r?.school_state,
+      school_name: r?.school_name,
+    })),
+    registeredCamps: regCamps.map((r) => ({
+      id: r?.camp_id || r?.id,
+      camp_name: r?.camp_name,
+      start_date: r?.start_date,
+      city: r?.city || r?.school_city,
+      state: r?.state || r?.school_state,
+      school_name: r?.school_name,
+    })),
+    homeCity: athleteProfile?.home_city || null,
+    homeState: athleteProfile?.home_state || null,
+    isPaid,
+  });
+
   const title = "Calendar";
 
   const renderBody = () => {
@@ -338,6 +370,7 @@ export default function Calendar() {
       <div className="space-y-3">
         {rows.map((r) => {
           const campId = String(r?.camp_id || r?.id || "");
+          const campWarnings = getWarningsForCamp(campId);
           const schoolId = r?.school_id ? String(r.school_id) : null;
           const sportId = r?.sport_id ? String(r.sport_id) : null;
 
@@ -374,23 +407,25 @@ export default function Calendar() {
             .filter(Boolean);
 
           return (
-            <CampCard
-              key={campId}
-              camp={camp}
-              school={school}
-              sport={sport}
-              positions={posObjs}
-              isFavorite={String(r?.intent_status || "").toLowerCase() === "favorite"}
-              isRegistered={String(r?.intent_status || "").toLowerCase() === "registered"}
-              mode={isPaid ? "paid" : "demo"}
-              disabledFavorite={!isPaid}
-              onClick={() => {
-                try {
-                  nav(`${ROUTES.CampDetail}?id=${encodeURIComponent(campId)}`);
-                } catch {}
-              }}
-              onFavoriteToggle={() => {}}
-            />
+            <div key={campId} className="relative">
+              <CampCard
+                camp={camp}
+                school={school}
+                sport={sport}
+                positions={posObjs}
+                isFavorite={String(r?.intent_status || "").toLowerCase() === "favorite"}
+                isRegistered={String(r?.intent_status || "").toLowerCase() === "registered"}
+                mode={isPaid ? "paid" : "demo"}
+                disabledFavorite={!isPaid}
+                onClick={() => {
+                  try {
+                    nav(`${ROUTES.CampDetail}?id=${encodeURIComponent(campId)}`);
+                  } catch {}
+                }}
+                onFavoriteToggle={() => {}}
+                warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
+              />
+            </div>
           );
         })}
       </div>
