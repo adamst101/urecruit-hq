@@ -27,7 +27,7 @@ function trackEvent(payload) {
 }
 
 function formatCount(n) {
-  if (n == null) return null;
+  if (n == null || n === 0) return null;
   const rounded = Math.floor(n / 10) * 10;
   if (rounded >= 1000) return rounded.toLocaleString() + "+";
   return rounded + "+";
@@ -222,14 +222,9 @@ export default function Home() {
                 <button onClick={handleLogout} style={S.navBtnGhost}>Log out</button>
               </>
             ) : (
-              <>
-                <button onClick={handleMemberLogin} style={S.navBtnMemberLogin}>
-                  Member Login
-                </button>
-                <button onClick={handlePricingSignup} style={S.navBtnAmber}>
-                  Get Season Pass →
-                </button>
-              </>
+              <button onClick={handleMemberLogin} style={S.navBtnMemberLogin}>
+                Member Login
+              </button>
             )}
           </div>
         </div>
