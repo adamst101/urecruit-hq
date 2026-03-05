@@ -1,7 +1,7 @@
 // src/Layout.jsx  (Base44 shared layout must be named Layout.jsx in /src root)
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { LogIn, LayoutGrid } from "lucide-react";
+import { LogIn } from "lucide-react";
 
 import { base44 } from "./api/base44Client";
 import { createPageUrl } from "./utils";

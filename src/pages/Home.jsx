@@ -201,21 +201,8 @@ export default function Home() {
           </div>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            {isAuthed && isMember ? (
-              <>
-                <button onClick={handleContinue} style={S.navBtnAmber}>
-                  Go to HQ{" "}
-                  <ArrowRight style={{ width: 16, height: 16, marginLeft: 4 }} />
-                </button>
-                <button onClick={handleLogout} style={S.navBtnLogout}>Log out</button>
-              </>
-            ) : isAuthed && !isMember ? (
-              <>
-                <button onClick={handlePricingSignup} style={S.navBtnAmber}>
-                  Subscribe
-                </button>
-                <button onClick={handleLogout} style={S.navBtnLogout}>Log out</button>
-              </>
+            {isAuthed ? (
+              <button onClick={handleLogout} style={S.navBtnGhost}>Log out</button>
             ) : (
               <>
                 <button onClick={handleMemberLogin} style={S.navBtnGhost}>
@@ -223,7 +210,7 @@ export default function Home() {
                   Member Login
                 </button>
                 <button onClick={handlePricingSignup} style={S.navBtnAmber}>
-                  Get Started
+                  Subscribe
                 </button>
               </>
             )}
