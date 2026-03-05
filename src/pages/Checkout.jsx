@@ -116,9 +116,9 @@ export default function Checkout() {
         // Already logged in — activate immediately
         await activateFreeAccess(promoCode.trim());
       } else {
-        // Save code and redirect to login
+        // Save code and redirect to login — AuthRedirect will pick up pendingPromoCode
         try { sessionStorage.setItem("pendingPromoCode", promoCode.trim()); } catch {}
-        const returnUrl = createPageUrl("Checkout") + `?promo=${encodeURIComponent(promoCode.trim())}&activate=true`;
+        const returnUrl = `${window.location.origin}/AuthRedirect?source=promo_checkout`;
         base44.auth.redirectToLogin(returnUrl);
       }
       return;
