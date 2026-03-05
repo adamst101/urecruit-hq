@@ -82,13 +82,17 @@ export default function Checkout() {
   const source = params.get("source") || "checkout_page";
   const soldYear = soldSeason;
 
+  // Is this the BETA100 free bypass code?
+  const isBetaFreeCode = appliedCoupon?.code?.toUpperCase() === "BETA100";
+
   // Compute discounted price
   const discountedPrice = useMemo(() => {
+    if (isBetaFreeCode) return 0;
     if (!appliedCoupon) return BASE_PRICE;
     if (appliedCoupon.percentOff) return Math.max(0, BASE_PRICE - BASE_PRICE * (appliedCoupon.percentOff / 100));
     if (appliedCoupon.amountOff) return Math.max(0, BASE_PRICE - appliedCoupon.amountOff);
     return BASE_PRICE;
-  }, [appliedCoupon]);
+  }, [appliedCoupon, isBetaFreeCode]);
 
   const discountAmount = BASE_PRICE - discountedPrice;
 
@@ -144,6 +148,40 @@ export default function Checkout() {
       setCouponError("Could not validate coupon. Please try again.");
     } finally {
       setCouponLoading(false);
+    }
+  }
+
+  // BETA100 free activation (no card required)
+  async function handleFreeActivation() {
+    setCheckoutLoading(true);
+    setCheckoutError("");
+
+    trackEvent({
+      event_name: "checkout_beta100_clicked",
+      mode: "demo",
+      season_year: soldYear,
+      source,
+      account_id: accountId || null,
+    });
+
+    try {
+      const res = await base44.functions.invoke("activateFreeAccess", {
+        promoCode: "BETA100",
+        athleteId: accountId || "",
+        userEmail: "",
+        accountId: accountId || "",
+      });
+
+      const result = res.data;
+      if (result?.ok) {
+        navigate(createPageUrl("CheckoutSuccess") + "?free=true&season=" + (result.seasonYear || soldYear));
+      } else {
+        setCheckoutError(result?.error || "Activation failed. Please try again.");
+        setCheckoutLoading(false);
+      }
+    } catch (e) {
+      setCheckoutError("Activation failed. Please try again.");
+      setCheckoutLoading(false);
     }
   }
 
@@ -311,9 +349,9 @@ export default function Checkout() {
           )}
         </div>
 
-        {/* Pay Button */}
+        {/* Pay / Activate Button */}
         <button
-          onClick={handleCheckout}
+          onClick={isBetaFreeCode ? handleFreeActivation : handleCheckout}
           disabled={checkoutLoading}
           style={{
             width: "100%",
@@ -337,6 +375,8 @@ export default function Checkout() {
               <Loader2 style={{ width: 20, height: 20, animation: "spin 1s linear infinite" }} />
               Processing...
             </>
+          ) : isBetaFreeCode ? (
+            <>Activate Free Access →</>
           ) : (
             <>Pay ${discountedPrice.toFixed(2)} — Get Season Access</>
           )}

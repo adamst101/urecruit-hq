@@ -70,11 +70,11 @@ import SchoolAthleticsCleanup from './pages/SchoolAthleticsCleanup';
 import SchoolsManager from './pages/SchoolsManager';
 import SportIngestConfigManager from './pages/SportIngestConfigManager';
 import Subscribe from './pages/Subscribe';
+import SupportDashboard from './pages/SupportDashboard';
 import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
-import SupportDashboard from './pages/SupportDashboard';
 import __Layout from './Layout.jsx';
 
 
@@ -102,11 +102,11 @@ export const PAGES = {
     "SchoolsManager": SchoolsManager,
     "SportIngestConfigManager": SportIngestConfigManager,
     "Subscribe": Subscribe,
+    "SupportDashboard": SupportDashboard,
     "TestFunctions": TestFunctions,
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
-    "SupportDashboard": SupportDashboard,
 }
 
 export const pagesConfig = {
