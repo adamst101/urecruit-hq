@@ -297,6 +297,22 @@ export default function Subscribe() {
         </div>
       </section>
 
+      {/* ── ALREADY A MEMBER ── */}
+      <section style={{ textAlign: "center", padding: "0 24px 48px", maxWidth: 480, margin: "0 auto" }}>
+        <p style={{ color: "#6b7280", fontSize: 14 }}>
+          Already have an account?{" "}
+          <button
+            onClick={() => {
+              const { startMemberLogin: doLogin } = require("../components/utils/memberLogin.jsx");
+              if (doLogin) doLogin({ nextPath: "/Workspace", source: "subscribe_login_link" });
+            }}
+            style={{ color: "#e8a020", background: "none", border: "none", cursor: "pointer", fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 2 }}
+          >
+            Log in here →
+          </button>
+        </p>
+      </section>
+
       {/* ── TRUST BAR ── */}
       <footer style={{ borderTop: "1px solid #1f2937", padding: "28px 24px", textAlign: "center" }}>
         <p style={{ fontSize: 15, color: "#6b7280" }}>

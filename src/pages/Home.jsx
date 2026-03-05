@@ -208,8 +208,20 @@ export default function Home() {
           </div>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            {isAuthed ? (
-              <button onClick={handleLogout} style={S.navBtnGhost}>Log out</button>
+            {isAuthed && isMember ? (
+              <>
+                <button onClick={handleContinue} style={S.navBtnAmber}>
+                  Go to HQ <ArrowRight style={{ width: 14, height: 14, marginLeft: 4 }} />
+                </button>
+                <button onClick={handleLogout} style={S.navBtnGhost}>Log out</button>
+              </>
+            ) : isAuthed && !isMember ? (
+              <>
+                <button onClick={handlePricingSignup} style={S.navBtnAmber}>
+                  Get Season Pass
+                </button>
+                <button onClick={handleLogout} style={S.navBtnGhost}>Log out</button>
+              </>
             ) : (
               <>
                 <button onClick={handleMemberLogin} style={S.navBtnGhost}>
@@ -224,6 +236,26 @@ export default function Home() {
           </div>
         </div>
       </nav>
+
+      {/* Banner for logged-in users without paid access */}
+      {isAuthed && !isMember && (
+        <div style={{
+          background: "#111827",
+          borderBottom: "2px solid #e8a020",
+          padding: "12px 24px",
+          textAlign: "center",
+          fontSize: 15,
+          color: "#f9fafb",
+        }}>
+          Your account doesn't have an active season pass.{" "}
+          <button
+            onClick={handlePricingSignup}
+            style={{ color: "#e8a020", fontWeight: 700, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}
+          >
+            Get access now →
+          </button>
+        </div>
+      )}
 
       {/* ── HERO ── */}
       <section
