@@ -489,6 +489,7 @@ export default function Discover() {
 
   function clearFilters() {
     filtersApi?.clearFilters?.();
+    setSelectedMonth("all");
   }
 
   /* ─── derived ─────────────────────────────────────────────────────────── */
