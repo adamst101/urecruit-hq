@@ -11,7 +11,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
-import { getCurrentSoldSeason, getCurrentActiveSeason, isEarlyBirdPeriod } from "../components/utils/seasonUtils.js";
+import { getCurrentSoldSeason, getCurrentActiveSeason, isEarlyBirdPeriod } from "../components/utils/seasonUtils";
 
 function trackEvent(payload) {
   try {

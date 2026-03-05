@@ -10,7 +10,7 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
-import { getCurrentSoldSeason, getCurrentActiveSeason, isEarlyBirdPeriod } from "../components/utils/seasonUtils.js";
+import { getCurrentSoldSeason, getCurrentActiveSeason, isEarlyBirdPeriod } from "../components/utils/seasonUtils";
 
 function trackEvent(payload) {
   try {

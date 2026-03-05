@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { base44 } from "../../api/base44Client";
 
 import { footballCurrentSeasonYear } from "../utils/seasonEntitlements.jsx";
-import { getCurrentSoldSeason, getCurrentActiveSeason } from "../utils/seasonUtils.js";
+import { getCurrentSoldSeason, getCurrentActiveSeason } from "../utils/seasonUtils";
 import { readDemoMode } from "./demoMode.jsx";
 
 /**
