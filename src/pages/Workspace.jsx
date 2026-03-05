@@ -143,30 +143,7 @@ export default function Workspace() {
     <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
-      {/* ── TOP BAR ── */}
-      <div style={{ background: "rgba(10,14,26,0.95)", borderBottom: "1px solid #1f2937", position: "sticky", top: 0, zIndex: 50, backdropFilter: "blur(12px)" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={() => nav(ROUTES.Home)}>
-            {logoOk && <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 28, width: "auto" }} />}
-            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#9ca3af" }}>URECRUIT HQ</span>
-          </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {isMember ? (
-              <span style={{ background: "rgba(232,160,32,0.15)", color: "#e8a020", fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 20, border: "1px solid rgba(232,160,32,0.3)" }}>MEMBER</span>
-            ) : (
-              <span style={{ background: "rgba(156,163,175,0.1)", color: "#9ca3af", fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, border: "1px solid #1f2937" }}>DEMO</span>
-            )}
-            {memberSeason && (
-              <span style={{ fontSize: 12, color: "#6b7280" }}>Season {memberSeason}</span>
-            )}
-            <button onClick={handleLogout} disabled={loggingOut} style={{ background: "none", border: "1px solid #1f2937", borderRadius: 8, padding: "6px 14px", fontSize: 13, color: "#9ca3af", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-              <LogOut style={{ width: 14, height: 14 }} />
-              {loggingOut ? "…" : "Log out"}
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* ── HERO GREETING ── */}
       <section style={{ padding: "48px 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
