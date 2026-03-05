@@ -11,6 +11,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 
 function trackEvent(payload) {
   try {
@@ -302,10 +303,7 @@ export default function Subscribe() {
         <p style={{ color: "#6b7280", fontSize: 14 }}>
           Already have an account?{" "}
           <button
-            onClick={() => {
-              const { startMemberLogin: doLogin } = require("../components/utils/memberLogin.jsx");
-              if (doLogin) doLogin({ nextPath: "/Workspace", source: "subscribe_login_link" });
-            }}
+            onClick={() => startMemberLogin({ nextPath: "/Workspace", source: "subscribe_login_link" })}
             style={{ color: "#e8a020", background: "none", border: "none", cursor: "pointer", fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 2 }}
           >
             Log in here →
