@@ -1,223 +1,145 @@
-// src/pages/Checkout.jsx
-// Collects athlete info, initiates Stripe checkout session, redirects to Stripe
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
-
+import { ArrowRight, ArrowLeft, Loader2, Check, X } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
 
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
-import SecondAthleteSection from "../components/checkout/SecondAthleteSection.jsx";
+const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 
 export default function Checkout() {
   const navigate = useNavigate();
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
 
-  const seasonParam = params.get("season");
-  const source = params.get("source") || "checkout";
-  const next = params.get("next") || createPageUrl("CheckoutSuccess");
-
-  const { isLoading: accessLoading, hasAccess, mode, accountId, isAuthenticated } = useSeasonAccess();
-
   const [seasonConfig, setSeasonConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState(null);
+  const [isAuthed, setIsAuthed] = useState(false);
 
-  // Form state
-  const [email, setEmail] = useState("");
-  const [athleteName, setAthleteName] = useState("");
-  const [couponCode, setCouponCode] = useState("");
-  const [addSecond, setAddSecond] = useState(false);
-  const [athleteTwoName, setAthleteTwoName] = useState("");
-  const [athleteTwoGradYear, setAthleteTwoGradYear] = useState("");
+  // Promo state
+  const [promoCode, setPromoCode] = useState("");
+  const [promoState, setPromoState] = useState(null); // null | "checking" | { ok, isFree, percentOff, amountOff, code, error }
 
-  // Load season config
+  // Load season config + check auth
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await base44.functions.invoke("getActiveSeason", {});
-        if (!cancelled && res.data?.ok && res.data?.season) {
-          setSeasonConfig(res.data.season);
+        const [seasonRes, authed] = await Promise.all([
+          base44.functions.invoke("getActiveSeason", {}),
+          base44.auth.isAuthenticated().catch(() => false),
+        ]);
+        if (cancelled) return;
+        if (seasonRes.data?.ok && seasonRes.data?.season) {
+          setSeasonConfig(seasonRes.data.season);
         }
+        setIsAuthed(!!authed);
       } catch {}
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
   }, []);
 
-  // Pre-fill email from auth + auto-apply pending promo code
+  // Auto-apply promo from URL param or sessionStorage
   useEffect(() => {
-    if (!isAuthenticated) return;
-    (async () => {
-      try {
-        const me = await base44.auth.me();
-        if (me?.email) setEmail(me.email);
-      } catch {}
-      // Check if there's a pending promo code from before login
-      try {
-        const pending = sessionStorage.getItem("pending_promo");
-        if (pending) {
-          sessionStorage.removeItem("pending_promo");
-          setCouponCode(pending);
-          // Trigger apply after a tick so state is set
-          setTimeout(() => {
-            document.getElementById("auto-apply-promo")?.click();
-          }, 500);
-        }
-      } catch {}
-    })();
-  }, [isAuthenticated]);
+    if (loading) return;
+    const urlPromo = params.get("promo");
+    const pendingPromo = (() => { try { return sessionStorage.getItem("pendingPromoCode"); } catch { return null; } })();
+    const code = urlPromo || pendingPromo || "";
+    if (pendingPromo) { try { sessionStorage.removeItem("pendingPromoCode"); } catch {} }
+    if (code) {
+      setPromoCode(code);
+      applyPromo(code);
+    }
+  }, [loading]);
 
-  // Redirect if already paid
+  // After returning from login with a free code, auto-activate
   useEffect(() => {
-    if (accessLoading) return;
-    if (mode === "paid" && hasAccess) {
-      navigate(createPageUrl("Workspace"), { replace: true });
+    if (loading || !isAuthed) return;
+    const urlPromo = params.get("promo");
+    const autoActivate = params.get("activate") === "true";
+    if (autoActivate && urlPromo && promoState?.isFree) {
+      activateFreeAccess(urlPromo);
     }
-  }, [accessLoading, mode, hasAccess, navigate]);
+  }, [loading, isAuthed, promoState]);
 
-  const soldSeason = seasonConfig?.season_year || seasonParam || "";
-  const pricePrimary = seasonConfig?.price_primary || 49;
-  const priceAddOn = seasonConfig?.price_add_on || 39;
-  const totalPrice = addSecond ? pricePrimary + priceAddOn : pricePrimary;
-
-  // Check if promo code is a 100%-free code (like BETA100) that bypasses Stripe
-  const [promoStatus, setPromoStatus] = useState(null); // null | "checking" | "free" | "verified_free" | "discount" | "invalid"
-  const [promoMessage, setPromoMessage] = useState("");
-
-  async function handleApplyPromo() {
-    const code = couponCode.trim();
-    if (!code) {
-      setPromoStatus(null);
-      setPromoMessage("");
-      return;
-    }
-
-    setPromoStatus("checking");
-    setPromoMessage("");
-
-    // If user is logged in, try activateFreeAccess first
-    if (isAuthenticated) {
-      try {
-        const freeRes = await base44.functions.invoke("activateFreeAccess", {
-          promoCode: code,
-          userEmail: email,
-        });
-        const freeData = freeRes.data;
-
-        if (freeData?.ok) {
-          setPromoStatus("free");
-          setPromoMessage(freeData.alreadyActive
-            ? "You already have an active pass! Redirecting..."
-            : `Code "${code}" applied — 100% free access activated!`);
-          setTimeout(() => {
-            navigate(
-              createPageUrl("CheckoutSuccess") +
-              `?free=true&season=${encodeURIComponent(freeData.seasonYear || soldSeason)}`
-            , { replace: true });
-          }, 1500);
-          return;
-        }
-        // If the error says it's a free-access code but needs auth, shouldn't happen here
-        // If the error is "This code requires card payment", it's a discount code — fall through
-        if (freeData?.error && !freeData.error.includes("card payment")) {
-          setPromoStatus("invalid");
-          setPromoMessage(freeData.error);
-          return;
-        }
-      } catch {}
-    } else {
-      // Not logged in — check the code type against the backend
-      try {
-        const freeRes = await base44.functions.invoke("activateFreeAccess", {
-          promoCode: code,
-          userEmail: email || "check@check.com",
-        });
-        const freeData = freeRes.data;
-
-        // If the backend says the code is valid for free access but user needs auth
-        if (freeData?.ok || (freeData?.error && freeData.error.includes("not authenticated"))) {
-          // It's a verified free code — show "Get Access" button, user will create account on click
-          setPromoStatus("verified_free");
-          setPromoMessage(`Code "${code}" verified — 100% free access! Create an account to activate.`);
-          return;
-        }
-        // If the error says "card payment" — it's a discount code, no login needed
-        if (freeData?.error && freeData.error.includes("card payment")) {
-          // fall through to discount
-        } else if (freeData?.error) {
-          setPromoStatus("invalid");
-          setPromoMessage(freeData.error);
-          return;
-        }
-      } catch {
-        // If the call fails entirely (e.g. 401), try treating it as a discount code
+  const applyPromo = useCallback(async (code) => {
+    const trimmed = (code || "").trim();
+    if (!trimmed) return;
+    setPromoState("checking");
+    setError(null);
+    try {
+      const res = await base44.functions.invoke("validatePromo", { promoCode: trimmed });
+      const data = res.data;
+      if (data?.ok) {
+        setPromoState(data);
+      } else {
+        setPromoState({ ok: false, error: data?.error || "Invalid code" });
       }
+    } catch {
+      setPromoState({ ok: false, error: "Could not validate code" });
     }
+  }, []);
 
-    // It's a discount code — will be applied at Stripe checkout
-    setPromoStatus("discount");
-    setPromoMessage(`Code "${code}" will be applied at checkout`);
+  async function activateFreeAccess(code) {
+    setWorking(true);
+    setError(null);
+    try {
+      const me = await base44.auth.me();
+      const res = await base44.functions.invoke("activateFreeAccess", {
+        promoCode: code || promoCode.trim(),
+        accountId: me?.id,
+        userEmail: me?.email,
+      });
+      const data = res.data;
+      if (data?.ok) {
+        navigate(
+          createPageUrl("CheckoutSuccess") + `?free=true&season=${encodeURIComponent(data.seasonYear || "")}`,
+          { replace: true }
+        );
+      } else {
+        setError(data?.error || "Failed to activate access");
+        setWorking(false);
+      }
+    } catch (e) {
+      setError(e?.message || "Something went wrong");
+      setWorking(false);
+    }
   }
 
   async function handleCheckout() {
     setError(null);
 
-    if (!email.trim()) {
-      setError("Email is required");
-      return;
-    }
-    if (addSecond && !athleteTwoName.trim()) {
-      setError("Please enter the second athlete's name");
-      return;
-    }
-
-    // If promo already activated free access, just redirect
-    if (promoStatus === "free") return;
-
-    // If verified free code and not logged in, redirect to login to create account
-    if (promoStatus === "verified_free") {
-      try { sessionStorage.setItem("pending_promo", couponCode.trim()); } catch {}
-      const returnUrl = window.location.pathname + window.location.search;
-      base44.auth.redirectToLogin(returnUrl);
+    // Free code flow
+    if (promoState?.ok && promoState?.isFree) {
+      if (isAuthed) {
+        // Already logged in — activate immediately
+        await activateFreeAccess(promoCode.trim());
+      } else {
+        // Save code and redirect to login
+        try { sessionStorage.setItem("pendingPromoCode", promoCode.trim()); } catch {}
+        const returnUrl = createPageUrl("Checkout") + `?promo=${encodeURIComponent(promoCode.trim())}&activate=true`;
+        base44.auth.redirectToLogin(returnUrl);
+      }
       return;
     }
 
-    // If user entered a promo but hasn't applied it yet, apply it first
-    if (couponCode.trim() && !promoStatus) {
-      await handleApplyPromo();
-      // If it turned out to be free, don't continue to Stripe
-      // We need a small delay to let state update
-      return;
-    }
-
+    // Paid flow — redirect to Stripe
     setWorking(true);
-
     try {
       const successUrl = window.location.origin + createPageUrl("CheckoutSuccess");
       const cancelUrl = window.location.href;
 
       const res = await base44.functions.invoke("createStripeCheckout", {
-        userEmail: email,
-        couponCode: couponCode.trim() || undefined,
-        athleteOneName: athleteName.trim() || undefined,
-        addSecondAthlete: addSecond,
-        athleteTwoName: addSecond ? athleteTwoName.trim() : undefined,
-        athleteTwoGradYear: addSecond ? athleteTwoGradYear.trim() : undefined,
+        couponCode: promoCode.trim() || undefined,
         successUrl,
         cancelUrl,
       });
-
       const data = res.data;
-
       if (data?.ok && data?.sessionUrl) {
         window.location.href = data.sessionUrl;
         return;
       }
-
       setError(data?.error || "Failed to create checkout session");
     } catch (e) {
       setError(e?.message || "Something went wrong");
@@ -226,19 +148,37 @@ export default function Checkout() {
     }
   }
 
-  if (loading || accessLoading) {
+  if (loading) {
     return (
       <div style={S.page}>
-        <style>{S.fonts}</style>
+        <style>{FONTS}</style>
         <Loader2 className="w-8 h-8 animate-spin" style={{ color: "#e8a020" }} />
       </div>
     );
   }
 
+  const basePrice = seasonConfig?.price_primary || 49;
+  const displayName = seasonConfig?.display_name || `Season ${seasonConfig?.season_year || ""}`;
+  const promoValid = promoState?.ok;
+  const promoFree = promoState?.isFree;
+  const promoChecking = promoState === "checking";
+
+  // Calculate discount
+  let discountAmount = 0;
+  if (promoValid) {
+    if (promoState.percentOff) discountAmount = Math.round(basePrice * promoState.percentOff) / 100;
+    else if (promoState.amountOff) discountAmount = promoState.amountOff;
+  }
+  const finalPrice = Math.max(0, basePrice - discountAmount);
+
+  // Button text
+  let buttonText = `Complete Purchase — $${finalPrice}`;
+  if (promoFree) buttonText = "Get Access";
+  else if (!promoValid && !promoChecking) buttonText = `Complete Purchase — $${basePrice}`;
+
   return (
     <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
-      <style>{S.fonts}</style>
-
+      <style>{FONTS}</style>
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "40px 24px" }}>
         {/* Back */}
         <button
@@ -248,120 +188,109 @@ export default function Checkout() {
           <ArrowLeft style={{ width: 14, height: 14 }} /> Back to pricing
         </button>
 
-        <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#f9fafb", margin: "0 0 8px" }}>
+        <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#f9fafb", margin: "0 0 24px" }}>
           CHECKOUT
         </h1>
-        <p style={{ color: "#9ca3af", fontSize: 16, marginBottom: 32 }}>
-          Season Pass {soldSeason} · ${pricePrimary}
-        </p>
 
-        {/* Email */}
-        <label style={S.label}>Email</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="your@email.com"
-          style={S.input}
-        />
+        {/* ──── ORDER SUMMARY CARD ──── */}
+        <div style={{ background: "#111827", borderRadius: 12, border: "1px solid #1f2937", borderTop: "3px solid #e8a020", padding: "20px 24px", marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, marginBottom: 12 }}>
+            <span style={{ color: "#f9fafb", fontWeight: 600 }}>{displayName}</span>
+            <span style={{ color: "#f9fafb", fontWeight: 700 }}>${basePrice}</span>
+          </div>
 
-        {/* Athlete name (optional) */}
-        <label style={{ ...S.label, marginTop: 16 }}>Athlete Name <span style={{ color: "#6b7280" }}>(optional)</span></label>
-        <input
-          type="text"
-          value={athleteName}
-          onChange={(e) => setAthleteName(e.target.value)}
-          placeholder="First Last"
-          style={S.input}
-        />
+          {promoValid && discountAmount > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, color: "#e8a020", marginBottom: 12 }}>
+              <span>Discount ({promoState.code})</span>
+              <span>−${discountAmount.toFixed(2)}</span>
+            </div>
+          )}
 
-        {/* Second athlete */}
-        <SecondAthleteSection
-          addSecond={addSecond}
-          setAddSecond={setAddSecond}
-          athleteTwoName={athleteTwoName}
-          setAthleteTwoName={setAthleteTwoName}
-          athleteTwoGradYear={athleteTwoGradYear}
-          setAthleteTwoGradYear={setAthleteTwoGradYear}
-          addOnPrice={priceAddOn}
-        />
+          {promoValid && discountAmount > 0 && (
+            <>
+              <div style={{ height: 1, background: "#1f2937", margin: "0 0 12px" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 18, fontWeight: 700 }}>
+                <span>Total</span>
+                <span style={{ color: promoFree ? "#22c55e" : "#f9fafb" }}>${finalPrice.toFixed(2)}</span>
+              </div>
+            </>
+          )}
 
-        {/* Promo code */}
-        <label style={{ ...S.label, marginTop: 20 }}>Promo Code <span style={{ color: "#6b7280" }}>(optional)</span></label>
-        <div style={{ display: "flex", gap: 8 }}>
+          {/* Features */}
+          <div style={{ marginTop: 16, borderTop: "1px solid #1f2937", paddingTop: 14 }}>
+            {[
+              "College football camps nationwide",
+              "Conflict & travel detection",
+              "Recruiting Guide & Camp Playbook",
+              "Multi-athlete support",
+              "Updated every Monday",
+            ].map((f) => (
+              <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#9ca3af", marginBottom: 6 }}>
+                <Check style={{ width: 14, height: 14, color: "#22c55e", flexShrink: 0 }} /> {f}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ──── PROMO CODE ROW ──── */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <input
             type="text"
-            value={couponCode}
+            value={promoCode}
             onChange={(e) => {
-              setCouponCode(e.target.value);
-              if (promoStatus) { setPromoStatus(null); setPromoMessage(""); }
+              setPromoCode(e.target.value);
+              if (promoState) { setPromoState(null); }
             }}
-            placeholder="Enter code"
-            disabled={promoStatus === "free"}
-            style={{ ...S.input, flex: 1 }}
+            placeholder="Promo code (optional)"
+            disabled={promoChecking || promoValid}
+            style={{ flex: 1, background: "#1f2937", border: "1px solid #374151", borderRadius: 8, padding: "12px 14px", fontSize: 16, color: "#f9fafb", outline: "none", boxSizing: "border-box" }}
           />
           <button
             type="button"
-            id="auto-apply-promo"
-            onClick={handleApplyPromo}
-            disabled={!couponCode.trim() || promoStatus === "checking" || promoStatus === "free"}
+            onClick={() => applyPromo(promoCode)}
+            disabled={!promoCode.trim() || promoChecking || promoValid}
             style={{
-              background: promoStatus === "free" ? "#22c55e" : "#1f2937",
-              color: promoStatus === "free" ? "#fff" : "#f9fafb",
+              background: promoValid ? "#22c55e" : "#1f2937",
+              color: promoValid ? "#fff" : "#f9fafb",
               border: "1px solid #374151",
               borderRadius: 8,
               padding: "12px 16px",
               fontSize: 14,
               fontWeight: 600,
-              cursor: promoStatus === "checking" || promoStatus === "free" ? "not-allowed" : "pointer",
+              cursor: promoChecking || promoValid ? "not-allowed" : "pointer",
               whiteSpace: "nowrap",
-              opacity: !couponCode.trim() ? 0.5 : 1,
+              opacity: !promoCode.trim() ? 0.5 : 1,
             }}
           >
-            {promoStatus === "checking" ? "Checking..." : promoStatus === "free" ? "✓ Applied" : "Apply"}
+            {promoChecking ? "Checking..." : promoValid ? "✓ Applied" : "Apply"}
           </button>
         </div>
-        {promoMessage && (
+
+        {/* Promo feedback */}
+        {promoState && promoState !== "checking" && (
           <div style={{
-            marginTop: 8,
-            fontSize: 14,
-            padding: "8px 12px",
-            borderRadius: 8,
-            background: promoStatus === "free" ? "rgba(34,197,94,0.15)" : promoStatus === "invalid" ? "rgba(239,68,68,0.15)" : "rgba(232,160,32,0.15)",
-            border: `1px solid ${promoStatus === "free" ? "rgba(34,197,94,0.4)" : promoStatus === "invalid" ? "rgba(239,68,68,0.4)" : "rgba(232,160,32,0.4)"}`,
-            color: promoStatus === "free" ? "#86efac" : promoStatus === "invalid" ? "#fca5a5" : "#e8a020",
+            fontSize: 14, padding: "8px 12px", borderRadius: 8, marginBottom: 16,
+            display: "flex", alignItems: "center", gap: 8,
+            background: promoValid ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+            border: `1px solid ${promoValid ? "rgba(34,197,94,0.4)" : "rgba(239,68,68,0.4)"}`,
+            color: promoValid ? "#86efac" : "#fca5a5",
           }}>
-            {promoMessage}
+            {promoValid ? (
+              <><Check style={{ width: 16, height: 16 }} /> {promoFree ? "100% off — free access" : `${promoState.percentOff}% off applied`}</>
+            ) : (
+              <><X style={{ width: 16, height: 16 }} /> {promoState.error || "Invalid or expired code"}</>
+            )}
           </div>
         )}
 
-        {/* Price summary */}
-        <div style={{ background: "#111827", borderRadius: 12, padding: "16px 20px", marginTop: 24, border: "1px solid #1f2937" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, color: "#9ca3af" }}>
-            <span>Season Pass {soldSeason}</span>
-            <span style={{ color: "#f9fafb", fontWeight: 700 }}>${pricePrimary}</span>
-          </div>
-          {addSecond && (
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, color: "#9ca3af", marginTop: 8 }}>
-              <span>Second Athlete</span>
-              <span style={{ color: "#f9fafb", fontWeight: 700 }}>${priceAddOn}</span>
-            </div>
-          )}
-          <div style={{ height: 1, background: "#1f2937", margin: "12px 0" }} />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 18, fontWeight: 700 }}>
-            <span>Total</span>
-            <span style={{ color: "#e8a020" }}>${totalPrice}</span>
-          </div>
-        </div>
-
         {/* Error */}
         {error && (
-          <div style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 10, padding: "12px 16px", marginTop: 16, color: "#fca5a5", fontSize: 14 }}>
+          <div style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 10, padding: "12px 16px", marginBottom: 16, color: "#fca5a5", fontSize: 14 }}>
             {error}
           </div>
         )}
 
-        {/* CTA */}
+        {/* ──── ACTION BUTTON ──── */}
         <button
           onClick={handleCheckout}
           disabled={working}
@@ -375,26 +304,25 @@ export default function Checkout() {
             fontSize: 19,
             fontWeight: 700,
             cursor: working ? "not-allowed" : "pointer",
-            marginTop: 24,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             gap: 8,
-            opacity: working ? 0.7 : 1
+            opacity: working ? 0.7 : 1,
           }}
         >
           {working ? (
             <><Loader2 className="w-5 h-5 animate-spin" /> Processing...</>
-          ) : promoStatus === "verified_free" ? (
-            <>Get Access — Create Account <ArrowRight style={{ width: 18, height: 18 }} /></>
           ) : (
-            <>Continue to Payment <ArrowRight style={{ width: 18, height: 18 }} /></>
+            <>{buttonText} <ArrowRight style={{ width: 18, height: 18 }} /></>
           )}
         </button>
 
-        <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280", marginTop: 12 }}>
-          🔒 Secured by Stripe · You'll be redirected to complete payment
-        </p>
+        {!promoFree && (
+          <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280", marginTop: 12 }}>
+            🔒 Secured by Stripe · You'll be redirected to complete payment
+          </p>
+        )}
       </div>
     </div>
   );
@@ -406,25 +334,6 @@ const S = {
     minHeight: "100vh",
     display: "flex",
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
   },
-  fonts: `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`,
-  label: {
-    display: "block",
-    fontSize: 14,
-    fontWeight: 600,
-    color: "#d1d5db",
-    marginBottom: 6
-  },
-  input: {
-    width: "100%",
-    background: "#1f2937",
-    border: "1px solid #374151",
-    borderRadius: 8,
-    padding: "12px 14px",
-    fontSize: 16,
-    color: "#f9fafb",
-    outline: "none",
-    boxSizing: "border-box"
-  }
 };
