@@ -161,9 +161,9 @@ export default function SchoolGroupCard({
           {/* Row 3: date pills */}
           {datePills.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {datePills.map((d) => (
+              {datePills.map((d, i) => (
                 <span
-                  key={d}
+                  key={`${d}-${i}`}
                   className="text-[10px] px-2 py-0.5 rounded-full border border-[#e8a020]/30 text-[#e8a020]/80 bg-[#e8a020]/5"
                 >
                   {safeShortDate(d)}
