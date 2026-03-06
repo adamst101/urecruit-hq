@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns";
 
-export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate }) {
+export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate, onRegister }) {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
@@ -171,16 +171,31 @@ export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDa
                     </div>
 
                     {/* Right */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                      {badgeText && (
-                        <span style={{
-                          background: badgeBg, color: badgeColor,
-                          fontSize: 12, fontWeight: 700, padding: "4px 10px",
-                          borderRadius: 12, whiteSpace: "nowrap",
-                        }}>
-                          {badgeText}
-                        </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      {isFav && !isReg && onRegister && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onRegister(c); }}
+                          style={{
+                            background: "#e8a020", color: "#0a0e1a",
+                            border: "none", borderRadius: 8,
+                            padding: "6px 14px", fontSize: 12, fontWeight: 700,
+                            cursor: "pointer", whiteSpace: "nowrap",
+                          }}
+                        >
+                          Register →
+                        </button>
                       )}
+                      {!isFav || isReg ? (
+                        badgeText && (
+                          <span style={{
+                            background: badgeBg, color: badgeColor,
+                            fontSize: 12, fontWeight: 700, padding: "4px 10px",
+                            borderRadius: 12, whiteSpace: "nowrap",
+                          }}>
+                            {badgeText}
+                          </span>
+                        )
+                      ) : null}
                       <span style={{ color: "#374151", fontSize: 16 }}>›</span>
                     </div>
                   </div>

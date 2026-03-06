@@ -512,6 +512,9 @@ export default function Calendar() {
           const campWarnings = getWarningsForCamp(campId);
           const schoolId = r?.school_id ? String(r.school_id) : null;
           const sportId = r?.sport_id ? String(r.sport_id) : null;
+          const st = String(r?.intent_status || "").toLowerCase();
+          const isFav = st === "favorite";
+          const isReg = st === "registered" || st === "completed";
 
           const camp = {
             id: campId, camp_name: r?.camp_name,
@@ -530,16 +533,34 @@ export default function Calendar() {
 
           return (
             <div key={campId} className="relative">
-              <CampCard
-                camp={camp} school={school} sport={sport} positions={posObjs}
-                isFavorite={String(r?.intent_status || "").toLowerCase() === "favorite"}
-                isRegistered={String(r?.intent_status || "").toLowerCase() === "registered"}
-                mode={isPaid ? "paid" : "demo"}
-                disabledFavorite={!isPaid}
-                onClick={undefined}
-                onFavoriteToggle={() => {}}
-                warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
-              />
+              <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <CampCard
+                    camp={camp} school={school} sport={sport} positions={posObjs}
+                    isFavorite={isFav}
+                    isRegistered={isReg}
+                    mode={isPaid ? "paid" : "demo"}
+                    disabledFavorite={!isPaid}
+                    onClick={undefined}
+                    onFavoriteToggle={() => {}}
+                    warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
+                  />
+                </div>
+                {isFav && !isReg && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleRegister(r); }}
+                    style={{
+                      background: "#e8a020", color: "#0a0e1a",
+                      border: "none", borderRadius: "0 12px 12px 0",
+                      padding: "12px 14px", fontSize: 13, fontWeight: 700,
+                      cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+                      alignSelf: "stretch", display: "flex", alignItems: "center",
+                    }}
+                  >
+                    Register →
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}

@@ -3,7 +3,7 @@ import { format, isSameDay } from "date-fns";
 
 const DAY_ABBRS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
-function CampMiniCard({ camp, school, status, isConflict, onClick }) {
+function CampMiniCard({ camp, school, status, isConflict, onClick, onRegister }) {
   const schoolName = school?.school_name || "Camp";
   const price = typeof camp?.price === "number" && camp.price > 0 ? `$${camp.price}` : null;
 
@@ -36,11 +36,24 @@ function CampMiniCard({ camp, school, status, isConflict, onClick }) {
         {isConflict && status !== "registered" && status !== "completed" && <span style={{ color: "#fca5a5" }}> · ⚠ Conflict</span>}
       </div>
       {price && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{price}</div>}
+      {status === "favorite" && onRegister && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRegister(); }}
+          style={{
+            background: "#e8a020", color: "#0a0e1a",
+            border: "none", borderRadius: 5,
+            padding: "4px 8px", fontSize: 11, fontWeight: 700,
+            cursor: "pointer", marginTop: 6, width: "100%",
+          }}
+        >
+          Register →
+        </button>
+      )}
     </div>
   );
 }
 
-export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate }) {
+export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate, onRegister }) {
   const today = new Date();
 
   // Mobile: show single day
@@ -152,6 +165,7 @@ export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, con
                   status={st}
                   isConflict={isConflict}
                   onClick={() => onCampClick(c)}
+                  onRegister={onRegister ? () => onRegister(c) : undefined}
                 />
               );
             })
