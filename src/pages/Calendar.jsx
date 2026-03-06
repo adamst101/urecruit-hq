@@ -750,10 +750,15 @@ export default function Calendar() {
           isConflict={panelIsConflict}
           conflictWith={panelConflictWith}
           onClose={closeCampDetail}
-          onRegisterClick={() => { handleRegisterClick(panelCamp); closeCampDetail(); }}
+          onRegisterClick={() => {
+            const url = panelCamp?.link_url || panelCamp?.source_url;
+            if (url) window.open(String(url), "_blank", "noopener,noreferrer");
+            closeCampDetail();
+          }}
           onUnregister={() => { doUnregister(panelCamp); closeCampDetail(); }}
           onFavorite={() => handleFavorite(panelCamp)}
           onUnfavorite={() => handleUnfavorite(panelCamp)}
+          onRegisteredToggle={() => { handleRegisteredToggle(panelCampId); closeCampDetail(); }}
         />
       )}
 
