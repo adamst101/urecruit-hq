@@ -203,6 +203,20 @@ export default function Calendar() {
 
   const nf = useMemo(() => normalizeFilters(filters), [filters]);
 
+  // ---- Calendar view state (must be before rows useMemo) ----
+  const [calView, setCalView] = useState("list");
+  const [monthSubView, setMonthSubView] = useState("agenda");
+  const [currentWeek, setCurrentWeek] = useState(() => {
+    const today = new Date();
+    const day = today.getDay();
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - day);
+    return sunday;
+  });
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedCamp, setSelectedCamp] = useState(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+
   // ---- data source ----
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId || undefined,
@@ -289,20 +303,6 @@ export default function Calendar() {
     homeState: athleteProfile?.home_state || null,
     isPaid,
   });
-
-  // ---- Calendar view state ----
-  const [calView, setCalView] = useState("list");
-  const [monthSubView, setMonthSubView] = useState("agenda");
-  const [currentWeek, setCurrentWeek] = useState(() => {
-    const today = new Date();
-    const day = today.getDay();
-    const sunday = new Date(today);
-    sunday.setDate(today.getDate() - day);
-    return sunday;
-  });
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedCamp, setSelectedCamp] = useState(null);
-  const [panelOpen, setPanelOpen] = useState(false);
 
   function openCampDetail(camp) {
     setSelectedCamp(camp);
