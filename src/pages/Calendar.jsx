@@ -118,9 +118,7 @@ export default function Calendar() {
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const forceDemo = url.mode === "demo";
   const effectiveMode = forceDemo ? "demo" : season?.mode;
-  const seasonLoading = !!season?.isLoading;
-  // Guard: treat "loading" as neither paid nor demo to avoid flashing demo UI
-  const isPaid = !seasonLoading && effectiveMode === "paid";
+  const isPaid = effectiveMode === "paid";
 
   const seasonYear = useMemo(() => {
     if (forceDemo && url.seasonYear) return url.seasonYear;
@@ -234,7 +232,7 @@ export default function Calendar() {
   });
 
   const loading =
-    seasonLoading ||
+    !!season?.isLoading ||
     (isPaid && identityLoading) ||
     (isPaid ? !!paidQuery?.isLoading : !!demoQuery?.isLoading);
 
@@ -748,7 +746,7 @@ export default function Calendar() {
           <CalendarViewToggle calView={calView} setCalView={setCalView} />
         </div>
 
-        {!isPaid && !seasonLoading && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
+        {!isPaid && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
 
         {/* Inline filters — list view only */}
         {calView === "list" && (

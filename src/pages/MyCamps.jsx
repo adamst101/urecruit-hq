@@ -56,9 +56,7 @@ export default function MyCamps() {
   const { demoProfileId } = useDemoProfile();
 
   const dm = readDemoMode();
-  const seasonLoading = !!season?.isLoading;
-  // Guard: treat "loading" as neither paid nor demo to avoid flashing demo UI
-  const isDemoMode = !seasonLoading && (dm?.mode === "demo" || season?.mode !== "paid");
+  const isDemoMode = dm?.mode === "demo" || season?.mode !== "paid";
   const seasonYear = Number(dm?.seasonYear || season?.seasonYear || season?.currentYear || new Date().getFullYear());
 
   const athleteId = normId(athleteProfile);
@@ -76,7 +74,7 @@ export default function MyCamps() {
     enabled: isDemoMode,
   });
 
-  const loading = seasonLoading || (isDemoMode ? !!demoQuery?.isLoading : !!paidQuery?.isLoading);
+  const loading = isDemoMode ? !!demoQuery?.isLoading : !!paidQuery?.isLoading;
 
   const rows = useMemo(() => {
     if (!isDemoMode) return Array.isArray(paidQuery?.data) ? paidQuery.data : [];
@@ -371,7 +369,7 @@ export default function MyCamps() {
           <div className="text-2xl font-bold text-[#f9fafb]">My Camps</div>
         </div>
 
-        {isDemoMode && !seasonLoading && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
+        {isDemoMode && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
 
         {/* Summary pills */}
         <MyCampsSummaryPills
