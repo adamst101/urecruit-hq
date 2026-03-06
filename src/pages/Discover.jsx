@@ -519,10 +519,17 @@ export default function Discover() {
       if (isPaid && distanceMiles && homeLat != null && homeLng != null) {
         const campLat = enriched?._school_lat ?? null;
         const campLng = enriched?._school_lng ?? null;
-        // If we can't determine camp location, exclude it from distance results
-        if (campLat == null || campLng == null) return false;
-        const dist = haversine(homeLat, homeLng, campLat, campLng);
-        if (dist > distanceMiles) return false;
+        if (campLat != null && campLng != null) {
+          const dist = haversine(homeLat, homeLng, campLat, campLng);
+          if (dist > distanceMiles) return false;
+        } else {
+          // No coordinates — use same-state as a fallback heuristic.
+          // Include if camp is in the user's home state, exclude otherwise.
+          const homeState = (athleteProfile?.home_state || "").trim().toUpperCase();
+          const campSt = (enriched?.state || enriched?.school_state || "").trim().toUpperCase();
+          if (homeState && campSt && campSt !== homeState) return false;
+          // If both are blank or match, let it through
+        }
       }
 
       return true;
