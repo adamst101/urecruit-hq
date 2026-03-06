@@ -533,9 +533,6 @@ export default function Home() {
       {/* ── DIFFERENTIATORS ── */}
       <DifferentiatorsSection campDisplay={campDisplay} schoolDisplay={schoolDisplay} />
 
-      {/* ── TESTIMONIALS ── */}
-      <TestimonialsSection />
-
       {/* ── EMAIL ALERTS ── */}
       <section style={{ background: '#0a0e1a', padding: '80px 24px', borderTop: '1px solid #1f2937' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
@@ -691,6 +688,9 @@ export default function Home() {
 
         </div>
       </section>
+
+      {/* ── TESTIMONIALS ── */}
+      <TestimonialsSection />
 
       {/* ── PRICING ── */}
       <section style={{ background: "#111827", padding: "80px 24px" }}>
