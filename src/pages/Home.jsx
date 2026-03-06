@@ -669,22 +669,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Bottom CTA */}
-          <div style={{ textAlign: 'center', marginTop: 56, paddingTop: 48, borderTop: '1px solid #1f2937' }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: '#f9fafb', marginBottom: 8 }}>
-              Both emails included in your Season Pass.
-            </div>
-            <p style={{ color: '#9ca3af', fontSize: 16, marginBottom: 24 }}>
-              Automatically sent based on your personal camp calendar. Nothing to set up.
-            </p>
-            <button
-              onClick={handlePricingSignup}
-              style={{ background: '#e8a020', color: '#0a0e1a', border: 'none', borderRadius: 10, padding: '14px 36px', fontSize: 17, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}
-            >
-              Get Season Pass →
-            </button>
-            <div style={{ marginTop: 12, fontSize: 13, color: '#6b7280' }}>$49 · Full season · All features included</div>
-          </div>
 
         </div>
       </section>
