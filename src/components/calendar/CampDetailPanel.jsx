@@ -22,7 +22,7 @@ function useIsMobile(breakpoint = 768) {
   return mobile;
 }
 
-export default function CampDetailPanel({ camp, school, status, isConflict, conflictWith, onClose, onFavorite, onRegisterExternal, onMarkRegistered, onUnregister, onUnfavorite }) {
+export default function CampDetailPanel({ camp, school, status, isConflict, conflictWith, onClose, onFavorite, onRegisterClick, onUnregister, onUnfavorite }) {
   const isMobile = useIsMobile();
 
   if (!camp) return null;
@@ -190,9 +190,9 @@ export default function CampDetailPanel({ camp, school, status, isConflict, conf
 
           {isFav && !isReg && (
             <>
-              {onRegisterExternal && (
+              {onRegisterClick && (
                 <button
-                  onClick={() => onRegisterExternal()}
+                  onClick={() => onRegisterClick()}
                   style={{
                     background: "#e8a020", color: "#0a0e1a",
                     border: "none", borderRadius: 10,
@@ -200,22 +200,8 @@ export default function CampDetailPanel({ camp, school, status, isConflict, conf
                     cursor: "pointer", width: "100%",
                   }}
                 >
-                  Register for this camp →
+                  Register
                 </button>
-              )}
-              {onMarkRegistered && (
-                <div style={{ textAlign: "center", marginTop: 10 }}>
-                  <button
-                    onClick={() => onMarkRegistered()}
-                    style={{
-                      background: "none", border: "none",
-                      color: "#6b7280", fontSize: 12, cursor: "pointer",
-                      textDecoration: "underline", textUnderlineOffset: 2,
-                    }}
-                  >
-                    ✓ Mark as registered (I already signed up)
-                  </button>
-                </div>
               )}
               {onUnfavorite && (
                 <button
@@ -225,6 +211,7 @@ export default function CampDetailPanel({ camp, school, status, isConflict, conf
                     border: "1px solid #374151", borderRadius: 10,
                     padding: 12, fontSize: 14,
                     cursor: "pointer", width: "100%",
+                    marginTop: 4,
                   }}
                 >
                   ★ Remove from favorites

@@ -14,8 +14,8 @@ import DemoBanner from "../components/DemoBanner.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
-import { toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
-import { toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
+import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
+import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
@@ -43,6 +43,8 @@ import WeekView from "../components/calendar/WeekView.jsx";
 import MonthOverview from "../components/calendar/MonthOverview.jsx";
 import MonthGridView from "../components/calendar/MonthGridView.jsx";
 import CampDetailPanel from "../components/calendar/CampDetailPanel.jsx";
+import RegisterConfirmModal from "../components/camps/RegisterConfirmModal.jsx";
+import UnregisterConfirmModal from "../components/camps/UnregisterConfirmModal.jsx";
 
 /* ═══════════════════════════════════════
    Helpers
@@ -140,6 +142,10 @@ export default function Calendar() {
   );
 
   /* ── 3. ALL useState declarations ─── */
+
+  // Register/unregister modal state (same as Discover)
+  const [registerModal, setRegisterModal] = useState({ open: false, camp: null });
+  const [unregisterModal, setUnregisterModal] = useState({ open: false, camp: null });
 
   // View state
   const [calView, setCalView] = useState("list");
@@ -383,31 +389,43 @@ export default function Calendar() {
 
   /* ── 8. Event handlers ────────────── */
 
-  function handleRegisterExternal(camp) {
-    const url = camp?.link_url || camp?.source_url || null;
-    if (url) {
-      window.open(String(url), "_blank", "noopener,noreferrer");
+  function invalidateCampCaches() {
+    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+    queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+  }
+
+  // Opens the same RegisterConfirmModal that Discover uses
+  function handleRegisterClick(camp) {
+    const cid = String(camp?.camp_id || camp?.id || "");
+    if (isCampRegistered(cid)) {
+      setUnregisterModal({ open: true, camp });
     } else {
-      alert("Registration link not available for this camp. Visit the school's website to register.");
+      setRegisterModal({ open: true, camp });
     }
   }
 
-  function handleMarkRegistered(camp) {
+  function isCampRegistered(campId) {
+    if (isPaid) return false; // TODO: check paid intents
+    return isDemoRegistered(demoProfileId, campId);
+  }
+
+  function doRegister(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
     if (!cid) return;
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
-      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+      invalidateCampCaches();
     }
   }
 
-  function handleUnregister(camp) {
+  function doUnregister(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
     if (!cid) return;
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
-      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+      invalidateCampCaches();
     }
+    setUnregisterModal({ open: false, camp: null });
   }
 
   function handleFavorite(camp) {
@@ -415,7 +433,7 @@ export default function Calendar() {
     if (!cid) return;
     if (!isPaid) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
-      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+      invalidateCampCaches();
     }
   }
 
@@ -424,7 +442,7 @@ export default function Calendar() {
     if (!cid) return;
     if (!isPaid) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
-      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+      invalidateCampCaches();
     }
   }
 
@@ -554,18 +572,24 @@ export default function Calendar() {
                     warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
                   />
                 </div>
-                {isFav && !isReg && (
+                {!isReg && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleRegisterExternal(r); }}
-                    style={{
-                      background: "#e8a020", color: "#0a0e1a",
-                      border: "none", borderRadius: "0 12px 12px 0",
-                      padding: "12px 14px", fontSize: 13, fontWeight: 700,
-                      cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-                      alignSelf: "stretch", display: "flex", alignItems: "center",
-                    }}
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleRegisterClick(r); }}
+                    className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
+                    style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10, flexShrink: 0 }}
                   >
-                    Register →
+                    Register
+                  </button>
+                )}
+                {isReg && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleRegisterClick(r); }}
+                    className="text-xs h-7 px-3 rounded-md font-medium bg-emerald-600 text-white hover:bg-emerald-700"
+                    style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10, flexShrink: 0 }}
+                  >
+                    ✓ Registered
                   </button>
                 )}
               </div>
@@ -601,7 +625,7 @@ export default function Calendar() {
             currentWeek={currentWeek} setCurrentWeek={setCurrentWeek}
             campsByDate={campsByDate} conflictDates={conflictDates}
             schoolMap={schoolMap} onCampClick={openCampDetail}
-            onRegister={handleRegisterExternal}
+            onRegister={handleRegisterClick}
             onJumpToDate={(date) => {
               setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
               const d = date.getDay();
@@ -616,7 +640,7 @@ export default function Calendar() {
             currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
             campsByDate={campsByDate} conflictDates={conflictDates}
             schoolMap={schoolMap} onCampClick={openCampDetail}
-            onRegister={handleRegisterExternal}
+            onRegister={handleRegisterClick}
             onJumpToDate={(date) => {
               setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
               const d = date.getDay();
@@ -731,13 +755,42 @@ export default function Calendar() {
           isConflict={panelIsConflict}
           conflictWith={panelConflictWith}
           onClose={closeCampDetail}
-          onRegisterExternal={() => handleRegisterExternal(panelCamp)}
-          onMarkRegistered={() => { handleMarkRegistered(panelCamp); closeCampDetail(); }}
-          onUnregister={() => { handleUnregister(panelCamp); closeCampDetail(); }}
+          onRegisterClick={() => { handleRegisterClick(panelCamp); closeCampDetail(); }}
+          onUnregister={() => { doUnregister(panelCamp); closeCampDetail(); }}
           onFavorite={() => handleFavorite(panelCamp)}
           onUnfavorite={() => handleUnfavorite(panelCamp)}
         />
       )}
+
+      {/* Same modals as Discover */}
+      <RegisterConfirmModal
+        open={registerModal.open}
+        onClose={() => setRegisterModal({ open: false, camp: null })}
+        campName={registerModal.camp?.camp_name || registerModal.camp?.school_name || "this camp"}
+        isPaid={isPaid}
+        linkUrl={registerModal.camp?.link_url || registerModal.camp?.source_url || null}
+        onMarkRegistered={() => {
+          doRegister(registerModal.camp);
+          setRegisterModal({ open: false, camp: null });
+        }}
+        onGoToLink={() => {
+          const url = registerModal.camp?.link_url || registerModal.camp?.source_url;
+          if (url) window.open(String(url), "_blank", "noopener,noreferrer");
+          doRegister(registerModal.camp);
+          setRegisterModal({ open: false, camp: null });
+        }}
+        onSubscribe={() => {
+          window.open("https://camp-connect-698c00ef.base44.app/Subscribe?source=workspace_banner", "_blank", "noopener,noreferrer");
+          setRegisterModal({ open: false, camp: null });
+        }}
+      />
+
+      <UnregisterConfirmModal
+        open={unregisterModal.open}
+        onClose={() => setUnregisterModal({ open: false, camp: null })}
+        campName={unregisterModal.camp?.camp_name || unregisterModal.camp?.school_name || "this camp"}
+        onRemove={() => doUnregister(unregisterModal.camp)}
+      />
     </div>
   );
 }

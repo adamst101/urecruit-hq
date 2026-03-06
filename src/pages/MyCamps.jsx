@@ -17,8 +17,10 @@ import { useCampSummariesClient } from "../components/hooks/useCampSummariesClie
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
-import { toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
-import { toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
+import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
+import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
+import RegisterConfirmModal from "../components/camps/RegisterConfirmModal.jsx";
+import UnregisterConfirmModal from "../components/camps/UnregisterConfirmModal.jsx";
 import WarningBadge from "../components/camps/WarningBadge.jsx";
 import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
@@ -142,14 +144,46 @@ export default function MyCamps() {
 
   const conflictCount = conflictCampIds.size;
 
-  // Action handlers
-  function handleRegisterExternal(r) {
-    const url = r?.link_url || r?.source_url || null;
-    if (url) {
-      window.open(String(url), "_blank", "noopener,noreferrer");
+  // Register/unregister modal state (same as Discover)
+  const [registerModal, setRegisterModal] = useState({ open: false, camp: null });
+  const [unregisterModal, setUnregisterModal] = useState({ open: false, camp: null });
+
+  function invalidateCampCaches() {
+    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+    queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+  }
+
+  function isCampRegisteredCheck(campId) {
+    if (!isDemoMode) return false;
+    return isDemoRegistered(demoProfileId, campId);
+  }
+
+  function handleRegisterClick(camp) {
+    const cid = String(camp?.camp_id || camp?.id || "");
+    if (isCampRegisteredCheck(cid)) {
+      setUnregisterModal({ open: true, camp });
     } else {
-      alert("Registration link not available for this camp. Visit the school's website to register.");
+      setRegisterModal({ open: true, camp });
     }
+  }
+
+  function doRegister(camp) {
+    const cid = String(camp?.camp_id || camp?.id || "");
+    if (!cid) return;
+    if (isDemoMode) {
+      toggleDemoRegistered(demoProfileId, cid);
+      invalidateCampCaches();
+    }
+  }
+
+  function doUnregister(camp) {
+    const cid = String(camp?.camp_id || camp?.id || "");
+    if (!cid) return;
+    if (isDemoMode) {
+      toggleDemoRegistered(demoProfileId, cid);
+      invalidateCampCaches();
+    }
+    setUnregisterModal({ open: false, camp: null });
   }
 
   function handleUnfavorite(r) {
@@ -157,7 +191,7 @@ export default function MyCamps() {
     if (!cid) return;
     if (isDemoMode) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
-      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+      invalidateCampCaches();
     }
   }
 
@@ -259,18 +293,24 @@ export default function MyCamps() {
               onFavoriteToggle={() => {}}
             />
           </div>
-          {isFavorite && !isRegistered && (
+          {!isRegistered && (
             <button
-              onClick={(e) => { e.stopPropagation(); handleRegisterExternal(r); }}
-              style={{
-                background: "#e8a020", color: "#0a0e1a",
-                border: "none", borderRadius: "0 12px 12px 0",
-                padding: "12px 14px", fontSize: 13, fontWeight: 700,
-                cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-                alignSelf: "stretch", display: "flex", alignItems: "center",
-              }}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleRegisterClick(r); }}
+              className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
+              style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10, flexShrink: 0 }}
             >
-              Register →
+              Register
+            </button>
+          )}
+          {isRegistered && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleRegisterClick(r); }}
+              className="text-xs h-7 px-3 rounded-md font-medium bg-emerald-600 text-white hover:bg-emerald-700"
+              style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10, flexShrink: 0 }}
+            >
+              ✓ Registered
             </button>
           )}
         </div>
@@ -363,6 +403,36 @@ export default function MyCamps() {
       </div>
 
       <BottomNav />
+
+      {/* Same modals as Discover */}
+      <RegisterConfirmModal
+        open={registerModal.open}
+        onClose={() => setRegisterModal({ open: false, camp: null })}
+        campName={registerModal.camp?.camp_name || registerModal.camp?.school_name || "this camp"}
+        isPaid={!isDemoMode}
+        linkUrl={registerModal.camp?.link_url || registerModal.camp?.source_url || null}
+        onMarkRegistered={() => {
+          doRegister(registerModal.camp);
+          setRegisterModal({ open: false, camp: null });
+        }}
+        onGoToLink={() => {
+          const url = registerModal.camp?.link_url || registerModal.camp?.source_url;
+          if (url) window.open(String(url), "_blank", "noopener,noreferrer");
+          doRegister(registerModal.camp);
+          setRegisterModal({ open: false, camp: null });
+        }}
+        onSubscribe={() => {
+          window.open("https://camp-connect-698c00ef.base44.app/Subscribe?source=workspace_banner", "_blank", "noopener,noreferrer");
+          setRegisterModal({ open: false, camp: null });
+        }}
+      />
+
+      <UnregisterConfirmModal
+        open={unregisterModal.open}
+        onClose={() => setUnregisterModal({ open: false, camp: null })}
+        campName={unregisterModal.camp?.camp_name || unregisterModal.camp?.school_name || "this camp"}
+        onRemove={() => doUnregister(unregisterModal.camp)}
+      />
     </div>
   );
 }
