@@ -50,6 +50,7 @@ export default function CampCard({
   mode,
   disabledFavorite,
   warningBadge,
+  onRegisterClick,
 }) {
   const division = school?.division || school?.school_division || null;
   const schoolName = school?.school_name || school?.name || "Unknown School";
@@ -123,28 +124,49 @@ export default function CampCard({
           </div>
         </div>
 
-        {/* Favorite star */}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="flex-shrink-0"
-          disabled={!!disabledFavorite}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (disabledFavorite) return;
-            onFavoriteToggle?.();
-          }}
-          aria-label={isFavorite ? "Remove favorite" : "Add favorite"}
-        >
-          <Star
-            className={cn(
-              "w-5 h-5",
-              isFavorite ? "fill-amber-400 text-amber-400" : "text-[#9ca3af]"
-            )}
-          />
-        </Button>
+        {/* Action buttons */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="flex-shrink-0"
+            disabled={!!disabledFavorite}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (disabledFavorite) return;
+              onFavoriteToggle?.();
+            }}
+            aria-label={isFavorite ? "Remove favorite" : "Add favorite"}
+          >
+            <Star
+              className={cn(
+                "w-5 h-5",
+                isFavorite ? "fill-amber-400 text-amber-400" : "text-[#9ca3af]"
+              )}
+            />
+          </Button>
+          {onRegisterClick && (
+            <button
+              type="button"
+              className={cn(
+                "text-xs h-7 px-3 rounded-md font-medium",
+                isRegistered
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
+              )}
+              style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onRegisterClick();
+              }}
+            >
+              {isRegistered ? "✓ Registered" : "Register"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
