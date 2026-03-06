@@ -1,6 +1,6 @@
 // src/components/camps/SchoolGroupCard.jsx
 import React, { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, CheckCircle2, Circle } from "lucide-react";
 import { format } from "date-fns";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -54,6 +54,7 @@ export default function SchoolGroupCard({
   isCampFavorite,
   isCampRegistered,
   onFavoriteToggle,
+  onRegisteredToggle,
   onRegisterClick,
   onCampClick,
   getWarningsForCamp,
@@ -216,27 +217,45 @@ export default function SchoolGroupCard({
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {/* Star */}
                   <button
                     type="button"
-                    className={"h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937] " + (isFav ? "text-amber-500" : "text-[#9ca3af]")}
-                    style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
+                    title={isFav ? "Remove from favorites" : "Add to favorites"}
+                    className={"h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937] " + (isFav ? "text-[#e8a020]" : "text-[#6b7280] hover:text-[#e8a020]")}
+                    style={{ background: "none", border: "none", cursor: "pointer", transition: "color 0.15s" }}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      console.log("[SchoolGroupCard] star clicked", { campId, isFav });
                       onFavoriteToggle?.(campId);
                     }}
-                    aria-label={isFav ? "Remove favorite" : "Add favorite"}
                   >
                     <span className="text-lg leading-none">
                       {isFav ? "★" : "☆"}
                     </span>
                   </button>
+                  {/* Checkmark */}
+                  {onRegisteredToggle && (
+                    <button
+                      type="button"
+                      title={isReg ? "Remove registered status" : "Mark as registered"}
+                      className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937]"
+                      style={{ background: "none", border: "none", cursor: "pointer" }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onRegisteredToggle(campId);
+                      }}
+                    >
+                      {isReg
+                        ? <CheckCircle2 size={20} className="text-[#10b981]" />
+                        : <Circle size={20} className="text-[#6b7280] hover:text-[#10b981]" style={{ transition: "color 0.15s" }} />
+                      }
+                    </button>
+                  )}
+                  {/* Register → opens Ryzer URL */}
                   <button
                     type="button"
-                    className={"text-xs h-7 px-3 rounded-md font-medium " + (isReg
-                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                      : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]")}
+                    className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
                     style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
                     onClick={(e) => {
                       e.preventDefault();
@@ -244,7 +263,7 @@ export default function SchoolGroupCard({
                       onRegisterClick?.(camp);
                     }}
                   >
-                    {isReg ? "✓ Registered" : "Register"}
+                    Register →
                   </button>
                 </div>
               </div>
