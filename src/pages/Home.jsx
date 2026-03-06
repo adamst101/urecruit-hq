@@ -536,6 +536,162 @@ export default function Home() {
       {/* ── TESTIMONIALS ── */}
       <TestimonialsSection />
 
+      {/* ── EMAIL ALERTS ── */}
+      <section style={{ background: '#0a0e1a', padding: '80px 24px', borderTop: '1px solid #1f2937' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+
+          {/* Section header */}
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 3, color: '#e8a020', textTransform: 'uppercase' }}>
+                WE DO THE WORK. YOU SHOW UP READY.
+              </span>
+              <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
+            </div>
+            <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(36px, 5vw, 56px)', color: '#f9fafb', margin: '0 0 16px', lineHeight: 1.05 }}>
+              NEVER MISS A CAMP.<br />NEVER FORGET A DATE.
+            </h2>
+            <p style={{ fontSize: 18, color: '#9ca3af', maxWidth: 560, margin: '0 auto', lineHeight: 1.6 }}>
+              We send two types of emails that keep your family one step ahead all season long — no app-checking required.
+            </p>
+          </div>
+
+          {/* Two column layout */}
+          <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+
+            {/* LEFT — two email type cards */}
+            <div style={{ flex: '1 1 340px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+              {/* Email type 1 — Monthly Agenda */}
+              <div style={{ background: '#111827', borderRadius: 16, borderLeft: '4px solid #e8a020', padding: '24px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(232,160,32,0.12)', border: '1px solid rgba(232,160,32,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>📅</div>
+                  <div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: '#f9fafb', letterSpacing: 1 }}>MONTHLY CAMP AGENDA</div>
+                    <div style={{ fontSize: 12, color: '#e8a020', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Sent first week of each month</div>
+                  </div>
+                </div>
+                <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.65, margin: 0 }}>
+                  A curated list of every camp happening that month — organized by date, filterable by division, and ready to forward to your athlete. Plan the full month before it starts.
+                </p>
+                <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {['All camps for the month in one place', 'Sorted by date — easy to scan', 'Includes price, location, and division', 'Printable format for the fridge'].map(item => (
+                    <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#d1d5db' }}>
+                      <span style={{ color: '#e8a020', fontSize: 14, flexShrink: 0 }}>✓</span>
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Email type 2 — Camp Week Alert */}
+              <div style={{ background: '#111827', borderRadius: 16, borderLeft: '4px solid #10b981', padding: '24px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🔔</div>
+                  <div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: '#f9fafb', letterSpacing: 1 }}>CAMP WEEK ALERT</div>
+                    <div style={{ fontSize: 12, color: '#10b981', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Sent 7 days before your camps</div>
+                  </div>
+                </div>
+                <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.65, margin: 0 }}>
+                  Seven days before any camp on your calendar, we send a prep reminder — what to bring, what coaches are watching for, and a final check on travel logistics. Show up prepared, not scrambling.
+                </p>
+                <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {['Triggered by your personal calendar', 'What to bring checklist', 'Travel and timing reminders', 'What coaches evaluate at camp'].map(item => (
+                    <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#d1d5db' }}>
+                      <span style={{ color: '#10b981', fontSize: 14, flexShrink: 0 }}>✓</span>
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT — mock email preview */}
+            <div style={{ flex: '1 1 400px', position: 'sticky', top: 80 }}>
+              <div style={{ background: '#111827', borderRadius: 16, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)' }}>
+
+                {/* Email client top bar */}
+                <div style={{ background: '#1f2937', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #374151' }}>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ef4444' }} />
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#f59e0b' }} />
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#10b981' }} />
+                  <div style={{ flex: 1, marginLeft: 8, background: '#374151', borderRadius: 6, padding: '4px 10px', fontSize: 12, color: '#9ca3af' }}>inbox</div>
+                </div>
+
+                {/* Email header */}
+                <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid #1f2937' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: '#f9fafb' }}>URecruit HQ</div>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>Today, 7:02 AM</div>
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#f9fafb', marginBottom: 4 }}>🔔 Camp Week Alert — TCU is in 7 days</div>
+                  <div style={{ fontSize: 13, color: '#6b7280' }}>to jake.adams@email.com</div>
+                </div>
+
+                {/* Email body preview */}
+                <div style={{ padding: '20px 20px' }}>
+                  {/* School banner */}
+                  <div style={{ background: 'linear-gradient(135deg, #1a0a00, #2d1500)', border: '1px solid rgba(232,160,32,0.3)', borderLeft: '4px solid #e8a020', borderRadius: 10, padding: '14px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, #e8a020, #c4841d)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: '#fff', flexShrink: 0 }}>T</div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: '#f9fafb' }}>TCU Horned Frogs Football</div>
+                      <div style={{ fontSize: 13, color: '#9ca3af' }}>📅 June 14 · 📍 Fort Worth, TX · 💰 $65</div>
+                    </div>
+                  </div>
+
+                  {/* Checklist preview */}
+                  <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Your prep checklist</div>
+                  {[
+                    { done: true, text: 'Registration confirmed ✓' },
+                    { done: true, text: 'Hotel booked — Fort Worth Marriott' },
+                    { done: false, text: 'Pack cleats, shorts, numbered pinnie' },
+                    { done: false, text: 'Download updated camp schedule' },
+                    { done: false, text: 'Review what WRs should show at TCU' }
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: i < 4 ? '1px solid #1f2937' : 'none', fontSize: 14, color: item.done ? '#6b7280' : '#d1d5db', textDecoration: item.done ? 'line-through' : 'none' }}>
+                      <div style={{ width: 18, height: 18, borderRadius: 4, border: item.done ? 'none' : '2px solid #374151', background: item.done ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11, color: '#fff' }}>
+                        {item.done ? '✓' : ''}
+                      </div>
+                      {item.text}
+                    </div>
+                  ))}
+
+                  {/* Faded bottom */}
+                  <div style={{ marginTop: 16, height: 60, background: 'linear-gradient(to bottom, transparent, #111827)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: '#4b5563' }}>+ travel notes, what coaches look for, and more...</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Caption */}
+              <p style={{ textAlign: 'center', fontSize: 13, color: '#6b7280', marginTop: 16, fontStyle: 'italic' }}>
+                Example camp week alert — personalized to your calendar
+              </p>
+            </div>
+          </div>
+
+          {/* Bottom CTA */}
+          <div style={{ textAlign: 'center', marginTop: 56, paddingTop: 48, borderTop: '1px solid #1f2937' }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: '#f9fafb', marginBottom: 8 }}>
+              Both emails included in your Season Pass.
+            </div>
+            <p style={{ color: '#9ca3af', fontSize: 16, marginBottom: 24 }}>
+              Automatically sent based on your personal camp calendar. Nothing to set up.
+            </p>
+            <button
+              onClick={handlePricingSignup}
+              style={{ background: '#e8a020', color: '#0a0e1a', border: 'none', borderRadius: 10, padding: '14px 36px', fontSize: 17, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}
+            >
+              Get Season Pass →
+            </button>
+            <div style={{ marginTop: 12, fontSize: 13, color: '#6b7280' }}>$49 · Full season · All features included</div>
+          </div>
+
+        </div>
+      </section>
+
       {/* ── PRICING ── */}
       <section style={{ background: "#111827", padding: "80px 24px" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center" }}>
