@@ -383,14 +383,22 @@ export default function Calendar() {
 
   /* ── 8. Event handlers ────────────── */
 
-  function handleRegister(camp) {
+  function handleRegisterExternal(camp) {
+    const url = camp?.link_url || camp?.source_url || null;
+    if (url) {
+      window.open(String(url), "_blank", "noopener,noreferrer");
+    } else {
+      alert("Registration link not available for this camp. Visit the school's website to register.");
+    }
+  }
+
+  function handleMarkRegistered(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
     if (!cid) return;
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
       queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
     }
-    // TODO: paid mode register via CampIntent entity
   }
 
   function handleUnregister(camp) {
@@ -548,7 +556,7 @@ export default function Calendar() {
                 </div>
                 {isFav && !isReg && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleRegister(r); }}
+                    onClick={(e) => { e.stopPropagation(); handleRegisterExternal(r); }}
                     style={{
                       background: "#e8a020", color: "#0a0e1a",
                       border: "none", borderRadius: "0 12px 12px 0",
@@ -593,7 +601,7 @@ export default function Calendar() {
             currentWeek={currentWeek} setCurrentWeek={setCurrentWeek}
             campsByDate={campsByDate} conflictDates={conflictDates}
             schoolMap={schoolMap} onCampClick={openCampDetail}
-            onRegister={handleRegister}
+            onRegister={handleRegisterExternal}
             onJumpToDate={(date) => {
               setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
               const d = date.getDay();
@@ -608,7 +616,7 @@ export default function Calendar() {
             currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
             campsByDate={campsByDate} conflictDates={conflictDates}
             schoolMap={schoolMap} onCampClick={openCampDetail}
-            onRegister={handleRegister}
+            onRegister={handleRegisterExternal}
             onJumpToDate={(date) => {
               setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
               const d = date.getDay();
@@ -723,8 +731,9 @@ export default function Calendar() {
           isConflict={panelIsConflict}
           conflictWith={panelConflictWith}
           onClose={closeCampDetail}
-          onRegister={() => handleRegister(panelCamp)}
-          onUnregister={() => handleUnregister(panelCamp)}
+          onRegisterExternal={() => handleRegisterExternal(panelCamp)}
+          onMarkRegistered={() => { handleMarkRegistered(panelCamp); closeCampDetail(); }}
+          onUnregister={() => { handleUnregister(panelCamp); closeCampDetail(); }}
           onFavorite={() => handleFavorite(panelCamp)}
           onUnfavorite={() => handleUnfavorite(panelCamp)}
         />

@@ -143,12 +143,12 @@ export default function MyCamps() {
   const conflictCount = conflictCampIds.size;
 
   // Action handlers
-  function handleRegister(r) {
-    const cid = String(r?.camp_id || r?.id || "");
-    if (!cid) return;
-    if (isDemoMode) {
-      toggleDemoRegistered(demoProfileId, cid);
-      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+  function handleRegisterExternal(r) {
+    const url = r?.link_url || r?.source_url || null;
+    if (url) {
+      window.open(String(url), "_blank", "noopener,noreferrer");
+    } else {
+      alert("Registration link not available for this camp. Visit the school's website to register.");
     }
   }
 
@@ -261,7 +261,7 @@ export default function MyCamps() {
           </div>
           {isFavorite && !isRegistered && (
             <button
-              onClick={(e) => { e.stopPropagation(); handleRegister(r); }}
+              onClick={(e) => { e.stopPropagation(); handleRegisterExternal(r); }}
               style={{
                 background: "#e8a020", color: "#0a0e1a",
                 border: "none", borderRadius: "0 12px 12px 0",
