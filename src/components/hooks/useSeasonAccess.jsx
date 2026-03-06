@@ -1,5 +1,5 @@
 // src/components/hooks/useSeasonAccess.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { base44 } from "../../api/base44Client";
 
 import { footballCurrentSeasonYear } from "../utils/seasonEntitlements.jsx";
@@ -9,46 +9,38 @@ import { readDemoMode } from "./demoMode.jsx";
 /**
  * useSeasonAccess()
  *
- * Purpose:
- * - Single source of truth for "am I authenticated?" and "do I have paid access for the current season?"
- * - Demo year defaults to previous season (football rule, Feb 1 rollover)
- * - If demo mode is set in sessionStorage (demoMode_v1), use that seasonYear while in demo
+ * Single source of truth for auth + season entitlement state.
  *
- * Contract (returned shape):
- * {
- *   loading, isLoading,
- *   mode: "paid" | "demo",
- *   hasAccess: boolean,
- *   currentYear: number,
- *   demoYear: number,
- *   seasonYear: number,
- *   season: number,          // alias for seasonYear (legacy compatibility)
- *   accountId: string|null,
- *   entitlement: object|null,
- *   isAuthenticated: boolean
- * }
+ * Uses a MODULE-LEVEL cache so the result persists across all hook
+ * instances and page navigations. Only one async fetch ever runs at
+ * a time — all concurrent callers share the same promise.
+ *
+ * Call clearSeasonAccessCache() on logout to reset.
  */
+
+// ─── Module-level session cache ───────────────────────
+// Persists across all hook instances and page navigations.
+let _cachedResult = null;   // null = not yet fetched
+let _fetchPromise = null;   // shared in-flight promise
+
+export function clearSeasonAccessCache() {
+  _cachedResult = null;
+  _fetchPromise = null;
+}
+
+// ─── Helpers (unchanged) ──────────────────────────────
 
 function nowISO() {
   return new Date().toISOString();
 }
 
-/**
- * Only treat an entitlement as valid if it's active "right now" in its time window.
- * - starts_at blank => OK
- * - ends_at blank => OK
- * - else enforce starts_at <= now < ends_at
- */
 function isActiveInWindow(ent, now = new Date()) {
   try {
     const nowMs = now.getTime();
-
     const starts = ent?.starts_at ? new Date(String(ent.starts_at)).getTime() : null;
     const ends = ent?.ends_at ? new Date(String(ent.ends_at)).getTime() : null;
-
     if (starts != null && !Number.isNaN(starts) && nowMs < starts) return false;
     if (ends != null && !Number.isNaN(ends) && nowMs >= ends) return false;
-
     return true;
   } catch {
     return false;
@@ -64,11 +56,6 @@ async function safeMe() {
   }
 }
 
-/**
- * Hardened fetch:
- * - Query only active entitlements for (accountId, seasonYear)
- * - Only accept the entitlement if it is active in its starts/ends window
- */
 async function fetchEntitlement({ accountId, seasonYear }) {
   try {
     const rows = await base44.entities.Entitlement.filter({
@@ -76,12 +63,9 @@ async function fetchEntitlement({ accountId, seasonYear }) {
       season_year: seasonYear,
       status: "active",
     });
-
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length) return null;
-
-    const valid = list.find((x) => isActiveInWindow(x)) || null;
-    return valid;
+    return list.find((x) => isActiveInWindow(x)) || null;
   } catch {
     return null;
   }
@@ -89,15 +73,77 @@ async function fetchEntitlement({ accountId, seasonYear }) {
 
 function readDemoSeasonOverride({ fallbackDemoYear }) {
   try {
-    const dm = readDemoMode(); // reads KEY "demoMode_v1"
+    const dm = readDemoMode();
     const y = Number(dm?.seasonYear);
     if (dm?.mode === "demo" && Number.isFinite(y)) return y;
   } catch {}
   return typeof fallbackDemoYear === "number" ? fallbackDemoYear : null;
 }
 
+// ─── Core async resolver (returns result object, no setState) ───
+
+async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
+  const demoSeason = readDemoSeasonOverride({ fallbackDemoYear: demoYear });
+
+  const me = await safeMe();
+  const accountId = me?.id || null;
+
+  // Not signed in → demo
+  if (!accountId) {
+    return {
+      currentYear: currentYear || null,
+      demoYear: demoYear || null,
+      mode: "demo",
+      hasAccess: false,
+      seasonYear: demoSeason || demoYear || currentYear || null,
+      season: demoSeason || demoYear || currentYear || null,
+      accountId: null,
+      entitlement: null,
+      isAuthenticated: false,
+      lastCheckedAt: nowISO(),
+    };
+  }
+
+  // Check entitlement for active season, then sold season (early-bird)
+  let ent = await fetchEntitlement({ accountId, seasonYear: activeSeason });
+  if (!ent && soldSeason !== activeSeason) {
+    ent = await fetchEntitlement({ accountId, seasonYear: soldSeason });
+  }
+
+  if (ent) {
+    try { sessionStorage.removeItem("demoMode_v1"); } catch {}
+    return {
+      currentYear: currentYear || null,
+      demoYear: demoYear || null,
+      mode: "paid",
+      hasAccess: true,
+      seasonYear: activeSeason || currentYear || null,
+      season: activeSeason || currentYear || null,
+      accountId,
+      entitlement: ent,
+      isAuthenticated: true,
+      lastCheckedAt: nowISO(),
+    };
+  }
+
+  // Signed in but NOT entitled → demo
+  return {
+    currentYear: currentYear || null,
+    demoYear: demoYear || null,
+    mode: "demo",
+    hasAccess: false,
+    seasonYear: demoSeason || demoYear || currentYear || null,
+    season: demoSeason || demoYear || currentYear || null,
+    accountId,
+    entitlement: null,
+    isAuthenticated: true,
+    lastCheckedAt: nowISO(),
+  };
+}
+
+// ─── Hook ─────────────────────────────────────────────
+
 export function useSeasonAccess() {
-  // Derived years using new season logic
   const currentYear = useMemo(() => footballCurrentSeasonYear(), []);
   const soldSeason = useMemo(() => getCurrentSoldSeason(), []);
   const activeSeason = useMemo(() => getCurrentActiveSeason(), []);
@@ -106,146 +152,76 @@ export function useSeasonAccess() {
     [activeSeason]
   );
 
-  // Demo override from session (set by Home "Access Demo")
   const initialDemoSeason = useMemo(
     () => readDemoSeasonOverride({ fallbackDemoYear: demoYear }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [demoYear]
   );
 
-  const [state, setState] = useState(() => ({
-    isLoading: true,
-    loading: true,
-
-    currentYear: currentYear || null,
-    demoYear: demoYear || null,
-
-    mode: "loading",
-    hasAccess: false,
-
-    // default browse year for demo uses session override if present
-    seasonYear: initialDemoSeason || demoYear || currentYear || null,
-    season: initialDemoSeason || demoYear || currentYear || null,
-
-    accountId: null,
-    entitlement: null,
-    isAuthenticated: false,
-
-    lastCheckedAt: null,
-  }));
-
-  const inflightRef = useRef(false);
-
-  const refresh = async () => {
-    if (inflightRef.current) return;
-    inflightRef.current = true;
-
-    const demoSeason = readDemoSeasonOverride({ fallbackDemoYear: demoYear });
-
-    setState((p) => ({
-      ...p,
+  // If we already have a cached result, initialise from it (instant)
+  const [state, setState] = useState(() => {
+    if (_cachedResult) {
+      return { ..._cachedResult, isLoading: false, loading: false };
+    }
+    return {
       isLoading: true,
       loading: true,
-      currentYear: currentYear || p.currentYear,
-      demoYear: demoYear || p.demoYear,
-      // keep demo selection sticky while loading (only matters for demo users)
-      seasonYear: demoSeason || p.seasonYear,
-      season: demoSeason || p.season,
-    }));
+      currentYear: currentYear || null,
+      demoYear: demoYear || null,
+      mode: "loading",
+      hasAccess: false,
+      seasonYear: initialDemoSeason || demoYear || currentYear || null,
+      season: initialDemoSeason || demoYear || currentYear || null,
+      accountId: null,
+      entitlement: null,
+      isAuthenticated: false,
+      lastCheckedAt: null,
+    };
+  });
+
+  const refresh = async () => {
+    // 1. Cached paid result → use instantly, skip network
+    if (_cachedResult?.hasAccess === true) {
+      setState((p) => ({ ...p, ..._cachedResult, isLoading: false, loading: false }));
+      return;
+    }
+
+    // 2. Another instance already fetching → share its promise
+    if (_fetchPromise) {
+      try {
+        const result = await _fetchPromise;
+        setState((p) => ({ ...p, ...result, isLoading: false, loading: false }));
+      } catch {}
+      return;
+    }
+
+    // 3. Start a new fetch, share via _fetchPromise
+    setState((p) => ({ ...p, isLoading: true, loading: true }));
+
+    _fetchPromise = doRefresh({ currentYear, demoYear, activeSeason, soldSeason });
 
     try {
-      const me = await safeMe();
-      const accountId = me?.id || null;
-      const isAuthenticated = !!accountId;
+      const result = await _fetchPromise;
 
-      // Not signed in -> demo (use demo mode seasonYear if set)
-      if (!accountId) {
-        setState((p) => ({
-          ...p,
-          isLoading: false,
-          loading: false,
-
-          currentYear: currentYear || p.currentYear,
-          demoYear: demoYear || p.demoYear,
-
-          mode: "demo",
-          hasAccess: false,
-
-          seasonYear: demoSeason || demoYear || p.demoYear || p.seasonYear,
-          season: demoSeason || demoYear || p.demoYear || p.season,
-
-          accountId: null,
-          entitlement: null,
-          isAuthenticated: false,
-
-          lastCheckedAt: nowISO(),
-        }));
-        return;
+      // Cache ONLY paid results
+      if (result?.hasAccess === true) {
+        _cachedResult = result;
       }
 
-      /**
-       * Check entitlement for EITHER the active season OR the sold season.
-       * This allows early-bird buyers (Sep-Dec) to get access immediately.
-       */
-      let ent = await fetchEntitlement({ accountId, seasonYear: activeSeason });
-      if (!ent && soldSeason !== activeSeason) {
-        ent = await fetchEntitlement({ accountId, seasonYear: soldSeason });
-      }
-
-      if (ent) {
-        // Clear demo mode when user has paid access
-        try { sessionStorage.removeItem("demoMode_v1"); } catch {}
-
-        setState((p) => ({
-          ...p,
-          isLoading: false,
-          loading: false,
-
-          currentYear: currentYear || p.currentYear,
-          demoYear: demoYear || p.demoYear,
-
-          mode: "paid",
-          hasAccess: true,
-
-          // Paid workspace always shows the active season's camp data
-          seasonYear: activeSeason || currentYear || p.seasonYear,
-          season: activeSeason || currentYear || p.season,
-
-          accountId,
-          entitlement: ent,
-          isAuthenticated: true,
-
-          lastCheckedAt: nowISO(),
-        }));
-      } else {
-        // Signed in but NOT entitled -> demo (use demo mode seasonYear if set)
-        setState((p) => ({
-          ...p,
-          isLoading: false,
-          loading: false,
-
-          currentYear: currentYear || p.currentYear,
-          demoYear: demoYear || p.demoYear,
-
-          mode: "demo",
-          hasAccess: false,
-
-          seasonYear: demoSeason || demoYear || p.demoYear || p.seasonYear,
-          season: demoSeason || demoYear || p.demoYear || p.season,
-
-          accountId,
-          entitlement: null,
-          isAuthenticated: true,
-
-          lastCheckedAt: nowISO(),
-        }));
-      }
+      setState((p) => ({ ...p, ...result, isLoading: false, loading: false }));
+    } catch {
+      // On error, fall through to demo gracefully
+      setState((p) => ({
+        ...p,
+        isLoading: false,
+        loading: false,
+        mode: p.mode === "loading" ? "demo" : p.mode,
+      }));
     } finally {
-      inflightRef.current = false;
+      _fetchPromise = null;
     }
   };
 
-  // Run once on mount, and also re-evaluate if currentYear/demoYear changes (rare)
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -253,7 +229,6 @@ export function useSeasonAccess() {
 
   return {
     ...state,
-    // keep both flags for backward compatibility
     isLoading: !!state.isLoading,
     loading: !!state.isLoading,
     soldSeason,
