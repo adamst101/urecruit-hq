@@ -803,7 +803,10 @@ export default function Discover() {
             isCampRegistered={isCampRegistered}
             onFavoriteToggle={handleFavoriteToggle}
             onRegisteredToggle={handleRegisteredToggle}
-            onRegisterClick={handleRegisterClick}
+            onRegisterClick={(camp) => {
+              const url = camp?.link_url || camp?.source_url;
+              if (url) window.open(String(url), "_blank", "noopener,noreferrer");
+            }}
             onCampClick={() => {}}
             getWarningsForCamp={(campId) => {
               const existing = getSavedCamps();
