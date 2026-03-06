@@ -76,7 +76,7 @@ export default function MyCamps() {
     enabled: isDemoMode,
   });
 
-  const loading = isDemoMode ? !!demoQuery?.isLoading : !!paidQuery?.isLoading;
+  const loading = seasonLoading || (isDemoMode ? !!demoQuery?.isLoading : !!paidQuery?.isLoading);
 
   const rows = useMemo(() => {
     if (!isDemoMode) return Array.isArray(paidQuery?.data) ? paidQuery.data : [];

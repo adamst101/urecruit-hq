@@ -234,7 +234,7 @@ export default function Calendar() {
   });
 
   const loading =
-    !!season?.isLoading ||
+    seasonLoading ||
     (isPaid && identityLoading) ||
     (isPaid ? !!paidQuery?.isLoading : !!demoQuery?.isLoading);
 
