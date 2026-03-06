@@ -89,6 +89,13 @@ const TOOLS = [
         icon: "🔄",
         color: "#3a6b1a",
       },
+      {
+        title: "Geocode Schools",
+        description: "Backfill lat/lng coordinates on School records for accurate distance filtering. Uses Census Geocoding API.",
+        route: "/GeocodeSchools",
+        icon: "📍",
+        color: "#1a6b3a",
+      },
     ],
   },
   {
