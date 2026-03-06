@@ -405,8 +405,23 @@ export default function Calendar() {
   }
 
   function isCampRegistered(campId) {
-    if (isPaid) return false; // TODO: check paid intents
+    if (isPaid) {
+      // Check from the query data — look for registered/completed status
+      const base = asArray(paidQuery?.data);
+      const row = base.find((r) => String(r?.camp_id || r?.id || "") === String(campId));
+      const st = String(row?.intent_status || "").toLowerCase();
+      return st === "registered" || st === "completed";
+    }
     return isDemoRegistered(demoProfileId, campId);
+  }
+
+  function isCampFavorite(campId) {
+    if (isPaid) {
+      const base = asArray(paidQuery?.data);
+      const row = base.find((r) => String(r?.camp_id || r?.id || "") === String(campId));
+      return String(row?.intent_status || "").toLowerCase() === "favorite";
+    }
+    return false;
   }
 
   function doRegister(camp) {
@@ -446,6 +461,33 @@ export default function Calendar() {
     }
   }
 
+  async function upsertIntent(campId, nextStatus) {
+    const CampIntent = base44?.entities?.CampIntent;
+    if (!CampIntent?.create) return;
+    const key = String(campId || "");
+    if (!key) return;
+
+    try {
+      // Find existing intent for this camp
+      const aId = athleteId;
+      if (!aId) return;
+      const existing = await CampIntent.filter({ athlete_id: aId, camp_id: key }).then(
+        (rows) => (Array.isArray(rows) && rows.length > 0 ? rows[0] : null)
+      ).catch(() => null);
+
+      if (!nextStatus) {
+        if (existing?.id) await CampIntent.update(existing.id, { status: "" });
+      } else if (existing?.id) {
+        await CampIntent.update(existing.id, { status: String(nextStatus) });
+      } else {
+        await CampIntent.create({ camp_id: key, status: String(nextStatus), athlete_id: aId });
+      }
+    } catch (err) {
+      console.error("[Calendar upsertIntent]", err);
+    }
+    invalidateCampCaches();
+  }
+
   function handleRegisteredToggle(campIdOrCamp) {
     const cid = typeof campIdOrCamp === "string"
       ? campIdOrCamp
@@ -456,7 +498,12 @@ export default function Calendar() {
       toggleDemoRegistered(demoProfileId, cid);
       invalidateCampCaches();
     } else {
-      // TODO: paid intent toggle
+      if (isReg) {
+        const isFav = isCampFavorite(cid);
+        upsertIntent(cid, isFav ? "favorite" : "");
+      } else {
+        upsertIntent(cid, "registered");
+      }
     }
   }
 

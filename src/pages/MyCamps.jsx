@@ -154,8 +154,23 @@ export default function MyCamps() {
   }
 
   function isCampRegisteredCheck(campId) {
-    if (!isDemoMode) return false;
+    if (!isDemoMode) {
+      // Check from query data
+      const base = Array.isArray(paidQuery?.data) ? paidQuery.data : [];
+      const row = base.find((r) => String(r?.camp_id || r?.id || "") === String(campId));
+      const st = String(row?.intent_status || "").toLowerCase();
+      return st === "registered" || st === "completed";
+    }
     return isDemoRegistered(demoProfileId, campId);
+  }
+
+  function isCampFavoriteCheck(campId) {
+    if (!isDemoMode) {
+      const base = Array.isArray(paidQuery?.data) ? paidQuery.data : [];
+      const row = base.find((r) => String(r?.camp_id || r?.id || "") === String(campId));
+      return String(row?.intent_status || "").toLowerCase() === "favorite";
+    }
+    return false;
   }
 
   function handleRegisterClick(camp) {
@@ -195,6 +210,32 @@ export default function MyCamps() {
     }
   }
 
+  async function upsertIntent(campId, nextStatus) {
+    const CampIntent = base44?.entities?.CampIntent;
+    if (!CampIntent?.create) return;
+    const key = String(campId || "");
+    if (!key) return;
+    const aId = athleteId ? String(athleteId) : null;
+    if (!aId) return;
+
+    try {
+      const existing = await CampIntent.filter({ athlete_id: aId, camp_id: key }).then(
+        (rows) => (Array.isArray(rows) && rows.length > 0 ? rows[0] : null)
+      ).catch(() => null);
+
+      if (!nextStatus) {
+        if (existing?.id) await CampIntent.update(existing.id, { status: "" });
+      } else if (existing?.id) {
+        await CampIntent.update(existing.id, { status: String(nextStatus) });
+      } else {
+        await CampIntent.create({ camp_id: key, status: String(nextStatus), athlete_id: aId });
+      }
+    } catch (err) {
+      console.error("[MyCamps upsertIntent]", err);
+    }
+    invalidateCampCaches();
+  }
+
   function handleRegisteredToggle(campId) {
     const cid = String(campId ?? "");
     if (!cid) return;
@@ -203,7 +244,12 @@ export default function MyCamps() {
       toggleDemoRegistered(demoProfileId, cid);
       invalidateCampCaches();
     } else {
-      // TODO: paid intent toggle
+      if (isReg) {
+        const isFav = isCampFavoriteCheck(cid);
+        upsertIntent(cid, isFav ? "favorite" : "");
+      } else {
+        upsertIntent(cid, "registered");
+      }
     }
   }
 

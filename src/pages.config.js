@@ -63,6 +63,7 @@ import Checkout from './pages/Checkout';
 import CheckoutSuccess from './pages/CheckoutSuccess';
 import Discover from './pages/Discover';
 import GenerateDemoCamps from './pages/GenerateDemoCamps';
+import GeocodeSchools from './pages/GeocodeSchools';
 import Home from './pages/Home';
 import HostOrgMappingManager from './pages/HostOrgMappingManager';
 import Index from './pages/Index';
@@ -79,7 +80,6 @@ import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
-import GeocodeSchools from './pages/GeocodeSchools';
 import __Layout from './Layout.jsx';
 
 
@@ -100,6 +100,7 @@ export const PAGES = {
     "CheckoutSuccess": CheckoutSuccess,
     "Discover": Discover,
     "GenerateDemoCamps": GenerateDemoCamps,
+    "GeocodeSchools": GeocodeSchools,
     "Home": Home,
     "HostOrgMappingManager": HostOrgMappingManager,
     "Index": Index,
@@ -116,7 +117,6 @@ export const PAGES = {
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
-    "GeocodeSchools": GeocodeSchools,
 }
 
 export const pagesConfig = {
