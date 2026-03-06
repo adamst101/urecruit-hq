@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from "react";
 import { format, isSameDay } from "date-fns";
+import { CheckCircle2, Circle } from "lucide-react";
 
 const DAY_ABBRS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
-function CampMiniCard({ camp, school, status, isConflict, onClick, onRegister }) {
+function CampMiniCard({ camp, school, status, isConflict, onClick, onRegister, onFavoriteToggle, onRegisteredToggle }) {
   const schoolName = school?.school_name || "Camp";
   const price = typeof camp?.price === "number" && camp.price > 0 ? `$${camp.price}` : null;
 
@@ -30,24 +31,46 @@ function CampMiniCard({ camp, school, status, isConflict, onClick, onRegister })
       <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         {isConflict ? "⚠ " : ""}{schoolName}
       </div>
-      <div style={{ fontSize: 11, marginTop: 2 }}>
-        {(status === "registered" || status === "completed") && <span style={{ color: "#6ee7b7" }}>✓ Registered</span>}
-        {status === "favorite" && <span style={{ color: "#fcd34d" }}>★ Favorited</span>}
-        {isConflict && status !== "registered" && status !== "completed" && <span style={{ color: "#fca5a5" }}> · ⚠ Conflict</span>}
+      {/* Star + Checkmark row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
+        {onFavoriteToggle && (
+          <button
+            type="button"
+            title={status === "favorite" ? "Remove from favorites" : "Add to favorites"}
+            onClick={(e) => { e.stopPropagation(); onFavoriteToggle(); }}
+            style={{
+              background: "none", border: "none", cursor: "pointer", padding: 2,
+              color: status === "favorite" ? "#e8a020" : "#6b7280", fontSize: 16, lineHeight: 1,
+            }}
+          >
+            {status === "favorite" ? "★" : "☆"}
+          </button>
+        )}
+        {onRegisteredToggle && (
+          <button
+            type="button"
+            title={(status === "registered" || status === "completed") ? "Remove registered status" : "Mark as registered"}
+            onClick={(e) => { e.stopPropagation(); onRegisteredToggle(); }}
+            style={{
+              background: "none", border: "none", cursor: "pointer", padding: 2,
+              color: (status === "registered" || status === "completed") ? "#10b981" : "#6b7280",
+              display: "flex", alignItems: "center",
+            }}
+          >
+            {(status === "registered" || status === "completed") ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+          </button>
+        )}
+        {isConflict && <span style={{ color: "#fca5a5", fontSize: 10 }}>⚠</span>}
       </div>
       {price && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{price}</div>}
       {onRegister && (
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onRegister(); }}
-          className={"text-xs h-6 px-2 rounded font-medium w-full mt-1.5 " + (
-            (status === "registered" || status === "completed")
-              ? "bg-emerald-600 text-white hover:bg-emerald-700"
-              : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
-          )}
+          className="text-xs h-6 px-2 rounded font-medium w-full mt-1.5 bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
           style={{ pointerEvents: "auto", cursor: "pointer" }}
         >
-          {(status === "registered" || status === "completed") ? "✓ Registered" : "Register"}
+          Register →
         </button>
       )}
     </div>
