@@ -193,13 +193,14 @@ export default function SchoolGroupCard({
             const priceLabel = typeof camp.price === "number" && camp.price > 0 ? `$${camp.price}` : null;
             const campWarnings = getWarningsForCamp ? getWarningsForCamp(campId) : [];
 
+            const rowBg = isReg ? "#052e16" : isFav ? "#1c1003" : (idx % 2 === 1 ? "rgba(15,23,42,0.4)" : "transparent");
+            const rowBorder = isReg ? "#10b981" : isFav ? "#e8a020" : "transparent";
+
             return (
               <div
                 key={campId}
-                className={
-                  "flex items-center gap-3 px-5 py-3 hover:bg-[#1a2235] transition " +
-                  (idx % 2 === 1 ? "bg-[#0f172a]/40" : "")
-                }
+                className="flex items-center gap-3 px-5 py-3 hover:brightness-110 transition"
+                style={{ background: rowBg, borderLeft: `3px solid ${rowBorder}` }}
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
