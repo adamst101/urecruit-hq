@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { format } from "date-fns";
+import { CheckCircle2, Circle } from "lucide-react";
 
 function safeFormat(d, fmt) {
   try {
@@ -22,7 +23,7 @@ function useIsMobile(breakpoint = 768) {
   return mobile;
 }
 
-export default function CampDetailPanel({ camp, school, status, isConflict, conflictWith, onClose, onFavorite, onRegisterClick, onUnregister, onUnfavorite }) {
+export default function CampDetailPanel({ camp, school, status, isConflict, conflictWith, onClose, onFavorite, onRegisterClick, onUnregister, onUnfavorite, onRegisteredToggle }) {
   const isMobile = useIsMobile();
 
   if (!camp) return null;
@@ -113,24 +114,50 @@ export default function CampDetailPanel({ camp, school, status, isConflict, conf
           <div style={{ color: "#f9fafb", fontWeight: 700, fontSize: 20 }}>{schoolName}</div>
         </div>
 
-        {/* Status badge — single instance */}
-        {statusColors && (
-          <div style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            background: statusColors.bg,
-            color: statusColors.text,
-            border: `1px solid ${statusColors.border}`,
-            borderRadius: 20,
-            padding: "5px 14px",
-            fontSize: 13,
-            fontWeight: 700,
-            marginBottom: 16,
-          }}>
-            {statusColors.label}
-          </div>
-        )}
+        {/* Star + Checkmark icon pair */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          {/* Star */}
+          <button
+            title={isFav ? "Remove from favorites" : "Add to favorites"}
+            onClick={() => { isFav ? onUnfavorite?.() : onFavorite?.(); }}
+            style={{
+              background: "none", border: "none", cursor: "pointer", padding: 4,
+              color: isFav ? "#e8a020" : "#6b7280", fontSize: 20, lineHeight: 1,
+              transition: "color 0.15s",
+            }}
+          >
+            {isFav ? "★" : "☆"}
+          </button>
+          {/* Checkmark */}
+          {onRegisteredToggle && (
+            <button
+              title={isReg ? "Remove registered status" : "Mark as registered"}
+              onClick={() => onRegisteredToggle()}
+              style={{
+                background: "none", border: "none", cursor: "pointer", padding: 4,
+                color: isReg ? "#10b981" : "#6b7280",
+                display: "flex", alignItems: "center",
+                transition: "color 0.15s",
+              }}
+            >
+              {isReg ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+            </button>
+          )}
+          {/* Status label */}
+          {statusColors && (
+            <span style={{
+              background: statusColors.bg,
+              color: statusColors.text,
+              border: `1px solid ${statusColors.border}`,
+              borderRadius: 20,
+              padding: "4px 12px",
+              fontSize: 12,
+              fontWeight: 700,
+            }}>
+              {statusColors.label}
+            </span>
+          )}
+        </div>
 
         {/* Detail rows */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
