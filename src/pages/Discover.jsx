@@ -686,6 +686,27 @@ export default function Discover() {
     }
   }
 
+  function handleRegisteredToggle(campId) {
+    const id = String(campId ?? "");
+    if (!id) return;
+    const isReg = isCampRegistered(id);
+    if (!isPaid) {
+      toggleDemoRegistered(demoProfileId, id);
+      setDemoFavoriteIds(getDemoFavorites(demoProfileId, seasonYear));
+      setIntentByKey((p) => ({ ...p }));
+      invalidateCampCaches(queryClient);
+    } else {
+      if (isReg) {
+        // Unregister: revert to favorite if favorited, else clear
+        const isFav = isCampFavorite(id);
+        upsertIntent(id, isFav ? "favorite" : "");
+      } else {
+        upsertIntent(id, "registered");
+      }
+      invalidateCampCaches(queryClient);
+    }
+  }
+
   function handleRegisterClick(camp) {
     const campId = String(camp?.id ?? "");
 
@@ -781,6 +802,7 @@ export default function Discover() {
             isCampFavorite={isCampFavorite}
             isCampRegistered={isCampRegistered}
             onFavoriteToggle={handleFavoriteToggle}
+            onRegisteredToggle={handleRegisteredToggle}
             onRegisterClick={handleRegisterClick}
             onCampClick={() => {}}
             getWarningsForCamp={(campId) => {
