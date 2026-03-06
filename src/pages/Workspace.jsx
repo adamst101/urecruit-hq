@@ -9,7 +9,7 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { useSeasonAccess, clearSeasonAccessCache } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 import { clearDemoMode } from "../components/hooks/demoMode.jsx";
 import { isAdminEmail } from "../components/auth/adminEmails.jsx";
@@ -121,6 +121,7 @@ export default function Workspace() {
     if (loggingOut) return;
     setLoggingOut(true);
 
+    clearSeasonAccessCache();
     try {
       clearDemoMode();
     } catch {}

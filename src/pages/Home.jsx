@@ -8,7 +8,7 @@ import { base44 } from "../api/base44Client";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { useSeasonAccess, clearSeasonAccessCache } from "../components/hooks/useSeasonAccess.jsx";
 import { getDemoDefaults, setDemoMode, clearDemoMode } from "../components/hooks/demoMode.jsx";
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 import TestimonialsSection from "../components/home/TestimonialsSection.jsx";
@@ -144,6 +144,7 @@ export default function Home() {
   }
 
   async function handleLogout() {
+    clearSeasonAccessCache();
     clearDemoMode();
     try {
       if (base44?.auth?.logout) { await base44.auth.logout("/Home"); return; }

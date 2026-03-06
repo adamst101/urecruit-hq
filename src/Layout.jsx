@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { base44 } from "./api/base44Client";
 import { createPageUrl } from "./utils";
+import { clearSeasonAccessCache } from "./components/hooks/useSeasonAccess.jsx";
 import SupportButton from "./components/support/SupportButton.jsx";
 import NoAccessWarning from "./components/auth/NoAccessWarning.jsx";
 import NoAccessBanner from "./components/auth/NoAccessBanner.jsx";
@@ -57,6 +58,7 @@ export default function Layout({ children }) {
   }
 
   async function handleLogout() {
+    clearSeasonAccessCache();
     try {
       if (base44?.auth?.logout) { await base44.auth.logout("/Home"); return; }
       if (base44?.auth?.signOut) { await base44.auth.signOut(); }
