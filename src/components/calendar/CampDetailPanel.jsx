@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { format } from "date-fns";
-import { CheckCircle2, Circle } from "lucide-react";
+// icons removed — using plain text ✓ for checkmark
 
 function safeFormat(d, fmt) {
   try {
@@ -135,12 +135,21 @@ export default function CampDetailPanel({ camp, school, status, isConflict, conf
               onClick={() => onRegisteredToggle()}
               style={{
                 background: "none", border: "none", cursor: "pointer", padding: 4,
+                fontSize: 20, lineHeight: 1,
+                fontWeight: isReg ? 700 : 300,
                 color: isReg ? "#10b981" : "#6b7280",
-                display: "flex", alignItems: "center",
-                transition: "color 0.15s",
+                opacity: isReg ? 1 : 0.6,
+                transition: "color 0.15s ease, opacity 0.15s ease",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: 28, height: 28,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }}
+              onMouseLeave={(e) => {
+                if (!isReg) { e.currentTarget.style.color = "#6b7280"; e.currentTarget.style.opacity = "0.6"; }
+                else { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }
               }}
             >
-              {isReg ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+              ✓
             </button>
           )}
           {/* Status label */}

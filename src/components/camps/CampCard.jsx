@@ -1,6 +1,6 @@
 // src/components/camps/CampCard.jsx
 import React, { useState } from "react";
-import { Star, CheckCircle2, Circle } from "lucide-react";
+import { Star } from "lucide-react";
 import { format } from "date-fns";
 
 import { cn } from "../../lib/utils";
@@ -151,17 +151,26 @@ export default function CampCard({
               type="button"
               title={isRegistered ? "Remove registered status" : "Mark as registered"}
               className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937]"
-              style={{ background: "none", border: "none", cursor: "pointer" }}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                fontSize: 18, lineHeight: 1,
+                fontWeight: isRegistered ? 700 : 300,
+                color: isRegistered ? "#10b981" : "#6b7280",
+                opacity: isRegistered ? 1 : 0.6,
+                transition: "color 0.15s ease, opacity 0.15s ease",
+              }}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 onRegisteredToggle();
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }}
+              onMouseLeave={(e) => {
+                if (!isRegistered) { e.currentTarget.style.color = "#6b7280"; e.currentTarget.style.opacity = "0.6"; }
+                else { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }
+              }}
             >
-              {isRegistered
-                ? <CheckCircle2 size={20} className="text-[#10b981]" />
-                : <Circle size={20} className="text-[#6b7280] hover:text-[#10b981] transition-colors" />
-              }
+              ✓
             </button>
           )}
 

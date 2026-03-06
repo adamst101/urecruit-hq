@@ -1,6 +1,6 @@
 // src/components/camps/SchoolGroupCard.jsx
 import React, { useState } from "react";
-import { ChevronDown, CheckCircle2, Circle } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -240,17 +240,26 @@ export default function SchoolGroupCard({
                       type="button"
                       title={isReg ? "Remove registered status" : "Mark as registered"}
                       className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937]"
-                      style={{ background: "none", border: "none", cursor: "pointer" }}
+                      style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        fontSize: 18, lineHeight: 1,
+                        fontWeight: isReg ? 700 : 300,
+                        color: isReg ? "#10b981" : "#6b7280",
+                        opacity: isReg ? 1 : 0.6,
+                        transition: "color 0.15s ease, opacity 0.15s ease",
+                      }}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         onRegisteredToggle(campId);
                       }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }}
+                      onMouseLeave={(e) => {
+                        if (!isReg) { e.currentTarget.style.color = "#6b7280"; e.currentTarget.style.opacity = "0.6"; }
+                        else { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }
+                      }}
                     >
-                      {isReg
-                        ? <CheckCircle2 size={20} className="text-[#10b981]" />
-                        : <Circle size={20} className="text-[#6b7280] hover:text-[#10b981]" style={{ transition: "color 0.15s" }} />
-                      }
+                      ✓
                     </button>
                   )}
                   {/* Register → opens Ryzer URL */}

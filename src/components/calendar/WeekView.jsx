@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { format, isSameDay } from "date-fns";
-import { CheckCircle2, Circle } from "lucide-react";
+// icons removed — using plain text ✓ for checkmark
 
 const DAY_ABBRS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
@@ -46,20 +46,32 @@ function CampMiniCard({ camp, school, status, isConflict, onClick, onRegister, o
             {status === "favorite" ? "★" : "☆"}
           </button>
         )}
-        {onRegisteredToggle && (
-          <button
-            type="button"
-            title={(status === "registered" || status === "completed") ? "Remove registered status" : "Mark as registered"}
-            onClick={(e) => { e.stopPropagation(); onRegisteredToggle(); }}
-            style={{
-              background: "none", border: "none", cursor: "pointer", padding: 2,
-              color: (status === "registered" || status === "completed") ? "#10b981" : "#6b7280",
-              display: "flex", alignItems: "center",
-            }}
-          >
-            {(status === "registered" || status === "completed") ? <CheckCircle2 size={16} /> : <Circle size={16} />}
-          </button>
-        )}
+        {onRegisteredToggle && (() => {
+          const isReg = status === "registered" || status === "completed";
+          return (
+            <button
+              type="button"
+              title={isReg ? "Remove registered status" : "Mark as registered"}
+              onClick={(e) => { e.stopPropagation(); onRegisteredToggle(); }}
+              style={{
+                background: "none", border: "none", cursor: "pointer", padding: 2,
+                fontSize: 16, lineHeight: 1,
+                fontWeight: isReg ? 700 : 300,
+                color: isReg ? "#10b981" : "#6b7280",
+                opacity: isReg ? 1 : 0.6,
+                transition: "color 0.15s ease, opacity 0.15s ease",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }}
+              onMouseLeave={(e) => {
+                if (!isReg) { e.currentTarget.style.color = "#6b7280"; e.currentTarget.style.opacity = "0.6"; }
+                else { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }
+              }}
+            >
+              ✓
+            </button>
+          );
+        })()}
         {isConflict && <span style={{ color: "#fca5a5", fontSize: 10 }}>⚠</span>}
       </div>
       {price && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{price}</div>}
