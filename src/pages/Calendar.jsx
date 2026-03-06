@@ -430,6 +430,8 @@ export default function Calendar() {
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
       invalidateCampCaches();
+    } else {
+      upsertIntent(cid, "registered");
     }
   }
 
@@ -439,6 +441,8 @@ export default function Calendar() {
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
       invalidateCampCaches();
+    } else {
+      upsertIntent(cid, "");
     }
     setUnregisterModal({ open: false, camp: null });
   }

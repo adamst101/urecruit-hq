@@ -188,6 +188,8 @@ export default function MyCamps() {
     if (isDemoMode) {
       toggleDemoRegistered(demoProfileId, cid);
       invalidateCampCaches();
+    } else {
+      upsertIntent(cid, "registered");
     }
   }
 
@@ -197,6 +199,8 @@ export default function MyCamps() {
     if (isDemoMode) {
       toggleDemoRegistered(demoProfileId, cid);
       invalidateCampCaches();
+    } else {
+      upsertIntent(cid, "");
     }
     setUnregisterModal({ open: false, camp: null });
   }
