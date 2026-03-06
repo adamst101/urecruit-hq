@@ -1,7 +1,8 @@
 import React, { useMemo } from "react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns";
+import { CheckCircle2, Circle } from "lucide-react";
 
-export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate, onRegister }) {
+export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate, onRegister, onFavoriteToggle, onRegisteredToggle }) {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
@@ -170,28 +171,49 @@ export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDa
                       {city && <div style={{ color: "#6b7280", fontSize: 13, marginTop: 2 }}>📍 {city}</div>}
                     </div>
 
-                    {/* Right */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    {/* Right: star + checkmark + register */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                      {/* Star */}
+                      {onFavoriteToggle && (
+                        <button
+                          type="button"
+                          title={isFav ? "Remove from favorites" : "Add to favorites"}
+                          onClick={(e) => { e.stopPropagation(); onFavoriteToggle(c); }}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer", padding: 4,
+                            color: isFav ? "#e8a020" : "#6b7280", fontSize: 18, lineHeight: 1,
+                            transition: "color 0.15s",
+                          }}
+                        >
+                          {isFav ? "★" : "☆"}
+                        </button>
+                      )}
+                      {/* Checkmark */}
+                      {onRegisteredToggle && (
+                        <button
+                          type="button"
+                          title={isReg ? "Remove registered status" : "Mark as registered"}
+                          onClick={(e) => { e.stopPropagation(); onRegisteredToggle(campId); }}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer", padding: 4,
+                            color: isReg ? "#10b981" : "#6b7280",
+                            display: "flex", alignItems: "center",
+                            transition: "color 0.15s",
+                          }}
+                        >
+                          {isReg ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                        </button>
+                      )}
+                      {/* Register → opens URL */}
                       {onRegister && (
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); onRegister(c); }}
-                          className={"text-xs h-7 px-3 rounded-md font-medium " + (isReg
-                            ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                            : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]")}
+                          className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
                           style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
                         >
-                          {isReg ? "✓ Registered" : "Register"}
+                          Register →
                         </button>
-                      )}
-                      {!onRegister && badgeText && (
-                        <span style={{
-                          background: badgeBg, color: badgeColor,
-                          fontSize: 12, fontWeight: 700, padding: "4px 10px",
-                          borderRadius: 12, whiteSpace: "nowrap",
-                        }}>
-                          {badgeText}
-                        </span>
                       )}
                       <span style={{ color: "#374151", fontSize: 16 }}>›</span>
                     </div>
