@@ -250,9 +250,12 @@ export default function Calendar() {
         const campStart = c?.start_date || null;
         const campEnd = c?.end_date || null;
         if (!withinDateRange(campStart, nf?.startDate || "", nf?.endDate || "", campEnd)) return false;
-        if (!matchesMonth(c, selectedMonth)) return false;
-        if (!matchesStateSimple(c, inlineState)) return false;
-        if (!matchesDivisionSimple(c, inlineDivision)) return false;
+        // Only apply inline filters when in list view (they're hidden in month views)
+        if (calView === "list") {
+          if (!matchesMonth(c, selectedMonth)) return false;
+          if (!matchesStateSimple(c, inlineState)) return false;
+          if (!matchesDivisionSimple(c, inlineDivision)) return false;
+        }
         return true;
       });
 
@@ -262,7 +265,7 @@ export default function Calendar() {
       return da.localeCompare(db);
     });
     return result;
-  }, [isPaid, paidQuery?.data, demoQuery?.data, nf, selectedMonth, inlineState, inlineDivision]);
+  }, [isPaid, paidQuery?.data, demoQuery?.data, nf, selectedMonth, inlineState, inlineDivision, calView]);
 
   // ---- conflict detection ----
   const favCamps = useMemo(() => rows.filter((r) => String(r?.intent_status || "").toLowerCase() === "favorite"), [rows]);
