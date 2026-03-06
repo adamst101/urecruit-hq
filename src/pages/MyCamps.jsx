@@ -56,7 +56,9 @@ export default function MyCamps() {
   const { demoProfileId } = useDemoProfile();
 
   const dm = readDemoMode();
-  const isDemoMode = dm?.mode === "demo" || season?.mode !== "paid";
+  const seasonLoading = !!season?.isLoading;
+  // Guard: treat "loading" as neither paid nor demo to avoid flashing demo UI
+  const isDemoMode = !seasonLoading && (dm?.mode === "demo" || season?.mode !== "paid");
   const seasonYear = Number(dm?.seasonYear || season?.seasonYear || season?.currentYear || new Date().getFullYear());
 
   const athleteId = normId(athleteProfile);
