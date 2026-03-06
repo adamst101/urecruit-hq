@@ -16,7 +16,7 @@ const STATE_CENTERS = {
   DC:[38.9,-77.0]
 };
 
-// Top ~200 US cities by population (city, state → [lat, lng])
+// Top US cities + college towns (city:STATE → [lat, lng])
 const CITY_COORDS = {
   "new york:NY":[40.71,-74.01],"los angeles:CA":[34.05,-118.24],"chicago:IL":[41.88,-87.63],
   "houston:TX":[29.76,-95.37],"phoenix:AZ":[33.45,-112.07],"philadelphia:PA":[39.95,-75.17],
@@ -74,7 +74,7 @@ const CITY_COORDS = {
   "pullman:WA":[46.73,-117.17],"morgantown:WV":[39.63,-79.96],"blacksburg:VA":[37.23,-80.41],
   "charlottesville:VA":[38.03,-78.48],"champaign:IL":[40.12,-88.24],"bloomington:IN":[39.17,-86.53],
   "iowa city:IA":[41.66,-91.53],"boulder:CO":[40.01,-105.27],"missoula:MT":[46.87,-114.00],
-  "laramie:WY":[41.31,-105.59],"lubbock:TX":[33.58,-101.85],"hattiesburg:MS":[31.33,-89.29],
+  "laramie:WY":[41.31,-105.59],"hattiesburg:MS":[31.33,-89.29],
   "murfreesboro:TN":[35.85,-86.39],"bowling green:KY":[36.99,-86.44],
   "boone:NC":[36.22,-81.67],"greenville:SC":[34.85,-82.39],"greenville:NC":[35.61,-77.37],
   "pensacola:FL":[30.44,-87.22],"fort myers:FL":[26.64,-81.87],"lakeland:FL":[28.04,-81.95],
@@ -84,7 +84,55 @@ const CITY_COORDS = {
   "ruston:LA":[32.52,-92.64],"lafayette:LA":[30.22,-92.02],"beaumont:TX":[30.09,-94.10],
   "tyler:TX":[32.35,-95.30],"abilene:TX":[32.45,-99.73],"san marcos:TX":[29.88,-97.94],
   "denton:TX":[33.21,-97.13],"round rock:TX":[30.51,-97.68],"mcallen:TX":[26.20,-98.23],
-  "midland:TX":[31.997,-102.08],"odessa:TX":[31.85,-102.35],"bryan:TX":[30.67,-96.37]
+  "midland:TX":[31.997,-102.08],"odessa:TX":[31.85,-102.35],"bryan:TX":[30.67,-96.37],
+  // Texas suburbs & college towns
+  "the colony:TX":[33.10,-96.89],"frisco:TX":[33.15,-96.82],"mckinney:TX":[33.20,-96.64],
+  "allen:TX":[33.10,-96.67],"prosper:TX":[33.24,-96.80],"celina:TX":[33.33,-96.78],
+  "lewisville:TX":[33.05,-97.06],"flower mound:TX":[33.01,-97.10],"southlake:TX":[32.94,-97.13],
+  "keller:TX":[32.93,-97.23],"mansfield:TX":[32.56,-97.14],"cedar hill:TX":[32.59,-96.96],
+  "desoto:TX":[32.59,-96.86],"huntsville:TX":[30.72,-95.55],"nacogdoches:TX":[31.60,-94.66],
+  "commerce:TX":[33.25,-95.90],"stephenville:TX":[32.22,-98.20],"canyon:TX":[34.98,-101.92],
+  "kingsville:TX":[27.52,-97.86],"alpine:TX":[30.36,-103.66],"edinburg:TX":[26.30,-98.16],
+  "prairie view:TX":[30.09,-95.99],"san angelo:TX":[31.46,-100.44],
+  // College towns across states
+  "oxford:MS":[34.37,-89.52],"natchitoches:LA":[31.76,-93.09],"thibodaux:LA":[29.80,-90.82],
+  "jonesboro:AR":[35.84,-90.70],"russellville:AR":[35.28,-93.13],"magnolia:AR":[33.27,-93.24],
+  "cookeville:TN":[36.16,-85.50],"clarksville:TN":[36.53,-87.36],"johnson city:TN":[36.31,-82.35],
+  "florence:AL":[34.80,-87.68],"jacksonville:AL":[33.81,-85.76],"livingston:AL":[32.59,-88.19],
+  "valdosta:GA":[30.83,-83.28],"statesboro:GA":[32.45,-81.78],"carrollton:GA":[33.58,-85.08],
+  "milledgeville:GA":[33.08,-83.23],"kennesaw:GA":[34.02,-84.62],
+  "boca raton:FL":[26.37,-80.13],"miami gardens:FL":[25.94,-80.24],
+  "cullowhee:NC":[35.31,-83.18],"pembroke:NC":[34.68,-79.20],"elon:NC":[36.10,-79.51],
+  "harrisonburg:VA":[38.45,-78.87],"radford:VA":[37.13,-80.58],"farmville:VA":[37.30,-78.40],
+  "lynchburg:VA":[37.41,-79.14],"williamsburg:VA":[37.27,-76.71],
+  "murray:KY":[36.61,-88.32],"richmond:KY":[37.75,-84.29],"morehead:KY":[38.18,-83.43],
+  "terre haute:IN":[39.47,-87.41],"muncie:IN":[40.19,-85.39],
+  "kalamazoo:MI":[42.29,-85.59],"ypsilanti:MI":[42.24,-83.61],"mount pleasant:MI":[43.60,-84.77],
+  "dekalb:IL":[41.93,-88.75],"macomb:IL":[40.46,-90.67],"carbondale:IL":[37.73,-89.22],
+  "vermillion:SD":[42.78,-96.93],"brookings:SD":[44.31,-96.80],
+  "warrensburg:MO":[38.76,-93.74],"cape girardeau:MO":[37.31,-89.52],"kirksville:MO":[40.19,-92.58],
+  "pittsburg:KS":[37.41,-94.70],"emporia:KS":[38.40,-96.18],"hays:KS":[38.88,-99.33],
+  "weatherford:OK":[35.53,-98.71],"durant:OK":[33.99,-96.39],"tahlequah:OK":[35.91,-94.97],
+  "edmond:OK":[35.65,-97.48],"ada:OK":[34.77,-96.68],
+  "conway:AR":[35.09,-92.44],"monticello:AR":[33.63,-91.79],"searcy:AR":[35.25,-91.74],
+  "hammond:LA":[30.50,-90.46],"monroe:LA":[32.51,-92.12],"lake charles:LA":[30.23,-93.22],
+  "san bernardino:CA":[34.11,-117.29],"pomona:CA":[34.06,-117.75],
+  "cheney:WA":[47.49,-117.58],"ellensburg:WA":[46.99,-120.55],
+  "monmouth:OR":[44.85,-123.23],"ashland:OR":[42.19,-122.71],
+  "cedar falls:IA":[42.53,-92.45],"storm lake:IA":[42.64,-95.21],
+  "wayne:NE":[42.23,-97.02],"kearney:NE":[40.70,-99.08],
+  "grand forks:ND":[47.93,-97.03],"minot:ND":[48.23,-101.30],
+  "duluth:MN":[46.79,-92.10],"mankato:MN":[44.17,-94.00],"moorhead:MN":[46.87,-96.77],
+  "whitewater:WI":[42.83,-88.73],"la crosse:WI":[43.81,-91.24],"eau claire:WI":[44.81,-91.50],
+  "marquette:MI":[46.54,-87.40],"sault ste. marie:MI":[46.50,-84.35],"big rapids:MI":[43.70,-85.48],
+  "charleston:WV":[38.35,-81.63],"huntington:WV":[38.42,-82.44],
+  "burlington:VT":[44.48,-73.21],"hanover:NH":[43.70,-72.29],
+  "orono:ME":[44.88,-68.67],"amherst:MA":[42.38,-72.52],
+  "storrs:CT":[41.81,-72.25],"new haven:CT":[41.31,-72.92],
+  "princeton:NJ":[40.35,-74.66],"new brunswick:NJ":[40.49,-74.45],
+  "bethlehem:PA":[40.63,-75.37],"university park:PA":[40.81,-77.86],
+  "ithaca:NY":[42.44,-76.50],"syracuse:NY":[43.05,-76.15],
+  "canton:NY":[44.60,-75.17],"potsdam:NY":[44.67,-74.98]
 };
 
 export function getCityCoords(city, state) {
@@ -97,7 +145,9 @@ export function getCityCoords(city, state) {
     if (CITY_COORDS[key]) return { lat: CITY_COORDS[key][0], lng: CITY_COORDS[key][1] };
   }
 
-  if (st && STATE_CENTERS[st]) return { lat: STATE_CENTERS[st][0], lng: STATE_CENTERS[st][1] };
+  // Do NOT fall back to state center — it causes same-state camps
+  // to resolve to the same point, making distance ≈ 0.
+  // Return null so the caller knows lookup failed.
   return null;
 }
 
