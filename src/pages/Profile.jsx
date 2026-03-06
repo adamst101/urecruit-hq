@@ -73,8 +73,8 @@ const helperTextClass = "text-[#6b7280] text-xs mt-1";
 
 export default function Profile() {
   const nav = useNavigate();
-  const { hasAccess, mode, loading: seasonLoading } = useSeasonAccess();
-  const isDemo = mode === "demo" || !hasAccess;
+  const { hasAccess, mode, loading: seasonLoading, isLoading: seasonIsLoading } = useSeasonAccess();
+  const isDemo = !seasonIsLoading && (mode === "demo" || !hasAccess);
   const { identity, loading: identityLoading, saveIdentity } = useAthleteIdentity();
 
   const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'success' | 'error'
@@ -174,6 +174,14 @@ export default function Profile() {
   }
 
   const disabled = isDemo;
+
+  if (seasonIsLoading) {
+    return (
+      <div style={{ background: "#0a0e1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 16 }}>
+        Loading your profile...
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">

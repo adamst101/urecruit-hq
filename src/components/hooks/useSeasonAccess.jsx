@@ -120,7 +120,7 @@ export function useSeasonAccess() {
     currentYear: currentYear || null,
     demoYear: demoYear || null,
 
-    mode: "demo",
+    mode: "loading",
     hasAccess: false,
 
     // default browse year for demo uses session override if present
