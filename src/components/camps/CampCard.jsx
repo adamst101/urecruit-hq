@@ -1,6 +1,6 @@
 // src/components/camps/CampCard.jsx
 import React, { useState } from "react";
-import { Star } from "lucide-react";
+import { Star, CheckCircle2, Circle } from "lucide-react";
 import { format } from "date-fns";
 
 import { cn } from "../../lib/utils";
@@ -46,6 +46,7 @@ export default function CampCard({
   isFavorite,
   isRegistered,
   onFavoriteToggle,
+  onRegisteredToggle,
   onClick,
   mode,
   disabledFavorite,
@@ -63,16 +64,18 @@ export default function CampCard({
   const city = [camp?.city, camp?.state].filter(Boolean).join(", ");
   const priceLabel = typeof camp?.price === "number" && camp.price > 0 ? `$${camp.price}` : null;
 
+  // Card border/background color based on status
+  const borderLeftColor = isRegistered ? "#10b981" : isFavorite ? "#e8a020" : "#1f2937";
+  const cardBg = isRegistered ? "#052e16" : isFavorite ? "#1c1003" : "#111827";
+
   return (
     <div
-      className={cn(
-        "rounded-xl border transition-colors border-[#1f2937] bg-[#111827] overflow-hidden",
-        isRegistered ? "opacity-90" : ""
-      )}
+      className="rounded-xl border transition-colors overflow-hidden"
+      style={{ borderColor: "#1f2937", background: cardBg }}
     >
       <div className="flex items-center gap-3 p-4">
-        {/* Amber accent bar */}
-        <div className="w-[3px] self-stretch rounded-full bg-[#e8a020] flex-shrink-0" />
+        {/* Status accent bar */}
+        <div className="w-[3px] self-stretch rounded-full flex-shrink-0" style={{ background: borderLeftColor }} />
 
         <LogoAvatar schoolName={schoolName} logoUrl={logoUrl} />
 
@@ -89,12 +92,6 @@ export default function CampCard({
             )}
             {isDemo && (
               <Badge variant="outline" className="text-[10px] border-[#374151] text-[#9ca3af] px-1.5 py-0">Demo</Badge>
-            )}
-            {isRegistered && (
-              <Badge className="bg-emerald-600 text-white text-[10px] px-1.5 py-0">Registered</Badge>
-            )}
-            {!isRegistered && isFavorite && (
-              <Badge className="bg-amber-500 text-white text-[10px] px-1.5 py-0">★ Favorite</Badge>
             )}
           </div>
 
@@ -124,38 +121,55 @@ export default function CampCard({
           </div>
         </div>
 
-        {/* Action buttons */}
+        {/* Action icons + register button */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          <Button
+          {/* Star — favorite toggle */}
+          <button
             type="button"
-            variant="ghost"
-            size="icon"
-            className="flex-shrink-0"
+            title={isFavorite ? "Remove from favorites" : "Add to favorites"}
             disabled={!!disabledFavorite}
+            className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937]"
+            style={{ background: "none", border: "none", cursor: disabledFavorite ? "default" : "pointer" }}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
               if (disabledFavorite) return;
               onFavoriteToggle?.();
             }}
-            aria-label={isFavorite ? "Remove favorite" : "Add favorite"}
           >
             <Star
               className={cn(
-                "w-5 h-5",
-                isFavorite ? "fill-amber-400 text-amber-400" : "text-[#9ca3af]"
+                "w-5 h-5 transition-colors",
+                isFavorite ? "fill-[#e8a020] text-[#e8a020]" : "text-[#6b7280] hover:text-[#e8a020]"
               )}
             />
-          </Button>
+          </button>
+
+          {/* Checkmark — registered toggle */}
+          {onRegisteredToggle && (
+            <button
+              type="button"
+              title={isRegistered ? "Remove registered status" : "Mark as registered"}
+              className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937]"
+              style={{ background: "none", border: "none", cursor: "pointer" }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onRegisteredToggle();
+              }}
+            >
+              {isRegistered
+                ? <CheckCircle2 size={20} className="text-[#10b981]" />
+                : <Circle size={20} className="text-[#6b7280] hover:text-[#10b981] transition-colors" />
+              }
+            </button>
+          )}
+
+          {/* Register button — opens Ryzer URL */}
           {onRegisterClick && (
             <button
               type="button"
-              className={cn(
-                "text-xs h-7 px-3 rounded-md font-medium",
-                isRegistered
-                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                  : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
-              )}
+              className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
               style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
               onClick={(e) => {
                 e.preventDefault();
@@ -163,7 +177,7 @@ export default function CampCard({
                 onRegisterClick();
               }}
             >
-              {isRegistered ? "✓ Registered" : "Register"}
+              Register →
             </button>
           )}
         </div>
