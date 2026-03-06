@@ -748,7 +748,7 @@ export default function Calendar() {
           <CalendarViewToggle calView={calView} setCalView={setCalView} />
         </div>
 
-        {!isPaid && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
+        {!isPaid && !seasonLoading && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
 
         {/* Inline filters — list view only */}
         {calView === "list" && (

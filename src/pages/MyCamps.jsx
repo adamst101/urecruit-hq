@@ -371,7 +371,7 @@ export default function MyCamps() {
           <div className="text-2xl font-bold text-[#f9fafb]">My Camps</div>
         </div>
 
-        {isDemoMode && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
+        {isDemoMode && !seasonLoading && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
 
         {/* Summary pills */}
         <MyCampsSummaryPills
