@@ -77,7 +77,7 @@ function CampMiniCard({ camp, school, status, isConflict, onClick, onRegister, o
   );
 }
 
-export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate, onRegister }) {
+export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate, onRegister, onFavoriteToggle, onRegisteredToggle }) {
   const today = new Date();
 
   // Mobile: show single day
@@ -190,6 +190,8 @@ export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, con
                   isConflict={isConflict}
                   onClick={() => onCampClick(c)}
                   onRegister={onRegister ? () => onRegister(c) : undefined}
+                  onFavoriteToggle={onFavoriteToggle ? () => onFavoriteToggle(c) : undefined}
+                  onRegisteredToggle={onRegisteredToggle ? () => onRegisteredToggle(campId) : undefined}
                 />
               );
             })
