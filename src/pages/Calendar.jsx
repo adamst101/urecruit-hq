@@ -1,21 +1,20 @@
-// src/pages/Calendar.jsx
+// src/pages/Calendar.jsx — clean rewrite
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { XCircle, SlidersHorizontal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { base44 } from "../api/base44Client";
-
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 
 import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
+import DemoBanner from "../components/DemoBanner.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
-
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 
@@ -35,7 +34,6 @@ import CampCard from "../components/camps/CampCard.jsx";
 import WarningBanner from "../components/camps/WarningBanner.jsx";
 import WarningBadge from "../components/camps/WarningBadge.jsx";
 import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
-import DemoBanner from "../components/DemoBanner.jsx";
 
 import CalendarViewToggle from "../components/calendar/CalendarViewToggle.jsx";
 import MonthSubToggle from "../components/calendar/MonthSubToggle.jsx";
@@ -44,17 +42,27 @@ import MonthOverview from "../components/calendar/MonthOverview.jsx";
 import MonthGridView from "../components/calendar/MonthGridView.jsx";
 import CampDetailPanel from "../components/calendar/CampDetailPanel.jsx";
 
-/* -------------------------
-   Helpers (MVP-safe)
-------------------------- */
+/* ═══════════════════════════════════════
+   Helpers
+   ═══════════════════════════════════════ */
+
+function asArray(x) {
+  return Array.isArray(x) ? x : [];
+}
+
 function normId(x) {
   if (!x) return null;
   if (typeof x === "string") return x;
   return x.id || x._id || x.uuid || null;
 }
 
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
+function readActiveFlag(row) {
+  if (typeof row?.active === "boolean") return row.active;
+  if (typeof row?.is_active === "boolean") return row.is_active;
+  if (typeof row?.isActive === "boolean") return row.isActive;
+  const st = String(row?.status || "").toLowerCase().trim();
+  if (st === "inactive") return false;
+  return true;
 }
 
 function getUrlParams(search) {
@@ -71,41 +79,38 @@ function getUrlParams(search) {
   }
 }
 
-function readActiveFlag(row) {
-  if (typeof row?.active === "boolean") return row.active;
-  if (typeof row?.is_active === "boolean") return row.is_active;
-  if (typeof row?.isActive === "boolean") return row.isActive;
-  const st = String(row?.status || "").toLowerCase().trim();
-  if (st === "inactive") return false;
-  if (st === "active") return true;
-  return true;
+/** Normalise any date value to "YYYY-MM-DD" or null */
+function normalizeDateKey(dateVal) {
+  if (!dateVal) return null;
+  try {
+    const s = String(dateVal);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    if (s.includes("T")) return s.split("T")[0];
+    const d = new Date(dateVal);
+    if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+    return null;
+  } catch {
+    return null;
+  }
 }
 
-/* -------------------------
-   Routes
-------------------------- */
-const ROUTES = {
-  Profile: "/Profile",
-  CampDetail: "/CampDetail",
-};
+const ROUTES = { Profile: "/Profile" };
+
+/* ═══════════════════════════════════════
+   Component
+   ═══════════════════════════════════════ */
 
 export default function Calendar() {
+  /* ── 1. Navigation ────────────────── */
   const nav = useNavigate();
   const loc = useLocation();
   const queryClient = useQueryClient();
 
+  /* ── 2. Season / auth ─────────────── */
   const season = useSeasonAccess();
-
-  // Invalidate cached camp summaries on mount so we pick up
-  // any favorites/registrations made on the Discover page
-  useEffect(() => {
-    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
-    queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
-  }, [queryClient]);
   const { demoProfileId } = useDemoProfile();
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
-  // ---- effective mode ----
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   const forceDemo = url.mode === "demo";
   const effectiveMode = forceDemo ? "demo" : season?.mode;
@@ -115,23 +120,6 @@ export default function Calendar() {
     if (forceDemo && url.seasonYear) return url.seasonYear;
     return season?.seasonYear;
   }, [forceDemo, url.seasonYear, season?.seasonYear]);
-
-  // ---- filters ----
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [filters, setFilters] = useState({
-    sport: "", state: "", divisions: [], positions: [], startDate: "", endDate: "",
-  });
-
-  const [selectedMonth, setSelectedMonth] = useState("all");
-  const [inlineState, setInlineState] = useState("all");
-  const [inlineDivision, setInlineDivision] = useState("all");
-
-  const clearFilters = () => {
-    setFilters({ sport: "", state: "", divisions: [], positions: [], startDate: "", endDate: "" });
-    setSelectedMonth("all");
-    setInlineState("all");
-    setInlineDivision("all");
-  };
 
   const athleteId = useMemo(() => {
     if (!isPaid) return null;
@@ -144,80 +132,85 @@ export default function Calendar() {
     return sid != null ? String(sid) : "";
   }, [athleteProfile]);
 
-  const paidMissingSport = useMemo(() => {
-    return isPaid && !!athleteId && !athleteSportId;
-  }, [isPaid, athleteId, athleteSportId]);
+  const paidMissingSport = useMemo(
+    () => isPaid && !!athleteId && !athleteSportId,
+    [isPaid, athleteId, athleteSportId],
+  );
 
-  useEffect(() => {
-    if (!isPaid) return;
-    if (!athleteSportId) return;
-    const cur = String(filters?.sport || "");
-    if (cur !== athleteSportId) {
-      setFilters((prev) => ({ ...prev, sport: athleteSportId }));
-    }
-  }, [isPaid, athleteSportId]);
+  /* ── 3. ALL useState declarations ─── */
 
-  const openFiltersOrProfile = () => {
-    if (paidMissingSport) { nav(ROUTES.Profile); return; }
-    setFilterOpen(true);
-  };
-
-  // ---- picklists ----
-  const [sports, setSports] = useState([]);
-  const [positions, setPositions] = useState([]);
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const rows = await base44?.entities?.Sport?.list?.();
-        if (mounted) setSports(Array.isArray(rows) ? rows : []);
-      } catch {
-        try {
-          const rows2 = await base44?.entities?.Sport?.filter?.({});
-          if (mounted) setSports(Array.isArray(rows2) ? rows2 : []);
-        } catch { if (mounted) setSports([]); }
-      }
-      try {
-        const rows = await base44?.entities?.Position?.list?.();
-        if (mounted) setPositions(Array.isArray(rows) ? rows : []);
-      } catch {
-        try {
-          const rows2 = await base44?.entities?.Position?.filter?.({});
-          if (mounted) setPositions(Array.isArray(rows2) ? rows2 : []);
-        } catch { if (mounted) setPositions([]); }
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
-
-  const positionsMap = useMemo(() => {
-    const m = new Map();
-    for (const p of asArray(positions)) {
-      const id = normId(p);
-      if (!id) continue;
-      m.set(String(id), p);
-    }
-    return m;
-  }, [positions]);
-
-  const nf = useMemo(() => normalizeFilters(filters), [filters]);
-
-  // ---- Calendar view state (must be before rows useMemo) ----
+  // View state
   const [calView, setCalView] = useState("list");
   const [monthSubView, setMonthSubView] = useState("agenda");
   const [currentWeek, setCurrentWeek] = useState(() => {
     const today = new Date();
-    const day = today.getDay();
     const sunday = new Date(today);
-    sunday.setDate(today.getDate() - day);
+    sunday.setDate(today.getDate() - today.getDay());
     return sunday;
   });
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedCamp, setSelectedCamp] = useState(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
-  // ---- data source ----
+  // Filter state
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filters, setFilters] = useState({
+    sport: "", state: "", divisions: [], positions: [], startDate: "", endDate: "",
+  });
+  const [selectedMonth, setSelectedMonth] = useState("all");
+  const [inlineState, setInlineState] = useState("all");
+  const [inlineDivision, setInlineDivision] = useState("all");
+
+  // Picklists
+  const [sports, setSports] = useState([]);
+  const [positions, setPositions] = useState([]);
+
+  /* ── 4. Side effects ──────────────── */
+
+  // Invalidate caches on mount
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+    queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+  }, [queryClient]);
+
+  // Auto-set sport filter for paid users
+  useEffect(() => {
+    if (!isPaid || !athleteSportId) return;
+    if (String(filters?.sport || "") !== athleteSportId) {
+      setFilters((prev) => ({ ...prev, sport: athleteSportId }));
+    }
+  }, [isPaid, athleteSportId]);
+
+  // Load picklists
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const r = await base44?.entities?.Sport?.list?.();
+        if (mounted) setSports(Array.isArray(r) ? r : []);
+      } catch {
+        try {
+          const r2 = await base44?.entities?.Sport?.filter?.({});
+          if (mounted) setSports(Array.isArray(r2) ? r2 : []);
+        } catch { if (mounted) setSports([]); }
+      }
+      try {
+        const r = await base44?.entities?.Position?.list?.();
+        if (mounted) setPositions(Array.isArray(r) ? r : []);
+      } catch {
+        try {
+          const r2 = await base44?.entities?.Position?.filter?.({});
+          if (mounted) setPositions(Array.isArray(r2) ? r2 : []);
+        } catch { if (mounted) setPositions([]); }
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  /* ── 5. Data sources ──────────────── */
+
+  const nf = useMemo(() => normalizeFilters(filters), [filters]);
+
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId || undefined,
     sportId: nf?.sportId || undefined,
@@ -235,16 +228,32 @@ export default function Calendar() {
     (isPaid && identityLoading) ||
     (isPaid ? !!paidQuery?.isLoading : !!demoQuery?.isLoading);
 
-  // ---- apply filters ----
-  const rows = useMemo(() => {
+  /* ── 6. Derived data (useMemo) ────── */
+
+  const positionsMap = useMemo(() => {
+    const m = new Map();
+    for (const p of asArray(positions)) {
+      const id = normId(p);
+      if (id) m.set(String(id), p);
+    }
+    return m;
+  }, [positions]);
+
+  /**
+   * allUserCamps — camps with intent (favorite / registered) after
+   * applying FilterSheet filters, but BEFORE inline list-only filters.
+   * Month views use this so they always show the full set.
+   */
+  const allUserCamps = useMemo(() => {
     const base = isPaid ? asArray(paidQuery?.data) : asArray(demoQuery?.data);
     const wantedState = nf?.state ? String(nf.state) : null;
     const wantedDivisions = asArray(nf?.divisions).map(String).filter(Boolean);
     const wantedPositions = asArray(nf?.positionIds).map(String).filter(Boolean);
 
     const result = base
-      .filter((c) => readActiveFlag(c) === true)
+      .filter((c) => readActiveFlag(c))
       .filter((c) => {
+        // In demo mode, only show camps with intent
         if (!isPaid) {
           const st = String(c?.intent_status || "").toLowerCase();
           if (st !== "favorite" && st !== "registered" && st !== "completed") return false;
@@ -253,40 +262,87 @@ export default function Calendar() {
           const campState = normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
           if (campState !== wantedState) return false;
         }
-        if (wantedDivisions.length) {
-          if (!matchesDivision(c, wantedDivisions)) return false;
-        }
+        if (wantedDivisions.length && !matchesDivision(c, wantedDivisions)) return false;
         if (wantedPositions.length) {
           const campPos = asArray(c?.position_ids).map(String);
-          const hasAny = wantedPositions.some((pid) => campPos.includes(pid));
-          if (!hasAny) return false;
+          if (!wantedPositions.some((pid) => campPos.includes(pid))) return false;
         }
         const campStart = c?.start_date || null;
         const campEnd = c?.end_date || null;
         if (!withinDateRange(campStart, nf?.startDate || "", nf?.endDate || "", campEnd)) return false;
-        // Only apply inline filters when in list view (they're hidden in month views)
-        if (calView === "list") {
-          if (!matchesMonth(c, selectedMonth)) return false;
-          if (!matchesStateSimple(c, inlineState)) return false;
-          if (!matchesDivisionSimple(c, inlineDivision)) return false;
-        }
         return true;
       });
 
     result.sort((a, b) => {
-      const da = String(a?.start_date || "9999").slice(0, 10);
-      const db = String(b?.start_date || "9999").slice(0, 10);
+      const da = normalizeDateKey(a?.start_date) || "9999";
+      const db = normalizeDateKey(b?.start_date) || "9999";
       return da.localeCompare(db);
     });
     return result;
-  }, [isPaid, paidQuery?.data, demoQuery?.data, nf, selectedMonth, inlineState, inlineDivision, calView]);
+  }, [isPaid, paidQuery?.data, demoQuery?.data, nf]);
 
-  // ---- conflict detection ----
-  const favCamps = useMemo(() => rows.filter((r) => String(r?.intent_status || "").toLowerCase() === "favorite"), [rows]);
-  const regCamps = useMemo(() => rows.filter((r) => {
-    const st = String(r?.intent_status || "").toLowerCase();
-    return st === "registered" || st === "completed";
-  }), [rows]);
+  /**
+   * listRows — allUserCamps + inline filters (month / state / division).
+   * Only used by the list view.
+   */
+  const listRows = useMemo(() => {
+    return allUserCamps.filter((c) => {
+      if (!matchesMonth(c, selectedMonth)) return false;
+      if (!matchesStateSimple(c, inlineState)) return false;
+      if (!matchesDivisionSimple(c, inlineDivision)) return false;
+      return true;
+    });
+  }, [allUserCamps, selectedMonth, inlineState, inlineDivision]);
+
+  /**
+   * campsByDate — built from allUserCamps (NOT listRows).
+   * Month sub-views use this so inline filters don't hide camps.
+   */
+  const campsByDate = useMemo(() => {
+    const map = {};
+    allUserCamps.forEach((c) => {
+      const key = normalizeDateKey(c?.start_date);
+      if (!key) return;
+      if (!map[key]) map[key] = [];
+      map[key].push(c);
+    });
+    return map;
+  }, [allUserCamps]);
+
+  const conflictDates = useMemo(() => {
+    const dates = new Set();
+    Object.entries(campsByDate).forEach(([date, camps]) => {
+      if (camps.length > 1) dates.add(date);
+    });
+    return dates;
+  }, [campsByDate]);
+
+  const schoolMap = useMemo(() => {
+    const map = {};
+    allUserCamps.forEach((r) => {
+      const campId = String(r?.camp_id || r?.id || "");
+      map[campId] = {
+        school_name: r?.school_name,
+        division: r?.school_division,
+        logo_url: r?.school_logo_url,
+      };
+    });
+    return map;
+  }, [allUserCamps]);
+
+  /* ── 7. Conflict detection ────────── */
+
+  const favCamps = useMemo(
+    () => allUserCamps.filter((r) => String(r?.intent_status || "").toLowerCase() === "favorite"),
+    [allUserCamps],
+  );
+  const regCamps = useMemo(
+    () => allUserCamps.filter((r) => {
+      const st = String(r?.intent_status || "").toLowerCase();
+      return st === "registered" || st === "completed";
+    }),
+    [allUserCamps],
+  );
 
   const { warnings: allWarnings, getWarningsForCamp } = useConflictDetection({
     favoritedCamps: favCamps.map((r) => ({
@@ -304,58 +360,42 @@ export default function Calendar() {
     isPaid,
   });
 
+  /* ── 8. Event handlers ────────────── */
+
+  const clearFilters = () => {
+    setFilters({ sport: "", state: "", divisions: [], positions: [], startDate: "", endDate: "" });
+    setSelectedMonth("all");
+    setInlineState("all");
+    setInlineDivision("all");
+  };
+
+  const openFiltersOrProfile = () => {
+    if (paidMissingSport) { nav(ROUTES.Profile); return; }
+    setFilterOpen(true);
+  };
+
   function openCampDetail(camp) {
     setSelectedCamp(camp);
     setPanelOpen(true);
   }
+
   function closeCampDetail() {
     setPanelOpen(false);
     setTimeout(() => setSelectedCamp(null), 300);
   }
 
-  // ---- campsByDate + conflictDates for month views ----
-  const campsByDate = useMemo(() => {
-    const map = {};
-    rows.forEach((c) => {
-      const d = String(c?.start_date || "").slice(0, 10);
-      if (!d) return;
-      if (!map[d]) map[d] = [];
-      map[d].push(c);
-    });
-    return map;
-  }, [rows]);
-
-  const conflictDates = useMemo(() => {
-    const dates = new Set();
-    Object.entries(campsByDate).forEach(([date, camps]) => {
-      if (camps.length > 1) dates.add(date);
-    });
-    return dates;
-  }, [campsByDate]);
-
-  // schoolMap for month views
-  const schoolMap = useMemo(() => {
-    const map = {};
-    rows.forEach((r) => {
-      const campId = String(r?.camp_id || r?.id || "");
-      map[campId] = {
-        school_name: r?.school_name,
-        division: r?.school_division,
-        logo_url: r?.school_logo_url,
-      };
-    });
-    return map;
-  }, [rows]);
-
-  // Find conflict partner for detail panel
   function getConflictPartner(camp) {
     if (!camp) return null;
-    const d = String(camp?.start_date || "").slice(0, 10);
-    const others = (campsByDate[d] || []).filter((c) => String(c?.camp_id || c?.id) !== String(camp?.camp_id || camp?.id));
+    const d = normalizeDateKey(camp?.start_date);
+    if (!d) return null;
+    const others = (campsByDate[d] || []).filter(
+      (c) => String(c?.camp_id || c?.id) !== String(camp?.camp_id || camp?.id),
+    );
     return others.length > 0 ? (others[0]?.school_name || "another camp") : null;
   }
 
-  // ---- list view body (existing, unchanged) ----
+  /* ── 9. Render: list view body ────── */
+
   const renderListBody = () => {
     if (loading) return <div className="py-10 text-center text-[#9ca3af]">Loading…</div>;
 
@@ -387,7 +427,7 @@ export default function Calendar() {
       );
     }
 
-    if (!rows.length) {
+    if (!listRows.length) {
       return (
         <Card className="p-5 border-[#1f2937] bg-[#111827]">
           <div className="text-lg font-semibold text-[#f9fafb]">No camps found</div>
@@ -396,8 +436,7 @@ export default function Calendar() {
           </div>
           <div className="mt-4 flex gap-2">
             <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={clearFilters}>
-              <XCircle className="w-4 h-4 mr-2" />
-              Clear filters
+              <XCircle className="w-4 h-4 mr-2" /> Clear filters
             </Button>
             <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={openFiltersOrProfile}>
               <SlidersHorizontal className="w-4 h-4 mr-2" />
@@ -410,7 +449,7 @@ export default function Calendar() {
 
     return (
       <div className="space-y-3">
-        {rows.map((r) => {
+        {listRows.map((r) => {
           const campId = String(r?.camp_id || r?.id || "");
           const campWarnings = getWarningsForCamp(campId);
           const schoolId = r?.school_id ? String(r.school_id) : null;
@@ -450,7 +489,8 @@ export default function Calendar() {
     );
   };
 
-  // ---- month view body ----
+  /* ── 10. Render: month view body ──── */
+
   const renderMonthBody = () => {
     if (loading) return <div className="py-10 text-center text-[#9ca3af]">Loading…</div>;
 
@@ -471,50 +511,45 @@ export default function Calendar() {
         <MonthSubToggle subView={monthSubView} setSubView={setMonthSubView} />
         {monthSubView === "week" && (
           <WeekView
-            currentWeek={currentWeek}
-            setCurrentWeek={setCurrentWeek}
-            campsByDate={campsByDate}
-            conflictDates={conflictDates}
-            schoolMap={schoolMap}
-            onCampClick={openCampDetail}
+            currentWeek={currentWeek} setCurrentWeek={setCurrentWeek}
+            campsByDate={campsByDate} conflictDates={conflictDates}
+            schoolMap={schoolMap} onCampClick={openCampDetail}
           />
         )}
         {monthSubView === "agenda" && (
           <MonthOverview
-            currentMonth={currentMonth}
-            setCurrentMonth={setCurrentMonth}
-            campsByDate={campsByDate}
-            conflictDates={conflictDates}
-            schoolMap={schoolMap}
-            onCampClick={openCampDetail}
+            currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
+            campsByDate={campsByDate} conflictDates={conflictDates}
+            schoolMap={schoolMap} onCampClick={openCampDetail}
           />
         )}
         {monthSubView === "grid" && (
           <MonthGridView
-            currentMonth={currentMonth}
-            setCurrentMonth={setCurrentMonth}
-            campsByDate={campsByDate}
-            conflictDates={conflictDates}
-            schoolMap={schoolMap}
-            onCampClick={openCampDetail}
+            currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
+            campsByDate={campsByDate} conflictDates={conflictDates}
+            schoolMap={schoolMap} onCampClick={openCampDetail}
           />
         )}
       </>
     );
   };
 
-  // Detail panel data
+  /* ── 11. Detail panel data ────────── */
+
   const panelCamp = selectedCamp;
   const panelCampId = String(panelCamp?.camp_id || panelCamp?.id || "");
   const panelSchool = schoolMap[panelCampId] || { school_name: panelCamp?.school_name };
   const panelStatus = String(panelCamp?.intent_status || "").toLowerCase();
-  const panelDateKey = String(panelCamp?.start_date || "").slice(0, 10);
-  const panelIsConflict = conflictDates.has(panelDateKey);
+  const panelDateKey = normalizeDateKey(panelCamp?.start_date);
+  const panelIsConflict = panelDateKey ? conflictDates.has(panelDateKey) : false;
   const panelConflictWith = getConflictPartner(panelCamp);
+
+  /* ── 12. Return JSX ───────────────── */
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb]">
       <div className="max-w-5xl mx-auto px-4 pt-5 pb-24">
+
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <div className="text-xl font-bold text-[#f9fafb]">Calendar</div>
@@ -523,7 +558,7 @@ export default function Calendar() {
 
         {!isPaid && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
 
-        {/* Inline filters (show for list view, hide for month views to reduce clutter) */}
+        {/* Inline filters — list view only */}
         {calView === "list" && (
           <div className="mb-4 flex flex-wrap gap-3 items-center">
             <select
@@ -578,7 +613,6 @@ export default function Calendar() {
 
       <BottomNav />
 
-      {/* Camp detail panel */}
       {panelOpen && panelCamp && (
         <CampDetailPanel
           camp={panelCamp}
