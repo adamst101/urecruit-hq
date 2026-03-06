@@ -17,6 +17,8 @@ import { useCampSummariesClient } from "../components/hooks/useCampSummariesClie
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
+import { toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
+import { toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
 import WarningBadge from "../components/camps/WarningBadge.jsx";
 import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
@@ -140,6 +142,25 @@ export default function MyCamps() {
 
   const conflictCount = conflictCampIds.size;
 
+  // Action handlers
+  function handleRegister(r) {
+    const cid = String(r?.camp_id || r?.id || "");
+    if (!cid) return;
+    if (isDemoMode) {
+      toggleDemoRegistered(demoProfileId, cid);
+      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+    }
+  }
+
+  function handleUnfavorite(r) {
+    const cid = String(r?.camp_id || r?.id || "");
+    if (!cid) return;
+    if (isDemoMode) {
+      toggleDemoFavorite(demoProfileId, cid, seasonYear);
+      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+    }
+  }
+
   // UI state
   const [activeTab, setActiveTab] = useState("favorites");
   const [pillFilter, setPillFilter] = useState(null);
@@ -208,33 +229,51 @@ export default function MyCamps() {
             </span>
           </div>
         )}
-        <CampCard
-          warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
-          camp={{
-            id: campId,
-            camp_name: r?.camp_name || r?.name || "Camp",
-            start_date: r?.start_date,
-            end_date: r?.end_date,
-            price: r?.price ?? null,
-            link_url: r?.link_url ?? null,
-            city: r?.city ?? null,
-            state: r?.state ?? null,
-          }}
-          school={{
-            id: r?.school_id ? String(r.school_id) : null,
-            school_name: r?.school_name ?? null,
-            division: r?.school_division ?? r?.division ?? null,
-            logo_url: r?.school_logo_url ?? null,
-          }}
-          sport={{}}
-          positions={[]}
-          isFavorite={isFavorite}
-          isRegistered={isRegistered}
-          mode={isDemoMode ? "demo" : "paid"}
-          disabledFavorite={true}
-          onClick={undefined}
-          onFavoriteToggle={() => {}}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <CampCard
+              warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
+              camp={{
+                id: campId,
+                camp_name: r?.camp_name || r?.name || "Camp",
+                start_date: r?.start_date,
+                end_date: r?.end_date,
+                price: r?.price ?? null,
+                link_url: r?.link_url ?? null,
+                city: r?.city ?? null,
+                state: r?.state ?? null,
+              }}
+              school={{
+                id: r?.school_id ? String(r.school_id) : null,
+                school_name: r?.school_name ?? null,
+                division: r?.school_division ?? r?.division ?? null,
+                logo_url: r?.school_logo_url ?? null,
+              }}
+              sport={{}}
+              positions={[]}
+              isFavorite={isFavorite}
+              isRegistered={isRegistered}
+              mode={isDemoMode ? "demo" : "paid"}
+              disabledFavorite={true}
+              onClick={undefined}
+              onFavoriteToggle={() => {}}
+            />
+          </div>
+          {isFavorite && !isRegistered && (
+            <button
+              onClick={(e) => { e.stopPropagation(); handleRegister(r); }}
+              style={{
+                background: "#e8a020", color: "#0a0e1a",
+                border: "none", borderRadius: "0 12px 12px 0",
+                padding: "12px 14px", fontSize: 13, fontWeight: 700,
+                cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+                alignSelf: "stretch", display: "flex", alignItems: "center",
+              }}
+            >
+              Register →
+            </button>
+          )}
+        </div>
       </div>
     );
   }

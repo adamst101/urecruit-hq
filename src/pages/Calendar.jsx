@@ -14,6 +14,8 @@ import DemoBanner from "../components/DemoBanner.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
+import { toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
+import { toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
@@ -381,6 +383,43 @@ export default function Calendar() {
 
   /* ── 8. Event handlers ────────────── */
 
+  function handleRegister(camp) {
+    const cid = String(camp?.camp_id || camp?.id || "");
+    if (!cid) return;
+    if (!isPaid) {
+      toggleDemoRegistered(demoProfileId, cid);
+      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+    }
+    // TODO: paid mode register via CampIntent entity
+  }
+
+  function handleUnregister(camp) {
+    const cid = String(camp?.camp_id || camp?.id || "");
+    if (!cid) return;
+    if (!isPaid) {
+      toggleDemoRegistered(demoProfileId, cid);
+      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+    }
+  }
+
+  function handleFavorite(camp) {
+    const cid = String(camp?.camp_id || camp?.id || "");
+    if (!cid) return;
+    if (!isPaid) {
+      toggleDemoFavorite(demoProfileId, cid, seasonYear);
+      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+    }
+  }
+
+  function handleUnfavorite(camp) {
+    const cid = String(camp?.camp_id || camp?.id || "");
+    if (!cid) return;
+    if (!isPaid) {
+      toggleDemoFavorite(demoProfileId, cid, seasonYear);
+      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+    }
+  }
+
   const clearFilters = () => {
     setFilters({ sport: "", state: "", divisions: [], positions: [], startDate: "", endDate: "" });
     setSelectedMonth("all");
@@ -661,6 +700,10 @@ export default function Calendar() {
           isConflict={panelIsConflict}
           conflictWith={panelConflictWith}
           onClose={closeCampDetail}
+          onRegister={() => handleRegister(panelCamp)}
+          onUnregister={() => handleUnregister(panelCamp)}
+          onFavorite={() => handleFavorite(panelCamp)}
+          onUnfavorite={() => handleUnfavorite(panelCamp)}
         />
       )}
     </div>
