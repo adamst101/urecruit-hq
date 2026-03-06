@@ -446,6 +446,20 @@ export default function Calendar() {
     }
   }
 
+  function handleRegisteredToggle(campIdOrCamp) {
+    const cid = typeof campIdOrCamp === "string"
+      ? campIdOrCamp
+      : String(campIdOrCamp?.camp_id || campIdOrCamp?.id || "");
+    if (!cid) return;
+    const isReg = isCampRegistered(cid);
+    if (!isPaid) {
+      toggleDemoRegistered(demoProfileId, cid);
+      invalidateCampCaches();
+    } else {
+      // TODO: paid intent toggle
+    }
+  }
+
   const clearFilters = () => {
     setFilters({ sport: "", state: "", divisions: [], positions: [], startDate: "", endDate: "" });
     setSelectedMonth("all");
@@ -567,8 +581,12 @@ export default function Calendar() {
                 disabledFavorite={!isPaid}
                 onClick={undefined}
                 onFavoriteToggle={() => {}}
+                onRegisteredToggle={() => handleRegisteredToggle(campId)}
                 warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
-                onRegisterClick={() => handleRegisterClick(r)}
+                onRegisterClick={() => {
+                  const url = r?.link_url || r?.source_url;
+                  if (url) window.open(String(url), "_blank", "noopener,noreferrer");
+                }}
               />
             </div>
           );
