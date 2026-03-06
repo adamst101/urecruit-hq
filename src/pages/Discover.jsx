@@ -519,7 +519,8 @@ export default function Discover() {
       if (isPaid && distanceMiles && homeLat != null && homeLng != null) {
         const campLat = enriched?._school_lat ?? null;
         const campLng = enriched?._school_lng ?? null;
-        if (campLat == null || campLng == null) return true;
+        // If we can't determine camp location, exclude it from distance results
+        if (campLat == null || campLng == null) return false;
         const dist = haversine(homeLat, homeLng, campLat, campLng);
         if (dist > distanceMiles) return false;
       }
