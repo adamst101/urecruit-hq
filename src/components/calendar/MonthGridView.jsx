@@ -45,7 +45,7 @@ function CampDot({ status, isConflict }) {
   return <div style={{ width: 8, height: 8, borderRadius: "50%", background: bg, flexShrink: 0 }} />;
 }
 
-export default function MonthGridView({ currentMonth, setCurrentMonth, campsByDate, conflictDates, schoolMap, onCampClick }) {
+export default function MonthGridView({ currentMonth, setCurrentMonth, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate }) {
   const today = new Date();
 
   const [daySheetDate, setDaySheetDate] = useState(null);

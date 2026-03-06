@@ -330,6 +330,25 @@ export default function Calendar() {
     return map;
   }, [allUserCamps]);
 
+  // Auto-jump calendar to first camp month/week when camps load.
+  // Critical for demo mode (2025 camps vs 2026 default) and
+  // helps paid users whose first camp may be in a future month.
+  const hasJumpedRef = React.useRef(false);
+  useEffect(() => {
+    if (!allUserCamps?.length) return;
+    if (hasJumpedRef.current) return;
+    const keys = Object.keys(campsByDate).sort();
+    if (keys.length === 0) return;
+    const firstDate = new Date(keys[0] + "T00:00:00");
+    if (isNaN(firstDate.getTime())) return;
+    hasJumpedRef.current = true;
+    setCurrentMonth(new Date(firstDate.getFullYear(), firstDate.getMonth(), 1));
+    const dayOfWeek = firstDate.getDay();
+    const sunday = new Date(firstDate);
+    sunday.setDate(firstDate.getDate() - dayOfWeek);
+    setCurrentWeek(sunday);
+  }, [allUserCamps, campsByDate]);
+
   /* ── 7. Conflict detection ────────── */
 
   const favCamps = useMemo(
@@ -514,6 +533,13 @@ export default function Calendar() {
             currentWeek={currentWeek} setCurrentWeek={setCurrentWeek}
             campsByDate={campsByDate} conflictDates={conflictDates}
             schoolMap={schoolMap} onCampClick={openCampDetail}
+            onJumpToDate={(date) => {
+              setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+              const d = date.getDay();
+              const sun = new Date(date);
+              sun.setDate(date.getDate() - d);
+              setCurrentWeek(sun);
+            }}
           />
         )}
         {monthSubView === "agenda" && (
@@ -521,6 +547,13 @@ export default function Calendar() {
             currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
             campsByDate={campsByDate} conflictDates={conflictDates}
             schoolMap={schoolMap} onCampClick={openCampDetail}
+            onJumpToDate={(date) => {
+              setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+              const d = date.getDay();
+              const sun = new Date(date);
+              sun.setDate(date.getDate() - d);
+              setCurrentWeek(sun);
+            }}
           />
         )}
         {monthSubView === "grid" && (
@@ -528,6 +561,13 @@ export default function Calendar() {
             currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
             campsByDate={campsByDate} conflictDates={conflictDates}
             schoolMap={schoolMap} onCampClick={openCampDetail}
+            onJumpToDate={(date) => {
+              setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+              const d = date.getDay();
+              const sun = new Date(date);
+              sun.setDate(date.getDate() - d);
+              setCurrentWeek(sun);
+            }}
           />
         )}
       </>

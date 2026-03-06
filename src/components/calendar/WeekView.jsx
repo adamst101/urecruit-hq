@@ -40,7 +40,7 @@ function CampMiniCard({ camp, school, status, isConflict, onClick }) {
   );
 }
 
-export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, conflictDates, schoolMap, onCampClick }) {
+export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate }) {
   const today = new Date();
 
   // Mobile: show single day

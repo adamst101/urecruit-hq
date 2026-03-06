@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns";
 
-export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDate, conflictDates, schoolMap, onCampClick }) {
+export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate }) {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
@@ -50,8 +50,28 @@ export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDa
       </div>
 
       {daysWithCamps.length === 0 ? (
-        <div style={{ textAlign: "center", color: "#6b7280", fontSize: 16, padding: 40 }}>
-          No camps scheduled for {format(currentMonth, "MMMM")}.
+        <div style={{ textAlign: "center", padding: "48px 20px" }}>
+          <div style={{ fontSize: 40 }}>📅</div>
+          <div style={{ color: "#9ca3af", marginTop: 12, fontSize: 16, fontWeight: 600 }}>
+            No camps in {format(currentMonth, "MMMM")}.
+          </div>
+          <div style={{ color: "#6b7280", fontSize: 14, marginTop: 6, marginBottom: 20 }}>
+            Use the arrows to navigate to a month with camps.
+          </div>
+          {onJumpToDate && Object.keys(campsByDate).length > 0 && (
+            <button
+              onClick={() => {
+                const keys = Object.keys(campsByDate).sort();
+                if (keys.length > 0) {
+                  const d = new Date(keys[0] + "T00:00:00");
+                  if (!isNaN(d.getTime())) onJumpToDate(d);
+                }
+              }}
+              style={{ background: "none", border: "none", color: "#e8a020", fontSize: 14, fontWeight: 600, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}
+            >
+              Jump to first camp →
+            </button>
+          )}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
