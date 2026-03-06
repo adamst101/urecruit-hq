@@ -473,7 +473,11 @@ export default function Discover() {
       const sch = sid ? schoolById[sid] : null;
       const campCity = r?.city || sch?.city || null;
       const campState = r?.state || sch?.state || null;
-      const campCoords = getCityCoords(campCity, campState);
+      // Prefer stored lat/lng on school, then lookup table
+      const storedLat = sch?.lat ?? null;
+      const storedLng = sch?.lng ?? null;
+      const hasStoredCoords = storedLat != null && storedLng != null && storedLat !== 0 && storedLng !== 0;
+      const campCoords = hasStoredCoords ? { lat: storedLat, lng: storedLng } : getCityCoords(campCity, campState);
       return sch ? {
         ...r,
         division: r?.division || sch?.division || sch?.school_division || null,

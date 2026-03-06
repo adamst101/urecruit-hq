@@ -11,6 +11,7 @@ import { Button } from "../components/ui/button";
 import BottomNav from "../components/navigation/BottomNav.jsx";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { geocodeCity } from "../components/hooks/useGeocode.jsx";
 
 const FEET_OPTIONS = [4, 5, 6, 7];
 const INCH_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
@@ -150,6 +151,20 @@ export default function Profile() {
       const fy = Number(gradYear);
       if (gradYear !== "" && !Number.isFinite(fy)) throw new Error("Grad year must be a number.");
       const cleanHandle = xHandle.replace(/^@/, "").trim();
+
+      // Geocode home location
+      let homeLat = null;
+      let homeLng = null;
+      const trimCity = homeCity.trim();
+      const trimState = homeState.trim();
+      if (trimCity || trimState) {
+        const coords = await geocodeCity(trimCity, trimState);
+        if (coords) {
+          homeLat = coords.lat;
+          homeLng = coords.lng;
+        }
+      }
+
       await saveIdentity({
         athleteProfile: {
           first_name: firstName.trim() || null,
@@ -160,8 +175,10 @@ export default function Profile() {
           weight_lbs: weight === "" ? null : Number(weight),
           sport_id: sportId ? String(sportId) : null,
           primary_position_id: primaryPositionId ? String(primaryPositionId) : null,
-          home_city: homeCity.trim() || null,
-          home_state: homeState.trim() || null,
+          home_city: trimCity || null,
+          home_state: trimState || null,
+          home_lat: homeLat,
+          home_lng: homeLng,
           player_email: playerEmail.trim() || null,
           x_handle: cleanHandle || null,
         },
@@ -172,6 +189,29 @@ export default function Profile() {
       setSaveStatus("error");
     }
   }
+
+  // Auto-backfill: geocode existing profiles that have city/state but no lat/lng
+  const [backfillDone, setBackfillDone] = useState(false);
+  useEffect(() => {
+    if (backfillDone || isDemo || !identity) return;
+    const ap = identity?.athleteProfile || identity?.athlete_profile || identity || null;
+    const hasCity = !!(ap?.home_city || ap?.home_state);
+    const hasCoords = ap?.home_lat != null && ap?.home_lng != null;
+    if (hasCity && !hasCoords) {
+      setBackfillDone(true);
+      geocodeCity(ap.home_city, ap.home_state).then((coords) => {
+        if (coords) {
+          saveIdentity({
+            athleteProfile: {
+              ...ap,
+              home_lat: coords.lat,
+              home_lng: coords.lng,
+            },
+          }).catch(() => {});
+        }
+      });
+    }
+  }, [identity, isDemo, backfillDone]);
 
   const disabled = isDemo;
 
