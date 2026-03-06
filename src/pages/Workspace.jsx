@@ -15,6 +15,7 @@ import { clearDemoMode } from "../components/hooks/demoMode.jsx";
 import { isAdminEmail } from "../components/auth/adminEmails.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import AddAthleteModal from "../components/workspace/AddAthleteModal.jsx";
+import InstallButton from "../components/pwa/InstallButton.jsx";
 
 // ---- routes (no createPageUrl dependency) ----
 const ROUTES = {
@@ -218,6 +219,11 @@ export default function Workspace() {
       </section>
 
 
+
+      {/* ── PWA INSTALL PROMPT ── */}
+      <section style={{ padding: "0 24px 16px", maxWidth: 1100, margin: "0 auto" }}>
+        <InstallButton />
+      </section>
 
       {/* ── ADMIN SECTION ── */}
       {isAdmin && (

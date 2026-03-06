@@ -7,6 +7,7 @@ import { clearSeasonAccessCache } from "./components/hooks/useSeasonAccess.jsx";
 import SupportButton from "./components/support/SupportButton.jsx";
 import NoAccessWarning from "./components/auth/NoAccessWarning.jsx";
 import NoAccessBanner from "./components/auth/NoAccessBanner.jsx";
+import InstallPromptCapture from "./components/pwa/InstallPromptCapture.jsx";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -120,6 +121,7 @@ export default function Layout({ children }) {
 
       <SupportButton />
       <NoAccessWarning />
+      <InstallPromptCapture />
 
       {/* Theme + utility classes */}
       <style>{`
