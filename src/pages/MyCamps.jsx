@@ -195,6 +195,18 @@ export default function MyCamps() {
     }
   }
 
+  function handleRegisteredToggle(campId) {
+    const cid = String(campId ?? "");
+    if (!cid) return;
+    const isReg = isCampRegisteredCheck(cid);
+    if (isDemoMode) {
+      toggleDemoRegistered(demoProfileId, cid);
+      invalidateCampCaches();
+    } else {
+      // TODO: paid intent toggle
+    }
+  }
+
   // UI state
   const [activeTab, setActiveTab] = useState("favorites");
   const [pillFilter, setPillFilter] = useState(null);
@@ -289,7 +301,11 @@ export default function MyCamps() {
           disabledFavorite={true}
           onClick={undefined}
           onFavoriteToggle={() => {}}
-          onRegisterClick={() => handleRegisterClick(r)}
+          onRegisteredToggle={() => handleRegisteredToggle(campId)}
+          onRegisterClick={() => {
+            const url = r?.link_url || r?.source_url;
+            if (url) window.open(String(url), "_blank", "noopener,noreferrer");
+          }}
         />
       </div>
     );
