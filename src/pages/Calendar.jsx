@@ -559,40 +559,17 @@ export default function Calendar() {
 
           return (
             <div key={campId} className="relative">
-              <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <CampCard
-                    camp={camp} school={school} sport={sport} positions={posObjs}
-                    isFavorite={isFav}
-                    isRegistered={isReg}
-                    mode={isPaid ? "paid" : "demo"}
-                    disabledFavorite={!isPaid}
-                    onClick={undefined}
-                    onFavoriteToggle={() => {}}
-                    warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
-                  />
-                </div>
-                {!isReg && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleRegisterClick(r); }}
-                    className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
-                    style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10, flexShrink: 0 }}
-                  >
-                    Register
-                  </button>
-                )}
-                {isReg && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleRegisterClick(r); }}
-                    className="text-xs h-7 px-3 rounded-md font-medium bg-emerald-600 text-white hover:bg-emerald-700"
-                    style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10, flexShrink: 0 }}
-                  >
-                    ✓ Registered
-                  </button>
-                )}
-              </div>
+              <CampCard
+                camp={camp} school={school} sport={sport} positions={posObjs}
+                isFavorite={isFav}
+                isRegistered={isReg}
+                mode={isPaid ? "paid" : "demo"}
+                disabledFavorite={!isPaid}
+                onClick={undefined}
+                onFavoriteToggle={() => {}}
+                warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
+                onRegisterClick={() => handleRegisterClick(r)}
+              />
             </div>
           );
         })}

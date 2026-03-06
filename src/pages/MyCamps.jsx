@@ -263,57 +263,34 @@ export default function MyCamps() {
             </span>
           </div>
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <CampCard
-              warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
-              camp={{
-                id: campId,
-                camp_name: r?.camp_name || r?.name || "Camp",
-                start_date: r?.start_date,
-                end_date: r?.end_date,
-                price: r?.price ?? null,
-                link_url: r?.link_url ?? null,
-                city: r?.city ?? null,
-                state: r?.state ?? null,
-              }}
-              school={{
-                id: r?.school_id ? String(r.school_id) : null,
-                school_name: r?.school_name ?? null,
-                division: r?.school_division ?? r?.division ?? null,
-                logo_url: r?.school_logo_url ?? null,
-              }}
-              sport={{}}
-              positions={[]}
-              isFavorite={isFavorite}
-              isRegistered={isRegistered}
-              mode={isDemoMode ? "demo" : "paid"}
-              disabledFavorite={true}
-              onClick={undefined}
-              onFavoriteToggle={() => {}}
-            />
-          </div>
-          {!isRegistered && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); handleRegisterClick(r); }}
-              className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
-              style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10, flexShrink: 0 }}
-            >
-              Register
-            </button>
-          )}
-          {isRegistered && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); handleRegisterClick(r); }}
-              className="text-xs h-7 px-3 rounded-md font-medium bg-emerald-600 text-white hover:bg-emerald-700"
-              style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10, flexShrink: 0 }}
-            >
-              ✓ Registered
-            </button>
-          )}
-        </div>
+        <CampCard
+          warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
+          camp={{
+            id: campId,
+            camp_name: r?.camp_name || r?.name || "Camp",
+            start_date: r?.start_date,
+            end_date: r?.end_date,
+            price: r?.price ?? null,
+            link_url: r?.link_url ?? null,
+            city: r?.city ?? null,
+            state: r?.state ?? null,
+          }}
+          school={{
+            id: r?.school_id ? String(r.school_id) : null,
+            school_name: r?.school_name ?? null,
+            division: r?.school_division ?? r?.division ?? null,
+            logo_url: r?.school_logo_url ?? null,
+          }}
+          sport={{}}
+          positions={[]}
+          isFavorite={isFavorite}
+          isRegistered={isRegistered}
+          mode={isDemoMode ? "demo" : "paid"}
+          disabledFavorite={true}
+          onClick={undefined}
+          onFavoriteToggle={() => {}}
+          onRegisterClick={() => handleRegisterClick(r)}
+        />
       </div>
     );
   }
