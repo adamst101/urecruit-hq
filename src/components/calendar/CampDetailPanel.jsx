@@ -185,79 +185,18 @@ export default function CampDetailPanel({ camp, school, status, isConflict, conf
 
         {/* Action buttons */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {isReg && (
-            <>
-              <div style={{
-                background: "#052e16",
-                color: "#6ee7b7",
-                border: "1px solid #10b981",
-                borderRadius: 10,
-                padding: 14,
-                fontSize: 16,
-                fontWeight: 700,
-                textAlign: "center",
-              }}>
-                ✓ Registered
-              </div>
-              {onUnregister && (
-                <button
-                  onClick={() => { onUnregister(); onClose(); }}
-                  style={{
-                    background: "none", border: "none",
-                    color: "#6b7280", fontSize: 13, cursor: "pointer",
-                    textDecoration: "underline", textUnderlineOffset: 2,
-                    padding: "6px 0", textAlign: "center",
-                  }}
-                >
-                  Remove registration
-                </button>
-              )}
-            </>
-          )}
-
-          {isFav && !isReg && (
-            <>
-              {onRegisterClick && (
-                <button
-                  onClick={() => onRegisterClick()}
-                  style={{
-                    background: "#e8a020", color: "#0a0e1a",
-                    border: "none", borderRadius: 10,
-                    padding: 14, fontSize: 16, fontWeight: 700,
-                    cursor: "pointer", width: "100%",
-                  }}
-                >
-                  Register
-                </button>
-              )}
-              {onUnfavorite && (
-                <button
-                  onClick={() => { onUnfavorite(); onClose(); }}
-                  style={{
-                    background: "transparent", color: "#6b7280",
-                    border: "1px solid #374151", borderRadius: 10,
-                    padding: 12, fontSize: 14,
-                    cursor: "pointer", width: "100%",
-                    marginTop: 4,
-                  }}
-                >
-                  ★ Remove from favorites
-                </button>
-              )}
-            </>
-          )}
-
-          {!isFav && !isReg && onFavorite && (
+          {/* Register → opens Ryzer URL */}
+          {onRegisterClick && (camp?.link_url || camp?.source_url) && (
             <button
-              onClick={() => { onFavorite(); onClose(); }}
+              onClick={() => onRegisterClick()}
               style={{
-                background: "transparent", color: "#e8a020",
-                border: "2px solid #e8a020", borderRadius: 10,
+                background: "#e8a020", color: "#0a0e1a",
+                border: "none", borderRadius: 10,
                 padding: 14, fontSize: 16, fontWeight: 700,
                 cursor: "pointer", width: "100%",
               }}
             >
-              ★ Add to Favorites
+              Register →
             </button>
           )}
         </div>
