@@ -593,6 +593,7 @@ export default function Calendar() {
             currentWeek={currentWeek} setCurrentWeek={setCurrentWeek}
             campsByDate={campsByDate} conflictDates={conflictDates}
             schoolMap={schoolMap} onCampClick={openCampDetail}
+            onRegister={handleRegister}
             onJumpToDate={(date) => {
               setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
               const d = date.getDay();
@@ -607,6 +608,7 @@ export default function Calendar() {
             currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
             campsByDate={campsByDate} conflictDates={conflictDates}
             schoolMap={schoolMap} onCampClick={openCampDetail}
+            onRegister={handleRegister}
             onJumpToDate={(date) => {
               setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
               const d = date.getDay();
