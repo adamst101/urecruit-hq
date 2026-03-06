@@ -36,17 +36,18 @@ function CampMiniCard({ camp, school, status, isConflict, onClick, onRegister })
         {isConflict && status !== "registered" && status !== "completed" && <span style={{ color: "#fca5a5" }}> · ⚠ Conflict</span>}
       </div>
       {price && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{price}</div>}
-      {status === "favorite" && onRegister && (
+      {onRegister && (
         <button
+          type="button"
           onClick={(e) => { e.stopPropagation(); onRegister(); }}
-          style={{
-            background: "#e8a020", color: "#0a0e1a",
-            border: "none", borderRadius: 5,
-            padding: "4px 8px", fontSize: 11, fontWeight: 700,
-            cursor: "pointer", marginTop: 6, width: "100%",
-          }}
+          className={"text-xs h-6 px-2 rounded font-medium w-full mt-1.5 " + (
+            (status === "registered" || status === "completed")
+              ? "bg-emerald-600 text-white hover:bg-emerald-700"
+              : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
+          )}
+          style={{ pointerEvents: "auto", cursor: "pointer" }}
         >
-          Register →
+          {(status === "registered" || status === "completed") ? "✓ Registered" : "Register"}
         </button>
       )}
     </div>

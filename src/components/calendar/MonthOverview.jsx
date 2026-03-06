@@ -172,30 +172,27 @@ export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDa
 
                     {/* Right */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                      {isFav && !isReg && onRegister && (
+                      {onRegister && (
                         <button
+                          type="button"
                           onClick={(e) => { e.stopPropagation(); onRegister(c); }}
-                          style={{
-                            background: "#e8a020", color: "#0a0e1a",
-                            border: "none", borderRadius: 8,
-                            padding: "6px 14px", fontSize: 12, fontWeight: 700,
-                            cursor: "pointer", whiteSpace: "nowrap",
-                          }}
+                          className={"text-xs h-7 px-3 rounded-md font-medium " + (isReg
+                            ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                            : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]")}
+                          style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
                         >
-                          Register →
+                          {isReg ? "✓ Registered" : "Register"}
                         </button>
                       )}
-                      {!isFav || isReg ? (
-                        badgeText && (
-                          <span style={{
-                            background: badgeBg, color: badgeColor,
-                            fontSize: 12, fontWeight: 700, padding: "4px 10px",
-                            borderRadius: 12, whiteSpace: "nowrap",
-                          }}>
-                            {badgeText}
-                          </span>
-                        )
-                      ) : null}
+                      {!onRegister && badgeText && (
+                        <span style={{
+                          background: badgeBg, color: badgeColor,
+                          fontSize: 12, fontWeight: 700, padding: "4px 10px",
+                          borderRadius: 12, whiteSpace: "nowrap",
+                        }}>
+                          {badgeText}
+                        </span>
+                      )}
                       <span style={{ color: "#374151", fontSize: 16 }}>›</span>
                     </div>
                   </div>
