@@ -213,6 +213,8 @@ export default function MyCamps() {
     if (isDemoMode) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
       invalidateCampCaches();
+    } else {
+      upsertIntent(cid, "");
     }
   }
 
@@ -350,10 +352,10 @@ export default function MyCamps() {
           isFavorite={isFavorite}
           isRegistered={isRegistered}
           mode={isDemoMode ? "demo" : "paid"}
-          disabledFavorite={true}
+          disabledFavorite={false}
           onClick={undefined}
-          onFavoriteToggle={() => {}}
-          onRegisteredToggle={() => handleRegisteredToggle(campId)}
+          onFavoriteToggle={() => handleUnfavorite(r)}
+          onRegisteredToggle={() => handleRegisterClick(r)}
           onRegisterClick={() => {
             const url = r?.link_url || r?.source_url;
             if (url) window.open(String(url), "_blank", "noopener,noreferrer");

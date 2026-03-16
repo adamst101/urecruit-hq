@@ -463,6 +463,9 @@ export default function Calendar() {
     if (!isPaid) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
       invalidateCampCaches();
+    } else {
+      const isFav = isCampFavorite(cid);
+      upsertIntent(cid, isFav ? "" : "favorite");
     }
   }
 
@@ -472,6 +475,8 @@ export default function Calendar() {
     if (!isPaid) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
       invalidateCampCaches();
+    } else {
+      upsertIntent(cid, "");
     }
   }
 
@@ -639,10 +644,10 @@ export default function Calendar() {
                 isFavorite={isFav}
                 isRegistered={isReg}
                 mode={isPaid ? "paid" : "demo"}
-                disabledFavorite={!isPaid}
+                disabledFavorite={false}
                 onClick={undefined}
-                onFavoriteToggle={() => {}}
-                onRegisteredToggle={() => handleRegisteredToggle(campId)}
+                onFavoriteToggle={() => handleFavorite(r)}
+                onRegisteredToggle={() => handleRegisterClick(r)}
                 warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
                 onRegisterClick={() => {
                   const url = r?.link_url || r?.source_url;
