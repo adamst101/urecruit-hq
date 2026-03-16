@@ -368,25 +368,10 @@ export default function Home() {
                 ⚡ Summer camp season opens March–April. Early registrations fill fast.
               </p>
 
-              <div
-                style={{ display: "flex", gap: 20, marginTop: 24, flexWrap: "wrap" }}
-              >
-                {[`${campDisplay} camps`, `${schoolDisplay} college programs`, "D1 FBS through JUCO", "Updated every Monday"].map(
-                  (t) => (
-                    <span
-                      key={t}
-                      style={{
-                        fontSize: 15,
-                        color: "#9ca3af",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6
-                      }}
-                    >
-                      <span style={{ color: "#e8a020", fontSize: 17 }}>✓</span> {t}
-                    </span>
-                  )
-                )}
+              <div style={{ marginTop: 24 }}>
+                <span style={{ fontSize: 20, color: "#e8a020", fontWeight: 600 }}>
+                  ⚡ Summer camp season opens March–April. Early registrations fill fast.
+                </span>
               </div>
             </div>
 
