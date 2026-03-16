@@ -364,7 +364,7 @@ export default function Home() {
                 </button>
               </div>
 
-              <p style={{ fontSize: 16, color: "#ffffffff", fontWeight: 600, marginTop: 14 }}>
+              <p style={{ fontSize: 12, color: "#ffffffff", fontWeight: 600, marginTop: 14 }}>
                 ⚡ Summer camp season opens March–April. Early registrations fill fast.
               </p>
             </div>
