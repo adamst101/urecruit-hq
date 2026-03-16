@@ -391,6 +391,13 @@ export default function Profile() {
               <input className={inputClass} value={xHandle ? `@${xHandle}` : ""} onChange={(e) => setXHandle(e.target.value.replace(/^@/, ""))} placeholder="@username" disabled={disabled} />
               <div className={helperTextClass}>Your recruiting profile on X — helps coaches find you</div>
             </label>
+          </div>
+        </Card>
+
+        {/* ── SECTION: Parent / Guardian Info ── */}
+        <Card className="p-4 space-y-3 border-[#1f2937] bg-[#111827]">
+          <div className="text-lg font-semibold text-[#f9fafb]">Parent / Guardian Info</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <label className="text-sm">
               <div className={labelTextClass}>Parent First Name</div>
               <input className={inputClass} value={parentFirstName} onChange={(e) => setParentFirstName(e.target.value)} placeholder="Jane" disabled={disabled} />
