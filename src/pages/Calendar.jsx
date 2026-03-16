@@ -1,5 +1,5 @@
 // src/pages/Calendar.jsx — clean rewrite
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { XCircle, SlidersHorizontal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -348,10 +348,12 @@ export default function Calendar() {
     return map;
   }, [allUserCamps]);
 
+  const debounceTimerRef = useRef(null);
+
   // Auto-jump calendar to first camp month/week when camps load.
   // Critical for demo mode (2025 camps vs 2026 default) and
   // helps paid users whose first camp may be in a future month.
-  const hasJumpedRef = React.useRef(false);
+  const hasJumpedRef = useRef(false);
   useEffect(() => {
     if (!allUserCamps?.length) return;
     if (hasJumpedRef.current) return;
@@ -400,14 +402,16 @@ export default function Calendar() {
   /* ── 8. Event handlers ────────────── */
 
   function invalidateCampCaches() {
-    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
-    queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+    }, 2000);
   }
 
   // Opens the same RegisterConfirmModal that Discover uses
   function handleRegisterClick(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
-    console.log("[Calendar] handleRegisterClick called", cid);
     if (isCampRegistered(cid)) {
       setUnregisterModal({ open: true, camp });
     } else {
@@ -437,7 +441,6 @@ export default function Calendar() {
 
   function doRegister(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
-    console.log("[Calendar] doRegister called", cid);
     if (!cid) return;
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
@@ -449,7 +452,6 @@ export default function Calendar() {
 
   function doUnregister(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
-    console.log("[Calendar] doUnregister called", cid);
     if (!cid) return;
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
@@ -462,7 +464,6 @@ export default function Calendar() {
 
   function handleFavorite(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
-    console.log("[Calendar] handleFavorite called", cid);
     if (!cid) return;
     if (!isPaid) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
@@ -475,7 +476,6 @@ export default function Calendar() {
 
   function handleUnfavorite(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
-    console.log("[Calendar] handleUnfavorite called", cid);
     if (!cid) return;
     if (!isPaid) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
@@ -490,11 +490,22 @@ export default function Calendar() {
     if (!CampIntent?.create) return;
     const key = String(campId || "");
     if (!key) return;
+    const aId = athleteId;
+    if (!aId) return;
+
+    const queryKey = ["myCampsSummaries_client", athleteId || null, athleteSportId || null];
+    const previousData = queryClient.getQueryData(queryKey);
+    queryClient.setQueryData(queryKey, (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map((r) =>
+        String(r?.camp_id || r?.id) === String(key)
+          ? { ...r, intent_status: nextStatus || "" }
+          : r
+      );
+    });
 
     try {
       // Find existing intent for this camp
-      const aId = athleteId;
-      if (!aId) return;
       const existing = await CampIntent.filter({ athlete_id: aId, camp_id: key }).then(
         (rows) => (Array.isArray(rows) && rows.length > 0 ? rows[0] : null)
       ).catch(() => null);
@@ -507,7 +518,8 @@ export default function Calendar() {
         await CampIntent.create({ camp_id: key, status: String(nextStatus), athlete_id: aId });
       }
     } catch (err) {
-      console.error("[Calendar upsertIntent]", err);
+      queryClient.setQueryData(queryKey, previousData);
+      console.error("[Calendar] write failed, reverting:", err);
     }
     invalidateCampCaches();
   }

@@ -1,5 +1,5 @@
 // src/pages/MyCamps.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -43,6 +43,8 @@ function normId(x) {
 export default function MyCamps() {
   const nav = useNavigate();
   const queryClient = useQueryClient();
+
+  const debounceTimerRef = useRef(null);
 
   const season = useSeasonAccess();
 
@@ -151,8 +153,11 @@ export default function MyCamps() {
   const [unregisterModal, setUnregisterModal] = useState({ open: false, camp: null });
 
   function invalidateCampCaches() {
-    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
-    queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
+    }, 2000);
   }
 
   function isCampRegisteredCheck(campId) {
@@ -177,7 +182,6 @@ export default function MyCamps() {
 
   function handleRegisterClick(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
-    console.log("[MyCamps] handleRegisterClick called", cid);
     if (isCampRegisteredCheck(cid)) {
       setUnregisterModal({ open: true, camp });
     } else {
@@ -187,7 +191,6 @@ export default function MyCamps() {
 
   function doRegister(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
-    console.log("[MyCamps] doRegister called", cid);
     if (!cid) return;
     if (isDemoMode) {
       toggleDemoRegistered(demoProfileId, cid);
@@ -199,7 +202,6 @@ export default function MyCamps() {
 
   function doUnregister(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
-    console.log("[MyCamps] doUnregister called", cid);
     if (!cid) return;
     if (isDemoMode) {
       toggleDemoRegistered(demoProfileId, cid);
@@ -212,7 +214,6 @@ export default function MyCamps() {
 
   function handleUnfavorite(r) {
     const cid = String(r?.camp_id || r?.id || "");
-    console.log("[MyCamps] handleUnfavorite called", cid);
     if (!cid) return;
     if (isDemoMode) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
@@ -230,6 +231,18 @@ export default function MyCamps() {
     const aId = athleteId ? String(athleteId) : null;
     if (!aId) return;
 
+    const sId = sportId ? String(sportId) : "";
+    const queryKey = ["myCampsSummaries_client", aId, sId || ""];
+    const previousData = queryClient.getQueryData(queryKey);
+    queryClient.setQueryData(queryKey, (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map((r) =>
+        String(r?.camp_id || r?.id) === String(key)
+          ? { ...r, intent_status: nextStatus || "" }
+          : r
+      );
+    });
+
     try {
       const existing = await CampIntent.filter({ athlete_id: aId, camp_id: key }).then(
         (rows) => (Array.isArray(rows) && rows.length > 0 ? rows[0] : null)
@@ -243,7 +256,8 @@ export default function MyCamps() {
         await CampIntent.create({ camp_id: key, status: String(nextStatus), athlete_id: aId });
       }
     } catch (err) {
-      console.error("[MyCamps upsertIntent]", err);
+      queryClient.setQueryData(queryKey, previousData);
+      console.error("[MyCamps] write failed, reverting:", err);
     }
     invalidateCampCaches();
   }
@@ -311,12 +325,6 @@ export default function MyCamps() {
 
   function renderCampRow(r) {
     const campId = String(r?.camp_id || r?.id || "");
-    console.log("[MyCamps] renderCampRow props", {
-      campId,
-      disabledFavorite: false,
-      onFavoriteToggle: typeof handleUnfavorite,
-      onRegisteredToggle: typeof handleRegisterClick,
-    });
     const st = String(r?.intent_status || "").toLowerCase();
     const isRegistered = st === "registered" || st === "completed";
     const isFavorite = st === "favorite";
