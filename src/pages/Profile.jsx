@@ -171,16 +171,20 @@ export default function Profile() {
       if (gradYear !== "" && !Number.isFinite(fy)) throw new Error("Grad year must be a number.");
       const cleanHandle = xHandle.replace(/^@/, "").trim();
 
-      // Geocode home location
+      // Geocode home location (best-effort — never block save on failure)
       let homeLat = null;
       let homeLng = null;
       const trimCity = homeCity.trim();
       const trimState = homeState.trim();
       if (trimCity || trimState) {
-        const coords = await geocodeCity(trimCity, trimState);
-        if (coords) {
-          homeLat = coords.lat;
-          homeLng = coords.lng;
+        try {
+          const coords = await geocodeCity(trimCity, trimState);
+          if (coords) {
+            homeLat = coords.lat;
+            homeLng = coords.lng;
+          }
+        } catch {
+          // Geocoding failed (e.g. CORS) — continue saving without coords
         }
       }
 
