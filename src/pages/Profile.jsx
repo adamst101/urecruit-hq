@@ -93,6 +93,7 @@ export default function Profile() {
   const [homeState, setHomeState] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
   const [xHandle, setXHandle] = useState("");
+  const [parentName, setParentName] = useState("");
 
   // Populate form from identity
   useEffect(() => {
@@ -113,6 +114,7 @@ export default function Profile() {
     setHomeState(safeStr(ap?.home_state));
     setPlayerEmail(safeStr(ap?.player_email));
     setXHandle(safeStr(ap?.x_handle));
+    setParentName(safeStr(ap?.parent_name));
   }, [identity]);
 
   // Load sports + positions
@@ -181,6 +183,7 @@ export default function Profile() {
           home_lng: homeLng,
           player_email: playerEmail.trim() || null,
           x_handle: cleanHandle || null,
+          parent_name: parentName.trim() || null,
         },
       });
       setSaveStatus("success");
@@ -368,6 +371,11 @@ export default function Profile() {
               <div className={labelTextClass}>X / Twitter</div>
               <input className={inputClass} value={xHandle ? `@${xHandle}` : ""} onChange={(e) => setXHandle(e.target.value.replace(/^@/, ""))} placeholder="@username" disabled={disabled} />
               <div className={helperTextClass}>Your recruiting profile on X — helps coaches find you</div>
+            </label>
+            <label className="text-sm">
+              <div className={labelTextClass}>Your Name (Parent / Guardian)</div>
+              <input className={inputClass} value={parentName} onChange={(e) => setParentName(e.target.value)} placeholder="Jane Smith" disabled={disabled} />
+              <div className={helperTextClass}>Used to personalize your HQ welcome experience</div>
             </label>
           </div>
         </Card>

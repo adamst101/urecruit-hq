@@ -89,6 +89,7 @@ export function useAthleteIdentity() {
       home_state: ap.home_state ?? null,
       home_lat: ap.home_lat ?? null,
       home_lng: ap.home_lng ?? null,
+      parent_name: ap.parent_name ?? null,
       active: true,
     };
 
