@@ -133,6 +133,7 @@ export default function CampCard({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              console.log("[CampCard] onFavoriteToggle fired, prop:", typeof onFavoriteToggle, "disabled:", !!disabledFavorite);
               if (disabledFavorite) return;
               onFavoriteToggle?.();
             }}
@@ -162,6 +163,7 @@ export default function CampCard({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                console.log("[CampCard] onRegisteredToggle fired, prop:", typeof onRegisteredToggle);
                 onRegisteredToggle();
               }}
               onMouseEnter={(e) => { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }}

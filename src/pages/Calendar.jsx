@@ -407,6 +407,7 @@ export default function Calendar() {
   // Opens the same RegisterConfirmModal that Discover uses
   function handleRegisterClick(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
+    console.log("[Calendar] handleRegisterClick called", cid);
     if (isCampRegistered(cid)) {
       setUnregisterModal({ open: true, camp });
     } else {
@@ -436,6 +437,7 @@ export default function Calendar() {
 
   function doRegister(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
+    console.log("[Calendar] doRegister called", cid);
     if (!cid) return;
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
@@ -447,6 +449,7 @@ export default function Calendar() {
 
   function doUnregister(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
+    console.log("[Calendar] doUnregister called", cid);
     if (!cid) return;
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
@@ -459,6 +462,7 @@ export default function Calendar() {
 
   function handleFavorite(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
+    console.log("[Calendar] handleFavorite called", cid);
     if (!cid) return;
     if (!isPaid) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
@@ -471,6 +475,7 @@ export default function Calendar() {
 
   function handleUnfavorite(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
+    console.log("[Calendar] handleUnfavorite called", cid);
     if (!cid) return;
     if (!isPaid) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);

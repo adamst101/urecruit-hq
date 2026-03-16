@@ -177,6 +177,7 @@ export default function MyCamps() {
 
   function handleRegisterClick(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
+    console.log("[MyCamps] handleRegisterClick called", cid);
     if (isCampRegisteredCheck(cid)) {
       setUnregisterModal({ open: true, camp });
     } else {
@@ -186,6 +187,7 @@ export default function MyCamps() {
 
   function doRegister(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
+    console.log("[MyCamps] doRegister called", cid);
     if (!cid) return;
     if (isDemoMode) {
       toggleDemoRegistered(demoProfileId, cid);
@@ -197,6 +199,7 @@ export default function MyCamps() {
 
   function doUnregister(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
+    console.log("[MyCamps] doUnregister called", cid);
     if (!cid) return;
     if (isDemoMode) {
       toggleDemoRegistered(demoProfileId, cid);
@@ -209,6 +212,7 @@ export default function MyCamps() {
 
   function handleUnfavorite(r) {
     const cid = String(r?.camp_id || r?.id || "");
+    console.log("[MyCamps] handleUnfavorite called", cid);
     if (!cid) return;
     if (isDemoMode) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
@@ -307,6 +311,12 @@ export default function MyCamps() {
 
   function renderCampRow(r) {
     const campId = String(r?.camp_id || r?.id || "");
+    console.log("[MyCamps] renderCampRow props", {
+      campId,
+      disabledFavorite: false,
+      onFavoriteToggle: typeof handleUnfavorite,
+      onRegisteredToggle: typeof handleRegisterClick,
+    });
     const st = String(r?.intent_status || "").toLowerCase();
     const isRegistered = st === "registered" || st === "completed";
     const isFavorite = st === "favorite";
