@@ -557,6 +557,22 @@ export default function Discover() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seasonYear, isPaid, seasonLoading]);
 
+  // Reload intents when Calendar/MyCamps writes an intent (same-window CustomEvent
+  // or cross-tab storage event) so the favorite star updates without a full reload.
+  useEffect(() => {
+    function handleIntentUpdate(e) {
+      if (e.type === "intentUpdated" || e.key === "intentUpdatedAt") {
+        loadIntents(allRows.map(campKeyForRow).filter(Boolean)).then(setIntentByKey);
+      }
+    }
+    window.addEventListener("storage", handleIntentUpdate);
+    window.addEventListener("intentUpdated", handleIntentUpdate);
+    return () => {
+      window.removeEventListener("storage", handleIntentUpdate);
+      window.removeEventListener("intentUpdated", handleIntentUpdate);
+    };
+  }, [allRows]);
+
   // Strip stale ?mode=demo from URL once season resolves to paid
   useEffect(() => {
     if (seasonMode === "paid" && urlp?.mode === "demo") {

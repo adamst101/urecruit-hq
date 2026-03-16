@@ -211,10 +211,9 @@ export default function MyCamps() {
     const aId = athleteId ? String(athleteId) : null;
     if (!aId) return;
 
-    const sId = sportId ? String(sportId) : "";
-    const queryKey = ["myCampsSummaries_client", aId, sId || ""];
-    const previousData = queryClient.getQueryData(queryKey);
-    queryClient.setQueryData(queryKey, (old) => {
+    const queryFilter = { queryKey: ["myCampsSummaries_client"], exact: false };
+    const previousEntries = queryClient.getQueriesData(queryFilter);
+    queryClient.setQueriesData(queryFilter, (old) => {
       if (!Array.isArray(old)) return old;
       return old.map((r) =>
         String(r?.camp_id || r?.id) === String(key)
@@ -235,8 +234,12 @@ export default function MyCamps() {
       } else {
         await CampIntent.create({ camp_id: key, status: String(nextStatus), athlete_id: aId });
       }
+      try { localStorage.setItem("intentUpdatedAt", Date.now().toString()); } catch {}
+      window.dispatchEvent(new CustomEvent("intentUpdated"));
     } catch (err) {
-      queryClient.setQueryData(queryKey, previousData);
+      for (const [qk, data] of previousEntries) {
+        queryClient.setQueryData(qk, data);
+      }
       console.error("[MyCamps] write failed, reverting:", err);
     }
   }

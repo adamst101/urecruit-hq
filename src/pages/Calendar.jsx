@@ -274,11 +274,8 @@ export default function Calendar() {
     const result = base
       .filter((c) => readActiveFlag(c))
       .filter((c) => {
-        // In demo mode, only show camps with intent
-        if (!isPaid) {
-          const st = String(c?.intent_status || "").toLowerCase();
-          if (st !== "favorite" && st !== "registered" && st !== "completed") return false;
-        }
+        const st = String(c?.intent_status || "").toLowerCase();
+        if (st !== "favorite" && st !== "registered" && st !== "completed") return false;
         if (wantedState) {
           const campState = normalizeState(c?.state || c?.camp_state || c?.school_state) || null;
           if (campState !== wantedState) return false;
@@ -482,9 +479,9 @@ export default function Calendar() {
     const aId = athleteId;
     if (!aId) return;
 
-    const queryKey = ["myCampsSummaries_client", athleteId || null, athleteSportId || null];
-    const previousData = queryClient.getQueryData(queryKey);
-    queryClient.setQueryData(queryKey, (old) => {
+    const queryFilter = { queryKey: ["myCampsSummaries_client"], exact: false };
+    const previousEntries = queryClient.getQueriesData(queryFilter);
+    queryClient.setQueriesData(queryFilter, (old) => {
       if (!Array.isArray(old)) return old;
       return old.map((r) =>
         String(r?.camp_id || r?.id) === String(key)
@@ -506,8 +503,12 @@ export default function Calendar() {
       } else {
         await CampIntent.create({ camp_id: key, status: String(nextStatus), athlete_id: aId });
       }
+      try { localStorage.setItem("intentUpdatedAt", Date.now().toString()); } catch {}
+      window.dispatchEvent(new CustomEvent("intentUpdated"));
     } catch (err) {
-      queryClient.setQueryData(queryKey, previousData);
+      for (const [qk, data] of previousEntries) {
+        queryClient.setQueryData(qk, data);
+      }
       console.error("[Calendar] write failed, reverting:", err);
     }
   }
