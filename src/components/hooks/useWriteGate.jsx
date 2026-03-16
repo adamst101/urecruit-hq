@@ -47,8 +47,9 @@ export function useWriteGate() {
         return false;
       }
 
-      // 2) Not entitled
-      if (!season?.hasAccess) {
+      // 2) Not entitled (but if they have an accountId and entitlement, allow even in demo mode)
+      const isEntitled = season?.hasAccess || !!season?.entitlement;
+      if (!isEntitled) {
         nav(
           createPageUrl("Subscribe") +
             `?force=1&source=${source}&intent=${encodeURIComponent(action)}` +
@@ -59,8 +60,8 @@ export function useWriteGate() {
         return false;
       }
 
-      // 3) Paid but missing athlete profile
-      if (!athleteProfile) {
+      // 3) Entitled but missing athlete profile — only block in paid mode, not demo
+      if (!athleteProfile && season?.hasAccess) {
         nav(createPageUrl("Profile") + `?next=${nextParam}`, { replace: true });
         return false;
       }

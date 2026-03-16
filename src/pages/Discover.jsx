@@ -686,6 +686,8 @@ export default function Discover() {
   }
 
   async function handleFavoriteToggle(campId) {
+    const ok = await writeGate.ensure("favorite", { campId });
+    if (!ok && !isPaid) return; // only block if truly not entitled
     // If already favorited, just unfavorite (no conflict check)
     if (isCampFavorite(campId)) {
       doFavoriteToggle(campId);
@@ -745,8 +747,10 @@ export default function Discover() {
     }
   }
 
-  function handleRegisterClick(camp) {
+  async function handleRegisterClick(camp) {
     const campId = String(camp?.id ?? "");
+    const ok = await writeGate.ensure("register", { campId });
+    if (!ok && !isPaid) return; // only block if truly not entitled
 
     // If already registered, show unregister modal
     if (isCampRegistered(campId)) {
