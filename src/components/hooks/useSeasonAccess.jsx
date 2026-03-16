@@ -22,10 +22,12 @@ import { readDemoMode, clearDemoMode } from "./demoMode.jsx";
 // Persists across all hook instances and page navigations.
 let _cachedResult = null;   // null = not yet fetched
 let _fetchPromise = null;   // shared in-flight promise
+let _lastDemoCheck = null;  // { accountId, checkedAt } — negative cache for entitled check
 
 export function clearSeasonAccessCache() {
   _cachedResult = null;
   _fetchPromise = null;
+  _lastDemoCheck = null;
 }
 
 // ─── Helpers (unchanged) ──────────────────────────────
@@ -104,6 +106,25 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
     };
   }
 
+  // Negative cache: skip entitlement API if we recently confirmed no entitlement
+  if (_lastDemoCheck?.accountId === accountId) {
+    const age = Date.now() - new Date(_lastDemoCheck.checkedAt).getTime();
+    if (age < 2 * 60 * 1000) {
+      return {
+        currentYear: currentYear || null,
+        demoYear: demoYear || null,
+        mode: "demo",
+        hasAccess: false,
+        seasonYear: demoSeason || demoYear || currentYear || null,
+        season: demoSeason || demoYear || currentYear || null,
+        accountId,
+        entitlement: null,
+        isAuthenticated: true,
+        lastCheckedAt: nowISO(),
+      };
+    }
+  }
+
   // Check entitlement for active season, then sold season (early-bird)
   let ent = await fetchEntitlement({ accountId, seasonYear: activeSeason });
   if (!ent && soldSeason !== activeSeason) {
@@ -126,7 +147,8 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
     };
   }
 
-  // Signed in but NOT entitled → demo
+  // Signed in but NOT entitled → demo; record negative cache
+  _lastDemoCheck = { accountId, checkedAt: nowISO() };
   return {
     currentYear: currentYear || null,
     demoYear: demoYear || null,

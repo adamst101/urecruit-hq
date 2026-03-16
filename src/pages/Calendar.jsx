@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { XCircle, SlidersHorizontal } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { base44 } from "../api/base44Client";
 import { Button } from "../components/ui/button";
@@ -170,9 +170,6 @@ export default function Calendar() {
   const [inlineState, setInlineState] = useState("all");
   const [inlineDivision, setInlineDivision] = useState("all");
 
-  // Picklists
-  const [sports, setSports] = useState([]);
-  const [positions, setPositions] = useState([]);
 
   /* ── 4. Side effects ──────────────── */
 
@@ -206,31 +203,43 @@ export default function Calendar() {
     }
   }, [isPaid, athleteSportId]);
 
-  // Load picklists
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
+  // Load picklists (cached 30 min — these lists never change during a session)
+  const sportsQuery = useQuery({
+    queryKey: ["sports_list"],
+    staleTime: 30 * 60 * 1000,
+    queryFn: async () => {
       try {
         const r = await base44?.entities?.Sport?.list?.();
-        if (mounted) setSports(Array.isArray(r) ? r : []);
+        if (Array.isArray(r)) return r;
+      } catch {}
+      try {
+        const r2 = await base44?.entities?.Sport?.filter?.({});
+        return Array.isArray(r2) ? r2 : [];
       } catch {
-        try {
-          const r2 = await base44?.entities?.Sport?.filter?.({});
-          if (mounted) setSports(Array.isArray(r2) ? r2 : []);
-        } catch { if (mounted) setSports([]); }
+        return [];
       }
+    },
+  });
+
+  const positionsQuery = useQuery({
+    queryKey: ["positions_list"],
+    staleTime: 30 * 60 * 1000,
+    queryFn: async () => {
       try {
         const r = await base44?.entities?.Position?.list?.();
-        if (mounted) setPositions(Array.isArray(r) ? r : []);
+        if (Array.isArray(r)) return r;
+      } catch {}
+      try {
+        const r2 = await base44?.entities?.Position?.filter?.({});
+        return Array.isArray(r2) ? r2 : [];
       } catch {
-        try {
-          const r2 = await base44?.entities?.Position?.filter?.({});
-          if (mounted) setPositions(Array.isArray(r2) ? r2 : []);
-        } catch { if (mounted) setPositions([]); }
+        return [];
       }
-    })();
-    return () => { mounted = false; };
-  }, []);
+    },
+  });
+
+  const sports = sportsQuery.data || [];
+  const positions = positionsQuery.data || [];
 
   /* ── 5. Data sources ──────────────── */
 

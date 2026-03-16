@@ -41,7 +41,7 @@ export function useIdentity() {
   const meQuery = useQuery({
     queryKey: ["auth_me"],
     retry: false,
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       try {
         return await base44.auth.me?.();
@@ -65,7 +65,7 @@ export function useIdentity() {
     queryKey: ["athleteProfiles", accountId],
     enabled: !!accountId && !accessLoading,
     retry: false,
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       try {
         const rows = await base44.entities.AthleteProfile.filter({

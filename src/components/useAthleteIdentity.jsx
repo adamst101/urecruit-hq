@@ -42,7 +42,7 @@ export function useAthleteIdentity() {
     queryKey: ["athleteIdentity", accountId],
     enabled: isAuthed,
     retry: false,
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     queryFn: async () => {
       // Pull profiles for this account
