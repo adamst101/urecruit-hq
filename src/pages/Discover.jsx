@@ -241,7 +241,7 @@ export default function Discover() {
   const { demoProfileId } = useDemoProfile();
   const athleteSportId = athleteProfile?.sport_id != null ? String(athleteProfile.sport_id) : "";
 
-  const { hasAccess, seasonYear: accessSeasonYear, accountId: seasonAccountId, mode: seasonMode } = useSeasonAccess();
+  const { hasAccess, seasonYear: accessSeasonYear, accountId: seasonAccountId, mode: seasonMode, isLoading: seasonLoading } = useSeasonAccess();
   const writeGate = useWriteGate();
 
   // Use useSeasonAccess as single source of truth for paid vs demo.
@@ -552,9 +552,19 @@ export default function Discover() {
   }, [allRows, nf, isPaid, athleteSportId, schoolById, distanceMiles, selectedMonth, homeLat, homeLng]);
 
   useEffect(() => {
+    if (seasonLoading) return;
     loadCamps();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seasonYear, isPaid]);
+  }, [seasonYear, isPaid, seasonLoading]);
+
+  // Strip stale ?mode=demo from URL once season resolves to paid
+  useEffect(() => {
+    if (seasonMode === "paid" && urlp?.mode === "demo") {
+      const sp = new URLSearchParams(loc.search);
+      sp.delete("mode");
+      nav({ search: sp.toString() }, { replace: true });
+    }
+  }, [seasonMode, urlp?.mode]);
 
   function clearFilters() {
     filtersApi?.clearFilters?.();
