@@ -686,8 +686,33 @@ export default function Discover() {
   }
 
   async function handleFavoriteToggle(campId) {
+    // Demo users: skip writeGate entirely, allow local-only favorite
+    if (!isPaid) {
+      if (isCampFavorite(campId)) {
+        doFavoriteToggle(campId);
+        return;
+      }
+      const camp = rawRows.find((r) => String(r?.id) === String(campId));
+      if (!camp) { doFavoriteToggle(campId); return; }
+      const existing = getSavedCamps();
+      const warnings = detectConflicts({
+        camps: [...existing, camp],
+        homeCity: athleteProfile?.home_city || null,
+        homeState: athleteProfile?.home_state || null,
+        isPaid,
+      }).filter((w) => w.campIds?.includes(String(campId)));
+      if (warnings.length > 0) {
+        setConflictModal({ open: true, warnings, campId, action: "favorite" });
+      } else {
+        doFavoriteToggle(campId);
+      }
+      return;
+    }
+
+    // Paid users: run writeGate
     const ok = await writeGate.ensure("favorite", { campId });
-    if (!ok && !isPaid) return; // only block if truly not entitled
+    if (!ok) return;
+
     // If already favorited, just unfavorite (no conflict check)
     if (isCampFavorite(campId)) {
       doFavoriteToggle(campId);
@@ -749,16 +774,25 @@ export default function Discover() {
 
   async function handleRegisterClick(camp) {
     const campId = String(camp?.id ?? "");
-    const ok = await writeGate.ensure("register", { campId });
-    if (!ok && !isPaid) return; // only block if truly not entitled
 
-    // If already registered, show unregister modal
+    // Demo users: skip writeGate entirely, allow local-only register
+    if (!isPaid) {
+      if (isCampRegistered(campId)) {
+        setUnregisterModal({ open: true, camp });
+      } else {
+        setRegisterModal({ open: true, camp });
+      }
+      return;
+    }
+
+    // Paid users: run writeGate
+    const ok = await writeGate.ensure("register", { campId });
+    if (!ok) return;
+
     if (isCampRegistered(campId)) {
       setUnregisterModal({ open: true, camp });
       return;
     }
-
-    // Show register confirm modal
     setRegisterModal({ open: true, camp });
   }
 
