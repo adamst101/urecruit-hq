@@ -4,7 +4,7 @@ import { base44 } from "../../api/base44Client";
 
 import { footballCurrentSeasonYear } from "../utils/seasonEntitlements.jsx";
 import { getCurrentSoldSeason, getCurrentActiveSeason } from "../utils/seasonUtils";
-import { readDemoMode } from "./demoMode.jsx";
+import { readDemoMode, clearDemoMode } from "./demoMode.jsx";
 
 /**
  * useSeasonAccess()
@@ -180,8 +180,9 @@ export function useSeasonAccess() {
   });
 
   const refresh = async () => {
-    // 1. Cached paid result → use instantly, skip network
+    // 1. Cached paid result → clear any stale sessionStorage demo flags, use instantly, skip network
     if (_cachedResult?.hasAccess === true) {
+      clearDemoMode();
       setState((p) => ({ ...p, ..._cachedResult, isLoading: false, loading: false }));
       return;
     }

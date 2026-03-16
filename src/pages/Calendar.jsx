@@ -116,7 +116,8 @@ export default function Calendar() {
   const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
 
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
-  const forceDemo = url.mode === "demo";
+  // If season has resolved to paid, never let a stale ?mode=demo override it
+  const forceDemo = url.mode === "demo" && season?.mode !== "paid";
   const effectiveMode = forceDemo ? "demo" : season?.mode;
   const isPaid = effectiveMode === "paid";
 
@@ -181,6 +182,15 @@ export default function Calendar() {
     queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
   }, [queryClient]);
 
+  // Strip stale ?mode=demo from URL once season resolves to paid
+  useEffect(() => {
+    if (season?.mode === "paid" && url.mode === "demo") {
+      const sp = new URLSearchParams(loc.search);
+      sp.delete("mode");
+      nav({ search: sp.toString() }, { replace: true });
+    }
+  }, [season?.mode, url.mode]);
+
   // Auto-set sport filter for paid users
   useEffect(() => {
     if (!isPaid || !athleteSportId) return;
@@ -222,13 +232,13 @@ export default function Calendar() {
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId || undefined,
     sportId: nf?.sportId || undefined,
-    enabled: isPaid && !!athleteId,
+    enabled: !season.isLoading && isPaid && !!athleteId,
   });
 
   const demoQuery = useDemoCampSummaries({
     seasonYear,
     demoProfileId: demoProfileId || "default",
-    enabled: !isPaid,
+    enabled: !season.isLoading && !isPaid,
   });
 
   const loading =
