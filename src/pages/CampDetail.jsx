@@ -230,11 +230,8 @@ function CampDetailInner() {
   }, [baseSummary, paid, demoIsFav, demoIsReg]);
 
   const invalidateSummaries = () => {
-    // Paid: invalidate the known key
     queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
-
-    // Demo: invalidate all so list refreshes (safe blunt instrument)
-    if (!paid) queryClient.invalidateQueries();
+    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
   };
 
   // Mutations
