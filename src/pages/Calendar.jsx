@@ -173,19 +173,6 @@ export default function Calendar() {
 
   /* ── 4. Side effects ──────────────── */
 
-  // Cancel debounce timer on unmount to prevent stale refetches on page navigation
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    };
-  }, []);
-
-  // Invalidate caches on mount
-  useEffect(() => {
-    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
-    queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
-  }, [queryClient]);
-
   // Strip stale ?mode=demo from URL once season resolves to paid
   useEffect(() => {
     if (season?.mode === "paid" && url.mode === "demo") {
@@ -364,8 +351,6 @@ export default function Calendar() {
     return map;
   }, [allUserCamps]);
 
-  const debounceTimerRef = useRef(null);
-
   // Auto-jump calendar to first camp month/week when camps load.
   // Critical for demo mode (2025 camps vs 2026 default) and
   // helps paid users whose first camp may be in a future month.
@@ -417,14 +402,6 @@ export default function Calendar() {
 
   /* ── 8. Event handlers ────────────── */
 
-  function invalidateCampCaches() {
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
-      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
-    }, 5000);
-  }
-
   // Opens the same RegisterConfirmModal that Discover uses
   function handleRegisterClick(camp) {
     const cid = String(camp?.camp_id || camp?.id || "");
@@ -460,7 +437,6 @@ export default function Calendar() {
     if (!cid) return;
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
-      invalidateCampCaches();
     } else {
       upsertIntent(cid, "registered");
     }
@@ -471,7 +447,6 @@ export default function Calendar() {
     if (!cid) return;
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
-      invalidateCampCaches();
     } else {
       upsertIntent(cid, "");
     }
@@ -483,7 +458,6 @@ export default function Calendar() {
     if (!cid) return;
     if (!isPaid) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
-      invalidateCampCaches();
     } else {
       const isFav = isCampFavorite(cid);
       upsertIntent(cid, isFav ? "" : "favorite");
@@ -495,7 +469,6 @@ export default function Calendar() {
     if (!cid) return;
     if (!isPaid) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
-      invalidateCampCaches();
     } else {
       upsertIntent(cid, "");
     }
@@ -537,7 +510,6 @@ export default function Calendar() {
       queryClient.setQueryData(queryKey, previousData);
       console.error("[Calendar] write failed, reverting:", err);
     }
-    invalidateCampCaches();
   }
 
   function handleRegisteredToggle(campIdOrCamp) {
@@ -548,7 +520,6 @@ export default function Calendar() {
     const isReg = isCampRegistered(cid);
     if (!isPaid) {
       toggleDemoRegistered(demoProfileId, cid);
-      invalidateCampCaches();
     } else {
       if (isReg) {
         const isFav = isCampFavorite(cid);

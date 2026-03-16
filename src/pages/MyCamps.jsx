@@ -1,5 +1,5 @@
 // src/pages/MyCamps.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -44,23 +44,7 @@ export default function MyCamps() {
   const nav = useNavigate();
   const queryClient = useQueryClient();
 
-  const debounceTimerRef = useRef(null);
-
   const season = useSeasonAccess();
-
-  // Cancel debounce timer on unmount to prevent stale refetches on page navigation
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    };
-  }, []);
-
-  // Invalidate cached camp summaries on mount so we pick up
-  // any favorites/registrations made on the Discover page
-  useEffect(() => {
-    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
-    queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
-  }, [queryClient]);
   const { identity: athleteProfile } = useAthleteIdentity();
   const { demoProfileId } = useDemoProfile();
 
@@ -76,7 +60,6 @@ export default function MyCamps() {
     athleteId: athleteId ? String(athleteId) : undefined,
     sportId: sportId ? String(sportId) : "",
     enabled: !season.isLoading && !isDemoMode && !!athleteId,
-    staleTime: 5 * 60 * 1000,
   });
 
   const demoQuery = useDemoCampSummaries({
@@ -160,14 +143,6 @@ export default function MyCamps() {
   const [registerModal, setRegisterModal] = useState({ open: false, camp: null });
   const [unregisterModal, setUnregisterModal] = useState({ open: false, camp: null });
 
-  function invalidateCampCaches() {
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
-      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
-    }, 5000);
-  }
-
   function isCampRegisteredCheck(campId) {
     if (!isDemoMode) {
       // Check from query data
@@ -202,7 +177,6 @@ export default function MyCamps() {
     if (!cid) return;
     if (isDemoMode) {
       toggleDemoRegistered(demoProfileId, cid);
-      invalidateCampCaches();
     } else {
       upsertIntent(cid, "registered");
     }
@@ -213,7 +187,6 @@ export default function MyCamps() {
     if (!cid) return;
     if (isDemoMode) {
       toggleDemoRegistered(demoProfileId, cid);
-      invalidateCampCaches();
     } else {
       upsertIntent(cid, "");
     }
@@ -225,7 +198,6 @@ export default function MyCamps() {
     if (!cid) return;
     if (isDemoMode) {
       toggleDemoFavorite(demoProfileId, cid, seasonYear);
-      invalidateCampCaches();
     } else {
       upsertIntent(cid, "");
     }
@@ -267,7 +239,6 @@ export default function MyCamps() {
       queryClient.setQueryData(queryKey, previousData);
       console.error("[MyCamps] write failed, reverting:", err);
     }
-    invalidateCampCaches();
   }
 
   function handleRegisteredToggle(campId) {
@@ -276,7 +247,6 @@ export default function MyCamps() {
     const isReg = isCampRegisteredCheck(cid);
     if (isDemoMode) {
       toggleDemoRegistered(demoProfileId, cid);
-      invalidateCampCaches();
     } else {
       if (isReg) {
         const isFav = isCampFavoriteCheck(cid);
