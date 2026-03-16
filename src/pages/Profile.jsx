@@ -77,7 +77,6 @@ export default function Profile() {
   const { hasAccess, mode, loading: seasonLoading, isLoading: seasonIsLoading } = useSeasonAccess();
   const isDemo = !seasonIsLoading && (mode === "demo" || !hasAccess);
   const { identity, loading: identityLoading, saveIdentity } = useAthleteIdentity();
-  const [parentEmail, setParentEmail] = useState("");
 
   const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'success' | 'error'
   const [sports, setSports] = useState([]);
@@ -94,7 +93,10 @@ export default function Profile() {
   const [homeState, setHomeState] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
   const [xHandle, setXHandle] = useState("");
-  const [parentName, setParentName] = useState("");
+  const [parentFirstName, setParentFirstName] = useState("");
+  const [parentLastName, setParentLastName] = useState("");
+  const [parentPhone, setParentPhone] = useState("");
+  const [parentEmail, setParentEmail] = useState("");
 
   // Populate form from identity
   useEffect(() => {
@@ -115,7 +117,9 @@ export default function Profile() {
     setHomeState(safeStr(ap?.home_state));
     setPlayerEmail(safeStr(ap?.player_email));
     setXHandle(safeStr(ap?.x_handle));
-    setParentName(safeStr(ap?.parent_name));
+    setParentFirstName(safeStr(ap?.parent_first_name));
+    setParentLastName(safeStr(ap?.parent_last_name));
+    setParentPhone(safeStr(ap?.parent_phone));
   }, [identity]);
 
   // Auto-populate parent email from logged-in account
@@ -196,7 +200,9 @@ export default function Profile() {
           home_lng: homeLng,
           player_email: playerEmail.trim() || null,
           x_handle: cleanHandle || null,
-          parent_name: parentName.trim() || null,
+          parent_first_name: parentFirstName.trim() || null,
+          parent_last_name: parentLastName.trim() || null,
+          parent_phone: parentPhone.trim() || null,
         },
       });
       setSaveStatus("success");
@@ -386,9 +392,17 @@ export default function Profile() {
               <div className={helperTextClass}>Your recruiting profile on X — helps coaches find you</div>
             </label>
             <label className="text-sm">
-              <div className={labelTextClass}>Your Name (Parent / Guardian)</div>
-              <input className={inputClass} value={parentName} onChange={(e) => setParentName(e.target.value)} placeholder="Jane Smith" disabled={disabled} />
-              <div className={helperTextClass}>Used to personalize your HQ welcome experience</div>
+              <div className={labelTextClass}>Parent First Name</div>
+              <input className={inputClass} value={parentFirstName} onChange={(e) => setParentFirstName(e.target.value)} placeholder="Jane" disabled={disabled} />
+            </label>
+            <label className="text-sm">
+              <div className={labelTextClass}>Parent Last Name</div>
+              <input className={inputClass} value={parentLastName} onChange={(e) => setParentLastName(e.target.value)} placeholder="Smith" disabled={disabled} />
+            </label>
+            <label className="text-sm">
+              <div className={labelTextClass}>Parent Cell Phone</div>
+              <input className={inputClass} type="tel" value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} placeholder="(555) 555-5555" disabled={disabled} />
+              <div className={helperTextClass}>Used to personalize your HQ experience — never shared</div>
             </label>
             <label className="text-sm">
               <div className={labelTextClass}>Parent Email</div>

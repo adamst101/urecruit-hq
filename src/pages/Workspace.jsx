@@ -144,7 +144,7 @@ export default function Workspace() {
 
   if (loading) return <div style={{ minHeight: "100vh", background: "#0a0e1a" }} />;
 
-  const displayName = meName || athleteProfile?.parent_name || athleteProfile?.athlete_name || meEmail || "Athlete";
+  const displayName = meName || (athleteProfile?.parent_first_name ? `${athleteProfile.parent_first_name} ${athleteProfile.parent_last_name || ""}`.trim() : null) || athleteProfile?.athlete_name || meEmail || "Athlete";
 
   return (
     <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
