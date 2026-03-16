@@ -77,6 +77,7 @@ export default function Profile() {
   const { hasAccess, mode, loading: seasonLoading, isLoading: seasonIsLoading } = useSeasonAccess();
   const isDemo = !seasonIsLoading && (mode === "demo" || !hasAccess);
   const { identity, loading: identityLoading, saveIdentity } = useAthleteIdentity();
+  const [parentEmail, setParentEmail] = useState("");
 
   const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'success' | 'error'
   const [sports, setSports] = useState([]);
@@ -116,6 +117,18 @@ export default function Profile() {
     setXHandle(safeStr(ap?.x_handle));
     setParentName(safeStr(ap?.parent_name));
   }, [identity]);
+
+  // Auto-populate parent email from logged-in account
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await base44.auth.me();
+        if (!cancelled && me?.email) setParentEmail(String(me.email).toLowerCase());
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Load sports + positions
   useEffect(() => {
@@ -376,6 +389,11 @@ export default function Profile() {
               <div className={labelTextClass}>Your Name (Parent / Guardian)</div>
               <input className={inputClass} value={parentName} onChange={(e) => setParentName(e.target.value)} placeholder="Jane Smith" disabled={disabled} />
               <div className={helperTextClass}>Used to personalize your HQ welcome experience</div>
+            </label>
+            <label className="text-sm">
+              <div className={labelTextClass}>Parent Email</div>
+              <input className={inputClass} type="email" value={parentEmail} disabled={true} style={{ opacity: 0.6, cursor: "not-allowed" }} />
+              <div className={helperTextClass}>Auto-filled from your account login — cannot be changed here</div>
             </label>
           </div>
         </Card>
