@@ -48,6 +48,13 @@ export default function MyCamps() {
 
   const season = useSeasonAccess();
 
+  // Cancel debounce timer on unmount to prevent stale refetches on page navigation
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, []);
+
   // Invalidate cached camp summaries on mount so we pick up
   // any favorites/registrations made on the Discover page
   useEffect(() => {
@@ -69,6 +76,7 @@ export default function MyCamps() {
     athleteId: athleteId ? String(athleteId) : undefined,
     sportId: sportId ? String(sportId) : "",
     enabled: !season.isLoading && !isDemoMode && !!athleteId,
+    staleTime: 5 * 60 * 1000,
   });
 
   const demoQuery = useDemoCampSummaries({
@@ -157,7 +165,7 @@ export default function MyCamps() {
     debounceTimerRef.current = setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
       queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
-    }, 2000);
+    }, 5000);
   }
 
   function isCampRegisteredCheck(campId) {

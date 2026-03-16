@@ -176,6 +176,13 @@ export default function Calendar() {
 
   /* ── 4. Side effects ──────────────── */
 
+  // Cancel debounce timer on unmount to prevent stale refetches on page navigation
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, []);
+
   // Invalidate caches on mount
   useEffect(() => {
     queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
@@ -406,7 +413,7 @@ export default function Calendar() {
     debounceTimerRef.current = setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
       queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"] });
-    }, 2000);
+    }, 5000);
   }
 
   // Opens the same RegisterConfirmModal that Discover uses
