@@ -760,6 +760,14 @@ export default function Calendar() {
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb]">
       <div className="max-w-5xl mx-auto px-4 pt-5 pb-24">
 
+        <button
+          type="button"
+          onClick={() => nav("/Workspace")}
+          className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
+        >
+          ← HQ
+        </button>
+
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <div className="text-xl font-bold text-[#f9fafb]">Calendar</div>

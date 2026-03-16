@@ -226,6 +226,13 @@ export default function Profile() {
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+        <button
+          type="button"
+          onClick={() => nav("/Workspace")}
+          className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
+        >
+          ← HQ
+        </button>
         {/* Header */}
         <div className="flex items-center gap-2">
           <User className="w-6 h-6 text-[#e8a020]" />

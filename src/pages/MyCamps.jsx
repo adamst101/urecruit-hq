@@ -367,6 +367,13 @@ export default function MyCamps() {
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
+        <button
+          type="button"
+          onClick={() => nav("/Workspace")}
+          className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
+        >
+          ← HQ
+        </button>
         <div className="mb-4">
           <div className="text-2xl font-bold text-[#f9fafb]">My Camps</div>
         </div>
