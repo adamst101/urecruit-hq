@@ -364,15 +364,9 @@ export default function Home() {
                 </button>
               </div>
 
-              <p style={{ fontSize: 12, color: "#9ca3af", fontStyle: "italic", marginTop: 14 }}>
+              <p style={{ fontSize: 18, color: "#e8a020", fontWeight: 600, marginTop: 14 }}>
                 ⚡ Summer camp season opens March–April. Early registrations fill fast.
               </p>
-
-              <div style={{ marginTop: 24 }}>
-                <span style={{ fontSize: 20, color: "#e8a020", fontWeight: 600 }}>
-                  ⚡ Summer camp season opens March–April. Early registrations fill fast.
-                </span>
-              </div>
             </div>
 
             {/* Right — decorative camp card stack (hidden on mobile) */}
