@@ -47,7 +47,6 @@
  *
  * The mainPage value must match a key in the PAGES object exactly.
  */
-import Account from './pages/Account';
 import AdminFactoryReset from './pages/AdminFactoryReset';
 import AdminOps from './pages/AdminOps';
 import AdminSeedSchoolLogos from './pages/AdminSeedSchoolLogos';
@@ -85,7 +84,6 @@ import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
-    "Account": Account,
     "AdminFactoryReset": AdminFactoryReset,
     "AdminOps": AdminOps,
     "AdminSeedSchoolLogos": AdminSeedSchoolLogos,
