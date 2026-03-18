@@ -837,12 +837,12 @@ function WhyPanel() {
         aria-expanded={open}
         style={{
           display: "flex", alignItems: "center", gap: 8,
-          padding: narrow ? "8px 10px" : "8px 14px 8px 12px",
-          background: "#fff",
-          border: "0.5px solid #d1d5db", borderRight: "none",
-          borderRadius: "8px 0 0 8px",
+          padding: narrow ? "9px 12px" : "9px 16px 9px 12px",
+          background: "#111827",
+          border: "1px solid rgba(232,160,32,0.4)", borderRight: "none",
+          borderRadius: "10px 0 0 10px",
           cursor: "pointer",
-          boxShadow: "-2px 2px 8px rgba(0,0,0,0.1)",
+          boxShadow: "-3px 3px 12px rgba(0,0,0,0.4)",
           whiteSpace: "nowrap",
         }}
       >
@@ -852,7 +852,7 @@ function WhyPanel() {
           fontSize: 13, fontWeight: 700, color: "#fff", fontStyle: "italic", fontFamily: "Georgia, serif",
         }}>i</div>
         {!narrow && (
-          <span style={{ fontSize: 13, fontWeight: 500, color: "#111827" }}>Why do I need this?</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#f9fafb" }}>Why do I need this?</span>
         )}
       </button>
 
