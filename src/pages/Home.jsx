@@ -1,5 +1,5 @@
 // src/pages/Home.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { ArrowRight, LogIn, CheckCircle2 } from "lucide-react";
 
@@ -780,11 +780,141 @@ export default function Home() {
           URecruit HQ · Independent planning tool · Not affiliated with any camp or school
         </p>
       </footer>
+
+      <WhyPanel />
     </div>
   );
 }
 
 
+
+/* ── Why Panel ── */
+function WhyPanel() {
+  const [open, setOpen] = useState(false);
+  const [top, setTop] = useState(64);
+  const [narrow, setNarrow] = useState(typeof window !== "undefined" && window.innerWidth < 480);
+
+  useEffect(() => {
+    function update() {
+      const navEl = document.querySelector("nav")
+        || document.querySelector("header")
+        || document.querySelector('[role="navigation"]');
+      setTop(navEl ? navEl.getBoundingClientRect().bottom : 64);
+      setNarrow(window.innerWidth < 480);
+    }
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e) { if (e.key === "Escape") setOpen(false); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  return (
+    <div style={{ position: "fixed", top, right: 0, zIndex: 200, fontFamily: "'DM Sans', sans-serif" }}>
+
+      {/* Tab */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: narrow ? "8px 10px" : "8px 14px 8px 12px",
+          background: "#fff",
+          border: "0.5px solid #d1d5db", borderRight: "none",
+          borderRadius: "8px 0 0 8px",
+          cursor: "pointer",
+          boxShadow: "-2px 2px 8px rgba(0,0,0,0.1)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <div style={{
+          width: 22, height: 22, borderRadius: "50%", background: "#378ADD", flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 13, fontWeight: 700, color: "#fff", fontStyle: "italic", fontFamily: "Georgia, serif",
+        }}>i</div>
+        {!narrow && (
+          <span style={{ fontSize: 13, fontWeight: 500, color: "#111827" }}>Why do I need this?</span>
+        )}
+      </button>
+
+      {/* Panel */}
+      <div style={{
+        overflow: "hidden",
+        maxHeight: open ? 700 : 0,
+        opacity: open ? 1 : 0,
+        transition: "max-height 0.32s ease, opacity 0.2s ease",
+        maxWidth: 280,
+        background: "#fff",
+        border: open ? "0.5px solid #d1d5db" : "none",
+        borderRight: "none", borderTop: "none",
+        borderRadius: "0 0 0 12px",
+        boxShadow: open ? "-2px 4px 16px rgba(0,0,0,0.12)" : "none",
+      }}>
+        <div style={{ padding: "16px 18px 18px" }}>
+
+          {/* Header */}
+          <div style={{ fontSize: 11, fontWeight: 500, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+            What to know
+          </div>
+          <p style={{ fontSize: 15, fontWeight: 500, color: "#111827", lineHeight: 1.4, margin: "0 0 10px" }}>
+            The recruiting process starts before most parents realize it.
+          </p>
+          <p style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6, margin: "0 0 14px", fontWeight: 400 }}>
+            From parents who've already lived it — here's what we wish someone had told us early.
+          </p>
+
+          {/* Bullets */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+            {[
+              ["Other families already have a system.", " Starting early is the difference."],
+              ["Not all camps are equal.", " \"Coaches in attendance\" isn't the same as a school-run camp where staff are evaluating players for their roster."],
+              ["The paperwork adds up fast.", " Missed deadlines cost your athlete real opportunities."],
+            ].map(([bold, rest], i) => (
+              <div key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "#374151", lineHeight: 1.5 }}>
+                <span style={{ color: "#378ADD", flexShrink: 0, marginTop: 1 }}>•</span>
+                <span><span style={{ fontWeight: 500 }}>{bold}</span>{rest}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Comparison box */}
+          <div style={{ background: "#f9fafb", borderRadius: 8, border: "0.5px solid #e5e7eb", overflow: "hidden", marginBottom: 14 }}>
+            <div style={{ padding: "10px 12px" }}>
+              <div style={{ fontSize: 11, fontWeight: 500, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5 }}>Option A</div>
+              <p style={{ fontSize: 13, color: "#6b7280", margin: "4px 0 0", lineHeight: 1.5 }}>
+                Spreadsheets and manual tracking like most families, until something slips.
+              </p>
+            </div>
+            <div style={{ height: 1, background: "#e5e7eb" }} />
+            <div style={{ padding: "10px 12px" }}>
+              <div style={{ fontSize: 11, fontWeight: 500, color: "#378ADD", textTransform: "uppercase", letterSpacing: 0.5 }}>Option B — URecruit HQ</div>
+              <p style={{ fontSize: 13, color: "#374151", margin: "4px 0 0", lineHeight: 1.5 }}>
+                Let the app handle tracking. You focus on the right camps, the right coaches.
+              </p>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div style={{ borderTop: "0.5px solid #e5e7eb", paddingTop: 10 }}>
+            <p style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.5, margin: 0 }}>
+              Built by parents of NCAA athletes. Free — because the right information shouldn't cost you.
+            </p>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ── Shared styles ── */
 const S = {
