@@ -1,4 +1,4 @@
-// src/pages/Account.jsx
+// src/pages/Account.jsx - Account management page
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
