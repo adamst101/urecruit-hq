@@ -114,34 +114,39 @@ export default function Account() {
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* ── Header ── */}
-      <div style={{ background: "#0d1221", borderBottom: "1px solid #1f2937", padding: "20px 20px 16px" }}>
-        <div style={{ maxWidth: 560, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{
-              width: 52, height: 52, borderRadius: "50%",
-              background: "linear-gradient(135deg, #e8a020, #b8790f)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 20, fontWeight: 700, color: "#0a0e1a", flexShrink: 0,
-            }}>
-              {userInitials}
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "24px 16px 0" }}>
+        <button
+          type="button"
+          onClick={() => navigate(ROUTES.Workspace)}
+          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500, color: "#e8a020", display: "flex", alignItems: "center", gap: 4, marginBottom: 12, padding: 0 }}
+        >
+          ← HQ
+        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 8 }}>
+          <div style={{
+            width: 52, height: 52, borderRadius: "50%",
+            background: "linear-gradient(135deg, #e8a020, #b8790f)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 20, fontWeight: 700, color: "#0a0e1a", flexShrink: 0,
+          }}>
+            {userInitials}
+          </div>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#f9fafb", lineHeight: 1.2 }}>
+              My Account
             </div>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb", lineHeight: 1.2 }}>
-                {user?.full_name || "My Account"}
-              </div>
-              <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>{email}</div>
-            </div>
-            <div style={{ marginLeft: "auto" }}>
-              {isActive ? (
-                <span style={{ background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.4)", color: "#22c55e", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>
-                  ACTIVE
-                </span>
-              ) : (
-                <span style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#ef4444", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>
-                  INACTIVE
-                </span>
-              )}
-            </div>
+            <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>{email}</div>
+          </div>
+          <div style={{ marginLeft: "auto" }}>
+            {isActive ? (
+              <span style={{ background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.4)", color: "#22c55e", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>
+                ACTIVE
+              </span>
+            ) : (
+              <span style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#ef4444", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>
+                INACTIVE
+              </span>
+            )}
           </div>
         </div>
       </div>
