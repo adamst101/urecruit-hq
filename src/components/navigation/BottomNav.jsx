@@ -8,7 +8,7 @@ const ROUTES = {
   Discover: "/Discover",
   Calendar: "/Calendar",
   MyCamps: "/MyCamps",
-  Account: "/Account",
+  Profile: "/Profile",
 };
 
 function isActivePath(pathname, target) {
@@ -27,7 +27,7 @@ export default function BottomNav() {
       { label: "Discover", to: ROUTES.Discover, Icon: Search },
       { label: "Calendar", to: ROUTES.Calendar, Icon: CalendarDays },
       { label: "My Camps", to: ROUTES.MyCamps, Icon: Heart },
-      { label: "Account", to: ROUTES.Account, Icon: User },
+      { label: "Profile", to: ROUTES.Profile, Icon: User },
     ],
     []
   );

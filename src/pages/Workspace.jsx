@@ -28,6 +28,7 @@ const ROUTES = {
   MyCamps: "/MyCamps",
   RecruitingGuide: "/RecruitingGuide",
   CampPlaybook: "/CampPlaybook",
+  Account: "/Account",
   AdminImport: "/AdminImport",
   AdminOps: "/AdminOps",
   CampsManager: "/CampsManager",
@@ -180,7 +181,22 @@ export default function Workspace() {
       <section style={{ padding: "48px 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
           <div style={{ width: 3, height: 32, background: "#e8a020", borderRadius: 2 }} />
-          <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(36px, 5vw, 56px)", lineHeight: 1, margin: 0, letterSpacing: 1 }}>YOUR RECRUITING HQ</h1>
+          <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(36px, 5vw, 56px)", lineHeight: 1, margin: 0, letterSpacing: 1, flex: 1 }}>YOUR RECRUITING HQ</h1>
+          {meEmail && (
+            <button
+              onClick={() => nav(ROUTES.Account)}
+              title="My Account"
+              style={{
+                width: 40, height: 40, borderRadius: "50%",
+                background: "linear-gradient(135deg, #e8a020, #b8790f)",
+                border: "none", cursor: "pointer", flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 15, fontWeight: 700, color: "#0a0e1a",
+              }}
+            >
+              {meEmail[0].toUpperCase()}
+            </button>
+          )}
         </div>
         {meEmail && <p style={{ color: "#9ca3af", fontSize: 17, margin: 0 }}>Welcome back, {displayName}</p>}
         <p style={{ color: "#6b7280", fontSize: 15, marginTop: 4 }}>
