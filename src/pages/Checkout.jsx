@@ -6,6 +6,9 @@ import { createPageUrl } from "../utils";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 
+const GRAD_YEARS = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() + i);
+const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
+
 export default function Checkout() {
   const navigate = useNavigate();
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -15,6 +18,19 @@ export default function Checkout() {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState(null);
   const [isAuthed, setIsAuthed] = useState(false);
+
+  // Profile step state
+  const [step, setStep] = useState("profile"); // "profile" | "payment"
+  const [sports, setSports] = useState([]);
+  const [athleteFirstName, setAthleteFirstName] = useState("");
+  const [athleteLastName, setAthleteLastName] = useState("");
+  const [gradYear, setGradYear] = useState("");
+  const [sportId, setSportId] = useState("");
+  const [homeCity, setHomeCity] = useState("");
+  const [homeState, setHomeState] = useState("");
+  const [parentFirstName, setParentFirstName] = useState("");
+  const [parentLastName, setParentLastName] = useState("");
+  const [parentPhone, setParentPhone] = useState("");
 
   // Promo state
   const [promoCode, setPromoCode] = useState("");
@@ -40,6 +56,18 @@ export default function Checkout() {
     return () => { cancelled = true; };
   }, []);
 
+  // Load sports list
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const rows = await base44.entities.Sport.list();
+        if (mounted) setSports(Array.isArray(rows) ? rows.filter(r => r.active !== false) : []);
+      } catch {}
+    })();
+    return () => { mounted = false; };
+  }, []);
+
   // Auto-apply promo from URL param or sessionStorage
   useEffect(() => {
     if (loading) return;
@@ -62,6 +90,13 @@ export default function Checkout() {
       activateFreeAccess(urlPromo);
     }
   }, [loading, isAuthed, promoState]);
+
+  function handleContinueToPayment(e) {
+    e.preventDefault();
+    if (!athleteFirstName.trim()) { setError("Athlete first name is required"); return; }
+    setError(null);
+    setStep("payment");
+  }
 
   const applyPromo = useCallback(async (code) => {
     const trimmed = (code || "").trim();
@@ -134,15 +169,26 @@ export default function Checkout() {
         couponCode: promoCode.trim() || undefined,
         successUrl,
         cancelUrl,
+        parentFirstName: parentFirstName.trim() || undefined,
+        parentLastName: parentLastName.trim() || undefined,
+        parentPhone: parentPhone.trim() || undefined,
+        athleteFirstName: athleteFirstName.trim() || undefined,
+        athleteLastName: athleteLastName.trim() || undefined,
+        gradYear: gradYear || undefined,
+        sportId: sportId || undefined,
+        homeCity: homeCity.trim() || undefined,
+        homeState: homeState || undefined,
       });
       const data = res.data;
+      console.log("createStripeCheckout response:", data);
       if (data?.ok && data?.sessionUrl) {
         window.location.href = data.sessionUrl;
         return;
       }
-      setError(data?.error || "Failed to create checkout session");
+      setError(data?.error || "Failed to create checkout session. Please try again.");
     } catch (e) {
-      setError(e?.message || "Something went wrong");
+      console.error("createStripeCheckout error:", e);
+      setError(e?.message || "Something went wrong. Please try again.");
     } finally {
       setWorking(false);
     }
@@ -182,15 +228,99 @@ export default function Checkout() {
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "40px 24px" }}>
         {/* Back */}
         <button
-          onClick={() => navigate(createPageUrl("Subscribe"))}
+          onClick={() => step === "payment" ? setStep("profile") : navigate(createPageUrl("Subscribe"))}
           style={{ background: "none", border: "none", color: "#9ca3af", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 24 }}
         >
-          <ArrowLeft style={{ width: 14, height: 14 }} /> Back to pricing
+          <ArrowLeft style={{ width: 14, height: 14 }} /> {step === "payment" ? "Back" : "Back to pricing"}
         </button>
 
         <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#f9fafb", margin: "0 0 24px" }}>
-          CHECKOUT
+          {step === "profile" ? "YOUR INFO" : "CHECKOUT"}
         </h1>
+
+        {/* ──── STEP 1: PROFILE FORM ──── */}
+        {step === "profile" && (
+          <form onSubmit={handleContinueToPayment} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {/* Athlete Info */}
+            <div style={{ background: "#111827", borderRadius: 12, border: "1px solid #1f2937", borderTop: "3px solid #e8a020", padding: "20px 24px" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#e8a020", letterSpacing: 1, textTransform: "uppercase", marginBottom: 16 }}>Athlete Info</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={S.label}>First Name *</label>
+                  <input value={athleteFirstName} onChange={e => setAthleteFirstName(e.target.value)} placeholder="First" style={S.input} />
+                </div>
+                <div>
+                  <label style={S.label}>Last Name</label>
+                  <input value={athleteLastName} onChange={e => setAthleteLastName(e.target.value)} placeholder="Last" style={S.input} />
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                <div>
+                  <label style={S.label}>Grad Year</label>
+                  <select value={gradYear} onChange={e => setGradYear(e.target.value)} style={S.input}>
+                    <option value="">Select...</option>
+                    {GRAD_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={S.label}>Sport</label>
+                  <select value={sportId} onChange={e => setSportId(e.target.value)} style={S.input}>
+                    <option value="">Select...</option>
+                    {sports.map(s => <option key={s.id} value={s.id}>{s.sport_name || s.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                <div>
+                  <label style={S.label}>Home City</label>
+                  <input value={homeCity} onChange={e => setHomeCity(e.target.value)} placeholder="City" style={S.input} />
+                </div>
+                <div>
+                  <label style={S.label}>State</label>
+                  <select value={homeState} onChange={e => setHomeState(e.target.value)} style={S.input}>
+                    <option value="">Select...</option>
+                    {US_STATES.map(st => <option key={st} value={st}>{st}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Parent / Guardian Info */}
+            <div style={{ background: "#111827", borderRadius: 12, border: "1px solid #1f2937", padding: "20px 24px" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#e8a020", letterSpacing: 1, textTransform: "uppercase", marginBottom: 16 }}>Parent / Guardian</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={S.label}>First Name</label>
+                  <input value={parentFirstName} onChange={e => setParentFirstName(e.target.value)} placeholder="First" style={S.input} />
+                </div>
+                <div>
+                  <label style={S.label}>Last Name</label>
+                  <input value={parentLastName} onChange={e => setParentLastName(e.target.value)} placeholder="Last" style={S.input} />
+                </div>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <label style={S.label}>Phone Number</label>
+                <input value={parentPhone} onChange={e => setParentPhone(e.target.value)} placeholder="(555) 555-5555" type="tel" style={S.input} />
+              </div>
+            </div>
+
+            {error && (
+              <div style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 10, padding: "12px 16px", color: "#fca5a5", fontSize: 14 }}>
+                {error}
+              </div>
+            )}
+
+            <button type="submit" style={{ width: "100%", background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "18px 0", fontSize: 19, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              Continue to Checkout <ArrowRight style={{ width: 18, height: 18 }} />
+            </button>
+            <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280", margin: 0 }}>
+              You can update your profile anytime after purchase.
+            </p>
+          </form>
+        )}
+
+        {/* ──── STEP 2: PAYMENT ──── */}
+        {step === "payment" && <>
 
         {/* ──── ORDER SUMMARY CARD ──── */}
         <div style={{ background: "#111827", borderRadius: 12, border: "1px solid #1f2937", borderTop: "3px solid #e8a020", padding: "20px 24px", marginBottom: 24 }}>
@@ -323,6 +453,7 @@ export default function Checkout() {
             🔒 Secured by Stripe · You'll be redirected to complete payment
           </p>
         )}
+        </>}
       </div>
     </div>
   );
@@ -336,4 +467,6 @@ const S = {
     alignItems: "center",
     justifyContent: "center",
   },
+  label: { display: "block", fontSize: 13, color: "#9ca3af", marginBottom: 4 },
+  input: { width: "100%", background: "#1f2937", border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 15, color: "#f9fafb", outline: "none", boxSizing: "border-box" },
 };

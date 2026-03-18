@@ -45,5 +45,6 @@ Deno.serve(async (req) => {
     percentOff,
     amountOff,
     couponName: coupon.name || foundPromo.code,
+    appliesTo: coupon.applies_to?.products ?? [],
   });
 });

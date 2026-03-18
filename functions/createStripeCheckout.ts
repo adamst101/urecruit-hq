@@ -34,7 +34,10 @@ Deno.serve(async (req) => {
   const {
     couponCode, athleteId, userEmail, successUrl, cancelUrl,
     isAddOn, addSecondAthlete,
-    athleteOneName, athleteTwoName, athleteTwoGradYear
+    athleteOneName, athleteTwoName, athleteTwoGradYear,
+    parentFirstName, parentLastName, parentPhone,
+    athleteFirstName, athleteLastName, gradYear, sportId,
+    homeCity, homeState,
   } = await req.json();
 
   const email = userEmail || user?.email || ""; // optional — Stripe collects if blank
@@ -81,6 +84,13 @@ Deno.serve(async (req) => {
 
   // Pick the right price ID
   const priceId = isAddOn ? season.stripe_price_add_on : season.stripe_price_primary;
+  console.log("Price selection:", {
+    isAddOn: !!isAddOn,
+    addSecondAthlete: !!addSecondAthlete,
+    stripe_price_primary: season.stripe_price_primary,
+    stripe_price_add_on: season.stripe_price_add_on,
+    selectedPriceId: priceId,
+  });
   if (!priceId) {
     return Response.json({ ok: false, error: "Price not configured for this season" });
   }
@@ -114,6 +124,18 @@ Deno.serve(async (req) => {
     }
 
     if (foundPromo) {
+      // Check if coupon has product restrictions and validate against the price being purchased
+      const appliesTo = foundPromo.coupon.applies_to?.products;
+      if (appliesTo && appliesTo.length > 0) {
+        try {
+          const price = await stripe.prices.retrieve(priceId);
+          if (!appliesTo.includes(String(price.product))) {
+            return Response.json({ ok: false, error: "This promo code is not valid for this product." });
+          }
+        } catch (e) {
+          console.warn("Could not verify coupon product restriction:", e.message);
+        }
+      }
       discounts = [{ promotion_code: foundPromo.id }];
       console.log("Applying promotion_code:", foundPromo.id, "code:", foundPromo.code);
     } else {
@@ -145,6 +167,15 @@ Deno.serve(async (req) => {
       athlete_1_name: athleteOneName || "",
       athlete_2_name: athleteTwoName || "",
       athlete_2_grad_year: athleteTwoGradYear || "",
+      parent_first_name: parentFirstName || "",
+      parent_last_name: parentLastName || "",
+      parent_phone: parentPhone || "",
+      athlete_first_name: athleteFirstName || "",
+      athlete_last_name: athleteLastName || "",
+      grad_year: gradYear ? String(gradYear) : "",
+      sport_id: sportId || "",
+      home_city: homeCity || "",
+      home_state: homeState || "",
     },
     success_url: successUrl + "?session_id={CHECKOUT_SESSION_ID}",
     cancel_url: cancelUrl,

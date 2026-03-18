@@ -83,9 +83,20 @@ Deno.serve(async (req) => {
     const hasSecondAthlete = session.metadata?.has_second_athlete === "true";
     const athleteTwoName = session.metadata?.athlete_2_name || "";
     const athleteTwoGradYear = session.metadata?.athlete_2_grad_year || "";
-    const email = session.customer_email || "";
+    const email = session.customer_email || session.customer_details?.email || "";
     const amountTotal = (session.amount_total || 0) / 100;
     const seasonYear = parseInt(session.metadata?.season_year) || new Date().getFullYear();
+
+    // Profile fields from checkout form
+    const parentFirstName = session.metadata?.parent_first_name || "";
+    const parentLastName = session.metadata?.parent_last_name || "";
+    const parentPhone = session.metadata?.parent_phone || "";
+    const athleteFirstName = session.metadata?.athlete_first_name || "";
+    const athleteLastName = session.metadata?.athlete_last_name || "";
+    const gradYear = session.metadata?.grad_year ? parseInt(session.metadata.grad_year) : null;
+    const sportId = session.metadata?.sport_id || "";
+    const homeCity = session.metadata?.home_city || "";
+    const homeState = session.metadata?.home_state || "";
 
     // Look up SeasonConfig for proper access dates
     let accessStartsAt = new Date().toISOString();
@@ -118,6 +129,44 @@ Deno.serve(async (req) => {
           startsAt: accessStartsAt,
           endsAt: accessEndsAt,
         });
+
+        // Write profile data to AthleteProfile if we have a name
+        if (athleteFirstName && accountId) {
+          try {
+            const profileFields = {
+              first_name: athleteFirstName,
+              last_name: athleteLastName || null,
+              athlete_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" "),
+              display_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" "),
+              grad_year: gradYear || null,
+              sport_id: sportId || null,
+              home_city: homeCity || null,
+              home_state: homeState || null,
+              parent_first_name: parentFirstName || null,
+              parent_last_name: parentLastName || null,
+              parent_phone: parentPhone || null,
+            };
+
+            if (athleteId) {
+              // Update existing profile
+              await base44.asServiceRole.entities.AthleteProfile.update(athleteId, profileFields);
+              console.log("Updated AthleteProfile:", athleteId);
+            } else {
+              // Create new profile linked to account
+              const newProfile = await base44.asServiceRole.entities.AthleteProfile.create({
+                account_id: accountId,
+                ...profileFields,
+                is_primary: true,
+                active: true,
+                sport_id: sportId || "",
+                primary_position_id: "",
+              });
+              console.log("Created AthleteProfile from checkout:", newProfile.id);
+            }
+          } catch (e) {
+            console.warn("Profile save failed (non-critical):", e.message);
+          }
+        }
       }
 
       // SCENARIO B — Second athlete bundled with primary
@@ -131,8 +180,13 @@ Deno.serve(async (req) => {
             display_name: athleteTwoName,
             is_primary: false,
             grad_year: parseInt(athleteTwoGradYear) || null,
-            sport_id: "",
+            sport_id: sportId || "",
             primary_position_id: "",
+            parent_first_name: parentFirstName || null,
+            parent_last_name: parentLastName || null,
+            parent_phone: parentPhone || null,
+            home_city: homeCity || null,
+            home_state: homeState || null,
             active: true,
           });
           console.log("Created secondary athlete profile:", newAthlete.id);
@@ -162,8 +216,13 @@ Deno.serve(async (req) => {
             display_name: athleteTwoName,
             is_primary: false,
             grad_year: parseInt(athleteTwoGradYear) || null,
-            sport_id: "",
+            sport_id: sportId || "",
             primary_position_id: "",
+            parent_first_name: parentFirstName || null,
+            parent_last_name: parentLastName || null,
+            parent_phone: parentPhone || null,
+            home_city: homeCity || null,
+            home_state: homeState || null,
             active: true,
           });
           console.log("Created add-on athlete profile:", newAthlete.id);
