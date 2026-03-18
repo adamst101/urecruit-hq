@@ -491,6 +491,16 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── SCROLL NUDGE ── */}
+      <div style={{ display: "flex", justifyContent: "center", marginTop: -32, paddingBottom: 16, position: "relative", zIndex: 2 }}>
+        <style>{`@keyframes bounce-down { 0%,100%{transform:translateY(0)}50%{transform:translateY(8px)} }`}</style>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, animation: "bounce-down 1.8s ease-in-out infinite", opacity: 0.5 }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f9fafb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      </div>
+
       {/* ── STATIC STATS BAR ── */}
       <div style={{
         background: "#e8a020",
