@@ -185,16 +185,15 @@ export default function Workspace() {
           {meEmail && (
             <button
               onClick={() => nav(ROUTES.Account)}
-              title="My Account"
               style={{
-                width: 40, height: 40, borderRadius: "50%",
-                background: "linear-gradient(135deg, #e8a020, #b8790f)",
-                border: "none", cursor: "pointer", flexShrink: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 15, fontWeight: 700, color: "#0a0e1a",
+                background: "#111827", border: "1px solid #1f2937",
+                borderRadius: 10, cursor: "pointer", flexShrink: 0,
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", color: "#f9fafb",
               }}
             >
-              {meEmail[0].toUpperCase()}
+              <User style={{ width: 16, height: 16, color: "#e8a020" }} />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>My Account</span>
             </button>
           )}
         </div>
