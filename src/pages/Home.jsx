@@ -916,7 +916,7 @@ function WhyPanel() {
           {/* Footer */}
           <div style={{ borderTop: "0.5px solid #e5e7eb", paddingTop: 10 }}>
             <p style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.5, margin: 0 }}>
-              Built by parents of NCAA athletes. Free — because the right information shouldn't cost you.
+              Built by parents of NCAA athletes.
             </p>
           </div>
 
