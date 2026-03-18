@@ -406,7 +406,7 @@ export default function Checkout() {
             color: promoValid ? "#86efac" : "#fca5a5",
           }}>
             {promoValid ? (
-              <><Check style={{ width: 16, height: 16 }} /> {promoFree ? "100% off — free access" : promoState.amountOff ? `$${promoState.amountOff} off applied` : `${promoState.percentOff}% off applied`}</>
+              <><Check style={{ width: 16, height: 16 }} /> {promoFree ? "Free access unlocked" : "Promo code applied"}</>
             ) : (
               <><X style={{ width: 16, height: 16 }} /> {promoState.error || "Invalid or expired code"}</>
             )}
