@@ -166,6 +166,13 @@ export default function Home() {
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
         .hero-card-stack { transition: transform 0.3s ease; }
         .hero-card-stack:hover { transform: translateY(-4px); }
+        @media (max-width: 480px) {
+          .nav-right-btns button {
+            font-size: 12px !important;
+            padding: 6px 10px !important;
+          }
+          .why-panel-label { font-size: 12px !important; }
+        }
       `}</style>
 
       {/* ── NAV ── */}
@@ -176,18 +183,20 @@ export default function Home() {
           zIndex: 50,
           background: "#ffffff",
           borderBottom: "1px solid #e5e7eb",
-          height: 56
+          minHeight: 56,
         }}
       >
         <div
           style={{
             maxWidth: 1100,
             margin: "0 auto",
-            padding: "0 24px",
-            height: "100%",
+            padding: "8px 24px",
+            minHeight: 40,
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between"
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 8,
           }}
         >
           {/* Left: logo */}
@@ -207,7 +216,7 @@ export default function Home() {
             )}
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div className="nav-right-btns" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             {isAuthed && isMember ? (
               <>
                 <button onClick={handleContinue} style={S.navBtnAmberText}>
@@ -837,7 +846,7 @@ function WhyPanel() {
         aria-expanded={open}
         style={{
           display: "flex", alignItems: "center", gap: 8,
-          padding: narrow ? "9px 12px" : "9px 16px 9px 12px",
+          padding: "9px 16px 9px 12px",
           background: "#111827",
           border: "1px solid rgba(232,160,32,0.4)", borderRight: "none",
           borderRadius: "10px 0 0 10px",
@@ -851,9 +860,7 @@ function WhyPanel() {
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 13, fontWeight: 700, color: "#fff", fontStyle: "italic", fontFamily: "Georgia, serif",
         }}>i</div>
-        {!narrow && (
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#f9fafb" }}>Why do I need this?</span>
-        )}
+        <span className="why-panel-label" style={{ fontSize: 13, fontWeight: 600, color: "#f9fafb" }}>Why do I need this?</span>
       </button>
 
       {/* Panel */}
@@ -862,7 +869,7 @@ function WhyPanel() {
         maxHeight: open ? 700 : 0,
         opacity: open ? 1 : 0,
         transition: "max-height 0.32s ease, opacity 0.2s ease",
-        maxWidth: 280,
+        maxWidth: narrow ? "90vw" : 280,
         background: "#fff",
         border: open ? "0.5px solid #d1d5db" : "none",
         borderRight: "none", borderTop: "none",
