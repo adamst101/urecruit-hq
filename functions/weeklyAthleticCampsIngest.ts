@@ -16,8 +16,10 @@ Deno.serve(async function(req) {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
   var base44 = createClientFromRequest(req);
-  var user = await base44.auth.me();
-  if (!user || user.role !== "admin") return json({ error: "Forbidden: Admin access required" }, 403);
+  // Allow both admin users and service-role calls (automations run as service role)
+  var user = await base44.auth.me().catch(function() { return null; });
+  var isServiceRole = !user; // service role calls have no user context
+  if (!isServiceRole && user.role !== "admin") return json({ error: "Forbidden" }, 403);
 
   var body = {};
   try { body = await req.json(); } catch(e) { body = {}; }

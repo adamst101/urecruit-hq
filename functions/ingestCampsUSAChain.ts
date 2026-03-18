@@ -26,8 +26,9 @@ Deno.serve(async function(req) {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
   var base44 = createClientFromRequest(req);
-  var user = await base44.auth.me();
-  if (!user || user.role !== "admin") return json({ error: "Forbidden: Admin access required" }, 403);
+  var user = await base44.auth.me().catch(function() { return null; });
+  var isServiceRole = !user;
+  if (!isServiceRole && user.role !== "admin") return json({ error: "Forbidden" }, 403);
 
   var body = {};
   try { body = await req.json(); } catch(e) { body = {}; }
@@ -107,37 +108,34 @@ Deno.serve(async function(req) {
     });
   } catch (e) { /* ignore */ }
 
-  // If not done and batch succeeded, kick off the next batch.
-  // We AWAIT the invoke so the HTTP request is fully dispatched before
-  // this function returns (serverless runtimes may kill the process on return).
-  // The next chain link will process its own batch and return quickly,
-  // so this await only waits for that one batch — NOT the entire chain.
+  // If not done and batch succeeded, fire off the next batch.
+  // CRITICAL: do NOT await — awaiting would keep this invocation alive for
+  // the entire remaining chain, re-introducing the timeout problem.
+  // Instead: start the invoke, wait briefly so the HTTP request is actually
+  // dispatched by the event loop, then return immediately.
   if (!isDone && batchOk) {
-    // Add a stealth delay between batches (3-6 seconds)
     var delay = dryRun ? 100 : randBetween(3000, 6000);
     await sleep(delay);
 
-    try {
-      await base44.functions.invoke("ingestCampsUSAChain", {
-        sport_key: sportKey,
-        dryRun: dryRun,
-        startAt: nextStartAt,
-        batchNumber: batchNumber + 1,
-      });
-    } catch (e) {
-      // Log continuation failure
-      try {
-        await base44.asServiceRole.entities.LastIngestRun.create({
-          sport: sportKey,
-          source: "ingestCampsUSAChain",
-          run_at: new Date().toISOString(),
-          dry_run: dryRun,
-          duration_ms: Date.now() - t0,
-          notes: "CHAIN BROKEN at batch#" + (batchNumber + 1) +
-            " startAt=" + nextStartAt + " Error: " + String(e.message || e).substring(0, 300),
-        });
-      } catch (e2) { /* ignore */ }
-    }
+    base44.functions.invoke("ingestCampsUSAChain", {
+      sport_key: sportKey,
+      dryRun: dryRun,
+      startAt: nextStartAt,
+      batchNumber: batchNumber + 1,
+    }).catch(function(e) {
+      base44.asServiceRole.entities.LastIngestRun.create({
+        sport: sportKey,
+        source: "ingestCampsUSAChain",
+        run_at: new Date().toISOString(),
+        dry_run: dryRun,
+        duration_ms: Date.now() - t0,
+        notes: "CHAIN BROKEN at batch#" + (batchNumber + 1) +
+          " startAt=" + nextStartAt + " Error: " + String(e.message || e).substring(0, 300),
+      }).catch(function() {});
+    });
+
+    // Brief pause so the HTTP request is dispatched before this function returns
+    await sleep(300);
   }
 
   // Update config last_run_at if this was the final batch
