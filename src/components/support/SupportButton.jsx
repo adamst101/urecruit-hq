@@ -31,17 +31,22 @@ export default function SupportButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed z-[9999] rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 hover:bg-[#1d4ed8] w-7 h-7 top-[60px] right-2 sm:top-auto sm:w-14 sm:h-14 sm:bottom-32 sm:right-4"
+        className="fixed z-[9999] flex items-center gap-2 transition-all duration-200 hover:bg-[#1d4ed8]"
         style={{
           background: "#2563eb",
           border: "2px solid rgba(255,255,255,0.2)",
+          borderRadius: 999,
+          padding: "10px 18px 10px 14px",
+          bottom: 24,
+          right: 16,
           boxShadow: "0 4px 20px rgba(37,99,235,0.5), 0 2px 8px rgba(0,0,0,0.4)",
           animation: pulse ? "pulse-ring 1.5s ease-out infinite" : "none",
+          cursor: "pointer",
         }}
         aria-label="Help & Feedback"
       >
-        <span className="hidden sm:block" style={{ color: "#ffffff", fontWeight: 800, fontSize: 22, lineHeight: 1 }}>?</span>
-        <MessageCircleQuestion className="block sm:hidden w-4 h-4 text-white" />
+        <MessageCircleQuestion style={{ width: 20, height: 20, color: "#fff", flexShrink: 0 }} />
+        <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, letterSpacing: 0.2, whiteSpace: "nowrap" }}>Support</span>
       </button>
 
       {open && <SupportModal onClose={() => setOpen(false)} />}
