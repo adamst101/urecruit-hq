@@ -108,34 +108,32 @@ Deno.serve(async function(req) {
   } catch (e) { /* ignore */ }
 
   // If not done and batch succeeded, schedule the next batch
+  // IMPORTANT: fire-and-forget — do NOT await the next invocation,
+  // otherwise this function stays alive for the entire chain duration
+  // and will timeout.
   if (!isDone && batchOk) {
     // Add a stealth delay between batches (3-6 seconds)
     var delay = dryRun ? 100 : randBetween(3000, 6000);
     await sleep(delay);
 
-    // Self-invoke for next batch (fire-and-forget via .catch to not block)
-    try {
-      // We await this but the next chain link returns quickly too
-      await base44.functions.invoke("ingestCampsUSAChain", {
-        sport_key: sportKey,
-        dryRun: dryRun,
-        startAt: nextStartAt,
-        batchNumber: batchNumber + 1,
-      });
-    } catch (e) {
-      // Log continuation failure
-      try {
-        await base44.asServiceRole.entities.LastIngestRun.create({
-          sport: sportKey,
-          source: "ingestCampsUSAChain",
-          run_at: new Date().toISOString(),
-          dry_run: dryRun,
-          duration_ms: Date.now() - t0,
-          notes: "CHAIN BROKEN at batch#" + (batchNumber + 1) +
-            " startAt=" + nextStartAt + " Error: " + String(e.message || e).substring(0, 300),
-        });
-      } catch (e2) { /* ignore */ }
-    }
+    // Fire-and-forget: start next batch but don't wait for it
+    base44.functions.invoke("ingestCampsUSAChain", {
+      sport_key: sportKey,
+      dryRun: dryRun,
+      startAt: nextStartAt,
+      batchNumber: batchNumber + 1,
+    }).catch(function(e) {
+      // Log continuation failure (best-effort, also fire-and-forget)
+      base44.asServiceRole.entities.LastIngestRun.create({
+        sport: sportKey,
+        source: "ingestCampsUSAChain",
+        run_at: new Date().toISOString(),
+        dry_run: dryRun,
+        duration_ms: Date.now() - t0,
+        notes: "CHAIN BROKEN at batch#" + (batchNumber + 1) +
+          " startAt=" + nextStartAt + " Error: " + String(e.message || e).substring(0, 300),
+      }).catch(function() {});
+    });
   }
 
   // Update config last_run_at if this was the final batch
