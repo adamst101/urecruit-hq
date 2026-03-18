@@ -219,7 +219,7 @@ export default function CheckoutSuccess() {
           )}
 
           <button onClick={handleCreateAccount} style={{ ...S.ctaBtn, marginTop: 0, maxWidth: "100%" }}>
-            Create My Free Account →
+            Create My Account →
           </button>
 
           <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280", marginTop: 16, marginBottom: 0 }}>
