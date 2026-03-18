@@ -38,20 +38,15 @@ Deno.serve(async function(req) {
     var cfg = configs[i];
     var sportKey = cfg.sport_key;
 
-    try {
-      // Fire-and-forget: invoke the chain starter, don't await completion
-      // We DO await this call, but ingestCampsUSAChain returns quickly
-      // after processing one batch and scheduling the next.
-      var res = await base44.functions.invoke("ingestCampsUSAChain", {
-        sport_key: sportKey,
-        dryRun: dryRun,
-        startAt: 0,
-        batchNumber: 1,
-      });
-      dispatched.push({ sport_key: sportKey, status: "dispatched", response: res.data || res });
-    } catch (e) {
-      dispatched.push({ sport_key: sportKey, status: "dispatch_error", error: String(e.message || e) });
-    }
+    // Fire-and-forget: do NOT await — the chain runs independently.
+    // weeklyAthleticCampsIngest must return within the 3-min automation timeout.
+    base44.functions.invoke("ingestCampsUSAChain", {
+      sport_key: sportKey,
+      dryRun: dryRun,
+      startAt: 0,
+      batchNumber: 1,
+    }).catch(function() {});
+    dispatched.push({ sport_key: sportKey, status: "dispatched" });
   }
 
   return json({

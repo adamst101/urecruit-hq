@@ -117,25 +117,26 @@ Deno.serve(async function(req) {
     var delay = dryRun ? 100 : randBetween(3000, 6000);
     await sleep(delay);
 
-    base44.functions.invoke("ingestCampsUSAChain", {
-      sport_key: sportKey,
-      dryRun: dryRun,
-      startAt: nextStartAt,
-      batchNumber: batchNumber + 1,
-    }).catch(function(e) {
-      base44.asServiceRole.entities.LastIngestRun.create({
-        sport: sportKey,
-        source: "ingestCampsUSAChain",
-        run_at: new Date().toISOString(),
-        dry_run: dryRun,
-        duration_ms: Date.now() - t0,
-        notes: "CHAIN BROKEN at batch#" + (batchNumber + 1) +
-          " startAt=" + nextStartAt + " Error: " + String(e.message || e).substring(0, 300),
-      }).catch(function() {});
-    });
-
-    // Brief pause so the HTTP request is dispatched before this function returns
-    await sleep(300);
+    try {
+      await base44.functions.invoke("ingestCampsUSAChain", {
+        sport_key: sportKey,
+        dryRun: dryRun,
+        startAt: nextStartAt,
+        batchNumber: batchNumber + 1,
+      });
+    } catch (e) {
+      try {
+        await base44.asServiceRole.entities.LastIngestRun.create({
+          sport: sportKey,
+          source: "ingestCampsUSAChain",
+          run_at: new Date().toISOString(),
+          dry_run: dryRun,
+          duration_ms: Date.now() - t0,
+          notes: "CHAIN BROKEN at batch#" + (batchNumber + 1) +
+            " startAt=" + nextStartAt + " Error: " + String(e.message || e).substring(0, 300),
+        });
+      } catch (e2) { /* ignore */ }
+    }
   }
 
   // Update config last_run_at if this was the final batch
