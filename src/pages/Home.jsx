@@ -166,6 +166,7 @@ export default function Home() {
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
         .hero-card-stack { transition: transform 0.3s ease; }
         .hero-card-stack:hover { transform: translateY(-4px); }
+        @keyframes bounce-down { 0%,100%{transform:translateY(0)}50%{transform:translateY(8px)} }
         @media (max-width: 480px) {
           .nav-right-btns button {
             font-size: 12px !important;
@@ -264,7 +265,6 @@ export default function Home() {
       <section
         style={{
           position: "relative",
-          overflow: "hidden",
           display: "flex",
           alignItems: "center",
           minHeight: "85vh"
@@ -498,17 +498,24 @@ export default function Home() {
             </div>
           </div>
         </div>
-      </section>
 
-      {/* ── SCROLL NUDGE ── */}
-      <div style={{ display: "flex", justifyContent: "center", marginTop: -32, paddingBottom: 16, position: "relative", zIndex: 2 }}>
-        <style>{`@keyframes bounce-down { 0%,100%{transform:translateY(0)}50%{transform:translateY(8px)} }`}</style>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, animation: "bounce-down 1.8s ease-in-out infinite", opacity: 0.5 }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f9fafb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+        {/* ── SCROLL NUDGE — inside hero, anchored to bottom ── */}
+        <div style={{
+          position: "absolute", bottom: 20, left: "50%", transform: "translateX(-50%)",
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+          zIndex: 5, pointerEvents: "none",
+        }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 2, color: "rgba(249,250,251,0.45)", textTransform: "uppercase" }}>scroll</span>
+          <div style={{ animation: "bounce-down 1.8s ease-in-out infinite", display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
+            <svg width="22" height="14" viewBox="0 0 24 14" fill="none" stroke="rgba(249,250,251,0.5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="2 2 12 12 22 2" />
+            </svg>
+            <svg width="22" height="14" viewBox="0 0 24 14" fill="none" stroke="rgba(249,250,251,0.25)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="2 2 12 12 22 2" />
+            </svg>
+          </div>
         </div>
-      </div>
+      </section>
 
       {/* ── STATIC STATS BAR ── */}
       <div style={{
