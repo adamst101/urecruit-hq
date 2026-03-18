@@ -84,11 +84,15 @@ export default function CheckoutSuccess() {
     }
     (async () => {
       setStatus("loading");
-      const res = await base44.functions.invoke("verifyStripeSession", { sessionId });
-      const result = res.data;
-      if (result?.ok && result?.paid) { setData(result); setStatus("paid"); }
-      else if (result?.ok && !result?.paid) { setData(result); setStatus("pending"); }
-      else { setStatus("error"); }
+      try {
+        const res = await base44.functions.invoke("verifyStripeSession", { sessionId });
+        const result = res.data;
+        if (result?.ok && result?.paid) { setData(result); setStatus("paid"); }
+        else if (result?.ok && !result?.paid) { setData(result); setStatus("pending"); }
+        else { setStatus("error"); }
+      } catch {
+        setStatus("error");
+      }
     })();
   }, [sessionId, navigate, isFree, freeSeason]);
 
