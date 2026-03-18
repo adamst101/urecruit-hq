@@ -44,7 +44,7 @@ async function safeLogout() {
 
 export default function Account() {
   const navigate = useNavigate();
-  const { hasAccess, entitlement, allEntitlements, accountId, isLoading: seasonLoading } = useSeasonAccess();
+  const { hasAccess, entitlement, accountId, isLoading: seasonLoading } = useSeasonAccess();
 
   const [user, setUser] = useState(null);
   const [athletes, setAthletes] = useState([]);
