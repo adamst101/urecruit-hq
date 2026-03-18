@@ -1,14 +1,63 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, Loader2, RefreshCw, AlertCircle } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, AlertCircle, Check } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 
+const FEATURES = [
+  "College football camps nationwide",
+  "Conflict & travel detection",
+  "Recruiting Guide & Camp Playbook",
+  "Multi-athlete support",
+  "Updated every Monday",
+];
+
+function StepIndicator({ step }) {
+  // step: 1 = purchase done, 2 = create account, 3 = access hq
+  const steps = ["Purchase", "Create Account", "Access HQ"];
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 32, width: "100%", maxWidth: 400 }}>
+      {steps.map((label, i) => {
+        const num = i + 1;
+        const done = num < step;
+        const active = num === step;
+        return (
+          <React.Fragment key={label}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: "50%",
+                background: done ? "#22c55e" : active ? "#e8a020" : "#1f2937",
+                border: `2px solid ${done ? "#22c55e" : active ? "#e8a020" : "#374151"}`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 13, fontWeight: 700,
+                color: done || active ? "#0a0e1a" : "#6b7280",
+              }}>
+                {done ? <Check style={{ width: 16, height: 16 }} /> : num}
+              </div>
+              <span style={{
+                fontSize: 11, marginTop: 6, fontWeight: active ? 700 : 400,
+                color: done ? "#22c55e" : active ? "#e8a020" : "#6b7280",
+                textAlign: "center", lineHeight: 1.2,
+              }}>{label}</span>
+            </div>
+            {i < steps.length - 1 && (
+              <div style={{
+                height: 2, flex: 1, marginBottom: 18,
+                background: done ? "#22c55e" : "#1f2937",
+              }} />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function CheckoutSuccess() {
   const navigate = useNavigate();
-  const [status, setStatus] = useState("loading"); // loading | paid | pending | error
+  const [status, setStatus] = useState("loading");
   const [data, setData] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
@@ -52,6 +101,15 @@ export default function CheckoutSuccess() {
     base44.auth.redirectToLogin(returnUrl);
   }
 
+  function handleLogin() {
+    try {
+      sessionStorage.setItem("postPaymentSignup", "true");
+      if (data?.seasonYear) sessionStorage.setItem("paidSeasonYear", String(data.seasonYear));
+    } catch {}
+    const returnUrl = `${window.location.origin}/AuthRedirect?next=/Workspace&source=post_payment_login`;
+    base44.auth.redirectToLogin(returnUrl);
+  }
+
   // ── Loading ──
   if (status === "loading") {
     return (
@@ -62,82 +120,122 @@ export default function CheckoutSuccess() {
     );
   }
 
-  // ── Paid / Free Success ──
-  if (status === "paid") {
-    // Free flow — user is already logged in
-    if (isFree) {
-      return (
-        <Page>
-          <CheckCircle2 style={{ width: 64, height: 64, color: "#22c55e", marginBottom: 20 }} />
-          <h1 style={S.title}>YOU'RE IN!</h1>
-          <p style={{ color: "#9ca3af", fontSize: 20, marginTop: 12 }}>Your free access is active.</p>
-          {isLoggedIn && (
-            <button onClick={() => navigate(createPageUrl("Workspace"), { replace: true })} style={S.ctaBtn}>
-              Go to My HQ →
-            </button>
-          )}
-        </Page>
-      );
-    }
-
-    // Paid flow
+  // ── Free access success ──
+  if (status === "paid" && isFree) {
     return (
       <Page>
         <CheckCircle2 style={{ width: 64, height: 64, color: "#22c55e", marginBottom: 20 }} />
-        <h1 style={S.title}>PAYMENT CONFIRMED!</h1>
-        <p style={{ color: "#9ca3af", fontSize: 20, marginTop: 12 }}>Your Season Pass is active.</p>
-
-        {isLoggedIn ? (
+        <h1 style={S.title}>YOU'RE IN!</h1>
+        <p style={{ color: "#9ca3af", fontSize: 20, marginTop: 12 }}>Your free access is active.</p>
+        {isLoggedIn && (
           <button onClick={() => navigate(createPageUrl("Workspace"), { replace: true })} style={S.ctaBtn}>
             Go to My HQ →
           </button>
-        ) : (
-          <>
-            {/* Info box */}
-            <div style={{
-              background: "rgba(232,160,32,0.12)", border: "1px solid rgba(232,160,32,0.4)",
-              borderRadius: 12, padding: "16px 20px", textAlign: "left", marginTop: 24, maxWidth: 400, width: "100%"
-            }}>
-              <p style={{ fontWeight: 700, color: "#f9fafb", fontSize: 16, margin: "0 0 8px" }}>
-                Now create your account
-              </p>
-              <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
-                Create your account to access your Season Pass.
-              </p>
-            </div>
-
-            {/* Email matching tip */}
-            <div style={{
-              background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.25)",
-              borderRadius: 10, padding: "12px 16px", textAlign: "left", marginTop: 12, maxWidth: 400, width: "100%"
-            }}>
-              <p style={{ color: "#e8a020", fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>
-                💡 Tip
-              </p>
-              <p style={{ color: "#9ca3af", fontSize: 13, lineHeight: 1.5, margin: 0 }}>
-                Use the same email address you entered at checkout so your payment is linked automatically.
-              </p>
-            </div>
-
-            <button onClick={handleCreateAccount} style={S.ctaBtn}>
-              Create My Account →
-            </button>
-
-            <p style={{ color: "#6b7280", fontSize: 14, marginTop: 16 }}>
-              Already have an account?{" "}
-              <button onClick={() => {
-                try {
-                  sessionStorage.setItem("postPaymentSignup", "true");
-                  if (data?.seasonYear) sessionStorage.setItem("paidSeasonYear", String(data.seasonYear));
-                } catch {}
-                const returnUrl = `${window.location.origin}/AuthRedirect?next=/Workspace&source=post_payment_login`;
-                base44.auth.redirectToLogin(returnUrl);
-              }} style={{ background: "none", border: "none", color: "#e8a020", cursor: "pointer", textDecoration: "underline", fontSize: 14 }}>
-                Log in instead →
-              </button>
-            </p>
-          </>
         )}
+      </Page>
+    );
+  }
+
+  // ── Paid success — already logged in ──
+  if (status === "paid" && isLoggedIn) {
+    return (
+      <Page>
+        <StepIndicator step={3} />
+        <CheckCircle2 style={{ width: 64, height: 64, color: "#22c55e", marginBottom: 16 }} />
+        <h1 style={S.title}>YOU'RE ALL SET!</h1>
+        <p style={{ color: "#9ca3af", fontSize: 18, marginTop: 12, marginBottom: 24 }}>
+          Season {data?.seasonYear} Pass is active on your account.
+        </p>
+        <FeatureCard />
+        <button
+          onClick={() => navigate(createPageUrl("Workspace"), { replace: true })}
+          style={S.ctaBtn}
+        >
+          Go to My HQ →
+        </button>
+      </Page>
+    );
+  }
+
+  // ── Paid success — needs account creation ──
+  if (status === "paid") {
+    const email = data?.email || "";
+    const seasonYear = data?.seasonYear || "";
+    const amountPaid = data?.amountPaid;
+
+    return (
+      <Page>
+        <StepIndicator step={2} />
+
+        {/* Success header */}
+        <CheckCircle2 style={{ width: 56, height: 56, color: "#22c55e", marginBottom: 12 }} />
+        <h1 style={S.title}>PAYMENT CONFIRMED!</h1>
+        {amountPaid != null && (
+          <p style={{ color: "#6b7280", fontSize: 15, marginTop: 6 }}>
+            ${amountPaid} · Season {seasonYear} Pass
+          </p>
+        )}
+
+        {/* What they unlocked */}
+        <FeatureCard />
+
+        {/* Account creation CTA */}
+        <div style={{
+          width: "100%", maxWidth: 440,
+          background: "#111827",
+          border: "1px solid #1f2937",
+          borderTop: "3px solid #e8a020",
+          borderRadius: 12,
+          padding: "24px",
+          marginTop: 24,
+          textAlign: "left",
+        }}>
+          <p style={{ fontSize: 20, fontWeight: 700, color: "#f9fafb", margin: "0 0 8px" }}>
+            One last step
+          </p>
+          <p style={{ color: "#9ca3af", fontSize: 15, lineHeight: 1.6, margin: "0 0 20px" }}>
+            Create your free URecruit HQ account to access your Season Pass.
+          </p>
+
+          {email && (
+            <div style={{
+              background: "#0a0e1a",
+              border: "1px solid #374151",
+              borderRadius: 8,
+              padding: "12px 16px",
+              marginBottom: 20,
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}>
+              <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>
+                Your receipt was sent to
+              </span>
+              <span style={{ fontSize: 16, color: "#e8a020", fontWeight: 700 }}>{email}</span>
+              <span style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
+                Use this email when creating your account to link your pass automatically.
+              </span>
+            </div>
+          )}
+
+          <button onClick={handleCreateAccount} style={{ ...S.ctaBtn, marginTop: 0, maxWidth: "100%" }}>
+            Create My Free Account →
+          </button>
+
+          <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280", marginTop: 16, marginBottom: 0 }}>
+            Already have an account?{" "}
+            <button
+              onClick={handleLogin}
+              style={{ background: "none", border: "none", color: "#e8a020", cursor: "pointer", textDecoration: "underline", fontSize: 13, padding: 0 }}
+            >
+              Log in instead →
+            </button>
+          </p>
+        </div>
+
+        <p style={{ color: "#6b7280", fontSize: 13, marginTop: 20 }}>
+          Questions? <a href="mailto:support@urecruithq.com" style={{ color: "#e8a020" }}>support@urecruithq.com</a>
+        </p>
       </Page>
     );
   }
@@ -180,11 +278,41 @@ export default function CheckoutSuccess() {
   );
 }
 
+function FeatureCard() {
+  return (
+    <div style={{
+      width: "100%", maxWidth: 440,
+      background: "#111827",
+      border: "1px solid #1f2937",
+      borderRadius: 12,
+      padding: "20px 24px",
+      marginTop: 20,
+      textAlign: "left",
+    }}>
+      <p style={{ fontSize: 13, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: 1, margin: "0 0 14px" }}>
+        What you unlocked
+      </p>
+      {FEATURES.map(f => (
+        <div key={f} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{
+            width: 20, height: 20, borderRadius: "50%",
+            background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.4)",
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
+            <Check style={{ width: 12, height: 12, color: "#22c55e" }} />
+          </div>
+          <span style={{ fontSize: 14, color: "#f9fafb" }}>{f}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Page({ children }) {
   return (
-    <div style={{ background: "#0a0e1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+    <div style={{ background: "#0a0e1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
       <style>{FONTS}</style>
-      <div style={{ textAlign: "center", maxWidth: 480, fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div style={{ textAlign: "center", maxWidth: 480, width: "100%", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", alignItems: "center" }}>
         {children}
       </div>
     </div>
@@ -194,7 +322,7 @@ function Page({ children }) {
 const S = {
   title: {
     fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: "clamp(40px, 6vw, 56px)",
+    fontSize: "clamp(36px, 6vw, 52px)",
     color: "#f9fafb",
     lineHeight: 1,
     margin: 0,
@@ -206,7 +334,7 @@ const S = {
     color: "#0a0e1a",
     border: "none",
     borderRadius: 10,
-    padding: "16px 0",
+    padding: "18px 0",
     fontSize: 18,
     fontWeight: 700,
     cursor: "pointer",
