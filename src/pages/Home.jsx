@@ -903,7 +903,7 @@ function WhyPanel() {
   // Color: white bubble, slate text — no amber
 
   return (
-    <div style={{
+    <div className="hidden md:block" style={{
       position: "fixed",
       top: "clamp(100px, 28vh, 220px)",
       right: 28,

@@ -46,7 +46,7 @@ export default function SupportButton() {
         aria-label="Help & Feedback"
       >
         <MessageCircleQuestion style={{ width: 20, height: 20, color: "#fff", flexShrink: 0 }} />
-        <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, letterSpacing: 0.2, whiteSpace: "nowrap" }}>Support</span>
+        <span className="hidden md:inline" style={{ color: "#fff", fontWeight: 700, fontSize: 15, letterSpacing: 0.2, whiteSpace: "nowrap" }}>Support</span>
       </button>
 
       {open && <SupportModal onClose={() => setOpen(false)} />}
