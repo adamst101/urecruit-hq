@@ -17,7 +17,8 @@ import SchoolGroupCard from "../components/camps/SchoolGroupCard.jsx";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
 
-import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
+import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import { useCampFilters } from "../components/filters/useCampFilters.jsx";
 import { useWriteGate } from "../components/hooks/useWriteGate.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
@@ -237,7 +238,7 @@ export default function Discover() {
   const loc = useLocation();
   const queryClient = useQueryClient();
 
-  const { identity: athleteProfile } = useAthleteIdentity();
+  const { activeAthlete: athleteProfile } = useActiveAthlete();
   const { demoProfileId } = useDemoProfile();
   const athleteSportId = athleteProfile?.sport_id != null ? String(athleteProfile.sport_id) : "";
 
@@ -953,6 +954,17 @@ export default function Discover() {
             >
               Clear
             </button>
+          </div>
+        )}
+
+        {/* Athlete switcher — only shows when account has 2+ athletes */}
+        {seasonAccountId && isPaid && (
+          <div className="mt-4 mb-2">
+            <AthleteSwitcher
+              accountId={seasonAccountId}
+              seasonYear={Number(accessSeasonYear || new Date().getFullYear())}
+              onAddAthlete={() => nav("/Checkout?mode=addon")}
+            />
           </div>
         )}
 

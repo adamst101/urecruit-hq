@@ -16,7 +16,8 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
 import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
-import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
+import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 
@@ -113,7 +114,7 @@ export default function Calendar() {
   /* ── 2. Season / auth ─────────────── */
   const season = useSeasonAccess();
   const { demoProfileId } = useDemoProfile();
-  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
+  const { activeAthlete: athleteProfile, isLoading: identityLoading } = useActiveAthlete();
 
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   // If season has resolved to paid, never let a stale ?mode=demo override it
@@ -773,6 +774,17 @@ export default function Calendar() {
           <div className="text-xl font-bold text-[#f9fafb]">Calendar</div>
           <CalendarViewToggle calView={calView} setCalView={setCalView} />
         </div>
+
+        {/* Athlete switcher — only shows when account has 2+ athletes */}
+        {season?.accountId && isPaid && (
+          <div className="mb-4">
+            <AthleteSwitcher
+              accountId={season.accountId}
+              seasonYear={Number(season?.entitlement?.season_year || season?.currentYear || new Date().getFullYear())}
+              onAddAthlete={() => nav("/Checkout?mode=addon")}
+            />
+          </div>
+        )}
 
         {!isPaid && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
 

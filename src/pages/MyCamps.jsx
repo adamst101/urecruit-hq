@@ -13,7 +13,8 @@ import MyCampsTabs from "../components/mycamps/MyCampsTabs.jsx";
 import MyCampsEmptyState from "../components/mycamps/MyCampsEmptyState.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
-import { useAthleteIdentity } from "../components/useAthleteIdentity";
+import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
+import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
@@ -45,7 +46,7 @@ export default function MyCamps() {
   const queryClient = useQueryClient();
 
   const season = useSeasonAccess();
-  const { identity: athleteProfile } = useAthleteIdentity();
+  const { activeAthlete: athleteProfile } = useActiveAthlete();
   const { demoProfileId } = useDemoProfile();
 
   const dm = readDemoMode();
@@ -377,6 +378,17 @@ export default function MyCamps() {
         <div className="mb-4">
           <div className="text-2xl font-bold text-[#f9fafb]">My Camps</div>
         </div>
+
+        {/* Athlete switcher — only shows when account has 2+ athletes */}
+        {season?.accountId && (
+          <div className="mb-4">
+            <AthleteSwitcher
+              accountId={season.accountId}
+              seasonYear={Number(season?.entitlement?.season_year || season?.currentYear || new Date().getFullYear())}
+              onAddAthlete={() => nav("/Checkout?mode=addon")}
+            />
+          </div>
+        )}
 
         {isDemoMode && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
 

@@ -10,7 +10,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 
 import { useSeasonAccess, clearSeasonAccessCache } from "../components/hooks/useSeasonAccess.jsx";
-import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { useActiveAthlete, clearActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import { clearDemoMode } from "../components/hooks/demoMode.jsx";
 import { isAdminEmail } from "../components/auth/adminEmails.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
@@ -76,7 +76,7 @@ export default function Workspace() {
   const nav = useNavigate();
 
   const season = useSeasonAccess();
-  const { athleteProfile, isLoading: identityLoading } = useAthleteIdentity();
+  const { activeAthlete: athleteProfile, isLoading: identityLoading } = useActiveAthlete();
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
 
   const [meEmail, setMeEmail] = useState("");
@@ -124,6 +124,7 @@ export default function Workspace() {
     setLoggingOut(true);
 
     clearSeasonAccessCache();
+    clearActiveAthlete();
     try {
       clearDemoMode();
     } catch {}
@@ -229,7 +230,7 @@ export default function Workspace() {
             title="ATHLETE PROFILE"
             desc={athleteId ? (athleteProfile?.athlete_name || "Profile set up") : "Set up your athlete profile"}
             btnLabel={athleteId ? "View Profile" : "Create Profile"}
-            onClick={() => nav(ROUTES.Profile)}
+            onClick={() => nav(athleteId ? `${ROUTES.Profile}?id=${athleteId}` : ROUTES.Profile)}
             highlight={!athleteId}
           />
           <WorkspaceTile icon="📖" title="RECRUITING GUIDE" desc="Step-by-step recruiting roadmap for families" btnLabel="Read →" onClick={() => nav(ROUTES.RecruitingGuide)} />

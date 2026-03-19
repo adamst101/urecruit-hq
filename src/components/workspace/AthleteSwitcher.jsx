@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { base44 } from "../../api/base44Client";
 import { ChevronDown, UserPlus, Check } from "lucide-react";
+import { setActiveAthleteId } from "../../components/hooks/useActiveAthlete.jsx";
 
 export default function AthleteSwitcher({ accountId, seasonYear, onAddAthlete }) {
   const [athletes, setAthletes] = useState([]);
@@ -28,7 +29,7 @@ export default function AthleteSwitcher({ accountId, seasonYear, onAddAthlete })
           const primary = aList.find(a => a.is_primary) || aList[0];
           const id = primary.id || primary._id;
           setActiveId(id);
-          try { sessionStorage.setItem("activeAthleteId", id); } catch {}
+          setActiveAthleteId(id); // notifies all subscribers
         }
       } catch {}
     })();
@@ -47,7 +48,7 @@ export default function AthleteSwitcher({ accountId, seasonYear, onAddAthlete })
   function selectAthlete(a) {
     const id = a.id || a._id;
     setActiveId(id);
-    try { sessionStorage.setItem("activeAthleteId", id); } catch {}
+    setActiveAthleteId(id); // notifies all subscribers across the app
     setOpen(false);
   }
 
