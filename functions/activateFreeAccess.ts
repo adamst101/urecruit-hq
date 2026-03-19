@@ -86,13 +86,13 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "You must be logged in to activate free access" }, { status: 401 });
   }
 
-  // Check for existing active entitlement
+  // Check for existing active entitlement — for addon, only check addon entitlements
+  // (user already has a primary entitlement; that shouldn't block addon creation)
   try {
-    const existing = await base44.asServiceRole.entities.Entitlement.filter({
-      account_id: resolvedAccountId,
-      season_year: soldSeason,
-      status: "active",
-    });
+    const entFilter = isAddOn
+      ? { account_id: resolvedAccountId, season_year: soldSeason, status: "active", is_primary: false }
+      : { account_id: resolvedAccountId, season_year: soldSeason, status: "active" };
+    const existing = await base44.asServiceRole.entities.Entitlement.filter(entFilter);
     if (existing && existing.length > 0) {
       return Response.json({ ok: true, alreadyActive: true, seasonYear: soldSeason });
     }
