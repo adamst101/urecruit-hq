@@ -62,8 +62,9 @@ export default function CheckoutSuccess() {
   const [status, setStatus] = useState("loading");
   const [data, setData] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  // For addon: "waiting" | "done"
+  // For addon: "waiting" | "done" | "error"
   const [addonStatus, setAddonStatus] = useState("waiting");
+  const [addonError, setAddonError] = useState(null);
 
   const params = new URLSearchParams(window.location.search);
   const sessionId = params.get("session_id");
@@ -101,39 +102,37 @@ export default function CheckoutSuccess() {
           }
         }
 
-        // Webhook didn't fire in time — create the profile directly as fallback
-        if (!cancelled && data?.athlete2Name) {
-          const parts = data.athlete2Name.trim().split(" ");
-          const firstName = parts[0] || data.athlete2Name;
-          const lastName = parts.slice(1).join(" ") || null;
-          await base44.entities.AthleteProfile.create({
-            account_id: accountId,
-            first_name: firstName,
-            last_name: lastName,
-            athlete_name: data.athlete2Name,
-            display_name: data.athlete2Name,
-            is_primary: false,
-            active: true,
-            sport_id: data.sportId || null,
-            primary_position_id: null,
-            grad_year: parseInt(data.athlete2GradYear) || null,
-          }).catch(() => {});
+        // Webhook didn't fire in time — call linkStripePayment as fallback (uses service role)
+        if (!cancelled) {
+          try {
+            const res = await base44.functions.invoke("linkStripePayment", { sessionId });
+            const ok = res?.data?.ok || res?.ok;
+            if (!ok) {
+              const errMsg = res?.data?.error || "Could not create athlete profile";
+              console.error("linkStripePayment fallback failed:", errMsg);
+              if (!cancelled) setAddonError(errMsg);
+            }
+          } catch (e) {
+            console.error("linkStripePayment invocation error:", e);
+            if (!cancelled) setAddonError(e?.message || "Unexpected error");
+          }
+          if (!cancelled) setAddonStatus("done");
         }
-        if (!cancelled) setAddonStatus("done");
-      } catch {
-        if (!cancelled) setAddonStatus("done");
+      } catch (e) {
+        console.error("Addon setup error:", e);
+        if (!cancelled) { setAddonError(e?.message || "Unexpected error"); setAddonStatus("done"); }
       }
     })();
 
     return () => { cancelled = true; };
   }, [status, isLoggedIn, data]);
 
-  // Navigate to Account once addon is confirmed
+  // Navigate to Account once addon is confirmed (only if no error)
   useEffect(() => {
-    if (addonStatus !== "done") return;
+    if (addonStatus !== "done" || addonError) return;
     const t = setTimeout(() => navigate("/Account", { replace: true }), 1200);
     return () => clearTimeout(t);
-  }, [addonStatus, navigate]);
+  }, [addonStatus, addonError, navigate]);
 
   useEffect(() => {
     if (isFree) {
@@ -207,12 +206,32 @@ export default function CheckoutSuccess() {
 
   // ── Paid success — addon athlete, already logged in ──
   if (status === "paid" && isLoggedIn && data?.isAddOn) {
+    if (addonError) {
+      return (
+        <Page>
+          <AlertCircle style={{ width: 48, height: 48, color: "#ef4444", marginBottom: 16 }} />
+          <h2 style={{ ...S.title, fontSize: 32 }}>PAYMENT SUCCEEDED</h2>
+          <p style={{ color: "#9ca3af", fontSize: 15, marginTop: 12, lineHeight: 1.6, maxWidth: 360 }}>
+            Your payment went through but we couldn't automatically add the athlete profile. Please contact support with your order details.
+          </p>
+          <p style={{ color: "#ef4444", fontSize: 13, marginTop: 12, maxWidth: 360, fontFamily: "monospace", background: "#111827", padding: "10px 14px", borderRadius: 8 }}>
+            {addonError}
+          </p>
+          <p style={{ color: "#6b7280", fontSize: 13, marginTop: 16 }}>
+            <a href="mailto:support@urecruithq.com" style={{ color: "#e8a020" }}>support@urecruithq.com</a>
+          </p>
+          <button onClick={() => navigate("/Account", { replace: true })} style={{ ...S.ctaBtn, marginTop: 20 }}>
+            Go to My Account →
+          </button>
+        </Page>
+      );
+    }
     return (
       <Page>
         <Loader2 className="w-12 h-12 animate-spin" style={{ color: "#e8a020", marginBottom: 20 }} />
         <h1 style={{ ...S.title, fontSize: 36 }}>ADDING YOUR ATHLETE…</h1>
         <p style={{ color: "#9ca3af", fontSize: 16, marginTop: 12, lineHeight: 1.6, maxWidth: 340 }}>
-          Payment confirmed. We're finalizing {data?.athlete2Name || "your athlete"}'s profile — you'll land on your Account page in a moment.
+          Payment confirmed. Finalizing {data?.athlete2Name || "your athlete"}'s profile — heading to your Account in a moment.
         </p>
       </Page>
     );
