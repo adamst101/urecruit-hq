@@ -12,6 +12,7 @@ const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","
 export default function Checkout() {
   const navigate = useNavigate();
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const isAddonMode = params.get("mode") === "addon";
 
   const [seasonConfig, setSeasonConfig] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -49,12 +50,17 @@ export default function Checkout() {
         if (seasonRes.data?.ok && seasonRes.data?.season) {
           setSeasonConfig(seasonRes.data.season);
         }
-        setIsAuthed(!!authed);
+        const authenticated = !!authed;
+        setIsAuthed(authenticated);
+        // Add-on flow requires an existing account
+        if (isAddonMode && !authenticated) {
+          navigate("/Subscribe", { replace: true });
+        }
       } catch {}
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [isAddonMode]);
 
   // Load sports list
   useEffect(() => {
@@ -165,16 +171,23 @@ export default function Checkout() {
       const successUrl = window.location.origin + createPageUrl("CheckoutSuccess");
       const cancelUrl = window.location.href;
 
+      const athleteFullName = [athleteFirstName.trim(), athleteLastName.trim()].filter(Boolean).join(" ");
+
       const res = await base44.functions.invoke("createStripeCheckout", {
-        couponCode: promoCode.trim() || undefined,
+        couponCode: isAddonMode ? undefined : (promoCode.trim() || undefined),
         successUrl,
         cancelUrl,
-        parentFirstName: parentFirstName.trim() || undefined,
-        parentLastName: parentLastName.trim() || undefined,
-        parentPhone: parentPhone.trim() || undefined,
-        athleteFirstName: athleteFirstName.trim() || undefined,
-        athleteLastName: athleteLastName.trim() || undefined,
-        gradYear: gradYear || undefined,
+        isAddOn: isAddonMode || undefined,
+        // Add-on: pass athlete as athleteTwoName (what the webhook uses for scenario C)
+        athleteTwoName: isAddonMode ? (athleteFullName || undefined) : undefined,
+        athleteTwoGradYear: isAddonMode ? (gradYear || undefined) : undefined,
+        // Primary: pass individual fields
+        parentFirstName: isAddonMode ? undefined : (parentFirstName.trim() || undefined),
+        parentLastName: isAddonMode ? undefined : (parentLastName.trim() || undefined),
+        parentPhone: isAddonMode ? undefined : (parentPhone.trim() || undefined),
+        athleteFirstName: isAddonMode ? undefined : (athleteFirstName.trim() || undefined),
+        athleteLastName: isAddonMode ? undefined : (athleteLastName.trim() || undefined),
+        gradYear: isAddonMode ? undefined : (gradYear || undefined),
         sportId: sportId || undefined,
         homeCity: homeCity.trim() || undefined,
         homeState: homeState || undefined,
@@ -203,8 +216,12 @@ export default function Checkout() {
     );
   }
 
-  const basePrice = seasonConfig?.price_primary || 49;
-  const displayName = seasonConfig?.display_name || `Season ${seasonConfig?.season_year || ""}`;
+  const basePrice = isAddonMode
+    ? (seasonConfig?.price_add_on || 39)
+    : (seasonConfig?.price_primary || 49);
+  const displayName = isAddonMode
+    ? `Additional Athlete — Season ${seasonConfig?.season_year || ""}`
+    : (seasonConfig?.display_name || `Season ${seasonConfig?.season_year || ""}`);
   const promoValid = promoState?.ok;
   const promoFree = promoState?.isFree;
   const promoChecking = promoState === "checking";
@@ -228,14 +245,14 @@ export default function Checkout() {
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "40px 24px" }}>
         {/* Back */}
         <button
-          onClick={() => step === "payment" ? setStep("profile") : navigate(createPageUrl("Subscribe"))}
+          onClick={() => step === "payment" ? setStep("profile") : navigate(isAddonMode ? "/Account" : createPageUrl("Subscribe"))}
           style={{ background: "none", border: "none", color: "#9ca3af", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 24 }}
         >
-          <ArrowLeft style={{ width: 14, height: 14 }} /> {step === "payment" ? "Back" : "Back to pricing"}
+          <ArrowLeft style={{ width: 14, height: 14 }} /> {step === "payment" ? "Back" : isAddonMode ? "Back to account" : "Back to pricing"}
         </button>
 
         <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#f9fafb", margin: "0 0 24px" }}>
-          {step === "profile" ? "YOUR INFO" : "CHECKOUT"}
+          {isAddonMode ? "ADD ATHLETE" : step === "profile" ? "YOUR INFO" : "CHECKOUT"}
         </h1>
 
         {/* ──── STEP 1: PROFILE FORM ──── */}
@@ -285,8 +302,8 @@ export default function Checkout() {
               </div>
             </div>
 
-            {/* Parent / Guardian Info */}
-            <div style={{ background: "#111827", borderRadius: 12, border: "1px solid #1f2937", padding: "20px 24px" }}>
+            {/* Parent / Guardian Info — hidden in add-on mode (already on file) */}
+            <div style={{ background: "#111827", borderRadius: 12, border: "1px solid #1f2937", padding: "20px 24px", display: isAddonMode ? "none" : "block" }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#e8a020", letterSpacing: 1, textTransform: "uppercase", marginBottom: 16 }}>Parent / Guardian</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
@@ -362,8 +379,8 @@ export default function Checkout() {
           </div>
         </div>
 
-        {/* ──── PROMO CODE ROW ──── */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+        {/* ──── PROMO CODE ROW — hidden for add-on ──── */}
+        <div style={{ display: isAddonMode ? "none" : "flex", gap: 8, marginBottom: 8 }}>
           <input
             type="text"
             value={promoCode}
@@ -397,7 +414,7 @@ export default function Checkout() {
         </div>
 
         {/* Promo feedback */}
-        {promoState && promoState !== "checking" && (
+        {!isAddonMode && promoState && promoState !== "checking" && (
           <div style={{
             fontSize: 14, padding: "8px 12px", borderRadius: 8, marginBottom: 16,
             display: "flex", alignItems: "center", gap: 8,
@@ -420,8 +437,8 @@ export default function Checkout() {
           </div>
         )}
 
-        {/* Account note for new users */}
-        {!isAuthed && !promoFree && (
+        {/* Account note for new users — not shown in add-on mode */}
+        {!isAddonMode && !isAuthed && !promoFree && (
           <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", margin: "0 0 12px", lineHeight: 1.5 }}>
             No account yet? You'll create one after checkout.
           </p>

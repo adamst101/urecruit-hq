@@ -249,7 +249,7 @@ export default function Account() {
 
           {isActive && athletes.length < 5 && (
             <button
-              onClick={() => navigate(ROUTES.Profile)}
+              onClick={() => navigate("/Checkout?mode=addon")}
               style={{ width: "100%", marginTop: 12, background: "transparent", border: "1px dashed #374151", borderRadius: 12, padding: "14px", fontSize: 14, fontWeight: 600, color: "#9ca3af", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
             >
               <Plus style={{ width: 16, height: 16 }} /> Add Athlete
