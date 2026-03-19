@@ -18,6 +18,11 @@ Deno.serve(async (req) => {
       amountPaid: (session.amount_total || 0) / 100,
       couponUsed: session.metadata?.coupon_code || null,
       seasonYear: parseInt(session.metadata?.season_year) || null,
+      isAddOn: session.metadata?.is_add_on === "true",
+      accountId: session.metadata?.account_id || "",
+      athlete2Name: session.metadata?.athlete_2_name || "",
+      athlete2GradYear: session.metadata?.athlete_2_grad_year || "",
+      sportId: session.metadata?.sport_id || "",
     });
   } catch (err) {
     console.error("verifyStripeSession error:", err.message);

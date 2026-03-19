@@ -55,11 +55,15 @@ function StepIndicator({ step }) {
   );
 }
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
 export default function CheckoutSuccess() {
   const navigate = useNavigate();
   const [status, setStatus] = useState("loading");
   const [data, setData] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // For addon: "waiting" | "done"
+  const [addonStatus, setAddonStatus] = useState("waiting");
 
   const params = new URLSearchParams(window.location.search);
   const sessionId = params.get("session_id");
@@ -71,6 +75,65 @@ export default function CheckoutSuccess() {
       try { setIsLoggedIn(await base44.auth.isAuthenticated()); } catch { setIsLoggedIn(false); }
     })();
   }, []);
+
+  // Addon post-payment: poll for new athlete; fallback to creating it directly
+  useEffect(() => {
+    if (status !== "paid" || !isLoggedIn || !data?.isAddOn) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const me = await base44.auth.me();
+        const accountId = me?.id;
+        if (!accountId) { setAddonStatus("done"); return; }
+
+        const initial = await base44.entities.AthleteProfile.filter({ account_id: accountId }).catch(() => []);
+        const initialCount = Array.isArray(initial) ? initial.length : 0;
+
+        // Poll up to 8 s for webhook to create the athlete
+        const deadline = Date.now() + 8000;
+        while (!cancelled && Date.now() < deadline) {
+          await sleep(1500);
+          const current = await base44.entities.AthleteProfile.filter({ account_id: accountId }).catch(() => []);
+          if (Array.isArray(current) && current.length > initialCount) {
+            if (!cancelled) setAddonStatus("done");
+            return;
+          }
+        }
+
+        // Webhook didn't fire in time — create the profile directly as fallback
+        if (!cancelled && data?.athlete2Name) {
+          const parts = data.athlete2Name.trim().split(" ");
+          const firstName = parts[0] || data.athlete2Name;
+          const lastName = parts.slice(1).join(" ") || null;
+          await base44.entities.AthleteProfile.create({
+            account_id: accountId,
+            first_name: firstName,
+            last_name: lastName,
+            athlete_name: data.athlete2Name,
+            display_name: data.athlete2Name,
+            is_primary: false,
+            active: true,
+            sport_id: data.sportId || null,
+            primary_position_id: null,
+            grad_year: parseInt(data.athlete2GradYear) || null,
+          }).catch(() => {});
+        }
+        if (!cancelled) setAddonStatus("done");
+      } catch {
+        if (!cancelled) setAddonStatus("done");
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [status, isLoggedIn, data]);
+
+  // Navigate to Account once addon is confirmed
+  useEffect(() => {
+    if (addonStatus !== "done") return;
+    const t = setTimeout(() => navigate("/Account", { replace: true }), 1200);
+    return () => clearTimeout(t);
+  }, [addonStatus, navigate]);
 
   useEffect(() => {
     if (isFree) {
@@ -142,7 +205,20 @@ export default function CheckoutSuccess() {
     );
   }
 
-  // ── Paid success — already logged in ──
+  // ── Paid success — addon athlete, already logged in ──
+  if (status === "paid" && isLoggedIn && data?.isAddOn) {
+    return (
+      <Page>
+        <Loader2 className="w-12 h-12 animate-spin" style={{ color: "#e8a020", marginBottom: 20 }} />
+        <h1 style={{ ...S.title, fontSize: 36 }}>ADDING YOUR ATHLETE…</h1>
+        <p style={{ color: "#9ca3af", fontSize: 16, marginTop: 12, lineHeight: 1.6, maxWidth: 340 }}>
+          Payment confirmed. We're finalizing {data?.athlete2Name || "your athlete"}'s profile — you'll land on your Account page in a moment.
+        </p>
+      </Page>
+    );
+  }
+
+  // ── Paid success — already logged in (primary purchase) ──
   if (status === "paid" && isLoggedIn) {
     return (
       <Page>
