@@ -84,28 +84,37 @@ Deno.serve(async (req) => {
     product: "RecruitMeSeasonAccess",
   });
 
-  // Create AthleteProfile if we have the athlete's name
+  // Create AthleteProfile if we have the athlete's name and none exists yet
   if (athleteFirstName) {
     try {
-      await base44.asServiceRole.entities.AthleteProfile.create({
+      const existingProfiles = await base44.asServiceRole.entities.AthleteProfile.filter({
         account_id: accountId,
-        first_name: athleteFirstName,
-        last_name: athleteLastName || null,
-        athlete_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" "),
-        display_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" "),
-        grad_year: gradYear || null,
-        sport_id: sportId || "",
-        home_city: homeCity || null,
-        home_state: homeState || null,
-        parent_first_name: parentFirstName || null,
-        parent_last_name: parentLastName || null,
-        parent_phone: parentPhone || null,
-        is_primary: true,
-        active: true,
-        primary_position_id: "",
-      });
+      }).catch(() => []);
+
+      if (!existingProfiles || existingProfiles.length === 0) {
+        await base44.asServiceRole.entities.AthleteProfile.create({
+          account_id: accountId,
+          first_name: athleteFirstName,
+          last_name: athleteLastName || null,
+          athlete_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" "),
+          display_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" "),
+          grad_year: gradYear || null,
+          sport_id: sportId || null,
+          home_city: homeCity || null,
+          home_state: homeState || null,
+          parent_first_name: parentFirstName || null,
+          parent_last_name: parentLastName || null,
+          parent_phone: parentPhone || null,
+          is_primary: true,
+          active: true,
+          primary_position_id: null,
+        });
+        console.log("Created AthleteProfile for account:", accountId);
+      } else {
+        console.log("AthleteProfile already exists for account:", accountId, "— skipping creation");
+      }
     } catch (e) {
-      console.warn("AthleteProfile creation failed (non-critical):", e.message);
+      console.error("AthleteProfile creation failed:", e.message);
     }
   }
 
