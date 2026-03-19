@@ -330,7 +330,7 @@ export default function Calendar() {
     return map;
   }, [allUserCamps]);
 
-  // campIdToDate — lookup for cross-athlete conflict date resolution
+  // campIdToDate — lookup for cross-athlete conflict date resolution (used after allWarnings is defined)
   const campIdToDate = useMemo(() => {
     const map = new Map();
     allUserCamps.forEach((c) => {
@@ -340,23 +340,6 @@ export default function Calendar() {
     });
     return map;
   }, [allUserCamps]);
-
-  // conflictDates — Map<dateString, 'error'|'warning'>
-  // error = same-athlete same-day, warning = cross-athlete (family_conflict)
-  const conflictDates = useMemo(() => {
-    const map = new Map();
-    Object.entries(campsByDate).forEach(([date, camps]) => {
-      if (camps.length > 1) map.set(date, "error");
-    });
-    for (const w of allWarnings) {
-      if (w.type !== "family_conflict") continue;
-      for (const cid of (w.campIds || [])) {
-        const date = campIdToDate.get(cid);
-        if (date && !map.has(date)) map.set(date, "warning");
-      }
-    }
-    return map;
-  }, [campsByDate, allWarnings, campIdToDate]);
 
   const ATHLETE_COLORS = ["#e8a020", "#38bdf8", "#a855f7", "#fb7185", "#2dd4bf"];
   const activeAthleteColor = useMemo(() => {
@@ -434,6 +417,24 @@ export default function Calendar() {
     homeState: athleteProfile?.home_state || null,
     isPaid,
   });
+
+  // conflictDates — Map<dateString, 'error'|'warning'>
+  // Defined after allWarnings so family_conflict warnings can be included.
+  // error = same-athlete same-day, warning = cross-athlete family_conflict
+  const conflictDates = useMemo(() => {
+    const map = new Map();
+    Object.entries(campsByDate).forEach(([date, camps]) => {
+      if (camps.length > 1) map.set(date, "error");
+    });
+    for (const w of allWarnings) {
+      if (w.type !== "family_conflict") continue;
+      for (const cid of (w.campIds || [])) {
+        const date = campIdToDate.get(cid);
+        if (date && !map.has(date)) map.set(date, "warning");
+      }
+    }
+    return map;
+  }, [campsByDate, allWarnings, campIdToDate]);
 
   /* ── 8. Event handlers ────────────── */
 
