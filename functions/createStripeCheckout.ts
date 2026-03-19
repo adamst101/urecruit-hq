@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
   } catch {}
 
   const {
-    couponCode, athleteId, userEmail, successUrl, cancelUrl,
+    couponCode, promoId, athleteId, userEmail, successUrl, cancelUrl,
     isAddOn, addSecondAthlete,
     athleteOneName, athleteTwoName, athleteTwoGradYear,
     parentFirstName, parentLastName, parentPhone,
@@ -95,9 +95,14 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "Price not configured for this season" });
   }
 
-  // Validate promotion code if provided (case-insensitive)
+  // Apply promotion code discount
+  // If the frontend already validated and returned a promoId, use it directly (fast path).
+  // Fall back to code lookup only when no promoId is available.
   let discounts = [];
-  if (couponCode && couponCode.trim()) {
+  if (promoId) {
+    discounts = [{ promotion_code: promoId }];
+    console.log("Applying pre-validated promotion_code:", promoId);
+  } else if (couponCode && couponCode.trim()) {
     const codesToTry = [
       couponCode.trim(),
       couponCode.trim().toUpperCase(),
@@ -108,23 +113,15 @@ Deno.serve(async (req) => {
     let foundPromo = null;
     for (const code of codesToTry) {
       try {
-        const result = await stripe.promotionCodes.list({
-          code: code,
-          active: true,
-          limit: 1,
-        });
+        const result = await stripe.promotionCodes.list({ code, active: true, limit: 1 });
         console.log("Promo lookup for '" + code + "':", result.data.length, "results");
-        if (result.data.length > 0) {
-          foundPromo = result.data[0];
-          break;
-        }
+        if (result.data.length > 0) { foundPromo = result.data[0]; break; }
       } catch (e) {
         console.error("Promo lookup failed for:", code, e.message);
       }
     }
 
     if (foundPromo) {
-      // Check if coupon has product restrictions and validate against the price being purchased
       const appliesTo = foundPromo.coupon.applies_to?.products;
       if (appliesTo && appliesTo.length > 0) {
         try {

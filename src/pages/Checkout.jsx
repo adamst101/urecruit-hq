@@ -182,6 +182,7 @@ export default function Checkout() {
 
       const res = await base44.functions.invoke("createStripeCheckout", {
         couponCode: promoCode.trim() || undefined,
+        promoId: promoState?.promoId || undefined,
         successUrl,
         cancelUrl,
         isAddOn: isAddonMode || undefined,
