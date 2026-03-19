@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   User, CreditCard, Calendar, Search, Heart,
   ChevronRight, LogOut, Plus, BookOpen, Shield,
-  CheckCircle2, XCircle, Clock, RefreshCw,
+  CheckCircle2, XCircle, Clock, RefreshCw, UserX,
 } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess, clearSeasonAccessCache } from "../components/hooks/useSeasonAccess.jsx";
@@ -52,6 +52,8 @@ export default function Account() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(null); // athlete id pending confirm
+  const [deactivating, setDeactivating] = useState(null); // athlete id currently being deactivated
 
   async function fetchData(showSpinner = false) {
     if (!accountId) return;
@@ -90,6 +92,18 @@ export default function Account() {
     } catch {
       setLoggingOut(false);
     }
+  }
+
+  async function handleDeactivate(athleteId) {
+    setDeactivating(athleteId);
+    setConfirmDeactivate(null);
+    try {
+      await base44.entities.AthleteProfile.update(athleteId, { active: false });
+      await fetchData();
+    } catch (e) {
+      console.error("Deactivate failed:", e.message);
+    }
+    setDeactivating(null);
   }
 
   if (seasonLoading || loading) {
@@ -236,28 +250,81 @@ export default function Account() {
                 const sport = a.sport_name || "";
                 const gradYear = a.grad_year ? `Class of ${a.grad_year}` : null;
                 const location = [a.home_city, a.home_state].filter(Boolean).join(", ");
+                const isPending = confirmDeactivate === a.id;
+                const isDeactivating = deactivating === a.id;
                 return (
-                  <button
-                    key={a.id}
-                    onClick={() => navigate(`/Profile?id=${a.id}`)}
-                    style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", textAlign: "left", width: "100%" }}
-                  >
-                    <div style={{
-                      width: 44, height: 44, borderRadius: "50%",
-                      background: "rgba(232,160,32,0.15)", border: "1px solid rgba(232,160,32,0.3)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 16, fontWeight: 700, color: "#e8a020", flexShrink: 0,
-                    }}>
-                      {abbr}
+                  <div key={a.id} style={{ background: "#111827", border: `1px solid ${isPending ? "#ef4444" : "#1f2937"}`, borderRadius: 12, overflow: "hidden", transition: "border-color 0.15s" }}>
+                    {/* Main row */}
+                    <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14 }}>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/Profile?id=${a.id}`)}
+                        style={{ display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 0, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}
+                      >
+                        <div style={{
+                          width: 44, height: 44, borderRadius: "50%",
+                          background: "rgba(232,160,32,0.15)", border: "1px solid rgba(232,160,32,0.3)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 16, fontWeight: 700, color: "#e8a020", flexShrink: 0,
+                        }}>
+                          {abbr}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb" }}>{name}</div>
+                          <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>
+                            {[sport, gradYear, location].filter(Boolean).join(" · ")}
+                          </div>
+                        </div>
+                        <ChevronRight style={{ width: 16, height: 16, color: "#6b7280", flexShrink: 0 }} />
+                      </button>
+
+                      {/* Deactivate button */}
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeactivate(isPending ? null : a.id)}
+                        disabled={isDeactivating}
+                        title="Deactivate athlete"
+                        style={{
+                          background: isPending ? "rgba(239,68,68,0.15)" : "transparent",
+                          border: `1px solid ${isPending ? "rgba(239,68,68,0.4)" : "#374151"}`,
+                          borderRadius: 8, padding: "6px 10px",
+                          display: "flex", alignItems: "center", gap: 5,
+                          cursor: isDeactivating ? "not-allowed" : "pointer",
+                          color: isPending ? "#ef4444" : "#6b7280",
+                          fontSize: 12, fontWeight: 600, flexShrink: 0,
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        <UserX style={{ width: 13, height: 13 }} />
+                        {isDeactivating ? "…" : "Deactivate"}
+                      </button>
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb" }}>{name}</div>
-                      <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>
-                        {[sport, gradYear, location].filter(Boolean).join(" · ")}
+
+                    {/* Confirm strip */}
+                    {isPending && (
+                      <div style={{ borderTop: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.06)", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                        <span style={{ fontSize: 13, color: "#fca5a5" }}>
+                          Deactivate <strong>{name}</strong>? This removes their access.
+                        </span>
+                        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeactivate(null)}
+                            style={{ background: "transparent", border: "1px solid #374151", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, color: "#9ca3af", cursor: "pointer" }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeactivate(a.id)}
+                            style={{ background: "#ef4444", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer" }}
+                          >
+                            Yes, Deactivate
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <ChevronRight style={{ width: 16, height: 16, color: "#6b7280", flexShrink: 0 }} />
-                  </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
