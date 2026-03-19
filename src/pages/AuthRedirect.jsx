@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { base44 } from "../api/base44Client";
-import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { useSeasonAccess, clearSeasonAccessCache } from "../components/hooks/useSeasonAccess.jsx";
 
 /**
  * AuthRedirect.jsx
@@ -130,6 +130,7 @@ export default function AuthRedirect() {
           });
           if (Array.isArray(ents) && ents.length > 0) {
             clearInterval(interval);
+            clearSeasonAccessCache();
             didRoute.current = true;
             nav(PATHS.WORKSPACE, { replace: true });
             return;
@@ -148,6 +149,7 @@ export default function AuthRedirect() {
               const res = await base44.functions.invoke("linkStripePayment", { sessionId: stripeSessionId });
               const ok = res?.data?.ok || res?.ok;
               if (ok) {
+                clearSeasonAccessCache();
                 didRoute.current = true;
                 nav(PATHS.WORKSPACE, { replace: true });
                 return;
