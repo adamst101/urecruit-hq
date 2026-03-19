@@ -16,6 +16,7 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
+import { useAllAthletesCamps } from "../components/hooks/useAllAthletesCamps.jsx";
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
@@ -52,6 +53,8 @@ export default function MyCamps() {
   const dm = readDemoMode();
   const isPaid = season?.mode === "paid";
   const isDemoMode = !isPaid;
+
+  const { allCamps: allAthletesCamps } = useAllAthletesCamps({ enabled: isPaid });
   const seasonYear = Number(dm?.seasonYear || season?.seasonYear || season?.currentYear || new Date().getFullYear());
 
   const athleteId = normId(athleteProfile);
@@ -99,7 +102,12 @@ export default function MyCamps() {
     return st === "registered" || st === "completed";
   }), [sortedRows]);
 
-  // Conflict detection
+  // Conflict detection — includes other athletes' camps for cross-athlete warnings
+  const activeAthleteName = athleteProfile?.first_name || athleteProfile?.athlete_name || null;
+  const otherAthletesCamps = useMemo(
+    () => allAthletesCamps.filter((c) => c.athleteId !== String(athleteId || "")),
+    [allAthletesCamps, athleteId],
+  );
   const { warnings: allWarnings, getWarningsForCamp } = useConflictDetection({
     favoritedCamps: favCamps.map((r) => ({
       id: r?.camp_id || r?.id,
@@ -108,6 +116,7 @@ export default function MyCamps() {
       city: r?.city || r?.school_city,
       state: r?.state || r?.school_state,
       school_name: r?.school_name,
+      athleteName: activeAthleteName,
     })),
     registeredCamps: regCamps.map((r) => ({
       id: r?.camp_id || r?.id,
@@ -116,7 +125,9 @@ export default function MyCamps() {
       city: r?.city || r?.school_city,
       state: r?.state || r?.school_state,
       school_name: r?.school_name,
+      athleteName: activeAthleteName,
     })),
+    additionalCamps: otherAthletesCamps,
     homeCity: athleteProfile?.home_city || null,
     homeState: athleteProfile?.home_state || null,
     isPaid: !isDemoMode,

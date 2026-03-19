@@ -52,11 +52,16 @@ export function detectConflicts({ camps, homeCity, homeState, isPaid }) {
 
       // TYPE 1: Same day conflict
       if (dateA && dateB && dateA === dateB) {
+        const aName = a?.athleteName || null;
+        const bName = b?.athleteName || null;
+        const crossAthlete = aName && bName && aName !== bName;
         warnings.push({
           type: "same_day",
           severity: "error",
           campIds: [String(a?.id || ""), String(b?.id || "")],
-          message: `⚠️ Date Conflict: ${campLabel(a)} and ${campLabel(b)} are both on ${dateA}. You can only attend one.`,
+          message: crossAthlete
+            ? `⚠️ Family Conflict: ${aName}'s ${campLabel(a)} and ${bName}'s ${campLabel(b)} are both on ${dateA}.`
+            : `⚠️ Date Conflict: ${campLabel(a)} and ${campLabel(b)} are both on ${dateA}. You can only attend one.`,
         });
       }
 
@@ -104,10 +109,10 @@ export function detectConflicts({ camps, homeCity, homeState, isPaid }) {
   return warnings;
 }
 
-export function useConflictDetection({ favoritedCamps, registeredCamps, homeCity, homeState, isPaid }) {
+export function useConflictDetection({ favoritedCamps, registeredCamps, additionalCamps = [], homeCity, homeState, isPaid }) {
   const warnings = useMemo(() => {
     const allCamps = [...(favoritedCamps || []), ...(registeredCamps || [])];
-    // Dedupe by id
+    // Dedupe current athlete's camps by id
     const seen = new Set();
     const unique = [];
     for (const c of allCamps) {
@@ -116,8 +121,10 @@ export function useConflictDetection({ favoritedCamps, registeredCamps, homeCity
       seen.add(id);
       unique.push(c);
     }
-    return detectConflicts({ camps: unique, homeCity, homeState, isPaid });
-  }, [favoritedCamps, registeredCamps, homeCity, homeState, isPaid]);
+    // Append other athletes' camps (exclude any already present)
+    const extra = (additionalCamps || []).filter((c) => !seen.has(String(c?.id || "")));
+    return detectConflicts({ camps: [...unique, ...extra], homeCity, homeState, isPaid });
+  }, [favoritedCamps, registeredCamps, additionalCamps, homeCity, homeState, isPaid]);
 
   const getWarningsForCamp = useMemo(() => {
     return (campId) => {

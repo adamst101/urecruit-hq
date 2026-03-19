@@ -19,6 +19,7 @@ import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demo
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
+import { useAllAthletesCamps } from "../components/hooks/useAllAthletesCamps.jsx";
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 
 import {
@@ -115,6 +116,7 @@ export default function Calendar() {
   const season = useSeasonAccess();
   const { demoProfileId } = useDemoProfile();
   const { activeAthlete: athleteProfile, isLoading: identityLoading } = useActiveAthlete();
+  const { allCamps: allAthletesCamps } = useAllAthletesCamps({ enabled: season?.mode === "paid" });
 
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   // If season has resolved to paid, never let a stale ?mode=demo override it
@@ -382,17 +384,25 @@ export default function Calendar() {
     [allUserCamps],
   );
 
+  const activeAthleteName = athleteProfile?.first_name || athleteProfile?.athlete_name || null;
+  const otherAthletesCamps = useMemo(
+    () => allAthletesCamps.filter((c) => c.athleteId !== String(athleteId || "")),
+    [allAthletesCamps, athleteId],
+  );
   const { warnings: allWarnings, getWarningsForCamp } = useConflictDetection({
     favoritedCamps: favCamps.map((r) => ({
       id: r?.camp_id || r?.id, camp_name: r?.camp_name,
       start_date: r?.start_date, city: r?.city || r?.school_city,
       state: r?.state || r?.school_state, school_name: r?.school_name,
+      athleteName: activeAthleteName,
     })),
     registeredCamps: regCamps.map((r) => ({
       id: r?.camp_id || r?.id, camp_name: r?.camp_name,
       start_date: r?.start_date, city: r?.city || r?.school_city,
       state: r?.state || r?.school_state, school_name: r?.school_name,
+      athleteName: activeAthleteName,
     })),
+    additionalCamps: otherAthletesCamps,
     homeCity: athleteProfile?.home_city || null,
     homeState: athleteProfile?.home_state || null,
     isPaid,
