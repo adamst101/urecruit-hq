@@ -420,6 +420,13 @@ export default function Checkout() {
           </div>
         )}
 
+        {/* Account note for new users */}
+        {!isAuthed && !promoFree && (
+          <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", margin: "0 0 12px", lineHeight: 1.5 }}>
+            No account yet? You'll create one after checkout.
+          </p>
+        )}
+
         {/* ──── ACTION BUTTON ──── */}
         <button
           onClick={handleCheckout}
