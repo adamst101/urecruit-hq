@@ -86,17 +86,7 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "You must be logged in to activate free access" }, { status: 401 });
   }
 
-  // Check for existing active entitlement — for addon, only check addon entitlements
-  // (user already has a primary entitlement; that shouldn't block addon creation)
-  try {
-    const entFilter = isAddOn
-      ? { account_id: resolvedAccountId, season_year: soldSeason, status: "active", is_primary: false }
-      : { account_id: resolvedAccountId, season_year: soldSeason, status: "active" };
-    const existing = await base44.asServiceRole.entities.Entitlement.filter(entFilter);
-    if (existing && existing.length > 0) {
-      return Response.json({ ok: true, alreadyActive: true, seasonYear: soldSeason });
-    }
-  } catch {}
+  console.log("activateFreeAccess params — account:", resolvedAccountId, "isAddOn:", !!isAddOn, "athleteFirstName:", athleteFirstName || "(none)");
 
   // Resolve access dates
   const startsAt = season.access_starts_at
@@ -106,22 +96,35 @@ Deno.serve(async (req) => {
     ? new Date(season.access_ends_at).toISOString()
     : new Date(Date.UTC(soldSeason + 1, 1, 1, 0, 0, 0)).toISOString();
 
-  // Create entitlement
-  await base44.asServiceRole.entities.Entitlement.create({
-    account_id: resolvedAccountId,
-    athlete_id: athleteId || "",
-    season_year: soldSeason,
-    status: "active",
-    is_primary: !isAddOn,
-    amount_paid: 0,
-    starts_at: startsAt,
-    ends_at: endsAt,
-    product: "RecruitMeSeasonAccess",
-  });
+  // Create entitlement if one doesn't already exist (scoped to addon vs primary)
+  try {
+    const entFilter = isAddOn
+      ? { account_id: resolvedAccountId, season_year: soldSeason, status: "active", is_primary: false }
+      : { account_id: resolvedAccountId, season_year: soldSeason, status: "active" };
+    const existing = await base44.asServiceRole.entities.Entitlement.filter(entFilter);
+    if (!existing || existing.length === 0) {
+      await base44.asServiceRole.entities.Entitlement.create({
+        account_id: resolvedAccountId,
+        athlete_id: athleteId || "",
+        season_year: soldSeason,
+        status: "active",
+        is_primary: !isAddOn,
+        amount_paid: 0,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        product: "RecruitMeSeasonAccess",
+      });
+      console.log("Created entitlement — account:", resolvedAccountId, "isAddOn:", !!isAddOn);
+    } else {
+      console.log("Entitlement already exists — skipping create");
+    }
+  } catch (e) {
+    console.error("Entitlement create failed:", e.message);
+    return Response.json({ ok: false, error: "Failed to create entitlement: " + e.message });
+  }
 
-  console.log("Free access activated for account:", resolvedAccountId, "season:", soldSeason, "isAddOn:", !!isAddOn);
-
-  // Create AthleteProfile if we have a name
+  // Always attempt AthleteProfile creation — even if entitlement already existed
+  // (a prior run may have created the entitlement but failed on the profile)
   if (athleteFirstName) {
     try {
       const existingProfiles = await base44.asServiceRole.entities.AthleteProfile.filter({
@@ -129,9 +132,9 @@ Deno.serve(async (req) => {
       }).catch(() => []);
 
       const profileList = Array.isArray(existingProfiles) ? existingProfiles : [];
+      console.log("Existing profiles for account:", profileList.length);
 
       if (isAddOn) {
-        // Addon: add second athlete — dedupe by name
         const alreadyExists = profileList.some(p =>
           (p.first_name || "").toLowerCase() === athleteFirstName.toLowerCase() &&
           (p.last_name || "") === (athleteLastName || "")
@@ -150,10 +153,11 @@ Deno.serve(async (req) => {
             active: true,
             primary_position_id: null,
           });
-          console.log("Created addon AthleteProfile for account:", resolvedAccountId);
+          console.log("Created addon AthleteProfile:", athleteFirstName, athleteLastName);
+        } else {
+          console.log("Addon athlete already exists:", athleteFirstName, athleteLastName);
         }
       } else {
-        // Primary: only create if none exists
         if (profileList.length === 0) {
           await base44.asServiceRole.entities.AthleteProfile.create({
             account_id: resolvedAccountId,
@@ -171,13 +175,17 @@ Deno.serve(async (req) => {
             active: true,
             primary_position_id: null,
           });
-          console.log("Created primary AthleteProfile for account:", resolvedAccountId);
+          console.log("Created primary AthleteProfile:", athleteFirstName, athleteLastName);
+        } else {
+          console.log("Primary athlete already exists, skipping");
         }
       }
     } catch (e) {
-      // Non-fatal — entitlement was already created
-      console.error("AthleteProfile creation failed (non-fatal):", e.message);
+      console.error("AthleteProfile creation failed:", e.message);
+      return Response.json({ ok: false, error: "Entitlement created but athlete profile failed: " + e.message });
     }
+  } else {
+    console.warn("No athleteFirstName received — skipping profile creation");
   }
 
   return Response.json({
