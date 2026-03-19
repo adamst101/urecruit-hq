@@ -271,7 +271,7 @@ export default function Account() {
         <Section title="Account">
           <div style={{ background: "#111827", borderRadius: 12, border: "1px solid #1f2937", overflow: "hidden" }}>
             <InfoRow label="Email" value={email} />
-            <InfoRow label="Account ID" value={accountId ? `${accountId.slice(0, 8)}…` : "—"} borderTop />
+            <InfoRow label="Account ID" value={accountId || "—"} borderTop mono />
           </div>
         </Section>
 
@@ -349,11 +349,11 @@ function QuickLink({ icon: Icon, label, onClick }) {
   );
 }
 
-function InfoRow({ label, value, borderTop }) {
+function InfoRow({ label, value, borderTop, mono }) {
   return (
-    <div style={{ padding: "14px 16px", borderTop: borderTop ? "1px solid #1f2937" : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <span style={{ fontSize: 14, color: "#9ca3af" }}>{label}</span>
-      <span style={{ fontSize: 14, color: "#f9fafb", fontWeight: 600 }}>{value || "—"}</span>
+    <div style={{ padding: "14px 16px", borderTop: borderTop ? "1px solid #1f2937" : "none", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+      <span style={{ fontSize: 14, color: "#9ca3af", flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: mono ? 11 : 14, color: "#f9fafb", fontWeight: 600, textAlign: "right", wordBreak: "break-all", fontFamily: mono ? "monospace" : "inherit" }}>{value || "—"}</span>
     </div>
   );
 }
