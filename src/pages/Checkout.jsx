@@ -174,7 +174,7 @@ export default function Checkout() {
       const athleteFullName = [athleteFirstName.trim(), athleteLastName.trim()].filter(Boolean).join(" ");
 
       const res = await base44.functions.invoke("createStripeCheckout", {
-        couponCode: isAddonMode ? undefined : (promoCode.trim() || undefined),
+        couponCode: promoCode.trim() || undefined,
         successUrl,
         cancelUrl,
         isAddOn: isAddonMode || undefined,
@@ -379,8 +379,8 @@ export default function Checkout() {
           </div>
         </div>
 
-        {/* ──── PROMO CODE ROW — hidden for add-on ──── */}
-        <div style={{ display: isAddonMode ? "none" : "flex", gap: 8, marginBottom: 8 }}>
+        {/* ──── PROMO CODE ROW ──── */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <input
             type="text"
             value={promoCode}
@@ -414,7 +414,7 @@ export default function Checkout() {
         </div>
 
         {/* Promo feedback */}
-        {!isAddonMode && promoState && promoState !== "checking" && (
+        {promoState && promoState !== "checking" && (
           <div style={{
             fontSize: 14, padding: "8px 12px", borderRadius: 8, marginBottom: 16,
             display: "flex", alignItems: "center", gap: 8,
