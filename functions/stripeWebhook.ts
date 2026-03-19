@@ -159,7 +159,7 @@ Deno.serve(async (req) => {
                 is_primary: true,
                 active: true,
                 sport_id: sportId || null,
-                primary_position_id: null,
+                primary_position_id: "",
               });
               console.log("Created AthleteProfile from checkout:", newProfile.id);
             }
@@ -181,7 +181,7 @@ Deno.serve(async (req) => {
             is_primary: false,
             grad_year: parseInt(athleteTwoGradYear) || null,
             sport_id: sportId || null,
-            primary_position_id: null,
+            primary_position_id: "",
             parent_first_name: parentFirstName || null,
             parent_last_name: parentLastName || null,
             parent_phone: parentPhone || null,
@@ -217,7 +217,7 @@ Deno.serve(async (req) => {
             is_primary: false,
             grad_year: parseInt(athleteTwoGradYear) || null,
             sport_id: sportId || null,
-            primary_position_id: null,
+            primary_position_id: "",
             parent_first_name: parentFirstName || null,
             parent_last_name: parentLastName || null,
             parent_phone: parentPhone || null,

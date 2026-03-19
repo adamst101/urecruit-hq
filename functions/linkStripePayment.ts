@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
           is_primary: false,
           active: true,
           sport_id: sportId || null,
-          primary_position_id: null,
+          primary_position_id: "",
           grad_year: parseInt(athlete2GradYear) || null,
         });
         newAthleteId = newProfile?.id || null;
@@ -182,7 +182,7 @@ Deno.serve(async (req) => {
           parent_phone: parentPhone || null,
           is_primary: true,
           active: true,
-          primary_position_id: null,
+          primary_position_id: "",
         });
         console.log("Created AthleteProfile for account:", accountId);
       } else {
