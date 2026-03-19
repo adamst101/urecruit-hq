@@ -151,7 +151,6 @@ Deno.serve(async (req) => {
             home_state: homeState || null,
             is_primary: false,
             active: true,
-            primary_position_id: "",
           });
           console.log("Created addon AthleteProfile:", athleteFirstName, athleteLastName);
         } else {
@@ -173,7 +172,6 @@ Deno.serve(async (req) => {
             parent_phone: parentPhone || null,
             is_primary: true,
             active: true,
-            primary_position_id: "",
           });
           console.log("Created primary AthleteProfile:", athleteFirstName, athleteLastName);
         } else {
