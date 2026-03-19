@@ -107,6 +107,10 @@ export default function Account() {
     || entitlements[0]
     || null;
 
+  const totalAmountPaid = entitlements
+    .filter(e => e.status === "active")
+    .reduce((sum, e) => sum + (Number(e.amount_paid) || 0), 0);
+
   const isActive = !!hasAccess;
   const email = user?.email || "";
   const userInitials = email ? email[0].toUpperCase() : "U";
@@ -182,8 +186,8 @@ export default function Account() {
                 {primaryEnt.ends_at && (
                   <InfoPill label="Access Ends" value={fmt(primaryEnt.ends_at)} />
                 )}
-                {primaryEnt.amount_paid != null && (
-                  <InfoPill label="Amount Paid" value={`$${primaryEnt.amount_paid}`} />
+                {totalAmountPaid > 0 && (
+                  <InfoPill label="Amount Paid" value={`$${totalAmountPaid}`} />
                 )}
                 <InfoPill label="Athletes" value={`${athletes.length} athlete${athletes.length !== 1 ? "s" : ""}`} />
               </div>

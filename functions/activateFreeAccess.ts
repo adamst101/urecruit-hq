@@ -149,6 +149,9 @@ Deno.serve(async (req) => {
             sport_id: sportId || null,
             home_city: homeCity || null,
             home_state: homeState || null,
+            parent_first_name: parentFirstName || null,
+            parent_last_name: parentLastName || null,
+            parent_phone: parentPhone || null,
             is_primary: false,
             active: true,
           });
