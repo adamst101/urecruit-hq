@@ -116,7 +116,7 @@ export default function Calendar() {
   const season = useSeasonAccess();
   const { demoProfileId } = useDemoProfile();
   const { activeAthlete: athleteProfile, isLoading: identityLoading } = useActiveAthlete();
-  const { allCamps: allAthletesCamps } = useAllAthletesCamps({ enabled: season?.mode === "paid" });
+  const { allCamps: allAthletesCamps, athletes: allAthletes } = useAllAthletesCamps({ enabled: season?.mode === "paid" });
 
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   // If season has resolved to paid, never let a stale ?mode=demo override it
@@ -330,13 +330,40 @@ export default function Calendar() {
     return map;
   }, [allUserCamps]);
 
-  const conflictDates = useMemo(() => {
-    const dates = new Set();
-    Object.entries(campsByDate).forEach(([date, camps]) => {
-      if (camps.length > 1) dates.add(date);
+  // campIdToDate — lookup for cross-athlete conflict date resolution
+  const campIdToDate = useMemo(() => {
+    const map = new Map();
+    allUserCamps.forEach((c) => {
+      const id = String(c?.camp_id || c?.id || "");
+      const d = normalizeDateKey(c?.start_date);
+      if (id && d) map.set(id, d);
     });
-    return dates;
-  }, [campsByDate]);
+    return map;
+  }, [allUserCamps]);
+
+  // conflictDates — Map<dateString, 'error'|'warning'>
+  // error = same-athlete same-day, warning = cross-athlete (family_conflict)
+  const conflictDates = useMemo(() => {
+    const map = new Map();
+    Object.entries(campsByDate).forEach(([date, camps]) => {
+      if (camps.length > 1) map.set(date, "error");
+    });
+    for (const w of allWarnings) {
+      if (w.type !== "family_conflict") continue;
+      for (const cid of (w.campIds || [])) {
+        const date = campIdToDate.get(cid);
+        if (date && !map.has(date)) map.set(date, "warning");
+      }
+    }
+    return map;
+  }, [campsByDate, allWarnings, campIdToDate]);
+
+  const ATHLETE_COLORS = ["#e8a020", "#38bdf8", "#a855f7", "#fb7185", "#2dd4bf"];
+  const activeAthleteColor = useMemo(() => {
+    if (!athleteId || !allAthletes.length) return ATHLETE_COLORS[0];
+    const idx = allAthletes.findIndex((a) => String(a.id || a._id || "") === athleteId);
+    return ATHLETE_COLORS[idx >= 0 ? idx % ATHLETE_COLORS.length : 0];
+  }, [athleteId, allAthletes]);
 
   const schoolMap = useMemo(() => {
     const map = {};
@@ -701,6 +728,7 @@ export default function Calendar() {
           <WeekView
             currentWeek={currentWeek} setCurrentWeek={setCurrentWeek}
             campsByDate={campsByDate} conflictDates={conflictDates}
+            athleteColor={activeAthleteColor}
             schoolMap={schoolMap} onCampClick={openCampDetail}
             onRegister={(c) => {
               const url = c?.link_url || c?.source_url;
@@ -721,6 +749,7 @@ export default function Calendar() {
           <MonthOverview
             currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
             campsByDate={campsByDate} conflictDates={conflictDates}
+            athleteColor={activeAthleteColor}
             schoolMap={schoolMap} onCampClick={openCampDetail}
             onRegister={(c) => {
               const url = c?.link_url || c?.source_url;
@@ -741,6 +770,7 @@ export default function Calendar() {
           <MonthGridView
             currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
             campsByDate={campsByDate} conflictDates={conflictDates}
+            athleteColor={activeAthleteColor}
             schoolMap={schoolMap} onCampClick={openCampDetail}
             onJumpToDate={(date) => {
               setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));

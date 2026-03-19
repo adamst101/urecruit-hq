@@ -54,11 +54,18 @@ export default function MyCamps() {
   const isPaid = season?.mode === "paid";
   const isDemoMode = !isPaid;
 
-  const { allCamps: allAthletesCamps } = useAllAthletesCamps({ enabled: isPaid });
+  const { allCamps: allAthletesCamps, athletes: allAthletes } = useAllAthletesCamps({ enabled: isPaid });
   const seasonYear = Number(dm?.seasonYear || season?.seasonYear || season?.currentYear || new Date().getFullYear());
 
   const athleteId = normId(athleteProfile);
   const sportId = normId(athleteProfile?.sport_id) || athleteProfile?.sport_id;
+
+  const ATHLETE_COLORS = ["#e8a020", "#38bdf8", "#a855f7", "#fb7185", "#2dd4bf"];
+  const activeAthleteColor = useMemo(() => {
+    if (!athleteId || !allAthletes.length) return ATHLETE_COLORS[0];
+    const idx = allAthletes.findIndex((a) => String(a.id || a._id || "") === String(athleteId));
+    return ATHLETE_COLORS[idx >= 0 ? idx % ATHLETE_COLORS.length : 0];
+  }, [athleteId, allAthletes]);
 
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId ? String(athleteId) : undefined,
@@ -322,24 +329,38 @@ export default function MyCamps() {
     const isRegistered = st === "registered" || st === "completed";
     const isFavorite = st === "favorite";
     const campWarnings = getWarningsForCamp(campId);
-    const hasConflict = conflictCampIds.has(campId);
+    const sameDayConflict = campWarnings.find((w) => w.type === "same_day");
+    const familyConflict = campWarnings.find((w) => w.type === "family_conflict");
+    const hasDateConflict = !!(sameDayConflict || familyConflict);
 
     return (
-      <div key={campId} className="relative">
-        {hasConflict && (
-          <div className="absolute top-2 right-12 z-10">
+      <div key={campId}>
+        {isPaid && allAthletes.length >= 2 && activeAthleteName && (
+          <div style={{ marginBottom: 4 }}>
             <span style={{
-              background: "#7f1d1d",
-              color: "#fca5a5",
-              fontSize: 11,
-              fontWeight: 700,
-              padding: "3px 8px",
-              borderRadius: 12,
+              display: "inline-flex", alignItems: "center",
+              padding: "2px 8px", borderRadius: 12,
+              background: `${activeAthleteColor}22`,
+              color: activeAthleteColor,
+              fontSize: 11, fontWeight: 700,
+              border: `1px solid ${activeAthleteColor}44`,
             }}>
-              ⚠ Date conflict
+              {activeAthleteName}
             </span>
           </div>
         )}
+        <div className="relative">
+          {hasDateConflict && (
+            <div className="absolute top-2 right-12 z-10">
+              <span style={{
+                background: sameDayConflict ? "#7f1d1d" : "#431407",
+                color: sameDayConflict ? "#fca5a5" : "#fed7aa",
+                fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
+              }}>
+                {sameDayConflict ? "⚠ Date conflict" : "⚠ Family conflict"}
+              </span>
+            </div>
+          )}
         <CampCard
           warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
           camp={{
@@ -372,6 +393,7 @@ export default function MyCamps() {
             if (url) window.open(String(url), "_blank", "noopener,noreferrer");
           }}
         />
+        </div>
       </div>
     );
   }

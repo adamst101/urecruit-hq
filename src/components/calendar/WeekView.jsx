@@ -4,12 +4,13 @@ import { format, isSameDay } from "date-fns";
 
 const DAY_ABBRS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
-function CampMiniCard({ camp, school, status, isConflict, onClick, onRegister, onFavoriteToggle, onRegisteredToggle }) {
+function CampMiniCard({ camp, school, status, conflictSeverity, onClick, onRegister, onFavoriteToggle, onRegisteredToggle }) {
   const schoolName = school?.school_name || "Camp";
   const price = typeof camp?.price === "number" && camp.price > 0 ? `$${camp.price}` : null;
 
   let bg, borderColor;
-  if (isConflict) { bg = "#1c0505"; borderColor = "#ef4444"; }
+  if (conflictSeverity === "error") { bg = "#1c0505"; borderColor = "#ef4444"; }
+  else if (conflictSeverity === "warning") { bg = "#1c0a05"; borderColor = "#f97316"; }
   else if (status === "registered" || status === "completed") { bg = "#052e16"; borderColor = "#10b981"; }
   else { bg = "#1c1003"; borderColor = "#e8a020"; }
 
@@ -29,7 +30,7 @@ function CampMiniCard({ camp, school, status, isConflict, onClick, onRegister, o
       onMouseLeave={(e) => { e.currentTarget.style.filter = ""; e.currentTarget.style.transform = ""; }}
     >
       <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {isConflict ? "⚠ " : ""}{schoolName}
+        {conflictSeverity ? "⚠ " : ""}{schoolName}
       </div>
       {/* Star + Checkmark row */}
       <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
@@ -72,7 +73,9 @@ function CampMiniCard({ camp, school, status, isConflict, onClick, onRegister, o
             </button>
           );
         })()}
-        {isConflict && <span style={{ color: "#fca5a5", fontSize: 10 }}>⚠</span>}
+        {conflictSeverity && (
+          <span style={{ color: conflictSeverity === "error" ? "#fca5a5" : "#fed7aa", fontSize: 10 }}>⚠</span>
+        )}
       </div>
       {price && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{price}</div>}
       {onRegister && (
@@ -89,7 +92,7 @@ function CampMiniCard({ camp, school, status, isConflict, onClick, onRegister, o
   );
 }
 
-export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate, onRegister, onFavoriteToggle, onRegisteredToggle }) {
+export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, conflictDates, athleteColor = "#e8a020", schoolMap, onCampClick, onJumpToDate, onRegister, onFavoriteToggle, onRegisteredToggle }) {
   const today = new Date();
 
   // Mobile: show single day
@@ -168,7 +171,7 @@ export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, con
             </div>
           </div>
           {hasCamps && (
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#e8a020", margin: "4px auto 0" }} />
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: athleteColor, margin: "4px auto 0" }} />
           )}
         </div>
 
@@ -190,7 +193,7 @@ export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, con
             camps.map((c) => {
               const campId = String(c?.camp_id || c?.id || "");
               const dateKey = String(c?.start_date || "").slice(0, 10);
-              const isConflict = conflictDates.has(dateKey);
+              const conflictSeverity = conflictDates.get(dateKey) || null;
               const st = String(c?.intent_status || "").toLowerCase();
               const school = schoolMap?.[campId] || { school_name: c?.school_name };
               return (
@@ -199,7 +202,7 @@ export default function WeekView({ currentWeek, setCurrentWeek, campsByDate, con
                   camp={c}
                   school={school}
                   status={st}
-                  isConflict={isConflict}
+                  conflictSeverity={conflictSeverity}
                   onClick={() => onCampClick(c)}
                   onRegister={onRegister ? () => onRegister(c) : undefined}
                   onFavoriteToggle={onFavoriteToggle ? () => onFavoriteToggle(c) : undefined}

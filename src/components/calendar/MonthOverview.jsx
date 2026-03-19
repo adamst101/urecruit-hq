@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns";
 // icons removed — using plain text ✓ for checkmark
 
-export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate, onRegister, onFavoriteToggle, onRegisteredToggle }) {
+export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDate, conflictDates, athleteColor = "#e8a020", schoolMap, onCampClick, onJumpToDate, onRegister, onFavoriteToggle, onRegisteredToggle }) {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
@@ -25,11 +25,14 @@ export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDa
         const key = format(d, "yyyy-MM-dd");
         const camps = campsByDate[key] || [];
         if (camps.length === 0) return null;
-        const conflictCount = camps.filter((c) => {
+        const conflictSeverities = camps.map((c) => {
           const dk = String(c?.start_date || "").slice(0, 10);
-          return conflictDates.has(dk);
-        }).length;
-        return { date: d, key, camps, conflictCount };
+          return conflictDates.get(dk) || null;
+        }).filter(Boolean);
+        const conflictCount = conflictSeverities.length;
+        const worstConflictSeverity = conflictSeverities.includes("error") ? "error"
+          : conflictSeverities.length > 0 ? "warning" : null;
+        return { date: d, key, camps, conflictCount, worstConflictSeverity };
       })
       .filter(Boolean);
   }, [monthStart, monthEnd, campsByDate, conflictDates]);
@@ -76,13 +79,13 @@ export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDa
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {daysWithCamps.map(({ date, camps, conflictCount }, blockIdx) => (
+          {daysWithCamps.map(({ date, camps, conflictCount, worstConflictSeverity }, blockIdx) => (
             <div key={format(date, "yyyy-MM-dd")} style={{ borderRadius: 8, overflow: "hidden", border: "1px solid #1f2937" }}>
               {/* Day header */}
               <div style={{
                 background: "#1f2937",
                 padding: "10px 16px",
-                borderLeft: "3px solid #e8a020",
+                borderLeft: `3px solid ${worstConflictSeverity === "error" ? "#ef4444" : worstConflictSeverity === "warning" ? "#f97316" : athleteColor}`,
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -100,7 +103,8 @@ export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDa
                   </span>
                   {conflictCount > 0 && (
                     <span style={{
-                      background: "#7f1d1d", color: "#fca5a5",
+                      background: worstConflictSeverity === "error" ? "#7f1d1d" : "#431407",
+                      color: worstConflictSeverity === "error" ? "#fca5a5" : "#fed7aa",
                       fontSize: 12, fontWeight: 700, padding: "3px 10px",
                       borderRadius: 12,
                     }}>
@@ -115,7 +119,7 @@ export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDa
                 const campId = String(c?.camp_id || c?.id || "");
                 const st = String(c?.intent_status || "").toLowerCase();
                 const dateKey = String(c?.start_date || "").slice(0, 10);
-                const isConflict = conflictDates.has(dateKey);
+                const conflictSeverity = conflictDates.get(dateKey) || null;
                 const isReg = st === "registered" || st === "completed";
                 const isFav = st === "favorite";
                 const school = schoolMap?.[campId] || { school_name: c?.school_name };
@@ -124,12 +128,14 @@ export default function MonthOverview({ currentMonth, setCurrentMonth, campsByDa
                 const city = [c?.city, c?.state].filter(Boolean).join(", ");
                 const isLast = idx === camps.length - 1;
 
-                let barColor = "#e8a020";
-                if (isConflict) barColor = "#ef4444";
+                let barColor = athleteColor;
+                if (conflictSeverity === "error") barColor = "#ef4444";
+                else if (conflictSeverity === "warning") barColor = "#f97316";
                 else if (isReg) barColor = "#10b981";
 
                 let badgeBg, badgeColor, badgeText;
-                if (isConflict) { badgeBg = "#7f1d1d"; badgeColor = "#fca5a5"; badgeText = "⚠ Conflict"; }
+                if (conflictSeverity === "error") { badgeBg = "#7f1d1d"; badgeColor = "#fca5a5"; badgeText = "⚠ Conflict"; }
+                else if (conflictSeverity === "warning") { badgeBg = "#431407"; badgeColor = "#fed7aa"; badgeText = "⚠ Family"; }
                 else if (isReg) { badgeBg = "#065f46"; badgeColor = "#6ee7b7"; badgeText = "✓ Registered"; }
                 else if (isFav) { badgeBg = "#92400e"; badgeColor = "#fcd34d"; badgeText = "★ Favorited"; }
 

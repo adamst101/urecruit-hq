@@ -1,13 +1,14 @@
 import React, { useMemo, useState } from "react";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay } from "date-fns";
 
-function CampPill({ camp, school, status, isConflict, onClick }) {
+function CampPill({ camp, school, status, conflictSeverity, athleteColor = "#e8a020", onClick }) {
   const name = school?.school_name || camp?.school_name || "Camp";
 
   let bg, color, borderColor;
-  if (isConflict) { bg = "#1c0505"; color = "#fca5a5"; borderColor = "#ef4444"; }
+  if (conflictSeverity === "error") { bg = "#1c0505"; color = "#fca5a5"; borderColor = "#ef4444"; }
+  else if (conflictSeverity === "warning") { bg = "#1c0a05"; color = "#fed7aa"; borderColor = "#f97316"; }
   else if (status === "registered" || status === "completed") { bg = "#064e3b"; color = "#6ee7b7"; borderColor = "#10b981"; }
-  else { bg = "#1c1003"; color = "#fcd34d"; borderColor = "#e8a020"; }
+  else { bg = "#1c1003"; color = "#fcd34d"; borderColor = athleteColor; }
 
   return (
     <div
@@ -36,16 +37,17 @@ function CampPill({ camp, school, status, isConflict, onClick }) {
   );
 }
 
-function CampDot({ status, isConflict }) {
+function CampDot({ status, conflictSeverity, athleteColor = "#e8a020" }) {
   let bg;
-  if (isConflict) bg = "#ef4444";
+  if (conflictSeverity === "error") bg = "#ef4444";
+  else if (conflictSeverity === "warning") bg = "#f97316";
   else if (status === "registered" || status === "completed") bg = "#10b981";
-  else bg = "#e8a020";
+  else bg = athleteColor;
 
   return <div style={{ width: 8, height: 8, borderRadius: "50%", background: bg, flexShrink: 0 }} />;
 }
 
-export default function MonthGridView({ currentMonth, setCurrentMonth, campsByDate, conflictDates, schoolMap, onCampClick, onJumpToDate }) {
+export default function MonthGridView({ currentMonth, setCurrentMonth, campsByDate, conflictDates, athleteColor = "#e8a020", schoolMap, onCampClick, onJumpToDate }) {
   const today = new Date();
 
   const [daySheetDate, setDaySheetDate] = useState(null);
@@ -158,7 +160,7 @@ export default function MonthGridView({ currentMonth, setCurrentMonth, campsByDa
                   {show3.map((c) => {
                     const campId = String(c?.camp_id || c?.id || "");
                     const st = String(c?.intent_status || "").toLowerCase();
-                    const isConflict = conflictDates.has(key);
+                    const conflictSeverity = conflictDates.get(key) || null;
                     const school = schoolMap?.[campId] || { school_name: c?.school_name };
                     return (
                       <CampPill
@@ -166,7 +168,8 @@ export default function MonthGridView({ currentMonth, setCurrentMonth, campsByDa
                         camp={c}
                         school={school}
                         status={st}
-                        isConflict={isConflict}
+                        conflictSeverity={conflictSeverity}
+                        athleteColor={athleteColor}
                         onClick={() => onCampClick(c)}
                       />
                     );
@@ -225,8 +228,8 @@ export default function MonthGridView({ currentMonth, setCurrentMonth, campsByDa
                   <div style={{ display: "flex", gap: 3, justifyContent: "center", flexWrap: "wrap" }}>
                     {show3.map((c) => {
                       const st = String(c?.intent_status || "").toLowerCase();
-                      const isConflict = conflictDates.has(key);
-                      return <CampDot key={String(c?.camp_id || c?.id)} status={st} isConflict={isConflict} />;
+                      const conflictSeverity = conflictDates.get(key) || null;
+                      return <CampDot key={String(c?.camp_id || c?.id)} status={st} conflictSeverity={conflictSeverity} athleteColor={athleteColor} />;
                     })}
                     {extra > 0 && (
                       <span style={{ fontSize: 9, color: "#6b7280" }}>+{extra}</span>
@@ -269,19 +272,21 @@ export default function MonthGridView({ currentMonth, setCurrentMonth, campsByDa
                 const campId = String(c?.camp_id || c?.id || "");
                 const st = String(c?.intent_status || "").toLowerCase();
                 const dateKey = format(daySheetDate, "yyyy-MM-dd");
-                const isConflict = conflictDates.has(dateKey);
+                const conflictSeverity = conflictDates.get(dateKey) || null;
                 const isReg = st === "registered" || st === "completed";
                 const isFav = st === "favorite";
                 const school = schoolMap?.[campId] || { school_name: c?.school_name };
                 const schoolName = school?.school_name || "Camp";
                 const city = [c?.city, c?.state].filter(Boolean).join(", ");
 
-                let barColor = "#e8a020";
-                if (isConflict) barColor = "#ef4444";
+                let barColor = athleteColor;
+                if (conflictSeverity === "error") barColor = "#ef4444";
+                else if (conflictSeverity === "warning") barColor = "#f97316";
                 else if (isReg) barColor = "#10b981";
 
                 let badgeBg, badgeColor, badgeText;
-                if (isConflict) { badgeBg = "#7f1d1d"; badgeColor = "#fca5a5"; badgeText = "⚠ Conflict"; }
+                if (conflictSeverity === "error") { badgeBg = "#7f1d1d"; badgeColor = "#fca5a5"; badgeText = "⚠ Conflict"; }
+                else if (conflictSeverity === "warning") { badgeBg = "#431407"; badgeColor = "#fed7aa"; badgeText = "⚠ Family"; }
                 else if (isReg) { badgeBg = "#065f46"; badgeColor = "#6ee7b7"; badgeText = "✓ Registered"; }
                 else if (isFav) { badgeBg = "#92400e"; badgeColor = "#fcd34d"; badgeText = "★ Favorited"; }
 
