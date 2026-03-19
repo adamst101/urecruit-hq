@@ -137,6 +137,23 @@ export default function AuthRedirect() {
         } catch {}
         if (attempts >= maxAttempts) {
           clearInterval(interval);
+          // Webhook may have created the entitlement with no account_id
+          // (user paid anonymously before creating their account).
+          // Try to link the Stripe session to this account now.
+          const stripeSessionId = ssGet("stripeSessionId");
+          ssRemove("stripeSessionId");
+          if (stripeSessionId) {
+            setStatusMsg("Linking your purchase…");
+            try {
+              const res = await base44.functions.invoke("linkStripePayment", { sessionId: stripeSessionId });
+              const ok = res?.data?.ok || res?.ok;
+              if (ok) {
+                didRoute.current = true;
+                nav(PATHS.WORKSPACE, { replace: true });
+                return;
+              }
+            } catch {}
+          }
           setShowSlowWarning(true);
         }
       }, 2000);

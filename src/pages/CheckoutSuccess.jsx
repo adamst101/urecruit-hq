@@ -99,6 +99,7 @@ export default function CheckoutSuccess() {
   function handleCreateAccount() {
     try {
       sessionStorage.setItem("postPaymentSignup", "true");
+      if (sessionId) sessionStorage.setItem("stripeSessionId", sessionId);
       if (data?.seasonYear) sessionStorage.setItem("paidSeasonYear", String(data.seasonYear));
     } catch {}
     const returnUrl = `${window.location.origin}/AuthRedirect?next=/Workspace&source=post_payment_signup`;
@@ -108,6 +109,7 @@ export default function CheckoutSuccess() {
   function handleLogin() {
     try {
       sessionStorage.setItem("postPaymentSignup", "true");
+      if (sessionId) sessionStorage.setItem("stripeSessionId", sessionId);
       if (data?.seasonYear) sessionStorage.setItem("paidSeasonYear", String(data.seasonYear));
     } catch {}
     const returnUrl = `${window.location.origin}/AuthRedirect?next=/Workspace&source=post_payment_login`;
