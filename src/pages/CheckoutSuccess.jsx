@@ -196,8 +196,8 @@ export default function CheckoutSuccess() {
         <h1 style={S.title}>YOU'RE IN!</h1>
         <p style={{ color: "#9ca3af", fontSize: 20, marginTop: 12 }}>Your free access is active.</p>
         {isLoggedIn && (
-          <button onClick={() => navigate(createPageUrl("Workspace"), { replace: true })} style={S.ctaBtn}>
-            Go to My HQ →
+          <button onClick={() => navigate("/Account", { replace: true })} style={S.ctaBtn}>
+            View My Account →
           </button>
         )}
       </Page>
@@ -249,10 +249,10 @@ export default function CheckoutSuccess() {
         </p>
         <FeatureCard />
         <button
-          onClick={() => navigate(createPageUrl("Workspace"), { replace: true })}
+          onClick={() => navigate("/Account", { replace: true })}
           style={S.ctaBtn}
         >
-          Go to My HQ →
+          View My Account →
         </button>
       </Page>
     );

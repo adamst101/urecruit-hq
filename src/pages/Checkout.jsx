@@ -144,10 +144,7 @@ export default function Checkout() {
       });
       const data = res.data;
       if (data?.ok) {
-        navigate(
-          createPageUrl("CheckoutSuccess") + `?free=true&season=${encodeURIComponent(data.seasonYear || "")}`,
-          { replace: true }
-        );
+        navigate("/Account", { replace: true });
       } else {
         setError(data?.error || "Failed to activate access");
         setWorking(false);
