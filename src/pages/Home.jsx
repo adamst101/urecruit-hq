@@ -172,7 +172,21 @@ export default function Home() {
             font-size: 12px !important;
             padding: 6px 10px !important;
           }
-          .why-panel-label { font-size: 12px !important; }
+        }
+        @keyframes why-ping {
+          0%   { transform: scale(1);   opacity: 0.7; }
+          100% { transform: scale(1.9); opacity: 0; }
+        }
+        @keyframes why-slide-up {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .why-bubble-btn {
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .why-bubble-btn:hover {
+          transform: translateY(-2px) !important;
+          box-shadow: 0 8px 32px rgba(232,160,32,0.45) !important;
         }
       `}</style>
 
@@ -814,27 +828,18 @@ export default function Home() {
 
 
 
-/* ── Why Panel ── */
+/* ── Why Bubble ── */
 function WhyPanel() {
   const [open, setOpen] = useState(false);
-  const [top, setTop] = useState(64);
-  const [narrow, setNarrow] = useState(typeof window !== "undefined" && window.innerWidth < 480);
+  const [pinged, setPinged] = useState(false);
 
+  // Fire the attention-ping 2.5 s after mount, then once more at 7 s
   useEffect(() => {
-    function update() {
-      const navEl = document.querySelector("nav")
-        || document.querySelector("header")
-        || document.querySelector('[role="navigation"]');
-      setTop(navEl ? navEl.getBoundingClientRect().bottom : 64);
-      setNarrow(window.innerWidth < 480);
-    }
-    update();
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update);
-    return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update);
-    };
+    const t1 = setTimeout(() => setPinged(true),  2500);
+    const t2 = setTimeout(() => setPinged(false), 4000);
+    const t3 = setTimeout(() => setPinged(true),  7000);
+    const t4 = setTimeout(() => setPinged(false), 8500);
+    return () => [t1, t2, t3, t4].forEach(clearTimeout);
   }, []);
 
   useEffect(() => {
@@ -844,97 +849,142 @@ function WhyPanel() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  const bubbleBg = open ? "#1e293b" : "#e8a020";
+  const bubbleColor = open ? "#f9fafb" : "#0a0e1a";
+
   return (
-    <div style={{ position: "fixed", top, right: 0, zIndex: 200, fontFamily: "'DM Sans', sans-serif" }}>
+    <div style={{
+      position: "fixed", bottom: 28, right: 24, zIndex: 200,
+      fontFamily: "'DM Sans', sans-serif",
+      display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0,
+    }}>
 
-      {/* Tab */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        aria-expanded={open}
-        style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "9px 16px 9px 12px",
-          background: "#111827",
-          border: "1px solid rgba(232,160,32,0.4)", borderRight: "none",
-          borderRadius: "10px 0 0 10px",
-          cursor: "pointer",
-          boxShadow: "-3px 3px 12px rgba(0,0,0,0.4)",
-          whiteSpace: "nowrap",
-        }}
-      >
+      {/* ── Content panel — slides up above bubble ── */}
+      {open && (
         <div style={{
-          width: 22, height: 22, borderRadius: "50%", background: "#378ADD", flexShrink: 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 13, fontWeight: 700, color: "#fff", fontStyle: "italic", fontFamily: "Georgia, serif",
-        }}>i</div>
-        <span className="why-panel-label" style={{ fontSize: 13, fontWeight: 600, color: "#f9fafb" }}>Why do I need this?</span>
-      </button>
-
-      {/* Panel */}
-      <div style={{
-        overflow: "hidden",
-        maxHeight: open ? 700 : 0,
-        opacity: open ? 1 : 0,
-        transition: "max-height 0.32s ease, opacity 0.2s ease",
-        maxWidth: narrow ? "90vw" : 280,
-        background: "#fff",
-        border: open ? "0.5px solid #d1d5db" : "none",
-        borderRight: "none", borderTop: "none",
-        borderRadius: "0 0 0 12px",
-        boxShadow: open ? "-2px 4px 16px rgba(0,0,0,0.12)" : "none",
-      }}>
-        <div style={{ padding: "16px 18px 18px" }}>
-
-          {/* Header */}
-          <div style={{ fontSize: 11, fontWeight: 500, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-            What to know
+          width: "min(320px, calc(100vw - 48px)",
+          background: "#fff",
+          borderRadius: 16,
+          boxShadow: "0 12px 48px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.06)",
+          marginBottom: 12,
+          animation: "why-slide-up 0.22s ease",
+          overflow: "hidden",
+        }}>
+          {/* Amber accent top bar */}
+          <div style={{ background: "#e8a020", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1.5, color: "#0a0e1a" }}>
+              WHAT NOBODY TELLS YOU
+            </span>
+            <button
+              onClick={() => setOpen(false)}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#0a0e1a", fontSize: 18, lineHeight: 1, padding: 0, opacity: 0.6 }}
+              aria-label="Close"
+            >×</button>
           </div>
-          <p style={{ fontSize: 15, fontWeight: 500, color: "#111827", lineHeight: 1.4, margin: "0 0 10px" }}>
-            The recruiting process starts before most parents realize it.
-          </p>
-          <p style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6, margin: "0 0 14px", fontWeight: 400 }}>
-            From parents who've already lived it — here's what we wish someone had told us early.
-          </p>
 
-          {/* Bullets */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
-            {[
-              ["Other families already have a system.", " Starting early is the difference."],
-              ["Not all camps are equal.", " \"Coaches in attendance\" isn't the same as a school-run camp where staff are evaluating players for their roster."],
-              ["The paperwork adds up fast.", " Missed deadlines cost your athlete real opportunities."],
-            ].map(([bold, rest], i) => (
-              <div key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "#374151", lineHeight: 1.5 }}>
-                <span style={{ color: "#378ADD", flexShrink: 0, marginTop: 1 }}>•</span>
-                <span><span style={{ fontWeight: 500 }}>{bold}</span>{rest}</span>
+          <div style={{ padding: "16px 18px 18px" }}>
+            <p style={{ fontSize: 15, fontWeight: 600, color: "#111827", lineHeight: 1.4, margin: "0 0 8px" }}>
+              The recruiting process starts before most parents realize it.
+            </p>
+            <p style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6, margin: "0 0 14px" }}>
+              From parents who've already lived it — here's what we wish someone had told us early.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+              {[
+                ["Other families already have a system.", " Starting early is the difference."],
+                ["Not all camps are equal.", " \"Coaches in attendance\" isn't the same as a school-run camp where staff are evaluating you for their roster."],
+                ["The paperwork adds up fast.", " Missed deadlines cost your athlete real opportunities."],
+              ].map(([bold, rest], i) => (
+                <div key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "#374151", lineHeight: 1.5 }}>
+                  <span style={{ color: "#e8a020", flexShrink: 0, fontWeight: 700, marginTop: 1 }}>▸</span>
+                  <span><span style={{ fontWeight: 600 }}>{bold}</span>{rest}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ background: "#f9fafb", borderRadius: 10, border: "1px solid #e5e7eb", overflow: "hidden", marginBottom: 14 }}>
+              <div style={{ padding: "10px 12px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.8 }}>Most families</div>
+                <p style={{ fontSize: 13, color: "#6b7280", margin: "3px 0 0", lineHeight: 1.5 }}>
+                  Spreadsheets and manual tracking — until something slips.
+                </p>
               </div>
-            ))}
-          </div>
-
-          {/* Comparison box */}
-          <div style={{ background: "#f9fafb", borderRadius: 8, border: "0.5px solid #e5e7eb", overflow: "hidden", marginBottom: 14 }}>
-            <div style={{ padding: "10px 12px" }}>
-              <div style={{ fontSize: 11, fontWeight: 500, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5 }}>Option A</div>
-              <p style={{ fontSize: 13, color: "#6b7280", margin: "4px 0 0", lineHeight: 1.5 }}>
-                Spreadsheets and manual tracking like most families, until something slips.
-              </p>
+              <div style={{ height: 1, background: "#e5e7eb" }} />
+              <div style={{ padding: "10px 12px", background: "rgba(232,160,32,0.05)" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: 0.8 }}>URecruit HQ families</div>
+                <p style={{ fontSize: 13, color: "#374151", margin: "3px 0 0", lineHeight: 1.5 }}>
+                  Let the app handle tracking. Focus on the right camps, the right coaches.
+                </p>
+              </div>
             </div>
-            <div style={{ height: 1, background: "#e5e7eb" }} />
-            <div style={{ padding: "10px 12px" }}>
-              <div style={{ fontSize: 11, fontWeight: 500, color: "#378ADD", textTransform: "uppercase", letterSpacing: 0.5 }}>Option B — URecruit HQ</div>
-              <p style={{ fontSize: 13, color: "#374151", margin: "4px 0 0", lineHeight: 1.5 }}>
-                Let the app handle tracking. You focus on the right camps, the right coaches.
-              </p>
-            </div>
-          </div>
 
-          {/* Footer */}
-          <div style={{ borderTop: "0.5px solid #e5e7eb", paddingTop: 10 }}>
-            <p style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.5, margin: 0 }}>
+            <p style={{ fontSize: 12, color: "#9ca3af", margin: 0, lineHeight: 1.5 }}>
               Built by parents of NCAA athletes.
             </p>
           </div>
-
         </div>
+      )}
+
+      {/* ── Speech bubble trigger ── */}
+      <div style={{ position: "relative" }}>
+        {/* Pulse ring — fires on pinged state */}
+        {pinged && !open && (
+          <div style={{
+            position: "absolute", inset: -10, borderRadius: 999,
+            border: "2px solid rgba(232,160,32,0.6)",
+            animation: "why-ping 1.2s ease-out forwards",
+            pointerEvents: "none",
+          }} />
+        )}
+
+        <button
+          className="why-bubble-btn"
+          onClick={() => setOpen(o => !o)}
+          aria-expanded={open}
+          style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "11px 18px 11px 14px",
+            background: bubbleBg,
+            color: bubbleColor,
+            border: "none",
+            borderRadius: 999,
+            cursor: "pointer",
+            boxShadow: open
+              ? "0 4px 20px rgba(0,0,0,0.35)"
+              : "0 4px 24px rgba(232,160,32,0.35)",
+            whiteSpace: "nowrap",
+            position: "relative",
+          }}
+        >
+          {/* Icon */}
+          <div style={{
+            width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+            background: open ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 14,
+          }}>
+            {open ? "×" : "💬"}
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>
+            {open ? "Close" : "Most parents don't know this."}
+          </span>
+          {!open && (
+            <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.7 }}>tap →</span>
+          )}
+        </button>
+
+        {/* Speech bubble tail — small downward triangle */}
+        {!open && (
+          <div style={{
+            position: "absolute", bottom: -7, right: 28,
+            width: 0, height: 0,
+            borderLeft: "8px solid transparent",
+            borderRight: "8px solid transparent",
+            borderTop: `8px solid ${bubbleBg}`,
+            filter: "drop-shadow(0 2px 2px rgba(0,0,0,0.15))",
+          }} />
+        )}
       </div>
     </div>
   );
