@@ -131,6 +131,16 @@ export default function Checkout() {
         promoCode: code || promoCode.trim(),
         accountId: me?.id,
         userEmail: me?.email,
+        isAddOn: isAddonMode || undefined,
+        athleteFirstName: athleteFirstName.trim() || undefined,
+        athleteLastName: athleteLastName.trim() || undefined,
+        gradYear: gradYear || undefined,
+        sportId: sportId || undefined,
+        homeCity: homeCity.trim() || undefined,
+        homeState: homeState || undefined,
+        parentFirstName: isAddonMode ? undefined : (parentFirstName.trim() || undefined),
+        parentLastName: isAddonMode ? undefined : (parentLastName.trim() || undefined),
+        parentPhone: isAddonMode ? undefined : (parentPhone.trim() || undefined),
       });
       const data = res.data;
       if (data?.ok) {
