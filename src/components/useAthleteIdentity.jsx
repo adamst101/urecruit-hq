@@ -22,7 +22,7 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
-export function useAthleteIdentity() {
+export function useAthleteIdentity({ athleteId } = {}) {
   const queryClient = useQueryClient();
   const { accountId } = useSeasonAccess();
   const isAuthed = !!accountId;
@@ -39,23 +39,30 @@ export function useAthleteIdentity() {
   }, [isAuthed, queryClient]);
 
   const query = useQuery({
-    queryKey: ["athleteIdentity", accountId],
+    queryKey: ["athleteIdentity", accountId, athleteId || "primary"],
     enabled: isAuthed,
     retry: false,
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     queryFn: async () => {
-      // Pull profiles for this account
+      // Pull all profiles for this account
       const profiles = await base44.entities.AthleteProfile.filter({
         account_id: accountId
       });
 
       const list = Array.isArray(profiles) ? profiles : [];
 
-      // Prefer active if present
-      const active = list.find((p) => p?.active === true) || null;
-      const first = list[0] || null;
-      const chosen = active || first || null;
+      let chosen = null;
+      if (athleteId) {
+        // Load the specific athlete requested
+        chosen = list.find((p) => normId(p) === athleteId) || null;
+      } else {
+        // Default: prefer primary, then active, then first
+        chosen = list.find((p) => p?.is_primary === true && p?.active !== false)
+          || list.find((p) => p?.active === true)
+          || list[0]
+          || null;
+      }
 
       if (!chosen) return null;
 

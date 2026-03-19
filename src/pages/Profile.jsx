@@ -74,9 +74,12 @@ const helperTextClass = "text-[#6b7280] text-xs mt-1";
 
 export default function Profile() {
   const nav = useNavigate();
+  const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const athleteId = urlParams.get("id") || undefined;
+
   const { hasAccess, mode, loading: seasonLoading, isLoading: seasonIsLoading } = useSeasonAccess();
   const isDemo = !seasonIsLoading && (mode === "demo" || !hasAccess);
-  const { identity, loading: identityLoading, saveIdentity } = useAthleteIdentity();
+  const { identity, loading: identityLoading, saveIdentity } = useAthleteIdentity({ athleteId });
 
   const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'success' | 'error'
   const [sports, setSports] = useState([]);
@@ -262,7 +265,9 @@ export default function Profile() {
         {/* Header */}
         <div className="flex items-center gap-2">
           <User className="w-6 h-6 text-[#e8a020]" />
-          <h1 className="text-2xl font-bold text-[#f9fafb]">Profile</h1>
+          <h1 className="text-2xl font-bold text-[#f9fafb]">
+            {firstName || lastName ? `${firstName} ${lastName}`.trim() : "Profile"}
+          </h1>
         </div>
 
         {/* Demo banner */}

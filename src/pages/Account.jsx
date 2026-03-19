@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   User, CreditCard, Calendar, Search, Heart,
   ChevronRight, LogOut, Plus, BookOpen, Shield,
-  CheckCircle2, XCircle, Clock,
+  CheckCircle2, XCircle, Clock, RefreshCw,
 } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess, clearSeasonAccessCache } from "../components/hooks/useSeasonAccess.jsx";
@@ -50,26 +50,29 @@ export default function Account() {
   const [athletes, setAthletes] = useState([]);
   const [entitlements, setEntitlements] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+
+  async function fetchData(showSpinner = false) {
+    if (!accountId) return;
+    if (showSpinner) setRefreshing(true);
+    try {
+      const [me, athRows, entRows] = await Promise.all([
+        base44.auth.me().catch(() => null),
+        base44.entities.AthleteProfile.filter({ account_id: accountId }).catch(() => []),
+        base44.entities.Entitlement.filter({ account_id: accountId }).catch(() => []),
+      ]);
+      setUser(me);
+      setAthletes(Array.isArray(athRows) ? athRows : []);
+      setEntitlements(Array.isArray(entRows) ? entRows : []);
+    } catch {}
+    setLoading(false);
+    if (showSpinner) setRefreshing(false);
+  }
 
   useEffect(() => {
     if (!accountId || seasonLoading) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const [me, athRows, entRows] = await Promise.all([
-          base44.auth.me().catch(() => null),
-          base44.entities.AthleteProfile.filter({ account_id: accountId }).catch(() => []),
-          base44.entities.Entitlement.filter({ account_id: accountId }).catch(() => []),
-        ]);
-        if (cancelled) return;
-        setUser(me);
-        setAthletes(Array.isArray(athRows) ? athRows : []);
-        setEntitlements(Array.isArray(entRows) ? entRows : []);
-      } catch {}
-      if (!cancelled) setLoading(false);
-    })();
-    return () => { cancelled = true; };
+    fetchData();
   }, [accountId, seasonLoading]);
 
   useEffect(() => {
@@ -209,7 +212,16 @@ export default function Account() {
         </Section>
 
         {/* ── Athletes ── */}
-        <Section title="My Athletes">
+        <Section title="My Athletes" action={
+          <button
+            onClick={() => fetchData(true)}
+            disabled={refreshing}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#6b7280", padding: 4, display: "flex", alignItems: "center" }}
+            title="Refresh athlete list"
+          >
+            <RefreshCw style={{ width: 14, height: 14, animation: refreshing ? "spin 0.8s linear infinite" : "none" }} />
+          </button>
+        }>
           {athletes.length === 0 ? (
             <p style={{ color: "#6b7280", fontSize: 14, padding: "8px 0" }}>No athletes set up yet.</p>
           ) : (
@@ -223,7 +235,7 @@ export default function Account() {
                 return (
                   <button
                     key={a.id}
-                    onClick={() => navigate(ROUTES.Profile)}
+                    onClick={() => navigate(`/Profile?id=${a.id}`)}
                     style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", textAlign: "left", width: "100%" }}
                   >
                     <div style={{
@@ -317,11 +329,14 @@ export default function Account() {
   );
 }
 
-function Section({ title, children }) {
+function Section({ title, children, action }) {
   return (
     <div style={{ marginBottom: 28 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>
-        {title}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 1 }}>
+          {title}
+        </div>
+        {action}
       </div>
       {children}
     </div>
