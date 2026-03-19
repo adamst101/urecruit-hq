@@ -54,6 +54,7 @@ export default function Account() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState(null); // athlete id pending confirm
   const [deactivating, setDeactivating] = useState(null); // athlete id currently being deactivated
+  const [deactivateError, setDeactivateError] = useState(null);
 
   async function fetchData(showSpinner = false) {
     if (!accountId) return;
@@ -95,13 +96,16 @@ export default function Account() {
   }
 
   async function handleDeactivate(athleteId) {
+    if (!athleteId) return;
     setDeactivating(athleteId);
     setConfirmDeactivate(null);
+    setDeactivateError(null);
     try {
-      await base44.entities.AthleteProfile.update(athleteId, { active: false });
+      await base44.entities.AthleteProfile.update(String(athleteId), { active: false });
       await fetchData();
     } catch (e) {
       console.error("Deactivate failed:", e.message);
+      setDeactivateError("Deactivation failed. Please try again.");
     }
     setDeactivating(null);
   }
@@ -240,25 +244,29 @@ export default function Account() {
             <RefreshCw style={{ width: 14, height: 14, animation: refreshing ? "spin 0.8s linear infinite" : "none" }} />
           </button>
         }>
-          {athletes.length === 0 ? (
+          {deactivateError && (
+            <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 8 }}>{deactivateError}</p>
+          )}
+          {athletes.filter(a => a.active !== false).length === 0 ? (
             <p style={{ color: "#6b7280", fontSize: 14, padding: "8px 0" }}>No athletes set up yet.</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {athletes.map(a => {
+              {athletes.filter(a => a.active !== false).map(a => {
+                const aId = a.id || a._id || null;
                 const name = [a.first_name, a.last_name].filter(Boolean).join(" ") || a.athlete_name || a.display_name || "Unnamed";
                 const abbr = initials(a.first_name, a.last_name, name[0]?.toUpperCase() || "?");
                 const sport = a.sport_name || "";
                 const gradYear = a.grad_year ? `Class of ${a.grad_year}` : null;
                 const location = [a.home_city, a.home_state].filter(Boolean).join(", ");
-                const isPending = confirmDeactivate === a.id;
-                const isDeactivating = deactivating === a.id;
+                const isPending = confirmDeactivate === aId;
+                const isDeactivating = deactivating === aId;
                 return (
-                  <div key={a.id} style={{ background: "#111827", border: `1px solid ${isPending ? "#ef4444" : "#1f2937"}`, borderRadius: 12, overflow: "hidden", transition: "border-color 0.15s" }}>
+                  <div key={aId} style={{ background: "#111827", border: `1px solid ${isPending ? "#ef4444" : "#1f2937"}`, borderRadius: 12, overflow: "hidden", transition: "border-color 0.15s" }}>
                     {/* Main row */}
                     <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14 }}>
                       <button
                         type="button"
-                        onClick={() => navigate(`/Profile?id=${a.id}`)}
+                        onClick={() => navigate(`/Profile?id=${aId}`)}
                         style={{ display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 0, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}
                       >
                         <div style={{
@@ -281,7 +289,7 @@ export default function Account() {
                       {/* Deactivate button */}
                       <button
                         type="button"
-                        onClick={() => setConfirmDeactivate(isPending ? null : a.id)}
+                        onClick={() => setConfirmDeactivate(isPending ? null : aId)}
                         disabled={isDeactivating}
                         title="Deactivate athlete"
                         style={{
@@ -316,7 +324,7 @@ export default function Account() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDeactivate(a.id)}
+                            onClick={() => handleDeactivate(aId)}
                             style={{ background: "#ef4444", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer" }}
                           >
                             Yes, Deactivate
@@ -330,7 +338,7 @@ export default function Account() {
             </div>
           )}
 
-          {isActive && athletes.length < 5 && (
+          {isActive && athletes.filter(a => a.active !== false).length < 5 && (
             <button
               onClick={() => navigate("/Checkout?mode=addon")}
               style={{ width: "100%", marginTop: 12, background: "transparent", border: "1px dashed #374151", borderRadius: 12, padding: "14px", fontSize: 14, fontWeight: 600, color: "#9ca3af", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
