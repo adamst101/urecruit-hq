@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   User, CreditCard, Calendar, Search, Heart,
   ChevronRight, LogOut, Plus, BookOpen, Shield,
-  CheckCircle2, XCircle, Clock, RefreshCw, UserX,
+  CheckCircle2, XCircle, Clock, RefreshCw, Trash2,
 } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess, clearSeasonAccessCache } from "../components/hooks/useSeasonAccess.jsx";
@@ -52,9 +52,8 @@ export default function Account() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [confirmDeactivate, setConfirmDeactivate] = useState(null); // athlete id pending confirm
-  const [deactivating, setDeactivating] = useState(null); // athlete id currently being deactivated
-  const [deactivateError, setDeactivateError] = useState(null);
+  const [deleteStep, setDeleteStep] = useState(0); // 0=idle, 1=confirm, 2=deleting
+  const [deleteError, setDeleteError] = useState(null);
 
   async function fetchData(showSpinner = false) {
     if (!accountId) return;
@@ -95,19 +94,21 @@ export default function Account() {
     }
   }
 
-  async function handleDeactivate(athleteId) {
-    if (!athleteId) return;
-    setDeactivating(athleteId);
-    setConfirmDeactivate(null);
-    setDeactivateError(null);
+  async function handleDeleteAccount() {
+    setDeleteStep(2);
+    setDeleteError(null);
     try {
-      await base44.entities.AthleteProfile.update(String(athleteId), { active: false });
-      await fetchData();
+      const res = await base44.functions.invoke("deleteAccount", {});
+      if (!res?.data?.ok) throw new Error(res?.data?.error || "Unknown error");
+      // Account data deleted — log out
+      clearSeasonAccessCache();
+      await safeLogout();
+      navigate("/Home", { replace: true });
     } catch (e) {
-      console.error("Deactivate failed:", e.message);
-      setDeactivateError("Deactivation failed. Please try again.");
+      console.error("Delete account failed:", e.message);
+      setDeleteError("Something went wrong. Please try again or contact support.");
+      setDeleteStep(0);
     }
-    setDeactivating(null);
   }
 
   if (seasonLoading || loading) {
@@ -244,101 +245,45 @@ export default function Account() {
             <RefreshCw style={{ width: 14, height: 14, animation: refreshing ? "spin 0.8s linear infinite" : "none" }} />
           </button>
         }>
-          {deactivateError && (
-            <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 8 }}>{deactivateError}</p>
-          )}
-          {athletes.filter(a => a.active !== false).length === 0 ? (
+          {athletes.length === 0 ? (
             <p style={{ color: "#6b7280", fontSize: 14, padding: "8px 0" }}>No athletes set up yet.</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {athletes.filter(a => a.active !== false).map(a => {
+              {athletes.map(a => {
                 const aId = a.id || a._id || null;
                 const name = [a.first_name, a.last_name].filter(Boolean).join(" ") || a.athlete_name || a.display_name || "Unnamed";
                 const abbr = initials(a.first_name, a.last_name, name[0]?.toUpperCase() || "?");
                 const sport = a.sport_name || "";
                 const gradYear = a.grad_year ? `Class of ${a.grad_year}` : null;
                 const location = [a.home_city, a.home_state].filter(Boolean).join(", ");
-                const isPending = confirmDeactivate === aId;
-                const isDeactivating = deactivating === aId;
                 return (
-                  <div key={aId} style={{ background: "#111827", border: `1px solid ${isPending ? "#ef4444" : "#1f2937"}`, borderRadius: 12, overflow: "hidden", transition: "border-color 0.15s" }}>
-                    {/* Main row */}
-                    <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14 }}>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/Profile?id=${aId}`)}
-                        style={{ display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 0, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}
-                      >
-                        <div style={{
-                          width: 44, height: 44, borderRadius: "50%",
-                          background: "rgba(232,160,32,0.15)", border: "1px solid rgba(232,160,32,0.3)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 16, fontWeight: 700, color: "#e8a020", flexShrink: 0,
-                        }}>
-                          {abbr}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb" }}>{name}</div>
-                          <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>
-                            {[sport, gradYear, location].filter(Boolean).join(" · ")}
-                          </div>
-                        </div>
-                        <ChevronRight style={{ width: 16, height: 16, color: "#6b7280", flexShrink: 0 }} />
-                      </button>
-
-                      {/* Deactivate button */}
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeactivate(isPending ? null : aId)}
-                        disabled={isDeactivating}
-                        title="Deactivate athlete"
-                        style={{
-                          background: isPending ? "rgba(239,68,68,0.15)" : "transparent",
-                          border: `1px solid ${isPending ? "rgba(239,68,68,0.4)" : "#374151"}`,
-                          borderRadius: 8, padding: "6px 10px",
-                          display: "flex", alignItems: "center", gap: 5,
-                          cursor: isDeactivating ? "not-allowed" : "pointer",
-                          color: isPending ? "#ef4444" : "#6b7280",
-                          fontSize: 12, fontWeight: 600, flexShrink: 0,
-                          transition: "all 0.15s",
-                        }}
-                      >
-                        <UserX style={{ width: 13, height: 13 }} />
-                        {isDeactivating ? "…" : "Deactivate"}
-                      </button>
+                  <button
+                    key={aId}
+                    onClick={() => navigate(`/Profile?id=${aId}`)}
+                    style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", textAlign: "left", width: "100%" }}
+                  >
+                    <div style={{
+                      width: 44, height: 44, borderRadius: "50%",
+                      background: "rgba(232,160,32,0.15)", border: "1px solid rgba(232,160,32,0.3)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 16, fontWeight: 700, color: "#e8a020", flexShrink: 0,
+                    }}>
+                      {abbr}
                     </div>
-
-                    {/* Confirm strip */}
-                    {isPending && (
-                      <div style={{ borderTop: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.06)", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                        <span style={{ fontSize: 13, color: "#fca5a5" }}>
-                          Deactivate <strong>{name}</strong>? This removes their access.
-                        </span>
-                        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeactivate(null)}
-                            style={{ background: "transparent", border: "1px solid #374151", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, color: "#9ca3af", cursor: "pointer" }}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeactivate(aId)}
-                            style={{ background: "#ef4444", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer" }}
-                          >
-                            Yes, Deactivate
-                          </button>
-                        </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb" }}>{name}</div>
+                      <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>
+                        {[sport, gradYear, location].filter(Boolean).join(" · ")}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                    <ChevronRight style={{ width: 16, height: 16, color: "#6b7280", flexShrink: 0 }} />
+                  </button>
                 );
               })}
             </div>
           )}
 
-          {isActive && athletes.filter(a => a.active !== false).length < 5 && (
+          {isActive && athletes.length < 5 && (
             <button
               onClick={() => navigate("/Checkout?mode=addon")}
               style={{ width: "100%", marginTop: 12, background: "transparent", border: "1px dashed #374151", borderRadius: 12, padding: "14px", fontSize: 14, fontWeight: 600, color: "#9ca3af", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
@@ -400,6 +345,67 @@ export default function Account() {
           <LogOut style={{ width: 18, height: 18 }} />
           {loggingOut ? "Signing out…" : "Sign Out"}
         </button>
+
+        {/* ── Delete Account ── */}
+        <div style={{ marginTop: 32, borderTop: "1px solid #1f2937", paddingTop: 24 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>
+            Danger Zone
+          </div>
+
+          {deleteStep === 0 && (
+            <button
+              type="button"
+              onClick={() => { setDeleteStep(1); setDeleteError(null); }}
+              style={{
+                width: "100%", background: "transparent",
+                border: "1px solid #374151", borderRadius: 12,
+                padding: "14px", fontSize: 14, fontWeight: 600,
+                color: "#6b7280", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              }}
+            >
+              <Trash2 style={{ width: 15, height: 15 }} />
+              Delete My Account
+            </button>
+          )}
+
+          {deleteStep === 1 && (
+            <div style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 12, padding: "20px" }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#fca5a5", marginBottom: 8 }}>
+                Are you sure you want to delete your account?
+              </div>
+              <div style={{ fontSize: 13, color: "#9ca3af", marginBottom: 16, lineHeight: 1.5 }}>
+                This will permanently delete your profile, all athlete profiles, entitlements, favorites, and registrations. <strong style={{ color: "#f9fafb" }}>This cannot be undone.</strong>
+              </div>
+              {deleteError && (
+                <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{deleteError}</p>
+              )}
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setDeleteStep(0)}
+                  style={{ flex: 1, background: "transparent", border: "1px solid #374151", borderRadius: 8, padding: "11px", fontSize: 14, fontWeight: 600, color: "#9ca3af", cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteAccount}
+                  style={{ flex: 1, background: "#ef4444", border: "none", borderRadius: 8, padding: "11px", fontSize: 14, fontWeight: 700, color: "#fff", cursor: "pointer" }}
+                >
+                  Yes, Delete Everything
+                </button>
+              </div>
+            </div>
+          )}
+
+          {deleteStep === 2 && (
+            <div style={{ textAlign: "center", padding: "20px", color: "#9ca3af", fontSize: 14 }}>
+              <div style={{ width: 24, height: 24, border: "2px solid #ef4444", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
+              Deleting account data…
+            </div>
+          )}
+        </div>
 
       </div>
 
