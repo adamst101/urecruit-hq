@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
   }
 
   // Pick the right price ID
-  const priceId = isAddOn ? season.stripe_price_add_on : season.stripe_price_primary;
+  const priceId = (isAddOn ? season.stripe_price_add_on : season.stripe_price_primary)?.trim();
   console.log("Price selection:", {
     isAddOn: !!isAddOn,
     addSecondAthlete: !!addSecondAthlete,
