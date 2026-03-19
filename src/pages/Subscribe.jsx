@@ -183,9 +183,10 @@ export default function Subscribe() {
   };
 
   const faqs = [
+    { q: "How long does access last?", a: `Your Season Pass gives you access through February ${soldSeason + 1} — regardless of when you sign up during the season. It's a one-time payment, not a subscription.` },
     { q: "Can I add multiple kids?", a: `Yes — your first athlete is $${pricePrimary}, then add more for $${priceAddOn} each. All managed under one account.` },
     { q: "Do I need to create a profile first?", a: "No — you create athlete profiles after purchase. Buy first, set up later." },
-    { q: "What does 'Demo' mean?", a: "Demo shows last season's data so you can explore the platform. Subscribe to unlock current camps." },
+    { q: "What does 'Demo' mean?", a: "Demo shows last season's data so you can explore the platform. Get your Season Pass to unlock current camps." },
   ];
 
   return (
@@ -223,8 +224,8 @@ export default function Subscribe() {
         </h1>
         <p style={{ color: "#9ca3af", fontSize: 18, marginTop: 20, lineHeight: 1.6 }}>
           {earlyBird
-            ? `Full access to the ${soldSeason} camp season (March — August ${soldSeason}) + Immediate access to current ${activeSeason} camp data`
-            : `Full access to ${soldSeason} camp season (March — August ${soldSeason})`}
+            ? `Immediate access to ${activeSeason} camps now + Full ${soldSeason} season access through February ${soldSeason + 1}`
+            : `One payment. Full access to ${soldSeason} camp data through February ${soldSeason + 1}.`}
         </p>
       </section>
 
@@ -302,7 +303,7 @@ export default function Subscribe() {
 
       {/* ── DEMO OPTION ── */}
       <section style={{ textAlign: "center", padding: "0 24px 48px", maxWidth: 480, margin: "0 auto" }}>
-        <p style={{ color: "#6b7280", fontSize: 16 }}>Not ready to commit?</p>
+        <p style={{ color: "#6b7280", fontSize: 16 }}>Want to look around first?</p>
         <p style={{ color: "#9ca3af", fontSize: 16, marginTop: 4 }}>
           Try a free demo with {demoYear || "last"} season data
         </p>

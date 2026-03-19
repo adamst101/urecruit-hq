@@ -746,7 +746,7 @@ export default function Home() {
                   per season · all camps · all features
                 </span>
                 <div style={{ color: "#6b7280", fontSize: 12, marginTop: 4 }}>
-                  Cancel anytime · Add multiple athletes
+                  One-time payment · Add multiple athletes
                 </div>
               </div>
             </div>
@@ -791,7 +791,7 @@ export default function Home() {
             <div style={{ display: "flex", justifyContent: "center", gap: 20, marginTop: 20, flexWrap: "wrap" }}>
               {[
                 { icon: "🔒", label: "Secure checkout" },
-                { icon: "↩️", label: "Cancel anytime" },
+                { icon: "📅", label: "No recurring charges" },
                 { icon: "👨‍👩‍👧", label: "Multi-athlete" }
               ].map((b) => (
                 <span key={b.label} style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 4 }}>
