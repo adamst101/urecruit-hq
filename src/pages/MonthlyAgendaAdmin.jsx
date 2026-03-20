@@ -19,6 +19,9 @@ const MONTHS = getMonthOptions();
 export default function MonthlyAgendaAdmin() {
   const [month, setMonth] = useState(MONTHS[0].value);
   const [myAccountId, setMyAccountId] = useState("");
+  const [subscribers, setSubscribers] = useState([]);
+  const [subSearch, setSubSearch] = useState("");
+  const [subsLoading, setSubsLoading] = useState(false);
   const [working, setWorking] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -36,6 +39,14 @@ export default function MonthlyAgendaAdmin() {
 
   useEffect(() => {
     base44.auth.me().then(u => { if (u?.id) setMyAccountId(u.id); }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setSubsLoading(true);
+    base44.functions.invoke("sendMonthlyAgenda", { month: MONTHS[0].value, mode: "list_subscribers" })
+      .then(res => { if (res?.data?.ok) setSubscribers(res.data.subscribers || []); })
+      .catch(() => {})
+      .finally(() => setSubsLoading(false));
   }, []);
 
   const loadTips = useCallback(() => {
@@ -140,14 +151,51 @@ export default function MonthlyAgendaAdmin() {
           </div>
 
           <div style={{ marginBottom: 24 }}>
-            <label style={S.label}>My Account ID (for preview)</label>
+            <label style={S.label}>Subscriber (for preview / send to one)</label>
             <input
-              value={myAccountId}
-              onChange={e => setMyAccountId(e.target.value)}
-              placeholder="auto-detected from auth"
-              style={S.input}
-              disabled={working}
+              value={subSearch}
+              onChange={e => setSubSearch(e.target.value)}
+              placeholder={subsLoading ? "Loading subscribers…" : "Search by name or email…"}
+              style={{ ...S.input, marginBottom: 6 }}
+              disabled={working || subsLoading}
             />
+            {(() => {
+              const q = subSearch.trim().toLowerCase();
+              const filtered = q
+                ? subscribers.filter(s => s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q))
+                : subscribers;
+              if (!filtered.length && q) return (
+                <div style={{ fontSize: 12, color: "#6b7280", padding: "6px 2px" }}>No matches</div>
+              );
+              if (!q && !myAccountId) return null;
+              return (
+                <div style={{ background: "#1f2937", border: "1px solid #374151", borderRadius: 8, maxHeight: 200, overflowY: "auto" }}>
+                  {(q ? filtered : subscribers.slice(0, 50)).map(s => (
+                    <div
+                      key={s.accountId}
+                      onClick={() => { setMyAccountId(s.accountId); setSubSearch(""); }}
+                      style={{
+                        padding: "8px 12px", cursor: "pointer", fontSize: 13,
+                        background: myAccountId === s.accountId ? "#374151" : "transparent",
+                        borderBottom: "1px solid #374151",
+                      }}
+                    >
+                      <span style={{ color: "#f9fafb", fontWeight: 600 }}>{s.name}</span>
+                      {s.email && s.email !== s.name && <span style={{ color: "#6b7280", marginLeft: 8 }}>{s.email}</span>}
+                      {!s.hasAthletes && <span style={{ color: "#e8a020", fontSize: 11, marginLeft: 8 }}>no athlete</span>}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            {myAccountId && !subSearch && (
+              <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                <span>Selected: <span style={{ color: "#f9fafb" }}>
+                  {subscribers.find(s => s.accountId === myAccountId)?.name || myAccountId}
+                </span></span>
+                <button onClick={() => setMyAccountId("")} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 12 }}>✕ clear</button>
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>

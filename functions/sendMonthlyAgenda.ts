@@ -180,15 +180,17 @@ function renderEmail(
   multiAthlete: boolean,
   tips: { title: string; content: string } | null,
   greeting: string,
+  noAthleteProfile = false,
 ): string {
+  const noProfileMsg = "No athlete profile is currently registered to your account. Visit your <a href=\"https://urecruithq.com/Profile\" style=\"color:#e8a020\">profile page</a> to add one.";
   const nearbyTitle = `Also Happening Near You${homeState ? ` · ${homeState}` : ""}`;
   const body =
     section("✅", "Camps You're Registered For", "#22c55e", registered, multiAthlete,
-      "You are not registered for any camps this month.") +
+      noAthleteProfile ? noProfileMsg : "You are not registered for any camps this month.") +
     section("⭐", "Camps on Your Watchlist", "#e8a020", watchlist, multiAthlete,
-      "You have no favorited camps for this month.") +
+      noAthleteProfile ? noProfileMsg : "You have no favorited camps for this month.") +
     section("📍", nearbyTitle, "#3b82f6", nearby, false,
-      "There are no college camps currently scheduled near you this month.") +
+      noAthleteProfile ? noProfileMsg : "There are no college camps currently scheduled near you this month.") +
     (tips ? tipsSection(tips.title, tips.content) : "");
 
   return `<!DOCTYPE html>
@@ -246,7 +248,51 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const { month, accountId: targetAccountId, mode = "dry_run" } = body;
-  // mode: "preview" | "dry_run" | "send_one" | "send_all"
+  // mode: "preview" | "dry_run" | "send_one" | "send_all" | "list_subscribers"
+
+  // ── List subscribers mode (no month required) ───────────────────────────
+  if (mode === "list_subscribers") {
+    const [rawEnts, rawUsers, rawAthletes] = await Promise.all([
+      base44.asServiceRole.entities.Entitlement.filter({ status: "active" }).catch(() => []),
+      base44.asServiceRole.entities.User.filter({}).catch(() => []),
+      base44.asServiceRole.entities.AthleteProfile.filter({ active: true }).catch(() => []),
+    ]);
+    const ents: Record<string, unknown>[] = Array.isArray(rawEnts) ? rawEnts : [];
+    const users: Record<string, unknown>[] = Array.isArray(rawUsers) ? rawUsers : [];
+    const athletes: Record<string, unknown>[] = Array.isArray(rawAthletes) ? rawAthletes : [];
+
+    const userByAccountId = new Map(users.map(u => [u.id as string, u]));
+    const athletesByAccount = new Map<string, Record<string, unknown>[]>();
+    for (const a of athletes) {
+      const aid = a.account_id as string;
+      if (!aid) continue;
+      if (!athletesByAccount.has(aid)) athletesByAccount.set(aid, []);
+      athletesByAccount.get(aid)!.push(a);
+    }
+
+    const seen = new Set<string>();
+    const subscribers = ents
+      .filter(e => { const id = e.account_id as string; if (!id || seen.has(id)) return false; seen.add(id); return true; })
+      .map(e => {
+        const accountId = e.account_id as string;
+        const user = userByAccountId.get(accountId);
+        const email = (user?.email as string) || "";
+        const acctAthletes = athletesByAccount.get(accountId) || [];
+        const a = acctAthletes[0];
+        const parentFirst = (a?.parent_first_name as string)?.trim() || "";
+        const parentLast  = (a?.parent_last_name as string)?.trim() || "";
+        const athleteFirst = (a?.first_name as string)?.trim() || "";
+        const athleteLast  = (a?.last_name as string)?.trim() || "";
+        const name = parentFirst && parentLast ? `${parentFirst} ${parentLast}`
+          : parentFirst ? parentFirst
+          : athleteFirst ? `${athleteFirst}${athleteLast ? " " + athleteLast : ""} (athlete)`
+          : email;
+        return { accountId, email, name, hasAthletes: acctAthletes.length > 0 };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return Response.json({ ok: true, subscribers });
+  }
 
   if (!month || !/^\d{4}-\d{2}$/.test(month)) {
     return Response.json({ ok: false, error: "month required in YYYY-MM format" }, { status: 400 });
@@ -317,7 +363,7 @@ Deno.serve(async (req) => {
 
   // Early exit for preview with no matching entitlement
   if (mode === "preview" && targets.length === 0) {
-    const html = renderEmail(monthLabel, [], [], [], "", false, tips, "uRecruitHQ Subscriber");
+    const html = renderEmail(monthLabel, [], [], [], "", false, tips, "uRecruitHQ Subscriber", true);
     return Response.json({ ok: true, html, subject: `Your ${monthLabel} Camp Agenda — uRecruitHQ`, registered: 0, watchlist: 0, nearby: 0 });
   }
 
@@ -326,14 +372,7 @@ Deno.serve(async (req) => {
   for (const ent of targets) {
     const accountId = ent.account_id as string;
     const accountAthletes = athletesByAccount.get(accountId) || [];
-    if (!accountAthletes.length) {
-      if (mode === "preview") {
-        const html = renderEmail(monthLabel, [], [], [], "", false, tips, "uRecruitHQ Subscriber");
-        return Response.json({ ok: true, html, subject: `Your ${monthLabel} Camp Agenda — uRecruitHQ`, registered: 0, watchlist: 0, nearby: 0 });
-      }
-      results.push({ accountId, status: "skipped", reason: "no athlete profile" });
-      continue;
-    }
+    const noAthleteProfile = accountAthletes.length === 0;
 
     // Resolve home coords and greeting from first athlete that has them
     let homeCoords: { lat: number; lng: number } | null = null;
@@ -354,7 +393,14 @@ Deno.serve(async (req) => {
       }
       if (homeCoords && greeting) break;
     }
-    if (!greeting) greeting = "uRecruitHQ Subscriber";
+    if (!greeting) {
+      // Try to get name from user email as last resort
+      try {
+        const users = await base44.asServiceRole.entities.User.filter({ id: accountId });
+        const email = Array.isArray(users) && users[0]?.email ? (users[0].email as string) : "";
+        greeting = email || "uRecruitHQ Subscriber";
+      } catch { greeting = "uRecruitHQ Subscriber"; }
+    }
 
     // Collect all intents for this account's athletes
     const registered: Record<string, unknown>[] = [];
@@ -407,7 +453,7 @@ Deno.serve(async (req) => {
     }
 
     const multiAthlete = accountAthletes.length > 1;
-    const html = renderEmail(monthLabel, registered, watchlist, nearby, homeState, multiAthlete, tips, greeting);
+    const html = renderEmail(monthLabel, registered, watchlist, nearby, homeState, multiAthlete, tips, greeting, noAthleteProfile);
     const subject = `Your ${monthLabel} Camp Agenda — uRecruitHQ`;
 
     // Preview mode — return HTML directly
@@ -423,7 +469,7 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "dry_run") {
-      results.push({ accountId, status: "dry_run", registered: registered.length, watchlist: watchlist.length, nearby: nearby.length, hasTips: !!tips });
+      results.push({ accountId, status: "dry_run", registered: noAthleteProfile ? "—" : registered.length, watchlist: noAthleteProfile ? "—" : watchlist.length, nearby: noAthleteProfile ? "—" : nearby.length, noAthleteProfile });
       continue;
     }
 
