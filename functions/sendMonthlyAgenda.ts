@@ -182,13 +182,13 @@ function renderEmail(
 ): string {
   const nearbyTitle = `Also Happening Near You${homeState ? ` · ${homeState}` : ""}`;
   const body =
-    (tips ? tipsSection(tips.title, tips.content) : "") +
     section("✅", "Camps You're Registered For", "#22c55e", registered, multiAthlete,
       "You are not registered for any camps this month.") +
     section("⭐", "Camps on Your Watchlist", "#e8a020", watchlist, multiAthlete,
       "You have no favorited camps for this month.") +
     section("📍", nearbyTitle, "#3b82f6", nearby, false,
-      "There are no college camps currently scheduled near you this month.");
+      "There are no college camps currently scheduled near you this month.") +
+    (tips ? tipsSection(tips.title, tips.content) : "");
 
   return `<!DOCTYPE html>
 <html lang="en">
