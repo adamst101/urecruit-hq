@@ -9,24 +9,19 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "No code provided" });
   }
 
-  const codesToTry = [
+  const codesToTry = [...new Set([
     promoCode.trim(),
     promoCode.trim().toUpperCase(),
     promoCode.trim().toLowerCase(),
-  ];
+  ])];
 
-  let foundPromo = null;
-  for (const code of codesToTry) {
-    try {
-      const result = await stripe.promotionCodes.list({ code, active: true, limit: 1 });
-      if (result.data.length > 0) {
-        foundPromo = result.data[0];
-        break;
-      }
-    } catch (e) {
-      console.error("Promo lookup failed for:", code, e.message);
-    }
-  }
+  const results = await Promise.all(
+    codesToTry.map(code =>
+      stripe.promotionCodes.list({ code, active: true, limit: 1 }).catch(() => ({ data: [] }))
+    )
+  );
+
+  const foundPromo = results.find(r => r.data.length > 0)?.data[0] ?? null;
 
   if (!foundPromo) {
     return Response.json({ ok: false, error: "Invalid or expired code" });
