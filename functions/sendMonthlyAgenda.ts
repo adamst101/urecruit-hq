@@ -120,56 +120,58 @@ function divLabel(div: string): string {
 }
 
 // ── Email HTML ─────────────────────────────────────────────────────────────
+const BRAND = "#c8850a";
+
 function campRows(camps: Record<string, unknown>[], showAthlete: boolean): string {
-  return camps.map((c, i) => {
+  return camps.map(c => {
     const loc = [c.city, c.state].filter(Boolean).join(", ");
+    const div = divLabel(c.division as string);
+    const meta = [div, loc].filter(Boolean).join(" · ");
     const athlete = showAthlete && c._athleteName
-      ? `<span style="display:inline-block;padding:1px 7px;border-radius:10px;background:#f3f4f6;color:#6b7280;font-size:11px;margin-left:6px;border:1px solid #e5e7eb">${c._athleteName}</span>`
+      ? `&nbsp;<span style="font-size:11px;color:#999;font-weight:400">(${c._athleteName})</span>`
       : "";
-    const rowBg = i % 2 === 0 ? "#ffffff" : "#f9fafb";
+    const price = formatPrice(c);
     return `
-      <tr style="border-bottom:1px solid #e5e7eb;background:${rowBg}">
-        <td style="padding:10px 12px;color:#6b7280;font-size:13px;white-space:nowrap;vertical-align:top">${formatDate(c.start_date as string)}</td>
-        <td style="padding:10px 12px;vertical-align:top">
-          <span style="font-size:14px;font-weight:600;color:#111827">${c.camp_name || "Camp"}</span>${athlete}
+      <tr>
+        <td style="padding:14px 16px 14px 0;border-bottom:1px solid #f0f0f0;vertical-align:top;width:76px;white-space:nowrap">
+          <span style="font-size:13px;color:#999">${formatDate(c.start_date as string)}</span>
         </td>
-        <td style="padding:10px 12px;color:#6b7280;font-size:13px;white-space:nowrap;vertical-align:top">${divLabel(c.division as string)}</td>
-        <td style="padding:10px 12px;color:#6b7280;font-size:13px;vertical-align:top">${loc}</td>
-        <td style="padding:10px 12px;color:#b45309;font-size:13px;font-weight:600;white-space:nowrap;vertical-align:top;text-align:right">${formatPrice(c)}</td>
+        <td style="padding:14px 0;border-bottom:1px solid #f0f0f0;vertical-align:top">
+          <div style="font-size:15px;font-weight:600;color:#1a1a1a;line-height:1.3">${c.camp_name || "Camp"}${athlete}</div>
+          ${meta ? `<div style="font-size:13px;color:#888;margin-top:3px">${meta}</div>` : ""}
+        </td>
+        ${price ? `<td style="padding:14px 0 14px 12px;border-bottom:1px solid #f0f0f0;vertical-align:top;text-align:right;white-space:nowrap"><span style="font-size:13px;font-weight:600;color:${BRAND}">${price}</span></td>` : `<td style="border-bottom:1px solid #f0f0f0"></td>`}
       </tr>`;
   }).join("");
 }
 
 function section(
-  icon: string,
   title: string,
-  borderColor: string,
+  accentColor: string,
   camps: Record<string, unknown>[],
   showAthlete: boolean,
   emptyMsg: string,
 ): string {
-  const body = camps.length
-    ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#ffffff;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 6px 6px">
-         <tbody>${campRows(camps, showAthlete)}</tbody>
-       </table>`
-    : `<div style="background:#ffffff;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 6px 6px;padding:20px 16px;text-align:center;color:#9ca3af;font-size:13px;font-style:italic">${emptyMsg}</div>`;
+  const rows = camps.length
+    ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">${campRows(camps, showAthlete)}</table>`
+    : `<p style="margin:16px 0 8px;font-size:14px;color:#aaa;font-style:italic">${emptyMsg}</p>`;
   return `
-    <div style="margin-bottom:28px">
-      <div style="border-left:4px solid ${borderColor};padding:10px 14px;background:#f9fafb;border-radius:4px 4px 0 0;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#111827;border:1px solid #e5e7eb;border-bottom:none">
-        ${icon}&nbsp; ${title}
+    <div style="margin-bottom:36px">
+      <div style="border-bottom:2px solid ${accentColor};padding-bottom:10px;margin-bottom:4px">
+        <span style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${accentColor}">${title}</span>
       </div>
-      ${body}
+      ${rows}
     </div>`;
 }
 
 function tipsSection(title: string, content: string): string {
   if (!content?.trim()) return "";
   return `
-    <div style="margin-bottom:32px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:20px 24px">
-      <div style="font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#b45309;margin-bottom:12px">
-        📋&nbsp; ${title?.trim() || "From the Desk of uRecruitHQ"}
+    <div style="margin-bottom:36px;padding-top:8px;border-top:2px solid ${BRAND}">
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${BRAND};margin-bottom:14px;margin-top:12px">
+        ${title?.trim() || "From the Desk of uRecruitHQ"}
       </div>
-      <div style="font-size:14px;color:#374151;line-height:1.7;white-space:pre-wrap">${content}</div>
+      <div style="font-size:15px;color:#333;line-height:1.8;white-space:pre-wrap">${content}</div>
     </div>`;
 }
 
@@ -184,15 +186,15 @@ function renderEmail(
   greeting: string,
   noAthleteProfile = false,
 ): string {
-  const noProfileMsg = "No athlete profile is currently registered to your account. Visit your <a href=\"https://urecruithq.com/Profile\" style=\"color:#b45309\">profile page</a> to add one.";
-  const nearbyTitle = `Also Happening Near You${homeState ? ` · ${homeState}` : ""}`;
+  const noProfileMsg = `No athlete profile is registered to your account. <a href="https://urecruithq.com/Profile" style="color:${BRAND}">Add one here</a> to receive personalized camp recommendations.`;
+  const nearbyTitle = `Camps Near You${homeState ? ` &mdash; ${homeState}` : ""}`;
   const body =
-    section("✅", "Camps You're Registered For", "#22c55e", registered, multiAthlete,
+    section("Registered Camps", "#2d7a3a", registered, multiAthlete,
       noAthleteProfile ? noProfileMsg : "You are not registered for any camps this month.") +
-    section("⭐", "Camps on Your Watchlist", "#e8a020", watchlist, multiAthlete,
+    section("Watchlist", "#b07800", watchlist, multiAthlete,
       noAthleteProfile ? noProfileMsg : "You have no favorited camps for this month.") +
-    section("📍", nearbyTitle, "#3b82f6", nearby, false,
-      noAthleteProfile ? noProfileMsg : "There are no college camps currently scheduled near you this month.") +
+    section(nearbyTitle, "#1a5fa8", nearby, false,
+      noAthleteProfile ? noProfileMsg : "No college camps are currently scheduled near you this month.") +
     (tips ? tipsSection(tips.title, tips.content) : "");
 
   return `<!DOCTYPE html>
@@ -200,48 +202,48 @@ function renderEmail(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${monthLabel} Camp Agenda</title>
-  <style>
-    @media print {
-      body { background:#fff !important; color:#000 !important; }
-      a { color:#000 !important; }
-    }
-    @media (max-width:600px) {
-      .hide-mobile { display:none !important; }
-    }
-  </style>
+  <title>${monthLabel} Camp Agenda — uRecruitHQ</title>
 </head>
-<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;color:#111827">
-  <div style="max-width:620px;margin:0 auto;padding:32px 16px">
+<body style="margin:0;padding:0;background:#ffffff;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1a1a;-webkit-font-smoothing:antialiased">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff">
+    <tr><td align="center" style="padding:48px 24px 40px">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:580px">
 
-    <!-- Header -->
-    <div style="text-align:center;margin-bottom:32px;padding:28px 24px;background:#ffffff;border-radius:8px;border:1px solid #e5e7eb">
-      <div style="font-size:13px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#b45309;margin-bottom:6px">uRecruitHQ</div>
-      <div style="font-size:26px;font-weight:700;color:#111827">${monthLabel} Camp Agenda</div>
-      <div style="font-size:13px;color:#6b7280;margin-top:6px">Your personalized monthly camp calendar</div>
-    </div>
+        <!-- Top accent bar -->
+        <tr><td style="background:${BRAND};height:4px;border-radius:2px"></td></tr>
 
-    <!-- Greeting -->
-    <div style="margin-bottom:24px;font-size:15px;color:#374151;line-height:1.6;background:#ffffff;padding:20px 24px;border-radius:8px;border:1px solid #e5e7eb">
-      Hi ${greeting},<br><br>
-      Here's your personalized camp agenda for ${monthLabel}. We've pulled together your registered camps, watchlist, and upcoming camps near you all in one place.
-    </div>
+        <!-- Header -->
+        <tr><td style="padding:32px 0 24px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:${BRAND};margin-bottom:10px">uRecruitHQ</div>
+          <div style="font-size:30px;font-weight:700;color:#1a1a1a;line-height:1.15;letter-spacing:-0.5px">${monthLabel}<br>Camp Agenda</div>
+          <div style="font-size:14px;color:#999;margin-top:8px">Your personalized monthly camp calendar</div>
+        </td></tr>
 
-    ${body}
+        <!-- Divider -->
+        <tr><td style="border-bottom:1px solid #eeeeee;padding-bottom:28px"></td></tr>
 
-    <!-- Footer -->
-    <div style="border-top:1px solid #e5e7eb;margin-top:16px;padding-top:20px;text-align:center;font-size:12px;color:#9ca3af;line-height:1.8">
-      <p style="margin:0">You're receiving this because you have an active uRecruitHQ subscription.</p>
-      <p style="margin:8px 0 0">
-        <a href="https://urecruithq.com/Account" style="color:#b45309;text-decoration:none">Manage preferences</a>
-        &nbsp;·&nbsp;
-        <a href="https://urecruithq.com/Account" style="color:#9ca3af;text-decoration:none">Unsubscribe</a>
-        &nbsp;·&nbsp;
-        <a href="https://urecruithq.com" style="color:#b45309;text-decoration:none">urecruithq.com</a>
-      </p>
-    </div>
+        <!-- Greeting -->
+        <tr><td style="padding:28px 0 32px;font-size:15px;color:#444;line-height:1.75">
+          Hi ${greeting},<br><br>
+          Here is your camp agenda for <strong>${monthLabel}</strong>. We've organized your registered camps, watchlist, and upcoming camps in your area below.
+        </td></tr>
 
-  </div>
+        <!-- Camp sections -->
+        <tr><td>${body}</td></tr>
+
+        <!-- Footer -->
+        <tr><td style="border-top:1px solid #eeeeee;padding-top:24px;font-size:12px;color:#bbb;text-align:center;line-height:2.2">
+          You're receiving this because you have an active uRecruitHQ subscription.<br>
+          <a href="https://urecruithq.com/Account" style="color:${BRAND};text-decoration:none">Manage preferences</a>
+          &nbsp;&middot;&nbsp;
+          <a href="https://urecruithq.com/Account" style="color:#bbb;text-decoration:none">Unsubscribe</a>
+          &nbsp;&middot;&nbsp;
+          <a href="https://urecruithq.com" style="color:${BRAND};text-decoration:none">urecruithq.com</a>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
 </body>
 </html>`;
 }
