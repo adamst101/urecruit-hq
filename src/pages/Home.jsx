@@ -1064,7 +1064,7 @@ function WhyPanel() {
 const S = {
   navBtnAmberText: {
     background: "#e8a020",
-    color: "#0a0e1a",
+    color: "#ffffff",
     border: "none",
     borderRadius: 8,
     padding: "6px 14px",
