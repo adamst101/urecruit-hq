@@ -350,15 +350,14 @@ Deno.serve(async (req) => {
     return true;
   });
 
-  // Filter to target account for preview/send_one
-  const targets = (mode === "preview" || mode === "send_one") && targetAccountId
-    ? uniqueEntitlements.filter(e => e.account_id === targetAccountId)
-    : uniqueEntitlements;
-
-  // Early exit for preview with no matching entitlement
-  if (mode === "preview" && targets.length === 0) {
-    const html = renderEmail(monthLabel, [], [], [], "", false, tips, "uRecruitHQ Subscriber", true);
-    return Response.json({ ok: true, html, subject: `Your ${monthLabel} Camp Agenda — uRecruitHQ`, registered: 0, watchlist: 0, nearby: 0 });
+  // Filter to target account for preview/send_one — always include the target account
+  // even if they have no active entitlement (admin testing, accounts without subscription)
+  let targets: Record<string, unknown>[];
+  if ((mode === "preview" || mode === "send_one") && targetAccountId) {
+    const inList = uniqueEntitlements.find(e => e.account_id === targetAccountId);
+    targets = inList ? [inList] : [{ account_id: targetAccountId }];
+  } else {
+    targets = uniqueEntitlements;
   }
 
   const results: Record<string, unknown>[] = [];
