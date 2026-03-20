@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import AdminRoute from "../components/auth/AdminRoute";
 import { base44 } from "../api/base44Client";
 
@@ -24,9 +24,56 @@ export default function MonthlyAgendaAdmin() {
   const [error, setError] = useState("");
   const [confirmSend, setConfirmSend] = useState(false);
 
+  // Tips / monthly content
+  const [tipsId, setTipsId] = useState(null);
+  const [tipsTitle, setTipsTitle] = useState("");
+  const [tipsContent, setTipsContent] = useState("");
+  const [tipsSaving, setTipsSaving] = useState(false);
+  const [tipsSaved, setTipsSaved] = useState(false);
+  const [tipsLoading, setTipsLoading] = useState(false);
+
+  const tipsPopulated = tipsContent.trim().length > 0;
+
   useEffect(() => {
     base44.auth.me().then(u => { if (u?.id) setMyAccountId(u.id); }).catch(() => {});
   }, []);
+
+  const loadTips = useCallback(() => {
+    setTipsLoading(true);
+    setTipsSaved(false);
+    base44.entities.MonthlyAgendaContent.filter({ month })
+      .then(rows => {
+        const row = rows?.[0] || null;
+        setTipsId(row?.id || null);
+        setTipsTitle(row?.title || "");
+        setTipsContent(row?.content || "");
+      })
+      .catch(() => {
+        setTipsId(null);
+        setTipsTitle("");
+        setTipsContent("");
+      })
+      .finally(() => setTipsLoading(false));
+  }, [month]);
+
+  useEffect(() => { loadTips(); }, [loadTips]);
+
+  async function saveTips() {
+    setTipsSaving(true);
+    try {
+      if (tipsId) {
+        await base44.entities.MonthlyAgendaContent.update(tipsId, { title: tipsTitle, content: tipsContent });
+      } else {
+        const created = await base44.entities.MonthlyAgendaContent.create({ month, title: tipsTitle, content: tipsContent });
+        if (created?.id) setTipsId(created.id);
+      }
+      setTipsSaved(true);
+    } catch (e) {
+      setError("Failed to save tips: " + (e?.message || "Unknown error"));
+    } finally {
+      setTipsSaving(false);
+    }
+  }
 
   async function run(mode) {
     setWorking(true);
@@ -39,9 +86,16 @@ export default function MonthlyAgendaAdmin() {
       const data = res.data;
       if (!data?.ok) { setError(data?.error || "Unknown error"); return; }
       if (mode === "preview") {
-        const win = window.open("", "_blank");
-        win.document.write(data.html);
-        win.document.close();
+        if (data.html) {
+          const win = window.open("", "_blank");
+          if (win) {
+            win.document.write(data.html);
+            win.document.close();
+          } else {
+            setError("Popup was blocked — please allow popups for this site and try again.");
+            return;
+          }
+        }
         setResult({ mode: "preview", subject: data.subject, registered: data.registered, watchlist: data.watchlist, nearby: data.nearby });
       } else {
         setResult(data);
@@ -60,6 +114,7 @@ export default function MonthlyAgendaAdmin() {
     label: { fontSize: 12, fontWeight: 700, color: "#9ca3af", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 6 },
     select: { background: "#1f2937", border: "1px solid #374151", borderRadius: 8, padding: "10px 14px", fontSize: 15, color: "#f9fafb", width: "100%" },
     input: { background: "#1f2937", border: "1px solid #374151", borderRadius: 8, padding: "10px 14px", fontSize: 14, color: "#f9fafb", width: "100%", fontFamily: "monospace" },
+    textarea: { background: "#1f2937", border: "1px solid #374151", borderRadius: 8, padding: "10px 14px", fontSize: 14, color: "#f9fafb", width: "100%", resize: "vertical", minHeight: 120, fontFamily: "'DM Sans', Arial, sans-serif", lineHeight: 1.6 },
     btn: (color) => ({ background: color, color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: working ? 0.6 : 1 }),
     btnOutline: { background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer" },
     stat: { background: "#1f2937", borderRadius: 8, padding: "12px 16px", textAlign: "center", flex: 1 },
@@ -79,7 +134,7 @@ export default function MonthlyAgendaAdmin() {
         <div style={S.card}>
           <div style={{ marginBottom: 20 }}>
             <label style={S.label}>Month</label>
-            <select value={month} onChange={e => setMonth(e.target.value)} style={S.select} disabled={working}>
+            <select value={month} onChange={e => { setMonth(e.target.value); setResult(null); }} style={S.select} disabled={working}>
               {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           </div>
@@ -110,7 +165,7 @@ export default function MonthlyAgendaAdmin() {
                 📤 Send All
               </button>
             ) : (
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontSize: 13, color: "#fca5a5" }}>Send to ALL active subscribers?</span>
                 <button style={S.btn("#ef4444")} onClick={() => run("send_all")} disabled={working}>Confirm Send</button>
                 <button style={S.btnOutline} onClick={() => setConfirmSend(false)}>Cancel</button>
@@ -118,6 +173,69 @@ export default function MonthlyAgendaAdmin() {
             )}
           </div>
         </div>
+
+        {/* Monthly Tips Editor */}
+        <div style={{ ...S.card, borderColor: tipsPopulated ? "#374151" : "#92400e", background: tipsPopulated ? "#111827" : "rgba(120,53,15,0.15)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#f9fafb" }}>
+                📋 Monthly Tips & Insights
+              </div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>
+                Included in the email above the camp sections. Populate before sending.
+              </div>
+            </div>
+            {!tipsPopulated && (
+              <div style={{ background: "#92400e", color: "#fbbf24", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 6, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+                NOT SET
+              </div>
+            )}
+            {tipsPopulated && tipsSaved && (
+              <div style={{ color: "#22c55e", fontSize: 12, fontWeight: 600 }}>✓ Saved</div>
+            )}
+          </div>
+
+          {tipsLoading ? (
+            <div style={{ color: "#6b7280", fontSize: 13 }}>Loading…</div>
+          ) : (
+            <>
+              <div style={{ marginBottom: 14 }}>
+                <label style={S.label}>Section Title (optional)</label>
+                <input
+                  value={tipsTitle}
+                  onChange={e => { setTipsTitle(e.target.value); setTipsSaved(false); }}
+                  placeholder="e.g. Recruiting Tips · May Edition"
+                  style={S.input}
+                  disabled={working}
+                />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={S.label}>Content</label>
+                <textarea
+                  value={tipsContent}
+                  onChange={e => { setTipsContent(e.target.value); setTipsSaved(false); }}
+                  placeholder={"Write tips, need-to-know info, deadlines, or any message you want subscribers to see this month.\n\nLine breaks are preserved in the email."}
+                  style={S.textarea}
+                  disabled={working}
+                />
+              </div>
+              <button
+                style={{ ...S.btn(tipsPopulated ? "#22c55e" : "#e8a020"), opacity: tipsSaving ? 0.6 : 1, cursor: tipsSaving ? "not-allowed" : "pointer" }}
+                onClick={saveTips}
+                disabled={tipsSaving || working}
+              >
+                {tipsSaving ? "Saving…" : tipsSaved ? "✓ Saved" : "Save Tips"}
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Reminder banner before Send All if tips not set */}
+        {confirmSend && !tipsPopulated && (
+          <div style={{ ...S.card, border: "1px solid #92400e", background: "rgba(120,53,15,0.2)", color: "#fbbf24", fontSize: 13, marginBottom: 0 }}>
+            ⚠️ <strong>Heads up:</strong> You haven't added monthly tips content for {MONTHS.find(m => m.value === month)?.label}. The email will go out without a tips section. Save your content above before sending, or proceed anyway.
+          </div>
+        )}
 
         {working && (
           <div style={{ ...S.card, color: "#9ca3af", fontSize: 14 }}>

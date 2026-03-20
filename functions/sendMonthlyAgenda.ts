@@ -138,16 +138,36 @@ function campRows(camps: Record<string, unknown>[], showAthlete: boolean): strin
   }).join("");
 }
 
-function section(icon: string, title: string, borderColor: string, camps: Record<string, unknown>[], showAthlete: boolean): string {
-  if (!camps.length) return "";
+function section(
+  icon: string,
+  title: string,
+  borderColor: string,
+  camps: Record<string, unknown>[],
+  showAthlete: boolean,
+  emptyMsg: string,
+): string {
+  const body = camps.length
+    ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#0d1117;border:1px solid #1f2937;border-top:none;border-radius:0 0 6px 6px">
+         <tbody>${campRows(camps, showAthlete)}</tbody>
+       </table>`
+    : `<div style="background:#0d1117;border:1px solid #1f2937;border-top:none;border-radius:0 0 6px 6px;padding:20px 16px;text-align:center;color:#6b7280;font-size:13px;font-style:italic">${emptyMsg}</div>`;
   return `
     <div style="margin-bottom:28px">
-      <div style="border-left:4px solid ${borderColor};padding:10px 14px;background:#111827;border-radius:4px;margin-bottom:0;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#f9fafb">
+      <div style="border-left:4px solid ${borderColor};padding:10px 14px;background:#111827;border-radius:4px 4px 0 0;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#f9fafb">
         ${icon}&nbsp; ${title}
       </div>
-      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#0d1117;border:1px solid #1f2937;border-top:none;border-radius:0 0 6px 6px">
-        <tbody>${campRows(camps, showAthlete)}</tbody>
-      </table>
+      ${body}
+    </div>`;
+}
+
+function tipsSection(title: string, content: string): string {
+  if (!content?.trim()) return "";
+  return `
+    <div style="margin-bottom:32px;background:#111827;border:1px solid #374151;border-radius:8px;padding:20px 24px">
+      <div style="font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#e8a020;margin-bottom:12px">
+        📋&nbsp; ${title?.trim() || "From the Desk of uRecruitHQ"}
+      </div>
+      <div style="font-size:14px;color:#d1d5db;line-height:1.7;white-space:pre-wrap">${content}</div>
     </div>`;
 }
 
@@ -158,11 +178,17 @@ function renderEmail(
   nearby: Record<string, unknown>[],
   homeState: string,
   multiAthlete: boolean,
+  tips: { title: string; content: string } | null,
 ): string {
+  const nearbyTitle = `Also Happening Near You${homeState ? ` · ${homeState}` : ""}`;
   const body =
-    section("✅", "Camps You're Registered For", "#22c55e", registered, multiAthlete) +
-    section("⭐", "Camps on Your Watchlist", "#e8a020", watchlist, multiAthlete) +
-    section("📍", `Also Happening Near You${homeState ? ` · ${homeState}` : ""}`, "#3b82f6", nearby, false);
+    (tips ? tipsSection(tips.title, tips.content) : "") +
+    section("✅", "Camps You're Registered For", "#22c55e", registered, multiAthlete,
+      "You are not registered for any camps this month.") +
+    section("⭐", "Camps on Your Watchlist", "#e8a020", watchlist, multiAthlete,
+      "You have no favorited camps for this month.") +
+    section("📍", nearbyTitle, "#3b82f6", nearby, false,
+      "There are no college camps currently scheduled near you this month.");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -190,7 +216,7 @@ function renderEmail(
       <div style="font-size:13px;color:#6b7280;margin-top:6px">Your personalized monthly camp calendar</div>
     </div>
 
-    ${body || '<p style="color:#6b7280;text-align:center;padding:32px 0">No camps found for this month. Check back soon — we update every Monday.</p>'}
+    ${body}
 
     <!-- Footer -->
     <div style="border-top:1px solid #1f2937;margin-top:16px;padding-top:20px;text-align:center;font-size:12px;color:#6b7280;line-height:1.8">
@@ -223,12 +249,18 @@ Deno.serve(async (req) => {
   const monthLabel = start.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
   // ── Batch fetch shared data ──────────────────────────────────────────────
-  const [rawEntitlements, rawAthletes, rawIntents, rawCamps] = await Promise.all([
+  const [rawEntitlements, rawAthletes, rawIntents, rawCamps, rawTips] = await Promise.all([
     base44.asServiceRole.entities.Entitlement.filter({ status: "active" }).catch(() => []),
     base44.asServiceRole.entities.AthleteProfile.filter({ active: true }).catch(() => []),
     base44.asServiceRole.entities.CampIntent.filter({}).catch(() => []),
     base44.asServiceRole.entities.Camp.filter({ active: true }).catch(() => []),
+    base44.asServiceRole.entities.MonthlyAgendaContent.filter({ month }).catch(() => []),
   ]);
+
+  const tipsRow = Array.isArray(rawTips) && rawTips.length > 0 ? rawTips[0] : null;
+  const tips = tipsRow
+    ? { title: (tipsRow.title as string) || "", content: (tipsRow.content as string) || "" }
+    : null;
 
   const entitlements: Record<string, unknown>[] = Array.isArray(rawEntitlements) ? rawEntitlements : [];
   const athletes:     Record<string, unknown>[] = Array.isArray(rawAthletes)     ? rawAthletes     : [];
@@ -276,12 +308,25 @@ Deno.serve(async (req) => {
     ? uniqueEntitlements.filter(e => e.account_id === targetAccountId)
     : uniqueEntitlements;
 
+  // Early exit for preview with no matching entitlement
+  if (mode === "preview" && targets.length === 0) {
+    const html = renderEmail(monthLabel, [], [], [], "", false, tips);
+    return Response.json({ ok: true, html, subject: `Your ${monthLabel} Camp Agenda — uRecruitHQ`, registered: 0, watchlist: 0, nearby: 0 });
+  }
+
   const results: Record<string, unknown>[] = [];
 
   for (const ent of targets) {
     const accountId = ent.account_id as string;
     const accountAthletes = athletesByAccount.get(accountId) || [];
-    if (!accountAthletes.length) continue;
+    if (!accountAthletes.length) {
+      if (mode === "preview") {
+        const html = renderEmail(monthLabel, [], [], [], "", false, tips);
+        return Response.json({ ok: true, html, subject: `Your ${monthLabel} Camp Agenda — uRecruitHQ`, registered: 0, watchlist: 0, nearby: 0 });
+      }
+      results.push({ accountId, status: "skipped", reason: "no athlete profile" });
+      continue;
+    }
 
     // Resolve home coords from first athlete that has them
     let homeCoords: { lat: number; lng: number } | null = null;
@@ -343,13 +388,8 @@ Deno.serve(async (req) => {
       nearby = nearby.slice(0, NEARBY_MAX);
     }
 
-    if (!registered.length && !watchlist.length && !nearby.length) {
-      results.push({ accountId, status: "skipped", reason: "no camps this month" });
-      continue;
-    }
-
     const multiAthlete = accountAthletes.length > 1;
-    const html = renderEmail(monthLabel, registered, watchlist, nearby, homeState, multiAthlete);
+    const html = renderEmail(monthLabel, registered, watchlist, nearby, homeState, multiAthlete, tips);
     const subject = `Your ${monthLabel} Camp Agenda — uRecruitHQ`;
 
     // Preview mode — return HTML directly
@@ -365,7 +405,7 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "dry_run") {
-      results.push({ accountId, status: "dry_run", registered: registered.length, watchlist: watchlist.length, nearby: nearby.length });
+      results.push({ accountId, status: "dry_run", registered: registered.length, watchlist: watchlist.length, nearby: nearby.length, hasTips: !!tips });
       continue;
     }
 

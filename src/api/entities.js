@@ -58,6 +58,8 @@ export const TravelConstraint = pickEntity("TravelConstraint", "TravelConstraint
 export const UserCamp = pickEntity("UserCamp", "UserCamps");
 
 // Optional: keep Query if you’re using it
+export const MonthlyAgendaContent = pickEntity("MonthlyAgendaContent", "MonthlyAgendaContents");
+
 export const Query = pickEntity("Query", "Queries");
 
 // --- Auth SDK ---
