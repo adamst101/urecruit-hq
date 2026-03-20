@@ -1109,18 +1109,17 @@ const S = {
     alignItems: "center"
   },
   navBtnMemberLogin: {
-    background: "transparent",
-    color: "#6b7280",
+    background: "#e8a020",
+    color: "#0a0e1a",
     border: "none",
     borderRadius: 8,
-    padding: "10px 14px",
+    padding: "6px 14px",
     fontSize: 14,
-    fontWeight: 500,
+    fontWeight: 700,
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
-    textDecoration: "underline",
-    textUnderlineOffset: 2,
+    textDecoration: "none",
   },
   ctaPrimary: {
     background: "#e8a020",
