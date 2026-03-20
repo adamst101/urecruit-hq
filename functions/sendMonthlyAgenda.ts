@@ -179,6 +179,7 @@ function renderEmail(
   homeState: string,
   multiAthlete: boolean,
   tips: { title: string; content: string } | null,
+  greeting: string,
 ): string {
   const nearbyTitle = `Also Happening Near You${homeState ? ` · ${homeState}` : ""}`;
   const body =
@@ -214,6 +215,12 @@ function renderEmail(
       <div style="font-size:13px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#e8a020;margin-bottom:6px">uRecruitHQ</div>
       <div style="font-size:26px;font-weight:700;color:#f9fafb">${monthLabel} Camp Agenda</div>
       <div style="font-size:13px;color:#6b7280;margin-top:6px">Your personalized monthly camp calendar</div>
+    </div>
+
+    <!-- Greeting -->
+    <div style="margin-bottom:28px;font-size:15px;color:#d1d5db;line-height:1.6">
+      Hi ${greeting},<br><br>
+      Here's your personalized camp agenda for ${monthLabel}. We've pulled together your registered camps, watchlist, and upcoming camps near you all in one place.
     </div>
 
     ${body}
@@ -310,7 +317,7 @@ Deno.serve(async (req) => {
 
   // Early exit for preview with no matching entitlement
   if (mode === "preview" && targets.length === 0) {
-    const html = renderEmail(monthLabel, [], [], [], "", false, tips);
+    const html = renderEmail(monthLabel, [], [], [], "", false, tips, "uRecruitHQ Subscriber");
     return Response.json({ ok: true, html, subject: `Your ${monthLabel} Camp Agenda — uRecruitHQ`, registered: 0, watchlist: 0, nearby: 0 });
   }
 
@@ -321,22 +328,33 @@ Deno.serve(async (req) => {
     const accountAthletes = athletesByAccount.get(accountId) || [];
     if (!accountAthletes.length) {
       if (mode === "preview") {
-        const html = renderEmail(monthLabel, [], [], [], "", false, tips);
+        const html = renderEmail(monthLabel, [], [], [], "", false, tips, "uRecruitHQ Subscriber");
         return Response.json({ ok: true, html, subject: `Your ${monthLabel} Camp Agenda — uRecruitHQ`, registered: 0, watchlist: 0, nearby: 0 });
       }
       results.push({ accountId, status: "skipped", reason: "no athlete profile" });
       continue;
     }
 
-    // Resolve home coords from first athlete that has them
+    // Resolve home coords and greeting from first athlete that has them
     let homeCoords: { lat: number; lng: number } | null = null;
     let homeState = "";
+    let greeting = "";
     for (const a of accountAthletes) {
       const coords = (a.home_lat && a.home_lng)
         ? { lat: Number(a.home_lat), lng: Number(a.home_lng) }
         : getCityCoords(a.home_city as string, a.home_state as string);
-      if (coords) { homeCoords = coords; homeState = (a.home_state as string) || ""; break; }
+      if (coords) { homeCoords = coords; homeState = (a.home_state as string) || ""; }
+      if (!greeting) {
+        const parentFirst = (a.parent_first_name as string)?.trim();
+        const parentLast  = (a.parent_last_name as string)?.trim();
+        const athleteFirst = (a.first_name as string)?.trim();
+        if (parentFirst && parentLast) greeting = `${parentFirst} ${parentLast}`;
+        else if (parentFirst) greeting = parentFirst;
+        else if (athleteFirst) greeting = `${athleteFirst}'s Family`;
+      }
+      if (homeCoords && greeting) break;
     }
+    if (!greeting) greeting = "uRecruitHQ Subscriber";
 
     // Collect all intents for this account's athletes
     const registered: Record<string, unknown>[] = [];
@@ -389,7 +407,7 @@ Deno.serve(async (req) => {
     }
 
     const multiAthlete = accountAthletes.length > 1;
-    const html = renderEmail(monthLabel, registered, watchlist, nearby, homeState, multiAthlete, tips);
+    const html = renderEmail(monthLabel, registered, watchlist, nearby, homeState, multiAthlete, tips, greeting);
     const subject = `Your ${monthLabel} Camp Agenda — uRecruitHQ`;
 
     // Preview mode — return HTML directly
