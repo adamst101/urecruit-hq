@@ -87,15 +87,35 @@ export default function Checkout() {
     }
   }, [loading]);
 
-  // After returning from login with a free code, auto-activate
+  // Restore form data saved before login redirect
+  useEffect(() => {
+    if (loading) return;
+    try {
+      const saved = sessionStorage.getItem("checkoutForm");
+      if (!saved) return;
+      sessionStorage.removeItem("checkoutForm");
+      const d = JSON.parse(saved);
+      if (d.athleteFirstName) setAthleteFirstName(d.athleteFirstName);
+      if (d.athleteLastName) setAthleteLastName(d.athleteLastName);
+      if (d.gradYear) setGradYear(d.gradYear);
+      if (d.sportId) setSportId(d.sportId);
+      if (d.homeCity) setHomeCity(d.homeCity);
+      if (d.homeState) setHomeState(d.homeState);
+      if (d.parentFirstName) setParentFirstName(d.parentFirstName);
+      if (d.parentLastName) setParentLastName(d.parentLastName);
+      if (d.parentPhone) setParentPhone(d.parentPhone);
+    } catch {}
+  }, [loading]);
+
+  // After returning from login with a free code, auto-activate — only if athlete info is present
   useEffect(() => {
     if (loading || !isAuthed) return;
     const urlPromo = params.get("promo");
     const autoActivate = params.get("activate") === "true";
-    if (autoActivate && urlPromo && promoState?.isFree) {
+    if (autoActivate && urlPromo && promoState?.isFree && athleteFirstName.trim()) {
       activateFreeAccess(urlPromo);
     }
-  }, [loading, isAuthed, promoState]);
+  }, [loading, isAuthed, promoState, athleteFirstName]);
 
   function handleContinueToPayment(e) {
     e.preventDefault();
@@ -164,8 +184,21 @@ export default function Checkout() {
         // Already logged in — activate immediately
         await activateFreeAccess(promoCode.trim());
       } else {
-        // Save code and redirect to login — AuthRedirect will pick up pendingPromoCode
-        try { sessionStorage.setItem("pendingPromoCode", promoCode.trim()); } catch {}
+        // Save code + form data before login — restored after account creation
+        try {
+          sessionStorage.setItem("pendingPromoCode", promoCode.trim());
+          sessionStorage.setItem("checkoutForm", JSON.stringify({
+            athleteFirstName: athleteFirstName.trim(),
+            athleteLastName: athleteLastName.trim(),
+            gradYear,
+            sportId,
+            homeCity: homeCity.trim(),
+            homeState,
+            parentFirstName: parentFirstName.trim(),
+            parentLastName: parentLastName.trim(),
+            parentPhone: parentPhone.trim(),
+          }));
+        } catch {}
         const returnUrl = `${window.location.origin}/AuthRedirect?source=promo_checkout`;
         base44.auth.redirectToLogin(returnUrl);
       }
