@@ -121,8 +121,8 @@ const TOOLS = [
     section: "Communications",
     items: [
       {
-        title: "Monthly Camp Agenda",
-        description: "Preview, dry-run, and send the personalized monthly camp email — registered, watchlist, and nearby camps per subscriber.",
+        title: "Communications",
+        description: "Manage subscriber emails — monthly camp agendas and camp week alerts.",
         route: "/MonthlyAgendaAdmin",
         icon: "📅",
         color: "#1a5a6b",

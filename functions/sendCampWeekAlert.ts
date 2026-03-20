@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
   const RESEND_API_KEY = getResendKey();
   const FROM_EMAIL = getFromEmail();
 
-  if (!RESEND_API_KEY && mode === "send") {
+  if (!RESEND_API_KEY && (mode === "send" || mode === "send_one")) {
     return Response.json({ ok: false, error: "RESEND_API_KEY is not set." }, { status: 400 });
   }
 
@@ -234,29 +234,33 @@ Deno.serve(async (req) => {
     accountCamps.get(accountId)!.push({ camp, athleteName });
   }
 
+  const EXAMPLE_CAMP = { camp_name: "Example University Football Camp", start_date: checkDateStr, city: "Columbus", state: "OH", division: "I" };
+
   // Filter to target account for preview/send_one
-  const targetAccounts = (mode === "preview" && targetAccountId)
+  const targetAccounts = (mode === "preview" || mode === "send_one") && targetAccountId
     ? [targetAccountId]
     : [...accountCamps.keys()];
 
-  // Preview with no camps
+  // Preview/send_one with no camps — use placeholder
   if (mode === "preview" && targetAccounts.length === 0) {
-    const placeholderCamp = { camp_name: "Example Camp", start_date: checkDateStr, city: "Columbus", state: "OH", division: "I" };
-    const html = renderAlertEmail("there", [{ camp: placeholderCamp, athleteName: "" }], false);
-    return Response.json({ ok: true, html, subject: "Camp Week Alert — uRecruitHQ", checkDate: checkDateStr });
+    const html = renderAlertEmail("there", [{ camp: EXAMPLE_CAMP, athleteName: "" }], false);
+    return Response.json({ ok: true, html, subject: "Camp Week Alert — uRecruitHQ (Example)", checkDate: checkDateStr });
   }
 
   const results: Record<string, unknown>[] = [];
 
   for (const accountId of targetAccounts) {
-    const camps = accountCamps.get(accountId) || [];
+    let camps = accountCamps.get(accountId) || [];
 
-    if (camps.length === 0) {
+    // For send_one (admin test), use example camp if no real camps on the date
+    if (camps.length === 0 && mode === "send_one") {
+      camps = [{ camp: EXAMPLE_CAMP, athleteName: "" }];
+    } else if (camps.length === 0) {
       results.push({ accountId, status: "skipped", reason: "no registered camps on this date" });
       continue;
     }
 
-    // Enforce opt-out for sends
+    // Enforce opt-out for sends (not for admin send_one test)
     if (mode === "send" && optedOutIds.has(accountId)) {
       results.push({ accountId, status: "skipped", reason: "opted out" });
       continue;
@@ -296,6 +300,8 @@ Deno.serve(async (req) => {
       results.push({ accountId, status: "dry_run", camps: camps.length, campNames });
       continue;
     }
+
+    // send or send_one — fall through to email send below
 
     // Send
     let userEmail = "";

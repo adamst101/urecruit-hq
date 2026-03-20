@@ -44,7 +44,7 @@ export default function MonthlyAgendaAdmin() {
     setAlertResult(null);
     try {
       const payload = { mode, targetDate: alertDate };
-      if (mode === "preview") payload.accountId = myAccountId;
+      if (mode === "preview" || mode === "send_one") payload.accountId = myAccountId;
       const res = await base44.functions.invoke("sendCampWeekAlert", payload);
       const data = res.data;
       if (!data?.ok) { setAlertError(data?.error || "Unknown error"); return; }
@@ -188,9 +188,9 @@ export default function MonthlyAgendaAdmin() {
   return (
     <AdminRoute>
       <div style={S.root}>
-        <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#f9fafb", margin: "0 0 8px" }}>Monthly Camp Agenda</h1>
+        <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#f9fafb", margin: "0 0 8px" }}>Communications</h1>
         <p style={{ color: "#6b7280", fontSize: 14, marginBottom: 32 }}>
-          Send each subscriber a personalized email with their registered camps, watchlist camps, and nearby camps for the month.
+          Manage and send subscriber emails — monthly camp agendas and camp week alerts.
         </p>
 
         {/* Controls */}
@@ -359,6 +359,9 @@ export default function MonthlyAgendaAdmin() {
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button style={{ ...S.btn("#3b82f6"), opacity: alertWorking ? 0.6 : 1 }} onClick={() => runAlert("preview")} disabled={alertWorking || !myAccountId}>
               👁 Preview
+            </button>
+            <button style={{ ...S.btn("#e8a020"), opacity: alertWorking ? 0.6 : 1 }} onClick={() => runAlert("send_one")} disabled={alertWorking || !myAccountId}>
+              ✉ Send to Me
             </button>
             <button style={{ ...S.btn("#6b7280"), opacity: alertWorking ? 0.6 : 1 }} onClick={() => runAlert("dry_run")} disabled={alertWorking}>
               🔍 Dry Run
