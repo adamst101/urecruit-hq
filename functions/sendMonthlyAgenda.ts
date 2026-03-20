@@ -393,8 +393,8 @@ Deno.serve(async (req) => {
 
   for (const ent of targets) {
     const accountId = ent.account_id as string;
-    // Skip opted-out accounts (except for preview/send_one which are admin-initiated)
-    if (mode === "send_all" && optedOutIds.has(accountId)) {
+    // Skip opted-out accounts for all send modes (preview is view-only, never blocked)
+    if (mode !== "preview" && mode !== "dry_run" && optedOutIds.has(accountId)) {
       results.push({ accountId, status: "skipped", reason: "opted out" });
       continue;
     }
