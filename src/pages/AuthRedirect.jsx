@@ -193,6 +193,7 @@ export default function AuthRedirect() {
             parentLastName: formData.parentLastName || undefined,
             parentPhone: formData.parentPhone || undefined,
           });
+          clearSeasonAccessCache();
         } catch (e) {
           console.error("activateFreeAccess failed in AuthRedirect:", e?.message);
         }
