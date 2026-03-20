@@ -121,20 +121,21 @@ function divLabel(div: string): string {
 
 // ── Email HTML ─────────────────────────────────────────────────────────────
 function campRows(camps: Record<string, unknown>[], showAthlete: boolean): string {
-  return camps.map(c => {
+  return camps.map((c, i) => {
     const loc = [c.city, c.state].filter(Boolean).join(", ");
     const athlete = showAthlete && c._athleteName
-      ? `<span style="display:inline-block;padding:1px 6px;border-radius:10px;background:#1f2937;color:#9ca3af;font-size:11px;margin-left:6px">${c._athleteName}</span>`
+      ? `<span style="display:inline-block;padding:1px 7px;border-radius:10px;background:#f3f4f6;color:#6b7280;font-size:11px;margin-left:6px;border:1px solid #e5e7eb">${c._athleteName}</span>`
       : "";
+    const rowBg = i % 2 === 0 ? "#ffffff" : "#f9fafb";
     return `
-      <tr style="border-bottom:1px solid #1f2937">
-        <td style="padding:10px 12px;color:#9ca3af;font-size:13px;white-space:nowrap;vertical-align:top">${formatDate(c.start_date as string)}</td>
+      <tr style="border-bottom:1px solid #e5e7eb;background:${rowBg}">
+        <td style="padding:10px 12px;color:#6b7280;font-size:13px;white-space:nowrap;vertical-align:top">${formatDate(c.start_date as string)}</td>
         <td style="padding:10px 12px;vertical-align:top">
-          <span style="font-size:14px;font-weight:600;color:#f9fafb">${c.camp_name || "Camp"}</span>${athlete}
+          <span style="font-size:14px;font-weight:600;color:#111827">${c.camp_name || "Camp"}</span>${athlete}
         </td>
-        <td style="padding:10px 12px;color:#9ca3af;font-size:13px;white-space:nowrap;vertical-align:top">${divLabel(c.division as string)}</td>
-        <td style="padding:10px 12px;color:#9ca3af;font-size:13px;vertical-align:top">${loc}</td>
-        <td style="padding:10px 12px;color:#e8a020;font-size:13px;white-space:nowrap;vertical-align:top;text-align:right">${formatPrice(c)}</td>
+        <td style="padding:10px 12px;color:#6b7280;font-size:13px;white-space:nowrap;vertical-align:top">${divLabel(c.division as string)}</td>
+        <td style="padding:10px 12px;color:#6b7280;font-size:13px;vertical-align:top">${loc}</td>
+        <td style="padding:10px 12px;color:#b45309;font-size:13px;font-weight:600;white-space:nowrap;vertical-align:top;text-align:right">${formatPrice(c)}</td>
       </tr>`;
   }).join("");
 }
@@ -148,13 +149,13 @@ function section(
   emptyMsg: string,
 ): string {
   const body = camps.length
-    ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#0d1117;border:1px solid #1f2937;border-top:none;border-radius:0 0 6px 6px">
+    ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#ffffff;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 6px 6px">
          <tbody>${campRows(camps, showAthlete)}</tbody>
        </table>`
-    : `<div style="background:#0d1117;border:1px solid #1f2937;border-top:none;border-radius:0 0 6px 6px;padding:20px 16px;text-align:center;color:#6b7280;font-size:13px;font-style:italic">${emptyMsg}</div>`;
+    : `<div style="background:#ffffff;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 6px 6px;padding:20px 16px;text-align:center;color:#9ca3af;font-size:13px;font-style:italic">${emptyMsg}</div>`;
   return `
     <div style="margin-bottom:28px">
-      <div style="border-left:4px solid ${borderColor};padding:10px 14px;background:#111827;border-radius:4px 4px 0 0;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#f9fafb">
+      <div style="border-left:4px solid ${borderColor};padding:10px 14px;background:#f9fafb;border-radius:4px 4px 0 0;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#111827;border:1px solid #e5e7eb;border-bottom:none">
         ${icon}&nbsp; ${title}
       </div>
       ${body}
@@ -164,11 +165,11 @@ function section(
 function tipsSection(title: string, content: string): string {
   if (!content?.trim()) return "";
   return `
-    <div style="margin-bottom:32px;background:#111827;border:1px solid #374151;border-radius:8px;padding:20px 24px">
-      <div style="font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#e8a020;margin-bottom:12px">
+    <div style="margin-bottom:32px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:20px 24px">
+      <div style="font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#b45309;margin-bottom:12px">
         📋&nbsp; ${title?.trim() || "From the Desk of uRecruitHQ"}
       </div>
-      <div style="font-size:14px;color:#d1d5db;line-height:1.7;white-space:pre-wrap">${content}</div>
+      <div style="font-size:14px;color:#374151;line-height:1.7;white-space:pre-wrap">${content}</div>
     </div>`;
 }
 
@@ -183,7 +184,7 @@ function renderEmail(
   greeting: string,
   noAthleteProfile = false,
 ): string {
-  const noProfileMsg = "No athlete profile is currently registered to your account. Visit your <a href=\"https://urecruithq.com/Profile\" style=\"color:#e8a020\">profile page</a> to add one.";
+  const noProfileMsg = "No athlete profile is currently registered to your account. Visit your <a href=\"https://urecruithq.com/Profile\" style=\"color:#b45309\">profile page</a> to add one.";
   const nearbyTitle = `Also Happening Near You${homeState ? ` · ${homeState}` : ""}`;
   const body =
     section("✅", "Camps You're Registered For", "#22c55e", registered, multiAthlete,
@@ -210,18 +211,18 @@ function renderEmail(
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background:#0a0e1a;font-family:Arial,sans-serif;color:#f9fafb">
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;color:#111827">
   <div style="max-width:620px;margin:0 auto;padding:32px 16px">
 
     <!-- Header -->
-    <div style="text-align:center;margin-bottom:32px;padding-bottom:24px;border-bottom:1px solid #1f2937">
-      <div style="font-size:13px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#e8a020;margin-bottom:6px">uRecruitHQ</div>
-      <div style="font-size:26px;font-weight:700;color:#f9fafb">${monthLabel} Camp Agenda</div>
+    <div style="text-align:center;margin-bottom:32px;padding:28px 24px;background:#ffffff;border-radius:8px;border:1px solid #e5e7eb">
+      <div style="font-size:13px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#b45309;margin-bottom:6px">uRecruitHQ</div>
+      <div style="font-size:26px;font-weight:700;color:#111827">${monthLabel} Camp Agenda</div>
       <div style="font-size:13px;color:#6b7280;margin-top:6px">Your personalized monthly camp calendar</div>
     </div>
 
     <!-- Greeting -->
-    <div style="margin-bottom:28px;font-size:15px;color:#d1d5db;line-height:1.6">
+    <div style="margin-bottom:24px;font-size:15px;color:#374151;line-height:1.6;background:#ffffff;padding:20px 24px;border-radius:8px;border:1px solid #e5e7eb">
       Hi ${greeting},<br><br>
       Here's your personalized camp agenda for ${monthLabel}. We've pulled together your registered camps, watchlist, and upcoming camps near you all in one place.
     </div>
@@ -229,12 +230,12 @@ function renderEmail(
     ${body}
 
     <!-- Footer -->
-    <div style="border-top:1px solid #1f2937;margin-top:16px;padding-top:20px;text-align:center;font-size:12px;color:#6b7280;line-height:1.8">
+    <div style="border-top:1px solid #e5e7eb;margin-top:16px;padding-top:20px;text-align:center;font-size:12px;color:#9ca3af;line-height:1.8">
       <p style="margin:0">You're receiving this because you have an active uRecruitHQ subscription.</p>
       <p style="margin:8px 0 0">
-        <a href="https://urecruithq.com/Account" style="color:#e8a020;text-decoration:none">Manage preferences</a>
+        <a href="https://urecruithq.com/Account" style="color:#b45309;text-decoration:none">Manage preferences</a>
         &nbsp;·&nbsp;
-        <a href="https://urecruithq.com" style="color:#e8a020;text-decoration:none">urecruithq.com</a>
+        <a href="https://urecruithq.com" style="color:#b45309;text-decoration:none">urecruithq.com</a>
       </p>
     </div>
 
