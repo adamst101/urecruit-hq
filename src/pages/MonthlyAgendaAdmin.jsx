@@ -192,9 +192,9 @@ export default function MonthlyAgendaAdmin() {
                             color: r.status === "sent" ? "#22c55e" : r.status === "error" ? "#ef4444" : r.status === "dry_run" ? "#e8a020" : "#6b7280",
                             fontWeight: 600,
                           }}>
-                            {r.status === "dry_run" ? "would send" : r.status as string}
+                            {r.status === "dry_run" ? "would send" : r.status}
                           </span>
-                          {r.reason && <span style={{ color: "#6b7280", marginLeft: 8 }}>{r.reason as string}</span>}
+                          {r.reason && <span style={{ color: "#6b7280", marginLeft: 8 }}>{r.reason}</span>}
                         </td>
                         <td style={{ padding: "6px 8px", textAlign: "right", color: "#9ca3af" }}>{r.registered as number ?? "—"}</td>
                         <td style={{ padding: "6px 8px", textAlign: "right", color: "#9ca3af" }}>{r.watchlist as number ?? "—"}</td>
