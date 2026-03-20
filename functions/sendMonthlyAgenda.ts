@@ -255,6 +255,15 @@ Deno.serve(async (req) => {
   const RESEND_API_KEY = getResendKey();
   const FROM_EMAIL = getFromEmail();
 
+  // Config check mode — returns masked env var status for debugging
+  if (mode === "check_config") {
+    return Response.json({
+      ok: true,
+      RESEND_API_KEY: RESEND_API_KEY ? `set (${RESEND_API_KEY.length} chars, starts with ${RESEND_API_KEY.slice(0, 6)}…)` : "NOT SET",
+      RESEND_FROM_EMAIL: FROM_EMAIL,
+    });
+  }
+
   if (!RESEND_API_KEY && mode !== "list_subscribers" && mode !== "dry_run" && mode !== "preview") {
     return Response.json({
       ok: false,

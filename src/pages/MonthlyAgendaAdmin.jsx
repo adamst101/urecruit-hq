@@ -86,6 +86,21 @@ export default function MonthlyAgendaAdmin() {
     }
   }
 
+  async function checkConfig() {
+    setWorking(true);
+    setError("");
+    setResult(null);
+    try {
+      const res = await base44.functions.invoke("sendMonthlyAgenda", { month: MONTHS[0].value, mode: "check_config" });
+      const data = res.data;
+      setResult({ mode: "check_config", ...data });
+    } catch (e) {
+      setError(e?.message || "Request failed");
+    } finally {
+      setWorking(false);
+    }
+  }
+
   async function run(mode) {
     setWorking(true);
     setError("");
@@ -208,6 +223,9 @@ export default function MonthlyAgendaAdmin() {
             <button style={S.btn("#6b7280")} onClick={() => run("dry_run")} disabled={working}>
               🔍 Dry Run (all accounts)
             </button>
+            <button style={{ ...S.btnOutline, color: "#9ca3af" }} onClick={checkConfig} disabled={working}>
+              ⚙️ Check Config
+            </button>
             {!confirmSend ? (
               <button style={{ ...S.btnOutline, color: "#ef4444", borderColor: "#ef4444" }} onClick={() => setConfirmSend(true)} disabled={working}>
                 📤 Send All
@@ -295,6 +313,21 @@ export default function MonthlyAgendaAdmin() {
         {error && (
           <div style={{ ...S.card, border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5", background: "rgba(239,68,68,0.1)" }}>
             {error}
+          </div>
+        )}
+
+        {result && result.mode === "check_config" && (
+          <div style={S.card}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#f9fafb", marginBottom: 12 }}>⚙️ Config Status</div>
+            {[
+              { key: "RESEND_API_KEY", val: result.RESEND_API_KEY },
+              { key: "RESEND_FROM_EMAIL", val: result.RESEND_FROM_EMAIL },
+            ].map(({ key, val }) => (
+              <div key={key} style={{ display: "flex", gap: 12, marginBottom: 8, fontSize: 13 }}>
+                <span style={{ color: "#9ca3af", fontFamily: "monospace", minWidth: 180 }}>{key}</span>
+                <span style={{ color: val && !val.includes("NOT SET") ? "#22c55e" : "#ef4444", fontWeight: 600 }}>{val}</span>
+              </div>
+            ))}
           </div>
         )}
 
