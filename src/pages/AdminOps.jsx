@@ -118,6 +118,18 @@ const TOOLS = [
     ],
   },
   {
+    section: "Communications",
+    items: [
+      {
+        title: "Monthly Camp Agenda",
+        description: "Preview, dry-run, and send the personalized monthly camp email — registered, watchlist, and nearby camps per subscriber.",
+        route: "/MonthlyAgendaAdmin",
+        icon: "📅",
+        color: "#1a5a6b",
+      },
+    ],
+  },
+  {
     section: "Support",
     items: [
       {
