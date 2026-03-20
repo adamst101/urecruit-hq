@@ -68,6 +68,7 @@ import GeocodeSchools from './pages/GeocodeSchools';
 import Home from './pages/Home';
 import HostOrgMappingManager from './pages/HostOrgMappingManager';
 import Index from './pages/Index';
+import MonthlyAgendaAdmin from './pages/MonthlyAgendaAdmin';
 import MyCamps from './pages/MyCamps';
 import Profile from './pages/Profile';
 import RecruitingGuide from './pages/RecruitingGuide';
@@ -106,6 +107,7 @@ export const PAGES = {
     "Home": Home,
     "HostOrgMappingManager": HostOrgMappingManager,
     "Index": Index,
+    "MonthlyAgendaAdmin": MonthlyAgendaAdmin,
     "MyCamps": MyCamps,
     "Profile": Profile,
     "RecruitingGuide": RecruitingGuide,
