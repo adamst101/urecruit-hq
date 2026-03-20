@@ -1076,8 +1076,8 @@ const S = {
   },
   navBtnTextMuted: {
     background: "transparent",
-    color: "#f9fafb",
-    border: "1px solid #374151",
+    color: "#111827",
+    border: "1px solid #d1d5db",
     borderRadius: 8,
     padding: "6px 14px",
     fontSize: 14,
