@@ -235,7 +235,7 @@ export default function Home() {
             {isAuthed && isMember ? (
               <>
                 <button onClick={handleContinue} style={S.navBtnAmberText}>
-                  Go to HQ <ArrowRight style={{ width: 14, height: 14, marginLeft: 4 }} />
+                  Go to HQ
                 </button>
                 <button onClick={handleLogout} style={S.navBtnTextMuted}>Log out</button>
               </>
@@ -1063,23 +1063,23 @@ function WhyPanel() {
 /* ── Shared styles ── */
 const S = {
   navBtnAmberText: {
-    background: "transparent",
-    color: "#e8a020",
+    background: "#e8a020",
+    color: "#0a0e1a",
     border: "none",
     borderRadius: 8,
-    padding: "8px 4px",
+    padding: "6px 14px",
     fontSize: 14,
-    fontWeight: 500,
+    fontWeight: 700,
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
   },
   navBtnTextMuted: {
     background: "transparent",
-    color: "#6b7280",
-    border: "none",
+    color: "#f9fafb",
+    border: "1px solid #374151",
     borderRadius: 8,
-    padding: "8px 4px",
+    padding: "6px 14px",
     fontSize: 14,
     fontWeight: 500,
     cursor: "pointer",
