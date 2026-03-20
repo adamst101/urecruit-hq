@@ -196,9 +196,9 @@ export default function MonthlyAgendaAdmin() {
                           </span>
                           {r.reason && <span style={{ color: "#6b7280", marginLeft: 8 }}>{r.reason}</span>}
                         </td>
-                        <td style={{ padding: "6px 8px", textAlign: "right", color: "#9ca3af" }}>{r.registered as number ?? "—"}</td>
-                        <td style={{ padding: "6px 8px", textAlign: "right", color: "#9ca3af" }}>{r.watchlist as number ?? "—"}</td>
-                        <td style={{ padding: "6px 8px", textAlign: "right", color: "#9ca3af" }}>{r.nearby as number ?? "—"}</td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", color: "#9ca3af" }}>{r.registered ?? "—"}</td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", color: "#9ca3af" }}>{r.watchlist ?? "—"}</td>
+                        <td style={{ padding: "6px 8px", textAlign: "right", color: "#9ca3af" }}>{r.nearby ?? "—"}</td>
                       </tr>
                     ))}
                   </tbody>
