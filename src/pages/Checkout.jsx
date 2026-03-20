@@ -87,7 +87,7 @@ export default function Checkout() {
     }
   }, [loading]);
 
-  // Restore form data saved before login redirect
+  // Restore form data saved before login redirect, then advance to payment step
   useEffect(() => {
     if (loading) return;
     try {
@@ -104,18 +104,10 @@ export default function Checkout() {
       if (d.parentFirstName) setParentFirstName(d.parentFirstName);
       if (d.parentLastName) setParentLastName(d.parentLastName);
       if (d.parentPhone) setParentPhone(d.parentPhone);
+      // Skip straight to payment step — user already filled the form before login
+      if (d.athleteFirstName) setStep("payment");
     } catch {}
   }, [loading]);
-
-  // After returning from login with a free code, auto-activate — only if athlete info is present
-  useEffect(() => {
-    if (loading || !isAuthed) return;
-    const urlPromo = params.get("promo");
-    const autoActivate = params.get("activate") === "true";
-    if (autoActivate && urlPromo && promoState?.isFree && athleteFirstName.trim()) {
-      activateFreeAccess(urlPromo);
-    }
-  }, [loading, isAuthed, promoState, athleteFirstName]);
 
   function handleContinueToPayment(e) {
     e.preventDefault();
