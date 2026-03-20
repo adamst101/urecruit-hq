@@ -1,7 +1,8 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
-const FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL") || "agenda@urecruithq.com";
+// Read at request time (not module init) so env var changes take effect immediately
+function getResendKey() { return Deno.env.get("RESEND_API_KEY") ?? ""; }
+function getFromEmail() { return Deno.env.get("RESEND_FROM_EMAIL") || "agenda@urecruithq.com"; }
 const NEARBY_RADIUS_MILES = 50;
 const NEARBY_MAX = 10;
 
@@ -251,11 +252,14 @@ Deno.serve(async (req) => {
   // mode: "preview" | "dry_run" | "send_one" | "send_all" | "list_subscribers"
 
   // Validate required env vars before doing any work
+  const RESEND_API_KEY = getResendKey();
+  const FROM_EMAIL = getFromEmail();
+
   if (!RESEND_API_KEY && mode !== "list_subscribers" && mode !== "dry_run" && mode !== "preview") {
     return Response.json({
       ok: false,
       error: "RESEND_API_KEY is not set. Add it in the base44 dashboard under Project Settings → Environment Variables.",
-    }, { status: 500 });
+    }, { status: 400 });
   }
 
   // ── List subscribers mode (no month required) ───────────────────────────
