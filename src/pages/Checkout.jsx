@@ -156,7 +156,7 @@ export default function Checkout() {
       });
       const data = res.data;
       if (data?.ok) {
-        navigate("/Account", { replace: true });
+        navigate("/Workspace", { replace: true });
       } else {
         setError(data?.error || "Failed to activate access");
         setWorking(false);
