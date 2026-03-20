@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
+const RESEND_API_KEY = Deno.env.get("re_MaNmjhJP_88dcmxXVxoCYj16kSTBYANcmI_KEY");
 const FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL") || "agenda@urecruithq.com";
 const NEARBY_RADIUS_MILES = 50;
 const NEARBY_MAX = 10;
