@@ -162,12 +162,42 @@ export default function AuthRedirect() {
       return;
     }
 
-    // ── Priority 2: Pending promo code (BETA100 flow) ──
+    // ── Priority 2: Pending promo code → activate directly, skip Checkout redirect ──
     const pendingPromo = ssGet("pendingPromoCode");
     if (pendingPromo) {
       ssRemove("pendingPromoCode");
+
+      let formData = {};
+      try {
+        const saved = ssGet("checkoutForm");
+        if (saved) { formData = JSON.parse(saved); ssRemove("checkoutForm"); }
+      } catch {}
+
       didRoute.current = true;
-      nav(`/Checkout?promo=${encodeURIComponent(pendingPromo)}&activate=true`, { replace: true });
+      setStatusMsg("Activating your free access…");
+
+      // Call activateFreeAccess directly using accountId already resolved by useSeasonAccess.
+      // Avoids calling base44.auth.me() which fails immediately after account creation.
+      (async () => {
+        try {
+          await base44.functions.invoke("activateFreeAccess", {
+            promoCode: pendingPromo,
+            accountId,
+            athleteFirstName: formData.athleteFirstName || undefined,
+            athleteLastName: formData.athleteLastName || undefined,
+            gradYear: formData.gradYear || undefined,
+            sportId: formData.sportId || undefined,
+            homeCity: formData.homeCity || undefined,
+            homeState: formData.homeState || undefined,
+            parentFirstName: formData.parentFirstName || undefined,
+            parentLastName: formData.parentLastName || undefined,
+            parentPhone: formData.parentPhone || undefined,
+          });
+        } catch (e) {
+          console.error("activateFreeAccess failed in AuthRedirect:", e?.message);
+        }
+        nav(PATHS.WORKSPACE, { replace: true });
+      })();
       return;
     }
 
