@@ -59,6 +59,7 @@ export const UserCamp = pickEntity("UserCamp", "UserCamps");
 
 // Optional: keep Query if you’re using it
 export const MonthlyAgendaContent = pickEntity("MonthlyAgendaContent", "MonthlyAgendaContents");
+export const EmailPreferences = pickEntity("EmailPreferences", "EmailPreferences");
 
 export const Query = pickEntity("Query", "Queries");
 

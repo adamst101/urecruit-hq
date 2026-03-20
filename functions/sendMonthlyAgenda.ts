@@ -235,6 +235,8 @@ function renderEmail(
       <p style="margin:8px 0 0">
         <a href="https://urecruithq.com/Account" style="color:#b45309;text-decoration:none">Manage preferences</a>
         &nbsp;·&nbsp;
+        <a href="https://urecruithq.com/Account" style="color:#9ca3af;text-decoration:none">Unsubscribe</a>
+        &nbsp;·&nbsp;
         <a href="https://urecruithq.com" style="color:#b45309;text-decoration:none">urecruithq.com</a>
       </p>
     </div>
@@ -318,13 +320,18 @@ Deno.serve(async (req) => {
   const monthLabel = start.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
   // ── Batch fetch shared data ──────────────────────────────────────────────
-  const [rawEntitlements, rawAthletes, rawIntents, rawCamps, rawTips] = await Promise.all([
+  const [rawEntitlements, rawAthletes, rawIntents, rawCamps, rawTips, rawOptOuts] = await Promise.all([
     base44.asServiceRole.entities.Entitlement.filter({ status: "active" }).catch(() => []),
     base44.asServiceRole.entities.AthleteProfile.filter({ active: true }).catch(() => []),
     base44.asServiceRole.entities.CampIntent.filter({}).catch(() => []),
     base44.asServiceRole.entities.Camp.filter({ active: true }).catch(() => []),
     base44.asServiceRole.entities.MonthlyAgendaContent.filter({ month }).catch(() => []),
+    base44.asServiceRole.entities.EmailPreferences.filter({ monthly_agenda_opt_out: true }).catch(() => []),
   ]);
+
+  const optedOutIds = new Set(
+    (Array.isArray(rawOptOuts) ? rawOptOuts : []).map(p => p.account_id as string).filter(Boolean)
+  );
 
   const tipsRow = Array.isArray(rawTips) && rawTips.length > 0 ? rawTips[0] : null;
   const tips = tipsRow
@@ -386,6 +393,12 @@ Deno.serve(async (req) => {
 
   for (const ent of targets) {
     const accountId = ent.account_id as string;
+    // Skip opted-out accounts (except for preview/send_one which are admin-initiated)
+    if (mode === "send_all" && optedOutIds.has(accountId)) {
+      results.push({ accountId, status: "skipped", reason: "opted out" });
+      continue;
+    }
+
     const accountAthletes = athletesByAccount.get(accountId) || [];
     const noAthleteProfile = accountAthletes.length === 0;
 

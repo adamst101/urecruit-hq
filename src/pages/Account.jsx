@@ -55,21 +55,47 @@ export default function Account() {
   const [deleteStep, setDeleteStep] = useState(0); // 0=idle, 1=confirm, 2=deleting
   const [deleteError, setDeleteError] = useState(null);
 
+  const [emailPrefsId, setEmailPrefsId] = useState(null);
+  const [monthlyOptOut, setMonthlyOptOut] = useState(false);
+  const [emailPrefsSaving, setEmailPrefsSaving] = useState(false);
+
   async function fetchData(showSpinner = false) {
     if (!accountId) return;
     if (showSpinner) setRefreshing(true);
     try {
-      const [me, athRows, entRows] = await Promise.all([
+      const [me, athRows, entRows, prefRows] = await Promise.all([
         base44.auth.me().catch(() => null),
         base44.entities.AthleteProfile.filter({ account_id: accountId }).catch(() => []),
         base44.entities.Entitlement.filter({ account_id: accountId }).catch(() => []),
+        base44.entities.EmailPreferences.filter({ account_id: accountId }).catch(() => []),
       ]);
       setUser(me);
       setAthletes(Array.isArray(athRows) ? athRows : []);
       setEntitlements(Array.isArray(entRows) ? entRows : []);
+      const pref = Array.isArray(prefRows) ? prefRows[0] : null;
+      setEmailPrefsId(pref?.id || null);
+      setMonthlyOptOut(pref?.monthly_agenda_opt_out === true);
     } catch {}
     setLoading(false);
     if (showSpinner) setRefreshing(false);
+  }
+
+  async function handleMonthlyOptOutToggle(newVal) {
+    setMonthlyOptOut(newVal);
+    setEmailPrefsSaving(true);
+    try {
+      if (emailPrefsId) {
+        await base44.entities.EmailPreferences.update(emailPrefsId, { monthly_agenda_opt_out: newVal });
+      } else {
+        const created = await base44.entities.EmailPreferences.create({ account_id: accountId, monthly_agenda_opt_out: newVal });
+        if (created?.id) setEmailPrefsId(created.id);
+      }
+    } catch (e) {
+      console.error("Failed to save email preferences:", e?.message);
+      setMonthlyOptOut(!newVal); // revert on failure
+    } finally {
+      setEmailPrefsSaving(false);
+    }
   }
 
   useEffect(() => {
@@ -345,6 +371,48 @@ export default function Account() {
           <LogOut style={{ width: 18, height: 18 }} />
           {loggingOut ? "Signing out…" : "Sign Out"}
         </button>
+
+        {/* ── Communications ── */}
+        <Section title="Communications">
+          <div style={{ background: "#111827", borderRadius: 12, border: "1px solid #1f2937", padding: "20px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#f9fafb" }}>Monthly Camp Agenda</div>
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 3, lineHeight: 1.5 }}>
+                  Personalized monthly email with your registered camps, watchlist, and nearby camps.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleMonthlyOptOutToggle(!monthlyOptOut)}
+                disabled={emailPrefsSaving}
+                style={{
+                  flexShrink: 0,
+                  width: 44, height: 24,
+                  borderRadius: 12,
+                  border: "none",
+                  background: monthlyOptOut ? "#374151" : "#22c55e",
+                  cursor: emailPrefsSaving ? "not-allowed" : "pointer",
+                  position: "relative",
+                  opacity: emailPrefsSaving ? 0.6 : 1,
+                  transition: "background 0.2s",
+                }}
+              >
+                <span style={{
+                  position: "absolute",
+                  top: 3, left: monthlyOptOut ? 3 : 23,
+                  width: 18, height: 18,
+                  borderRadius: "50%",
+                  background: "#fff",
+                  transition: "left 0.2s",
+                }} />
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: monthlyOptOut ? "#ef4444" : "#22c55e", marginTop: 10, fontWeight: 600 }}>
+              {emailPrefsSaving ? "Saving…" : monthlyOptOut ? "Opted out — you will not receive monthly agenda emails" : "Subscribed — you will receive monthly agenda emails"}
+            </div>
+          </div>
+        </Section>
 
         {/* ── Delete Account ── */}
         <div style={{ marginTop: 32, borderTop: "1px solid #1f2937", paddingTop: 24 }}>
