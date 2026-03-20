@@ -130,6 +130,18 @@ const TOOLS = [
     ],
   },
   {
+    section: "Product",
+    items: [
+      {
+        title: "Product Roadmap",
+        description: "Track what we're building, why, who owns it, and where it's stuck. Intake → Scoped → In Progress → Blocked → Done.",
+        route: "/ProductRoadmap",
+        icon: "🗺️",
+        color: "#1a4e6b",
+      },
+    ],
+  },
+  {
     section: "Support",
     items: [
       {

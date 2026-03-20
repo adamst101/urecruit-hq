@@ -70,6 +70,7 @@ import HostOrgMappingManager from './pages/HostOrgMappingManager';
 import Index from './pages/Index';
 import MonthlyAgendaAdmin from './pages/MonthlyAgendaAdmin';
 import MyCamps from './pages/MyCamps';
+import ProductRoadmap from './pages/ProductRoadmap';
 import Profile from './pages/Profile';
 import RecruitingGuide from './pages/RecruitingGuide';
 import SchoolAthleticsCleanup from './pages/SchoolAthleticsCleanup';
@@ -109,6 +110,7 @@ export const PAGES = {
     "Index": Index,
     "MonthlyAgendaAdmin": MonthlyAgendaAdmin,
     "MyCamps": MyCamps,
+    "ProductRoadmap": ProductRoadmap,
     "Profile": Profile,
     "RecruitingGuide": RecruitingGuide,
     "SchoolAthleticsCleanup": SchoolAthleticsCleanup,
