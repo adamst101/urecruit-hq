@@ -64,6 +64,11 @@ export default function Checkout() {
     return () => { cancelled = true; };
   }, [isAddonMode]);
 
+  // Pre-warm validatePromo Deno function so cold-start latency is absorbed before the user types a code
+  useEffect(() => {
+    base44.functions.invoke("validatePromo", { promoCode: "" }).catch(() => {});
+  }, []);
+
   // Load sports list
   useEffect(() => {
     let mounted = true;
@@ -141,10 +146,13 @@ export default function Checkout() {
         return;
       } catch (e) {
         if (e?.message === "timeout" && attempt === 0) {
-          // First attempt timed out — silently retry
+          // First attempt timed out — silently retry (Deno cold start)
           continue;
         }
-        setPromoState({ ok: false, error: "Validation timed out — please try again" });
+        const msg = e?.message === "timeout"
+          ? "Validation timed out — please try again"
+          : "Could not validate code — please try again";
+        setPromoState({ ok: false, error: msg });
         return;
       }
     }
