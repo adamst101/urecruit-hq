@@ -261,7 +261,8 @@ Deno.serve(async (req) => {
     const users: Record<string, unknown>[] = Array.isArray(rawUsers) ? rawUsers : [];
     const athletes: Record<string, unknown>[] = Array.isArray(rawAthletes) ? rawAthletes : [];
 
-    const userByAccountId = new Map(users.map(u => [u.id as string, u]));
+    const userByAccountId = new Map(users.map(u => [(u.id || u._id) as string, u]));
+
     const athletesByAccount = new Map<string, Record<string, unknown>[]>();
     for (const a of athletes) {
       const aid = a.account_id as string;
@@ -277,16 +278,9 @@ Deno.serve(async (req) => {
         const accountId = e.account_id as string;
         const user = userByAccountId.get(accountId);
         const email = (user?.email as string) || "";
+        const fullName = (user?.full_name as string)?.trim() || "";
+        const name = fullName || email || accountId;
         const acctAthletes = athletesByAccount.get(accountId) || [];
-        const a = acctAthletes[0];
-        const parentFirst = (a?.parent_first_name as string)?.trim() || "";
-        const parentLast  = (a?.parent_last_name as string)?.trim() || "";
-        const athleteFirst = (a?.first_name as string)?.trim() || "";
-        const athleteLast  = (a?.last_name as string)?.trim() || "";
-        const name = parentFirst && parentLast ? `${parentFirst} ${parentLast}`
-          : parentFirst ? parentFirst
-          : athleteFirst ? `${athleteFirst}${athleteLast ? " " + athleteLast : ""} (athlete)`
-          : email;
         return { accountId, email, name, hasAthletes: acctAthletes.length > 0 };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -394,11 +388,12 @@ Deno.serve(async (req) => {
       if (homeCoords && greeting) break;
     }
     if (!greeting) {
-      // Try to get name from user email as last resort
       try {
         const users = await base44.asServiceRole.entities.User.filter({ id: accountId });
-        const email = Array.isArray(users) && users[0]?.email ? (users[0].email as string) : "";
-        greeting = email || "uRecruitHQ Subscriber";
+        const user = Array.isArray(users) ? users[0] : null;
+        const fullName = (user?.full_name as string)?.trim() || "";
+        const email = (user?.email as string) || "";
+        greeting = fullName || email || "uRecruitHQ Subscriber";
       } catch { greeting = "uRecruitHQ Subscriber"; }
     }
 
