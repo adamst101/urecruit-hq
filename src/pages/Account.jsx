@@ -57,6 +57,7 @@ export default function Account() {
 
   const [emailPrefsId, setEmailPrefsId] = useState(null);
   const [monthlyOptOut, setMonthlyOptOut] = useState(false);
+  const [campAlertOptOut, setCampAlertOptOut] = useState(false);
   const [emailPrefsSaving, setEmailPrefsSaving] = useState(false);
 
   async function fetchData(showSpinner = false) {
@@ -75,27 +76,37 @@ export default function Account() {
       const pref = Array.isArray(prefRows) ? prefRows[0] : null;
       setEmailPrefsId(pref?.id || null);
       setMonthlyOptOut(pref?.monthly_agenda_opt_out === true);
+      setCampAlertOptOut(pref?.camp_week_alert_opt_out === true);
     } catch {}
     setLoading(false);
     if (showSpinner) setRefreshing(false);
   }
 
-  async function handleMonthlyOptOutToggle(newVal) {
-    setMonthlyOptOut(newVal);
+  async function saveEmailPref(field, newVal, revert) {
     setEmailPrefsSaving(true);
     try {
       if (emailPrefsId) {
-        await base44.entities.EmailPreferences.update(emailPrefsId, { monthly_agenda_opt_out: newVal });
+        await base44.entities.EmailPreferences.update(emailPrefsId, { [field]: newVal });
       } else {
-        const created = await base44.entities.EmailPreferences.create({ account_id: accountId, monthly_agenda_opt_out: newVal });
+        const created = await base44.entities.EmailPreferences.create({ account_id: accountId, [field]: newVal });
         if (created?.id) setEmailPrefsId(created.id);
       }
     } catch (e) {
       console.error("Failed to save email preferences:", e?.message);
-      setMonthlyOptOut(!newVal); // revert on failure
+      revert();
     } finally {
       setEmailPrefsSaving(false);
     }
+  }
+
+  function handleMonthlyOptOutToggle(newVal) {
+    setMonthlyOptOut(newVal);
+    saveEmailPref("monthly_agenda_opt_out", newVal, () => setMonthlyOptOut(!newVal));
+  }
+
+  function handleCampAlertOptOutToggle(newVal) {
+    setCampAlertOptOut(newVal);
+    saveEmailPref("camp_week_alert_opt_out", newVal, () => setCampAlertOptOut(!newVal));
   }
 
   useEffect(() => {
@@ -409,8 +420,49 @@ export default function Account() {
               </button>
             </div>
             <div style={{ fontSize: 12, color: monthlyOptOut ? "#ef4444" : "#22c55e", marginTop: 10, fontWeight: 600 }}>
-              {emailPrefsSaving ? "Saving…" : monthlyOptOut ? "Opted out — you will not receive monthly agenda emails" : "Subscribed — you will receive monthly agenda emails"}
+              {monthlyOptOut ? "Opted out — you will not receive monthly agenda emails" : "Subscribed — you will receive monthly agenda emails"}
             </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ borderTop: "1px solid #1f2937", margin: "16px 0" }} />
+
+          {/* Camp Week Alert toggle */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#f9fafb" }}>Camp Week Alert</div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 3, lineHeight: 1.5 }}>
+                Prep reminder sent 7 days before each registered camp — what to bring, travel tips, and what coaches evaluate.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleCampAlertOptOutToggle(!campAlertOptOut)}
+              disabled={emailPrefsSaving}
+              style={{
+                flexShrink: 0,
+                width: 44, height: 24,
+                borderRadius: 12,
+                border: "none",
+                background: campAlertOptOut ? "#374151" : "#22c55e",
+                cursor: emailPrefsSaving ? "not-allowed" : "pointer",
+                position: "relative",
+                opacity: emailPrefsSaving ? 0.6 : 1,
+                transition: "background 0.2s",
+              }}
+            >
+              <span style={{
+                position: "absolute",
+                top: 3, left: campAlertOptOut ? 3 : 23,
+                width: 18, height: 18,
+                borderRadius: "50%",
+                background: "#fff",
+                transition: "left 0.2s",
+              }} />
+            </button>
+          </div>
+          <div style={{ fontSize: 12, color: campAlertOptOut ? "#ef4444" : "#22c55e", marginTop: 10, fontWeight: 600 }}>
+            {emailPrefsSaving ? "Saving…" : campAlertOptOut ? "Opted out — you will not receive camp week alerts" : "Subscribed — you will receive camp week alerts"}
           </div>
         </Section>
 
