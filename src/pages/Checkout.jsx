@@ -40,14 +40,16 @@ export default function Checkout() {
   // Load season config + check auth
   useEffect(() => {
     let cancelled = false;
+    const withTimeout = (p, ms) =>
+      Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error("timeout")), ms))]);
     (async () => {
       try {
         const [seasonRes, authed] = await Promise.all([
-          base44.functions.invoke("getActiveSeason", {}),
+          withTimeout(base44.functions.invoke("getActiveSeason", {}), 5000).catch(() => null),
           base44.auth.isAuthenticated().catch(() => false),
         ]);
         if (cancelled) return;
-        if (seasonRes.data?.ok && seasonRes.data?.season) {
+        if (seasonRes?.data?.ok && seasonRes?.data?.season) {
           setSeasonConfig(seasonRes.data.season);
         }
         const authenticated = !!authed;
@@ -121,16 +123,30 @@ export default function Checkout() {
     if (!trimmed) return;
     setPromoState("checking");
     setError(null);
-    try {
-      const res = await base44.functions.invoke("validatePromo", { promoCode: trimmed });
-      const data = res.data;
-      if (data?.ok) {
-        setPromoState(data);
-      } else {
-        setPromoState({ ok: false, error: data?.error || "Invalid code" });
+    const withTimeout = (p, ms) =>
+      Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error("timeout")), ms))]);
+    // Retry once on timeout (Deno cold start can take several seconds)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await withTimeout(
+          base44.functions.invoke("validatePromo", { promoCode: trimmed }),
+          10000
+        );
+        const data = res.data;
+        if (data?.ok) {
+          setPromoState(data);
+        } else {
+          setPromoState({ ok: false, error: data?.error || "Invalid code" });
+        }
+        return;
+      } catch (e) {
+        if (e?.message === "timeout" && attempt === 0) {
+          // First attempt timed out — silently retry
+          continue;
+        }
+        setPromoState({ ok: false, error: "Validation timed out — please try again" });
+        return;
       }
-    } catch {
-      setPromoState({ ok: false, error: "Could not validate code" });
     }
   }, []);
 
