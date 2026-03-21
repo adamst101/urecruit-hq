@@ -1,7 +1,8 @@
 // src/pages/AppHealthCheck.jsx
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import AdminRoute from "../components/auth/AdminRoute";
 import { base44 } from "../api/base44Client";
+import { toast } from "../components/ui/use-toast";
 
 // ── Demo localStorage helpers (mirrors demoRegistered.jsx) ──────────────────
 const _demoKey = (profileId) => `rm_demo_registered_${profileId || "default"}`;
@@ -789,6 +790,10 @@ export default function AppHealthCheck() {
   );
   const [runningAll, setRunningAll] = useState(false);
   const [lastRunAll, setLastRunAll] = useState(null);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const statesRef = useRef(states);
+  statesRef.current = states;
 
   const anyRunning = Object.values(states).some(s => s.status === "running");
 
@@ -796,33 +801,94 @@ export default function AppHealthCheck() {
     setStates(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   }, []);
 
+  // ── Notification helpers ──────────────────────────────────────────────────
+
+  function toastFailure(journey, result) {
+    const failedStep = result.steps.find(s => s.status === "fail");
+    toast({
+      title: `❌ ${journey.name} failed`,
+      description: failedStep ? `${failedStep.name}: ${failedStep.detail}` : "Check step details.",
+      variant: "destructive",
+    });
+  }
+
+  function desktopNotify(failedJourneys) {
+    if (!("Notification" in window)) return;
+    const body = failedJourneys.map(j => j.name).join(", ");
+    const fire = () => new Notification(
+      `uRecruitHQ — ${failedJourneys.length} health check failure${failedJourneys.length > 1 ? "s" : ""}`,
+      { body, icon: "/favicon.ico" }
+    );
+    if (Notification.permission === "granted") fire();
+    else if (Notification.permission !== "denied") Notification.requestPermission().then(p => { if (p === "granted") fire(); });
+  }
+
+  async function emailReport() {
+    setEmailSending(true);
+    setEmailSent(false);
+    try {
+      const me = await base44.auth.me();
+      const currentStates = statesRef.current;
+      const failures = ALL_JOURNEYS
+        .filter(j => currentStates[j.id]?.status === "fail")
+        .map(j => ({ name: j.name, steps: currentStates[j.id].steps }));
+      const res = await base44.functions.invoke("sendHealthAlert", {
+        toEmail: me?.email,
+        failures,
+        runDate: new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
+      });
+      if (res?.data?.ok) {
+        setEmailSent(true);
+        toast({ title: "Report sent", description: `Failure summary emailed to ${me?.email}` });
+      } else {
+        toast({ title: "Email failed", description: res?.data?.error || "Unknown error", variant: "destructive" });
+      }
+    } catch (e) {
+      toast({ title: "Email failed", description: e.message, variant: "destructive" });
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
+  // ── Run functions ─────────────────────────────────────────────────────────
+
   async function runOne(journey) {
     patchState(journey.id, { status: "running", steps: [], duration: null });
     const result = await runJourney(journey, (steps, status) => {
       patchState(journey.id, { steps, status });
     });
     patchState(journey.id, result);
+    if (result.status === "fail") toastFailure(journey, result);
   }
 
   async function runGroup(journeys) {
+    const failures = [];
     for (const j of journeys) {
       patchState(j.id, { status: "running", steps: [], duration: null });
       const result = await runJourney(j, (steps, status) => patchState(j.id, { steps, status }));
       patchState(j.id, result);
+      if (result.status === "fail") {
+        toastFailure(j, result);
+        failures.push(j);
+      }
     }
+    return failures;
   }
 
   async function runAll() {
     setRunningAll(true);
+    setEmailSent(false);
     const start = Date.now();
-    await runGroup(ALL_JOURNEYS);
+    const failures = await runGroup(ALL_JOURNEYS);
     setRunningAll(false);
     setLastRunAll(Date.now() - start);
+    if (failures.length > 0) desktopNotify(failures);
   }
 
   function resetAll() {
     setStates(Object.fromEntries(ALL_JOURNEYS.map(j => [j.id, IDLE()])));
     setLastRunAll(null);
+    setEmailSent(false);
   }
 
   const counts = Object.values(states).reduce((acc, s) => {
@@ -870,7 +936,7 @@ export default function AppHealthCheck() {
           </div>
 
           {allDone && (
-            <div style={{ display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
               {counts.pass > 0 && (
                 <div style={{ background: "#ecfdf5", border: "1px solid #6ee7b7", borderRadius: 8,
                   padding: "5px 14px", fontSize: 13 }}>
@@ -884,6 +950,22 @@ export default function AppHealthCheck() {
                   <span style={{ fontWeight: 700, color: "#dc2626" }}>{counts.fail}</span>
                   <span style={{ color: "#dc2626", marginLeft: 5 }}>failed</span>
                 </div>
+              )}
+              {counts.fail > 0 && (
+                <button
+                  onClick={emailReport}
+                  disabled={emailSending || emailSent}
+                  style={{
+                    background: emailSent ? "#ecfdf5" : "#fff",
+                    border: `1px solid ${emailSent ? "#6ee7b7" : "#fca5a5"}`,
+                    color: emailSent ? "#059669" : "#dc2626",
+                    borderRadius: 8, padding: "5px 14px", fontSize: 13,
+                    fontWeight: 600, cursor: emailSending || emailSent ? "default" : "pointer",
+                    opacity: emailSending ? 0.6 : 1,
+                  }}
+                >
+                  {emailSent ? "✓ Report sent" : emailSending ? "Sending…" : "📧 Email failure report"}
+                </button>
               )}
             </div>
           )}
