@@ -179,7 +179,9 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const profile = await base44.entities.AthleteProfile.create({
                 first_name: "__test__", last_name: "__healthcheck__",
+                athlete_name: "__test__ __healthcheck__",
                 account_id: ctx.myId, active: true,
+                sport_id: "test", grad_year: 2099,
               });
               if (!profile?.id) throw new Error("AthleteProfile create returned no id");
               ctx.testProfileId = profile.id;
