@@ -130,6 +130,18 @@ const TOOLS = [
     ],
   },
   {
+    section: "Quality",
+    items: [
+      {
+        title: "App Health Check",
+        description: "Run user journey tests after deploys or data changes. Auth, camps, schools, subscribers, email config, entity write.",
+        route: "/AppHealthCheck",
+        icon: "🩺",
+        color: "#1a6b5a",
+      },
+    ],
+  },
+  {
     section: "Product",
     items: [
       {
