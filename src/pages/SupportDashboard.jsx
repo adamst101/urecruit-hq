@@ -5,7 +5,7 @@ import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { ChevronDown, ChevronUp, ArrowLeft } from "lucide-react";
+import { ChevronDown, ChevronUp, ArrowLeft, Send, MessageSquare, HelpCircle } from "lucide-react";
 import { createPageUrl } from "../utils";
 import AdminRoute from "../components/auth/AdminRoute";
 
@@ -23,6 +23,11 @@ export default function SupportDashboard() {
   const [expandedId, setExpandedId] = useState(null);
   const [adminNotes, setAdminNotes] = useState({});
   const [saving, setSaving] = useState(null);
+  const [replyMsg, setReplyMsg] = useState({});
+  const [replyType, setReplyType] = useState({});
+  const [replyStatus, setReplyStatus] = useState({});
+  const [replySending, setReplySending] = useState(null);
+  const [replySent, setReplySent] = useState({});
 
   useEffect(() => {
     (async () => {
@@ -65,6 +70,34 @@ export default function SupportDashboard() {
     await base44.entities.SupportTicket.update(ticketId, { admin_notes: adminNotes[ticketId] || "" });
     setTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, admin_notes: adminNotes[ticketId] || "" } : t)));
     setSaving(null);
+  }
+
+  async function sendReply(ticketId) {
+    const msg = (replyMsg[ticketId] || "").trim();
+    if (!msg) return;
+    setReplySending(ticketId);
+    try {
+      const result = await base44.functions.replyToTicket({
+        ticketId,
+        message: msg,
+        messageType: replyType[ticketId] || "reply",
+        newStatus: replyStatus[ticketId] || "no_change",
+      });
+      if (result?.ok) {
+        // Apply any ticket updates returned from the function
+        if (result.updatedData) {
+          setTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, ...result.updatedData } : t)));
+          // Sync admin notes textarea if it was updated
+          if (result.updatedData.admin_notes !== undefined) {
+            setAdminNotes((p) => ({ ...p, [ticketId]: result.updatedData.admin_notes }));
+          }
+        }
+        setReplyMsg((p) => ({ ...p, [ticketId]: "" }));
+        setReplySent((p) => ({ ...p, [ticketId]: Date.now() }));
+      }
+    } finally {
+      setReplySending(null);
+    }
   }
 
   const selectCls = "bg-[#111827] border-[#1f2937] text-[#f9fafb]";
@@ -169,8 +202,89 @@ export default function SupportDashboard() {
                         {saving === t.id && <span className="text-xs text-[#e8a020]">Saving...</span>}
                       </div>
 
+                      {/* Message User */}
+                      <div className="border border-[#1f2937] rounded-lg p-3 space-y-2 bg-[#0a0e1a]">
+                        <div className="flex items-center gap-2 mb-1">
+                          <MessageSquare className="w-4 h-4 text-[#e8a020]" />
+                          <span className="text-xs font-semibold text-[#f9fafb]">Message User</span>
+                          <span className="text-xs text-[#6b7280]">→ {t.user_email}</span>
+                        </div>
+
+                        {/* Type toggle */}
+                        <div className="flex gap-2">
+                          {[
+                            { val: "reply", label: "Update / Reply", icon: <Send className="w-3 h-3" /> },
+                            { val: "info_request", label: "Request Info", icon: <HelpCircle className="w-3 h-3" /> },
+                          ].map(({ val, label, icon }) => {
+                            const active = (replyType[t.id] || "reply") === val;
+                            return (
+                              <button
+                                key={val}
+                                type="button"
+                                onClick={() => setReplyType((p) => ({ ...p, [t.id]: val }))}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                                  active
+                                    ? val === "info_request"
+                                      ? "bg-amber-600 border-amber-600 text-white"
+                                      : "bg-[#e8a020] border-[#e8a020] text-[#0a0e1a]"
+                                    : "bg-transparent border-[#374151] text-[#9ca3af] hover:border-[#4b5563]"
+                                }`}
+                              >
+                                {icon}{label}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <textarea
+                          className="w-full rounded-lg bg-[#111827] border border-[#1f2937] text-[#f9fafb] text-sm px-3 py-2 resize-none placeholder-[#4b5563]"
+                          rows={3}
+                          placeholder={(replyType[t.id] || "reply") === "info_request"
+                            ? "Describe what additional information you need from the user..."
+                            : "Type your update or reply to the user..."}
+                          value={replyMsg[t.id] || ""}
+                          onChange={(e) => {
+                            setReplyMsg((p) => ({ ...p, [t.id]: e.target.value }));
+                            setReplySent((p) => ({ ...p, [t.id]: null }));
+                          }}
+                        />
+
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-[#6b7280]">Also change status:</span>
+                            <Select
+                              value={replyStatus[t.id] || "no_change"}
+                              onValueChange={(v) => setReplyStatus((p) => ({ ...p, [t.id]: v }))}
+                            >
+                              <SelectTrigger className={`w-[140px] h-7 text-xs ${selectCls}`}><SelectValue /></SelectTrigger>
+                              <SelectContent className={selectCls}>
+                                <SelectItem value="no_change">No change</SelectItem>
+                                <SelectItem value="open">Open</SelectItem>
+                                <SelectItem value="in_progress">In Progress</SelectItem>
+                                <SelectItem value="resolved">Resolved</SelectItem>
+                                <SelectItem value="closed">Closed</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <Button
+                            size="sm"
+                            disabled={!replyMsg[t.id]?.trim() || replySending === t.id}
+                            onClick={() => sendReply(t.id)}
+                            className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f] text-xs flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            <Send className="w-3 h-3" />
+                            {replySending === t.id ? "Sending..." : "Send Email"}
+                          </Button>
+
+                          {replySent[t.id] && (
+                            <span className="text-xs text-green-400">Email sent!</span>
+                          )}
+                        </div>
+                      </div>
+
                       <div>
-                        <div className="text-xs text-[#6b7280] mb-1">Admin Notes</div>
+                        <div className="text-xs text-[#6b7280] mb-1">Admin Notes / History</div>
                         <textarea
                           className="w-full rounded-lg bg-[#0a0e1a] border border-[#1f2937] text-[#f9fafb] text-sm px-3 py-2 resize-none"
                           rows={2}
