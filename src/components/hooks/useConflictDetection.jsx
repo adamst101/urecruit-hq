@@ -33,13 +33,18 @@ function campCity(camp) {
   return [camp?.city, camp?.state].filter(Boolean).join(", ") || "unknown location";
 }
 
-export function detectConflicts({ camps, homeCity, homeState, isPaid }) {
+export function detectConflicts({ camps, homeCity, homeState, homeLat, homeLng, isPaid }) {
   const warnings = [];
   if (!Array.isArray(camps) || camps.length === 0) return warnings;
 
-  const homeCoords = isPaid && (homeCity || homeState)
-    ? getCityCoords(homeCity, homeState)
-    : null;
+  let homeCoords = null;
+  if (isPaid) {
+    if (homeLat != null && homeLng != null) {
+      homeCoords = { lat: homeLat, lng: homeLng };
+    } else if (homeCity || homeState) {
+      homeCoords = getCityCoords(homeCity, homeState);
+    }
+  }
 
   // Check pairwise
   for (let i = 0; i < camps.length; i++) {
@@ -109,7 +114,7 @@ export function detectConflicts({ camps, homeCity, homeState, isPaid }) {
   return warnings;
 }
 
-export function useConflictDetection({ favoritedCamps, registeredCamps, additionalCamps = [], homeCity, homeState, isPaid }) {
+export function useConflictDetection({ favoritedCamps, registeredCamps, additionalCamps = [], homeCity, homeState, homeLat, homeLng, isPaid }) {
   const warnings = useMemo(() => {
     const allCamps = [...(favoritedCamps || []), ...(registeredCamps || [])];
     // Dedupe current athlete's camps by id
@@ -123,8 +128,8 @@ export function useConflictDetection({ favoritedCamps, registeredCamps, addition
     }
     // Append other athletes' camps (exclude any already present)
     const extra = (additionalCamps || []).filter((c) => !seen.has(String(c?.id || "")));
-    return detectConflicts({ camps: [...unique, ...extra], homeCity, homeState, isPaid });
-  }, [favoritedCamps, registeredCamps, additionalCamps, homeCity, homeState, isPaid]);
+    return detectConflicts({ camps: [...unique, ...extra], homeCity, homeState, homeLat, homeLng, isPaid });
+  }, [favoritedCamps, registeredCamps, additionalCamps, homeCity, homeState, homeLat, homeLng, isPaid]);
 
   const getWarningsForCamp = useMemo(() => {
     return (campId) => {

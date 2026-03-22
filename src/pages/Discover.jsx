@@ -700,6 +700,8 @@ export default function Discover() {
         camps: [...existing, camp],
         homeCity: athleteProfile?.home_city || null,
         homeState: athleteProfile?.home_state || null,
+        homeLat: athleteProfile?.home_lat ?? null,
+        homeLng: athleteProfile?.home_lng ?? null,
         isPaid,
       }).filter((w) => w.campIds?.includes(String(campId)));
       if (warnings.length > 0) {
@@ -729,6 +731,8 @@ export default function Discover() {
       camps: [...existing, camp],
       homeCity: athleteProfile?.home_city || null,
       homeState: athleteProfile?.home_state || null,
+      homeLat: athleteProfile?.home_lat ?? null,
+      homeLng: athleteProfile?.home_lng ?? null,
       isPaid,
     }).filter((w) => w.campIds?.includes(String(campId)));
 
@@ -892,6 +896,8 @@ export default function Discover() {
                 camps: existing,
                 homeCity: athleteProfile?.home_city || null,
                 homeState: athleteProfile?.home_state || null,
+                homeLat: athleteProfile?.home_lat ?? null,
+                homeLng: athleteProfile?.home_lng ?? null,
                 isPaid,
               }).filter((w) => w.campIds?.includes(String(campId)));
             }}

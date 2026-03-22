@@ -137,6 +137,8 @@ export default function MyCamps() {
     additionalCamps: otherAthletesCamps,
     homeCity: athleteProfile?.home_city || null,
     homeState: athleteProfile?.home_state || null,
+    homeLat: athleteProfile?.home_lat ?? null,
+    homeLng: athleteProfile?.home_lng ?? null,
     isPaid: !isDemoMode,
   });
 
