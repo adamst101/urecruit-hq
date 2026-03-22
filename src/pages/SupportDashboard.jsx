@@ -288,8 +288,8 @@ export default function SupportDashboard() {
                       <div>
                         <div className="text-xs text-[#6b7280] mb-1">Admin Notes / History</div>
                         <textarea
-                          className="w-full rounded-lg bg-[#0a0e1a] border border-[#1f2937] text-[#f9fafb] text-sm px-3 py-2 resize-none"
-                          rows={2}
+                          className="w-full rounded-lg bg-[#0a0e1a] border border-[#1f2937] text-[#f9fafb] text-sm px-3 py-2 resize-y min-h-[80px]"
+                          rows={6}
                           value={adminNotes[t.id] ?? t.admin_notes ?? ""}
                           onChange={(e) => setAdminNotes((p) => ({ ...p, [t.id]: e.target.value }))}
                         />
