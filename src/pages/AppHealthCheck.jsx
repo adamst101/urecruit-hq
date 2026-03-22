@@ -831,19 +831,21 @@ const JOURNEY_GROUPS = [
           },
           {
             name: "replyToTicket function reachable",
-            run: async (ctx) => {
-              const id = ctx.ticketFound?.id || ctx.ticketId || "healthcheck-fake-id";
-              // Call with a fake or real id — we expect ok:false for fake, ok:true for real
-              const res = await base44.functions.invoke("replyToTicket", {
-                ticketId: id,
-                message: "__HEALTHCHECK__ — please ignore this test ping",
-                messageType: "reply",
-                appUrl: window.location.origin,
-              });
-              const data = res?.data;
-              // Function is reachable if it returns any structured response
-              if (data === undefined || data === null) throw new Error("replyToTicket returned no response");
-              return `replyToTicket responded — ok=${data.ok}${data.error ? ` (${data.error})` : ""}`;
+            run: async () => {
+              // Probe with an empty body — the function returns 400 immediately
+              // (ticketId required) before any DB lookup or email is attempted.
+              // A 400 proves the function is alive; anything else (502, 500) is a real failure.
+              try {
+                await base44.functions.invoke("replyToTicket", {});
+                // If somehow ok:true with no ticketId, still counts as reachable
+                return "replyToTicket responded (no ticketId — unexpected ok:true)";
+              } catch (err) {
+                const status = err?.response?.status ?? err?.status;
+                if (status === 400) return "replyToTicket reachable — returned 400 for missing ticketId ✓";
+                if (status === 404) return "replyToTicket reachable — returned 404 ✓";
+                // 502 / 500 / network error = real failure
+                throw new Error(`replyToTicket unavailable (HTTP ${status ?? "unknown"}): ${err.message}`);
+              }
             },
           },
         ],
