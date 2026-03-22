@@ -69,6 +69,7 @@ import GeocodeSchools from './pages/GeocodeSchools';
 import Home from './pages/Home';
 import HostOrgMappingManager from './pages/HostOrgMappingManager';
 import Index from './pages/Index';
+import KnowledgeBase from './pages/KnowledgeBase';
 import MonthlyAgendaAdmin from './pages/MonthlyAgendaAdmin';
 import MyCamps from './pages/MyCamps';
 import ProductRoadmap from './pages/ProductRoadmap';
@@ -111,6 +112,7 @@ export const PAGES = {
     "Home": Home,
     "HostOrgMappingManager": HostOrgMappingManager,
     "Index": Index,
+    "KnowledgeBase": KnowledgeBase,
     "MonthlyAgendaAdmin": MonthlyAgendaAdmin,
     "MyCamps": MyCamps,
     "ProductRoadmap": ProductRoadmap,

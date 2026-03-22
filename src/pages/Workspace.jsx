@@ -26,8 +26,7 @@ const ROUTES = {
   Profile: "/Profile",
   Subscribe: "/Subscribe",
   MyCamps: "/MyCamps",
-  RecruitingGuide: "/RecruitingGuide",
-  CampPlaybook: "/CampPlaybook",
+  KnowledgeBase: "/KnowledgeBase",
   Account: "/Account",
   AdminImport: "/AdminImport",
   AdminOps: "/AdminOps",
@@ -233,8 +232,7 @@ export default function Workspace() {
             onClick={() => nav(athleteId ? `${ROUTES.Profile}?id=${athleteId}` : ROUTES.Profile)}
             highlight={!athleteId}
           />
-          <WorkspaceTile icon="📖" title="RECRUITING GUIDE" desc="Step-by-step recruiting roadmap for families" btnLabel="Read →" onClick={() => nav(ROUTES.RecruitingGuide)} />
-          <WorkspaceTile icon="📋" title="CAMP PLAYBOOK" desc="How to prepare, what to expect, and how to stand out" btnLabel="Read →" onClick={() => nav(ROUTES.CampPlaybook)} />
+          <WorkspaceTile icon="📚" title="KNOWLEDGE BASE" desc="Recruiting rules, camp strategy, film, offers & more" btnLabel="Read →" onClick={() => nav(ROUTES.KnowledgeBase)} />
         </div>
       </section>
 
