@@ -73,19 +73,25 @@ export default function ProductMetrics() {
   const [campIntents,  setCampIntents]  = useState([]);
   const [tickets,      setTickets]      = useState([]);
   const [events,       setEvents]       = useState([]);
+  const [athletes,     setAthletes]     = useState([]);
+  const [pageEvents,   setPageEvents]   = useState([]);
 
   async function loadAll() {
     setLoading(true);
-    const [ents, intents, tix, evts] = await Promise.all([
+    const [ents, intents, tix, evts, aths, pgEvts] = await Promise.all([
       base44.entities.Entitlement.filter({}).catch(() => []),
       base44.entities.CampIntent.filter({}).catch(() => []),
       base44.entities.SupportTicket.filter({}).catch(() => []),
       base44.entities.Event.filter({ event_type: "purchase_completed" }).catch(() => []),
+      base44.entities.Athlete.filter({}).catch(() => []),
+      base44.entities.Event.filter({}).catch(() => []),
     ]);
     setEntitlements(Array.isArray(ents) ? ents : []);
     setCampIntents(Array.isArray(intents) ? intents : []);
     setTickets(Array.isArray(tix) ? tix : []);
     setEvents(Array.isArray(evts) ? evts : []);
+    setAthletes(Array.isArray(aths) ? aths : []);
+    setPageEvents(Array.isArray(pgEvts) ? pgEvts : []);
     setLastLoaded(new Date());
     setLoading(false);
   }
@@ -233,6 +239,93 @@ export default function ProductMetrics() {
 
     return { open, inProgress, resolved, thisWeek, resolutionRate, typeData, weeklyVolume, avgResHours, total: tickets.length };
   }, [tickets]);
+
+  // ── Activation funnel ─────────────────────────────────
+  const activationMetrics = useMemo(() => {
+    // Paid account IDs
+    const paidAccountIds = new Set(
+      entitlements.filter((e) => e.status === "active").map((e) => e.account_id).filter(Boolean)
+    );
+    const paidCount = paidAccountIds.size;
+
+    // Accounts that have at least one athlete profile
+    const accountsWithProfile = new Set(
+      athletes.map((a) => a.account_id).filter((id) => paidAccountIds.has(id))
+    ).size;
+
+    // Accounts that have at least one favorite (via athlete_id → account_id lookup)
+    const athleteToAccount = {};
+    for (const a of athletes) {
+      if (a.id && a.account_id) athleteToAccount[a.id] = a.account_id;
+    }
+    const accountsWithFavorite = new Set(
+      campIntents
+        .filter((c) => c.status === "favorite" || c.status === "registered" || c.status === "completed")
+        .map((c) => athleteToAccount[c.athlete_id])
+        .filter((id) => id && paidAccountIds.has(id))
+    ).size;
+
+    const accountsWithRegistered = new Set(
+      campIntents
+        .filter((c) => c.status === "registered" || c.status === "completed")
+        .map((c) => athleteToAccount[c.athlete_id])
+        .filter((id) => id && paidAccountIds.has(id))
+    ).size;
+
+    const funnelSteps = [
+      { label: "Paid Accounts", value: paidCount, pct: 100 },
+      { label: "Profile Created", value: accountsWithProfile, pct: paidCount ? +((accountsWithProfile / paidCount) * 100).toFixed(1) : 0 },
+      { label: "Camp Favorited", value: accountsWithFavorite, pct: paidCount ? +((accountsWithFavorite / paidCount) * 100).toFixed(1) : 0 },
+      { label: "Camp Registered", value: accountsWithRegistered, pct: paidCount ? +((accountsWithRegistered / paidCount) * 100).toFixed(1) : 0 },
+    ];
+
+    return { paidCount, accountsWithProfile, accountsWithFavorite, accountsWithRegistered, funnelSteps };
+  }, [entitlements, athletes, campIntents]);
+
+  // ── Page engagement ───────────────────────────────────
+  const pageEngagement = useMemo(() => {
+    const PAGE_EVENTS = [
+      { type: "workspace_viewed",    label: "Workspace" },
+      { type: "discover_loaded",     label: "Discover" },
+      { type: "my_camps_viewed",     label: "My Camps" },
+      { type: "calendar_viewed",     label: "Calendar" },
+      { type: "playbook_viewed",     label: "The Playbook" },
+      { type: "profile_viewed",      label: "Profile" },
+      { type: "camp_favorite_toggled", label: "Favorites" },
+      { type: "profile_saved",       label: "Profile Saves" },
+    ];
+
+    const countByType = {};
+    for (const e of pageEvents) countByType[e.event_type] = (countByType[e.event_type] || 0) + 1;
+
+    const pageData = PAGE_EVENTS
+      .map(({ type, label }) => ({ label, count: countByType[type] || 0 }))
+      .filter((d) => d.count > 0)
+      .sort((a, b) => b.count - a.count);
+
+    // Playbook topic breakdown
+    const topicCounts = {};
+    for (const e of pageEvents) {
+      if (e.event_type === "playbook_topic_viewed") {
+        let topic = "unknown";
+        try { topic = JSON.parse(e.payload_json || "{}").topic || "unknown"; } catch {}
+        topicCounts[topic] = (topicCounts[topic] || 0) + 1;
+      }
+    }
+    const topicData = Object.entries(topicCounts)
+      .map(([topic, count]) => ({ topic, count }))
+      .sort((a, b) => b.count - a.count);
+
+    // WAU / MAU from page-level events
+    const now = new Date();
+    const weekAgo = new Date(now - 7 * 86400000);
+    const monthAgo = new Date(now - 30 * 86400000);
+    const pageEventTypes = new Set(PAGE_EVENTS.map((p) => p.type));
+    const wauEvents = pageEvents.filter((e) => pageEventTypes.has(e.event_type) && new Date(e.ts || e.start_date) >= weekAgo);
+    const mauEvents = pageEvents.filter((e) => pageEventTypes.has(e.event_type) && new Date(e.ts || e.start_date) >= monthAgo);
+
+    return { pageData, topicData, wauSessions: wauEvents.length, mauSessions: mauEvents.length };
+  }, [pageEvents]);
 
   // ── render ────────────────────────────────────────────
   return (
@@ -462,9 +555,94 @@ export default function ProductMetrics() {
                 </Card>
               </div>
 
+              {/* ── ACTIVATION FUNNEL ───────────────────── */}
+              <SectionHeader title="Activation Funnel" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                {activationMetrics.funnelSteps.map((step, i) => (
+                  <StatCard
+                    key={step.label}
+                    label={step.label}
+                    value={step.value}
+                    sub={i > 0 ? `${step.pct}% of paid` : undefined}
+                    color={i === 0 ? "#e8a020" : step.pct >= 60 ? "#22c55e" : step.pct >= 30 ? "#f9fafb" : "#ef4444"}
+                  />
+                ))}
+              </div>
+              <Card className="p-4 border-[#1f2937] bg-[#111827] mb-2">
+                <div className="text-xs text-[#6b7280] mb-4 font-semibold uppercase tracking-wide">Funnel Drop-off</div>
+                <div className="space-y-3">
+                  {activationMetrics.funnelSteps.map((step, i) => (
+                    <div key={step.label}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-[#9ca3af]">{step.label}</span>
+                        <span className="text-[#f9fafb] font-medium">{step.value} <span className="text-[#6b7280]">({step.pct}%)</span></span>
+                      </div>
+                      <div className="h-2 bg-[#1f2937] rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${step.pct}%`,
+                            background: CHART_COLORS[i % CHART_COLORS.length],
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+
+              {/* ── PAGE ENGAGEMENT ──────────────────────── */}
+              <SectionHeader title="Page Engagement" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <StatCard label="Sessions (7d)" value={pageEngagement.wauSessions} color="#e8a020" sub="page-level events" />
+                <StatCard label="Sessions (30d)" value={pageEngagement.mauSessions} color="#f9fafb" sub="page-level events" />
+                <StatCard label="Playbook Topics Tracked" value={pageEngagement.topicData.length} sub="topics with views" />
+                <StatCard label="Total Page Events" value={pageEvents.length.toLocaleString()} color="#6b7280" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
+                {pageEngagement.pageData.length > 0 ? (
+                  <Card className="p-4 border-[#1f2937] bg-[#111827]">
+                    <div className="text-xs text-[#6b7280] mb-3 font-semibold uppercase tracking-wide">Page Views by Type</div>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={pageEngagement.pageData} layout="vertical" barSize={14}>
+                        <XAxis type="number" tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <YAxis type="category" dataKey="label" tick={{ fill: "#9ca3af", fontSize: 11 }} axisLine={false} tickLine={false} width={90} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={TOOLTIP_ITEM_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} formatter={(v) => [v, "Views"]} />
+                        <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                          {pageEngagement.pageData.map((_, i) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Card>
+                ) : (
+                  <Card className="p-4 border-[#1f2937] bg-[#111827] flex items-center justify-center">
+                    <div className="text-xs text-[#4b5563]">Page tracking events will appear here once users visit instrumented pages.</div>
+                  </Card>
+                )}
+                {pageEngagement.topicData.length > 0 ? (
+                  <Card className="p-4 border-[#1f2937] bg-[#111827]">
+                    <div className="text-xs text-[#6b7280] mb-3 font-semibold uppercase tracking-wide">Playbook Topic Views</div>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={pageEngagement.topicData} layout="vertical" barSize={14}>
+                        <XAxis type="number" tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <YAxis type="category" dataKey="topic" tick={{ fill: "#9ca3af", fontSize: 11 }} axisLine={false} tickLine={false} width={80} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={TOOLTIP_ITEM_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} formatter={(v) => [v, "Views"]} />
+                        <Bar dataKey="count" fill="#e8a020" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Card>
+                ) : (
+                  <Card className="p-4 border-[#1f2937] bg-[#111827] flex items-center justify-center">
+                    <div className="text-xs text-[#4b5563]">Playbook topic tracking will appear here once users open The Playbook.</div>
+                  </Card>
+                )}
+              </div>
+
               <div className="mt-6 text-xs text-[#374151] text-center pb-4">
-                Phase 1 metrics — computed from Entitlement, CampIntent, SupportTicket, and Event tables.
-                Signup-based activation metrics require Phase 2 instrumentation.
+                Phase 1+2 metrics — Entitlement, CampIntent, SupportTicket, Athlete, and Event tables.
+                WAU/MAU counts are session events; user-level deduplication requires account_id on events (Phase 3).
               </div>
             </>
           )}

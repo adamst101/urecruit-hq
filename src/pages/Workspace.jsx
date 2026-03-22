@@ -13,6 +13,7 @@ import { useSeasonAccess, clearSeasonAccessCache } from "../components/hooks/use
 import { useActiveAthlete, clearActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import { clearDemoMode } from "../components/hooks/demoMode.jsx";
 import { isAdminEmail } from "../components/auth/adminEmails.jsx";
+import { trackEventOnce } from "../utils/trackEvent.js";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import AddAthleteModal from "../components/workspace/AddAthleteModal.jsx";
 import InstallButton from "../components/pwa/InstallButton.jsx";
@@ -108,6 +109,10 @@ export default function Workspace() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    trackEventOnce("workspace_viewed", "evt_workspace_viewed_v1", { paid: isMember });
+  }, [isMember]);
 
   const isAdmin = isAdminEmail(meEmail);
 

@@ -13,6 +13,7 @@ import FilterSheet from "../components/filters/FilterSheet.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { trackEventOnce } from "../utils/trackEvent.js";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
 import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
@@ -117,6 +118,8 @@ export default function Calendar() {
   const { demoProfileId } = useDemoProfile();
   const { activeAthlete: athleteProfile, isLoading: identityLoading } = useActiveAthlete();
   const { allCamps: allAthletesCamps, athletes: allAthletes } = useAllAthletesCamps({ enabled: season?.mode === "paid" });
+
+  useEffect(() => { trackEventOnce("calendar_viewed", "evt_calendar_viewed_v1"); }, []);
 
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   // If season has resolved to paid, never let a stale ?mode=demo override it

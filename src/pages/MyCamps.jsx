@@ -13,6 +13,7 @@ import MyCampsTabs from "../components/mycamps/MyCampsTabs.jsx";
 import MyCampsEmptyState from "../components/mycamps/MyCampsEmptyState.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess";
+import { trackEventOnce } from "../utils/trackEvent.js";
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
@@ -49,6 +50,8 @@ export default function MyCamps() {
   const season = useSeasonAccess();
   const { activeAthlete: athleteProfile } = useActiveAthlete();
   const { demoProfileId } = useDemoProfile();
+
+  useEffect(() => { trackEventOnce("my_camps_viewed", "evt_my_camps_viewed_v1"); }, []);
 
   const dm = readDemoMode();
   const isPaid = season?.mode === "paid";

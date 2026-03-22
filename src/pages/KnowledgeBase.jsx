@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { ArrowLeft, ArrowRight, ChevronLeft } from "lucide-react";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
+import { trackEvent, trackEventOnce } from "../utils/trackEvent.js";
 import GuidePaywall from "../components/guides/GuidePaywall.jsx";
 import {
   KbSidebarDesktop, KbTopicBarMobile, KB_TOPICS_FLAT,
@@ -344,6 +345,16 @@ export default function KnowledgeBase() {
   const activeIndex = KB_TOPICS_FLAT.indexOf(activeTopic);
   const prevTopic = activeIndex > 0 ? KB_TOPICS_FLAT[activeIndex - 1] : null;
   const nextTopic = activeIndex < KB_TOPICS_FLAT.length - 1 ? KB_TOPICS_FLAT[activeIndex + 1] : null;
+
+  // Track page view once per session
+  useEffect(() => {
+    trackEventOnce("playbook_viewed", "evt_playbook_viewed_v1");
+  }, []);
+
+  // Track topic views
+  useEffect(() => {
+    trackEvent("playbook_topic_viewed", { topic: activeTopicId });
+  }, [activeTopicId]);
 
   // Update URL when topic changes (no full navigation, just search param)
   function selectTopic(id) {

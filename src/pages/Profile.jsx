@@ -11,6 +11,7 @@ import { Button } from "../components/ui/button";
 import BottomNav from "../components/navigation/BottomNav.jsx";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
+import { trackEvent, trackEventOnce } from "../utils/trackEvent.js";
 import { geocodeCity } from "../components/hooks/useGeocode.jsx";
 
 const FEET_OPTIONS = [4, 5, 6, 7];
@@ -82,6 +83,8 @@ export default function Profile() {
   const { identity, loading: identityLoading, saveIdentity } = useAthleteIdentity({ athleteId });
 
   const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'success' | 'error'
+
+  useEffect(() => { trackEventOnce("profile_viewed", "evt_profile_viewed_v1"); }, []);
   const [sports, setSports] = useState([]);
   const [positions, setPositions] = useState([]);
   const [sportId, setSportId] = useState("");
@@ -213,6 +216,7 @@ export default function Profile() {
         },
       });
       setSaveStatus("success");
+      trackEvent("profile_saved", { is_new: !athleteId });
       setTimeout(() => setSaveStatus(null), 4000);
     } catch {
       setSaveStatus("error");
