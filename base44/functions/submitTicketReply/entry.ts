@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: "Invalid link." }, { status: 400 });
     }
 
-    const secret = Deno.env.get("TICKET_REPLY_SECRET");
+    const secret = (Deno.env.get("TICKET_REPLY_SECRET") || "").trim();
     if (!secret) {
       return Response.json({ ok: false, error: "Server configuration error." }, { status: 500 });
     }

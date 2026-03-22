@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
 
     // Generate magic-link reply button
     let replyButtonHtml = "";
-    const secret = Deno.env.get("TICKET_REPLY_SECRET");
+    const secret = (Deno.env.get("TICKET_REPLY_SECRET") || "").trim();
     if (secret && appUrl) {
       const token = await computeToken(ticketId, secret);
       const replyUrl = `${String(appUrl).replace(/\/$/, "")}/SupportReply?ticket=${encodeURIComponent(ticketId)}&token=${encodeURIComponent(token)}`;
