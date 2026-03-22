@@ -151,6 +151,13 @@ const TOOLS = [
         icon: "🗺️",
         color: "#1a4e6b",
       },
+      {
+        title: "Product Metrics",
+        description: "Phase 1 KPI dashboard — Revenue, Acquisition, Engagement, and Support Health at a glance.",
+        route: "/ProductMetrics",
+        icon: "📊",
+        color: "#1a6b3a",
+      },
     ],
   },
   {

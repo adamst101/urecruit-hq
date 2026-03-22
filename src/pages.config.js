@@ -72,6 +72,7 @@ import Index from './pages/Index';
 import KnowledgeBase from './pages/KnowledgeBase';
 import MonthlyAgendaAdmin from './pages/MonthlyAgendaAdmin';
 import MyCamps from './pages/MyCamps';
+import ProductMetrics from './pages/ProductMetrics';
 import ProductRoadmap from './pages/ProductRoadmap';
 import Profile from './pages/Profile';
 import RecruitingGuide from './pages/RecruitingGuide';
@@ -115,6 +116,7 @@ export const PAGES = {
     "KnowledgeBase": KnowledgeBase,
     "MonthlyAgendaAdmin": MonthlyAgendaAdmin,
     "MyCamps": MyCamps,
+    "ProductMetrics": ProductMetrics,
     "ProductRoadmap": ProductRoadmap,
     "Profile": Profile,
     "RecruitingGuide": RecruitingGuide,
