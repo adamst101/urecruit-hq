@@ -9,7 +9,11 @@ async function computeToken(ticketId: string, secret: string): Promise<string> {
     ["sign"],
   );
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(ticketId));
-  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+  // URL-safe base64: no +, /, or = that get mangled by email click trackers
+  return btoa(String.fromCharCode(...new Uint8Array(sig)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
 }
 
 Deno.serve(async (req) => {
