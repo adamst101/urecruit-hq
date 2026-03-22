@@ -77,7 +77,7 @@ export default function SupportDashboard() {
     if (!msg) return;
     setReplySending(ticketId);
     try {
-      const result = await base44.functions.replyToTicket({
+      const result = await base44.functions.invoke("replyToTicket", {
         ticketId,
         message: msg,
         messageType: replyType[ticketId] || "reply",
