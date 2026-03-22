@@ -42,6 +42,8 @@ function fmtPct(n, d) {
 
 const CHART_COLORS = ["#e8a020", "#3b82f6", "#22c55e", "#a855f7", "#ef4444", "#6b7280"];
 const TOOLTIP_STYLE = { background: "#111827", border: "1px solid #1f2937", borderRadius: 8, color: "#f9fafb", fontSize: 12 };
+const TOOLTIP_ITEM_STYLE = { color: "#f9fafb" };
+const TOOLTIP_LABEL_STYLE = { color: "#9ca3af" };
 
 function StatCard({ label, value, sub, color = "#f9fafb" }) {
   return (
@@ -397,7 +399,7 @@ export default function ProductMetrics() {
                             <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip contentStyle={TOOLTIP_STYLE} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={TOOLTIP_ITEM_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} />
                       </PieChart>
                     </ResponsiveContainer>
                   ) : (
@@ -442,7 +444,7 @@ export default function ProductMetrics() {
                               <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                             ))}
                           </Pie>
-                          <Tooltip contentStyle={TOOLTIP_STYLE} />
+                          <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={TOOLTIP_ITEM_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} />
                         </PieChart>
                       </ResponsiveContainer>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center mt-1">
