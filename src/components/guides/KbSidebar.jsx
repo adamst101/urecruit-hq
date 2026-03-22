@@ -141,7 +141,7 @@ export function KbSidebarDesktop({ activeId, onSelect }) {
     }}>
       <div style={{ padding: "20px 16px 12px", borderBottom: "1px solid #1f2937" }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#e8a020", letterSpacing: 1 }}>
-          KNOWLEDGE BASE
+          THE PLAYBOOK
         </div>
       </div>
       <SidebarContent

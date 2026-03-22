@@ -232,7 +232,7 @@ export default function Workspace() {
             onClick={() => nav(athleteId ? `${ROUTES.Profile}?id=${athleteId}` : ROUTES.Profile)}
             highlight={!athleteId}
           />
-          <WorkspaceTile icon="📚" title="KNOWLEDGE BASE" desc="Recruiting rules, camp strategy, film, offers & more" btnLabel="Read →" onClick={() => nav(ROUTES.KnowledgeBase)} />
+          <WorkspaceTile icon="📚" title="THE PLAYBOOK" desc="Recruiting rules, camp strategy, film, offers & more" btnLabel="Read →" onClick={() => nav(ROUTES.KnowledgeBase)} />
         </div>
       </section>
 
