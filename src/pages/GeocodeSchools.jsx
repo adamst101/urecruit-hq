@@ -1,5 +1,5 @@
 // src/pages/GeocodeSchools.jsx — Admin tool to backfill lat/lng on School records
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "../api/base44Client";
 import AdminRoute from "../components/auth/AdminRoute";
@@ -12,8 +12,14 @@ export default function GeocodeSchools() {
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("");
   const [results, setResults] = useState(null);
+  const stopRef = useRef(false);
+
+  function stop() {
+    stopRef.current = true;
+  }
 
   async function run() {
+    stopRef.current = false;
     setRunning(true);
     setStatus("Loading schools...");
     setResults(null);
@@ -44,6 +50,12 @@ export default function GeocodeSchools() {
       let skipped = 0;
 
       for (const school of missing) {
+        if (stopRef.current) {
+          setStatus(`Stopped. ${done} geocoded, ${failed} failed, ${skipped} skipped of ${missing.length} total.`);
+          setResults({ done, failed, skipped, total: missing.length, stopped: true });
+          return;
+        }
+
         const city = school?.city || null;
         const state = school?.state || null;
 
@@ -54,6 +66,13 @@ export default function GeocodeSchools() {
 
         // Rate limit: 1100ms — Nominatim requires max 1 req/sec per usage policy
         await sleep(1100);
+
+        // Check again after the sleep in case stop was clicked during the wait
+        if (stopRef.current) {
+          setStatus(`Stopped. ${done} geocoded, ${failed} failed, ${skipped} skipped of ${missing.length} total.`);
+          setResults({ done, failed, skipped, total: missing.length, stopped: true });
+          return;
+        }
 
         const coords = await geocodeCity(city, state);
         if (coords) {
@@ -69,7 +88,7 @@ export default function GeocodeSchools() {
         }
       }
 
-      setResults({ done, failed, skipped, total: missing.length });
+      setResults({ done, failed, skipped, total: missing.length, stopped: false });
       setStatus(`Complete: ${done} geocoded, ${failed} failed, ${skipped} skipped.`);
     } catch (err) {
       setStatus(`Error: ${err?.message || err}`);
@@ -84,26 +103,45 @@ export default function GeocodeSchools() {
         <button onClick={() => nav("/AdminOps")} style={{ background: "none", border: "none", color: "#e8a020", cursor: "pointer", fontSize: 14, marginBottom: 16 }}>← Back to Admin</button>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: "#0B1F3B", marginBottom: 8 }}>Geocode Missing Schools</h1>
         <p style={{ color: "#6B7280", fontSize: 14, marginBottom: 24 }}>
-          Backfill lat/lng coordinates on School records using the Census Geocoding API. Schools with existing coordinates are skipped.
+          Backfill lat/lng coordinates on School records using Nominatim (OpenStreetMap). Schools with existing coordinates are skipped.
         </p>
 
-        <button
-          onClick={run}
-          disabled={running}
-          style={{
-            background: running ? "#6B7280" : "#0B1F3B",
-            color: "#fff",
-            border: "none",
-            borderRadius: 8,
-            padding: "12px 24px",
-            fontSize: 15,
-            fontWeight: 700,
-            cursor: running ? "not-allowed" : "pointer",
-            marginBottom: 20,
-          }}
-        >
-          {running ? "Geocoding..." : "Start Geocoding"}
-        </button>
+        <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+          <button
+            onClick={run}
+            disabled={running}
+            style={{
+              background: running ? "#6B7280" : "#0B1F3B",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              padding: "12px 24px",
+              fontSize: 15,
+              fontWeight: 700,
+              cursor: running ? "not-allowed" : "pointer",
+            }}
+          >
+            {running ? "Geocoding..." : "Start Geocoding"}
+          </button>
+
+          {running && (
+            <button
+              onClick={stop}
+              style={{
+                background: "#DC2626",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                padding: "12px 24px",
+                fontSize: 15,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Stop
+            </button>
+          )}
+        </div>
 
         {status && (
           <div style={{
@@ -121,17 +159,20 @@ export default function GeocodeSchools() {
 
         {results && (
           <div style={{
-            background: results.done > 0 ? "#ECFDF5" : "#FEF2F2",
-            border: `1px solid ${results.done > 0 ? "#059669" : "#DC2626"}`,
+            background: results.stopped ? "#FFFBEB" : results.done > 0 ? "#ECFDF5" : "#FEF2F2",
+            border: `1px solid ${results.stopped ? "#D97706" : results.done > 0 ? "#059669" : "#DC2626"}`,
             borderRadius: 8,
             padding: 16,
             fontSize: 14,
           }}>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>Results</div>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>{results.stopped ? "Stopped Early" : "Results"}</div>
             <div>✅ Geocoded: {results.done}</div>
             <div>❌ Failed: {results.failed}</div>
             <div>⏭ Skipped (no city/state): {results.skipped}</div>
-            <div style={{ marginTop: 8, color: "#6B7280" }}>Total processed: {results.total}</div>
+            <div style={{ marginTop: 8, color: "#6B7280" }}>Total processed: {results.done + results.failed + results.skipped} of {results.total}</div>
+            {results.stopped && (
+              <div style={{ marginTop: 8, color: "#D97706" }}>Run again to resume — already-geocoded schools will be skipped.</div>
+            )}
           </div>
         )}
       </div>
