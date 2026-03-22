@@ -788,43 +788,45 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const res = await base44.functions.invoke("submitSupportTicket", {
                 type: "support",
-                message: "__HEALTHCHECK_TEST__ — safe to ignore",
-                userEmail: "healthcheck@test.invalid",
-                subject: "Health Check Test Ticket",
+                subject: "[HEALTHCHECK] Test Ticket — safe to ignore",
+                description: "Automated health check test. This ticket was created by the AppHealthCheck runner and will be closed immediately.",
+                userEmail: "healthcheck@urecruit.test",
+                userName: "Health Check",
+                accountType: "admin",
               });
               const data = res?.data;
               if (!data?.ok) throw new Error(data?.error || "submitSupportTicket returned ok:false");
-              ctx.ticketId = data.ticket_id || data.id || data.ticketId;
-              return `Ticket created — id=${ctx.ticketId || "(no id returned)"}`;
+              ctx.ticketNumber = data.ticketNumber;
+              return `Ticket created — #${data.ticketNumber}`;
             },
           },
           {
             name: "Ticket queryable via SupportTicket entity",
             run: async (ctx) => {
-              const tickets = await base44.entities.SupportTicket.filter({ type: "support" });
+              const tickets = await base44.entities.SupportTicket.filter({});
               if (!Array.isArray(tickets)) throw new Error("SupportTicket.filter() returned non-array");
-              const found = ctx.ticketId
-                ? tickets.find(t => t.id === ctx.ticketId)
-                : tickets.find(t => t.subject === "Health Check Test Ticket");
+              const found = tickets.find(t =>
+                t.ticket_number === ctx.ticketNumber ||
+                t.subject === "[HEALTHCHECK] Test Ticket — safe to ignore"
+              );
               if (!found) {
-                // Non-fatal: function worked but filter didn't return it (timing/pagination)
-                return `${tickets.length} support tickets queryable (test ticket not found by id — may be filtered)`;
+                return `${tickets.length} tickets queryable (test ticket not found by number — may be pagination)`;
               }
               ctx.ticketFound = found;
-              return `Ticket id=${found.id} confirmed in SupportTicket store — status: ${found.status}`;
+              return `Ticket #${found.ticket_number} (id=${found.id}) confirmed in store — status: ${found.status}`;
             },
           },
           {
             name: "Admin can update ticket status",
             run: async (ctx) => {
-              const id = ctx.ticketFound?.id || ctx.ticketId;
-              if (!id) return "Skipped — ticket id unknown (function responded ok, entity visible)";
+              const id = ctx.ticketFound?.id;
+              if (!id) return "Skipped — ticket id not found via entity filter (function responded ok)";
               const updated = await base44.entities.SupportTicket.update(id, {
                 status: "closed",
                 admin_notes: `[HEALTHCHECK] Auto-closed by health check on ${new Date().toISOString().slice(0,10)}`,
               });
               if (!updated) throw new Error("SupportTicket.update() returned null");
-              return `Ticket id=${id} closed`;
+              return `Ticket id=${id} updated to closed`;
             },
           },
           {
@@ -846,7 +848,7 @@ const JOURNEY_GROUPS = [
           },
         ],
         cleanup: async (ctx) => {
-          const id = ctx.ticketFound?.id || ctx.ticketId;
+          const id = ctx.ticketFound?.id;
           if (id) {
             try {
               await base44.entities.SupportTicket.update(id, { status: "closed", admin_notes: "[HEALTHCHECK] Auto-closed" });
