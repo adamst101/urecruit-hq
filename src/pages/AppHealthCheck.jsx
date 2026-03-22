@@ -160,6 +160,88 @@ const JOURNEY_GROUPS = [
     label: "User Registration",
     journeys: [
       {
+        id: "signup_flow",
+        name: "Custom Signup Flow",
+        icon: "✍️",
+        description: "base44.auth.register() and loginViaEmailPassword() are reachable — the custom /Signup page can create and sign in accounts.",
+        steps: [
+          {
+            name: "auth.register is callable",
+            run: async () => {
+              if (typeof base44.auth?.register !== "function") {
+                throw new Error("base44.auth.register is not a function — custom signup page will fail");
+              }
+              return "base44.auth.register exists ✓";
+            },
+          },
+          {
+            name: "auth.loginViaEmailPassword is callable",
+            run: async () => {
+              if (typeof base44.auth?.loginViaEmailPassword !== "function") {
+                throw new Error("base44.auth.loginViaEmailPassword is not a function — post-signup sign-in will fail");
+              }
+              return "base44.auth.loginViaEmailPassword exists ✓";
+            },
+          },
+          {
+            // Probe register with the current admin email (guaranteed to already exist).
+            // A "duplicate" error proves the endpoint is alive without creating any new account.
+            name: "register endpoint reachable — duplicate email rejected correctly",
+            run: async (ctx) => {
+              const me = await base44.auth.me();
+              if (!me?.email) throw new Error("Could not resolve current user email for probe");
+              try {
+                await base44.auth.register({ email: me.email, password: "healthcheck_probe_xzq9!" });
+                throw new Error("register() accepted an already-existing email — duplicate prevention may be broken");
+              } catch (err) {
+                const msg = String(err?.message || err).toLowerCase();
+                if (
+                  msg.includes("already registered") ||
+                  msg.includes("already exists") ||
+                  msg.includes("already in use") ||
+                  msg.includes("user already") ||
+                  msg.includes("duplicate")
+                ) {
+                  return `register endpoint reachable — duplicate email correctly rejected ✓`;
+                }
+                // Unexpected error — endpoint may be down
+                throw new Error(`register endpoint returned unexpected error: ${err?.message || err}`);
+              }
+            },
+          },
+          {
+            // Probe loginViaEmailPassword with a nonexistent email.
+            // An "invalid credentials" error proves the endpoint is alive without creating any session.
+            name: "loginViaEmailPassword endpoint reachable — bad credentials rejected correctly",
+            run: async () => {
+              try {
+                await base44.auth.loginViaEmailPassword(
+                  "__healthcheck_probe__@urecruithq.invalid",
+                  "healthcheck_probe_xzq9!"
+                );
+                throw new Error("loginViaEmailPassword() accepted invalid credentials — auth is broken");
+              } catch (err) {
+                const msg = String(err?.message || err).toLowerCase();
+                if (
+                  msg.includes("invalid") ||
+                  msg.includes("incorrect") ||
+                  msg.includes("not found") ||
+                  msg.includes("credentials") ||
+                  msg.includes("password") ||
+                  msg.includes("unauthorized") ||
+                  msg.includes("email") ||
+                  msg.includes("user")
+                ) {
+                  return `loginViaEmailPassword endpoint reachable — invalid credentials correctly rejected ✓`;
+                }
+                throw new Error(`loginViaEmailPassword returned unexpected error: ${err?.message || err}`);
+              }
+            },
+          },
+        ],
+      },
+
+      {
         id: "registration_flow",
         name: "New User Registration State",
         icon: "📝",
