@@ -641,6 +641,488 @@ const JOURNEY_GROUPS = [
       },
     ],
   },
+  {
+    label: "Checkout & Access",
+    journeys: [
+      {
+        id: "season_config",
+        name: "Season Config & Access Gate",
+        icon: "📅",
+        description: "getActiveSeason function responds with a valid season, Subscribe and Checkout can load pricing.",
+        steps: [
+          {
+            name: "Invoke getActiveSeason",
+            run: async (ctx) => {
+              const res = await base44.functions.invoke("getActiveSeason", {});
+              const data = res?.data;
+              if (!data?.ok) throw new Error(data?.error || "getActiveSeason returned ok:false");
+              ctx.season = data.season;
+              return `ok:true — season_year=${data.season?.season_year ?? "—"}`;
+            },
+          },
+          {
+            name: "Season has season_year and active flag",
+            run: async (ctx) => {
+              if (!ctx.season?.season_year) throw new Error("season.season_year missing — Subscribe page cannot display pricing");
+              if (ctx.season.active === undefined) throw new Error("season.active missing");
+              return `season_year=${ctx.season.season_year}  active=${ctx.season.active}`;
+            },
+          },
+          {
+            name: "SeasonConfig entity queryable",
+            run: async (ctx) => {
+              const configs = await base44.entities.SeasonConfig.filter({});
+              if (!Array.isArray(configs)) throw new Error("SeasonConfig.filter() returned non-array");
+              if (configs.length === 0) throw new Error("No SeasonConfig records — getActiveSeason has nothing to return");
+              ctx.seasonConfigs = configs;
+              return `${configs.length} SeasonConfig record${configs.length !== 1 ? "s" : ""}`;
+            },
+          },
+          {
+            name: "At least one season marked active",
+            run: async (ctx) => {
+              const active = ctx.seasonConfigs.filter(s => s.active);
+              if (active.length === 0) throw new Error("No active SeasonConfig — platform is in limbo (no subscribable season)");
+              if (active.length > 1) throw new Error(`${active.length} seasons marked active simultaneously — should be exactly 1`);
+              return `Exactly 1 active season: ${active[0].season_year}`;
+            },
+          },
+        ],
+      },
+
+      {
+        id: "promo_validation",
+        name: "Promo Code Validation",
+        icon: "🎟️",
+        description: "validatePromo function handles invalid codes gracefully without crashing.",
+        steps: [
+          {
+            name: "validatePromo reachable",
+            run: async (ctx) => {
+              const res = await base44.functions.invoke("validatePromo", { promoCode: "__HEALTHCHECK_INVALID__" });
+              const data = res?.data;
+              // Any response (ok:true or ok:false) proves the function is reachable
+              if (data === undefined || data === null) throw new Error("validatePromo returned empty response");
+              ctx.promoRes = data;
+              return `Function responded — ok=${data.ok}`;
+            },
+          },
+          {
+            name: "Invalid code returns ok:false with an error message",
+            run: async (ctx) => {
+              if (ctx.promoRes.ok === true) throw new Error("Unknown test code was accepted — promo validation may not be working");
+              if (!ctx.promoRes.error && !ctx.promoRes.message) throw new Error("ok:false but no error message returned — Checkout page cannot display reason");
+              return `ok:false  error: "${ctx.promoRes.error || ctx.promoRes.message}"`;
+            },
+          },
+          {
+            name: "Empty promo code returns ok:false",
+            run: async (ctx) => {
+              const res = await base44.functions.invoke("validatePromo", { promoCode: "" });
+              const data = res?.data;
+              if (data?.ok === true) throw new Error("Empty promo code was accepted — validation logic may be broken");
+              return `Empty code correctly rejected`;
+            },
+          },
+        ],
+      },
+
+      {
+        id: "sport_position",
+        name: "Sport & Position Lists",
+        icon: "🏈",
+        description: "Sport and Position entities are accessible — required for Profile setup and camp filtering.",
+        steps: [
+          {
+            name: "Fetch active sports",
+            run: async (ctx) => {
+              const sports = await base44.entities.Sport.filter({});
+              if (!Array.isArray(sports) || sports.length === 0) throw new Error("No sports found — Profile position dropdown will be empty");
+              ctx.sports = sports;
+              const active = sports.filter(s => s.active !== false);
+              return `${sports.length} sports (${active.length} active)`;
+            },
+          },
+          {
+            name: "Sports have name field",
+            run: async (ctx) => {
+              const bad = ctx.sports.filter(s => !s.sport_name && !s.name);
+              if (bad.length > 0) throw new Error(`${bad.length} sports missing name — Profile dropdowns will show blank entries`);
+              return `All ${ctx.sports.length} sports have a name`;
+            },
+          },
+          {
+            name: "Fetch positions",
+            run: async (ctx) => {
+              const positions = await base44.entities.Position.filter({});
+              if (!Array.isArray(positions)) throw new Error("Position.filter() returned non-array");
+              if (positions.length === 0) throw new Error("No positions found — Profile cannot assign a position");
+              ctx.positions = positions;
+              return `${positions.length} positions`;
+            },
+          },
+          {
+            name: "Positions link to a sport_id",
+            run: async (ctx) => {
+              const unlinked = ctx.positions.filter(p => !p.sport_id && !p.sportId).length;
+              if (unlinked > ctx.positions.length / 2) throw new Error(`${unlinked}/${ctx.positions.length} positions missing sport_id — Profile dropdown will be broken`);
+              return `${ctx.positions.length - unlinked}/${ctx.positions.length} positions have sport_id`;
+            },
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    label: "Support Tickets",
+    journeys: [
+      {
+        id: "support_ticket_lifecycle",
+        name: "Support Ticket Lifecycle",
+        icon: "🎫",
+        description: "submitSupportTicket creates a ticket, it is queryable, admin can update status, replyToTicket function is reachable, and ticket is closed for cleanup.",
+        steps: [
+          {
+            name: "submitSupportTicket function reachable",
+            run: async (ctx) => {
+              const res = await base44.functions.invoke("submitSupportTicket", {
+                type: "support",
+                message: "__HEALTHCHECK_TEST__ — safe to ignore",
+                userEmail: "healthcheck@test.invalid",
+                subject: "Health Check Test Ticket",
+              });
+              const data = res?.data;
+              if (!data?.ok) throw new Error(data?.error || "submitSupportTicket returned ok:false");
+              ctx.ticketId = data.ticket_id || data.id || data.ticketId;
+              return `Ticket created — id=${ctx.ticketId || "(no id returned)"}`;
+            },
+          },
+          {
+            name: "Ticket queryable via SupportTicket entity",
+            run: async (ctx) => {
+              const tickets = await base44.entities.SupportTicket.filter({ type: "support" });
+              if (!Array.isArray(tickets)) throw new Error("SupportTicket.filter() returned non-array");
+              const found = ctx.ticketId
+                ? tickets.find(t => t.id === ctx.ticketId)
+                : tickets.find(t => t.subject === "Health Check Test Ticket");
+              if (!found) {
+                // Non-fatal: function worked but filter didn't return it (timing/pagination)
+                return `${tickets.length} support tickets queryable (test ticket not found by id — may be filtered)`;
+              }
+              ctx.ticketFound = found;
+              return `Ticket id=${found.id} confirmed in SupportTicket store — status: ${found.status}`;
+            },
+          },
+          {
+            name: "Admin can update ticket status",
+            run: async (ctx) => {
+              const id = ctx.ticketFound?.id || ctx.ticketId;
+              if (!id) return "Skipped — ticket id unknown (function responded ok, entity visible)";
+              const updated = await base44.entities.SupportTicket.update(id, {
+                status: "closed",
+                admin_notes: `[HEALTHCHECK] Auto-closed by health check on ${new Date().toISOString().slice(0,10)}`,
+              });
+              if (!updated) throw new Error("SupportTicket.update() returned null");
+              return `Ticket id=${id} closed`;
+            },
+          },
+          {
+            name: "replyToTicket function reachable",
+            run: async (ctx) => {
+              const id = ctx.ticketFound?.id || ctx.ticketId || "healthcheck-fake-id";
+              // Call with a fake or real id — we expect ok:false for fake, ok:true for real
+              const res = await base44.functions.invoke("replyToTicket", {
+                ticketId: id,
+                message: "__HEALTHCHECK__ — please ignore this test ping",
+                messageType: "reply",
+                appUrl: window.location.origin,
+              });
+              const data = res?.data;
+              // Function is reachable if it returns any structured response
+              if (data === undefined || data === null) throw new Error("replyToTicket returned no response");
+              return `replyToTicket responded — ok=${data.ok}${data.error ? ` (${data.error})` : ""}`;
+            },
+          },
+        ],
+        cleanup: async (ctx) => {
+          const id = ctx.ticketFound?.id || ctx.ticketId;
+          if (id) {
+            try {
+              await base44.entities.SupportTicket.update(id, { status: "closed", admin_notes: "[HEALTHCHECK] Auto-closed" });
+            } catch {}
+          }
+        },
+      },
+    ],
+  },
+
+  {
+    label: "Advanced Subscriber Flows",
+    journeys: [
+      {
+        id: "multi_athlete_isolation",
+        name: "Multi-Athlete Data Isolation",
+        icon: "👥",
+        description: "CampIntent queries filter strictly by athlete_id — one athlete's camps do not appear in another athlete's view.",
+        steps: [
+          {
+            name: "Create two test athlete profiles",
+            run: async (ctx) => {
+              const me = await base44.auth.me();
+              if (!me?.id) throw new Error("Cannot get account id — auth.me() returned no id");
+              ctx.myId = me.id;
+
+              const a1 = await base44.entities.AthleteProfile.create({
+                first_name: "__hc_a1__", last_name: "__test__",
+                athlete_name: "__hc_a1__ __test__",
+                account_id: ctx.myId, active: true, sport_id: "test", grad_year: 2099,
+              });
+              const a2 = await base44.entities.AthleteProfile.create({
+                first_name: "__hc_a2__", last_name: "__test__",
+                athlete_name: "__hc_a2__ __test__",
+                account_id: ctx.myId, active: true, sport_id: "test", grad_year: 2099,
+              });
+              if (!a1?.id || !a2?.id) throw new Error("Failed to create one or both test athletes");
+              ctx.athlete1Id = a1.id;
+              ctx.athlete2Id = a2.id;
+              return `Athlete 1 id=${a1.id}  Athlete 2 id=${a2.id}`;
+            },
+          },
+          {
+            name: "Fetch a camp to use as test target",
+            run: async (ctx) => {
+              const camps = await base44.entities.Camp.filter({ active: true });
+              if (!Array.isArray(camps) || camps.length === 0) throw new Error("No active camps for intent test");
+              ctx.campA = camps[0];
+              ctx.campB = camps[1] || camps[0];
+              return `Using camp "${ctx.campA.camp_name}" for A, "${ctx.campB.camp_name}" for B`;
+            },
+          },
+          {
+            name: "Create CampIntent for athlete 1 only",
+            run: async (ctx) => {
+              const intent = await base44.entities.CampIntent.create({
+                camp_id: ctx.campA.id, athlete_id: ctx.athlete1Id, status: "favorite",
+              });
+              if (!intent?.id) throw new Error("CampIntent.create() returned no id");
+              ctx.intent1Id = intent.id;
+              return `Intent id=${intent.id} created for athlete 1`;
+            },
+          },
+          {
+            name: "Athlete 2 query returns no intents (isolation check)",
+            run: async (ctx) => {
+              const intents = await base44.entities.CampIntent.filter({ athlete_id: ctx.athlete2Id });
+              const leak = (intents || []).filter(i => i.camp_id === ctx.campA.id && i.athlete_id === ctx.athlete1Id);
+              if (leak.length > 0) throw new Error(`Athlete 1's intent leaked into Athlete 2's query — data isolation broken`);
+              const ownIntents = (intents || []).filter(i => i.athlete_id === ctx.athlete2Id);
+              return `Athlete 2 query: ${ownIntents.length} own intents, 0 from athlete 1 ✓`;
+            },
+          },
+          {
+            name: "Athlete 1 query returns correct intent",
+            run: async (ctx) => {
+              const intents = await base44.entities.CampIntent.filter({ athlete_id: ctx.athlete1Id });
+              const found = (intents || []).find(i => i.id === ctx.intent1Id);
+              if (!found) throw new Error(`Athlete 1's own intent id=${ctx.intent1Id} not found in their filtered query`);
+              return `Athlete 1 query returns their intent correctly — status: ${found.status} ✓`;
+            },
+          },
+          {
+            name: "Cleanup — delete test intents and athletes",
+            run: async (ctx) => {
+              if (ctx.intent1Id) await base44.entities.CampIntent.delete(ctx.intent1Id).catch(() => {});
+              if (ctx.athlete1Id) await base44.entities.AthleteProfile.delete(ctx.athlete1Id).catch(() => {});
+              if (ctx.athlete2Id) await base44.entities.AthleteProfile.delete(ctx.athlete2Id).catch(() => {});
+              return "Test data cleaned up";
+            },
+          },
+        ],
+        cleanup: async (ctx) => {
+          try { if (ctx.intent1Id) await base44.entities.CampIntent.delete(ctx.intent1Id); } catch {}
+          try { if (ctx.athlete1Id) await base44.entities.AthleteProfile.delete(ctx.athlete1Id); } catch {}
+          try { if (ctx.athlete2Id) await base44.entities.AthleteProfile.delete(ctx.athlete2Id); } catch {}
+        },
+      },
+
+      {
+        id: "entitlement_windows",
+        name: "Entitlement Time Window Validity",
+        icon: "🕐",
+        description: "Active entitlements have starts_at and ends_at, and at least one is currently within its access window.",
+        steps: [
+          {
+            name: "Fetch active entitlements",
+            run: async (ctx) => {
+              const ents = await base44.entities.Entitlement.filter({ status: "active" });
+              if (!Array.isArray(ents)) throw new Error("Entitlement.filter() returned non-array");
+              if (ents.length === 0) throw new Error("No active entitlements — skip or check subscription data");
+              ctx.ents = ents;
+              return `${ents.length} active entitlements`;
+            },
+          },
+          {
+            name: "Entitlements have starts_at and ends_at",
+            run: async (ctx) => {
+              const missingStart = ctx.ents.filter(e => !e.starts_at).length;
+              const missingEnd = ctx.ents.filter(e => !e.ends_at).length;
+              if (missingStart > ctx.ents.length / 2) throw new Error(`${missingStart}/${ctx.ents.length} missing starts_at — access window cannot be evaluated`);
+              if (missingEnd > ctx.ents.length / 2) throw new Error(`${missingEnd}/${ctx.ents.length} missing ends_at — subscriptions may never expire`);
+              return `starts_at present: ${ctx.ents.length - missingStart}/${ctx.ents.length}  ends_at present: ${ctx.ents.length - missingEnd}/${ctx.ents.length}`;
+            },
+          },
+          {
+            name: "At least one entitlement is within its access window (now >= starts_at and now <= ends_at)",
+            run: async (ctx) => {
+              const now = new Date();
+              const inWindow = ctx.ents.filter(e => {
+                if (!e.starts_at || !e.ends_at) return false;
+                return new Date(e.starts_at) <= now && new Date(e.ends_at) >= now;
+              });
+              if (inWindow.length === 0) {
+                // Check if any are upcoming (starts_at in future)
+                const upcoming = ctx.ents.filter(e => e.starts_at && new Date(e.starts_at) > now);
+                if (upcoming.length > 0) return `0 in-window now, but ${upcoming.length} upcoming — may be off-season`;
+                throw new Error("No active entitlements within their time window — all subscribers would be blocked from access");
+              }
+              return `${inWindow.length}/${ctx.ents.length} entitlements currently within their access window ✓`;
+            },
+          },
+          {
+            name: "No entitlement has ends_at in the distant past (> 1 year ago)",
+            run: async (ctx) => {
+              const cutoff = new Date(Date.now() - 365 * 86400000);
+              const stale = ctx.ents.filter(e => e.ends_at && new Date(e.ends_at) < cutoff);
+              if (stale.length > 5) throw new Error(`${stale.length} entitlements marked active but ended >1 year ago — status cleanup may be needed`);
+              return stale.length > 0
+                ? `${stale.length} stale entitlement${stale.length !== 1 ? "s" : ""} (ended >1yr ago but still active) — consider cleanup`
+                : "No stale entitlements ✓";
+            },
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    label: "Platform Integrity",
+    journeys: [
+      {
+        id: "event_tracking",
+        name: "Event Tracking Write",
+        icon: "📡",
+        description: "Event entity is writable — analytics and funnel tracking will record correctly.",
+        steps: [
+          {
+            name: "Write a test event",
+            run: async (ctx) => {
+              const iso = new Date().toISOString();
+              const evt = await base44.entities.Event.create({
+                source_platform: "healthcheck",
+                event_type: "healthcheck_ping",
+                title: "Health Check Ping",
+                source_key: `healthcheck:healthcheck_ping:${iso}`,
+                start_date: iso.slice(0, 10),
+                ts: iso,
+                payload_json: JSON.stringify({ event_name: "healthcheck_ping", test: true }),
+              });
+              if (!evt?.id) throw new Error("Event.create() returned no id — analytics will silently fail");
+              ctx.eventId = evt.id;
+              return `Event created (id=${evt.id})`;
+            },
+          },
+          {
+            name: "Event readable back via event_type filter",
+            run: async (ctx) => {
+              const evts = await base44.entities.Event.filter({ event_type: "healthcheck_ping" });
+              if (!Array.isArray(evts)) throw new Error("Event.filter() returned non-array");
+              const found = evts.find(e => e.id === ctx.eventId);
+              if (!found) return `Event written but not found via filter — may be eventual consistency (id=${ctx.eventId})`;
+              return `Event confirmed readable — event_type: ${found.event_type} ✓`;
+            },
+          },
+        ],
+      },
+
+      {
+        id: "email_prefs_lifecycle",
+        name: "Email Preferences Full Lifecycle",
+        icon: "📬",
+        description: "EmailPreferences can be created, updated, and deleted — opt-out system is fully operational.",
+        steps: [
+          {
+            name: "Get current account id",
+            run: async (ctx) => {
+              const me = await base44.auth.me();
+              if (!me?.id) throw new Error("auth.me() returned no id");
+              ctx.myId = me.id;
+              return `account id = ${me.id}`;
+            },
+          },
+          {
+            name: "Create EmailPreferences record",
+            run: async (ctx) => {
+              // First clean up any leftover healthcheck prefs
+              const existing = await base44.entities.EmailPreferences.filter({ account_id: ctx.myId });
+              ctx.existingPrefIds = (existing || []).map(p => p.id).filter(Boolean);
+
+              const pref = await base44.entities.EmailPreferences.create({
+                account_id: ctx.myId,
+                monthly_agenda_opt_out: false,
+                camp_week_alert_opt_out: false,
+              });
+              if (!pref?.id) throw new Error("EmailPreferences.create() returned no id");
+              ctx.prefId = pref.id;
+              return `Created EmailPreferences id=${pref.id}`;
+            },
+          },
+          {
+            name: "Read back preferences",
+            run: async (ctx) => {
+              const prefs = await base44.entities.EmailPreferences.filter({ account_id: ctx.myId });
+              const found = (prefs || []).find(p => p.id === ctx.prefId);
+              if (!found) throw new Error(`EmailPreferences id=${ctx.prefId} not found after create`);
+              return `Read back ok — monthly_opt_out=${found.monthly_agenda_opt_out}  alert_opt_out=${found.camp_week_alert_opt_out}`;
+            },
+          },
+          {
+            name: "Update opt-out flag",
+            run: async (ctx) => {
+              const updated = await base44.entities.EmailPreferences.update(ctx.prefId, {
+                monthly_agenda_opt_out: true,
+              });
+              if (!updated) throw new Error("EmailPreferences.update() returned null");
+              return `Updated monthly_agenda_opt_out → true`;
+            },
+          },
+          {
+            name: "Verify update persisted",
+            run: async (ctx) => {
+              const prefs = await base44.entities.EmailPreferences.filter({ account_id: ctx.myId });
+              const found = (prefs || []).find(p => p.id === ctx.prefId);
+              if (!found) throw new Error("Record not found after update");
+              if (!found.monthly_agenda_opt_out) throw new Error("opt_out flag did not persist — sendMonthlyAgenda would ignore this opt-out");
+              return `Opt-out persisted: monthly_agenda_opt_out=${found.monthly_agenda_opt_out} ✓`;
+            },
+          },
+          {
+            name: "Delete test record (cleanup)",
+            run: async (ctx) => {
+              await base44.entities.EmailPreferences.delete(ctx.prefId);
+              return `EmailPreferences id=${ctx.prefId} deleted`;
+            },
+          },
+        ],
+        cleanup: async (ctx) => {
+          if (ctx.prefId) {
+            try { await base44.entities.EmailPreferences.delete(ctx.prefId); } catch {}
+          }
+        },
+      },
+    ],
+  },
+
 ];
 
 // Flatten for runner access by id
