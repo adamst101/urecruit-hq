@@ -19,8 +19,8 @@ export default function SupportReply() {
     }
     (async () => {
       try {
-        const res = await base44.functions.invoke("submitTicketReply", { ticketId, token });
-        console.log("[SupportReply] token response:", JSON.stringify(res));
+        const raw = await base44.functions.invoke("submitTicketReply", { ticketId, token });
+        const res = raw?.data ?? raw;
         if (!res?.ok) {
           setErrorMsg(res?.error || "This link is invalid or has expired.");
           setPhase("error");
@@ -41,7 +41,8 @@ export default function SupportReply() {
     if (!msg) return;
     setPhase("submitting");
     try {
-      const res = await base44.functions.invoke("submitTicketReply", { ticketId, token, message: msg });
+      const raw = await base44.functions.invoke("submitTicketReply", { ticketId, token, message: msg });
+      const res = raw?.data ?? raw;
       if (!res?.ok) {
         setErrorMsg(res?.error || "Failed to send your reply. Please try again.");
         setPhase("form");

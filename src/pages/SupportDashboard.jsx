@@ -77,13 +77,14 @@ export default function SupportDashboard() {
     if (!msg) return;
     setReplySending(ticketId);
     try {
-      const result = await base44.functions.invoke("replyToTicket", {
+      const raw = await base44.functions.invoke("replyToTicket", {
         ticketId,
         message: msg,
         messageType: replyType[ticketId] || "reply",
         newStatus: replyStatus[ticketId] || "no_change",
         appUrl: window.location.origin,
       });
+      const result = raw?.data ?? raw;
       if (result?.ok) {
         // Apply any ticket updates returned from the function
         if (result.updatedData) {
