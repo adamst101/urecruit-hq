@@ -110,15 +110,15 @@ export default function Workspace() {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    trackEventOnce("workspace_viewed", "evt_workspace_viewed_v1", { paid: isMember });
-  }, [isMember]);
-
   const isAdmin = isAdminEmail(meEmail);
 
   const loading = !!season?.isLoading || !!identityLoading;
 
   const isMember = !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
+
+  useEffect(() => {
+    trackEventOnce("workspace_viewed", "evt_workspace_viewed_v1", { paid: isMember });
+  }, [isMember]);
   const memberSeason = Number(season?.entitlement?.season_year) || season?.seasonYear || null;
   const currentYear = season?.currentYear || new Date().getFullYear();
   const demoYear = season?.demoYear || (currentYear - 1);
