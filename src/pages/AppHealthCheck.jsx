@@ -564,6 +564,151 @@ const JOURNEY_GROUPS = [
   },
 
   {
+    label: "Ingest Pipeline",
+    journeys: [
+      {
+        id: "ingest_config",
+        name: "Ingest — Sport Configs Active",
+        icon: "⚙️",
+        description: "SportIngestConfig has active records — the weekly job has sports to process.",
+        steps: [
+          {
+            name: "Fetch SportIngestConfig records",
+            run: async (ctx) => {
+              const configs = await base44.entities.SportIngestConfig.filter({});
+              if (!Array.isArray(configs) || configs.length === 0)
+                throw new Error("No SportIngestConfig records — weeklyIngestAllSports has nothing to run");
+              ctx.configs = configs;
+              return `${configs.length} SportIngestConfig record${configs.length !== 1 ? "s" : ""}`;
+            },
+          },
+          {
+            name: "At least one config is active",
+            run: async (ctx) => {
+              const active = ctx.configs.filter(c => c.active);
+              if (active.length === 0)
+                throw new Error("No active SportIngestConfig — weekly ingest will skip all sports");
+              return `${active.length}/${ctx.configs.length} configs active: ${active.map(c => c.sport_key).join(", ")}`;
+            },
+          },
+          {
+            name: "Active configs have a sport_key",
+            run: async (ctx) => {
+              const bad = ctx.configs.filter(c => c.active && !c.sport_key);
+              if (bad.length > 0)
+                throw new Error(`${bad.length} active configs missing sport_key — ingestCampsUSA would fail for them`);
+              return "All active configs have sport_key ✓";
+            },
+          },
+        ],
+      },
+
+      {
+        id: "ingest_freshness",
+        name: "Ingest — Camp Data Freshness",
+        icon: "🕐",
+        description: "Active camps have been ingested recently, confirming the weekly job ran within the expected window.",
+        steps: [
+          {
+            name: "Fetch sample of active camps",
+            run: async (ctx) => {
+              const camps = await base44.entities.Camp.filter({ active: true });
+              if (!Array.isArray(camps) || camps.length === 0)
+                throw new Error("No active camps — ingest may never have run or all camps were deactivated");
+              ctx.camps = camps;
+              return `${camps.length} active camps`;
+            },
+          },
+          {
+            name: "Camps have last_ingested_at (ingest is writing timestamps)",
+            run: async (ctx) => {
+              const sample = ctx.camps.slice(0, 50);
+              const withTs = sample.filter(c => c.last_ingested_at).length;
+              const pct = Math.round((withTs / sample.length) * 100);
+              if (pct < 50)
+                throw new Error(`Only ${pct}% of sampled camps have last_ingested_at — ingest may not be writing timestamps`);
+              ctx.campsWithTs = ctx.camps.filter(c => c.last_ingested_at);
+              return `${withTs}/${sample.length} sampled camps have last_ingested_at (${pct}%)`;
+            },
+          },
+          {
+            name: "At least one camp ingested within the last 14 days",
+            run: async (ctx) => {
+              const cutoff = new Date(Date.now() - 14 * 86400000);
+              const recent = ctx.campsWithTs.filter(c => new Date(c.last_ingested_at) >= cutoff);
+              if (recent.length === 0) {
+                const mostRecent = ctx.campsWithTs
+                  .map(c => new Date(c.last_ingested_at))
+                  .sort((a, b) => b - a)[0];
+                throw new Error(
+                  `No camps ingested in the last 14 days — most recent: ${mostRecent ? mostRecent.toLocaleDateString() : "unknown"}. Weekly job may be failing.`
+                );
+              }
+              const mostRecent = ctx.campsWithTs
+                .map(c => new Date(c.last_ingested_at))
+                .sort((a, b) => b - a)[0];
+              return `${recent.length} camps ingested in last 14 days — most recent: ${mostRecent.toLocaleDateString()} ✓`;
+            },
+          },
+          {
+            name: "Ingestion error rate is acceptable (<20% of sampled camps)",
+            run: async (ctx) => {
+              const sample = ctx.camps.slice(0, 100);
+              const errored = sample.filter(c => c.ingestion_status === "error").length;
+              const pct = Math.round((errored / sample.length) * 100);
+              if (pct >= 20)
+                throw new Error(`${pct}% of sampled camps have ingestion_status=error — ingest pipeline may be broken`);
+              const active = sample.filter(c => c.ingestion_status === "active").length;
+              return `Error rate: ${pct}% (${errored}/${sample.length})  active: ${active} ✓`;
+            },
+          },
+        ],
+      },
+
+      {
+        id: "ingest_function",
+        name: "Ingest — Pipeline Function Health",
+        icon: "🔄",
+        description: "campHealthCheck function is reachable and reports a healthy camp store.",
+        steps: [
+          {
+            name: "campHealthCheck function reachable",
+            run: async (ctx) => {
+              const res = await base44.functions.invoke("campHealthCheck", {});
+              const data = res?.data;
+              if (!data) throw new Error("campHealthCheck returned empty response");
+              ctx.campHealth = data;
+              const total = data.totalCamps ?? data.total_camps ?? null;
+              return `campHealthCheck responded — totalCamps=${total ?? "(field not found)"}`;
+            },
+          },
+          {
+            name: "Camp store reports healthy total count",
+            run: async (ctx) => {
+              const total = ctx.campHealth?.totalCamps ?? ctx.campHealth?.total_camps ?? null;
+              if (total === null) return "totalCamps field not in response — check campHealthCheck output format";
+              if (total === 0) throw new Error("campHealthCheck reports 0 camps — data may have been wiped");
+              return `${total.toLocaleString()} total camps in store ✓`;
+            },
+          },
+          {
+            name: "Majority of camps have school_id (school matching working)",
+            run: async (ctx) => {
+              const total = ctx.campHealth?.totalCamps ?? ctx.campHealth?.total_camps;
+              const unmatched = ctx.campHealth?.schoolIdNull ?? null;
+              if (total == null || unmatched == null) return "School match data not in campHealthCheck response — skipped";
+              const matchedPct = Math.round(((total - unmatched) / total) * 100);
+              if (matchedPct < 40)
+                throw new Error(`Only ${matchedPct}% of camps matched to a school — school matching may be broken`);
+              return `${matchedPct}% of camps have school_id (${total - unmatched}/${total}) ✓`;
+            },
+          },
+        ],
+      },
+    ],
+  },
+
+  {
     label: "Communications",
     journeys: [
       {
