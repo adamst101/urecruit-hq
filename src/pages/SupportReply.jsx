@@ -20,6 +20,7 @@ export default function SupportReply() {
     (async () => {
       try {
         const res = await base44.functions.invoke("submitTicketReply", { ticketId, token });
+        console.log("[SupportReply] token response:", JSON.stringify(res));
         if (!res?.ok) {
           setErrorMsg(res?.error || "This link is invalid or has expired.");
           setPhase("error");

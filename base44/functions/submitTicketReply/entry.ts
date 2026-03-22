@@ -34,7 +34,16 @@ Deno.serve(async (req) => {
     // Verify HMAC token
     const expected = await computeToken(ticketId, secret);
     if (token !== expected) {
-      return Response.json({ ok: false, error: "This link is invalid or has expired." }, { status: 403 });
+      return Response.json({
+        ok: false,
+        error: "This link is invalid or has expired.",
+        _debug: {
+          ticketIdReceived: ticketId,
+          tokenReceived: token,
+          tokenExpected: expected,
+          secretFirst6: secret.slice(0, 6),
+        },
+      }, { status: 403 });
     }
 
     // Fetch ticket
