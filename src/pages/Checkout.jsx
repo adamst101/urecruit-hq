@@ -119,6 +119,14 @@ export default function Checkout() {
   function handleContinueToPayment(e) {
     e.preventDefault();
     if (!athleteFirstName.trim()) { setError("Athlete first name is required"); return; }
+    if (!athleteLastName.trim()) { setError("Athlete last name is required"); return; }
+    if (!homeCity.trim()) { setError("Home city is required"); return; }
+    if (!homeState) { setError("Home state is required"); return; }
+    if (!isAddonMode) {
+      if (!parentFirstName.trim()) { setError("Parent / guardian first name is required"); return; }
+      if (!parentLastName.trim()) { setError("Parent / guardian last name is required"); return; }
+      if (!parentPhone.trim()) { setError("Parent / guardian phone number is required"); return; }
+    }
     setError(null);
     setStep("payment");
   }
@@ -325,7 +333,7 @@ export default function Checkout() {
                   <input value={athleteFirstName} onChange={e => setAthleteFirstName(e.target.value)} placeholder="First" style={S.input} />
                 </div>
                 <div>
-                  <label style={S.label}>Last Name</label>
+                  <label style={S.label}>Last Name *</label>
                   <input value={athleteLastName} onChange={e => setAthleteLastName(e.target.value)} placeholder="Last" style={S.input} />
                 </div>
               </div>
@@ -347,11 +355,11 @@ export default function Checkout() {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
                 <div>
-                  <label style={S.label}>Home City</label>
+                  <label style={S.label}>Home City *</label>
                   <input value={homeCity} onChange={e => setHomeCity(e.target.value)} placeholder="City" style={S.input} />
                 </div>
                 <div>
-                  <label style={S.label}>State</label>
+                  <label style={S.label}>State *</label>
                   <select value={homeState} onChange={e => setHomeState(e.target.value)} style={S.input}>
                     <option value="">Select...</option>
                     {US_STATES.map(st => <option key={st} value={st}>{st}</option>)}
@@ -365,16 +373,16 @@ export default function Checkout() {
               <div style={{ fontSize: 13, fontWeight: 700, color: "#e8a020", letterSpacing: 1, textTransform: "uppercase", marginBottom: 16 }}>Parent / Guardian</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
-                  <label style={S.label}>First Name</label>
+                  <label style={S.label}>First Name *</label>
                   <input value={parentFirstName} onChange={e => setParentFirstName(e.target.value)} placeholder="First" style={S.input} />
                 </div>
                 <div>
-                  <label style={S.label}>Last Name</label>
+                  <label style={S.label}>Last Name *</label>
                   <input value={parentLastName} onChange={e => setParentLastName(e.target.value)} placeholder="Last" style={S.input} />
                 </div>
               </div>
               <div style={{ marginTop: 12 }}>
-                <label style={S.label}>Phone Number</label>
+                <label style={S.label}>Phone Number *</label>
                 <input value={parentPhone} onChange={e => setParentPhone(e.target.value)} placeholder="(555) 555-5555" type="tel" style={S.input} />
               </div>
             </div>
