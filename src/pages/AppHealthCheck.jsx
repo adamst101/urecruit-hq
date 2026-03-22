@@ -564,6 +564,177 @@ const JOURNEY_GROUPS = [
   },
 
   {
+    label: "Data Quality",
+    journeys: [
+      {
+        id: "school_data_quality",
+        name: "School Data Completeness",
+        icon: "🏫",
+        description: "Schools have division, coordinates (required for travel alerts), and logos — monitors output of Geocode Schools, Seed Logos, and Athletics Cleanup tools.",
+        steps: [
+          {
+            name: "Fetch all schools",
+            run: async (ctx) => {
+              const schools = await base44.entities.School.filter({});
+              if (!Array.isArray(schools) || schools.length === 0)
+                throw new Error("No schools found — school data may have been wiped");
+              ctx.schools = schools;
+              return `${schools.length} schools`;
+            },
+          },
+          {
+            name: "Division coverage >50% (Athletics Cleanup working)",
+            run: async (ctx) => {
+              const withDiv = ctx.schools.filter(s => s.division).length;
+              const pct = Math.round((withDiv / ctx.schools.length) * 100);
+              if (pct < 50)
+                throw new Error(`Only ${pct}% have a division — run School Athletics Cleanup to fix`);
+              return `${withDiv}/${ctx.schools.length} (${pct}%) have division ✓`;
+            },
+          },
+          {
+            name: "Coordinate coverage >60% (Geocode Schools working — required for travel alerts)",
+            run: async (ctx) => {
+              const withCoords = ctx.schools.filter(s =>
+                s.lat && s.lng && Number(s.lat) !== 0 && Number(s.lng) !== 0
+              ).length;
+              const pct = Math.round((withCoords / ctx.schools.length) * 100);
+              const missing = ctx.schools.length - withCoords;
+              if (pct < 60)
+                throw new Error(`Only ${pct}% have coordinates — ${missing} schools missing lat/lng. Travel distance alerts will be inaccurate. Run Geocode Schools.`);
+              if (pct < 80)
+                return `${withCoords}/${ctx.schools.length} (${pct}%) have coordinates — ${missing} still missing (run Geocode Schools to improve)`;
+              return `${withCoords}/${ctx.schools.length} (${pct}%) have coordinates ✓`;
+            },
+          },
+          {
+            name: "Logo coverage check (Seed School Logos status)",
+            run: async (ctx) => {
+              const withLogo = ctx.schools.filter(s => s.athletic_logo_url).length;
+              const pct = Math.round((withLogo / ctx.schools.length) * 100);
+              // Logo is informational — warn below 30%, don't fail
+              if (pct < 30)
+                return `⚠ Only ${pct}% (${withLogo}/${ctx.schools.length}) have a logo — consider running Seed School Logos`;
+              return `${withLogo}/${ctx.schools.length} (${pct}%) have a logo`;
+            },
+          },
+        ],
+      },
+
+      {
+        id: "camp_school_matching",
+        name: "Camp → School Matching Quality",
+        icon: "🔗",
+        description: "Camps are linked to schools and Host Org Mappings are verified — monitors output of Host Org Mapping Manager and ingest pipeline.",
+        steps: [
+          {
+            name: "Fetch active camps (sample)",
+            run: async (ctx) => {
+              const camps = await base44.entities.Camp.filter({ active: true });
+              if (!Array.isArray(camps) || camps.length === 0)
+                throw new Error("No active camps");
+              ctx.camps = camps;
+              return `${camps.length} active camps`;
+            },
+          },
+          {
+            name: "School match rate >50% (Host Org Mappings and ingest matching working)",
+            run: async (ctx) => {
+              const matched = ctx.camps.filter(c => c.school_id).length;
+              const pct = Math.round((matched / ctx.camps.length) * 100);
+              const unmatched = ctx.camps.length - matched;
+              if (pct < 50)
+                throw new Error(`Only ${pct}% of camps matched to a school (${unmatched} unmatched) — run Host Org Mapping Manager to improve`);
+              if (pct < 70)
+                return `${matched}/${ctx.camps.length} (${pct}%) matched — ${unmatched} still unmatched (run Host Org Mapping Manager to improve)`;
+              return `${matched}/${ctx.camps.length} (${pct}%) matched to a school ✓`;
+            },
+          },
+          {
+            name: "Host Org Mapping records exist",
+            run: async (ctx) => {
+              const mappings = await base44.entities.HostOrgMapping.filter({});
+              if (!Array.isArray(mappings))
+                throw new Error("HostOrgMapping.filter() returned non-array");
+              if (mappings.length === 0)
+                return "⚠ No HostOrgMapping records — run backfill from Host Org Mapping Manager to improve school matching";
+              const verified = mappings.filter(m => m.verified).length;
+              const unverified = mappings.length - verified;
+              ctx.unverifiedMappings = unverified;
+              return `${mappings.length} mappings — ${verified} verified, ${unverified} pending review`;
+            },
+          },
+          {
+            name: "Unverified mappings are not excessive (>200 suggests review needed)",
+            run: async (ctx) => {
+              if (ctx.unverifiedMappings === undefined) return "Skipped — mapping count unavailable";
+              if (ctx.unverifiedMappings > 200)
+                return `⚠ ${ctx.unverifiedMappings} unverified HostOrgMappings — review in Host Org Mapping Manager to improve school matching accuracy`;
+              return `${ctx.unverifiedMappings} unverified mappings — within acceptable range ✓`;
+            },
+          },
+        ],
+      },
+
+      {
+        id: "camp_enrichment_quality",
+        name: "Camp Enrichment Completeness",
+        icon: "📋",
+        description: "Ryzer camps have program names and venues, and missing coordinates are tracked — monitors output of Backfill Ryzer Program Name and Geocode Schools.",
+        steps: [
+          {
+            name: "Fetch active camps",
+            run: async (ctx) => {
+              const camps = await base44.entities.Camp.filter({ active: true });
+              if (!Array.isArray(camps) || camps.length === 0)
+                throw new Error("No active camps");
+              ctx.camps = camps;
+              return `${camps.length} active camps`;
+            },
+          },
+          {
+            name: "Ryzer camp program name coverage (Backfill Ryzer status)",
+            run: async (ctx) => {
+              const ryzerCamps = ctx.camps.filter(c =>
+                c.link_url && (c.link_url.includes("ryzer.com") || c.link_url.includes("ryzerevents.com"))
+              );
+              if (ryzerCamps.length === 0)
+                return "No Ryzer camps found in active set — skipped";
+              const withName = ryzerCamps.filter(c => c.ryzer_program_name).length;
+              const pct = Math.round((withName / ryzerCamps.length) * 100);
+              const missing = ryzerCamps.length - withName;
+              if (pct < 50)
+                return `⚠ ${pct}% of Ryzer camps have program name (${missing} missing) — run Backfill Ryzer Program Name`;
+              return `${withName}/${ryzerCamps.length} (${pct}%) of Ryzer camps have program name${missing > 0 ? ` — ${missing} still missing` : " ✓"}`;
+            },
+          },
+          {
+            name: "Camps have start_date (required for Calendar and conflict detection)",
+            run: async (ctx) => {
+              const sample = ctx.camps.slice(0, 50);
+              const missing = sample.filter(c => !c.start_date).length;
+              const pct = Math.round(((sample.length - missing) / sample.length) * 100);
+              if (missing > 5)
+                throw new Error(`${missing}/50 sampled camps missing start_date — Calendar cannot place them and conflict detection is broken`);
+              return `${sample.length - missing}/50 sampled camps have start_date (${pct}%) ✓`;
+            },
+          },
+          {
+            name: "Camps have state field (required for geographic filtering)",
+            run: async (ctx) => {
+              const sample = ctx.camps.slice(0, 50);
+              const missing = sample.filter(c => !c.state).length;
+              if (missing > 10)
+                return `⚠ ${missing}/50 sampled camps missing state — geographic filtering will be incomplete`;
+              return `${sample.length - missing}/50 sampled camps have state ✓`;
+            },
+          },
+        ],
+      },
+    ],
+  },
+
+  {
     label: "Ingest Pipeline",
     journeys: [
       {
