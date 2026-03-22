@@ -40,6 +40,14 @@ function fmtPct(n, d) {
   return ((n / d) * 100).toFixed(1) + "%";
 }
 
+function parsePayload(event) {
+  try { return JSON.parse(event?.payload_json || "{}"); } catch { return {}; }
+}
+
+function eventAccountId(event) {
+  return parsePayload(event).account_id || null;
+}
+
 const CHART_COLORS = ["#e8a020", "#3b82f6", "#22c55e", "#a855f7", "#ef4444", "#6b7280"];
 const TOOLTIP_STYLE = { background: "#111827", border: "1px solid #1f2937", borderRadius: 8, color: "#f9fafb", fontSize: 12 };
 const TOOLTIP_ITEM_STYLE = { color: "#f9fafb" };
@@ -316,7 +324,7 @@ export default function ProductMetrics() {
       .map(([topic, count]) => ({ topic, count }))
       .sort((a, b) => b.count - a.count);
 
-    // WAU / MAU from page-level events
+    // WAU / MAU from page-level events (session counts, pre-Phase 3)
     const now = new Date();
     const weekAgo = new Date(now - 7 * 86400000);
     const monthAgo = new Date(now - 30 * 86400000);
@@ -325,6 +333,70 @@ export default function ProductMetrics() {
     const mauEvents = pageEvents.filter((e) => pageEventTypes.has(e.event_type) && new Date(e.ts || e.start_date) >= monthAgo);
 
     return { pageData, topicData, wauSessions: wauEvents.length, mauSessions: mauEvents.length };
+  }, [pageEvents]);
+
+  // ── Retention (Phase 3) ───────────────────────────────
+  const retentionMetrics = useMemo(() => {
+    const now = new Date();
+    const MS_PER_WEEK = 7 * 86400000;
+
+    // Only events that have account_id in payload (Phase 3 events)
+    const tracked = pageEvents.filter((e) => !!eventAccountId(e));
+    const hasPhase3Data = tracked.length > 0;
+
+    // True WAU / MAU unique users
+    const weekAgo = new Date(now - MS_PER_WEEK);
+    const monthAgo = new Date(now - 30 * 86400000);
+    const wauIds = new Set(tracked.filter((e) => new Date(e.ts || e.start_date) >= weekAgo).map(eventAccountId).filter(Boolean));
+    const mauIds = new Set(tracked.filter((e) => new Date(e.ts || e.start_date) >= monthAgo).map(eventAccountId).filter(Boolean));
+
+    const wau = wauIds.size;
+    const mau = mauIds.size;
+    const stickiness = mau ? +((wau / mau) * 100).toFixed(1) : 0; // WAU/MAU ratio
+
+    // Weekly active users — last 8 complete weeks + current partial week
+    const weeklyWau = [];
+    for (let i = 7; i >= 0; i--) {
+      const weekStart = new Date(now - (i + 1) * MS_PER_WEEK);
+      const weekEnd   = new Date(now - i * MS_PER_WEEK);
+      const label = `W-${i}`;
+      const ids = new Set(
+        tracked
+          .filter((e) => { const d = new Date(e.ts || e.start_date); return d >= weekStart && d < weekEnd; })
+          .map(eventAccountId).filter(Boolean)
+      );
+      weeklyWau.push({ week: i === 0 ? "Now" : label, users: ids.size, _ids: ids });
+    }
+
+    // Retention rate: % of prior-week actives who also appeared this week
+    const priorWeekIds = weeklyWau[weeklyWau.length - 2]?._ids || new Set();
+    const currentWeekIds = weeklyWau[weeklyWau.length - 1]?._ids || new Set();
+    const returned = [...priorWeekIds].filter((id) => currentWeekIds.has(id)).length;
+    const retentionRate = priorWeekIds.size ? +((returned / priorWeekIds.size) * 100).toFixed(1) : null;
+
+    // Activity distribution: bucket users by event count (last 30 days)
+    const countsByUser = {};
+    for (const e of tracked) {
+      if (new Date(e.ts || e.start_date) < monthAgo) continue;
+      const id = eventAccountId(e);
+      if (id) countsByUser[id] = (countsByUser[id] || 0) + 1;
+    }
+    const activityBuckets = [
+      { label: "1 event", count: 0 },
+      { label: "2–5 events", count: 0 },
+      { label: "6–15 events", count: 0 },
+      { label: "16+ events", count: 0 },
+    ];
+    for (const n of Object.values(countsByUser)) {
+      if      (n === 1)  activityBuckets[0].count++;
+      else if (n <= 5)   activityBuckets[1].count++;
+      else if (n <= 15)  activityBuckets[2].count++;
+      else               activityBuckets[3].count++;
+    }
+
+    const chartData = weeklyWau.map(({ week, users }) => ({ week, users }));
+
+    return { wau, mau, stickiness, retentionRate, returned, priorWeekSize: priorWeekIds.size, chartData, activityBuckets, hasPhase3Data };
   }, [pageEvents]);
 
   // ── render ────────────────────────────────────────────
@@ -640,9 +712,71 @@ export default function ProductMetrics() {
                 )}
               </div>
 
+              {/* ── RETENTION (PHASE 3) ──────────────────── */}
+              <SectionHeader title="Retention & Active Users" />
+              {!retentionMetrics.hasPhase3Data ? (
+                <Card className="p-6 border-[#1f2937] bg-[#111827] mb-4">
+                  <div className="text-center">
+                    <div className="text-2xl mb-2">📡</div>
+                    <div className="text-sm text-[#9ca3af] font-medium mb-1">Collecting user-level data</div>
+                    <div className="text-xs text-[#4b5563]">
+                      Phase 3 events include <code className="text-[#e8a020]">account_id</code> in the payload.
+                      True WAU, MAU, and retention metrics will appear here once users visit instrumented pages with the new build.
+                    </div>
+                  </div>
+                </Card>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    <StatCard label="WAU (unique users)" value={retentionMetrics.wau} color="#e8a020" sub="last 7 days" />
+                    <StatCard label="MAU (unique users)" value={retentionMetrics.mau} color="#f9fafb" sub="last 30 days" />
+                    <StatCard
+                      label="Stickiness (WAU/MAU)"
+                      value={`${retentionMetrics.stickiness}%`}
+                      color={retentionMetrics.stickiness >= 20 ? "#22c55e" : retentionMetrics.stickiness >= 10 ? "#f9fafb" : "#ef4444"}
+                      sub="higher = more habitual"
+                    />
+                    <StatCard
+                      label="Week-over-Week Retention"
+                      value={retentionMetrics.retentionRate !== null ? `${retentionMetrics.retentionRate}%` : "—"}
+                      color={retentionMetrics.retentionRate >= 40 ? "#22c55e" : retentionMetrics.retentionRate >= 20 ? "#f9fafb" : "#ef4444"}
+                      sub={retentionMetrics.priorWeekSize ? `${retentionMetrics.returned} of ${retentionMetrics.priorWeekSize} returned` : undefined}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
+                    <Card className="p-4 border-[#1f2937] bg-[#111827]">
+                      <div className="text-xs text-[#6b7280] mb-3 font-semibold uppercase tracking-wide">Weekly Active Users (8 weeks)</div>
+                      <ResponsiveContainer width="100%" height={160}>
+                        <BarChart data={retentionMetrics.chartData} barSize={20}>
+                          <XAxis dataKey="week" tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                          <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={TOOLTIP_ITEM_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} formatter={(v) => [v, "Unique Users"]} />
+                          <Bar dataKey="users" fill="#e8a020" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </Card>
+                    <Card className="p-4 border-[#1f2937] bg-[#111827]">
+                      <div className="text-xs text-[#6b7280] mb-3 font-semibold uppercase tracking-wide">User Activity Distribution (30d)</div>
+                      <ResponsiveContainer width="100%" height={160}>
+                        <BarChart data={retentionMetrics.activityBuckets} barSize={28}>
+                          <XAxis dataKey="label" tick={{ fill: "#6b7280", fontSize: 10 }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                          <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={TOOLTIP_ITEM_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} formatter={(v) => [v, "Users"]} />
+                          <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                            {retentionMetrics.activityBuckets.map((_, i) => (
+                              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </Card>
+                  </div>
+                </>
+              )}
+
               <div className="mt-6 text-xs text-[#374151] text-center pb-4">
-                Phase 1+2 metrics — Entitlement, CampIntent, SupportTicket, Athlete, and Event tables.
-                WAU/MAU counts are session events; user-level deduplication requires account_id on events (Phase 3).
+                Phase 1–3 metrics — Entitlement, CampIntent, SupportTicket, Athlete, and Event tables.
+                Retention section requires Phase 3 events (account_id in payload) to populate.
               </div>
             </>
           )}
