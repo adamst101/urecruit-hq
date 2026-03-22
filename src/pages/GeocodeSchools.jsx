@@ -52,8 +52,8 @@ export default function GeocodeSchools() {
           continue;
         }
 
-        // Rate limit: 250ms between requests to be respectful
-        await sleep(250);
+        // Rate limit: 1100ms — Nominatim requires max 1 req/sec per usage policy
+        await sleep(1100);
 
         const coords = await geocodeCity(city, state);
         if (coords) {
