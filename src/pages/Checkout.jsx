@@ -215,8 +215,9 @@ export default function Checkout() {
             parentPhone: parentPhone.trim(),
           }));
         } catch {}
-        const returnUrl = `${window.location.origin}/AuthRedirect?source=promo_checkout`;
-        base44.auth.redirectToLogin(returnUrl);
+        // Send unauthenticated users to our custom signup page.
+        // After account creation AuthRedirect will pick up pendingPromoCode.
+        navigate("/Signup?next=promo_checkout");
       }
       return;
     }

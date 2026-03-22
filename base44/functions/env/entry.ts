@@ -12,6 +12,11 @@ RESEND_FROM_EMAIL=agenda@urecruithq.com
 STRIPE_SECRET_KEY=sk_live_YOUR_STRIPE_SECRET_KEY_HERE
 STRIPE_WEBHOOK_SECRET=whsec_YOUR_WEBHOOK_SECRET_HERE
 
+# ── Supabase (required for custom account creation via /Signup page) ──────────
+# Get these from Supabase Dashboard → Project Settings → API
+SUPABASE_URL=https://qtrypzzcjebvfcihiynt.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY_HERE
+
 # ── Other ─────────────────────────────────────────────────────────────────────
 RYZER_AUTH=YOUR_RYZER_AUTH_TOKEN_HERE
 SCORECARD_API_KEY=YOUR_SCORECARD_API_KEY_HERE

@@ -247,9 +247,14 @@ export default function Home() {
                 <button onClick={handleLogout} style={S.navBtnGhost}>Log out</button>
               </>
             ) : (
-              <button onClick={handleMemberLogin} style={S.navBtnMemberLogin}>
-                Member Login
-              </button>
+              <>
+                <button onClick={() => nav("/Signup")} style={S.navBtnAmber}>
+                  Create Account
+                </button>
+                <button onClick={handleMemberLogin} style={S.navBtnMemberLogin}>
+                  Sign In
+                </button>
+              </>
             )}
           </div>
         </div>

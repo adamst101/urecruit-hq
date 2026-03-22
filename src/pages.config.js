@@ -80,6 +80,7 @@ import SchoolAthleticsCleanup from './pages/SchoolAthleticsCleanup';
 import SchoolsManager from './pages/SchoolsManager';
 import SeasonManager from './pages/SeasonManager';
 import SportIngestConfigManager from './pages/SportIngestConfigManager';
+import Signup from './pages/Signup';
 import Subscribe from './pages/Subscribe';
 import SupportDashboard from './pages/SupportDashboard';
 import SupportReply from './pages/SupportReply';
@@ -124,6 +125,7 @@ export const PAGES = {
     "SchoolsManager": SchoolsManager,
     "SeasonManager": SeasonManager,
     "SportIngestConfigManager": SportIngestConfigManager,
+    "Signup": Signup,
     "Subscribe": Subscribe,
     "SupportDashboard": SupportDashboard,
     "SupportReply": SupportReply,
