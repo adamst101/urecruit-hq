@@ -1,11 +1,23 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
+async function computeToken(ticketId: string, secret: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(ticketId));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
     const body = await req.json();
 
-    const { ticketId, message, messageType, newStatus } = body;
+    const { ticketId, message, messageType, newStatus, appUrl } = body;
 
     if (!ticketId) return Response.json({ ok: false, error: "ticketId is required." }, { status: 400 });
     if (!message || !String(message).trim()) return Response.json({ ok: false, error: "Message is required." }, { status: 400 });
@@ -24,7 +36,6 @@ Deno.serve(async (req) => {
     const headerColor = isInfoRequest ? "#b45309" : "#0B1F3B";
     const msgHtml = msgText.replace(/\n/g, "<br>");
 
-    // Map status → human label for email
     const STATUS_LABELS: Record<string, string> = {
       open: "Open",
       in_progress: "In Progress",
@@ -35,6 +46,20 @@ Deno.serve(async (req) => {
     const statusLine = newStatus && newStatus !== "no_change" && newStatus !== ticket.status
       ? `<p style="margin:0 0 16px;font-size:14px;color:#374151;">Your ticket status has been updated to <strong>${STATUS_LABELS[newStatus] || newStatus}</strong>.</p>`
       : "";
+
+    // Generate magic-link reply button
+    let replyButtonHtml = "";
+    const secret = Deno.env.get("TICKET_REPLY_SECRET");
+    if (secret && appUrl) {
+      const token = await computeToken(ticketId, secret);
+      const replyUrl = `${String(appUrl).replace(/\/$/, "")}/SupportReply?ticket=${encodeURIComponent(ticketId)}&token=${encodeURIComponent(token)}`;
+      replyButtonHtml = `
+    <div style="margin-top:24px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center;">
+      <p style="margin:0 0 12px;font-size:14px;color:#374151;">Have a response or additional information for us?</p>
+      <a href="${replyUrl}" style="display:inline-block;padding:12px 28px;background:#0B1F3B;color:#D4AF37;font-weight:700;font-size:14px;text-decoration:none;border-radius:8px;letter-spacing:0.5px;">Reply to This Ticket</a>
+      <p style="margin:12px 0 0;font-size:11px;color:#9ca3af;">Button not working? Copy and paste this link into your browser:<br><span style="word-break:break-all;">${replyUrl}</span></p>
+    </div>`;
+    }
 
     const replyHtml = `
 <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
@@ -49,11 +74,11 @@ Deno.serve(async (req) => {
       <p style="margin:0 0 8px;font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:1px;">${isInfoRequest ? "Information Requested" : "Message from Support"}</p>
       <p style="margin:0;font-size:14px;color:#111827;line-height:1.7;">${msgHtml}</p>
     </div>
-    ${isInfoRequest ? `<p style="margin:0 0 16px;font-size:14px;color:#374151;line-height:1.6;">Please reply to this email with the requested information so we can continue helping you.</p>` : ""}
-    <div style="padding:12px 16px;background:#f3f4f6;border-radius:8px;margin-bottom:20px;">
+    <div style="padding:12px 16px;background:#f3f4f6;border-radius:8px;margin-bottom:4px;">
       <p style="margin:0;font-size:12px;color:#6b7280;">Original subject: <strong style="color:#374151;">${subject || "—"}</strong></p>
     </div>
-    <p style="margin:0;font-size:14px;color:#6b7280;line-height:1.6;">— URecruit HQ Support</p>
+    ${replyButtonHtml}
+    <p style="margin:20px 0 0;font-size:14px;color:#6b7280;line-height:1.6;">— URecruit HQ Support</p>
   </div>
 </div>`;
 

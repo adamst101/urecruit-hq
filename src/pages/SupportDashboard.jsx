@@ -82,6 +82,7 @@ export default function SupportDashboard() {
         message: msg,
         messageType: replyType[ticketId] || "reply",
         newStatus: replyStatus[ticketId] || "no_change",
+        appUrl: window.location.origin,
       });
       if (result?.ok) {
         // Apply any ticket updates returned from the function

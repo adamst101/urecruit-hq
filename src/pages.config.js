@@ -80,6 +80,7 @@ import SeasonManager from './pages/SeasonManager';
 import SportIngestConfigManager from './pages/SportIngestConfigManager';
 import Subscribe from './pages/Subscribe';
 import SupportDashboard from './pages/SupportDashboard';
+import SupportReply from './pages/SupportReply';
 import TestFunctions from './pages/TestFunctions';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
@@ -121,6 +122,7 @@ export const PAGES = {
     "SportIngestConfigManager": SportIngestConfigManager,
     "Subscribe": Subscribe,
     "SupportDashboard": SupportDashboard,
+    "SupportReply": SupportReply,
     "TestFunctions": TestFunctions,
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
