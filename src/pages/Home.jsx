@@ -463,20 +463,21 @@ export default function Home() {
         </div>{/* end main content */}
 
         {/* Bottom strip — social proof */}
+        {/* ── SOCIAL PROOF STRIP — above scroll nudge ── */}
         <div style={{
-          width: "100%", textAlign: "center",
-          padding: "14px 24px",
+          position: "absolute", bottom: 58, left: 0, right: 0,
+          textAlign: "center", padding: "12px 24px",
           borderTop: "1px solid rgba(255,255,255,0.07)",
-          position: "relative", zIndex: 1,
+          zIndex: 2, pointerEvents: "none",
         }}>
-          <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
-            100%&nbsp;<em style={{ fontStyle: "italic", color: "#9ca3af" }}>College</em>&nbsp;Coaching Staffs &nbsp;·&nbsp; Zero Club Camps &nbsp;·&nbsp; All Divisions
+          <p style={{ fontSize: 15, color: "#9ca3af", margin: 0 }}>
+            100%&nbsp;<em style={{ fontStyle: "italic", color: "#d1d5db" }}>College</em>&nbsp;Coaching Staffs &nbsp;·&nbsp; Zero Club Camps &nbsp;·&nbsp; All Divisions
           </p>
         </div>
 
         {/* ── SCROLL NUDGE ── */}
         <div style={{
-          position: "absolute", bottom: 46, left: "50%", transform: "translateX(-50%)",
+          position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)",
           display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
           zIndex: 5, pointerEvents: "none",
         }}>
