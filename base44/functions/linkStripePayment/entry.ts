@@ -28,7 +28,8 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "Could not retrieve Stripe session: " + String(e.message) });
   }
 
-  if (session.payment_status !== "paid") {
+  // Accept both paid sessions and $0 sessions from 100% promo codes
+  if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") {
     return Response.json({ ok: false, error: "Session not paid" });
   }
 

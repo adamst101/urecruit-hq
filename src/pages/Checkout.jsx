@@ -202,35 +202,9 @@ export default function Checkout() {
   async function handleCheckout() {
     setError(null);
 
-    // Free code flow
-    if (promoState?.ok && promoState?.isFree) {
-      if (isAuthed) {
-        // Already logged in — activate immediately
-        await activateFreeAccess(promoCode.trim());
-      } else {
-        // Save code + form data before login — restored after account creation
-        try {
-          sessionStorage.setItem("pendingPromoCode", promoCode.trim());
-          sessionStorage.setItem("checkoutForm", JSON.stringify({
-            athleteFirstName: athleteFirstName.trim(),
-            athleteLastName: athleteLastName.trim(),
-            gradYear,
-            sportId,
-            homeCity: homeCity.trim(),
-            homeState,
-            parentFirstName: parentFirstName.trim(),
-            parentLastName: parentLastName.trim(),
-            parentPhone: parentPhone.trim(),
-          }));
-        } catch {}
-        // Send unauthenticated users to our custom signup page.
-        // After account creation AuthRedirect will pick up pendingPromoCode.
-        navigate("/Signup?next=promo_checkout");
-      }
-      return;
-    }
-
-    // Paid flow — redirect to Stripe
+    // All promo codes (including 100% off) go through Stripe checkout so
+    // max_redemptions is enforced server-side. $0 sessions fire the webhook
+    // with payment_status "no_payment_required" which the webhook handles.
     setWorking(true);
     try {
       const successUrl = window.location.origin + createPageUrl("CheckoutSuccess");
@@ -504,7 +478,7 @@ export default function Checkout() {
         )}
 
         {/* Account note for new users — not shown in add-on mode */}
-        {!isAddonMode && !isAuthed && !promoFree && (
+        {!isAddonMode && !isAuthed && (
           <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", margin: "0 0 12px", lineHeight: 1.5 }}>
             No account yet? You'll create one after checkout.
           </p>
@@ -538,11 +512,9 @@ export default function Checkout() {
           )}
         </button>
 
-        {!promoFree && (
-          <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280", marginTop: 12 }}>
-            🔒 Secured by Stripe · You'll be redirected to complete payment
-          </p>
-        )}
+        <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280", marginTop: 12 }}>
+          🔒 Secured by Stripe · You'll be redirected to complete{promoFree ? " your free order" : " payment"}
+        </p>
         </>}
       </div>
     </div>

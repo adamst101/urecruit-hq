@@ -72,7 +72,8 @@ Deno.serve(async (req) => {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
 
-    if (session.payment_status !== "paid") {
+    // Accept both paid sessions and $0 sessions from 100% promo codes
+    if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") {
       return Response.json({ ok: true, skipped: "not paid" });
     }
 

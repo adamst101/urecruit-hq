@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
 
     return Response.json({
       ok: true,
-      paid: session.payment_status === "paid",
+      paid: session.payment_status === "paid" || session.payment_status === "no_payment_required",
       email: session.customer_email || "",
       amountPaid: (session.amount_total || 0) / 100,
       couponUsed: session.metadata?.coupon_code || null,
