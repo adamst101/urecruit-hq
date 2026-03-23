@@ -13,7 +13,7 @@ import { getDemoDefaults, setDemoMode, clearDemoMode } from "../components/hooks
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 import TestimonialsSection from "../components/home/TestimonialsSection.jsx";
 import DifferentiatorsSection from "../components/home/DifferentiatorsSection.jsx";
-import allCampsImg from "../../Images/transparent monitor and phone.png";
+import laptopImg from "../../Images/laptop image.png";
 import lessStressImg from "../../Images/Less Stress.jpg";
 
 const LOGO_URL =
@@ -441,7 +441,7 @@ export default function Home() {
             }} />
 
             <img
-              src={allCampsImg}
+              src={laptopImg}
               alt="URecruitHQ camp planning platform on desktop and mobile"
               style={{
                 position: "relative", zIndex: 1,
