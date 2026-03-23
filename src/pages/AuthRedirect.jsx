@@ -110,8 +110,8 @@ export default function AuthRedirect() {
       ssRemove("postPaymentSignup");
       ssRemove("paidSeasonYear");
 
-      // Entitlement might already exist (webhook fast)
-      if (season?.hasAccess && season?.entitlement) {
+      // Entitlement might already exist (webhook fast) — admins have hasAccess but no entitlement record
+      if (season?.hasAccess && (season?.entitlement || season?.role === "admin")) {
         didRoute.current = true;
         nav(PATHS.WORKSPACE, { replace: true });
         return;
@@ -211,8 +211,8 @@ export default function AuthRedirect() {
       return;
     }
 
-    // ── Priority 4: Entitled → next destination ──
-    if (season?.hasAccess && season?.entitlement) {
+    // ── Priority 4: Entitled → next destination — admins have hasAccess but no entitlement record ──
+    if (season?.hasAccess && (season?.entitlement || season?.role === "admin")) {
       didRoute.current = true;
       nav(next, { replace: true });
       return;
