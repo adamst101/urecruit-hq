@@ -80,6 +80,7 @@ export default function Home() {
   }, [loc?.search]);
 
   const isAuthed = previewAnon ? false : !!season?.accountId;
+  const isAdmin = !previewAnon && season?.role === "admin";
   const isMember = previewAnon ? false :
     !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
 
@@ -251,7 +252,7 @@ export default function Home() {
           </div>
 
           <div className="nav-right-btns" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            {isAuthed && isMember ? (
+            {isAuthed && (isMember || isAdmin) ? (
               <>
                 <button onClick={handleContinue} style={S.navBtnAmberText}>
                   Go to HQ
@@ -277,7 +278,7 @@ export default function Home() {
       </nav>
 
       {/* Banner for logged-in users without paid access */}
-      {isAuthed && !isMember && (
+      {isAuthed && !isMember && !isAdmin && (
         <div style={{
           background: "#111827",
           borderBottom: "2px solid #e8a020",
