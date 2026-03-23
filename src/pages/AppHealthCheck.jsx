@@ -515,7 +515,10 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const ents = await base44.entities.Entitlement.filter({ status: "active" });
               if (!Array.isArray(ents)) throw new Error("Entitlement.filter() returned non-array");
-              if (ents.length === 0) throw new Error("No active entitlements — no subscribers in system");
+              if (ents.length === 0) {
+                ctx.entitlements = [];
+                return "No active entitlements — 0 subscribers (expected post-purge or pre-launch)";
+              }
               ctx.entitlements = ents;
               return `${ents.length} active entitlement${ents.length !== 1 ? "s" : ""}`;
             },
@@ -692,6 +695,11 @@ const JOURNEY_GROUPS = [
           {
             name: "Spot-check: intents have athlete_id (required for Calendar / My Agenda queries)",
             run: async (ctx) => {
+              if (ctx.athletes.length === 0) {
+                if (ctx.activeIntents.length > 0)
+                  return `⚠ ${ctx.activeIntents.length} orphaned intents with no athletes — re-run user purge to clear`;
+                return "No athletes and no intents — clean state";
+              }
               const missing = ctx.activeIntents.slice(0, 20).filter(i => !i.athlete_id).length;
               if (missing > 2) throw new Error(`${missing}/20 intents missing athlete_id — useAllAthletesCamps filter would skip them`);
               return `${Math.min(20, ctx.activeIntents.length) - missing}/${Math.min(20, ctx.activeIntents.length)} intents have athlete_id`;
@@ -1973,7 +1981,10 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const ents = await base44.entities.Entitlement.filter({ status: "active" });
               if (!Array.isArray(ents)) throw new Error("Entitlement.filter() returned non-array");
-              if (ents.length === 0) throw new Error("No active entitlements — skip or check subscription data");
+              if (ents.length === 0) {
+                ctx.ents = [];
+                return "No active entitlements — skipping time window checks (post-purge or pre-launch)";
+              }
               ctx.ents = ents;
               return `${ents.length} active entitlements`;
             },
@@ -1991,6 +2002,7 @@ const JOURNEY_GROUPS = [
           {
             name: "At least one entitlement is within its access window (now >= starts_at and now <= ends_at)",
             run: async (ctx) => {
+              if (ctx.ents.length === 0) return "No entitlements to check — skipping window check";
               const now = new Date();
               const inWindow = ctx.ents.filter(e => {
                 if (!e.starts_at || !e.ends_at) return false;
