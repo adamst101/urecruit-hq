@@ -426,7 +426,7 @@ export default function Home() {
           {/* RIGHT — laptop image (hidden on mobile) */}
           <div
             className="hidden md:block"
-            style={{ flex: 1, position: "relative", minHeight: 420, marginLeft: "-5%" }}
+            style={{ flex: 1, position: "relative", minHeight: 420, marginLeft: "-10%" }}
           >
             {/* Gold glow at bottom of image */}
             <div style={{
