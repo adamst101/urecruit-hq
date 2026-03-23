@@ -413,7 +413,6 @@ export default function Home() {
                 overflow: "hidden",
                 boxShadow: "0 0 80px rgba(232,160,32,0.12), 0 24px 64px rgba(0,0,0,0.7)",
                 border: "1px solid rgba(232,160,32,0.2)",
-                maxWidth: 480,
                 width: "100%",
               }}>
                 <img
