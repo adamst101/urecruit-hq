@@ -175,6 +175,23 @@ export default function Home() {
             padding: 6px 10px !important;
           }
         }
+
+        /* ── HERO RESPONSIVE ── */
+        @media (max-width: 767px) {
+          .hero-label-wrap span { font-size: 11px !important; letter-spacing: 1px !important; }
+          .hero-h1-line1 { white-space: normal !important; font-size: 10vw !important; }
+          .hero-h1-line2 { font-size: 10vw !important; }
+          .hero-cols { flex-direction: column !important; margin-top: 8px !important; }
+          .hero-text-col { flex: 0 0 100% !important; width: 100% !important; }
+          .hero-subtext { font-size: 16px !important; max-width: 100% !important; }
+          .hero-proof-strip { font-size: 11px !important; }
+        }
+        @media (min-width: 768px) and (max-width: 1024px) {
+          .hero-h1-line1 { font-size: 3.2vw !important; }
+          .hero-h1-line2 { font-size: 3.2vw !important; }
+          .hero-text-col { flex: 0 0 50% !important; }
+          .hero-img-col { margin-left: -5% !important; }
+        }
         @keyframes why-float {
           0%,100% { transform: translateY(0); }
           50%     { transform: translateY(-6px); }
@@ -318,8 +335,8 @@ export default function Home() {
           zIndex: 1,
         }}>
           {/* Label */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-            <div style={{ width: 3, height: 28, background: "#e8a020", borderRadius: 2 }} />
+          <div className="hero-label-wrap" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <div style={{ width: 3, height: 28, background: "#e8a020", borderRadius: 2, flexShrink: 0 }} />
             <span style={{
               fontFamily: "'Bebas Neue', sans-serif",
               fontSize: 18, letterSpacing: 3,
@@ -331,7 +348,7 @@ export default function Home() {
 
           {/* HEADLINE — spans full container width, one line each */}
           <h1 style={{ margin: 0, lineHeight: 1 }}>
-            <span style={{
+            <span className="hero-h1-line1" style={{
               display: "block",
               fontFamily: "'Bebas Neue', sans-serif",
               fontSize: "clamp(36px, 4.8vw, 62px)",
@@ -342,7 +359,7 @@ export default function Home() {
             }}>
               THE CAMPS THAT GET ATHLETES EVALUATED.
             </span>
-            <span style={{
+            <span className="hero-h1-line2" style={{
               display: "block",
               fontFamily: "'Bebas Neue', sans-serif",
               fontSize: "clamp(36px, 4.8vw, 62px)",
@@ -355,11 +372,11 @@ export default function Home() {
           </h1>
 
           {/* Two-column row: subtext/CTAs left, image right with overlap */}
-          <div style={{ display: "flex", alignItems: "center", gap: 0, marginTop: -32 }}>
+          <div className="hero-cols" style={{ display: "flex", alignItems: "center", gap: 0, marginTop: -32 }}>
             {/* LEFT — subtext, CTAs, bullets */}
-            <div style={{ flex: "0 0 44%", minWidth: 0, position: "relative", zIndex: 2 }}>
+            <div className="hero-text-col" style={{ flex: "0 0 44%", minWidth: 0, position: "relative", zIndex: 2 }}>
               {/* Subtext */}
-              <p style={{
+              <p className="hero-subtext" style={{
                 fontSize: 20,
                 color: "#9ca3af",
                 lineHeight: 1.65,
@@ -417,7 +434,7 @@ export default function Home() {
 
           {/* RIGHT — laptop image (hidden on mobile) */}
           <div
-            className="hidden md:block"
+            className="hero-img-col hidden md:block"
             style={{ flex: 1, position: "relative", minHeight: 420, marginLeft: "-10%" }}
           >
             {/* Gold glow at bottom of image */}
@@ -466,7 +483,7 @@ export default function Home() {
           borderTop: "1px solid rgba(255,255,255,0.07)",
           zIndex: 2, pointerEvents: "none",
         }}>
-          <p style={{ fontSize: 15, color: "#9ca3af", margin: 0 }}>
+          <p className="hero-proof-strip" style={{ fontSize: 15, color: "#9ca3af", margin: 0 }}>
             100%&nbsp;<em style={{ fontStyle: "italic", color: "#d1d5db" }}>College</em>&nbsp;Coaching Staffs &nbsp;·&nbsp; Zero Club Camps &nbsp;·&nbsp; All Divisions
           </p>
         </div>
