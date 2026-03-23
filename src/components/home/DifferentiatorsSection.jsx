@@ -109,19 +109,25 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
           <DiffCard
             borderColor="#e8a020"
             emoji="🏟️"
-            title="750+ CAMPS. EVERY DIVISION."
+            title={`${campDisplay} CAMPS. EVERY DIVISION.`}
             body="Every college football camp from FBS to JUCO — in one searchable list. Updated every Monday. No club camps. No noise."
           >
-            <div
+            <span
               style={{
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: 32,
-                color: "#e8a020",
-                lineHeight: 1.1,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: "rgba(232,160,32,0.15)",
+                border: "1px solid rgba(232,160,32,0.4)",
+                color: "#fcd34d",
+                fontSize: 13,
+                fontWeight: 700,
+                padding: "6px 14px",
+                borderRadius: 20,
               }}
             >
-              {campDisplay} camps · {schoolDisplay} programs
-            </div>
+              ✓ {schoolDisplay} programs · All divisions
+            </span>
           </DiffCard>
 
           {/* Card 2 — Conflicts */}
