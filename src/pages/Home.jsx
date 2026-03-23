@@ -13,6 +13,8 @@ import { getDemoDefaults, setDemoMode, clearDemoMode } from "../components/hooks
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 import TestimonialsSection from "../components/home/TestimonialsSection.jsx";
 import DifferentiatorsSection from "../components/home/DifferentiatorsSection.jsx";
+import allCampsImg from "../../Images/All Camps.jpg";
+import lessStressImg from "../../Images/Less Stress.jpg";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -536,6 +538,15 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── ALL CAMPS IMAGE ── */}
+      <div style={{ textAlign: "center", padding: "0 24px 0", background: "#0a0e1a" }}>
+        <img
+          src={allCampsImg}
+          alt="URecruitHQ - All Camps. One Place. Desktop and mobile platform view"
+          style={{ maxWidth: "100%", width: "100%", display: "block" }}
+        />
+      </div>
+
       {/* ── STATIC STATS BAR ── */}
       <div style={{
         background: "#e8a020",
@@ -557,6 +568,15 @@ export default function Home() {
 
       {/* ── DIFFERENTIATORS ── */}
       <DifferentiatorsSection campDisplay={campDisplay} schoolDisplay={schoolDisplay} />
+
+      {/* ── LESS STRESS IMAGE ── */}
+      <div style={{ textAlign: "center", padding: "0 24px", background: "#0a0e1a" }}>
+        <img
+          src={lessStressImg}
+          alt="URecruitHQ before and after - Less stress, smarter planning"
+          style={{ maxWidth: "100%", width: "100%", display: "block" }}
+        />
+      </div>
 
       {/* ── EMAIL ALERTS ── */}
       <section style={{ background: '#0a0e1a', padding: '80px 24px', borderTop: '1px solid #1f2937' }}>
