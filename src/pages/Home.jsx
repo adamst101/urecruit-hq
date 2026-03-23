@@ -380,10 +380,15 @@ export default function Home() {
                   flexWrap: "wrap"
                 }}
               >
-                <button onClick={handlePricingSignup} style={S.ctaPrimary}>
-                  Get Season Pass{" "}
-                  <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
-                </button>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <button onClick={handlePricingSignup} style={S.ctaPrimary}>
+                    Get Season Pass{" "}
+                    <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
+                  </button>
+                  <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>
+                    $49 · one season · one-time payment
+                  </span>
+                </div>
                 <button
                   onClick={handleTryDemo}
                   style={S.ctaOutline}
