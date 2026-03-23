@@ -360,7 +360,7 @@ export default function Home() {
           </h1>
 
           {/* Two-column row: subtext/CTAs left, image right with overlap */}
-          <div style={{ display: "flex", alignItems: "center", gap: 0, marginTop: -16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 0, marginTop: -32 }}>
             {/* LEFT — subtext, CTAs, bullets */}
             <div style={{ flex: "0 0 44%", minWidth: 0, position: "relative", zIndex: 2 }}>
               {/* Subtext */}
