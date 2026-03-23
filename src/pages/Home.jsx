@@ -314,7 +314,7 @@ export default function Home() {
           flexDirection: "column",
           maxWidth: 1200,
           margin: "0 auto",
-          padding: "56px 32px 40px",
+          padding: "40px 32px 40px",
           width: "100%",
           position: "relative",
           zIndex: 1,
