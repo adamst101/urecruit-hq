@@ -33,7 +33,7 @@ Deno.serve(async function(req) {
   var maxCamps = Math.max(1, Number(body.maxCamps || 200));
   var startAt = Math.max(0, Number(body.startAt || 0));
 
-  var Camp = base44.entities.Camp;
+  var Camp = base44.asServiceRole.entities.Camp;
 
   // Load all camps and find ones with "|" in the name
   var allCamps = await Camp.filter({}, "source_key", 99999);
@@ -68,6 +68,9 @@ Deno.serve(async function(req) {
         stats.updated++;
       } catch (e) {
         stats.errors++;
+        if (sample.length < 30) {
+          sample.push({ source_key: camp.source_key, old: oldName, new: newName, error: String(e.message || e).substring(0, 200) });
+        }
       }
     } else {
       stats.updated++;
