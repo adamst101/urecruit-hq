@@ -151,6 +151,89 @@ export default function AdminFactoryReset() {
     [E]
   );
 
+  // User-data-only purge — keeps Schools and Camps intact
+  const userPurgePlan = useMemo(
+    () => [
+      { name: "CampDecisionScore", entity: E.CampDecisionScore || E.CampDecisionScores },
+      { name: "CampIntentHistory", entity: E.CampIntentHistory || E.CampIntentHistories },
+      { name: "CampIntent",        entity: E.CampIntent || E.CampIntents },
+      { name: "Registration",      entity: E.Registration || E.Registrations },
+      { name: "Favorite",          entity: E.Favorite || E.Favorites },
+      { name: "UserCamp",          entity: E.UserCamp || E.UserCamps },
+      { name: "ScenarioCamp",      entity: E.ScenarioCamp || E.ScenarioCamps },
+      { name: "Scenario",          entity: E.Scenario || E.Scenarios },
+      { name: "TargetSchoolHistory", entity: E.TargetSchoolHistory || E.TargetSchoolHistories },
+      { name: "TargetSchool",      entity: E.TargetSchool || E.TargetSchools },
+      { name: "Entitlement",       entity: E.Entitlement || E.Entitlements },
+      { name: "AthleteProfile",    entity: E.AthleteProfile || E.AthleteProfiles },
+    ],
+    [E]
+  );
+
+  const [userPurgeDryRun, setUserPurgeDryRun] = useState(true);
+  const [userPurgeWorking, setUserPurgeWorking] = useState(false);
+  const [userPurgeLog, setUserPurgeLog] = useState([]);
+
+  const pushU = (m) => setUserPurgeLog((x) => [...x, m]);
+
+  const previewUserCounts = async () => {
+    setUserPurgeLog([]);
+    pushU(`Preview @ ${new Date().toISOString()}`);
+    for (let i = 0; i < userPurgePlan.length; i++) {
+      const t = userPurgePlan[i];
+      if (!t.entity) { pushU(`- ${t.name}: entity not found (skipping)`); continue; }
+      try {
+        const rows = await withRetry(() => entityList(t.entity, {}));
+        pushU(`- ${t.name}: ${rows.length}`);
+        await sleep(25);
+      } catch (e) {
+        pushU(`- ${t.name}: ERROR listing (${String(e?.message || e)})`);
+      }
+    }
+    pushU("Preview complete.");
+  };
+
+  const runUserPurge = async () => {
+    setUserPurgeWorking(true);
+    setUserPurgeLog([]);
+    pushU(`USER DATA PURGE START @ ${new Date().toISOString()}`);
+    pushU(`Mode: ${userPurgeDryRun ? "DRY RUN (no deletes)" : "LIVE DELETE"}`);
+    pushU("Schools, Camps, Sport, Position — untouched.");
+    pushU("Note: delete non-admin user accounts via base44 dashboard → Users after this.");
+    try {
+      for (let i = 0; i < userPurgePlan.length; i++) {
+        const t = userPurgePlan[i];
+        if (!t.entity) { pushU(`[SKIP] ${t.name}: entity not found`); continue; }
+        pushU(`\n[STEP] ${t.name}: listing…`);
+        const rows = await withRetry(() => entityList(t.entity, {}));
+        const ids = rows.map((r) => r?.id ? String(r.id) : null).filter(Boolean);
+        pushU(`[STEP] ${t.name}: ${ids.length} rows`);
+        if (ids.length === 0) continue;
+        if (userPurgeDryRun) { pushU(`[DRY] ${t.name}: would delete ${ids.length}`); continue; }
+        let ok = 0, fail = 0;
+        for (let j = 0; j < ids.length; j++) {
+          try {
+            const deleted = await withRetry(() => tryDelete(t.entity, ids[j]));
+            if (deleted) ok++; else fail++;
+          } catch { fail++; }
+          if ((j + 1) % 25 === 0) {
+            pushU(`[PROGRESS] ${t.name}: ${j + 1}/${ids.length} ok=${ok} fail=${fail}`);
+            await sleep(120);
+          } else {
+            await sleep(20);
+          }
+        }
+        pushU(`[DONE] ${t.name}: ok=${ok} fail=${fail}`);
+      }
+      pushU("\nUSER DATA PURGE COMPLETE ✅");
+      pushU("Next: delete non-admin user accounts via base44 dashboard → Users.");
+    } catch (e) {
+      pushU(`\n❌ PURGE FAILED: ${String(e?.message || e)}`);
+    } finally {
+      setUserPurgeWorking(false);
+    }
+  };
+
   const previewCounts = async () => {
     setLog([]);
     push(`Preview @ ${new Date().toISOString()}`);
@@ -284,6 +367,45 @@ export default function AdminFactoryReset() {
         <Card>
           <div className="text-sm font-semibold text-slate-900">Log</div>
           <pre className="mt-2 text-xs whitespace-pre-wrap">{log.join("\n")}</pre>
+        </Card>
+
+        {/* ── USER DATA PURGE ── */}
+        <Card>
+          <div className="text-xl font-bold text-slate-900">🧹 Pre-Launch User Data Purge</div>
+          <div className="text-sm text-slate-600 mt-2">
+            Deletes all athlete profiles, entitlements, camp intents, registrations, favorites, and scenarios.
+            <strong className="text-slate-900"> Schools and Camps are NOT touched.</strong>
+          </div>
+          <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+            ⚠ After running, manually delete non-admin user accounts via the base44 dashboard → Users.
+          </div>
+
+          <div className="mt-4 text-xs text-slate-500 font-medium uppercase tracking-wide">Will delete:</div>
+          <ul className="mt-1 text-xs text-slate-600 list-disc list-inside space-y-0.5">
+            {["AthleteProfile", "Entitlement", "CampIntent", "CampIntentHistory", "CampDecisionScore",
+              "Registration", "Favorite", "UserCamp", "Scenario", "ScenarioCamp",
+              "TargetSchool", "TargetSchoolHistory"].map(n => <li key={n}>{n}</li>)}
+          </ul>
+          <div className="mt-2 text-xs text-green-700">✓ Preserved: School, Camp, SchoolSportSite, Sport, Position</div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={userPurgeDryRun} onChange={(e) => setUserPurgeDryRun(e.target.checked)} />
+              Dry run (no deletes)
+            </label>
+            <Button variant="outline" disabled={userPurgeWorking} onClick={previewUserCounts}>
+              Preview counts
+            </Button>
+            <Button disabled={userPurgeWorking} onClick={runUserPurge}>
+              {userPurgeWorking ? "Working…" : userPurgeDryRun ? "Run dry purge" : "DELETE USER DATA NOW"}
+            </Button>
+          </div>
+          <div className="mt-3 text-xs text-slate-500">Tip: run Preview first, then uncheck Dry run and execute.</div>
+        </Card>
+
+        <Card>
+          <div className="text-sm font-semibold text-slate-900">User Purge Log</div>
+          <pre className="mt-2 text-xs whitespace-pre-wrap">{userPurgeLog.join("\n")}</pre>
         </Card>
       </div>
     </div>
