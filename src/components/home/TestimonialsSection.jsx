@@ -18,7 +18,7 @@ const QUOTES = [
 
 export default function TestimonialsSection() {
   return (
-    <section style={{ background: "#0d1117", padding: "80px 24px" }}>
+    <section style={{ background: "#f9fafb", padding: "80px 24px" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
         <h2
           style={{
@@ -26,7 +26,7 @@ export default function TestimonialsSection() {
             fontSize: 48,
             textAlign: "center",
             marginBottom: 48,
-            color: "#f9fafb",
+            color: "#0a0e1a",
             letterSpacing: 1,
           }}
         >
@@ -44,13 +44,14 @@ export default function TestimonialsSection() {
             <div
               key={i}
               style={{
-                background: "#111827",
+                background: "#ffffff",
                 borderRadius: 16,
                 borderTop: "3px solid #e8a020",
                 padding: 28,
                 display: "flex",
                 flexDirection: "column",
                 gap: 16,
+                boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
               }}
             >
               <div
@@ -59,7 +60,7 @@ export default function TestimonialsSection() {
                   fontSize: 64,
                   color: "#e8a020",
                   lineHeight: 0.6,
-                  opacity: 0.6,
+                  opacity: 0.5,
                 }}
               >
                 "
@@ -68,7 +69,7 @@ export default function TestimonialsSection() {
                 style={{
                   fontSize: 17,
                   fontStyle: "italic",
-                  color: "#f9fafb",
+                  color: "#111827",
                   lineHeight: 1.65,
                   margin: 0,
                   flex: 1,
@@ -79,7 +80,7 @@ export default function TestimonialsSection() {
               <p
                 style={{
                   fontSize: 14,
-                  color: "#9ca3af",
+                  color: "#6b7280",
                   margin: 0,
                 }}
               >

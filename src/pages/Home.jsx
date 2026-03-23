@@ -399,122 +399,28 @@ export default function Home() {
               </p>
             </div>
 
-            {/* Right — decorative camp card stack (hidden on mobile) */}
+            {/* Right — All Camps platform image (hidden on mobile) */}
             <div
-              className="hidden md:block hero-card-stack"
+              className="hidden md:flex"
               style={{
                 flex: "1 1 45%",
-                position: "relative",
-                minHeight: 520,
-                perspective: 800
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              {/* Card 3 — back */}
               <div style={{
-                position: "absolute", top: 300, left: 60,
-                transform: "rotate(3deg)",
-                background: "#111827", borderRadius: 16,
-                borderLeft: "4px solid #e8a020",
-                padding: 20, width: 340,
-                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-                opacity: 0.7, zIndex: 1
+                borderRadius: 20,
+                overflow: "hidden",
+                boxShadow: "0 0 80px rgba(232,160,32,0.12), 0 24px 64px rgba(0,0,0,0.7)",
+                border: "1px solid rgba(232,160,32,0.2)",
+                maxWidth: 480,
+                width: "100%",
               }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                  <div style={{
-                    width: 40, height: 40, borderRadius: "50%",
-                    background: "linear-gradient(135deg, #e8a020, #c4841d)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontWeight: 700, fontSize: 18, color: "#fff", flexShrink: 0
-                  }}>P</div>
-                  <div style={{ fontWeight: 700, fontSize: 16, color: "#f9fafb", flex: 1 }}>Penn State Football</div>
-                  <span style={{
-                    background: "#e8a020", color: "#0a0e1a",
-                    fontSize: 11, fontWeight: 700, padding: "3px 9px",
-                    borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5
-                  }}>FBS</span>
-                </div>
-                <div style={{ fontSize: 14, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>📅</span> July 5, 2026 · <span>📍</span> State College, PA
-                </div>
-                <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>💰</span> $60
-                </div>
-              </div>
-
-              {/* Card 2 — middle */}
-              <div style={{
-                position: "absolute", top: 150, left: 30,
-                transform: "rotate(1deg)",
-                background: "#111827", borderRadius: 16,
-                borderLeft: "4px solid #e8a020",
-                padding: 20, width: 340,
-                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-                zIndex: 2
-              }}>
-                <div style={{
-                  position: "absolute", top: 12, right: 12,
-                  background: "#e8a020", color: "#0a0e1a",
-                  fontSize: 12, fontWeight: 700, padding: "4px 12px",
-                  borderRadius: 20
-                }}>★ Favorited</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                  <div style={{
-                    width: 40, height: 40, borderRadius: "50%",
-                    background: "linear-gradient(135deg, #e8a020, #c4841d)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontWeight: 700, fontSize: 18, color: "#fff", flexShrink: 0
-                  }}>A</div>
-                  <div style={{ fontWeight: 700, fontSize: 16, color: "#f9fafb", flex: 1 }}>Alabama Crimson Tide</div>
-                  <span style={{
-                    background: "#e8a020", color: "#0a0e1a",
-                    fontSize: 11, fontWeight: 700, padding: "3px 9px",
-                    borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5
-                  }}>FBS</span>
-                </div>
-                <div style={{ fontSize: 14, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>📅</span> June 21, 2026 · <span>📍</span> Tuscaloosa, AL
-                </div>
-                <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>💰</span> $65 · <span>🎓</span> Grades 9-12
-                </div>
-              </div>
-
-              {/* Card 1 — front */}
-              <div style={{
-                position: "absolute", top: 0, left: 0,
-                transform: "rotate(-2deg)",
-                background: "#111827", borderRadius: 16,
-                borderLeft: "4px solid #e8a020",
-                padding: 20, width: 340,
-                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-                zIndex: 3
-              }}>
-                <div style={{
-                  position: "absolute", top: 12, right: 12,
-                  background: "#10b981", color: "#fff",
-                  fontSize: 12, fontWeight: 700, padding: "4px 12px",
-                  borderRadius: 20
-                }}>✓ Registered</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                  <div style={{
-                    width: 40, height: 40, borderRadius: "50%",
-                    background: "linear-gradient(135deg, #e8a020, #c4841d)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontWeight: 700, fontSize: 18, color: "#fff", flexShrink: 0
-                  }}>O</div>
-                  <div style={{ fontWeight: 700, fontSize: 16, color: "#f9fafb", flex: 1 }}>Ohio State Football</div>
-                  <span style={{
-                    background: "#e8a020", color: "#0a0e1a",
-                    fontSize: 11, fontWeight: 700, padding: "3px 9px",
-                    borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5
-                  }}>FBS</span>
-                </div>
-                <div style={{ fontSize: 14, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>📅</span> June 14, 2026 · <span>📍</span> Columbus, OH
-                </div>
-                <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>💰</span> $75 · <span>🎓</span> Grades 9-12
-                </div>
+                <img
+                  src={allCampsImg}
+                  alt="URecruitHQ - All Camps. One Place. Desktop and mobile platform view"
+                  style={{ display: "block", width: "100%", height: "auto" }}
+                />
               </div>
             </div>
           </div>
@@ -534,41 +440,6 @@ export default function Home() {
             <svg width="22" height="14" viewBox="0 0 24 14" fill="none" stroke="rgba(249,250,251,0.25)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="2 2 12 12 22 2" />
             </svg>
-          </div>
-        </div>
-      </section>
-
-      {/* ── PLATFORM PREVIEW ── */}
-      <section style={{ background: "#0a0e1a", padding: "64px 24px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", textAlign: "center" }}>
-          <span style={{
-            fontFamily: "'Bebas Neue', sans-serif",
-            fontSize: 15, letterSpacing: 3,
-            color: "#e8a020", textTransform: "uppercase"
-          }}>
-            THE PLATFORM
-          </span>
-          <h2 style={{
-            fontFamily: "'Bebas Neue', sans-serif",
-            fontSize: "clamp(32px, 5vw, 52px)",
-            color: "#f9fafb",
-            margin: "8px 0 36px",
-            lineHeight: 1.05
-          }}>
-            ALL CAMPS. ONE PLACE.
-          </h2>
-          <div style={{
-            display: "inline-block",
-            borderRadius: 16,
-            overflow: "hidden",
-            boxShadow: "0 0 60px rgba(232,160,32,0.15), 0 20px 60px rgba(0,0,0,0.6)",
-            border: "1px solid rgba(232,160,32,0.25)"
-          }}>
-            <img
-              src={allCampsImg}
-              alt="URecruitHQ - All Camps. One Place. Desktop and mobile platform view"
-              style={{ display: "block", maxWidth: "100%", width: "auto" }}
-            />
           </div>
         </div>
       </section>
@@ -595,41 +466,14 @@ export default function Home() {
       {/* ── DIFFERENTIATORS ── */}
       <DifferentiatorsSection campDisplay={campDisplay} schoolDisplay={schoolDisplay} />
 
-      {/* ── LESS STRESS ── */}
-      <section style={{ background: "#0a0e1a", padding: "0 24px 64px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 32 }}>
-            <span style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: 15, letterSpacing: 3,
-              color: "#e8a020", textTransform: "uppercase"
-            }}>
-              BEFORE &amp; AFTER
-            </span>
-            <h2 style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: "clamp(32px, 5vw, 52px)",
-              color: "#f9fafb",
-              margin: "8px 0 0",
-              lineHeight: 1.05
-            }}>
-              LESS STRESS. SMARTER PLANNING.
-            </h2>
-          </div>
-          <div style={{
-            borderRadius: 16,
-            overflow: "hidden",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
-            border: "1px solid #1f2937"
-          }}>
-            <img
-              src={lessStressImg}
-              alt="URecruitHQ before and after - Less stress, smarter planning"
-              style={{ display: "block", maxWidth: "100%", width: "100%" }}
-            />
-          </div>
-        </div>
-      </section>
+      {/* ── LESS STRESS — full-bleed section break ── */}
+      <div style={{ background: "#0a0e1a", lineHeight: 0 }}>
+        <img
+          src={lessStressImg}
+          alt="URecruitHQ before and after - Less stress, smarter planning"
+          style={{ display: "block", width: "100%", height: "auto" }}
+        />
+      </div>
 
       {/* ── EMAIL ALERTS ── */}
       <section style={{ background: '#0a0e1a', padding: '80px 24px', borderTop: '1px solid #1f2937' }}>
