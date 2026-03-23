@@ -63,6 +63,12 @@ function cleanTextField(s) {
   return v || null;
 }
 
+// Strip " | anything" suffix from camp names (site breadcrumbs, school names, etc.)
+function stripPipeSuffix(s) {
+  if (!s) return s;
+  return s.replace(/\s*\|.*$/, "").trim();
+}
+
 function normalizeUnicode(s) {
   return s.replace(/[\u2011\u2012\u2013\u2014\u2015\u2212\u2010]/g, " ").replace(/\u00a0/g, " ");
 }
@@ -905,12 +911,12 @@ function extractRyzerCampDetails(html, regUrl) {
   var campName = null;
   var h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
   if (h1 && h1[1]) {
-    campName = stripTags(h1[1]).replace(/\s*\|\s*Event Registration.*$/i, "").replace(/\s*-\s*Registration.*$/i, "").replace(/\s*-\s*Event Registration.*$/i, "").trim();
+    campName = stripPipeSuffix(stripTags(h1[1]).replace(/\s*-\s*(?:Event\s+)?Registration.*$/i, "").trim());
   }
   if (!campName || campName.length < 4) {
     var titleM = /<title[^>]*>([^<]+)<\/title>/i.exec(html);
     if (titleM && titleM[1]) {
-      campName = stripNonAscii(titleM[1]).replace(/\s*\|\s*Event Registration.*$/i, "").replace(/\s*-\s*Registration.*$/i, "").trim();
+      campName = stripPipeSuffix(stripNonAscii(titleM[1]).replace(/\s*-\s*(?:Event\s+)?Registration.*$/i, "").trim());
     }
   }
 
@@ -1527,6 +1533,7 @@ Deno.serve(async function(req) {
       if (!startDate) { stats.campsErrors++; if (sampleErrors.length < 10) sampleErrors.push({ source_key: sourceKey, reason: "no_start_date", camp_name: campName, reg_url: regUrl }); continue; }
       if (startDate < todayIso) { stats.campsPastSkipped++; continue; }
       if (!campName) campName = prog2.name + " Camp";
+      campName = stripPipeSuffix(campName);
 
       // ── WRONG-SPORT FILTER (runs on EVERY camp, new or existing) ──
       var WRONG_SPORT_KEYWORDS = [

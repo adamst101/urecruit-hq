@@ -26,12 +26,49 @@ export default function IngestStatusPanel() {
       base44.entities.LastIngestRun.list("-run_at", 200),
     ]).then(([cfgs, allRuns]) => {
       setConfigs(cfgs || []);
-      // Index: latest non-dry run per sport
-      const byKey = {};
+
+      // Chain runs (ingestCampsUSAChain) write one record per batch plus a
+      // stats-less "COMPLETED" summary at the end. Aggregate all batch records
+      // within 6 hours of the latest run_at per sport so totals are correct.
+      const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
+      const bySport = {};
       for (const r of (allRuns || [])) {
         if (r.dry_run) continue;
-        if (!byKey[r.sport] || r.run_at > byKey[r.sport].run_at) byKey[r.sport] = r;
+        if (!bySport[r.sport]) bySport[r.sport] = [];
+        bySport[r.sport].push(r);
       }
+
+      const byKey = {};
+      for (const [sport, records] of Object.entries(bySport)) {
+        const latestTs = Math.max(...records.map(r => new Date(r.run_at).getTime()));
+        const cutoff = latestTs - SIX_HOURS_MS;
+
+        // Collect all batch records in the window; skip stats-less COMPLETED rows
+        const window = records.filter(r => {
+          if (new Date(r.run_at).getTime() < cutoff) return false;
+          if ((r.notes || "").startsWith("COMPLETED")) return false;
+          return true;
+        });
+
+        const latest = records.reduce((a, b) => a.run_at > b.run_at ? a : b);
+
+        if (window.length === 0) {
+          byKey[sport] = latest;
+          continue;
+        }
+
+        // Sum stats across all batches in this chain run
+        const agg = window.reduce((acc, r) => ({
+          camps_inserted: (acc.camps_inserted || 0) + (r.camps_inserted || 0),
+          camps_updated:  (acc.camps_updated  || 0) + (r.camps_updated  || 0),
+          camps_skipped:  (acc.camps_skipped  || 0) + (r.camps_skipped  || 0),
+          camps_errors:   (acc.camps_errors   || 0) + (r.camps_errors   || 0),
+        }), {});
+
+        byKey[sport] = { ...latest, ...agg };
+      }
+
       setRuns(byKey);
     }).finally(() => setLoading(false));
   }, []);
@@ -54,7 +91,7 @@ export default function IngestStatusPanel() {
         <table style={S.table}>
           <thead>
             <tr>
-              {["Sport", "Last Run", "New", "Updated", "Errors", "Status"].map(h => (
+              {["Sport", "Last Run", "New", "Updated", "Skipped", "Errors", "Status"].map(h => (
                 <th key={h} style={S.th}>{h}</th>
               ))}
             </tr>
@@ -90,6 +127,7 @@ export default function IngestStatusPanel() {
                   </td>
                   <td style={{ ...S.td, fontWeight: 600 }}>{hasRun ? run.camps_inserted : "—"}</td>
                   <td style={{ ...S.td, fontWeight: 600 }}>{hasRun ? run.camps_updated : "—"}</td>
+                  <td style={{ ...S.td, color: "#9CA3AF" }}>{hasRun ? run.camps_skipped : "—"}</td>
                   <td style={{ ...S.td, fontWeight: 600, color: (hasRun && run.camps_errors > 0) ? "#DC2626" : undefined }}>
                     {hasRun ? run.camps_errors : "—"}
                   </td>
