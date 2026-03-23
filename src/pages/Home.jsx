@@ -186,6 +186,8 @@ export default function Home() {
           .hero-text-col { flex: 0 0 100% !important; width: 100% !important; }
           .hero-subtext { font-size: 16px !important; max-width: 100% !important; }
           .hero-proof-strip { font-size: 11px !important; }
+          .hero-proof-strip-wrap { display: none !important; }
+          .hero-scroll-nudge { display: none !important; }
         }
         @media (min-width: 768px) and (max-width: 1024px) {
           .hero-h1-line1 { font-size: 3.2vw !important; }
@@ -478,7 +480,7 @@ export default function Home() {
 
         {/* Bottom strip — social proof */}
         {/* ── SOCIAL PROOF STRIP — above scroll nudge ── */}
-        <div style={{
+        <div className="hero-proof-strip-wrap" style={{
           position: "absolute", bottom: 80, left: 0, right: 0,
           textAlign: "center", padding: "12px 24px",
           borderTop: "1px solid rgba(255,255,255,0.07)",
@@ -490,7 +492,7 @@ export default function Home() {
         </div>
 
         {/* ── SCROLL NUDGE ── */}
-        <div style={{
+        <div className="hero-scroll-nudge" style={{
           position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)",
           display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
           zIndex: 5, pointerEvents: "none",
