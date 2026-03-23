@@ -25,11 +25,16 @@ async function getActiveSeason(base44) {
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  // Allow both authenticated and anonymous checkout
-  let user = null;
-  try {
-    user = await base44.auth.me();
-  } catch {}
+  // Run auth, body parsing, and season lookup in parallel to reduce cold-start latency.
+  const [user, body, season] = await Promise.all([
+    base44.auth.me().catch(() => null),
+    req.json().catch(() => ({})),
+    getActiveSeason(base44),
+  ]);
+
+  if (!season) {
+    return Response.json({ ok: false, error: "No active season configured. Please contact support." });
+  }
 
   const {
     couponCode, promoId, athleteId, userEmail, successUrl, cancelUrl,
@@ -38,47 +43,29 @@ Deno.serve(async (req) => {
     parentFirstName, parentLastName, parentPhone,
     athleteFirstName, athleteLastName, gradYear, sportId,
     homeCity, homeState,
-  } = await req.json();
+  } = body;
 
   const email = userEmail || user?.email || ""; // optional — Stripe collects if blank
   const accountId = user?.id || "";
 
-  // Get active season from DB
-  const season = await getActiveSeason(base44);
-  if (!season) {
-    return Response.json({ ok: false, error: "No active season configured. Please contact support." });
-  }
-
   const soldSeason = season.season_year;
 
-  // Abuse prevention: max 5 athletes per account
+  // For add-on purchases: run athlete count and entitlement checks in parallel
   if (accountId && (isAddOn || addSecondAthlete)) {
-    try {
-      const existingAthletes = await base44.asServiceRole.entities.AthleteProfile.filter({
-        account_id: accountId,
-      });
-      if (existingAthletes && existingAthletes.length >= 5) {
-        return Response.json({ ok: false, error: "Maximum 5 athletes per account" });
-      }
-    } catch (e) {
-      console.warn("Athlete count check failed:", e.message);
-    }
-  }
+    const [existingAthletes, primaryEnts] = await Promise.all([
+      base44.asServiceRole.entities.AthleteProfile.filter({ account_id: accountId }).catch(() => []),
+      isAddOn
+        ? base44.asServiceRole.entities.Entitlement.filter({
+            account_id: accountId, is_primary: true, season_year: soldSeason, status: "active",
+          }).catch(() => [])
+        : Promise.resolve(null),
+    ]);
 
-  // Additional athlete requires active primary entitlement
-  if (isAddOn && accountId) {
-    try {
-      const primaryEnt = await base44.asServiceRole.entities.Entitlement.filter({
-        account_id: accountId,
-        is_primary: true,
-        season_year: soldSeason,
-        status: "active",
-      });
-      if (!primaryEnt || primaryEnt.length === 0) {
-        return Response.json({ ok: false, error: "A Season Pass is required before adding athletes" });
-      }
-    } catch (e) {
-      console.warn("Primary entitlement check failed:", e.message);
+    if (existingAthletes && existingAthletes.length >= 5) {
+      return Response.json({ ok: false, error: "Maximum 5 athletes per account" });
+    }
+    if (isAddOn && (!primaryEnts || primaryEnts.length === 0)) {
+      return Response.json({ ok: false, error: "A Season Pass is required before adding athletes" });
     }
   }
 
