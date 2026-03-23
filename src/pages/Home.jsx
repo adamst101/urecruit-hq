@@ -352,7 +352,7 @@ export default function Home() {
               >
                 THE CAMPS THAT GET
                 <br />
-                ATHLETES EVALUATED.
+                <span style={{ whiteSpace: "nowrap" }}>ATHLETES EVALUATED.</span>
                 <br />
                 ALL IN ONE PLACE.
               </h1>
