@@ -389,14 +389,17 @@ export default function Home() {
                     $49 · one season · one-time payment
                   </span>
                 </div>
-                <button
-                  onClick={handleTryDemo}
-                  style={S.ctaOutline}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
-                >
-                  Try Free Demo
-                </button>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <button
+                    onClick={handleTryDemo}
+                    style={S.ctaOutline}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
+                  >
+                    Try Free Demo
+                  </button>
+                  <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
+                </div>
               </div>
 
               <p style={{ fontSize: 12, color: "#ffffffff", fontWeight: 600, marginTop: 14 }}>
