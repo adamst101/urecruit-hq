@@ -22,10 +22,7 @@ const LOGO_URL =
 
 function trackEvent(payload) {
   try {
-    base44.analytics.track({
-      eventName: payload.event_name,
-      properties: payload
-    });
+    base44.analytics.track({ eventName: payload.event_name, properties: payload });
   } catch {}
 }
 
@@ -39,11 +36,9 @@ function formatCount(n) {
 export default function Home() {
   const nav = useNavigate();
   const loc = useLocation();
-
   const season = useSeasonAccess();
   const { demoSeasonYear } = getDemoDefaults();
   const [logoOk, setLogoOk] = useState(true);
-
   const [campCount, setCampCount] = useState(null);
   const [schoolCount, setSchoolCount] = useState(null);
 
@@ -54,15 +49,10 @@ export default function Home() {
         const allCamps = await base44.entities.Camp.filter({ active: true });
         if (cancelled) return;
         setCampCount(allCamps.length);
-        const uniqueSchools = new Set(
-          allCamps.filter(c => c.school_id).map(c => c.school_id)
-        );
+        const uniqueSchools = new Set(allCamps.filter(c => c.school_id).map(c => c.school_id));
         setSchoolCount(uniqueSchools.size);
       } catch {
-        if (!cancelled) {
-          setCampCount(760);
-          setSchoolCount(260);
-        }
+        if (!cancelled) { setCampCount(760); setSchoolCount(260); }
       }
     })();
     return () => { cancelled = true; };
@@ -70,73 +60,36 @@ export default function Home() {
 
   const campDisplay = formatCount(campCount) || "750+";
   const schoolDisplay = formatCount(schoolCount) || "250+";
-  const campRaw = campCount || 750;
-  const schoolRaw = schoolCount || 250;
 
   const previewAnon = useMemo(() => {
-    try {
-      return new URLSearchParams(loc?.search || "").get("preview") === "anon";
-    } catch { return false; }
+    try { return new URLSearchParams(loc?.search || "").get("preview") === "anon"; }
+    catch { return false; }
   }, [loc?.search]);
 
   const isAuthed = previewAnon ? false : !!season?.accountId;
-  const isMember = previewAnon ? false :
-    !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
+  const isMember = previewAnon ? false : !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
 
   useEffect(() => {
     const key = "evt_home_viewed_v24";
-    try {
-      if (sessionStorage.getItem(key) === "1") return;
-      sessionStorage.setItem(key, "1");
-    } catch {}
-
-    trackEvent({
-      event_name: "home_view",
-      source: "home",
-      auth_state: isAuthed ? "authed" : "anon",
-      mode: isMember ? "paid" : "demo"
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    try { if (sessionStorage.getItem(key) === "1") return; sessionStorage.setItem(key, "1"); } catch {}
+    trackEvent({ event_name: "home_view", source: "home", auth_state: isAuthed ? "authed" : "anon", mode: isMember ? "paid" : "demo" });
   }, []);
 
   function handleTryDemo() {
-    const demoYear =
-      season?.demoYear ||
-      demoSeasonYear ||
-      (season?.currentYear ? season.currentYear - 1 : null);
-
-    trackEvent({
-      event_name: "cta_demo_click",
-      source: "home",
-      demo_season: demoYear
-    });
-
+    const demoYear = season?.demoYear || demoSeasonYear || (season?.currentYear ? season.currentYear - 1 : null);
+    trackEvent({ event_name: "cta_demo_click", source: "home", demo_season: demoYear });
     if (demoYear) setDemoMode(demoYear);
-
-    trackEvent({
-      event_name: "demo_entered",
-      source: "home",
-      demo_season: demoYear
-    });
-
+    trackEvent({ event_name: "demo_entered", source: "home", demo_season: demoYear });
     nav(`/Workspace?mode=demo&src=home_demo`);
   }
 
   function handleMemberLogin() {
-    trackEvent({
-      event_name: "cta_login_click",
-      source: "home",
-      via: "hero_login"
-    });
+    trackEvent({ event_name: "cta_login_click", source: "home", via: "hero_login" });
     startMemberLogin({ nextPath: "/Workspace", source: "home_member_login" });
   }
 
   function handleContinue() {
-    trackEvent({
-      event_name: "cta_continue_click",
-      source: "home",
-      dest: "workspace"
-    });
+    trackEvent({ event_name: "cta_continue_click", source: "home", dest: "workspace" });
     nav("/Workspace");
   }
 
@@ -156,364 +109,196 @@ export default function Home() {
   }
 
   return (
-    <div
-      style={{
-        background: "#0a0e1a",
-        color: "#f9fafb",
-        minHeight: "100vh",
-        fontFamily: "'DM Sans', Inter, system-ui, sans-serif"
-      }}
-    >
+    <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
-        .hero-card-stack { transition: transform 0.3s ease; }
-        .hero-card-stack:hover { transform: translateY(-4px); }
         @keyframes bounce-down { 0%,100%{transform:translateY(0)}50%{transform:translateY(8px)} }
-        @media (max-width: 480px) {
-          .nav-right-btns button {
-            font-size: 12px !important;
-            padding: 6px 10px !important;
-          }
-        }
-        @keyframes why-float {
-          0%,100% { transform: translateY(0); }
-          50%     { transform: translateY(-6px); }
-        }
-        @keyframes why-fade-in {
-          from { opacity: 0; transform: translateY(6px) scale(0.97); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        .why-bubble-closed {
-          animation: why-float 3.6s ease-in-out infinite;
-          cursor: pointer;
-        }
-        .why-bubble-closed:hover {
-          filter: brightness(1.04);
-        }
+        @keyframes why-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+        @keyframes why-fade-in { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .why-bubble-closed { animation: why-float 3.6s ease-in-out infinite; cursor: pointer; }
+        .why-bubble-closed:hover { filter: brightness(1.04); }
+        @media (max-width: 480px) { .nav-right-btns button { font-size: 12px !important; padding: 6px 10px !important; } }
+        @media (max-width: 768px) { .hero-laptop-img { display: none !important; } .hero-text { width: 100% !important; padding-left: 24px !important; padding-right: 24px !important; } }
       `}</style>
 
       {/* ── NAV ── */}
-      <nav
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 50,
-          background: "#ffffff",
-          borderBottom: "1px solid #e5e7eb",
-          minHeight: 56,
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 1100,
-            margin: "0 auto",
-            padding: "8px 24px",
-            minHeight: 40,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: 8,
-          }}
-        >
-          {/* Left: logo */}
+      <nav style={{ position: "sticky", top: 0, zIndex: 50, background: "#ffffff", borderBottom: "1px solid #e5e7eb", minHeight: 56 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "8px 24px", minHeight: 40, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <div>
             {logoOk ? (
-              <img
-                src={LOGO_URL}
-                alt="URecruit HQ"
-                onError={() => setLogoOk(false)}
-                style={{ height: 36, width: "auto", objectFit: "contain" }}
-              />
+              <img src={LOGO_URL} alt="URecruit HQ" onError={() => setLogoOk(false)} style={{ height: 36, width: "auto", objectFit: "contain" }} />
             ) : (
               <span style={{ fontSize: 20, fontWeight: 800 }}>
-                <span style={{ color: "#111827" }}>URecruit</span>
-                <span style={{ color: "#e8a020" }}>HQ</span>
+                <span style={{ color: "#111827" }}>URecruit</span><span style={{ color: "#e8a020" }}>HQ</span>
               </span>
             )}
           </div>
-
           <div className="nav-right-btns" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             {isAuthed && isMember ? (
-              <>
-                <button onClick={handleContinue} style={S.navBtnAmberText}>
-                  Go to HQ
-                </button>
-                <button onClick={handleLogout} style={S.navBtnTextMuted}>Log out</button>
-              </>
+              <><button onClick={handleContinue} style={S.navBtnAmberText}>Go to HQ</button><button onClick={handleLogout} style={S.navBtnTextMuted}>Log out</button></>
             ) : isAuthed && !isMember ? (
-              <>
-                <button onClick={handlePricingSignup} style={S.navBtnAmber}>
-                  Get Season Pass
-                </button>
-                <button onClick={handleLogout} style={S.navBtnGhost}>Log out</button>
-              </>
+              <><button onClick={handlePricingSignup} style={S.navBtnAmber}>Get Season Pass</button><button onClick={handleLogout} style={S.navBtnGhost}>Log out</button></>
             ) : (
-              <>
-                <button onClick={() => nav("/Signup")} style={S.navBtnAmber}>
-                  Create Account
-                </button>
-                <button onClick={handleMemberLogin} style={S.navBtnMemberLogin}>
-                  Sign In
-                </button>
-              </>
+              <><button onClick={() => nav("/Signup")} style={S.navBtnAmber}>Create Account</button><button onClick={handleMemberLogin} style={S.navBtnMemberLogin}>Sign In</button></>
             )}
           </div>
         </div>
       </nav>
 
-      {/* Banner for logged-in users without paid access */}
       {isAuthed && !isMember && (
-        <div style={{
-          background: "#111827",
-          borderBottom: "2px solid #e8a020",
-          padding: "12px 24px",
-          textAlign: "center",
-          fontSize: 15,
-          color: "#f9fafb",
-        }}>
+        <div style={{ background: "#111827", borderBottom: "2px solid #e8a020", padding: "12px 24px", textAlign: "center", fontSize: 15, color: "#f9fafb" }}>
           Your account doesn't have an active season pass.{" "}
-          <button
-            onClick={handlePricingSignup}
-            style={{ color: "#e8a020", fontWeight: 700, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}
-          >
+          <button onClick={handlePricingSignup} style={{ color: "#e8a020", fontWeight: 700, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>
             Get access now →
           </button>
         </div>
       )}
 
-      {/* ── HERO ── */}
-      <section
-        style={{
-          position: "relative",
-          display: "flex",
-          alignItems: "center",
-          minHeight: "85vh",
-          overflow: "hidden",
-        }}
-      >
-        {/* Background effects */}
-        <div
+      {/* ══════════════════════════════════════════
+          HERO — single unified dark box
+          Laptop image: absolute, right side, large
+          Text: relative, left side, sits above image
+         ══════════════════════════════════════════ */}
+      <section style={{
+        position: "relative",
+        overflow: "hidden",
+        background: "#0a0e1a",
+        minHeight: "88vh",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+      }}>
+
+        {/* Background diagonal texture */}
+        <div style={{
+          position: "absolute", inset: 0, pointerEvents: "none",
+          backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.012) 60px, rgba(255,255,255,0.012) 61px)",
+        }} />
+
+        {/* ── LAPTOP IMAGE — absolutely placed, right, large ── */}
+        <img
+          className="hero-laptop-img"
+          src={laptopImg}
+          alt="URecruitHQ platform"
           style={{
             position: "absolute",
-            inset: 0,
-            background:
-              "radial-gradient(ellipse 55% 60% at 78% 40%, rgba(232,160,32,0.08) 0%, transparent 60%), radial-gradient(ellipse 40% 50% at 75% 65%, rgba(99,102,241,0.08) 0%, transparent 70%)",
-            pointerEvents: "none"
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            backgroundImage:
-              "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.015) 60px, rgba(255,255,255,0.015) 61px)",
-            pointerEvents: "none"
+            right: "-20px",
+            top: "50%",
+            transform: "translateY(-50%)",
+            width: "64%",
+            maxWidth: 920,
+            height: "auto",
+            zIndex: 0,
+            // 4-stop gradient: sharp center → soft dissolve into background
+            WebkitMaskImage: "radial-gradient(ellipse 86% 80% at 56% 50%, black 25%, rgba(0,0,0,0.8) 42%, rgba(0,0,0,0.35) 58%, transparent 72%)",
+            maskImage:        "radial-gradient(ellipse 86% 80% at 56% 50%, black 25%, rgba(0,0,0,0.8) 42%, rgba(0,0,0,0.35) 58%, transparent 72%)",
+            mixBlendMode: "lighten",
+            opacity: 0.95,
           }}
         />
 
+        {/* Glow layers behind laptop */}
+        <div style={{ position: "absolute", right: "4%", top: "25%", width: "58%", height: "60%", background: "radial-gradient(ellipse, rgba(99,102,241,0.52) 0%, rgba(59,82,255,0.22) 45%, transparent 70%)", filter: "blur(52px)", zIndex: 0, pointerEvents: "none" }} />
+        <div style={{ position: "absolute", right: "10%", bottom: "-5%", width: "50%", height: "45%", background: "radial-gradient(ellipse, rgba(139,92,246,0.28) 0%, transparent 65%)", filter: "blur(36px)", zIndex: 0, pointerEvents: "none" }} />
+        <div style={{ position: "absolute", left: "28%", bottom: "0%", width: "44%", height: "35%", background: "radial-gradient(ellipse, rgba(232,160,32,0.09) 0%, transparent 70%)", filter: "blur(32px)", zIndex: 0, pointerEvents: "none" }} />
+
+        {/* ── TEXT CONTENT — left side, zIndex above image ── */}
         <div
+          className="hero-text"
           style={{
-            maxWidth: 1100,
-            margin: "0 auto",
-            padding: "48px 24px 60px",
-            width: "100%",
             position: "relative",
-            zIndex: 1,
-            overflow: "visible",
+            zIndex: 2,
+            width: "50%",
+            paddingLeft: "5%",
+            paddingTop: 64,
+            paddingBottom: 20,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 48 }}>
-            {/* Left */}
-            <div style={{ flex: "1 1 48%", minWidth: 0 }}>
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                  <div style={{ width: 3, height: 28, background: "#e8a020", borderRadius: 2 }} />
-                  <span style={{
-                    fontFamily: "'Bebas Neue', sans-serif",
-                    fontSize: 18, letterSpacing: 3,
-                    color: "#e8a020", textTransform: "uppercase",
-                  }}>
-                    THE COLLEGE FOOTBALL CAMP PLANNING PLATFORM
-                  </span>
-                </div>
-                <div style={{ fontSize: 14, color: "#9ca3af", paddingLeft: 13 }}>
-                  100% College Coaching Staffs · Zero Club Camps · All Divisions
-                </div>
-              </div>
+          {/* Main headline */}
+          <h1 style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: "clamp(44px, 6vw, 70px)",
+            lineHeight: 1.0,
+            margin: "0 0 4px",
+            color: "#f9fafb",
+            letterSpacing: 1,
+          }}>
+            Find Every College Camp.
+            <br />
+            <span style={{ color: "#e8a020" }}>Plan Smarter.</span>
+          </h1>
 
-              <h1
-                style={{
-                  fontFamily: "'Bebas Neue', sans-serif",
-                  fontSize: "clamp(48px, 7vw, 72px)",
-                  lineHeight: 0.95,
-                  margin: 0,
-                  color: "#f9fafb",
-                  letterSpacing: 1
-                }}
-              >
-                THE CAMPS THAT GET
-                <br />
-                <span style={{ whiteSpace: "nowrap" }}>ATHLETES EVALUATED.</span>
-                <br />
-                ALL IN ONE PLACE.
-              </h1>
+          {/* Sub-copy */}
+          <p style={{ fontSize: 17, color: "#9ca3af", lineHeight: 1.65, marginTop: 18, maxWidth: 440 }}>
+            Easily discover, track, and plan for every college football camp in the country.
+            Avoid schedule conflicts and never miss out on an opportunity to get evaluated.
+          </p>
 
-              <p
-                style={{
-                  fontSize: 20,
-                  color: "#9ca3af",
-                  lineHeight: 1.6,
-                  marginTop: 24,
-                  maxWidth: 540
-                }}
-              >
-                Camp dates are scattered across hundreds of school websites.
-                We pull them all together, flag scheduling conflicts, and warn
-                you when back-to-back camps require a flight — so your athlete
-                shows up to every camp that matters.
-              </p>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 14,
-                  marginTop: 32,
-                  flexWrap: "wrap"
-                }}
-              >
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <button onClick={handlePricingSignup} style={S.ctaPrimary}>
-                    Get Season Pass{" "}
-                    <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
-                  </button>
-                  <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>
-                    $49 · one season · one-time payment
-                  </span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <button
-                    onClick={handleTryDemo}
-                    style={S.ctaOutline}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
-                  >
-                    Try Free Demo
-                  </button>
-                  <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
-                </div>
-              </div>
-
-              <p style={{ fontSize: 12, color: "#ffffffff", fontWeight: 600, marginTop: 14 }}>
-                ⚡ Summer camp season opens March–April. Early registrations fill fast.
-              </p>
-              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
-                No auto-renew · Cancel anytime · Secure checkout via Stripe
-              </p>
+          {/* CTAs */}
+          <div style={{ display: "flex", gap: 14, marginTop: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <button onClick={handlePricingSignup} style={S.ctaPrimary}>Get Season Pass</button>
+              <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>$49 · one season · one-time payment</span>
             </div>
-
-            {/* ── Right — Laptop image, blended into background ── */}
-            <div
-              className="hidden md:block"
-              style={{
-                flex: "0 0 52%",
-                position: "relative",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "flex-end",
-                marginRight: "-80px",
-              }}
+            <button
+              onClick={handleTryDemo}
+              style={S.ctaOutline}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
             >
-              {/* Large bottom glow — blue/indigo bloom beneath laptop */}
-              <div style={{
-                position: "absolute",
-                bottom: "-12%",
-                left: "0%",
-                width: "95%",
-                height: "55%",
-                background: "radial-gradient(ellipse, rgba(99,102,241,0.55) 0%, rgba(59,82,255,0.25) 40%, transparent 70%)",
-                filter: "blur(40px)",
-                zIndex: 0,
-                pointerEvents: "none",
-              }} />
-              {/* Secondary center glow — purple accent */}
-              <div style={{
-                position: "absolute",
-                top: "15%",
-                left: "10%",
-                width: "75%",
-                height: "65%",
-                background: "radial-gradient(ellipse, rgba(139,92,246,0.25) 0%, transparent 65%)",
-                filter: "blur(28px)",
-                zIndex: 0,
-                pointerEvents: "none",
-              }} />
-              {/* Subtle amber warmth top-right to echo brand color */}
-              <div style={{
-                position: "absolute",
-                top: "5%",
-                right: "5%",
-                width: "40%",
-                height: "35%",
-                background: "radial-gradient(ellipse, rgba(232,160,32,0.07) 0%, transparent 70%)",
-                filter: "blur(20px)",
-                zIndex: 0,
-                pointerEvents: "none",
-              }} />
+              Try Free Demo
+            </button>
+          </div>
 
-              {/* Laptop image — soft edge dissolve into dark background */}
-              <img
-                src={laptopImg}
-                alt="URecruitHQ camp planning platform on laptop"
-                style={{
-                  position: "relative",
-                  zIndex: 1,
-                  display: "block",
-                  width: "100%",
-                  height: "auto",
-                  WebkitMaskImage: "radial-gradient(ellipse 80% 75% at 55% 52%, black 25%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.4) 58%, transparent 72%)",
-                  maskImage: "radial-gradient(ellipse 80% 75% at 55% 52%, black 25%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.4) 58%, transparent 72%)",
-                  mixBlendMode: "lighten",
-                  opacity: 0.93,
-                }}
-              />
-            </div>
+          <p style={{ fontSize: 12, color: "#ffffff", fontWeight: 600, marginTop: 16 }}>
+            ⚡ Summer camp season opens March–April. Early registrations fill fast.
+          </p>
+          <p style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
+            No auto-renew · Cancel anytime · Secure checkout via Stripe
+          </p>
+
+          {/* Trust badges */}
+          <div style={{ marginTop: 28, display: "flex", flexDirection: "column", gap: 9 }}>
+            {[
+              `${campDisplay} Verified College Football Camps`,
+              "Weekly Updates from School Sites",
+              "Trusted by Recruiting Families Nationwide",
+            ].map((item) => (
+              <div key={item} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 14, color: "#f9fafb", fontWeight: 600 }}>
+                <span style={{ color: "#e8a020", fontSize: 17, lineHeight: 1 }}>✓</span>
+                {item}
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* ── SCROLL NUDGE ── */}
+        {/* ── BOTTOM TAG LINE — inside hero, above stats bar ── */}
         <div style={{
-          position: "absolute", bottom: 20, left: "50%", transform: "translateX(-50%)",
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-          zIndex: 5, pointerEvents: "none",
+          position: "relative",
+          zIndex: 2,
+          textAlign: "center",
+          paddingBottom: 24,
+          paddingTop: 4,
+          fontSize: 14,
+          color: "#6b7280",
+          letterSpacing: 0.3,
         }}>
-          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 2, color: "rgba(249,250,251,0.45)", textTransform: "uppercase" }}>scroll</span>
-          <div style={{ animation: "bounce-down 1.8s ease-in-out infinite", display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
-            <svg width="22" height="14" viewBox="0 0 24 14" fill="none" stroke="rgba(249,250,251,0.5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="2 2 12 12 22 2" />
-            </svg>
-            <svg width="22" height="14" viewBox="0 0 24 14" fill="none" stroke="rgba(249,250,251,0.25)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="2 2 12 12 22 2" />
-            </svg>
+          100%{" "}<em style={{ color: "#9ca3af", fontStyle: "italic" }}>College</em>{" "}Coaching Staffs &nbsp;•&nbsp; Zero Club Camps &nbsp;•&nbsp; All Divisions
+        </div>
+
+        {/* Scroll nudge */}
+        <div style={{ position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, zIndex: 5, pointerEvents: "none" }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 2, color: "rgba(249,250,251,0.3)", textTransform: "uppercase" }}>scroll</span>
+          <div style={{ animation: "bounce-down 1.8s ease-in-out infinite", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <svg width="22" height="14" viewBox="0 0 24 14" fill="none" stroke="rgba(249,250,251,0.35)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="2 2 12 12 22 2" /></svg>
+            <svg width="22" height="14" viewBox="0 0 24 14" fill="none" stroke="rgba(249,250,251,0.18)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="2 2 12 12 22 2" /></svg>
           </div>
         </div>
       </section>
 
-      {/* ── STATIC STATS BAR ── */}
-      <div style={{
-        background: "#e8a020",
-        padding: "14px 24px",
-        textAlign: "center",
-        position: "relative",
-        zIndex: 2,
-        overflow: "hidden",
-        whiteSpace: "nowrap",
-        textOverflow: "ellipsis",
-      }}>
-        <span style={{
-          fontSize: 14, fontWeight: 700, color: "#0a0e1a",
-          textTransform: "uppercase", letterSpacing: 1,
-        }}>
+      {/* ── STATS BAR ── */}
+      <div style={{ background: "#e8a020", padding: "14px 24px", textAlign: "center", position: "relative", zIndex: 2, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: "#0a0e1a", textTransform: "uppercase", letterSpacing: 1 }}>
           {campDisplay} Verified College Football Camps &nbsp;·&nbsp; {schoolDisplay} Programs &nbsp;·&nbsp; FBS · FCS · D2 · D3 · NAIA · JUCO &nbsp;·&nbsp; Verified every Monday from official school athletic pages
         </span>
       </div>
@@ -525,34 +310,11 @@ export default function Home() {
       <section style={{ background: "#0a0e1a", padding: "0 24px 64px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: 32 }}>
-            <span style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: 15, letterSpacing: 3,
-              color: "#e8a020", textTransform: "uppercase"
-            }}>
-              BEFORE &amp; AFTER
-            </span>
-            <h2 style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: "clamp(32px, 5vw, 52px)",
-              color: "#f9fafb",
-              margin: "8px 0 0",
-              lineHeight: 1.05
-            }}>
-              LESS STRESS. SMARTER PLANNING.
-            </h2>
+            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 3, color: "#e8a020", textTransform: "uppercase" }}>BEFORE &amp; AFTER</span>
+            <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(32px, 5vw, 52px)", color: "#f9fafb", margin: "8px 0 0", lineHeight: 1.05 }}>LESS STRESS. SMARTER PLANNING.</h2>
           </div>
-          <div style={{
-            borderRadius: 16,
-            overflow: "hidden",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
-            border: "1px solid #1f2937"
-          }}>
-            <img
-              src={lessStressImg}
-              alt="URecruitHQ before and after - Less stress, smarter planning"
-              style={{ display: "block", maxWidth: "100%", width: "100%" }}
-            />
+          <div style={{ borderRadius: 16, overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", border: "1px solid #1f2937" }}>
+            <img src={lessStressImg} alt="URecruitHQ before and after - Less stress, smarter planning" style={{ display: "block", maxWidth: "100%", width: "100%" }} />
           </div>
         </div>
       </section>
@@ -560,27 +322,17 @@ export default function Home() {
       {/* ── EMAIL ALERTS ── */}
       <section style={{ background: '#0a0e1a', padding: '80px 24px', borderTop: '1px solid #1f2937' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-
           <div style={{ textAlign: 'center', marginBottom: 56 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 }}>
               <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
-              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 3, color: '#e8a020', textTransform: 'uppercase' }}>
-                WE DO THE WORK. YOU SHOW UP READY.
-              </span>
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 3, color: '#e8a020', textTransform: 'uppercase' }}>WE DO THE WORK. YOU SHOW UP READY.</span>
               <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
             </div>
-            <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(36px, 5vw, 56px)', color: '#f9fafb', margin: '0 0 16px', lineHeight: 1.05 }}>
-              NEVER MISS A CAMP.<br />NEVER FORGET A DATE.
-            </h2>
-            <p style={{ fontSize: 18, color: '#9ca3af', maxWidth: 560, margin: '0 auto', lineHeight: 1.6 }}>
-              We send two types of emails that keep your family one step ahead all season long — no app-checking required.
-            </p>
+            <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(36px, 5vw, 56px)', color: '#f9fafb', margin: '0 0 16px', lineHeight: 1.05 }}>NEVER MISS A CAMP.<br />NEVER FORGET A DATE.</h2>
+            <p style={{ fontSize: 18, color: '#9ca3af', maxWidth: 560, margin: '0 auto', lineHeight: 1.6 }}>We send two types of emails that keep your family one step ahead all season long — no app-checking required.</p>
           </div>
-
           <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-
             <div style={{ flex: '1 1 340px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-
               <div style={{ background: '#111827', borderRadius: 16, borderLeft: '4px solid #e8a020', padding: '24px 24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
                   <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(232,160,32,0.12)', border: '1px solid rgba(232,160,32,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>📅</div>
@@ -589,19 +341,13 @@ export default function Home() {
                     <div style={{ fontSize: 12, color: '#e8a020', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Sent first week of each month</div>
                   </div>
                 </div>
-                <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.65, margin: 0 }}>
-                  A curated list of every camp happening that month — organized by date, filterable by division, and ready to forward to your athlete. Plan the full month before it starts.
-                </p>
+                <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.65, margin: 0 }}>A curated list of every camp happening that month — organized by date, filterable by division, and ready to forward to your athlete. Plan the full month before it starts.</p>
                 <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {['All camps for the month in one place', 'Sorted by date — easy to scan', 'Includes price, location, and division', 'Printable format for the fridge'].map(item => (
-                    <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#d1d5db' }}>
-                      <span style={{ color: '#e8a020', fontSize: 14, flexShrink: 0 }}>✓</span>
-                      {item}
-                    </div>
+                    <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#d1d5db' }}><span style={{ color: '#e8a020', fontSize: 14, flexShrink: 0 }}>✓</span>{item}</div>
                   ))}
                 </div>
               </div>
-
               <div style={{ background: '#111827', borderRadius: 16, borderLeft: '4px solid #10b981', padding: '24px 24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
                   <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🔔</div>
@@ -610,30 +356,22 @@ export default function Home() {
                     <div style={{ fontSize: 12, color: '#10b981', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Sent 7 days before your camps</div>
                   </div>
                 </div>
-                <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.65, margin: 0 }}>
-                  Seven days before any camp on your calendar, we send a prep reminder — what to bring, what coaches are watching for, and a final check on travel logistics. Show up prepared, not scrambling.
-                </p>
+                <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.65, margin: 0 }}>Seven days before any camp on your calendar, we send a prep reminder — what to bring, what coaches are watching for, and a final check on travel logistics. Show up prepared, not scrambling.</p>
                 <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {['Triggered by your personal calendar', 'What to bring checklist', 'Travel and timing reminders', 'What coaches evaluate at camp'].map(item => (
-                    <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#d1d5db' }}>
-                      <span style={{ color: '#10b981', fontSize: 14, flexShrink: 0 }}>✓</span>
-                      {item}
-                    </div>
+                    <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#d1d5db' }}><span style={{ color: '#10b981', fontSize: 14, flexShrink: 0 }}>✓</span>{item}</div>
                   ))}
                 </div>
               </div>
             </div>
-
             <div style={{ flex: '1 1 400px', position: 'sticky', top: 80 }}>
               <div style={{ background: '#111827', borderRadius: 16, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)' }}>
-
                 <div style={{ background: '#1f2937', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #374151' }}>
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ef4444' }} />
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#f59e0b' }} />
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#10b981' }} />
                   <div style={{ flex: 1, marginLeft: 8, background: '#374151', borderRadius: 6, padding: '4px 10px', fontSize: 12, color: '#9ca3af' }}>inbox</div>
                 </div>
-
                 <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid #1f2937' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                     <div style={{ fontWeight: 700, fontSize: 15, color: '#f9fafb' }}>URecruit HQ</div>
@@ -642,7 +380,6 @@ export default function Home() {
                   <div style={{ fontSize: 16, fontWeight: 700, color: '#f9fafb', marginBottom: 4 }}>🔔 Camp Week Alert — TCU is in 7 days</div>
                   <div style={{ fontSize: 13, color: '#6b7280' }}>to jake.adams@email.com</div>
                 </div>
-
                 <div style={{ padding: '20px 20px' }}>
                   <div style={{ background: 'linear-gradient(135deg, #1a0a00, #2d1500)', border: '1px solid rgba(232,160,32,0.3)', borderLeft: '4px solid #e8a020', borderRadius: 10, padding: '14px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, #e8a020, #c4841d)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: '#fff', flexShrink: 0 }}>T</div>
@@ -651,32 +388,19 @@ export default function Home() {
                       <div style={{ fontSize: 13, color: '#9ca3af' }}>📅 June 14 · 📍 Fort Worth, TX · 💰 $65</div>
                     </div>
                   </div>
-
                   <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Your prep checklist</div>
-                  {[
-                    { done: true, text: 'Registration confirmed ✓' },
-                    { done: true, text: 'Hotel booked — Fort Worth Marriott' },
-                    { done: false, text: 'Pack cleats, shorts, numbered pinnie' },
-                    { done: false, text: 'Download updated camp schedule' },
-                    { done: false, text: 'Review what WRs should show at TCU' }
-                  ].map((item, i) => (
+                  {[{ done: true, text: 'Registration confirmed ✓' }, { done: true, text: 'Hotel booked — Fort Worth Marriott' }, { done: false, text: 'Pack cleats, shorts, numbered pinnie' }, { done: false, text: 'Download updated camp schedule' }, { done: false, text: 'Review what WRs should show at TCU' }].map((item, i) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: i < 4 ? '1px solid #1f2937' : 'none', fontSize: 14, color: item.done ? '#6b7280' : '#d1d5db', textDecoration: item.done ? 'line-through' : 'none' }}>
-                      <div style={{ width: 18, height: 18, borderRadius: 4, border: item.done ? 'none' : '2px solid #374151', background: item.done ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11, color: '#fff' }}>
-                        {item.done ? '✓' : ''}
-                      </div>
+                      <div style={{ width: 18, height: 18, borderRadius: 4, border: item.done ? 'none' : '2px solid #374151', background: item.done ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11, color: '#fff' }}>{item.done ? '✓' : ''}</div>
                       {item.text}
                     </div>
                   ))}
-
                   <div style={{ marginTop: 16, height: 60, background: 'linear-gradient(to bottom, transparent, #111827)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8 }}>
                     <span style={{ fontSize: 12, color: '#4b5563' }}>+ travel notes, what coaches look for, and more...</span>
                   </div>
                 </div>
               </div>
-
-              <p style={{ textAlign: 'center', fontSize: 13, color: '#6b7280', marginTop: 16, fontStyle: 'italic' }}>
-                Example camp week alert — personalized to your calendar
-              </p>
+              <p style={{ textAlign: 'center', fontSize: 13, color: '#6b7280', marginTop: 16, fontStyle: 'italic' }}>Example camp week alert — personalized to your calendar</p>
             </div>
           </div>
         </div>
@@ -688,176 +412,67 @@ export default function Home() {
       {/* ── PRICING ── */}
       <section style={{ background: "#111827", padding: "80px 24px" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center" }}>
-          <h2
-            style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: 48,
-              color: "#f9fafb",
-              marginBottom: 32
-            }}
-          >
-            ONE SEASON. ONE PRICE.
-          </h2>
-
-          <div
-            style={{
-              background: "#0a0e1a",
-              border: "2px solid #e8a020",
-              borderRadius: 16,
-              padding: "36px 28px",
-              textAlign: "left"
-            }}
-          >
-            <div
-              style={{
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: 24,
-                color: "#e8a020",
-                letterSpacing: 2,
-                textTransform: "uppercase"
-              }}
-            >
-              Season Pass
-            </div>
+          <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "#f9fafb", marginBottom: 32 }}>ONE SEASON. ONE PRICE.</h2>
+          <div style={{ background: "#0a0e1a", border: "2px solid #e8a020", borderRadius: 16, padding: "36px 28px", textAlign: "left" }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "#e8a020", letterSpacing: 2, textTransform: "uppercase" }}>Season Pass</div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
-              <span
-                style={{
-                  fontFamily: "'Bebas Neue', sans-serif",
-                  fontSize: 64,
-                  color: "#f9fafb",
-                  lineHeight: 1
-                }}
-              >
-                $49
-              </span>
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 64, color: "#f9fafb", lineHeight: 1 }}>$49</span>
               <div>
-                <span style={{ color: "#9ca3af", fontSize: 16 }}>
-                  per season · all camps · all features
-                </span>
-                <div style={{ color: "#6b7280", fontSize: 12, marginTop: 4 }}>
-                  One-time payment · Add multiple athletes
-                </div>
+                <span style={{ color: "#9ca3af", fontSize: 16 }}>per season · all camps · all features</span>
+                <div style={{ color: "#6b7280", fontSize: 12, marginTop: 4 }}>One-time payment · Add multiple athletes</div>
               </div>
             </div>
-
             <div style={{ height: 1, background: "rgba(232,160,32,0.3)", margin: "24px 0" }} />
-
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {[
-                "Current season camp data",
-                "Unlimited favorites & registration tracking",
-                "Calendar conflict detection",
-                "Multiple athletes under one account"
-              ].map((f) => (
-                <div
-                  key={f}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    fontSize: 16,
-                    color: "#f9fafb"
-                  }}
-                >
+              {["Current season camp data", "Unlimited favorites & registration tracking", "Calendar conflict detection", "Multiple athletes under one account"].map((f) => (
+                <div key={f} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 16, color: "#f9fafb" }}>
                   <span style={{ color: "#e8a020", fontSize: 18, flexShrink: 0 }}>✓</span> {f}
                 </div>
               ))}
             </div>
-
-            <button
-              onClick={handlePricingSignup}
-              style={{
-                ...S.ctaPrimary,
-                width: "100%",
-                justifyContent: "center",
-                marginTop: 28
-              }}
-            >
+            <button onClick={handlePricingSignup} style={{ ...S.ctaPrimary, width: "100%", justifyContent: "center", marginTop: 28 }}>
               Get Season Pass <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
             </button>
-
-            <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>
-              Not what you expected? We'll refund you — no questions asked.
-            </p>
+            <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>Not what you expected? We'll refund you — no questions asked.</p>
             <div style={{ display: "flex", justifyContent: "center", gap: 20, marginTop: 12, flexWrap: "wrap" }}>
-              {[
-                { icon: "🔒", label: "Secure checkout via Stripe" },
-                { icon: "📅", label: "No auto-renew" },
-                { icon: "🛡️", label: "We never sell your data" }
-              ].map((b) => (
-                <span key={b.label} style={{ fontSize: 12, color: "#6b7280", display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ fontSize: 13 }}>{b.icon}</span> {b.label}
-                </span>
+              {[{ icon: "🔒", label: "Secure checkout via Stripe" }, { icon: "📅", label: "No auto-renew" }, { icon: "🛡️", label: "We never sell your data" }].map((b) => (
+                <span key={b.label} style={{ fontSize: 12, color: "#6b7280", display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 13 }}>{b.icon}</span> {b.label}</span>
               ))}
             </div>
           </div>
-
           <p style={{ fontSize: 13, color: "#6b7280", textAlign: "center", marginTop: 16 }}>
             Not sure yet?{" "}
-            <button
-              onClick={handleTryDemo}
-              style={{ color: "#e8a020", background: "none", border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13 }}
-            >
-              Try the free demo
-            </button>
+            <button onClick={handleTryDemo} style={{ color: "#e8a020", background: "none", border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Try the free demo</button>
             {" "}— no account needed.
           </p>
         </div>
       </section>
 
-      {/* ── MORE SPORTS COMING ── */}
+      {/* ── MORE SPORTS ── */}
       <section style={{ padding: "0 24px 48px", maxWidth: 560, margin: "0 auto", textAlign: "center" }}>
         <div style={{ borderTop: "1px solid #1f2937", paddingTop: 40 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>
-            More sports coming soon
-          </div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>More sports coming soon</div>
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, marginBottom: 20 }}>
             {["Baseball", "Basketball", "Gymnastics", "Lacrosse", "Soccer", "Softball", "Volleyball"].map((s) => (
-              <span key={s} style={{
-                background: "#111827", border: "1px solid #1f2937",
-                borderRadius: 20, padding: "5px 14px",
-                fontSize: 13, color: "#9ca3af", fontWeight: 500,
-              }}>
-                {s}
-              </span>
+              <span key={s} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 20, padding: "5px 14px", fontSize: 13, color: "#9ca3af", fontWeight: 500 }}>{s}</span>
             ))}
           </div>
-          <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 16 }}>
-            Follow along for updates as we expand to new sports.
-          </p>
+          <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 16 }}>Follow along for updates as we expand to new sports.</p>
           <div style={{ display: "flex", justifyContent: "center", gap: 16 }}>
-            <a
-              href="https://www.facebook.com/profile.php?id=61586121124133"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                background: "#111827", border: "1px solid #1f2937",
-                borderRadius: 8, padding: "10px 18px",
-                fontSize: 14, fontWeight: 600, color: "#f9fafb",
-                textDecoration: "none", transition: "border-color 0.15s",
-              }}
+            <a href="https://www.facebook.com/profile.php?id=61586121124133" target="_blank" rel="noopener noreferrer"
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "10px 18px", fontSize: 14, fontWeight: 600, color: "#f9fafb", textDecoration: "none" }}
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#4267B2"; }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#1f2937"; }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="#4267B2"><path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.886v2.268h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/></svg>
               Facebook
             </a>
-            <a
-              href="https://www.instagram.com/urecruithq/"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                background: "#111827", border: "1px solid #1f2937",
-                borderRadius: 8, padding: "10px 18px",
-                fontSize: 14, fontWeight: 600, color: "#f9fafb",
-                textDecoration: "none", transition: "border-color 0.15s",
-              }}
+            <a href="https://www.instagram.com/urecruithq/" target="_blank" rel="noopener noreferrer"
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "10px 18px", fontSize: 14, fontWeight: 600, color: "#f9fafb", textDecoration: "none" }}
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#E1306C"; }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#1f2937"; }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="url(#ig-grad)"><defs><linearGradient id="ig-grad" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stopColor="#F58529"/><stop offset="50%" stopColor="#DD2A7B"/><stop offset="100%" stopColor="#8134AF"/></linearGradient></defs><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="url(#ig-grad2)"><defs><linearGradient id="ig-grad2" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stopColor="#F58529"/><stop offset="50%" stopColor="#DD2A7B"/><stop offset="100%" stopColor="#8134AF"/></linearGradient></defs><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
               Instagram
             </a>
           </div>
@@ -868,34 +483,19 @@ export default function Home() {
       <footer style={{ borderTop: "1px solid #1f2937", padding: "36px 24px 28px", background: "#0a0e1a" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 20 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb" }}>
-              URecruit<span style={{ color: "#e8a020" }}>HQ</span>
-            </div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb" }}>URecruit<span style={{ color: "#e8a020" }}>HQ</span></div>
             <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-              {[
-                { label: "Terms of Service", href: "/TermsOfService" },
-                { label: "Privacy Policy", href: "/PrivacyPolicy" },
-                { label: "Contact", href: "mailto:support@urecruithq.com" },
-              ].map(({ label, href }) => (
-                <a
-                  key={label}
-                  href={href}
-                  style={{ fontSize: 13, color: "#6b7280", textDecoration: "none" }}
+              {[{ label: "Terms of Service", href: "/TermsOfService" }, { label: "Privacy Policy", href: "/PrivacyPolicy" }, { label: "Contact", href: "mailto:support@urecruithq.com" }].map(({ label, href }) => (
+                <a key={label} href={href} style={{ fontSize: 13, color: "#6b7280", textDecoration: "none" }}
                   onMouseEnter={(e) => { e.currentTarget.style.color = "#9ca3af"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = "#6b7280"; }}
-                >
-                  {label}
-                </a>
+                >{label}</a>
               ))}
             </div>
           </div>
           <div style={{ borderTop: "1px solid #1f2937", paddingTop: 20, display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8 }}>
-            <p style={{ fontSize: 12, color: "#4b5563", margin: 0 }}>
-              © 2026 URecruitHQ · Independent planning tool · Not affiliated with any school or camp program
-            </p>
-            <p style={{ fontSize: 12, color: "#4b5563", margin: 0 }}>
-              We never sell your data.
-            </p>
+            <p style={{ fontSize: 12, color: "#4b5563", margin: 0 }}>© 2026 URecruitHQ · Independent planning tool · Not affiliated with any school or camp program</p>
+            <p style={{ fontSize: 12, color: "#4b5563", margin: 0 }}>We never sell your data.</p>
           </div>
         </div>
       </footer>
@@ -908,7 +508,6 @@ export default function Home() {
 /* ── Why Speech Bubble ── */
 function WhyPanel() {
   const [open, setOpen] = useState(false);
-
   useEffect(() => {
     if (!open) return;
     function onKey(e) { if (e.key === "Escape") setOpen(false); }
@@ -917,150 +516,56 @@ function WhyPanel() {
   }, [open]);
 
   return (
-    <div className="hidden md:block" style={{
-      position: "fixed",
-      top: "clamp(100px, 28vh, 220px)",
-      right: 28,
-      zIndex: 200,
-      fontFamily: "'DM Sans', sans-serif",
-      maxWidth: "min(300px, calc(100vw - 48px))",
-    }}>
-
+    <div className="hidden md:block" style={{ position: "fixed", top: "clamp(100px, 28vh, 220px)", right: 28, zIndex: 200, fontFamily: "'DM Sans', sans-serif", maxWidth: "min(300px, calc(100vw - 48px))" }}>
       {!open && (
         <div style={{ position: "relative" }}>
-          <button
-            className="why-bubble-closed"
-            onClick={() => setOpen(true)}
-            aria-label="Why do I need this?"
-            style={{
-              background: "#f1f5f9",
-              border: "1.5px solid #e2e8f0",
-              borderRadius: 18,
-              padding: "14px 18px",
-              textAlign: "left",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15)",
-              display: "block",
-              width: "100%",
-              cursor: "pointer",
-            }}
+          <button className="why-bubble-closed" onClick={() => setOpen(true)} aria-label="Why do I need this?"
+            style={{ background: "#f1f5f9", border: "1.5px solid #e2e8f0", borderRadius: 18, padding: "14px 18px", textAlign: "left", boxShadow: "0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15)", display: "block", width: "100%", cursor: "pointer" }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <div style={{
-                width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
-                background: "#334155",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 15,
-              }}>👨‍👦</div>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.8 }}>
-                From a recruiting parent
-              </span>
+              <div style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: "#334155", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>👨‍👦</div>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.8 }}>From a recruiting parent</span>
             </div>
-            <p style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", lineHeight: 1.4, margin: "0 0 6px" }}>
-              "We wish someone had told us this before junior year."
-            </p>
-            <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>
-              Tap to find out what we learned →
-            </span>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", lineHeight: 1.4, margin: "0 0 6px" }}>"We wish someone had told us this before junior year."</p>
+            <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>Tap to find out what we learned →</span>
           </button>
-          <div style={{
-            position: "absolute",
-            bottom: -10,
-            left: 24,
-            width: 0,
-            height: 0,
-            borderLeft: "10px solid transparent",
-            borderRight: "10px solid transparent",
-            borderTop: "11px solid #f1f5f9",
-            filter: "drop-shadow(0 3px 2px rgba(0,0,0,0.12))",
-          }} />
+          <div style={{ position: "absolute", bottom: -10, left: 24, width: 0, height: 0, borderLeft: "10px solid transparent", borderRight: "10px solid transparent", borderTop: "11px solid #f1f5f9", filter: "drop-shadow(0 3px 2px rgba(0,0,0,0.12))" }} />
         </div>
       )}
-
       {open && (
-        <div style={{
-          background: "#f1f5f9",
-          border: "1.5px solid #e2e8f0",
-          borderRadius: 18,
-          boxShadow: "0 12px 48px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15)",
-          overflow: "hidden",
-          animation: "why-fade-in 0.2s ease",
-          position: "relative",
-        }}>
-          <div style={{
-            background: "#1e293b",
-            padding: "12px 16px",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-          }}>
+        <div style={{ background: "#f1f5f9", border: "1.5px solid #e2e8f0", borderRadius: 18, boxShadow: "0 12px 48px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15)", overflow: "hidden", animation: "why-fade-in 0.2s ease", position: "relative" }}>
+          <div style={{ background: "#1e293b", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 16 }}>👨‍👦</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#f1f5f9" }}>
-                What recruiting families learn too late
-              </span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#f1f5f9" }}>What recruiting families learn too late</span>
             </div>
-            <button
-              onClick={() => setOpen(false)}
-              style={{
-                background: "rgba(255,255,255,0.1)", border: "none", cursor: "pointer",
-                color: "#94a3b8", fontSize: 16, lineHeight: 1, padding: "2px 6px",
-                borderRadius: 6, flexShrink: 0,
-              }}
-              aria-label="Close"
-            >×</button>
+            <button onClick={() => setOpen(false)} style={{ background: "rgba(255,255,255,0.1)", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16, lineHeight: 1, padding: "2px 6px", borderRadius: 6, flexShrink: 0 }} aria-label="Close">×</button>
           </div>
-
           <div style={{ padding: "16px 18px 18px" }}>
-            <p style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", lineHeight: 1.45, margin: "0 0 8px" }}>
-              The recruiting process starts before most parents realize it.
-            </p>
-            <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 14px" }}>
-              Here's what we wish someone had told us early.
-            </p>
-
+            <p style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", lineHeight: 1.45, margin: "0 0 8px" }}>The recruiting process starts before most parents realize it.</p>
+            <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 14px" }}>Here's what we wish someone had told us early.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
-              {[
-                ["Other families already have a system.", " Starting early is the difference."],
-                ["Not all camps are equal.", " School-run camps where staff are evaluating for their roster are not the same as \"coaches in attendance.\""],
-                ["The paperwork adds up fast.", " Missed deadlines cost athletes real opportunities."],
-              ].map(([bold, rest], i) => (
+              {[["Other families already have a system.", " Starting early is the difference."], ["Not all camps are equal.", " School-run camps where staff are evaluating for their roster are not the same as \"coaches in attendance.\""], ["The paperwork adds up fast.", " Missed deadlines cost athletes real opportunities."]].map(([bold, rest], i) => (
                 <div key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "#334155", lineHeight: 1.5 }}>
                   <span style={{ color: "#475569", flexShrink: 0, marginTop: 2, fontSize: 10 }}>●</span>
                   <span><span style={{ fontWeight: 600, color: "#0f172a" }}>{bold}</span>{rest}</span>
                 </div>
               ))}
             </div>
-
             <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", overflow: "hidden", marginBottom: 14 }}>
               <div style={{ padding: "10px 12px" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.8 }}>Most families</div>
-                <p style={{ fontSize: 13, color: "#64748b", margin: "3px 0 0", lineHeight: 1.5 }}>
-                  Spreadsheets and manual tracking — until something slips.
-                </p>
+                <p style={{ fontSize: 13, color: "#64748b", margin: "3px 0 0", lineHeight: 1.5 }}>Spreadsheets and manual tracking — until something slips.</p>
               </div>
               <div style={{ height: 1, background: "#e2e8f0" }} />
               <div style={{ padding: "10px 12px", background: "#f8fafc" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: 0.8 }}>URecruit HQ families</div>
-                <p style={{ fontSize: 13, color: "#0f172a", margin: "3px 0 0", lineHeight: 1.5, fontWeight: 500 }}>
-                  Let the app handle tracking. Focus on the right camps, the right coaches.
-                </p>
+                <p style={{ fontSize: 13, color: "#0f172a", margin: "3px 0 0", lineHeight: 1.5, fontWeight: 500 }}>Let the app handle tracking. Focus on the right camps, the right coaches.</p>
               </div>
             </div>
-
-            <p style={{ fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.5 }}>
-              Built by parents of NCAA athletes.
-            </p>
+            <p style={{ fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.5 }}>Built by parents of NCAA athletes.</p>
           </div>
-
-          <div style={{
-            position: "absolute",
-            bottom: -10,
-            left: 24,
-            width: 0,
-            height: 0,
-            borderLeft: "10px solid transparent",
-            borderRight: "10px solid transparent",
-            borderTop: "11px solid #f1f5f9",
-            filter: "drop-shadow(0 3px 2px rgba(0,0,0,0.12))",
-          }} />
+          <div style={{ position: "absolute", bottom: -10, left: 24, width: 0, height: 0, borderLeft: "10px solid transparent", borderRight: "10px solid transparent", borderTop: "11px solid #f1f5f9", filter: "drop-shadow(0 3px 2px rgba(0,0,0,0.12))" }} />
         </div>
       )}
     </div>
@@ -1069,98 +574,12 @@ function WhyPanel() {
 
 /* ── Shared styles ── */
 const S = {
-  navBtnAmberText: {
-    background: "#e8a020",
-    color: "#ffffff",
-    border: "none",
-    borderRadius: 8,
-    padding: "6px 14px",
-    fontSize: 14,
-    fontWeight: 700,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-  },
-  navBtnTextMuted: {
-    background: "transparent",
-    color: "#111827",
-    border: "1px solid #d1d5db",
-    borderRadius: 8,
-    padding: "6px 14px",
-    fontSize: 14,
-    fontWeight: 500,
-    cursor: "pointer",
-  },
-  navBtnAmber: {
-    background: "#e8a020",
-    color: "#0a0e1a",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px 20px",
-    fontSize: 16,
-    fontWeight: 700,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center"
-  },
-  navBtnGhost: {
-    background: "transparent",
-    color: "#111827",
-    border: "1px solid #e5e7eb",
-    borderRadius: 8,
-    padding: "10px 18px",
-    fontSize: 16,
-    fontWeight: 500,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center"
-  },
-  navBtnMemberLogin: {
-    background: "#e8a020",
-    color: "#0a0e1a",
-    border: "none",
-    borderRadius: 8,
-    padding: "6px 14px",
-    fontSize: 14,
-    fontWeight: 700,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    textDecoration: "none",
-  },
-  ctaPrimary: {
-    background: "#e8a020",
-    color: "#0a0e1a",
-    border: "none",
-    borderRadius: 10,
-    padding: "16px 32px",
-    fontSize: 18,
-    fontWeight: 700,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center"
-  },
-  ctaOutline: {
-    background: "transparent",
-    color: "#f9fafb",
-    border: "2px solid #ffffff",
-    borderRadius: 10,
-    padding: "16px 32px",
-    fontSize: 18,
-    fontWeight: 600,
-    cursor: "pointer",
-    transition: "background 0.2s, color 0.2s"
-  },
-  navBtnLogout: {
-    background: "transparent",
-    color: "#6b7280",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px 12px",
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: "pointer",
-    textDecoration: "underline",
-    textUnderlineOffset: 2
-  }
+  navBtnAmberText: { background: "#e8a020", color: "#ffffff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center" },
+  navBtnTextMuted: { background: "transparent", color: "#111827", border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 14px", fontSize: 14, fontWeight: 500, cursor: "pointer" },
+  navBtnAmber: { background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 16, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center" },
+  navBtnGhost: { background: "transparent", color: "#111827", border: "1px solid #e5e7eb", borderRadius: 8, padding: "10px 18px", fontSize: 16, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center" },
+  navBtnMemberLogin: { background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", textDecoration: "none" },
+  ctaPrimary: { background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 10, padding: "16px 32px", fontSize: 18, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center" },
+  ctaOutline: { background: "transparent", color: "#f9fafb", border: "2px solid #ffffff", borderRadius: 10, padding: "16px 32px", fontSize: 18, fontWeight: 600, cursor: "pointer", transition: "background 0.2s, color 0.2s" },
+  navBtnLogout: { background: "transparent", color: "#6b7280", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 500, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 },
 };
