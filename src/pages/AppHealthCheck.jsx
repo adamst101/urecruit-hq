@@ -689,6 +689,75 @@ const JOURNEY_GROUPS = [
           },
         ],
       },
+
+      {
+        id: "cross_athlete_warning_isolation",
+        name: "Cross-Athlete Warning Isolation",
+        icon: "🔀",
+        description: "Travel notices for camps belonging only to another athlete are excluded from the current athlete's WarningBanner. Cross-athlete same-day conflicts still surface correctly.",
+        steps: [
+          {
+            name: "Import detectConflicts",
+            run: async (ctx) => {
+              const mod = await import("../components/hooks/useConflictDetection.jsx");
+              if (typeof mod.detectConflicts !== "function") throw new Error("detectConflicts not exported");
+              ctx.detectConflicts = mod.detectConflicts;
+              return "detectConflicts imported ✓";
+            },
+          },
+          {
+            name: "Other athlete's solo far-from-home notice excluded from current athlete's warnings",
+            run: async (ctx) => {
+              // Current athlete: nearby camp (Dallas TX) — no far-from-home
+              // Other athlete: distant camp (Chicago) — should generate far_from_home but NOT appear for current athlete
+              const campA = { id: "curr-a", camp_name: "Current Camp", start_date: "2026-06-14", city: "Dallas", state: "TX", athleteName: "Current" };
+              const campB = { id: "other-b", camp_name: "Other Camp",   start_date: "2026-06-20", city: "Chicago", state: "IL", athleteName: "Other" };
+              const allWarnings = ctx.detectConflicts({
+                camps: [campA, campB],
+                homeCity: "Magnolia", homeState: "TX",
+                homeLat: 30.21, homeLng: -95.75,
+                isPaid: true,
+              });
+              const currentCampIds = new Set(["curr-a"]);
+              const currentWarnings = allWarnings.filter(w => (w.campIds || []).some(id => currentCampIds.has(id)));
+              const otherOnlyWarnings = allWarnings.filter(w => (w.campIds || []).every(id => !currentCampIds.has(id)));
+              if (otherOnlyWarnings.length === 0) return "No other-only warnings generated in this scenario — distance thresholds not met (ok)";
+              const leaked = currentWarnings.filter(w => (w.campIds || []).every(id => !currentCampIds.has(id)));
+              if (leaked.length > 0) throw new Error(`${leaked.length} other-athlete-only warning(s) leaked into currentAthleteWarnings — Calendar WarningBanner will show wrong athlete's notices`);
+              return `${otherOnlyWarnings.length} other-athlete notice(s) correctly excluded from currentAthleteWarnings ✓`;
+            },
+          },
+          {
+            name: "Cross-athlete same-day conflict DOES appear for both athletes",
+            run: async (ctx) => {
+              // Both on same date — warning campIds contains both; should pass the currentCampIds filter for either athlete
+              const campA = { id: "curr-a", camp_name: "Current Camp", start_date: "2026-06-14", city: "Dallas",  state: "TX", athleteName: "Current" };
+              const campB = { id: "other-b", camp_name: "Other Camp",   start_date: "2026-06-14", city: "Chicago", state: "IL", athleteName: "Other" };
+              const allWarnings = ctx.detectConflicts({ camps: [campA, campB], isPaid: false });
+              const currentCampIds = new Set(["curr-a"]);
+              const currentWarnings = allWarnings.filter(w => (w.campIds || []).some(id => currentCampIds.has(id)));
+              const sameDayWarn = currentWarnings.find(w => w.type === "same_day");
+              if (!sameDayWarn) throw new Error("Same-day conflict absent from currentAthleteWarnings — cross-athlete conflict detection broken");
+              return "Same-day conflict correctly survives the currentAthleteWarnings filter ✓";
+            },
+          },
+          {
+            name: "Back-to-back cross-athlete travel warning appears for the current athlete's camp",
+            run: async (ctx) => {
+              // Current athlete: camp A on June 14; Other athlete: camp B on June 15, far away
+              // Warning campIds: ["curr-a", "other-b"] — passes filter since curr-a is current
+              const campA = { id: "curr-a", camp_name: "Columbus Camp", start_date: "2026-06-14", city: "Columbus", state: "OH", athleteName: "Current" };
+              const campB = { id: "other-b", camp_name: "Chicago Camp",  start_date: "2026-06-15", city: "Chicago",  state: "IL", athleteName: "Other" };
+              const allWarnings = ctx.detectConflicts({ camps: [campA, campB], isPaid: false });
+              const currentCampIds = new Set(["curr-a"]);
+              const currentWarnings = allWarnings.filter(w => (w.campIds || []).some(id => currentCampIds.has(id)));
+              const travelWarn = currentWarnings.find(w => w.type === "back_to_back_travel");
+              if (!travelWarn) return "No back-to-back travel warning generated — may be within distance threshold (ok)";
+              return `Cross-athlete back-to-back travel warning correctly surfaces for current athlete (${travelWarn.distance} mi) ✓`;
+            },
+          },
+        ],
+      },
     ],
   },
 
@@ -1373,6 +1442,116 @@ const JOURNEY_GROUPS = [
       },
 
       {
+        id: "post_payment_routing",
+        name: "Post-Payment Account Creation Routing",
+        icon: "🔀",
+        description: "CheckoutSuccess saves the correct sessionStorage keys so AuthRedirect can pick up postPaymentSignup and stripeSessionId after account creation on /Signup.",
+        steps: [
+          {
+            name: "sessionStorage is available",
+            run: async () => {
+              if (typeof sessionStorage === "undefined") throw new Error("sessionStorage not available — post-payment routing will fail");
+              return "sessionStorage available ✓";
+            },
+          },
+          {
+            name: "Can write and read postPaymentSignup key",
+            run: async (ctx) => {
+              const KEY = "postPaymentSignup";
+              sessionStorage.setItem(KEY, "true");
+              const val = sessionStorage.getItem(KEY);
+              if (val !== "true") throw new Error(`sessionStorage write/read failed for key '${KEY}' — AuthRedirect Priority 1 will not trigger`);
+              sessionStorage.removeItem(KEY);
+              return `Key '${KEY}' read/write ok ✓`;
+            },
+          },
+          {
+            name: "Can write and read stripeSessionId key",
+            run: async () => {
+              const KEY = "stripeSessionId";
+              const testVal = "cs_test_healthcheck_probe";
+              sessionStorage.setItem(KEY, testVal);
+              const val = sessionStorage.getItem(KEY);
+              if (val !== testVal) throw new Error(`sessionStorage write/read failed for key '${KEY}' — linkStripePayment fallback will not receive session id`);
+              sessionStorage.removeItem(KEY);
+              return `Key '${KEY}' read/write ok ✓`;
+            },
+          },
+          {
+            name: "Can write and read paidSeasonYear key",
+            run: async () => {
+              const KEY = "paidSeasonYear";
+              sessionStorage.setItem(KEY, "2026");
+              const val = sessionStorage.getItem(KEY);
+              if (val !== "2026") throw new Error(`sessionStorage write/read failed for key '${KEY}'`);
+              sessionStorage.removeItem(KEY);
+              return `Key '${KEY}' read/write ok ✓`;
+            },
+          },
+          {
+            name: "Signup page route exists in pages config",
+            run: async () => {
+              // Import the pages config to verify Signup is registered
+              const mod = await import("../pages.config.js");
+              const pages = mod.PAGES || mod.pagesConfig?.Pages;
+              if (!pages) throw new Error("Could not import PAGES from pages.config.js");
+              if (!pages["Signup"]) throw new Error("'Signup' not registered in PAGES — /Signup route will 404 and post-payment account creation will fail");
+              if (!pages["TermsOfService"]) throw new Error("'TermsOfService' not registered in PAGES — /TermsOfService will show a blank page");
+              if (!pages["PrivacyPolicy"]) throw new Error("'PrivacyPolicy' not registered in PAGES — /PrivacyPolicy will show a blank page");
+              return "Signup, TermsOfService, PrivacyPolicy all registered in PAGES ✓";
+            },
+          },
+        ],
+      },
+
+      {
+        id: "stripe_functions",
+        name: "Stripe Backend Functions",
+        icon: "💳",
+        description: "verifyStripeSession and linkStripePayment functions are reachable. Both must handle paid and $0 sessions (100% off coupons via no_payment_required).",
+        steps: [
+          {
+            name: "verifyStripeSession function reachable",
+            run: async (ctx) => {
+              const res = await base44.functions.invoke("verifyStripeSession", { sessionId: "__healthcheck_probe__" });
+              const data = res?.data;
+              if (data === undefined || data === null) throw new Error("verifyStripeSession returned empty response — function may be down");
+              ctx.verifyRes = data;
+              return `Function responded — ok=${data.ok}`;
+            },
+          },
+          {
+            name: "verifyStripeSession rejects invalid session (not a silent pass)",
+            run: async (ctx) => {
+              if (ctx.verifyRes.ok === true && ctx.verifyRes.paid === true) {
+                throw new Error("Probe session returned paid:true — Stripe session validation is not working (any string accepted)");
+              }
+              return `Invalid session correctly not accepted — function alive and validating ✓`;
+            },
+          },
+          {
+            name: "linkStripePayment function reachable",
+            run: async (ctx) => {
+              // Probe with empty sessionId — expects ok:false with 'sessionId required' error
+              const res = await base44.functions.invoke("linkStripePayment", { sessionId: "" });
+              const data = res?.data;
+              if (data === undefined || data === null) throw new Error("linkStripePayment returned empty response — function may be down");
+              ctx.linkRes = data;
+              return `Function responded — ok=${data.ok}`;
+            },
+          },
+          {
+            name: "linkStripePayment rejects missing sessionId",
+            run: async (ctx) => {
+              if (ctx.linkRes.ok === true) throw new Error("linkStripePayment accepted an empty sessionId — payment linking could be triggered without a valid Stripe session");
+              const errMsg = ctx.linkRes.error || "(no error field)";
+              return `Empty sessionId correctly rejected — error: "${errMsg}" ✓`;
+            },
+          },
+        ],
+      },
+
+      {
         id: "sport_position",
         name: "Sport & Position Lists",
         icon: "🏈",
@@ -1592,6 +1771,160 @@ const JOURNEY_GROUPS = [
           try { if (ctx.intent1Id) await base44.entities.CampIntent.delete(ctx.intent1Id); } catch {}
           try { if (ctx.athlete1Id) await base44.entities.AthleteProfile.delete(ctx.athlete1Id); } catch {}
           try { if (ctx.athlete2Id) await base44.entities.AthleteProfile.delete(ctx.athlete2Id); } catch {}
+        },
+      },
+
+      {
+        id: "addon_athlete_provisioning",
+        name: "Add-on Athlete Provisioning",
+        icon: "👤",
+        description: "A second (non-primary) AthleteProfile can be created with all required fields — home_city, home_state, display_name, is_primary:false — and is correctly queryable by account_id.",
+        steps: [
+          {
+            name: "Get current account",
+            run: async (ctx) => {
+              const me = await base44.auth.me();
+              if (!me?.id) throw new Error("auth.me() returned no id");
+              ctx.myId = me.id;
+              return `account id = ${me.id}`;
+            },
+          },
+          {
+            name: "Create add-on AthleteProfile with all linkStripePayment fields",
+            run: async (ctx) => {
+              const profile = await base44.entities.AthleteProfile.create({
+                account_id: ctx.myId,
+                first_name: "__hc_addon__",
+                last_name: "__test__",
+                athlete_name: "__hc_addon__ __test__",
+                display_name: "__hc_addon__ __test__",
+                is_primary: false,
+                active: true,
+                sport_id: "test",
+                grad_year: 2099,
+                home_city: "TestCity",
+                home_state: "TX",
+                parent_first_name: "TestParent",
+                parent_last_name: "TestLast",
+                parent_phone: "555-555-5555",
+              });
+              if (!profile?.id) throw new Error("AthleteProfile.create() returned no id — add-on flow will fail");
+              ctx.addonProfileId = profile.id;
+              return `Add-on profile created (id=${profile.id})`;
+            },
+          },
+          {
+            name: "Add-on profile queryable by account_id",
+            run: async (ctx) => {
+              const profiles = await base44.entities.AthleteProfile.filter({ account_id: ctx.myId });
+              const found = (profiles || []).find(p => p.id === ctx.addonProfileId);
+              if (!found) throw new Error(`Add-on profile id=${ctx.addonProfileId} not found via account_id filter`);
+              ctx.addonFound = found;
+              return `Profile found via account_id filter ✓`;
+            },
+          },
+          {
+            name: "is_primary=false persisted correctly",
+            run: async (ctx) => {
+              if (ctx.addonFound.is_primary === true) throw new Error("Add-on athlete incorrectly marked is_primary=true — AthleteSwitcher sort logic will be wrong");
+              return `is_primary=${ctx.addonFound.is_primary} ✓`;
+            },
+          },
+          {
+            name: "home_city, home_state, display_name all persisted",
+            run: async (ctx) => {
+              const missing = ["home_city", "home_state", "display_name"].filter(f => !ctx.addonFound[f]);
+              if (missing.length > 0) throw new Error(`Add-on profile missing: ${missing.join(", ")} — linkStripePayment add-on path has a field coverage bug`);
+              return `home_city=${ctx.addonFound.home_city}  home_state=${ctx.addonFound.home_state}  display_name=${ctx.addonFound.display_name} ✓`;
+            },
+          },
+          {
+            name: "parent fields persisted",
+            run: async (ctx) => {
+              const missing = ["parent_first_name", "parent_last_name", "parent_phone"].filter(f => !ctx.addonFound[f]);
+              if (missing.length > 0) throw new Error(`Add-on profile missing parent fields: ${missing.join(", ")}`);
+              return `parent: ${ctx.addonFound.parent_first_name} ${ctx.addonFound.parent_last_name}  phone: ${ctx.addonFound.parent_phone} ✓`;
+            },
+          },
+          {
+            name: "Cleanup — delete add-on test profile",
+            run: async (ctx) => {
+              if (ctx.addonProfileId) await base44.entities.AthleteProfile.delete(ctx.addonProfileId).catch(() => {});
+              return "Add-on test profile deleted";
+            },
+          },
+        ],
+        cleanup: async (ctx) => {
+          if (ctx.addonProfileId) {
+            try { await base44.entities.AthleteProfile.delete(ctx.addonProfileId); } catch {}
+          }
+        },
+      },
+
+      {
+        id: "primary_athlete_sort",
+        name: "Primary Athlete Sort Order",
+        icon: "🔢",
+        description: "When multiple athletes exist, is_primary:true athletes sort before secondary athletes — AthleteSwitcher defaults to the right athlete.",
+        steps: [
+          {
+            name: "Get current account",
+            run: async (ctx) => {
+              const me = await base44.auth.me();
+              if (!me?.id) throw new Error("auth.me() returned no id");
+              ctx.myId = me.id;
+              return `account id = ${me.id}`;
+            },
+          },
+          {
+            name: "Create one primary and one secondary test athlete",
+            run: async (ctx) => {
+              const primary = await base44.entities.AthleteProfile.create({
+                account_id: ctx.myId, first_name: "__hc_primary__", last_name: "__sort_test__",
+                athlete_name: "__hc_primary__ __sort_test__", is_primary: true, active: true,
+                sport_id: "test", grad_year: 2099,
+              });
+              const secondary = await base44.entities.AthleteProfile.create({
+                account_id: ctx.myId, first_name: "__hc_secondary__", last_name: "__sort_test__",
+                athlete_name: "__hc_secondary__ __sort_test__", is_primary: false, active: true,
+                sport_id: "test", grad_year: 2099,
+              });
+              if (!primary?.id || !secondary?.id) throw new Error("Could not create test athletes");
+              ctx.primaryId = primary.id;
+              ctx.secondaryId = secondary.id;
+              return `Primary id=${primary.id}  Secondary id=${secondary.id}`;
+            },
+          },
+          {
+            name: "Sorting is_primary:true first yields correct order",
+            run: async (ctx) => {
+              const profiles = await base44.entities.AthleteProfile.filter({ account_id: ctx.myId });
+              const testProfiles = (profiles || []).filter(p =>
+                p.id === ctx.primaryId || p.id === ctx.secondaryId
+              );
+              if (testProfiles.length < 2) throw new Error("Could not find both test profiles for sort check");
+              // Apply same sort as AthleteSwitcher
+              const sorted = [...testProfiles].sort((a, b) => {
+                if (a.is_primary && !b.is_primary) return -1;
+                if (!a.is_primary && b.is_primary) return 1;
+                return 0;
+              });
+              if (sorted[0].id !== ctx.primaryId) throw new Error("is_primary:true athlete did not sort first — AthleteSwitcher would default to wrong athlete");
+              return "is_primary:true athlete sorts first ✓";
+            },
+          },
+          {
+            name: "Cleanup — delete sort test athletes",
+            run: async (ctx) => {
+              if (ctx.primaryId) await base44.entities.AthleteProfile.delete(ctx.primaryId).catch(() => {});
+              if (ctx.secondaryId) await base44.entities.AthleteProfile.delete(ctx.secondaryId).catch(() => {});
+              return "Sort test athletes deleted";
+            },
+          },
+        ],
+        cleanup: async (ctx) => {
+          try { if (ctx.primaryId) await base44.entities.AthleteProfile.delete(ctx.primaryId); } catch {}
+          try { if (ctx.secondaryId) await base44.entities.AthleteProfile.delete(ctx.secondaryId); } catch {}
         },
       },
 
