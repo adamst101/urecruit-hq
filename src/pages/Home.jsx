@@ -397,6 +397,9 @@ export default function Home() {
               <p style={{ fontSize: 12, color: "#ffffffff", fontWeight: 600, marginTop: 14 }}>
                 ⚡ Summer camp season opens March–April. Early registrations fill fast.
               </p>
+              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
+                No auto-renew · Cancel anytime · Secure checkout via Stripe
+              </p>
             </div>
 
             {/* Right — All Camps platform image (hidden on mobile) */}
@@ -458,7 +461,7 @@ export default function Home() {
           fontSize: 14, fontWeight: 700, color: "#0a0e1a",
           textTransform: "uppercase", letterSpacing: 1,
         }}>
-          {campDisplay} Verified College Football Camps &nbsp;·&nbsp; {schoolDisplay} Programs &nbsp;·&nbsp; FBS · FCS · D2 · D3 · NAIA · JUCO &nbsp;·&nbsp; Updated Every Monday
+          {campDisplay} Verified College Football Camps &nbsp;·&nbsp; {schoolDisplay} Programs &nbsp;·&nbsp; FBS · FCS · D2 · D3 · NAIA · JUCO &nbsp;·&nbsp; Verified every Monday from official school athletic pages
         </span>
       </div>
 
@@ -735,15 +738,17 @@ export default function Home() {
               Get Season Pass <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
             </button>
 
-            {/* Trust badges */}
-            <div style={{ display: "flex", justifyContent: "center", gap: 20, marginTop: 20, flexWrap: "wrap" }}>
+            <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>
+              Not what you expected? We'll refund you — no questions asked.
+            </p>
+            <div style={{ display: "flex", justifyContent: "center", gap: 20, marginTop: 12, flexWrap: "wrap" }}>
               {[
-                { icon: "🔒", label: "Secure checkout" },
-                { icon: "📅", label: "No recurring charges" },
-                { icon: "👨‍👩‍👧", label: "Multi-athlete" }
+                { icon: "🔒", label: "Secure checkout via Stripe" },
+                { icon: "📅", label: "No auto-renew" },
+                { icon: "🛡️", label: "We never sell your data" }
               ].map((b) => (
-                <span key={b.label} style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ fontSize: 14 }}>{b.icon}</span> {b.label}
+                <span key={b.label} style={{ fontSize: 12, color: "#6b7280", display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ fontSize: 13 }}>{b.icon}</span> {b.label}
                 </span>
               ))}
             </div>
@@ -822,10 +827,41 @@ export default function Home() {
       </section>
 
       {/* ── FOOTER ── */}
-      <footer style={{ borderTop: "1px solid #1f2937", padding: "28px 24px", textAlign: "center" }}>
-        <p style={{ fontSize: 14, color: "#6b7280" }}>
-          URecruit HQ · Independent planning tool · Not affiliated with any camp or school
-        </p>
+      <footer style={{ borderTop: "1px solid #1f2937", padding: "36px 24px 28px", background: "#0a0e1a" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 20 }}>
+            {/* Brand */}
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb" }}>
+              URecruit<span style={{ color: "#e8a020" }}>HQ</span>
+            </div>
+            {/* Links */}
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+              {[
+                { label: "Terms of Service", href: "/TermsOfService" },
+                { label: "Privacy Policy", href: "/PrivacyPolicy" },
+                { label: "Contact", href: "mailto:support@urecruithq.com" },
+              ].map(({ label, href }) => (
+                <a
+                  key={label}
+                  href={href}
+                  style={{ fontSize: 13, color: "#6b7280", textDecoration: "none" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "#9ca3af"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "#6b7280"; }}
+                >
+                  {label}
+                </a>
+              ))}
+            </div>
+          </div>
+          <div style={{ borderTop: "1px solid #1f2937", paddingTop: 20, display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8 }}>
+            <p style={{ fontSize: 12, color: "#4b5563", margin: 0 }}>
+              © 2026 URecruitHQ · Independent planning tool · Not affiliated with any school or camp program
+            </p>
+            <p style={{ fontSize: 12, color: "#4b5563", margin: 0 }}>
+              We never sell your data.
+            </p>
+          </div>
+        </div>
       </footer>
 
       <WhyPanel />
