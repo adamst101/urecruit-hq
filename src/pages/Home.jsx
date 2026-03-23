@@ -335,7 +335,7 @@ export default function Home() {
           </div>
 
           {/* HEADLINE — spans full container width, one line each */}
-          <h1 style={{ margin: "0 0 16px", lineHeight: 1 }}>
+          <h1 style={{ margin: "0 0 5px", lineHeight: 1 }}>
             <span style={{
               display: "block",
               fontFamily: "'Bebas Neue', sans-serif",
