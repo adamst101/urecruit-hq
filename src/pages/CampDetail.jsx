@@ -14,6 +14,7 @@ import {
 import { format } from "date-fns";
 
 import { base44 } from "../api/base44Client";
+import { trackEvent } from "../utils/trackEvent.js";
 import { createPageUrl } from "../utils";
 import { cn } from "../lib/utils";
 
@@ -42,33 +43,6 @@ const divisionColors = {
   JUCO: "bg-slate-600 text-white"
 };
 
-function trackEvent(payload) {
-  try {
-    const EventEntity = base44?.entities?.Event || base44?.entities?.Events;
-    if (!EventEntity?.create) return;
-
-    const now = new Date();
-    const iso = now.toISOString();
-    const day = iso.slice(0, 10);
-    const eventName =
-      payload?.event_name || payload?.event_type || payload?.title || payload?.name || "event";
-    const sourcePlatform = payload?.source_platform || payload?.source || "web";
-    const title = payload?.title || String(eventName);
-    const sourceKey =
-      payload?.source_key || payload?.sourceKey || `${String(sourcePlatform)}:${String(eventName)}`;
-    const startDate = payload?.start_date || day;
-
-    EventEntity.create({
-      source_platform: String(sourcePlatform),
-      event_type: String(eventName),
-      title: String(title),
-      source_key: String(sourceKey),
-      start_date: String(startDate),
-      payload_json: JSON.stringify(payload || {}),
-      ts: iso,
-    });
-  } catch {}
-}
 
 // --------------------
 // Query-cache lookup (demo data source)
@@ -275,12 +249,11 @@ function CampDetailInner() {
     },
     onSuccess: () => {
       invalidateSummaries();
-      trackEvent({
-        event_name: "camp_favorite_toggled",
+      trackEvent("camp_favorite_toggled", {
         mode: paid ? "paid" : "demo",
         season_year: seasonYear || null,
         camp_id: campId,
-        athlete_id: athleteId || null
+        athlete_id: athleteId || null,
       });
     }
   });
@@ -320,12 +293,11 @@ function CampDetailInner() {
     },
     onSuccess: () => {
       invalidateSummaries();
-      trackEvent({
-        event_name: "camp_mark_registered",
+      trackEvent("camp_mark_registered", {
         mode: paid ? "paid" : "demo",
         season_year: seasonYear || null,
         camp_id: campId,
-        athlete_id: athleteId || null
+        athlete_id: athleteId || null,
       });
     }
   });

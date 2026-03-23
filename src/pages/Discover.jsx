@@ -5,6 +5,7 @@ import { SlidersHorizontal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { base44 } from "../api/base44Client";
+import { trackEvent } from "../utils/trackEvent.js";
 
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -177,24 +178,6 @@ function hasActiveFilters(nf, isPaid) {
   );
 }
 
-function trackEvent(payload) {
-  try {
-    const EventEntity = base44?.entities?.Event || base44?.entities?.Events;
-    if (!EventEntity?.create) return;
-    const iso = new Date().toISOString();
-    const eventName = payload?.event_name || "event";
-    const src = payload?.source_platform || "web";
-    EventEntity.create({
-      source_platform: String(src),
-      event_type: String(eventName),
-      title: String(payload?.title || String(eventName)),
-      source_key: String(payload?.source_key || `${src}:${eventName}`),
-      start_date: payload?.start_date || iso.slice(0, 10),
-      payload_json: JSON.stringify(payload || {}),
-      ts: iso,
-    });
-  } catch { /* ignore */ }
-}
 
 function initialBadge(name) {
   const s = String(name || "").trim();
@@ -441,8 +424,7 @@ export default function Discover() {
       const intents = await loadIntents(keys);
       setIntentByKey(intents);
 
-      trackEvent({
-        event_name:  "discover_loaded",
+      trackEvent("discover_loaded", {
         source:      "discover",
         season_year: seasonYear,
         paid:        isPaid,
@@ -456,7 +438,7 @@ export default function Discover() {
       setCampErr(msg);
       setAllRows([]);
       setRawRows([]);
-      trackEvent({ event_name: "discover_error", source: "discover", season_year: seasonYear, paid: isPaid, error: msg });
+      trackEvent("discover_error", { source: "discover", season_year: seasonYear, paid: isPaid, error: msg });
     } finally {
       setIsLoading(false);
     }
