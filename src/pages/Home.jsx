@@ -321,7 +321,7 @@ export default function Home() {
           gap: 0,
         }}>
           {/* LEFT — text */}
-          <div style={{ flex: "0 0 44%", minWidth: 0 }}>
+          <div style={{ flex: "0 0 44%", minWidth: 0, position: "relative", zIndex: 2 }}>
             {/* Label badge */}
             <div style={{
               display: "inline-flex", alignItems: "center", gap: 8,
@@ -423,7 +423,7 @@ export default function Home() {
           {/* RIGHT — monitor + phone mockup (hidden on mobile) */}
           <div
             className="hidden md:block"
-            style={{ flex: 1, position: "relative", minHeight: 420 }}
+            style={{ flex: 1, position: "relative", minHeight: 420, marginLeft: "-18%" }}
           >
             {/* Gold glow at bottom of image */}
             <div style={{
