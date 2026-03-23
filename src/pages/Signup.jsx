@@ -66,6 +66,8 @@ export default function Signup() {
   const [working, setWorking] = useState(false);
   const [logoOk, setLogoOk] = useState(true);
   const [existingAccount, setExistingAccount] = useState(false);
+  const [registered, setRegistered] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState("");
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -87,8 +89,8 @@ export default function Signup() {
         email: normalizedEmail,
         password,
       });
-      // Some SDK versions return an error object instead of throwing
-      const registerErr = registerResult?.error || registerResult?.message;
+      // Only treat an explicit error field as failure — not a success message
+      const registerErr = registerResult?.error;
       if (registerErr) throw new Error(String(registerErr));
     } catch (err) {
       setWorking(false);
@@ -98,24 +100,26 @@ export default function Signup() {
       return;
     }
 
-    // Step 2: log in immediately to get a session token
+    // Step 2: try immediate login (works if verification isn't required)
     let access_token;
     try {
       const loginResult = await base44.auth.loginViaEmailPassword(normalizedEmail, password);
       access_token = loginResult?.access_token;
-      if (!access_token) throw new Error("No access token returned after sign-in.");
-    } catch (err) {
-      setWorking(false);
-      const msg = String(err?.message || err?.error_description || err || "");
-      // Account was created — sign-in failed for an unexpected reason
-      setError("Account created! " + friendlyAuthError(msg, "login") + " Please use Sign In below.");
-      return;
+    } catch {
+      // Login failed — email verification is likely required first
     }
 
-    // Step 3: hand the token to AuthRedirect
-    window.location.assign(
-      `/AuthRedirect?access_token=${encodeURIComponent(access_token)}&source=custom_signup`
-    );
+    if (access_token) {
+      // Verification not required — go straight in
+      window.location.assign(
+        `/AuthRedirect?access_token=${encodeURIComponent(access_token)}&source=custom_signup`
+      );
+    } else {
+      // Show the "check your email" state
+      setWorking(false);
+      setRegisteredEmail(normalizedEmail);
+      setRegistered(true);
+    }
   }
 
   function goToLogin() {
@@ -145,82 +149,110 @@ export default function Signup() {
 
       {/* Card */}
       <div style={CARD}>
-        <h1 style={HEADING}>CREATE YOUR ACCOUNT</h1>
-        <p style={{ color: "#9ca3af", fontSize: 14, margin: "0 0 28px" }}>
-          Join uRecruitHQ to track camps, save favorites, and build your recruiting timeline.
-        </p>
-
-        <form onSubmit={handleSubmit} noValidate>
-          {/* Email */}
-          <label style={LABEL}>Email address</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => { setEmail(e.target.value); setError(""); setExistingAccount(false); }}
-            placeholder="you@example.com"
-            autoComplete="email"
-            style={INPUT}
-          />
-
-          {/* Password */}
-          <label style={{ ...LABEL, marginTop: 16 }}>Password</label>
-          <div style={{ position: "relative" }}>
-            <input
-              type={showPw ? "text" : "password"}
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setError(""); }}
-              placeholder="At least 8 characters"
-              autoComplete="new-password"
-              style={{ ...INPUT, paddingRight: 44 }}
-            />
-            <button type="button" onClick={() => setShowPw(v => !v)} style={EYE_BTN} tabIndex={-1}>
-              {showPw ? <EyeOff style={{ width: 16, height: 16 }} /> : <Eye style={{ width: 16, height: 16 }} />}
-            </button>
-          </div>
-
-          {/* Confirm Password */}
-          <label style={{ ...LABEL, marginTop: 16 }}>Confirm password</label>
-          <div style={{ position: "relative" }}>
-            <input
-              type={showConfirm ? "text" : "password"}
-              value={confirm}
-              onChange={(e) => { setConfirm(e.target.value); setError(""); }}
-              placeholder="Repeat your password"
-              autoComplete="new-password"
-              style={{ ...INPUT, paddingRight: 44 }}
-            />
-            <button type="button" onClick={() => setShowConfirm(v => !v)} style={EYE_BTN} tabIndex={-1}>
-              {showConfirm ? <EyeOff style={{ width: 16, height: 16 }} /> : <Eye style={{ width: 16, height: 16 }} />}
-            </button>
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div style={ERROR_BOX}>
-              {error}
-              {existingAccount && (
-                <button
-                  type="button"
-                  onClick={goToLogin}
-                  style={{ display: "block", marginTop: 6, color: "#e8a020", fontWeight: 700, background: "none", border: "none", cursor: "pointer", fontSize: 13, padding: 0 }}
-                >
-                  Sign in instead →
-                </button>
-              )}
+        {registered ? (
+          /* ── Verification sent state ── */
+          <>
+            <div style={{ textAlign: "center", marginBottom: 24 }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>📬</div>
+              <h1 style={{ ...HEADING, fontSize: 28, marginBottom: 8 }}>CHECK YOUR EMAIL</h1>
+              <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
+                We sent a verification link to:
+              </p>
+              <p style={{ color: "#f9fafb", fontWeight: 700, fontSize: 15, margin: "6px 0 16px" }}>
+                {registeredEmail}
+              </p>
+              <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
+                Click the link in that email to verify your account, then come back here and sign in.
+              </p>
             </div>
-          )}
+            <button onClick={goToLogin} style={{ ...SUBMIT_BTN, background: "#e8a020" }}>
+              Continue to Sign In
+            </button>
+            <p style={{ textAlign: "center", marginTop: 16, color: "#6b7280", fontSize: 13 }}>
+              Didn&apos;t get the email? Check your spam folder.
+            </p>
+          </>
+        ) : (
+          /* ── Registration form ── */
+          <>
+            <h1 style={HEADING}>CREATE YOUR ACCOUNT</h1>
+            <p style={{ color: "#9ca3af", fontSize: 14, margin: "0 0 28px" }}>
+              Join uRecruitHQ to track camps, save favorites, and build your recruiting timeline.
+            </p>
 
-          {/* Submit */}
-          <button type="submit" disabled={working} style={{ ...SUBMIT_BTN, background: working ? "#92400e" : "#e8a020" }}>
-            {working && <Loader2 style={{ width: 18, height: 18, animation: "spin 1s linear infinite" }} />}
-            {working ? "Creating account…" : "Create Account"}
-          </button>
-        </form>
+            <form onSubmit={handleSubmit} noValidate>
+              {/* Email */}
+              <label style={LABEL}>Email address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(""); setExistingAccount(false); }}
+                placeholder="you@example.com"
+                autoComplete="email"
+                style={INPUT}
+              />
 
-        <p style={{ textAlign: "center", marginTop: 20, color: "#6b7280", fontSize: 14 }}>
-          Already have an account?{" "}
-          <button onClick={goToLogin} style={LINK_BTN}>Sign in</button>
-        </p>
+              {/* Password */}
+              <label style={{ ...LABEL, marginTop: 16 }}>Password</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showPw ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                  placeholder="At least 8 characters"
+                  autoComplete="new-password"
+                  style={{ ...INPUT, paddingRight: 44 }}
+                />
+                <button type="button" onClick={() => setShowPw(v => !v)} style={EYE_BTN} tabIndex={-1}>
+                  {showPw ? <EyeOff style={{ width: 16, height: 16 }} /> : <Eye style={{ width: 16, height: 16 }} />}
+                </button>
+              </div>
+
+              {/* Confirm Password */}
+              <label style={{ ...LABEL, marginTop: 16 }}>Confirm password</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showConfirm ? "text" : "password"}
+                  value={confirm}
+                  onChange={(e) => { setConfirm(e.target.value); setError(""); }}
+                  placeholder="Repeat your password"
+                  autoComplete="new-password"
+                  style={{ ...INPUT, paddingRight: 44 }}
+                />
+                <button type="button" onClick={() => setShowConfirm(v => !v)} style={EYE_BTN} tabIndex={-1}>
+                  {showConfirm ? <EyeOff style={{ width: 16, height: 16 }} /> : <Eye style={{ width: 16, height: 16 }} />}
+                </button>
+              </div>
+
+              {/* Error */}
+              {error && (
+                <div style={ERROR_BOX}>
+                  {error}
+                  {existingAccount && (
+                    <button
+                      type="button"
+                      onClick={goToLogin}
+                      style={{ display: "block", marginTop: 6, color: "#e8a020", fontWeight: 700, background: "none", border: "none", cursor: "pointer", fontSize: 13, padding: 0 }}
+                    >
+                      Sign in instead →
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Submit */}
+              <button type="submit" disabled={working} style={{ ...SUBMIT_BTN, background: working ? "#92400e" : "#e8a020" }}>
+                {working && <Loader2 style={{ width: 18, height: 18, animation: "spin 1s linear infinite" }} />}
+                {working ? "Creating account…" : "Create Account"}
+              </button>
+            </form>
+
+            <p style={{ textAlign: "center", marginTop: 20, color: "#6b7280", fontSize: 14 }}>
+              Already have an account?{" "}
+              <button onClick={goToLogin} style={LINK_BTN}>Sign in</button>
+            </p>
+          </>
+        )}
       </div>
 
       <p style={{ color: "#4b5563", fontSize: 12, marginTop: 20, textAlign: "center" }}>

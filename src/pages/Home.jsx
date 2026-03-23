@@ -538,14 +538,40 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── ALL CAMPS IMAGE ── */}
-      <div style={{ textAlign: "center", padding: "0 24px", background: "#0a0e1a" }}>
-        <img
-          src={allCampsImg}
-          alt="URecruitHQ - All Camps. One Place. Desktop and mobile platform view"
-          style={{ maxWidth: "100%", width: "auto", display: "inline-block" }}
-        />
-      </div>
+      {/* ── PLATFORM PREVIEW ── */}
+      <section style={{ background: "#0a0e1a", padding: "64px 24px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", textAlign: "center" }}>
+          <span style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: 15, letterSpacing: 3,
+            color: "#e8a020", textTransform: "uppercase"
+          }}>
+            THE PLATFORM
+          </span>
+          <h2 style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: "clamp(32px, 5vw, 52px)",
+            color: "#f9fafb",
+            margin: "8px 0 36px",
+            lineHeight: 1.05
+          }}>
+            ALL CAMPS. ONE PLACE.
+          </h2>
+          <div style={{
+            display: "inline-block",
+            borderRadius: 16,
+            overflow: "hidden",
+            boxShadow: "0 0 60px rgba(232,160,32,0.15), 0 20px 60px rgba(0,0,0,0.6)",
+            border: "1px solid rgba(232,160,32,0.25)"
+          }}>
+            <img
+              src={allCampsImg}
+              alt="URecruitHQ - All Camps. One Place. Desktop and mobile platform view"
+              style={{ display: "block", maxWidth: "100%", width: "auto" }}
+            />
+          </div>
+        </div>
+      </section>
 
       {/* ── STATIC STATS BAR ── */}
       <div style={{
@@ -569,14 +595,41 @@ export default function Home() {
       {/* ── DIFFERENTIATORS ── */}
       <DifferentiatorsSection campDisplay={campDisplay} schoolDisplay={schoolDisplay} />
 
-      {/* ── LESS STRESS IMAGE ── */}
-      <div style={{ textAlign: "center", padding: "0 24px", background: "#0a0e1a" }}>
-        <img
-          src={lessStressImg}
-          alt="URecruitHQ before and after - Less stress, smarter planning"
-          style={{ maxWidth: "100%", width: "100%", display: "block" }}
-        />
-      </div>
+      {/* ── LESS STRESS ── */}
+      <section style={{ background: "#0a0e1a", padding: "0 24px 64px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <span style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 15, letterSpacing: 3,
+              color: "#e8a020", textTransform: "uppercase"
+            }}>
+              BEFORE &amp; AFTER
+            </span>
+            <h2 style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: "clamp(32px, 5vw, 52px)",
+              color: "#f9fafb",
+              margin: "8px 0 0",
+              lineHeight: 1.05
+            }}>
+              LESS STRESS. SMARTER PLANNING.
+            </h2>
+          </div>
+          <div style={{
+            borderRadius: 16,
+            overflow: "hidden",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+            border: "1px solid #1f2937"
+          }}>
+            <img
+              src={lessStressImg}
+              alt="URecruitHQ before and after - Less stress, smarter planning"
+              style={{ display: "block", maxWidth: "100%", width: "100%" }}
+            />
+          </div>
+        </div>
+      </section>
 
       {/* ── EMAIL ALERTS ── */}
       <section style={{ background: '#0a0e1a', padding: '80px 24px', borderTop: '1px solid #1f2937' }}>
