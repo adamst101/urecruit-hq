@@ -57,6 +57,19 @@ export default function Checkout() {
         // Add-on flow requires an existing account
         if (isAddonMode && !authenticated) {
           navigate("/Subscribe", { replace: true });
+          return;
+        }
+        // In add-on mode, pre-populate parent info from the primary athlete profile
+        if (isAddonMode && authenticated) {
+          try {
+            const profiles = await base44.entities.AthleteProfile.filter({ is_primary: true });
+            const primary = Array.isArray(profiles) ? profiles[0] : null;
+            if (primary) {
+              if (primary.parent_first_name) setParentFirstName(primary.parent_first_name);
+              if (primary.parent_last_name) setParentLastName(primary.parent_last_name);
+              if (primary.parent_phone) setParentPhone(primary.parent_phone);
+            }
+          } catch {}
         }
       } catch {}
       if (!cancelled) setLoading(false);
@@ -221,10 +234,10 @@ export default function Checkout() {
         // Add-on: pass athlete as athleteTwoName (what the webhook uses for scenario C)
         athleteTwoName: isAddonMode ? (athleteFullName || undefined) : undefined,
         athleteTwoGradYear: isAddonMode ? (gradYear || undefined) : undefined,
-        // Primary: pass individual fields
-        parentFirstName: isAddonMode ? undefined : (parentFirstName.trim() || undefined),
-        parentLastName: isAddonMode ? undefined : (parentLastName.trim() || undefined),
-        parentPhone: isAddonMode ? undefined : (parentPhone.trim() || undefined),
+        // Parent info — sent for both primary and add-on (add-on pre-populated from primary profile)
+        parentFirstName: parentFirstName.trim() || undefined,
+        parentLastName: parentLastName.trim() || undefined,
+        parentPhone: parentPhone.trim() || undefined,
         athleteFirstName: isAddonMode ? undefined : (athleteFirstName.trim() || undefined),
         athleteLastName: isAddonMode ? undefined : (athleteLastName.trim() || undefined),
         gradYear: isAddonMode ? undefined : (gradYear || undefined),
