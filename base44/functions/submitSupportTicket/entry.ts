@@ -82,12 +82,16 @@ Deno.serve(async (req) => {
   </div>
 </div>`;
 
-      await base44.asServiceRole.integrations.Core.SendEmail({
-        to: supportEmail,
-        from_name: "URecruit HQ Support",
-        subject: `[${(type || "support").toUpperCase()}] #${ticketNumber} — ${subject}`,
-        body: adminBody,
-      });
+      try {
+        await base44.asServiceRole.integrations.Core.SendEmail({
+          to: supportEmail,
+          from_name: "URecruit HQ Support",
+          subject: `[${(type || "support").toUpperCase()}] #${ticketNumber} — ${subject}`,
+          body: adminBody,
+        });
+      } catch (emailErr) {
+        console.log("Admin notification email failed (non-fatal):", emailErr.message);
+      }
     }
 
     // Send confirmation to user (non-blocking — may fail for non-app users)

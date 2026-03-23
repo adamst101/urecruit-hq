@@ -1638,7 +1638,7 @@ const JOURNEY_GROUPS = [
                 type: "support",
                 subject: "[HEALTHCHECK] Test Ticket — safe to ignore",
                 description: "Automated health check test. This ticket was created by the AppHealthCheck runner and will be closed immediately.",
-                userEmail: "healthcheck@urecruit.test",
+                userEmail: "healthcheck@example.com",
                 userName: "Health Check",
                 accountType: "admin",
               });
