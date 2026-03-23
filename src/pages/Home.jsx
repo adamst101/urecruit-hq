@@ -478,7 +478,7 @@ export default function Home() {
         {/* Bottom strip — social proof */}
         {/* ── SOCIAL PROOF STRIP — above scroll nudge ── */}
         <div style={{
-          position: "absolute", bottom: 58, left: 0, right: 0,
+          position: "absolute", bottom: 80, left: 0, right: 0,
           textAlign: "center", padding: "12px 24px",
           borderTop: "1px solid rgba(255,255,255,0.07)",
           zIndex: 2, pointerEvents: "none",
