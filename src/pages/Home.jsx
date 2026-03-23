@@ -449,6 +449,8 @@ export default function Home() {
               style={{
                 position: "relative", zIndex: 1,
                 display: "block", width: "100%", height: "auto",
+                WebkitMaskImage: "radial-gradient(ellipse 90% 85% at 50% 50%, black 55%, transparent 90%)",
+                maskImage: "radial-gradient(ellipse 90% 85% at 50% 50%, black 55%, transparent 90%)",
                 animation: "hero-float 5s ease-in-out infinite",
               }}
             />
