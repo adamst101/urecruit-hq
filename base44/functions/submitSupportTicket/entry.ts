@@ -48,9 +48,11 @@ Deno.serve(async (req) => {
 
     await base44.asServiceRole.entities.SupportTicket.create(ticketData);
 
-    // Send notification to support
+    // Send notification to all admins
+    const ADMIN_EMAILS = ["tom.adams101@gmail.com", "sadie_adams@icloud.com"];
     const supportEmail = Deno.env.get("SUPPORT_EMAIL");
-    if (supportEmail) {
+    const recipients = [...ADMIN_EMAILS, ...(supportEmail && !ADMIN_EMAILS.includes(supportEmail) ? [supportEmail] : [])];
+    if (recipients.length > 0) {
       const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Chicago", dateStyle: "medium", timeStyle: "short" });
       const descHtml = String(description).trim().replace(/\n/g, "<br>");
       const ratingHtml = rating ? `<tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Rating</td><td style="padding:8px 12px;color:#111827;">${"★".repeat(rating)}${"☆".repeat(5 - rating)}</td></tr>` : "";
@@ -82,16 +84,16 @@ Deno.serve(async (req) => {
   </div>
 </div>`;
 
-      try {
-        await base44.asServiceRole.integrations.Core.SendEmail({
-          to: supportEmail,
-          from_name: "URecruit HQ Support",
-          subject: `[${(type || "support").toUpperCase()}] #${ticketNumber} — ${subject}`,
-          body: adminBody,
-        });
-      } catch (emailErr) {
-        console.log("Admin notification email failed (non-fatal):", emailErr.message);
-      }
+      await Promise.allSettled(
+        recipients.map(email =>
+          base44.asServiceRole.integrations.Core.SendEmail({
+            to: email,
+            from_name: "URecruit HQ Support",
+            subject: `[${(type || "support").toUpperCase()}] #${ticketNumber} — ${subject}`,
+            body: adminBody,
+          })
+        )
+      );
     }
 
     // Send confirmation to user (non-blocking — may fail for non-app users)
