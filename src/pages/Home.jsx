@@ -321,9 +321,9 @@ export default function Home() {
             zIndex: 1
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 80 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 48 }}>
             {/* Left */}
-            <div style={{ flex: "1 1 55%", minWidth: 0 }}>
+            <div style={{ flex: "1 1 48%", minWidth: 0 }}>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                   <div style={{ width: 3, height: 28, background: "#e8a020", borderRadius: 2 }} />
@@ -403,7 +403,7 @@ export default function Home() {
             <div
               className="hidden md:flex"
               style={{
-                flex: "1 1 45%",
+                flex: "1 1 52%",
                 alignItems: "center",
                 justifyContent: "center",
               }}
