@@ -11,6 +11,38 @@ import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
+function isDuplicate(msg) {
+  const m = msg.toLowerCase();
+  return (
+    m.includes("already registered") ||
+    m.includes("already exists") ||
+    m.includes("already in use") ||
+    m.includes("user already")
+  );
+}
+
+function friendlyAuthError(msg, step) {
+  const m = msg.toLowerCase();
+  if (isDuplicate(m)) return "An account with this email already exists.";
+  if (m.includes("invalid email") || m.includes("incorrect email") || m.includes("valid email")) {
+    return "Please check your email address and try again.";
+  }
+  if (m.includes("password") && (m.includes("weak") || m.includes("short") || m.includes("length"))) {
+    return "Password is too weak. Please use at least 8 characters.";
+  }
+  if (m.includes("rate") || m.includes("too many")) {
+    return "Too many attempts. Please wait a moment and try again.";
+  }
+  if (m.includes("network") || m.includes("fetch") || m.includes("timeout")) {
+    return "Network error. Please check your connection and try again.";
+  }
+  if (step === "login" && (m.includes("invalid") || m.includes("incorrect") || m.includes("credentials"))) {
+    return "Sign-in failed after account creation. Please use Sign In below.";
+  }
+  // Fall back to the raw SDK message so it's at least visible
+  return msg || "Something went wrong. Please try again.";
+}
+
 function validate(email, password, confirm) {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return "Please enter a valid email address.";
@@ -47,39 +79,43 @@ export default function Signup() {
     }
 
     setWorking(true);
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Step 1: create the account
     try {
-      // Step 1: create the account
-      await base44.auth.register({
-        email: email.trim().toLowerCase(),
+      const registerResult = await base44.auth.register({
+        email: normalizedEmail,
         password,
       });
-
-      // Step 2: log in immediately to get a session token
-      const { access_token } = await base44.auth.loginViaEmailPassword(
-        email.trim().toLowerCase(),
-        password
-      );
-
-      // Step 3: hand the token to AuthRedirect (same path base44's hosted
-      // login uses) — it stores the token and routes the user appropriately
-      window.location.assign(
-        `/AuthRedirect?access_token=${encodeURIComponent(access_token)}&source=custom_signup`
-      );
+      // Some SDK versions return an error object instead of throwing
+      const registerErr = registerResult?.error || registerResult?.message;
+      if (registerErr) throw new Error(String(registerErr));
     } catch (err) {
-      const msg = err?.message || err?.error_description || "";
-
-      if (
-        msg.toLowerCase().includes("already registered") ||
-        msg.toLowerCase().includes("already exists") ||
-        msg.toLowerCase().includes("already in use")
-      ) {
-        setExistingAccount(true);
-        setError("An account with this email already exists.");
-      } else {
-        setError(msg || "Something went wrong. Please try again.");
-      }
       setWorking(false);
+      const msg = String(err?.message || err?.error_description || err || "");
+      setError(friendlyAuthError(msg, "register"));
+      if (isDuplicate(msg)) setExistingAccount(true);
+      return;
     }
+
+    // Step 2: log in immediately to get a session token
+    let access_token;
+    try {
+      const loginResult = await base44.auth.loginViaEmailPassword(normalizedEmail, password);
+      access_token = loginResult?.access_token;
+      if (!access_token) throw new Error("No access token returned after sign-in.");
+    } catch (err) {
+      setWorking(false);
+      const msg = String(err?.message || err?.error_description || err || "");
+      // Account was created — sign-in failed for an unexpected reason
+      setError("Account created! " + friendlyAuthError(msg, "login") + " Please use Sign In below.");
+      return;
+    }
+
+    // Step 3: hand the token to AuthRedirect
+    window.location.assign(
+      `/AuthRedirect?access_token=${encodeURIComponent(access_token)}&source=custom_signup`
+    );
   }
 
   function goToLogin() {
