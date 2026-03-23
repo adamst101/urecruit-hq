@@ -14,6 +14,7 @@ import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 import TestimonialsSection from "../components/home/TestimonialsSection.jsx";
 import DifferentiatorsSection from "../components/home/DifferentiatorsSection.jsx";
 import allCampsImg from "../../Images/transparent monitor and phone.png";
+import laptopImg from "../../Images/laptop image.png";
 import lessStressImg from "../../Images/Less Stress.jpg";
 
 const LOGO_URL =
@@ -297,7 +298,7 @@ export default function Home() {
             position: "absolute",
             inset: 0,
             background:
-              "radial-gradient(ellipse 55% 60% at 78% 40%, rgba(232,160,32,0.13) 0%, transparent 70%)",
+              "radial-gradient(ellipse 55% 60% at 78% 40%, rgba(232,160,32,0.08) 0%, transparent 60%), radial-gradient(ellipse 40% 50% at 75% 65%, rgba(99,102,241,0.08) 0%, transparent 70%)",
             pointerEvents: "none"
           }}
         />
@@ -410,32 +411,54 @@ export default function Home() {
               </p>
             </div>
 
-            {/* Right — All Camps platform image (hidden on mobile) */}
+            {/* Right — Laptop image, floating with fade mask (hidden on mobile) */}
             <div
-              className="hidden md:flex"
+              className="hidden md:block"
               style={{
                 flex: "1 1 52%",
-                alignItems: "center",
-                justifyContent: "center",
-                perspective: "1200px",
+                position: "relative",
               }}
             >
+              {/* Blue/purple glow beneath laptop */}
               <div style={{
-                width: "100%",
-                transform: "rotateY(-8deg) rotateX(2deg)",
-                transformStyle: "preserve-3d",
-                transition: "transform 0.4s ease",
-                filter: "drop-shadow(0 24px 48px rgba(0,0,0,0.6)) drop-shadow(0 0 40px rgba(232,160,32,0.15))",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = "rotateY(-4deg) rotateX(1deg)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = "rotateY(-8deg) rotateX(2deg)"; }}
-              >
+                position: "absolute",
+                bottom: "8%",
+                left: "50%",
+                transform: "translateX(-50%)",
+                width: "70%",
+                height: 60,
+                background: "radial-gradient(ellipse at center, rgba(99,102,241,0.45) 0%, rgba(139,92,246,0.2) 50%, transparent 80%)",
+                filter: "blur(18px)",
+                borderRadius: "50%",
+                zIndex: 0,
+                pointerEvents: "none",
+              }} />
+
+              {/* Laptop image with radial mask fade */}
+              <div style={{
+                position: "relative",
+                zIndex: 1,
+                WebkitMaskImage: "radial-gradient(ellipse 88% 85% at 52% 48%, black 40%, transparent 100%)",
+                maskImage: "radial-gradient(ellipse 88% 85% at 52% 48%, black 40%, transparent 100%)",
+              }}>
                 <img
-                  src={allCampsImg}
-                  alt="URecruitHQ - All Camps. One Place. Desktop and mobile platform view"
-                  style={{ display: "block", width: "100%", height: "auto" }}
+                  src={laptopImg}
+                  alt="URecruitHQ camp planning platform on laptop"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    height: "auto",
+                    animation: "hero-float 5s ease-in-out infinite",
+                  }}
                 />
               </div>
+
+              <style>{`
+                @keyframes hero-float {
+                  0%, 100% { transform: translateY(0px); }
+                  50%       { transform: translateY(-10px); }
+                }
+              `}</style>
             </div>
           </div>
         </div>
