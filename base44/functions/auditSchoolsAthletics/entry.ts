@@ -277,6 +277,9 @@ Deno.serve(async (req) => {
     }
 
     const base44 = createClientFromRequest(req);
+    const user = await base44.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
+
     const School = base44?.entities?.School ?? base44?.entities?.Schools;
     if (!School?.filter) return Response.json({ ok: false, error: "School entity not available" });
 

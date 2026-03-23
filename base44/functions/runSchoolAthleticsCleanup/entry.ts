@@ -32,6 +32,8 @@ Deno.serve(async (req) => {
     }
 
     const base44 = createClientFromRequest(req);
+    const user = await base44.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
 
     const res  = await base44.functions.invoke("auditSchoolsAthletics", {
       mode, dryRun, maxRows, sleepMs, startAt,

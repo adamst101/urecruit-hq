@@ -1,6 +1,8 @@
 // functions/fetchFootballCampsUSASchoolList.js
 // v4b: Card-boundary parsing. mode=failed returns only programs where school extraction failed.
 
+import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
+
 const VERSION = "fetchFootballCampsUSASchoolList_v4b";
 
 Deno.serve(async (req) => {
@@ -8,6 +10,10 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return Response.json({ error: "POST only", version: VERSION }, { status: 405 });
   }
+
+  const base44 = createClientFromRequest(req);
+  const user = await base44.auth.me().catch(() => null);
+  if (!user || user.role !== "admin") return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
 
   var body = {};
   try { body = await req.json(); } catch(e) { body = {}; }

@@ -1,3 +1,7 @@
+// NOTE: submitSupportTicket is intentionally unauthenticated.
+// It is the public-facing support form endpoint used by anonymous, free, and paid users.
+// All entity writes use asServiceRole so RLS does not apply.
+// Input is validated (subject, description, email required) to prevent trivial abuse.
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
 Deno.serve(async (req) => {

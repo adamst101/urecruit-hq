@@ -515,6 +515,9 @@ Deno.serve(async (req) => {
     const force        = !!body?.force;
 
     const base44 = createClientFromRequest(req);
+    const user = await base44.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") return json({ ok: false, error: "Forbidden" }, 403);
+
     const School = base44.entities.School;
 
     const startAt = cursor ? Number(cursor) : 0;
