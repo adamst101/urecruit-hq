@@ -21,7 +21,6 @@ function pickEntity(...names) {
 
 // --- Entities (tables) ---
 export const AthleteProfile = pickEntity("AthleteProfile", "AthleteProfiles");
-export const BudgetConstraint = pickEntity("BudgetConstraint", "BudgetConstraints");
 export const Camp = pickEntity("Camp", "Camps");
 export const CampDecisionScore = pickEntity("CampDecisionScore", "CampDecisionScores");
 export const CampDemo = pickEntity("CampDemo", "CampDemos");
