@@ -307,120 +307,123 @@ export default function Home() {
           pointerEvents: "none",
         }} />
 
-        {/* Main two-column row */}
+        {/* Main content */}
         <div style={{
           flex: 1,
           display: "flex",
-          alignItems: "center",
+          flexDirection: "column",
           maxWidth: 1200,
           margin: "0 auto",
-          padding: "64px 32px 48px",
+          padding: "56px 32px 40px",
           width: "100%",
           position: "relative",
           zIndex: 1,
-          gap: 0,
         }}>
-          {/* LEFT — text */}
-          <div style={{ flex: "0 0 44%", minWidth: 0, position: "relative", zIndex: 2 }}>
-            {/* Label badge */}
-            <div style={{
-              display: "inline-flex", alignItems: "center", gap: 8,
-              marginBottom: 22,
-              padding: "5px 14px",
-              border: "1px solid rgba(232,160,32,0.35)",
-              borderRadius: 20,
-              background: "rgba(232,160,32,0.07)",
-            }}>
-              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "#e8a020", textTransform: "uppercase" }}>
-                College Football Camp Planning Platform
-              </span>
-            </div>
-
-            {/* Two-line headline */}
-            <h1 style={{ margin: "0 0 22px", lineHeight: 1 }}>
-              <span style={{
-                display: "block",
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: "clamp(40px, 5vw, 64px)",
-                color: "#f9fafb",
-                letterSpacing: 1,
-                lineHeight: 1.05,
-              }}>
-                THE CAMPS THAT GET ATHLETES EVALUATED.
-              </span>
-              <span style={{
-                display: "block",
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: "clamp(40px, 5vw, 64px)",
-                color: "#e8a020",
-                letterSpacing: 1,
-                lineHeight: 1.05,
-              }}>
-                ALL IN ONE PLACE.
-              </span>
-            </h1>
-
-            {/* Subtext */}
-            <p style={{
-              fontSize: 17,
-              color: "#9ca3af",
-              lineHeight: 1.65,
-              margin: "0 0 28px",
-              maxWidth: 460,
-            }}>
-              Camp dates are scattered across hundreds of school websites.
-              We pull them all together, flag scheduling conflicts, and warn
-              you when back-to-back camps require a flight — so your athlete
-              shows up to every camp that matters.
-            </p>
-
-            {/* CTAs */}
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 28 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <button onClick={handlePricingSignup} style={S.ctaPrimary}>
-                  Get Season Pass{" "}
-                  <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
-                </button>
-                <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>
-                  $49 · one season · one-time payment
-                </span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <button
-                  onClick={handleTryDemo}
-                  style={S.ctaOutline}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
-                >
-                  Try Free Demo
-                </button>
-                <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
-              </div>
-            </div>
-
-            {/* Checkmark bullets */}
-            {[
-              [campDisplay + " Verified", "College Football Camps"],
-              ["Weekly Updates", "from Official School Sites"],
-              ["Trusted by", "Recruiting Families Nationwide"],
-            ].map(([bold, rest]) => (
-              <div key={bold} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <CheckCircle2 style={{ width: 18, height: 18, color: "#e8a020", flexShrink: 0 }} />
-                <span style={{ fontSize: 14, color: "#d1d5db" }}>
-                  <strong style={{ color: "#f9fafb" }}>{bold}</strong> {rest}
-                </span>
-              </div>
-            ))}
-
-            <p style={{ fontSize: 12, color: "#ffffff", fontWeight: 600, marginTop: 18 }}>
-              ⚡ Summer camp season opens March–April. Early registrations fill fast.
-            </p>
-            <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-              No auto-renew · Cancel anytime · Secure checkout via Stripe
-            </p>
+          {/* Label badge */}
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 8,
+            marginBottom: 18,
+            padding: "5px 14px",
+            border: "1px solid rgba(232,160,32,0.35)",
+            borderRadius: 20,
+            background: "rgba(232,160,32,0.07)",
+            alignSelf: "flex-start",
+          }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "#e8a020", textTransform: "uppercase" }}>
+              College Football Camp Planning Platform
+            </span>
           </div>
 
-          {/* RIGHT — monitor + phone mockup (hidden on mobile) */}
+          {/* HEADLINE — spans full container width, one line each */}
+          <h1 style={{ margin: "0 0 36px", lineHeight: 1 }}>
+            <span style={{
+              display: "block",
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: "clamp(36px, 4.8vw, 62px)",
+              color: "#f9fafb",
+              letterSpacing: 1,
+              lineHeight: 1.0,
+              whiteSpace: "nowrap",
+            }}>
+              THE CAMPS THAT GET ATHLETES EVALUATED.
+            </span>
+            <span style={{
+              display: "block",
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: "clamp(36px, 4.8vw, 62px)",
+              color: "#e8a020",
+              letterSpacing: 1,
+              lineHeight: 1.05,
+            }}>
+              ALL IN ONE PLACE.
+            </span>
+          </h1>
+
+          {/* Two-column row: subtext/CTAs left, image right with overlap */}
+          <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+            {/* LEFT — subtext, CTAs, bullets */}
+            <div style={{ flex: "0 0 44%", minWidth: 0, position: "relative", zIndex: 2 }}>
+              {/* Subtext */}
+              <p style={{
+                fontSize: 17,
+                color: "#9ca3af",
+                lineHeight: 1.65,
+                margin: "0 0 28px",
+                maxWidth: 460,
+              }}>
+                Camp dates are scattered across hundreds of school websites.
+                We pull them all together, flag scheduling conflicts, and warn
+                you when back-to-back camps require a flight — so your athlete
+                shows up to every camp that matters.
+              </p>
+
+              {/* CTAs */}
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 28 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <button onClick={handlePricingSignup} style={S.ctaPrimary}>
+                    Get Season Pass{" "}
+                    <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
+                  </button>
+                  <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>
+                    $49 · one season · one-time payment
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <button
+                    onClick={handleTryDemo}
+                    style={S.ctaOutline}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
+                  >
+                    Try Free Demo
+                  </button>
+                  <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
+                </div>
+              </div>
+
+              {/* Checkmark bullets */}
+              {[
+                [campDisplay + " Verified", "College Football Camps"],
+                ["Weekly Updates", "from Official School Sites"],
+                ["Trusted by", "Recruiting Families Nationwide"],
+              ].map(([bold, rest]) => (
+                <div key={bold} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <CheckCircle2 style={{ width: 18, height: 18, color: "#e8a020", flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, color: "#d1d5db" }}>
+                    <strong style={{ color: "#f9fafb" }}>{bold}</strong> {rest}
+                  </span>
+                </div>
+              ))}
+
+              <p style={{ fontSize: 12, color: "#ffffff", fontWeight: 600, marginTop: 18 }}>
+                ⚡ Summer camp season opens March–April. Early registrations fill fast.
+              </p>
+              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                No auto-renew · Cancel anytime · Secure checkout via Stripe
+              </p>
+            </div>
+
+          {/* RIGHT — laptop image (hidden on mobile) */}
           <div
             className="hidden md:block"
             style={{ flex: 1, position: "relative", minHeight: 420, marginLeft: "-18%" }}
@@ -460,7 +463,8 @@ export default function Home() {
               }
             `}</style>
           </div>
-        </div>
+          </div>{/* end two-column row */}
+        </div>{/* end main content */}
 
         {/* Bottom strip — social proof */}
         <div style={{
