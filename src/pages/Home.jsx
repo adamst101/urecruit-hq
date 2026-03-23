@@ -170,10 +170,15 @@ export default function Home() {
         .hero-card-stack { transition: transform 0.3s ease; }
         .hero-card-stack:hover { transform: translateY(-4px); }
         @keyframes bounce-down { 0%,100%{transform:translateY(0)}50%{transform:translateY(8px)} }
-        @media (max-width: 480px) {
+        @media (max-width: 640px) {
+          .nav-right-btns {
+            gap: 8px !important;
+          }
           .nav-right-btns button {
-            font-size: 12px !important;
-            padding: 6px 10px !important;
+            font-size: 13px !important;
+            padding: 10px 16px !important;
+            min-height: 44px !important;
+            border-radius: 8px !important;
           }
         }
 
@@ -255,7 +260,7 @@ export default function Home() {
             )}
           </div>
 
-          <div className="nav-right-btns" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="nav-right-btns" style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {isAuthed && (isMember || isAdmin) ? (
               <>
                 <button onClick={handleContinue} style={S.navBtnAmberText}>
