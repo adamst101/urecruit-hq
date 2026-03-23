@@ -261,10 +261,10 @@ export default function Profile() {
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <button
           type="button"
-          onClick={() => nav("/Account")}
+          onClick={() => nav("/Workspace")}
           className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
         >
-          ← My Account
+          ← HQ
         </button>
         {/* Header */}
         <div className="flex items-center gap-2">
