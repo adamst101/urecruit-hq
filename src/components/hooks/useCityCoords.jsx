@@ -86,6 +86,9 @@ const CITY_COORDS = {
   "denton:TX":[33.21,-97.13],"round rock:TX":[30.51,-97.68],"mcallen:TX":[26.20,-98.23],
   "midland:TX":[31.997,-102.08],"odessa:TX":[31.85,-102.35],"bryan:TX":[30.67,-96.37],
   // Texas suburbs & college towns
+  "magnolia:TX":[30.21,-95.75],"spring:TX":[30.08,-95.42],"cypress:TX":[29.97,-95.70],
+  "katy:TX":[29.79,-95.82],"sugar land:TX":[29.62,-95.63],"pearland:TX":[29.56,-95.29],
+  "league city:TX":[29.51,-95.09],"conroe:TX":[30.31,-95.46],"woodlands:TX":[30.17,-95.51],
   "the colony:TX":[33.10,-96.89],"frisco:TX":[33.15,-96.82],"mckinney:TX":[33.20,-96.64],
   "allen:TX":[33.10,-96.67],"prosper:TX":[33.24,-96.80],"celina:TX":[33.33,-96.78],
   "lewisville:TX":[33.05,-97.06],"flower mound:TX":[33.01,-97.10],"southlake:TX":[32.94,-97.13],
@@ -134,6 +137,13 @@ const CITY_COORDS = {
   "ithaca:NY":[42.44,-76.50],"syracuse:NY":[43.05,-76.15],
   "canton:NY":[44.60,-75.17],"potsdam:NY":[44.67,-74.98]
 };
+
+export function getStateCenter(state) {
+  if (!state) return null;
+  const st = String(state).trim().toUpperCase();
+  const c = STATE_CENTERS[st];
+  return c ? { lat: c[0], lng: c[1] } : null;
+}
 
 export function getCityCoords(city, state) {
   if (!city && !state) return null;

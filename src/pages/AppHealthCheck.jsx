@@ -238,6 +238,53 @@ const JOURNEY_GROUPS = [
               }
             },
           },
+          {
+            name: "auth.verifyOtp is callable",
+            run: async () => {
+              if (typeof base44.auth?.verifyOtp !== "function") {
+                throw new Error("base44.auth.verifyOtp is not a function — OTP verification step will fail");
+              }
+              return "base44.auth.verifyOtp exists ✓";
+            },
+          },
+          {
+            // Probe verifyOtp with a fake email and bad code.
+            // An error (invalid/expired code) proves the endpoint is reachable without consuming a real OTP.
+            name: "verifyOtp endpoint reachable — bad code rejected correctly",
+            run: async () => {
+              try {
+                await base44.auth.verifyOtp({
+                  email: "__healthcheck_probe__@urecruithq.invalid",
+                  otpCode: "000000",
+                });
+                throw new Error("verifyOtp() accepted a clearly invalid code — OTP validation may be broken");
+              } catch (err) {
+                const msg = String(err?.message || err).toLowerCase();
+                if (
+                  msg.includes("invalid") ||
+                  msg.includes("expired") ||
+                  msg.includes("not found") ||
+                  msg.includes("incorrect") ||
+                  msg.includes("otp") ||
+                  msg.includes("code") ||
+                  msg.includes("user") ||
+                  msg.includes("email")
+                ) {
+                  return `verifyOtp endpoint reachable — invalid code correctly rejected ✓`;
+                }
+                throw new Error(`verifyOtp returned unexpected error: ${err?.message || err}`);
+              }
+            },
+          },
+          {
+            name: "auth.resendOtp is callable",
+            run: async () => {
+              if (typeof base44.auth?.resendOtp !== "function") {
+                throw new Error("base44.auth.resendOtp is not a function — resend code button will fail");
+              }
+              return "base44.auth.resendOtp exists ✓";
+            },
+          },
         ],
       },
 

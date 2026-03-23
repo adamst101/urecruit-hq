@@ -1,6 +1,6 @@
 // src/components/hooks/useConflictDetection.jsx
 import { useMemo } from "react";
-import { getCityCoords, haversine } from "./useCityCoords.jsx";
+import { getCityCoords, getStateCenter, haversine } from "./useCityCoords.jsx";
 
 const DRIVE_MAX_MILES = 400;
 const OVERNIGHT_BETWEEN_CAMPS_MILES = 200;
@@ -20,6 +20,11 @@ function daysBetween(d1, d2) {
 }
 
 function campCoords(camp) {
+  // Prefer stored geocoded coordinates from school entity
+  const lat = camp?._school_lat ?? camp?.school_lat ?? null;
+  const lng = camp?._school_lng ?? camp?.school_lng ?? null;
+  if (lat != null && lng != null && lat !== 0 && lng !== 0) return { lat, lng };
+  // Fall back to static city lookup
   const city = camp?.city || camp?.school_city || null;
   const state = camp?.state || camp?.school_state || null;
   return getCityCoords(city, state);
@@ -42,7 +47,8 @@ export function detectConflicts({ camps, homeCity, homeState, homeLat, homeLng, 
     if (homeLat != null && homeLng != null) {
       homeCoords = { lat: homeLat, lng: homeLng };
     } else if (homeCity || homeState) {
-      homeCoords = getCityCoords(homeCity, homeState);
+      // Try exact city lookup first, then state center as approximate fallback
+      homeCoords = getCityCoords(homeCity, homeState) || getStateCenter(homeState);
     }
   }
 
