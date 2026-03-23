@@ -1,18 +1,20 @@
-// TODO: Replace with real testimonials
 import React from "react";
 
-const QUOTES = [
+const SCENARIOS = [
   {
-    text: "We were double-booked for two camps the same weekend before we found URecruit HQ. Now we plan the whole summer in one place.",
-    attr: "— Parent of a 2026 QB prospect, Texas",
+    icon: "📅",
+    heading: "Double-booked two camps the same weekend.",
+    body: "Two different schools, same Saturday. One registration fee wasted, one relationship with a coaching staff awkward. URecruit HQ flags overlaps before you commit.",
   },
   {
-    text: "Finally a site with ONLY college camps. No wading through club showcases and trainer camps to find the real recruiting events.",
-    attr: "— Parent of a 2027 WR prospect, Ohio",
+    icon: "🔍",
+    heading: "Spent hours searching school websites for camp dates.",
+    body: "Every program posts on a different page, in a different format, on a different schedule. Some don't post at all until two weeks out. We pull it all into one list, updated every Monday.",
   },
   {
-    text: "The travel warning saved us from booking a camp in Florida the day after one in Oregon. Worth every penny.",
-    attr: "— Parent of a 2026 OL prospect, Georgia",
+    icon: "✈️",
+    heading: "Almost booked a camp in Florida the day after one in Oregon.",
+    body: "The travel math didn't hit until the credit card was out. URecruit HQ warns you when back-to-back camps require a flight — before you register for the wrong ones.",
   },
 ];
 
@@ -20,27 +22,33 @@ export default function TestimonialsSection() {
   return (
     <section style={{ background: "#f9fafb", padding: "80px 24px" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <h2
-          style={{
+        <div style={{ textAlign: "center", marginBottom: 48 }}>
+          <div style={{
+            display: "inline-block",
             fontFamily: "'Bebas Neue', sans-serif",
-            fontSize: 48,
-            textAlign: "center",
-            marginBottom: 48,
+            fontSize: 15, letterSpacing: 3,
+            color: "#e8a020", textTransform: "uppercase", marginBottom: 12,
+          }}>
+            FOR RECRUITING FAMILIES
+          </div>
+          <h2 style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: "clamp(36px, 5vw, 48px)",
             color: "#0a0e1a",
+            margin: 0,
             letterSpacing: 1,
-          }}
-        >
-          WHAT FAMILIES ARE SAYING
-        </h2>
+            lineHeight: 1.05,
+          }}>
+            SOUND FAMILIAR?
+          </h2>
+        </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: 24,
-          }}
-        >
-          {QUOTES.map((q, i) => (
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          gap: 24,
+        }}>
+          {SCENARIOS.map((s, i) => (
             <div
               key={i}
               style={{
@@ -50,41 +58,28 @@ export default function TestimonialsSection() {
                 padding: 28,
                 display: "flex",
                 flexDirection: "column",
-                gap: 16,
+                gap: 14,
                 boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
               }}
             >
-              <div
-                style={{
-                  fontFamily: "'Bebas Neue', sans-serif",
-                  fontSize: 64,
-                  color: "#e8a020",
-                  lineHeight: 0.6,
-                  opacity: 0.5,
-                }}
-              >
-                "
-              </div>
-              <p
-                style={{
-                  fontSize: 17,
-                  fontStyle: "italic",
-                  color: "#111827",
-                  lineHeight: 1.65,
-                  margin: 0,
-                  flex: 1,
-                }}
-              >
-                "{q.text}"
+              <div style={{ fontSize: 32, lineHeight: 1 }}>{s.icon}</div>
+              <p style={{
+                fontSize: 17,
+                fontWeight: 700,
+                color: "#111827",
+                lineHeight: 1.4,
+                margin: 0,
+              }}>
+                {s.heading}
               </p>
-              <p
-                style={{
-                  fontSize: 14,
-                  color: "#6b7280",
-                  margin: 0,
-                }}
-              >
-                {q.attr}
+              <p style={{
+                fontSize: 15,
+                color: "#6b7280",
+                lineHeight: 1.65,
+                margin: 0,
+                flex: 1,
+              }}>
+                {s.body}
               </p>
             </div>
           ))}
