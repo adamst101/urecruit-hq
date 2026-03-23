@@ -68,6 +68,57 @@ export default function Signup() {
   const [existingAccount, setExistingAccount] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(false);
+
+  async function handleVerify() {
+    if (!otpCode.trim()) { setError("Please enter the verification code."); return; }
+    setWorking(true);
+    setError("");
+
+    // Step 1: verify the OTP
+    try {
+      const result = await base44.auth.verifyOtp({ email: registeredEmail, otpCode: otpCode.trim() });
+      const verifyErr = result?.error;
+      if (verifyErr) throw new Error(String(verifyErr));
+    } catch (err) {
+      setWorking(false);
+      const msg = String(err?.message || err?.error_description || err || "");
+      setError(msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("expired")
+        ? "That code is invalid or expired. Please check it and try again, or request a new code."
+        : (msg || "Verification failed. Please try again."));
+      return;
+    }
+
+    // Step 2: log in now that email is verified
+    let access_token;
+    try {
+      const loginResult = await base44.auth.loginViaEmailPassword(registeredEmail, password);
+      access_token = loginResult?.access_token;
+      if (!access_token) throw new Error("No access token returned.");
+    } catch (err) {
+      setWorking(false);
+      const msg = String(err?.message || err?.error_description || err || "");
+      setError("Email verified! Sign-in failed: " + friendlyAuthError(msg, "login"));
+      return;
+    }
+
+    window.location.assign(
+      `/AuthRedirect?access_token=${encodeURIComponent(access_token)}&source=custom_signup`
+    );
+  }
+
+  async function handleResend() {
+    if (resendCooldown) return;
+    setError("");
+    try {
+      await base44.auth.resendOtp(registeredEmail);
+      setResendCooldown(true);
+      setTimeout(() => setResendCooldown(false), 30000);
+    } catch {
+      setError("Could not resend code. Please try again.");
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -150,26 +201,51 @@ export default function Signup() {
       {/* Card */}
       <div style={CARD}>
         {registered ? (
-          /* ── Verification sent state ── */
+          /* ── OTP verification state ── */
           <>
             <div style={{ textAlign: "center", marginBottom: 24 }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>📬</div>
               <h1 style={{ ...HEADING, fontSize: 28, marginBottom: 8 }}>CHECK YOUR EMAIL</h1>
-              <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
-                We sent a verification link to:
+              <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: 1.6, margin: "0 0 6px" }}>
+                We sent a verification code to:
               </p>
-              <p style={{ color: "#f9fafb", fontWeight: 700, fontSize: 15, margin: "6px 0 16px" }}>
+              <p style={{ color: "#f9fafb", fontWeight: 700, fontSize: 15, margin: "0 0 16px" }}>
                 {registeredEmail}
               </p>
-              <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
-                Click the link in that email to verify your account, then come back here and sign in.
-              </p>
             </div>
-            <button onClick={goToLogin} style={{ ...SUBMIT_BTN, background: "#e8a020" }}>
-              Continue to Sign In
+
+            <label style={LABEL}>Verification code</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={otpCode}
+              onChange={(e) => { setOtpCode(e.target.value); setError(""); }}
+              placeholder="Enter code from email"
+              autoComplete="one-time-code"
+              style={{ ...INPUT, textAlign: "center", letterSpacing: 6, fontSize: 20 }}
+              autoFocus
+            />
+
+            {error && <div style={ERROR_BOX}>{error}</div>}
+
+            <button
+              onClick={handleVerify}
+              disabled={working}
+              style={{ ...SUBMIT_BTN, background: working ? "#92400e" : "#e8a020", marginTop: 20 }}
+            >
+              {working && <Loader2 style={{ width: 18, height: 18, animation: "spin 1s linear infinite" }} />}
+              {working ? "Verifying…" : "Verify & Sign In"}
             </button>
+
             <p style={{ textAlign: "center", marginTop: 16, color: "#6b7280", fontSize: 13 }}>
-              Didn&apos;t get the email? Check your spam folder.
+              Didn&apos;t get the email? Check your spam folder, or{" "}
+              <button
+                onClick={handleResend}
+                disabled={resendCooldown}
+                style={{ background: "none", border: "none", color: resendCooldown ? "#4b5563" : "#e8a020", fontWeight: 700, cursor: resendCooldown ? "default" : "pointer", fontSize: 13, padding: 0 }}
+              >
+                {resendCooldown ? "Code sent" : "resend code"}
+              </button>.
             </p>
           </>
         ) : (
