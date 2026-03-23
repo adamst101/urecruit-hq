@@ -40,6 +40,8 @@ Deno.serve(async (req) => {
   const parentFirstName = session.metadata?.parent_first_name || "";
   const parentLastName = session.metadata?.parent_last_name || "";
   const parentPhone = session.metadata?.parent_phone || "";
+  const homeCity = session.metadata?.home_city || "";
+  const homeState = session.metadata?.home_state || "";
 
   // Resolve access dates from SeasonConfig
   let accessStartsAt = new Date().toISOString();
@@ -92,6 +94,8 @@ Deno.serve(async (req) => {
           active: true,
           sport_id: sportId || null,
           grad_year: parseInt(athlete2GradYear) || null,
+          home_city: homeCity || null,
+          home_state: homeState || null,
           parent_first_name: parentFirstName || null,
           parent_last_name: parentLastName || null,
           parent_phone: parentPhone || null,
@@ -136,11 +140,6 @@ Deno.serve(async (req) => {
   const athleteFirstName = session.metadata?.athlete_first_name || "";
   const athleteLastName = session.metadata?.athlete_last_name || "";
   const gradYear = session.metadata?.grad_year ? parseInt(session.metadata.grad_year) : null;
-  const homeCity = session.metadata?.home_city || "";
-  const homeState = session.metadata?.home_state || "";
-  const parentFirstName = session.metadata?.parent_first_name || "";
-  const parentLastName = session.metadata?.parent_last_name || "";
-  const parentPhone = session.metadata?.parent_phone || "";
 
   // Check if entitlement already exists for this account+season
   const existing = await base44.asServiceRole.entities.Entitlement.filter({
