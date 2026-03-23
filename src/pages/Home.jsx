@@ -14,7 +14,6 @@ import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 import TestimonialsSection from "../components/home/TestimonialsSection.jsx";
 import DifferentiatorsSection from "../components/home/DifferentiatorsSection.jsx";
 import allCampsImg from "../../Images/transparent monitor and phone.png";
-import laptopImg from "../../Images/laptop image.png";
 import lessStressImg from "../../Images/Less Stress.jpg";
 
 const LOGO_URL =
@@ -288,195 +287,196 @@ export default function Home() {
         style={{
           position: "relative",
           display: "flex",
-          alignItems: "center",
-          minHeight: "85vh",
+          flexDirection: "column",
+          minHeight: "88vh",
           overflow: "hidden",
         }}
       >
-        {/* Background effects */}
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "radial-gradient(ellipse 55% 60% at 78% 40%, rgba(232,160,32,0.08) 0%, transparent 60%), radial-gradient(ellipse 40% 50% at 75% 65%, rgba(99,102,241,0.08) 0%, transparent 70%)",
-            pointerEvents: "none"
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            backgroundImage:
-              "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.015) 60px, rgba(255,255,255,0.015) 61px)",
-            pointerEvents: "none"
-          }}
-        />
+        {/* Background: deep navy with blue bloom on right, gold at bottom-right */}
+        <div style={{
+          position: "absolute", inset: 0,
+          background:
+            "radial-gradient(ellipse 65% 75% at 80% 55%, rgba(30,45,120,0.55) 0%, transparent 65%)," +
+            "radial-gradient(ellipse 45% 50% at 70% 85%, rgba(232,160,32,0.12) 0%, transparent 60%)",
+          pointerEvents: "none",
+        }} />
+        <div style={{
+          position: "absolute", inset: 0,
+          backgroundImage:
+            "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.012) 60px, rgba(255,255,255,0.012) 61px)",
+          pointerEvents: "none",
+        }} />
 
-        <div
-          style={{
-            maxWidth: 1100,
-            margin: "0 auto",
-            padding: "48px 24px 60px",
-            width: "100%",
-            position: "relative",
-            zIndex: 1
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 48 }}>
-            {/* Left */}
-            <div style={{ flex: "1 1 48%", minWidth: 0 }}>
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                  <div style={{ width: 3, height: 28, background: "#e8a020", borderRadius: 2 }} />
-                  <span style={{
-                    fontFamily: "'Bebas Neue', sans-serif",
-                    fontSize: 18, letterSpacing: 3,
-                    color: "#e8a020", textTransform: "uppercase",
-                  }}>
-                    THE COLLEGE FOOTBALL CAMP PLANNING PLATFORM
-                  </span>
-                </div>
-                <div style={{ fontSize: 14, color: "#9ca3af", paddingLeft: 13 }}>
-                  100% College Coaching Staffs · Zero Club Camps · All Divisions
-                </div>
-              </div>
+        {/* Main two-column row */}
+        <div style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          maxWidth: 1200,
+          margin: "0 auto",
+          padding: "64px 32px 48px",
+          width: "100%",
+          position: "relative",
+          zIndex: 1,
+          gap: 32,
+        }}>
+          {/* LEFT — text */}
+          <div style={{ flex: "0 0 44%", minWidth: 0 }}>
+            {/* Label badge */}
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              marginBottom: 22,
+              padding: "5px 14px",
+              border: "1px solid rgba(232,160,32,0.35)",
+              borderRadius: 20,
+              background: "rgba(232,160,32,0.07)",
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "#e8a020", textTransform: "uppercase" }}>
+                College Football Camp Planning Platform
+              </span>
+            </div>
 
-              <h1
-                style={{
-                  fontFamily: "'Bebas Neue', sans-serif",
-                  fontSize: "clamp(48px, 7vw, 72px)",
-                  lineHeight: 0.95,
-                  margin: 0,
-                  color: "#f9fafb",
-                  letterSpacing: 1
-                }}
-              >
-                THE CAMPS THAT GET
-                <br />
-                <span style={{ whiteSpace: "nowrap" }}>ATHLETES EVALUATED.</span>
-                <br />
+            {/* Two-line headline */}
+            <h1 style={{ margin: "0 0 22px", lineHeight: 1 }}>
+              <span style={{
+                display: "block",
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: "clamp(40px, 5vw, 64px)",
+                color: "#f9fafb",
+                letterSpacing: 1,
+                lineHeight: 1.05,
+              }}>
+                THE CAMPS THAT GET ATHLETES EVALUATED.
+              </span>
+              <span style={{
+                display: "block",
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: "clamp(40px, 5vw, 64px)",
+                color: "#e8a020",
+                letterSpacing: 1,
+                lineHeight: 1.05,
+              }}>
                 ALL IN ONE PLACE.
-              </h1>
+              </span>
+            </h1>
 
-              <p
-                style={{
-                  fontSize: 20,
-                  color: "#9ca3af",
-                  lineHeight: 1.6,
-                  marginTop: 24,
-                  maxWidth: 540
-                }}
-              >
-                Camp dates are scattered across hundreds of school websites.
-                We pull them all together, flag scheduling conflicts, and warn
-                you when back-to-back camps require a flight — so your athlete
-                shows up to every camp that matters.
-              </p>
+            {/* Subtext */}
+            <p style={{
+              fontSize: 17,
+              color: "#9ca3af",
+              lineHeight: 1.65,
+              margin: "0 0 28px",
+              maxWidth: 460,
+            }}>
+              Camp dates are scattered across hundreds of school websites.
+              We pull them all together, flag scheduling conflicts, and warn
+              you when back-to-back camps require a flight — so your athlete
+              shows up to every camp that matters.
+            </p>
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: 14,
-                  marginTop: 32,
-                  flexWrap: "wrap"
-                }}
-              >
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <button onClick={handlePricingSignup} style={S.ctaPrimary}>
-                    Get Season Pass{" "}
-                    <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
-                  </button>
-                  <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>
-                    $49 · one season · one-time payment
-                  </span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <button
-                    onClick={handleTryDemo}
-                    style={S.ctaOutline}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
-                  >
-                    Try Free Demo
-                  </button>
-                  <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
-                </div>
+            {/* CTAs */}
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 28 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <button onClick={handlePricingSignup} style={S.ctaPrimary}>
+                  Get Season Pass{" "}
+                  <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
+                </button>
+                <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>
+                  $49 · one season · one-time payment
+                </span>
               </div>
-
-              <p style={{ fontSize: 12, color: "#ffffffff", fontWeight: 600, marginTop: 14 }}>
-                ⚡ Summer camp season opens March–April. Early registrations fill fast.
-              </p>
-              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
-                No auto-renew · Cancel anytime · Secure checkout via Stripe
-              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <button
+                  onClick={handleTryDemo}
+                  style={S.ctaOutline}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
+                >
+                  Try Free Demo
+                </button>
+                <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
+              </div>
             </div>
 
-            {/* Right — Laptop image, blended into background (hidden on mobile) */}
-            <div
-              className="hidden md:block"
+            {/* Checkmark bullets */}
+            {[
+              [campDisplay + " Verified", "College Football Camps"],
+              ["Weekly Updates", "from Official School Sites"],
+              ["Trusted by", "Recruiting Families Nationwide"],
+            ].map(([bold, rest]) => (
+              <div key={bold} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <CheckCircle2 style={{ width: 18, height: 18, color: "#e8a020", flexShrink: 0 }} />
+                <span style={{ fontSize: 14, color: "#d1d5db" }}>
+                  <strong style={{ color: "#f9fafb" }}>{bold}</strong> {rest}
+                </span>
+              </div>
+            ))}
+
+            <p style={{ fontSize: 12, color: "#ffffff", fontWeight: 600, marginTop: 18 }}>
+              ⚡ Summer camp season opens March–April. Early registrations fill fast.
+            </p>
+            <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+              No auto-renew · Cancel anytime · Secure checkout via Stripe
+            </p>
+          </div>
+
+          {/* RIGHT — monitor + phone mockup (hidden on mobile) */}
+          <div
+            className="hidden md:block"
+            style={{ flex: 1, position: "relative", minHeight: 420 }}
+          >
+            {/* Gold glow at bottom of image */}
+            <div style={{
+              position: "absolute", bottom: "-8%", left: "5%",
+              width: "90%", height: "40%",
+              background: "radial-gradient(ellipse, rgba(232,160,32,0.25) 0%, transparent 65%)",
+              filter: "blur(30px)", zIndex: 0, pointerEvents: "none",
+            }} />
+            {/* Blue/indigo glow center */}
+            <div style={{
+              position: "absolute", top: "10%", left: "0%",
+              width: "100%", height: "75%",
+              background: "radial-gradient(ellipse, rgba(59,82,255,0.22) 0%, rgba(99,102,241,0.1) 45%, transparent 70%)",
+              filter: "blur(28px)", zIndex: 0, pointerEvents: "none",
+            }} />
+
+            <img
+              src={allCampsImg}
+              alt="URecruitHQ camp planning platform on desktop and mobile"
               style={{
-                flex: "0 0 60%",
-                position: "relative",
-                marginRight: "-100px",
+                position: "relative", zIndex: 1,
+                display: "block", width: "100%", height: "auto",
+                WebkitMaskImage: "radial-gradient(ellipse 85% 82% at 50% 50%, black 35%, transparent 72%)",
+                maskImage: "radial-gradient(ellipse 85% 82% at 50% 50%, black 35%, transparent 72%)",
+                mixBlendMode: "lighten",
+                animation: "hero-float 5s ease-in-out infinite",
               }}
-            >
-              {/* Primary glow — large blue/indigo bloom */}
-              <div style={{
-                position: "absolute",
-                bottom: "-10%",
-                left: "5%",
-                width: "90%",
-                height: "50%",
-                background: "radial-gradient(ellipse, rgba(99,102,241,0.45) 0%, rgba(59,82,255,0.2) 40%, transparent 70%)",
-                filter: "blur(32px)",
-                zIndex: 0,
-                pointerEvents: "none",
-              }} />
-              {/* Secondary glow — purple accent behind center */}
-              <div style={{
-                position: "absolute",
-                top: "20%",
-                left: "15%",
-                width: "70%",
-                height: "60%",
-                background: "radial-gradient(ellipse, rgba(139,92,246,0.2) 0%, transparent 65%)",
-                filter: "blur(24px)",
-                zIndex: 0,
-                pointerEvents: "none",
-              }} />
+            />
 
-              {/* Laptop image — aggressive edge dissolve + lighten blend */}
-              <img
-                src={laptopImg}
-                alt="URecruitHQ camp planning platform on laptop"
-                style={{
-                  position: "relative",
-                  zIndex: 1,
-                  display: "block",
-                  width: "115%",
-                  height: "auto",
-                  WebkitMaskImage: "radial-gradient(ellipse 75% 70% at 60% 50%, black 30%, transparent 72%)",
-                  maskImage: "radial-gradient(ellipse 75% 70% at 60% 50%, black 30%, transparent 72%)",
-                  mixBlendMode: "lighten",
-                  opacity: 0.95,
-                  animation: "hero-float 5s ease-in-out infinite",
-                }}
-              />
-
-              <style>{`
-                @keyframes hero-float {
-                  0%, 100% { transform: translateY(0px); }
-                  50%       { transform: translateY(-10px); }
-                }
-              `}</style>
-            </div>
+            <style>{`
+              @keyframes hero-float {
+                0%, 100% { transform: translateY(0px); }
+                50%       { transform: translateY(-10px); }
+              }
+            `}</style>
           </div>
         </div>
 
-        {/* ── SCROLL NUDGE — inside hero, anchored to bottom ── */}
+        {/* Bottom strip — social proof */}
         <div style={{
-          position: "absolute", bottom: 20, left: "50%", transform: "translateX(-50%)",
+          width: "100%", textAlign: "center",
+          padding: "14px 24px",
+          borderTop: "1px solid rgba(255,255,255,0.07)",
+          position: "relative", zIndex: 1,
+        }}>
+          <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
+            100%&nbsp;<em style={{ fontStyle: "italic", color: "#9ca3af" }}>College</em>&nbsp;Coaching Staffs &nbsp;·&nbsp; Zero Club Camps &nbsp;·&nbsp; All Divisions
+          </p>
+        </div>
+
+        {/* ── SCROLL NUDGE ── */}
+        <div style={{
+          position: "absolute", bottom: 46, left: "50%", transform: "translateX(-50%)",
           display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
           zIndex: 5, pointerEvents: "none",
         }}>
