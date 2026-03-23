@@ -655,6 +655,125 @@ const JOURNEY_GROUPS = [
       },
 
       {
+        id: "campintent_permissions",
+        name: "CampIntent Entity Permissions",
+        icon: "🔒",
+        description: "Verifies CampIntent is readable and writable by all authenticated users — not just admins. Catches broken entity permission rules that admin-bypass would otherwise mask. After any base44 entity restriction change, this journey must also be verified manually with a subscriber (non-admin) account.",
+        steps: [
+          {
+            name: "CampIntent.filter({}) readable — no permission error",
+            run: async (ctx) => {
+              let rows;
+              try {
+                rows = await base44.entities.CampIntent.filter({});
+              } catch (err) {
+                throw new Error(`CampIntent read blocked: ${err?.message || err} — check entity Read permission in base44 admin`);
+              }
+              if (!Array.isArray(rows)) throw new Error("CampIntent.filter() returned non-array — entity may be misconfigured");
+              ctx.existingCount = rows.length;
+              return `Read OK — ${rows.length} existing records visible`;
+            },
+          },
+          {
+            name: "Resolve admin account_id for write probe",
+            run: async (ctx) => {
+              const me = await base44.auth.me();
+              if (!me?.id) throw new Error("auth.me() returned no id");
+              ctx.probeAccountId = me.id;
+              return `account_id = ${me.id}`;
+            },
+          },
+          {
+            name: "Find a camp for probe",
+            run: async (ctx) => {
+              const camps = await base44.entities.Camp.filter({ active: true });
+              if (!Array.isArray(camps) || camps.length === 0) throw new Error("No active camps to use for probe");
+              ctx.probeCamp = camps[0];
+              return `Using camp: "${camps[0].camp_name}"`;
+            },
+          },
+          {
+            name: "Create probe AthleteProfile",
+            run: async (ctx) => {
+              const profile = await base44.entities.AthleteProfile.create({
+                account_id: ctx.probeAccountId,
+                first_name: "__hc_perm_probe__", last_name: "__test__",
+                athlete_name: "__hc_perm_probe__ __test__",
+                active: true, sport_id: "test", grad_year: 2099,
+              });
+              if (!profile?.id) throw new Error("AthleteProfile.create returned no id");
+              ctx.probeAthleteId = profile.id;
+              return `Probe athlete id = ${profile.id}`;
+            },
+          },
+          {
+            name: "CampIntent.create — mirrors exact app payload (account_id + athlete_id required)",
+            run: async (ctx) => {
+              let intent;
+              try {
+                intent = await base44.entities.CampIntent.create({
+                  camp_id: ctx.probeCamp.id,
+                  athlete_id: ctx.probeAthleteId,
+                  account_id: ctx.probeAccountId,
+                  status: "favorite",
+                });
+              } catch (err) {
+                throw new Error(`CampIntent create blocked: ${err?.message || err} — check entity Create permission in base44 admin`);
+              }
+              if (!intent?.id) throw new Error("Create returned no id");
+              ctx.probeIntentId = intent.id;
+              return `Created id = ${intent.id}`;
+            },
+          },
+          {
+            name: "CampIntent.filter by athlete_id — mirrors Discover / Calendar / MyCamps query",
+            run: async (ctx) => {
+              let rows;
+              try {
+                rows = await base44.entities.CampIntent.filter({ athlete_id: ctx.probeAthleteId });
+              } catch (err) {
+                throw new Error(`CampIntent read by athlete_id blocked: ${err?.message || err} — check entity Read permission in base44 admin`);
+              }
+              const found = (rows || []).find(r => r.id === ctx.probeIntentId);
+              if (!found) throw new Error("Probe record not found via athlete_id filter — Read permission may be filtering it out");
+              return `Record visible via athlete_id filter ✓`;
+            },
+          },
+          {
+            name: "CampIntent.update — mirrors unfavorite / register actions",
+            run: async (ctx) => {
+              let updated;
+              try {
+                updated = await base44.entities.CampIntent.update(ctx.probeIntentId, { status: "registered" });
+              } catch (err) {
+                throw new Error(`CampIntent update blocked: ${err?.message || err} — check entity Update permission in base44 admin`);
+              }
+              if (!updated) throw new Error("Update returned null");
+              return `Update OK — status set to registered`;
+            },
+          },
+          {
+            name: "Cleanup probe records",
+            run: async (ctx) => {
+              if (ctx.probeIntentId) await base44.entities.CampIntent.delete(ctx.probeIntentId).catch(() => {});
+              if (ctx.probeAthleteId) await base44.entities.AthleteProfile.delete(ctx.probeAthleteId).catch(() => {});
+              return "Probe records deleted";
+            },
+          },
+          {
+            name: "⚠️ Admin-bypass gap — manually verify with a subscriber account after any permission change",
+            run: async () => {
+              return "This journey runs as admin. If a permission rule has an admin bypass, it will pass here even if regular users are blocked. After any base44 entity restriction change on CampIntent, sign in as a non-admin subscriber and confirm favorites/registered still persist in Discover, Calendar, and MyCamps.";
+            },
+          },
+        ],
+        cleanup: async (ctx) => {
+          try { if (ctx.probeIntentId) await base44.entities.CampIntent.delete(ctx.probeIntentId); } catch {}
+          try { if (ctx.probeAthleteId) await base44.entities.AthleteProfile.delete(ctx.probeAthleteId); } catch {}
+        },
+      },
+
+      {
         id: "subscriber_data_integrity",
         name: "Subscriber — Data Integrity Check",
         icon: "🔗",
