@@ -46,6 +46,10 @@ async function createOrUpdateEntitlement(base44, {
   return created;
 }
 
+// NOTE: stripeWebhook is intentionally unauthenticated — Stripe cannot send user auth tokens.
+// Security is enforced via Stripe webhook signature verification (STRIPE_WEBHOOK_SECRET).
+// createClientFromRequest does NOT consume the body stream, so req.text() below still
+// reads the raw body intact for signature validation.
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 

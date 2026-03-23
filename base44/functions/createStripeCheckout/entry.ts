@@ -32,6 +32,10 @@ Deno.serve(async (req) => {
     getActiveSeason(base44),
   ]);
 
+  if (!user?.id) {
+    return Response.json({ ok: false, error: "Authentication required" }, { status: 401 });
+  }
+
   if (!season) {
     return Response.json({ ok: false, error: "No active season configured. Please contact support." });
   }

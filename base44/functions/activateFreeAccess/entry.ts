@@ -22,13 +22,13 @@ async function getActiveSeason(base44) {
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  let user = null;
-  try {
-    user = await base44.auth.me();
-  } catch {}
+  const user = await base44.auth.me().catch(() => null);
+  if (!user?.id) {
+    return Response.json({ ok: false, error: "Authentication required" }, { status: 401 });
+  }
 
   const {
-    promoCode, athleteId, userEmail, accountId,
+    promoCode, athleteId, userEmail,
     isAddOn,
     athleteFirstName, athleteLastName, gradYear, sportId,
     homeCity, homeState,
@@ -74,12 +74,9 @@ Deno.serve(async (req) => {
   }
 
   const soldSeason = season.season_year;
-  const resolvedAccountId = accountId || user?.id || "";
+  // Always derive account from the authenticated session — never trust body-supplied accountId.
+  const resolvedAccountId = user.id;
   const resolvedEmail = userEmail || user?.email || "";
-
-  if (!resolvedAccountId) {
-    return Response.json({ ok: false, error: "You must be logged in to activate free access" }, { status: 401 });
-  }
 
   console.log("activateFreeAccess params — account:", resolvedAccountId, "isAddOn:", !!isAddOn, "athleteFirstName:", athleteFirstName || "(none)");
 
