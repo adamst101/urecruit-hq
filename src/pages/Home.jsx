@@ -13,7 +13,7 @@ import { getDemoDefaults, setDemoMode, clearDemoMode } from "../components/hooks
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 import TestimonialsSection from "../components/home/TestimonialsSection.jsx";
 import DifferentiatorsSection from "../components/home/DifferentiatorsSection.jsx";
-import allCampsImg from "../../Images/All Camps.jpg";
+import allCampsImg from "../../Images/transparent monitor and phone.png";
 import lessStressImg from "../../Images/Less Stress.jpg";
 
 const LOGO_URL =
@@ -421,14 +421,11 @@ export default function Home() {
               }}
             >
               <div style={{
-                borderRadius: 16,
-                overflow: "hidden",
-                boxShadow: "0 0 60px rgba(232,160,32,0.18), 0 32px 80px rgba(0,0,0,0.8), -12px 12px 40px rgba(0,0,0,0.5)",
-                border: "1px solid rgba(232,160,32,0.25)",
                 width: "100%",
                 transform: "rotateY(-8deg) rotateX(2deg)",
                 transformStyle: "preserve-3d",
                 transition: "transform 0.4s ease",
+                filter: "drop-shadow(0 24px 48px rgba(0,0,0,0.6)) drop-shadow(0 0 40px rgba(232,160,32,0.15))",
               }}
               onMouseEnter={(e) => { e.currentTarget.style.transform = "rotateY(-4deg) rotateX(1deg)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.transform = "rotateY(-8deg) rotateX(2deg)"; }}
