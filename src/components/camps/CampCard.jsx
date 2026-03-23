@@ -66,7 +66,7 @@ export default function CampCard({
 
   // Card border/background color based on status
   const borderLeftColor = isRegistered ? "#10b981" : isFavorite ? "#e8a020" : "#1f2937";
-  const cardBg = isRegistered ? "#052e16" : isFavorite ? "#1c1003" : "#111827";
+  const cardBg = isRegistered ? "#052e16" : "#111827";
 
   return (
     <div

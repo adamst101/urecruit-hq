@@ -193,7 +193,7 @@ export default function SchoolGroupCard({
             const priceLabel = typeof camp.price === "number" && camp.price > 0 ? `$${camp.price}` : null;
             const campWarnings = getWarningsForCamp ? getWarningsForCamp(campId) : [];
 
-            const rowBg = isReg ? "#052e16" : isFav ? "#1c1003" : (idx % 2 === 1 ? "rgba(15,23,42,0.4)" : "transparent");
+            const rowBg = isReg ? "#052e16" : (idx % 2 === 1 ? "rgba(15,23,42,0.4)" : "transparent");
             const rowBorder = isReg ? "#10b981" : isFav ? "#e8a020" : "transparent";
 
             return (
