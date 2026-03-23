@@ -132,6 +132,8 @@ export default function Calendar() {
     return season?.seasonYear;
   }, [forceDemo, url.seasonYear, season?.seasonYear]);
 
+  const isAdmin = season?.role === "admin";
+
   const athleteId = useMemo(() => {
     if (!isPaid) return null;
     const id = athleteProfile?.id ?? athleteProfile?._id ?? athleteProfile?.uuid ?? null;
@@ -241,7 +243,8 @@ export default function Calendar() {
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId || undefined,
     sportId: nf?.sportId || undefined,
-    enabled: !season.isLoading && isPaid && !!athleteId,
+    adminMode: isAdmin && !athleteId,
+    enabled: !season.isLoading && isPaid && (!!athleteId || (isAdmin && !athleteId)),
   });
 
   const demoQuery = useDemoCampSummaries({

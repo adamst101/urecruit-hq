@@ -167,14 +167,15 @@ export function useCampSummariesClient({
   sportId,
   limit = 500,
   includeAllCampsForSport = false,
+  adminMode = false,
   enabled = true,
 } = {}) {
   const aId = clean(athleteId);
   const sId = clean(sportId);
 
   return useQuery({
-    queryKey: ["myCampsSummaries_client", aId || null, sId || null],
-    enabled: Boolean(aId) && Boolean(enabled),
+    queryKey: ["myCampsSummaries_client", aId || null, sId || null, adminMode || false],
+    enabled: Boolean(enabled) && (adminMode || Boolean(aId)),
 
     retry: (count, err) => {
       if (isRateLimitError(err)) return count < 2;
@@ -189,31 +190,33 @@ export function useCampSummariesClient({
 
       if (!CampEntity?.filter || !IntentEntity?.filter) return [];
 
-      // 1) Load intents
-      const intentsRaw = await Promise.allSettled([
-        safeFilter(IntentEntity, { athlete_id: String(aId) }, undefined, undefined, { retries: 2, baseDelayMs: 250 }),
-      ]);
-
-      const intents = intentsRaw[0].status === "fulfilled" && Array.isArray(intentsRaw[0].value) ? intentsRaw[0].value : [];
-
+      // 1) Load intents — skipped for admin (no athlete profile)
       const intentByKey = new Map();
       const interestedKeys = [];
-      for (const i of intents) {
-        const rawKey = i?.camp_id;
-        if (!rawKey) continue;
-        const key = String(rawKey);
-        intentByKey.set(key, i);
+      if (aId) {
+        const intentsRaw = await Promise.allSettled([
+          safeFilter(IntentEntity, { athlete_id: String(aId) }, undefined, undefined, { retries: 2, baseDelayMs: 250 }),
+        ]);
 
-        const st = String(i?.status || "").toLowerCase();
-        if (st === "favorite" || st === "registered" || st === "completed") interestedKeys.push(key);
+        const intents = intentsRaw[0].status === "fulfilled" && Array.isArray(intentsRaw[0].value) ? intentsRaw[0].value : [];
+
+        for (const i of intents) {
+          const rawKey = i?.camp_id;
+          if (!rawKey) continue;
+          const key = String(rawKey);
+          intentByKey.set(key, i);
+
+          const st = String(i?.status || "").toLowerCase();
+          if (st === "favorite" || st === "registered" || st === "completed") interestedKeys.push(key);
+        }
       }
 
-      if (!includeAllCampsForSport && interestedKeys.length === 0) return [];
+      if (!includeAllCampsForSport && !adminMode && interestedKeys.length === 0) return [];
 
       // 2) Fetch camps. IMPORTANT: do not let one strategy failure zero the results.
       let camps = [];
 
-      if (includeAllCampsForSport) {
+      if (includeAllCampsForSport || adminMode) {
         const where = {};
         if (sId) where.sport_id = String(sId);
         try {

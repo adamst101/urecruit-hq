@@ -56,6 +56,7 @@ export default function MyCamps() {
   const dm = readDemoMode();
   const isPaid = season?.mode === "paid";
   const isDemoMode = !isPaid;
+  const isAdmin = season?.role === "admin";
 
   const { allCamps: allAthletesCamps, athletes: allAthletes } = useAllAthletesCamps({ enabled: isPaid });
   const seasonYear = Number(dm?.seasonYear || season?.seasonYear || season?.currentYear || new Date().getFullYear());
@@ -73,7 +74,8 @@ export default function MyCamps() {
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId ? String(athleteId) : undefined,
     sportId: sportId ? String(sportId) : "",
-    enabled: !season.isLoading && !isDemoMode && !!athleteId,
+    adminMode: isAdmin && !athleteId,
+    enabled: !season.isLoading && !isDemoMode && (!!athleteId || (isAdmin && !athleteId)),
   });
 
   const demoQuery = useDemoCampSummaries({
