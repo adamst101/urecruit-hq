@@ -318,7 +318,7 @@ export default function Home() {
           width: "100%",
           position: "relative",
           zIndex: 1,
-          gap: 32,
+          gap: 0,
         }}>
           {/* LEFT — text */}
           <div style={{ flex: "0 0 44%", minWidth: 0 }}>
