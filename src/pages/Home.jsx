@@ -14,6 +14,7 @@ import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 import TestimonialsSection from "../components/home/TestimonialsSection.jsx";
 import DifferentiatorsSection from "../components/home/DifferentiatorsSection.jsx";
 import allCampsImg from "../../Images/transparent monitor and phone.png";
+import laptopImg from "../../Images/laptop image.png";
 import lessStressImg from "../../Images/Less Stress.jpg";
 
 const LOGO_URL =
@@ -72,7 +73,6 @@ export default function Home() {
   const campRaw = campCount || 750;
   const schoolRaw = schoolCount || 250;
 
-  // ?preview=anon forces anonymous UI for testing
   const previewAnon = useMemo(() => {
     try {
       return new URLSearchParams(loc?.search || "").get("preview") === "anon";
@@ -287,196 +287,203 @@ export default function Home() {
         style={{
           position: "relative",
           display: "flex",
-          flexDirection: "column",
-          minHeight: "88vh",
+          alignItems: "center",
+          minHeight: "85vh",
           overflow: "hidden",
         }}
       >
-        {/* Background: deep navy with blue bloom on right, gold at bottom-right */}
-        <div style={{
-          position: "absolute", inset: 0,
-          background:
-            "radial-gradient(ellipse 65% 75% at 80% 55%, rgba(30,45,120,0.55) 0%, transparent 65%)," +
-            "radial-gradient(ellipse 45% 50% at 70% 85%, rgba(232,160,32,0.12) 0%, transparent 60%)",
-          pointerEvents: "none",
-        }} />
-        <div style={{
-          position: "absolute", inset: 0,
-          backgroundImage:
-            "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.012) 60px, rgba(255,255,255,0.012) 61px)",
-          pointerEvents: "none",
-        }} />
+        {/* Background effects */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(ellipse 55% 60% at 78% 40%, rgba(232,160,32,0.08) 0%, transparent 60%), radial-gradient(ellipse 40% 50% at 75% 65%, rgba(99,102,241,0.08) 0%, transparent 70%)",
+            pointerEvents: "none"
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundImage:
+              "repeating-linear-gradient(45deg, transparent, transparent 60px, rgba(255,255,255,0.015) 60px, rgba(255,255,255,0.015) 61px)",
+            pointerEvents: "none"
+          }}
+        />
 
-        {/* Main two-column row */}
-        <div style={{
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          maxWidth: 1200,
-          margin: "0 auto",
-          padding: "64px 32px 48px",
-          width: "100%",
-          position: "relative",
-          zIndex: 1,
-          gap: 32,
-        }}>
-          {/* LEFT — text */}
-          <div style={{ flex: "0 0 44%", minWidth: 0 }}>
-            {/* Label badge */}
-            <div style={{
-              display: "inline-flex", alignItems: "center", gap: 8,
-              marginBottom: 22,
-              padding: "5px 14px",
-              border: "1px solid rgba(232,160,32,0.35)",
-              borderRadius: 20,
-              background: "rgba(232,160,32,0.07)",
-            }}>
-              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "#e8a020", textTransform: "uppercase" }}>
-                College Football Camp Planning Platform
-              </span>
-            </div>
+        <div
+          style={{
+            maxWidth: 1100,
+            margin: "0 auto",
+            padding: "48px 24px 60px",
+            width: "100%",
+            position: "relative",
+            zIndex: 1,
+            overflow: "visible",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 48 }}>
+            {/* Left */}
+            <div style={{ flex: "1 1 48%", minWidth: 0 }}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <div style={{ width: 3, height: 28, background: "#e8a020", borderRadius: 2 }} />
+                  <span style={{
+                    fontFamily: "'Bebas Neue', sans-serif",
+                    fontSize: 18, letterSpacing: 3,
+                    color: "#e8a020", textTransform: "uppercase",
+                  }}>
+                    THE COLLEGE FOOTBALL CAMP PLANNING PLATFORM
+                  </span>
+                </div>
+                <div style={{ fontSize: 14, color: "#9ca3af", paddingLeft: 13 }}>
+                  100% College Coaching Staffs · Zero Club Camps · All Divisions
+                </div>
+              </div>
 
-            {/* Two-line headline */}
-            <h1 style={{ margin: "0 0 22px", lineHeight: 1 }}>
-              <span style={{
-                display: "block",
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: "clamp(40px, 5vw, 64px)",
-                color: "#f9fafb",
-                letterSpacing: 1,
-                lineHeight: 1.05,
-              }}>
-                THE CAMPS THAT GET ATHLETES EVALUATED.
-              </span>
-              <span style={{
-                display: "block",
-                fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: "clamp(40px, 5vw, 64px)",
-                color: "#e8a020",
-                letterSpacing: 1,
-                lineHeight: 1.05,
-              }}>
+              <h1
+                style={{
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: "clamp(48px, 7vw, 72px)",
+                  lineHeight: 0.95,
+                  margin: 0,
+                  color: "#f9fafb",
+                  letterSpacing: 1
+                }}
+              >
+                THE CAMPS THAT GET
+                <br />
+                <span style={{ whiteSpace: "nowrap" }}>ATHLETES EVALUATED.</span>
+                <br />
                 ALL IN ONE PLACE.
-              </span>
-            </h1>
+              </h1>
 
-            {/* Subtext */}
-            <p style={{
-              fontSize: 17,
-              color: "#9ca3af",
-              lineHeight: 1.65,
-              margin: "0 0 28px",
-              maxWidth: 460,
-            }}>
-              Camp dates are scattered across hundreds of school websites.
-              We pull them all together, flag scheduling conflicts, and warn
-              you when back-to-back camps require a flight — so your athlete
-              shows up to every camp that matters.
-            </p>
+              <p
+                style={{
+                  fontSize: 20,
+                  color: "#9ca3af",
+                  lineHeight: 1.6,
+                  marginTop: 24,
+                  maxWidth: 540
+                }}
+              >
+                Camp dates are scattered across hundreds of school websites.
+                We pull them all together, flag scheduling conflicts, and warn
+                you when back-to-back camps require a flight — so your athlete
+                shows up to every camp that matters.
+              </p>
 
-            {/* CTAs */}
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 28 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <button onClick={handlePricingSignup} style={S.ctaPrimary}>
-                  Get Season Pass{" "}
-                  <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
-                </button>
-                <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>
-                  $49 · one season · one-time payment
-                </span>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 14,
+                  marginTop: 32,
+                  flexWrap: "wrap"
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <button onClick={handlePricingSignup} style={S.ctaPrimary}>
+                    Get Season Pass{" "}
+                    <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
+                  </button>
+                  <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>
+                    $49 · one season · one-time payment
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <button
+                    onClick={handleTryDemo}
+                    style={S.ctaOutline}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
+                  >
+                    Try Free Demo
+                  </button>
+                  <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
+                </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <button
-                  onClick={handleTryDemo}
-                  style={S.ctaOutline}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
-                >
-                  Try Free Demo
-                </button>
-                <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
-              </div>
+
+              <p style={{ fontSize: 12, color: "#ffffffff", fontWeight: 600, marginTop: 14 }}>
+                ⚡ Summer camp season opens March–April. Early registrations fill fast.
+              </p>
+              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
+                No auto-renew · Cancel anytime · Secure checkout via Stripe
+              </p>
             </div>
 
-            {/* Checkmark bullets */}
-            {[
-              [campDisplay + " Verified", "College Football Camps"],
-              ["Weekly Updates", "from Official School Sites"],
-              ["Trusted by", "Recruiting Families Nationwide"],
-            ].map(([bold, rest]) => (
-              <div key={bold} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <CheckCircle2 style={{ width: 18, height: 18, color: "#e8a020", flexShrink: 0 }} />
-                <span style={{ fontSize: 14, color: "#d1d5db" }}>
-                  <strong style={{ color: "#f9fafb" }}>{bold}</strong> {rest}
-                </span>
-              </div>
-            ))}
-
-            <p style={{ fontSize: 12, color: "#ffffff", fontWeight: 600, marginTop: 18 }}>
-              ⚡ Summer camp season opens March–April. Early registrations fill fast.
-            </p>
-            <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-              No auto-renew · Cancel anytime · Secure checkout via Stripe
-            </p>
-          </div>
-
-          {/* RIGHT — monitor + phone mockup (hidden on mobile) */}
-          <div
-            className="hidden md:block"
-            style={{ flex: 1, position: "relative", minHeight: 420 }}
-          >
-            {/* Gold glow at bottom of image */}
-            <div style={{
-              position: "absolute", bottom: "-8%", left: "5%",
-              width: "90%", height: "40%",
-              background: "radial-gradient(ellipse, rgba(232,160,32,0.25) 0%, transparent 65%)",
-              filter: "blur(30px)", zIndex: 0, pointerEvents: "none",
-            }} />
-            {/* Blue/indigo glow center */}
-            <div style={{
-              position: "absolute", top: "10%", left: "0%",
-              width: "100%", height: "75%",
-              background: "radial-gradient(ellipse, rgba(59,82,255,0.22) 0%, rgba(99,102,241,0.1) 45%, transparent 70%)",
-              filter: "blur(28px)", zIndex: 0, pointerEvents: "none",
-            }} />
-
-            <img
-              src={allCampsImg}
-              alt="URecruitHQ camp planning platform on desktop and mobile"
+            {/* ── Right — Laptop image, blended into background ── */}
+            <div
+              className="hidden md:block"
               style={{
-                position: "relative", zIndex: 1,
-                display: "block", width: "100%", height: "auto",
-                WebkitMaskImage: "radial-gradient(ellipse 85% 82% at 50% 50%, black 35%, transparent 72%)",
-                maskImage: "radial-gradient(ellipse 85% 82% at 50% 50%, black 35%, transparent 72%)",
-                mixBlendMode: "lighten",
-                animation: "hero-float 5s ease-in-out infinite",
+                flex: "0 0 52%",
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                marginRight: "-80px",
               }}
-            />
+            >
+              {/* Large bottom glow — blue/indigo bloom beneath laptop */}
+              <div style={{
+                position: "absolute",
+                bottom: "-12%",
+                left: "0%",
+                width: "95%",
+                height: "55%",
+                background: "radial-gradient(ellipse, rgba(99,102,241,0.55) 0%, rgba(59,82,255,0.25) 40%, transparent 70%)",
+                filter: "blur(40px)",
+                zIndex: 0,
+                pointerEvents: "none",
+              }} />
+              {/* Secondary center glow — purple accent */}
+              <div style={{
+                position: "absolute",
+                top: "15%",
+                left: "10%",
+                width: "75%",
+                height: "65%",
+                background: "radial-gradient(ellipse, rgba(139,92,246,0.25) 0%, transparent 65%)",
+                filter: "blur(28px)",
+                zIndex: 0,
+                pointerEvents: "none",
+              }} />
+              {/* Subtle amber warmth top-right to echo brand color */}
+              <div style={{
+                position: "absolute",
+                top: "5%",
+                right: "5%",
+                width: "40%",
+                height: "35%",
+                background: "radial-gradient(ellipse, rgba(232,160,32,0.07) 0%, transparent 70%)",
+                filter: "blur(20px)",
+                zIndex: 0,
+                pointerEvents: "none",
+              }} />
 
-            <style>{`
-              @keyframes hero-float {
-                0%, 100% { transform: translateY(0px); }
-                50%       { transform: translateY(-10px); }
-              }
-            `}</style>
+              {/* Laptop image — soft edge dissolve into dark background */}
+              <img
+                src={laptopImg}
+                alt="URecruitHQ camp planning platform on laptop"
+                style={{
+                  position: "relative",
+                  zIndex: 1,
+                  display: "block",
+                  width: "100%",
+                  height: "auto",
+                  WebkitMaskImage: "radial-gradient(ellipse 80% 75% at 55% 52%, black 25%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.4) 58%, transparent 72%)",
+                  maskImage: "radial-gradient(ellipse 80% 75% at 55% 52%, black 25%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.4) 58%, transparent 72%)",
+                  mixBlendMode: "lighten",
+                  opacity: 0.93,
+                }}
+              />
+            </div>
           </div>
-        </div>
-
-        {/* Bottom strip — social proof */}
-        <div style={{
-          width: "100%", textAlign: "center",
-          padding: "14px 24px",
-          borderTop: "1px solid rgba(255,255,255,0.07)",
-          position: "relative", zIndex: 1,
-        }}>
-          <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
-            100%&nbsp;<em style={{ fontStyle: "italic", color: "#9ca3af" }}>College</em>&nbsp;Coaching Staffs &nbsp;·&nbsp; Zero Club Camps &nbsp;·&nbsp; All Divisions
-          </p>
         </div>
 
         {/* ── SCROLL NUDGE ── */}
         <div style={{
-          position: "absolute", bottom: 46, left: "50%", transform: "translateX(-50%)",
+          position: "absolute", bottom: 20, left: "50%", transform: "translateX(-50%)",
           display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
           zIndex: 5, pointerEvents: "none",
         }}>
@@ -554,7 +561,6 @@ export default function Home() {
       <section style={{ background: '#0a0e1a', padding: '80px 24px', borderTop: '1px solid #1f2937' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
 
-          {/* Section header */}
           <div style={{ textAlign: 'center', marginBottom: 56 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 }}>
               <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
@@ -571,13 +577,10 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Two column layout */}
           <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
-            {/* LEFT — two email type cards */}
             <div style={{ flex: '1 1 340px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-              {/* Email type 1 — Monthly Agenda */}
               <div style={{ background: '#111827', borderRadius: 16, borderLeft: '4px solid #e8a020', padding: '24px 24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
                   <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(232,160,32,0.12)', border: '1px solid rgba(232,160,32,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>📅</div>
@@ -599,7 +602,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Email type 2 — Camp Week Alert */}
               <div style={{ background: '#111827', borderRadius: 16, borderLeft: '4px solid #10b981', padding: '24px 24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
                   <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🔔</div>
@@ -622,11 +624,9 @@ export default function Home() {
               </div>
             </div>
 
-            {/* RIGHT — mock email preview */}
             <div style={{ flex: '1 1 400px', position: 'sticky', top: 80 }}>
               <div style={{ background: '#111827', borderRadius: 16, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)' }}>
 
-                {/* Email client top bar */}
                 <div style={{ background: '#1f2937', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #374151' }}>
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ef4444' }} />
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#f59e0b' }} />
@@ -634,7 +634,6 @@ export default function Home() {
                   <div style={{ flex: 1, marginLeft: 8, background: '#374151', borderRadius: 6, padding: '4px 10px', fontSize: 12, color: '#9ca3af' }}>inbox</div>
                 </div>
 
-                {/* Email header */}
                 <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid #1f2937' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                     <div style={{ fontWeight: 700, fontSize: 15, color: '#f9fafb' }}>URecruit HQ</div>
@@ -644,9 +643,7 @@ export default function Home() {
                   <div style={{ fontSize: 13, color: '#6b7280' }}>to jake.adams@email.com</div>
                 </div>
 
-                {/* Email body preview */}
                 <div style={{ padding: '20px 20px' }}>
-                  {/* School banner */}
                   <div style={{ background: 'linear-gradient(135deg, #1a0a00, #2d1500)', border: '1px solid rgba(232,160,32,0.3)', borderLeft: '4px solid #e8a020', borderRadius: 10, padding: '14px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, #e8a020, #c4841d)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: '#fff', flexShrink: 0 }}>T</div>
                     <div>
@@ -655,7 +652,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Checklist preview */}
                   <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Your prep checklist</div>
                   {[
                     { done: true, text: 'Registration confirmed ✓' },
@@ -672,21 +668,17 @@ export default function Home() {
                     </div>
                   ))}
 
-                  {/* Faded bottom */}
                   <div style={{ marginTop: 16, height: 60, background: 'linear-gradient(to bottom, transparent, #111827)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8 }}>
                     <span style={{ fontSize: 12, color: '#4b5563' }}>+ travel notes, what coaches look for, and more...</span>
                   </div>
                 </div>
               </div>
 
-              {/* Caption */}
               <p style={{ textAlign: 'center', fontSize: 13, color: '#6b7280', marginTop: 16, fontStyle: 'italic' }}>
                 Example camp week alert — personalized to your calendar
               </p>
             </div>
           </div>
-
-
         </div>
       </section>
 
@@ -876,11 +868,9 @@ export default function Home() {
       <footer style={{ borderTop: "1px solid #1f2937", padding: "36px 24px 28px", background: "#0a0e1a" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 20 }}>
-            {/* Brand */}
             <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb" }}>
               URecruit<span style={{ color: "#e8a020" }}>HQ</span>
             </div>
-            {/* Links */}
             <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
               {[
                 { label: "Terms of Service", href: "/TermsOfService" },
@@ -915,8 +905,6 @@ export default function Home() {
   );
 }
 
-
-
 /* ── Why Speech Bubble ── */
 function WhyPanel() {
   const [open, setOpen] = useState(false);
@@ -928,10 +916,6 @@ function WhyPanel() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // Closed: floating speech bubble with tail pointing bottom-left (toward the hero text / CTAs)
-  // Open: expands in place to show content
-  // Color: white bubble, slate text — no amber
-
   return (
     <div className="hidden md:block" style={{
       position: "fixed",
@@ -942,7 +926,6 @@ function WhyPanel() {
       maxWidth: "min(300px, calc(100vw - 48px))",
     }}>
 
-      {/* ── Closed: teaser bubble ── */}
       {!open && (
         <div style={{ position: "relative" }}>
           <button
@@ -961,7 +944,6 @@ function WhyPanel() {
               cursor: "pointer",
             }}
           >
-            {/* Avatar row */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <div style={{
                 width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
@@ -980,8 +962,6 @@ function WhyPanel() {
               Tap to find out what we learned →
             </span>
           </button>
-
-          {/* Tail — bottom-left, pointing toward the hero CTAs */}
           <div style={{
             position: "absolute",
             bottom: -10,
@@ -996,7 +976,6 @@ function WhyPanel() {
         </div>
       )}
 
-      {/* ── Open: expanded bubble ── */}
       {open && (
         <div style={{
           background: "#f1f5f9",
@@ -1007,7 +986,6 @@ function WhyPanel() {
           animation: "why-fade-in 0.2s ease",
           position: "relative",
         }}>
-          {/* Header */}
           <div style={{
             background: "#1e293b",
             padding: "12px 16px",
@@ -1072,7 +1050,6 @@ function WhyPanel() {
             </p>
           </div>
 
-          {/* Tail on open state too */}
           <div style={{
             position: "absolute",
             bottom: -10,
