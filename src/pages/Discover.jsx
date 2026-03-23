@@ -314,13 +314,29 @@ export default function Discover() {
       const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
       if (!aId) return {};
 
-      // Single query by athlete_id — no need to chunk by camp_id
+      // Primary query: records correctly linked to this athlete
       const rows = await safeFilter(CampIntent, { athlete_id: String(aId) }, "-updated_date", 2000);
       const out = {};
       for (const r of asArray(rows)) {
         const k = String(r?.camp_id || "");
         if (k) out[k] = r;
       }
+
+      // Secondary query: orphaned records (no athlete_id) for this account.
+      // These exist from a prior bug where athlete_id was omitted on create.
+      // Loading them lets upsertIntent use UPDATE instead of CREATE, avoiding
+      // a uniqueness-constraint failure on (camp_id, account_id).
+      if (seasonAccountId) {
+        try {
+          const accountRows = await safeFilter(CampIntent, { account_id: String(seasonAccountId) }, "-updated_date", 500);
+          for (const r of asArray(accountRows)) {
+            const k = String(r?.camp_id || "");
+            if (!k || out[k]) continue; // athlete-linked record already takes precedence
+            if (!r?.athlete_id) out[k] = r; // only include truly orphaned records
+          }
+        } catch {}
+      }
+
       return out;
     } catch {
       return {};
@@ -362,7 +378,10 @@ export default function Discover() {
       }
 
       if (existing?.id && CampIntent?.update) {
-        const updated = await CampIntent.update(existing.id, { status: String(nextStatus) });
+        // Also set athlete_id if this is an orphaned record being healed
+        const updatePayload = { status: String(nextStatus) };
+        if (!existing.athlete_id && aId) updatePayload.athlete_id = String(aId);
+        const updated = await CampIntent.update(existing.id, updatePayload);
         if (updated) setIntentByKey((p) => ({ ...p, [key]: updated }));
         return;
       }
