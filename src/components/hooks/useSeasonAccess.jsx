@@ -5,6 +5,7 @@ import { base44 } from "../../api/base44Client";
 import { footballCurrentSeasonYear } from "../utils/seasonEntitlements.jsx";
 import { getCurrentSoldSeason, getCurrentActiveSeason } from "../utils/seasonUtils";
 import { readDemoMode, clearDemoMode } from "./demoMode.jsx";
+import { isAdminEmail } from "../auth/adminEmails.jsx";
 
 /**
  * useSeasonAccess()
@@ -89,7 +90,8 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
 
   const me = await safeMe();
   const accountId = me?.id || null;
-  const role = me?.role || null;
+  // Treat as admin if base44 role is "admin" OR if email is in the hardcoded admin list
+  const role = (me?.role === "admin" || isAdminEmail(me?.email)) ? "admin" : (me?.role || null);
 
   // Not signed in → demo
   if (!accountId) {
