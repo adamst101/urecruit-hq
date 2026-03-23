@@ -427,6 +427,20 @@ export default function Calendar() {
     isPaid,
   });
 
+  // Warnings filtered to only those involving the current athlete's camps.
+  // Prevents other athletes' solo travel notices from appearing in the banner.
+  const currentAthleteCampIds = useMemo(() => {
+    const ids = new Set();
+    favCamps.forEach((r) => { const id = String(r?.camp_id || r?.id || ""); if (id) ids.add(id); });
+    regCamps.forEach((r) => { const id = String(r?.camp_id || r?.id || ""); if (id) ids.add(id); });
+    return ids;
+  }, [favCamps, regCamps]);
+
+  const currentAthleteWarnings = useMemo(
+    () => allWarnings.filter((w) => (w.campIds || []).some((id) => currentAthleteCampIds.has(id))),
+    [allWarnings, currentAthleteCampIds],
+  );
+
   // conflictDates — Map<dateString, 'error'|'warning'>
   // Defined after allWarnings so family_conflict warnings can be included.
   // error = same-athlete same-day, warning = cross-athlete family_conflict
@@ -874,7 +888,7 @@ export default function Calendar() {
           </div>
         )}
 
-        {calView === "list" && <WarningBanner warnings={allWarnings} />}
+        {calView === "list" && <WarningBanner warnings={currentAthleteWarnings} />}
 
         {calView === "list" ? renderListBody() : renderMonthBody()}
 
