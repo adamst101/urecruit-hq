@@ -352,7 +352,7 @@ export default function Home() {
               >
                 THE CAMPS THAT GET
                 <br />
-                ATHLETES RECRUITED.
+                ATHLETES EVALUATED.
                 <br />
                 ALL IN ONE PLACE.
               </h1>
