@@ -46,6 +46,7 @@ import {
   matchesMonth,
   normalizeDivisionForSort,
 } from "../components/filters/filterUtils.jsx";
+import { toast } from "../components/ui/use-toast";
 
 /* ─── helpers ──────────────────────────────────────────────────────────────── */
 
@@ -315,7 +316,13 @@ export default function Discover() {
       if (!aId) return {};
 
       // Primary query: records correctly linked to this athlete
-      const rows = await safeFilter(CampIntent, { athlete_id: String(aId) }, "-updated_date", 2000);
+      let rows;
+      try {
+        rows = await safeFilter(CampIntent, { athlete_id: String(aId) }, "-updated_date", 2000);
+      } catch (readErr) {
+        console.error("[loadIntents] CampIntent read failed:", String(readErr?.message || readErr));
+        return {};
+      }
       const out = {};
       for (const r of asArray(rows)) {
         const k = String(r?.camp_id || "");
@@ -362,6 +369,11 @@ export default function Discover() {
       return;
     }
 
+    if (!seasonAccountId) {
+      console.warn("[upsertIntent] No account_id available — skipping DB write");
+      return;
+    }
+
     // Optimistic local update FIRST so star fills immediately
     const optimisticStatus = nextStatus ? String(nextStatus) : "";
     setIntentByKey((p) => ({
@@ -396,7 +408,13 @@ export default function Discover() {
       const created = await CampIntent.create(payload);
       if (created) setIntentByKey((p) => ({ ...p, [key]: created }));
     } catch (err) {
-      console.error("[upsertIntent] DB write failed:", err);
+      const msg = String(err?.message || err || "Unknown error");
+      console.error("[upsertIntent] DB write failed:", msg, err);
+      toast({
+        title: "Could not save — permission error",
+        description: msg,
+        variant: "destructive",
+      });
       // Revert optimistic update on error
       setIntentByKey((p) => ({
         ...p,
