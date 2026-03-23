@@ -338,8 +338,13 @@ export default function Discover() {
 
     const existing = intentByKey?.[key] || null;
 
-    // Resolve athlete_id — use profile id if available, otherwise leave null
+    // Resolve athlete_id — required to write and later retrieve the intent.
+    // Without it the record becomes permanently orphaned (loadIntents queries by athlete_id).
     const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
+    if (!aId) {
+      console.warn("[upsertIntent] No athlete profile available — skipping DB write to avoid orphaned record");
+      return;
+    }
 
     // Optimistic local update FIRST so star fills immediately
     const optimisticStatus = nextStatus ? String(nextStatus) : "";
@@ -366,8 +371,8 @@ export default function Discover() {
         camp_id: key,
         status: String(nextStatus),
         account_id: seasonAccountId || "",
+        athlete_id: String(aId),
       };
-      if (aId) payload.athlete_id = String(aId);
 
       const created = await CampIntent.create(payload);
       if (created) setIntentByKey((p) => ({ ...p, [key]: created }));
@@ -993,10 +998,20 @@ export default function Discover() {
         onClose={() => setConflictModal({ open: false, warnings: [], campId: null, action: null })}
         confirmLabel={conflictModal.action === "favorite" ? "Favorite Anyway" : "Register Anyway"}
         onConfirm={() => {
-          if (conflictModal.action === "favorite") {
-            doFavoriteToggle(conflictModal.campId);
-          }
+          const { action: cAction, campId: cCampId } = conflictModal;
           setConflictModal({ open: false, warnings: [], campId: null, action: null });
+          if (cAction === "favorite" && cCampId) {
+            // Explicitly ADD as favorite — do not re-check isCampFavorite direction,
+            // which could race to "unfavorite" if state changed while modal was open.
+            if (!isPaid) {
+              const next = toggleDemoFavorite(demoProfileId, cCampId, seasonYear);
+              setDemoFavoriteIds(next);
+              invalidateCampCaches(queryClient);
+            } else {
+              upsertIntent(cCampId, "favorite");
+              invalidateCampCaches(queryClient);
+            }
+          }
         }}
       />
 

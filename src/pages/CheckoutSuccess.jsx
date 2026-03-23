@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { CheckCircle2, Loader2, RefreshCw, AlertCircle, Check } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
+import { clearSeasonAccessCache } from "../components/hooks/useSeasonAccess";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 
@@ -248,10 +249,14 @@ export default function CheckoutSuccess() {
         </p>
         <FeatureCard />
         <button
-          onClick={() => navigate("/Account", { replace: true })}
+          onClick={() => {
+            clearSeasonAccessCache();
+            sessionStorage.setItem("postPaymentSignup", "true");
+            navigate("/AuthRedirect?next=/Workspace", { replace: true });
+          }}
           style={S.ctaBtn}
         >
-          View My Account →
+          Go to My HQ →
         </button>
       </Page>
     );
