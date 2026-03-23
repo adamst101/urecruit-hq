@@ -50,17 +50,17 @@ export default function Home() {
     let cancelled = false;
     (async () => {
       try {
-        const allCamps = await base44.entities.Camp.filter({ active: true });
+        const [allCamps, allSchools] = await Promise.all([
+          base44.entities.Camp.filter({ active: true }),
+          base44.entities.School.filter({}),
+        ]);
         if (cancelled) return;
         setCampCount(allCamps.length);
-        const uniqueSchools = new Set(
-          allCamps.filter(c => c.school_id).map(c => c.school_id)
-        );
-        setSchoolCount(uniqueSchools.size);
+        setSchoolCount(Array.isArray(allSchools) ? allSchools.length : 0);
       } catch {
         if (!cancelled) {
           setCampCount(760);
-          setSchoolCount(260);
+          setSchoolCount(170);
         }
       }
     })();
@@ -68,9 +68,9 @@ export default function Home() {
   }, []);
 
   const campDisplay = formatCount(campCount) || "750+";
-  const schoolDisplay = formatCount(schoolCount) || "250+";
+  const schoolDisplay = schoolCount != null ? `${schoolCount}` : "170+";
   const campRaw = campCount || 750;
-  const schoolRaw = schoolCount || 250;
+  const schoolRaw = schoolCount || 170;
 
   // ?preview=anon forces anonymous UI for testing
   const previewAnon = useMemo(() => {
