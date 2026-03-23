@@ -411,47 +411,45 @@ export default function Home() {
               </p>
             </div>
 
-            {/* Right — Laptop image, floating with fade mask (hidden on mobile) */}
+            {/* Right — Laptop image, blended into background (hidden on mobile) */}
             <div
               className="hidden md:block"
               style={{
-                flex: "1 1 52%",
+                flex: "0 0 55%",
+                maxWidth: 700,
                 position: "relative",
               }}
             >
-              {/* Blue/purple glow beneath laptop */}
+              {/* Glow beneath laptop */}
               <div style={{
                 position: "absolute",
-                bottom: "8%",
-                left: "50%",
-                transform: "translateX(-50%)",
-                width: "70%",
-                height: 60,
-                background: "radial-gradient(ellipse at center, rgba(99,102,241,0.45) 0%, rgba(139,92,246,0.2) 50%, transparent 80%)",
-                filter: "blur(18px)",
-                borderRadius: "50%",
+                bottom: "-5%",
+                left: "10%",
+                width: "80%",
+                height: "30%",
+                background: "radial-gradient(ellipse, rgba(59,82,255,0.25) 0%, transparent 70%)",
+                filter: "blur(20px)",
                 zIndex: 0,
                 pointerEvents: "none",
               }} />
 
-              {/* Laptop image with radial mask fade */}
-              <div style={{
-                position: "relative",
-                zIndex: 1,
-                WebkitMaskImage: "radial-gradient(ellipse 88% 85% at 52% 48%, black 40%, transparent 100%)",
-                maskImage: "radial-gradient(ellipse 88% 85% at 52% 48%, black 40%, transparent 100%)",
-              }}>
-                <img
-                  src={laptopImg}
-                  alt="URecruitHQ camp planning platform on laptop"
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    height: "auto",
-                    animation: "hero-float 5s ease-in-out infinite",
-                  }}
-                />
-              </div>
+              {/* Laptop image — mask fade + lighten blend */}
+              <img
+                src={laptopImg}
+                alt="URecruitHQ camp planning platform on laptop"
+                style={{
+                  position: "relative",
+                  zIndex: 1,
+                  display: "block",
+                  width: "100%",
+                  height: "auto",
+                  WebkitMaskImage: "radial-gradient(ellipse 85% 80% at 55% 45%, black 40%, transparent 80%)",
+                  maskImage: "radial-gradient(ellipse 85% 80% at 55% 45%, black 40%, transparent 80%)",
+                  mixBlendMode: "lighten",
+                  opacity: 0.92,
+                  animation: "hero-float 5s ease-in-out infinite",
+                }}
+              />
 
               <style>{`
                 @keyframes hero-float {
