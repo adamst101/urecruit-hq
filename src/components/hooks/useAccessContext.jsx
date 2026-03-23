@@ -44,8 +44,9 @@ export function useAccessContext() {
 
   const hasProfile = useMemo(() => {
     if (!isPaid) return false;
+    if (season.role === "admin") return true;
     return !!identity.athleteProfile;
-  }, [isPaid, identity.athleteProfile]);
+  }, [isPaid, season.role, identity.athleteProfile]);
 
   // In demo mode, never block UI waiting on identity
   const loading = useMemo(() => {

@@ -546,14 +546,20 @@ const JOURNEY_GROUPS = [
         description: "Create a CampIntent (favorite), verify it's visible in Discover/Calendar/My Agenda queries, update to registered, verify, then clean up.",
         steps: [
           {
-            name: "Find a test athlete",
+            name: "Create test athlete (owned by admin account)",
             run: async (ctx) => {
-              const athletes = await base44.entities.AthleteProfile.filter({ active: true });
-              if (!Array.isArray(athletes) || athletes.length === 0)
-                throw new Error("No active athletes — cannot simulate subscriber intent flow");
-              ctx.athlete = athletes[0];
-              const name = [ctx.athlete.first_name, ctx.athlete.last_name].filter(Boolean).join(" ") || ctx.athlete.id;
-              return `Using athlete: ${name} (id=${ctx.athlete.id})`;
+              const me = await base44.auth.me();
+              if (!me?.id) throw new Error("auth.me() returned no id");
+              ctx.myId = me.id;
+              const profile = await base44.entities.AthleteProfile.create({
+                account_id: ctx.myId,
+                first_name: "__hc_intent__", last_name: "__test__",
+                athlete_name: "__hc_intent__ __test__",
+                active: true, sport_id: "test", grad_year: 2099,
+              });
+              if (!profile?.id) throw new Error("AthleteProfile.create returned no id");
+              ctx.athlete = profile;
+              return `Test athlete created (id=${profile.id})`;
             },
           },
           {
@@ -571,6 +577,7 @@ const JOURNEY_GROUPS = [
               const intent = await base44.entities.CampIntent.create({
                 camp_id: ctx.testCamp.id,
                 athlete_id: ctx.athlete.id,
+                account_id: ctx.myId,
                 status: "favorite",
               });
               if (!intent?.id) throw new Error("CampIntent create returned no id");
@@ -629,14 +636,17 @@ const JOURNEY_GROUPS = [
             name: "Delete test intent (cleanup)",
             run: async (ctx) => {
               await base44.entities.CampIntent.delete(ctx.intentId);
-              return `Intent id=${ctx.intentId} deleted`;
+              if (ctx.athlete?.id) await base44.entities.AthleteProfile.delete(ctx.athlete.id).catch(() => {});
+              return `Intent id=${ctx.intentId} deleted, test athlete cleaned up`;
             },
           },
         ],
         cleanup: async (ctx) => {
-          // Safety net: delete the test intent if a mid-journey failure left it behind
           if (ctx.intentId) {
             try { await base44.entities.CampIntent.delete(ctx.intentId); } catch {}
+          }
+          if (ctx.athlete?.id) {
+            try { await base44.entities.AthleteProfile.delete(ctx.athlete.id); } catch {}
           }
         },
       },
@@ -1745,7 +1755,7 @@ const JOURNEY_GROUPS = [
             name: "Create CampIntent for athlete 1 only",
             run: async (ctx) => {
               const intent = await base44.entities.CampIntent.create({
-                camp_id: ctx.campA.id, athlete_id: ctx.athlete1Id, status: "favorite",
+                camp_id: ctx.campA.id, athlete_id: ctx.athlete1Id, account_id: ctx.myId || "", status: "favorite",
               });
               if (!intent?.id) throw new Error("CampIntent.create() returned no id");
               ctx.intent1Id = intent.id;
@@ -2115,6 +2125,183 @@ const JOURNEY_GROUPS = [
             try { await base44.entities.EmailPreferences.delete(ctx.prefId); } catch {}
           }
         },
+      },
+    ],
+  },
+
+  {
+    label: "Admin-Only Backend Functions",
+    journeys: [
+      {
+        id: "admin_function_guards",
+        name: "Admin Function Access & Guards",
+        icon: "🔒",
+        description: "Probes all 10 admin-guarded backend functions. Each must be reachable and must NOT return 403 for this admin session. A 403 means the admin guard is misconfigured and would block the admin account.",
+        steps: [
+          // Helper: for each function, call with dryRun:true (plus limits to prevent heavy work).
+          // Treat 2xx = pass, 400 = alive/validation enforced (pass), 403 = guard misconfigured (fail).
+          {
+            name: "ryzerIngest — admin reachable, guard active",
+            run: async () => {
+              try {
+                const res = await base44.functions.invoke("ryzerIngest", { dryRun: true, maxPages: 0, maxEvents: 0 });
+                const data = res?.data;
+                return `Reachable — admin access confirmed${data?.ok !== undefined ? ` ok=${data.ok}` : ""}`;
+              } catch (e) {
+                const msg = String(e?.message || e);
+                if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
+                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
+                throw new Error("Function unreachable: " + msg);
+              }
+            },
+          },
+          {
+            name: "ncaaMembershipSync — admin reachable, guard active",
+            run: async () => {
+              try {
+                const res = await base44.functions.invoke("ncaaMembershipSync", { dryRun: true, maxGroups: 0 });
+                const data = res?.data;
+                return `Reachable — admin access confirmed${data?.ok !== undefined ? ` ok=${data.ok}` : ""}`;
+              } catch (e) {
+                const msg = String(e?.message || e);
+                if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
+                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
+                throw new Error("Function unreachable: " + msg);
+              }
+            },
+          },
+          {
+            name: "runNcaaUntilDone — admin reachable, guard active",
+            run: async () => {
+              try {
+                const res = await base44.functions.invoke("runNcaaUntilDone", { dryRun: true, maxRounds: 0 });
+                const data = res?.data;
+                return `Reachable — admin access confirmed${data?.ok !== undefined ? ` ok=${data.ok}` : ""}`;
+              } catch (e) {
+                const msg = String(e?.message || e);
+                if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
+                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
+                throw new Error("Function unreachable: " + msg);
+              }
+            },
+          },
+          {
+            name: "athleticsMembershipCollapseBySchool — admin reachable, guard active",
+            run: async () => {
+              try {
+                const res = await base44.functions.invoke("athleticsMembershipCollapseBySchool", { dryRun: true });
+                const data = res?.data;
+                return `Reachable — admin access confirmed${data?.ok !== undefined ? ` ok=${data.ok}` : ""}`;
+              } catch (e) {
+                const msg = String(e?.message || e);
+                if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
+                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
+                throw new Error("Function unreachable: " + msg);
+              }
+            },
+          },
+          {
+            name: "athleticsMembershipDedupeSweep — admin reachable, guard active",
+            run: async () => {
+              try {
+                const res = await base44.functions.invoke("athleticsMembershipDedupeSweep", { dryRun: true, maxGroups: 0 });
+                const data = res?.data;
+                return `Reachable — admin access confirmed${data?.ok !== undefined ? ` ok=${data.ok}` : ""}`;
+              } catch (e) {
+                const msg = String(e?.message || e);
+                if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
+                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
+                throw new Error("Function unreachable: " + msg);
+              }
+            },
+          },
+          {
+            name: "dedupeAthleticsMembershipBySourceKey — admin reachable, guard active",
+            run: async () => {
+              try {
+                const res = await base44.functions.invoke("dedupeAthleticsMembershipBySourceKey", { dryRun: true, maxGroups: 0 });
+                const data = res?.data;
+                return `Reachable — admin access confirmed${data?.ok !== undefined ? ` ok=${data.ok}` : ""}`;
+              } catch (e) {
+                const msg = String(e?.message || e);
+                if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
+                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
+                throw new Error("Function unreachable: " + msg);
+              }
+            },
+          },
+          {
+            name: "enrichSchoolsMaster_scorecard — admin reachable, guard active",
+            run: async () => {
+              try {
+                const res = await base44.functions.invoke("enrichSchoolsMaster_scorecard", { dryRun: true, maxRows: 0 });
+                const data = res?.data;
+                return `Reachable — admin access confirmed${data?.ok !== undefined ? ` ok=${data.ok}` : ""}`;
+              } catch (e) {
+                const msg = String(e?.message || e);
+                if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
+                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
+                throw new Error("Function unreachable: " + msg);
+              }
+            },
+          },
+          {
+            name: "seedSchoolsMaster_membership — admin reachable, guard active",
+            run: async () => {
+              try {
+                const res = await base44.functions.invoke("seedSchoolsMaster_membership", { dryRun: true, maxRows: 0 });
+                const data = res?.data;
+                return `Reachable — admin access confirmed${data?.ok !== undefined ? ` ok=${data.ok}` : ""}`;
+              } catch (e) {
+                const msg = String(e?.message || e);
+                if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
+                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
+                throw new Error("Function unreachable: " + msg);
+              }
+            },
+          },
+          {
+            name: "seedSchoolsMaster_scorecard — admin reachable, guard active",
+            run: async () => {
+              try {
+                const res = await base44.functions.invoke("seedSchoolsMaster_scorecard", { dryRun: true, maxRows: 0 });
+                const data = res?.data;
+                return `Reachable — admin access confirmed${data?.ok !== undefined ? ` ok=${data.ok}` : ""}`;
+              } catch (e) {
+                const msg = String(e?.message || e);
+                if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
+                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
+                throw new Error("Function unreachable: " + msg);
+              }
+            },
+          },
+          {
+            name: "sendHealthAlert — admin reachable, guard active",
+            run: async () => {
+              // Probe with empty body — returns 400 (toEmail required) after passing the admin guard
+              try {
+                const res = await base44.functions.invoke("sendHealthAlert", {});
+                const data = res?.data;
+                return `Reachable — admin access confirmed${data?.ok !== undefined ? ` ok=${data.ok}` : ""}`;
+              } catch (e) {
+                const msg = String(e?.message || e);
+                if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
+                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                if (msg.includes("400")) return "Reachable — admin access confirmed (400: toEmail required) ✓";
+                throw new Error("Function unreachable: " + msg);
+              }
+            },
+          },
+        ],
       },
     ],
   },

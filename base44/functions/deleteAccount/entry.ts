@@ -69,33 +69,7 @@ Deno.serve(async (req) => {
   }
   summary.CampIntent = { deleted: intentDeleted, errors: intentErrors };
 
-  // 3. Delete TargetSchool records for each athlete
-  let targetDeleted = 0, targetErrors = 0;
-  for (const aId of athleteIds) {
-    const targets = await sr.TargetSchool.filter({ athlete_id: aId }).catch(() => []);
-    if (Array.isArray(targets) && targets.length > 0) {
-      const r = await deleteAll(sr.TargetSchool, targets);
-      targetDeleted += r.deleted;
-      targetErrors += r.errors;
-    }
-  }
-  summary.TargetSchool = { deleted: targetDeleted, errors: targetErrors };
-
-  // 4. Delete Favorite records for each athlete (if entity exists)
-  let favDeleted = 0, favErrors = 0;
-  if (sr.Favorite) {
-    for (const aId of athleteIds) {
-      const favs = await sr.Favorite.filter({ athlete_id: aId }).catch(() => []);
-      if (Array.isArray(favs) && favs.length > 0) {
-        const r = await deleteAll(sr.Favorite, favs);
-        favDeleted += r.deleted;
-        favErrors += r.errors;
-      }
-    }
-  }
-  summary.Favorite = { deleted: favDeleted, errors: favErrors };
-
-  // 5. Delete all AthleteProfile records
+  // 3. Delete all AthleteProfile records
   const apResult = await deleteAll(sr.AthleteProfile, athleteList);
   summary.AthleteProfile = apResult;
 

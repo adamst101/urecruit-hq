@@ -22,8 +22,6 @@ function pickEntity(...names) {
 // --- Entities (tables) ---
 export const AthleteProfile = pickEntity("AthleteProfile", "AthleteProfiles");
 export const BudgetConstraint = pickEntity("BudgetConstraint", "BudgetConstraints");
-export const CalendarConstraint = pickEntity("CalendarConstraint", "CalendarConstraints");
-
 export const Camp = pickEntity("Camp", "Camps");
 export const CampDecisionScore = pickEntity("CampDecisionScore", "CampDecisionScores");
 export const CampDemo = pickEntity("CampDemo", "CampDemos");
@@ -33,12 +31,10 @@ export const CampIntentHistory = pickEntity("CampIntentHistory", "CampIntentHist
 export const Entitlement = pickEntity("Entitlement", "Entitlements");
 export const Event = pickEntity("Event", "Events");
 
-export const Favorite = pickEntity("Favorite", "Favorites");
 export const Position = pickEntity("Position", "Positions");
 export const Registration = pickEntity("Registration", "Registrations");
 
 export const Scenario = pickEntity("Scenario", "Scenarios");
-export const ScenarioCamp = pickEntity("ScenarioCamp", "ScenarioCamps");
 
 // IMPORTANT: ensure School resolves correctly
 export const School = pickEntity("School", "Schools");
@@ -50,12 +46,6 @@ export const AthleticsMembership = pickEntity("AthleticsMembership", "AthleticsM
 export const SchoolSport = pickEntity("SchoolSport", "SchoolSports");
 export const UnmatchedAthleticsRow = pickEntity("UnmatchedAthleticsRow", "UnmatchedAthleticsRows");
 export const AthleticsMatchOverride = pickEntity("AthleticsMatchOverride", "AthleticsMatchOverrides");
-
-export const TargetSchool = pickEntity("TargetSchool", "TargetSchools");
-export const TargetSchoolHistory = pickEntity("TargetSchoolHistory", "TargetSchoolHistories");
-
-export const TravelConstraint = pickEntity("TravelConstraint", "TravelConstraints");
-export const UserCamp = pickEntity("UserCamp", "UserCamps");
 
 // Optional: keep Query if you’re using it
 export const MonthlyAgendaContent = pickEntity("MonthlyAgendaContent", "MonthlyAgendaContents");

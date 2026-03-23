@@ -60,8 +60,8 @@ export function useWriteGate() {
         return false;
       }
 
-      // 3) Entitled but missing athlete profile — only block in paid mode, not demo
-      if (!athleteProfile && season?.hasAccess) {
+      // 3) Entitled but missing athlete profile — only block in paid mode, not demo; admins bypass
+      if (!athleteProfile && season?.hasAccess && season?.role !== "admin") {
         nav(createPageUrl("Profile") + `?next=${nextParam}`, { replace: true });
         return false;
       }
@@ -69,7 +69,7 @@ export function useWriteGate() {
       // 4) Allowed
       return true;
     },
-    [season?.isLoading, identityLoading, season?.accountId, season?.hasAccess, athleteProfile, nav, loc?.pathname, loc?.search]
+    [season?.isLoading, identityLoading, season?.accountId, season?.hasAccess, season?.role, athleteProfile, nav, loc?.pathname, loc?.search]
   );
 
   // Return a stable contract

@@ -89,6 +89,7 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
 
   const me = await safeMe();
   const accountId = me?.id || null;
+  const role = me?.role || null;
 
   // Not signed in → demo
   if (!accountId) {
@@ -101,7 +102,25 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
       season: demoSeason || demoYear || currentYear || null,
       accountId: null,
       entitlement: null,
+      role: null,
       isAuthenticated: false,
+      lastCheckedAt: nowISO(),
+    };
+  }
+
+  // Admin users get full access without needing an entitlement or athlete profile
+  if (role === "admin") {
+    return {
+      currentYear: currentYear || null,
+      demoYear: demoYear || null,
+      mode: "paid",
+      hasAccess: true,
+      seasonYear: activeSeason || currentYear || null,
+      season: activeSeason || currentYear || null,
+      accountId,
+      entitlement: null,
+      role,
+      isAuthenticated: true,
       lastCheckedAt: nowISO(),
     };
   }
@@ -119,6 +138,7 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
         season: demoSeason || demoYear || currentYear || null,
         accountId,
         entitlement: null,
+        role,
         isAuthenticated: true,
         lastCheckedAt: nowISO(),
       };
@@ -142,6 +162,7 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
       season: activeSeason || currentYear || null,
       accountId,
       entitlement: ent,
+      role,
       isAuthenticated: true,
       lastCheckedAt: nowISO(),
     };
@@ -158,6 +179,7 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
     season: demoSeason || demoYear || currentYear || null,
     accountId,
     entitlement: null,
+    role,
     isAuthenticated: true,
     lastCheckedAt: nowISO(),
   };

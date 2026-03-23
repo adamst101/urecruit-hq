@@ -186,20 +186,15 @@ export function useCampSummariesClient({
     queryFn: async () => {
       const CampEntity = base44.entities?.Camp;
       const IntentEntity = base44.entities?.CampIntent;
-      const TargetEntity = base44.entities?.TargetSchool;
 
       if (!CampEntity?.filter || !IntentEntity?.filter) return [];
 
-      // 1) Load intents + targets
-      const [intentsRaw, targetsRaw] = await Promise.allSettled([
+      // 1) Load intents
+      const intentsRaw = await Promise.allSettled([
         safeFilter(IntentEntity, { athlete_id: String(aId) }, undefined, undefined, { retries: 2, baseDelayMs: 250 }),
-        TargetEntity?.filter
-          ? safeFilter(TargetEntity, { athlete_id: String(aId) }, undefined, undefined, { retries: 2, baseDelayMs: 250 })
-          : Promise.resolve([]),
       ]);
 
-      const intents = intentsRaw.status === "fulfilled" && Array.isArray(intentsRaw.value) ? intentsRaw.value : [];
-      const targets = targetsRaw.status === "fulfilled" && Array.isArray(targetsRaw.value) ? targetsRaw.value : [];
+      const intents = intentsRaw[0].status === "fulfilled" && Array.isArray(intentsRaw[0].value) ? intentsRaw[0].value : [];
 
       const intentByKey = new Map();
       const interestedKeys = [];
@@ -282,10 +277,6 @@ export function useCampSummariesClient({
       const sports = sportMap.status === "fulfilled" ? sportMap.value : new Map();
       const positions = positionMap.status === "fulfilled" ? positionMap.value : new Map();
 
-      const targetSchoolIds = new Set(
-        targets.map((t) => String(normId(t?.school_id) || t?.school_id)).filter(Boolean)
-      );
-
       return campsNorm.map((camp) => {
         const campId = String(camp._camp_id);
         const eventKey = camp._event_key;
@@ -326,7 +317,7 @@ export function useCampSummariesClient({
           intent_status: intent?.status || null,
           intent_priority: intent?.priority || null,
 
-          is_target_school: !!(schoolId && targetSchoolIds.has(schoolId)),
+          is_target_school: false,
           position_ids: camp._position_ids,
           position_codes: campPositions.map((p) => p?.position_code).filter(Boolean),
         };
