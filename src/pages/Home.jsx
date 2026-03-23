@@ -319,18 +319,15 @@ export default function Home() {
           position: "relative",
           zIndex: 1,
         }}>
-          {/* Label badge */}
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            marginBottom: 18,
-            padding: "5px 14px",
-            border: "1px solid rgba(232,160,32,0.35)",
-            borderRadius: 20,
-            background: "rgba(232,160,32,0.07)",
-            alignSelf: "flex-start",
-          }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "#e8a020", textTransform: "uppercase" }}>
-              College Football Camp Planning Platform
+          {/* Label */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <div style={{ width: 3, height: 28, background: "#e8a020", borderRadius: 2 }} />
+            <span style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 18, letterSpacing: 3,
+              color: "#e8a020", textTransform: "uppercase",
+            }}>
+              THE COLLEGE FOOTBALL CAMP PLANNING PLATFORM
             </span>
           </div>
 
