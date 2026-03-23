@@ -10,10 +10,10 @@ import {
 } from "../ui/dialog";
 import { Button } from "../ui/button";
 
-const SEVERITY_STYLES = {
-  error: "bg-red-900/30 border-red-700/50 text-red-300",
-  warning: "bg-amber-900/30 border-amber-700/50 text-amber-300",
-  info: "bg-blue-900/30 border-blue-700/50 text-blue-300",
+const BORDER_COLOR = {
+  error:   "border-l-red-500",
+  warning: "border-l-amber-500",
+  info:    "border-l-[#6b7280]",
 };
 
 export default function ConflictWarningModal({
@@ -30,9 +30,9 @@ export default function ConflictWarningModal({
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="bg-[#111827] border-[#1f2937] text-[#f9fafb] max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-[#f9fafb]">Heads Up — Potential Conflict</DialogTitle>
+          <DialogTitle className="text-[#f9fafb]">Heads Up</DialogTitle>
           <DialogDescription className="text-[#9ca3af]">
-            Review the warnings below before proceeding.
+            Review before adding to your calendar.
           </DialogDescription>
         </DialogHeader>
 
@@ -40,7 +40,8 @@ export default function ConflictWarningModal({
           {warnings.map((w, i) => (
             <div
               key={i}
-              className={`text-sm rounded-lg border px-3 py-2 ${SEVERITY_STYLES[w.severity] || SEVERITY_STYLES.info}`}
+              className={`text-sm border-l-2 pl-3 py-1 ${BORDER_COLOR[w.severity] || BORDER_COLOR.info}`}
+              style={{ color: "#d1d5db" }}
             >
               {w.message}
             </div>

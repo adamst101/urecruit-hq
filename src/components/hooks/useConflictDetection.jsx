@@ -106,12 +106,15 @@ export function detectConflicts({ camps, homeCity, homeState, homeLat, homeLng, 
       if (!cc) continue;
       const dist = Math.round(haversine(homeCoords.lat, homeCoords.lng, cc.lat, cc.lng));
       if (dist > FAR_FROM_HOME_MILES) {
+        const needsFlight = dist > DRIVE_MAX_MILES;
         warnings.push({
           type: "far_from_home",
           severity: "info",
           campIds: [String(camp?.id || "")],
           distance: dist,
-          message: `🏨 Travel Note: ${campLabel(camp)} is ~${dist} miles from ${homeCity || homeState}. You may want to plan for a hotel stay.`,
+          message: needsFlight
+            ? `✈️ Travel Note: ${campLabel(camp)} is ~${dist} miles from ${homeCity || homeState}. Plan for a flight and hotel.`
+            : `🏨 Travel Note: ${campLabel(camp)} is ~${dist} miles from ${homeCity || homeState}. Plan for a hotel stay.`,
         });
       }
     }
