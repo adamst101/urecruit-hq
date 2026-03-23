@@ -82,7 +82,7 @@ export default function CampCard({
         <div className="min-w-0 flex-1">
           {/* Row 1: School name + badges */}
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-base font-bold text-[#f9fafb] truncate">{schoolName}</span>
+            <span className="text-base font-bold text-[#f9fafb] sm:truncate">{schoolName}</span>
             {warningBadge}
             {division && (
               <Badge className="bg-[#0f172a] text-[#f9fafb] border border-[#374151] text-[10px] px-1.5 py-0">{division}</Badge>
@@ -96,7 +96,7 @@ export default function CampCard({
           </div>
 
           {/* Row 2: Camp name */}
-          <div className="text-sm text-[#9ca3af] truncate mt-0.5">
+          <div className="text-sm text-[#9ca3af] sm:truncate mt-0.5">
             {camp?.camp_name || "Camp"}
           </div>
 
