@@ -297,7 +297,7 @@ export default function Home() {
             position: "absolute",
             inset: 0,
             background:
-              "radial-gradient(ellipse 60% 50% at 80% 20%, rgba(232,160,32,0.08) 0%, transparent 70%)",
+              "radial-gradient(ellipse 55% 60% at 78% 40%, rgba(232,160,32,0.13) 0%, transparent 70%)",
             pointerEvents: "none"
           }}
         />
@@ -417,15 +417,22 @@ export default function Home() {
                 flex: "1 1 52%",
                 alignItems: "center",
                 justifyContent: "center",
+                perspective: "1200px",
               }}
             >
               <div style={{
-                borderRadius: 20,
+                borderRadius: 16,
                 overflow: "hidden",
-                boxShadow: "0 0 80px rgba(232,160,32,0.12), 0 24px 64px rgba(0,0,0,0.7)",
-                border: "1px solid rgba(232,160,32,0.2)",
+                boxShadow: "0 0 60px rgba(232,160,32,0.18), 0 32px 80px rgba(0,0,0,0.8), -12px 12px 40px rgba(0,0,0,0.5)",
+                border: "1px solid rgba(232,160,32,0.25)",
                 width: "100%",
-              }}>
+                transform: "rotateY(-8deg) rotateX(2deg)",
+                transformStyle: "preserve-3d",
+                transition: "transform 0.4s ease",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = "rotateY(-4deg) rotateX(1deg)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = "rotateY(-8deg) rotateX(2deg)"; }}
+              >
                 <img
                   src={allCampsImg}
                   alt="URecruitHQ - All Camps. One Place. Desktop and mobile platform view"
