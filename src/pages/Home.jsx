@@ -289,7 +289,8 @@ export default function Home() {
           position: "relative",
           display: "flex",
           alignItems: "center",
-          minHeight: "85vh"
+          minHeight: "85vh",
+          overflow: "hidden",
         }}
       >
         {/* Background effects */}
@@ -415,25 +416,37 @@ export default function Home() {
             <div
               className="hidden md:block"
               style={{
-                flex: "0 0 55%",
-                maxWidth: 700,
+                flex: "0 0 60%",
                 position: "relative",
+                marginRight: "-100px",
               }}
             >
-              {/* Glow beneath laptop */}
+              {/* Primary glow — large blue/indigo bloom */}
               <div style={{
                 position: "absolute",
-                bottom: "-5%",
-                left: "10%",
-                width: "80%",
-                height: "30%",
-                background: "radial-gradient(ellipse, rgba(59,82,255,0.25) 0%, transparent 70%)",
-                filter: "blur(20px)",
+                bottom: "-10%",
+                left: "5%",
+                width: "90%",
+                height: "50%",
+                background: "radial-gradient(ellipse, rgba(99,102,241,0.45) 0%, rgba(59,82,255,0.2) 40%, transparent 70%)",
+                filter: "blur(32px)",
+                zIndex: 0,
+                pointerEvents: "none",
+              }} />
+              {/* Secondary glow — purple accent behind center */}
+              <div style={{
+                position: "absolute",
+                top: "20%",
+                left: "15%",
+                width: "70%",
+                height: "60%",
+                background: "radial-gradient(ellipse, rgba(139,92,246,0.2) 0%, transparent 65%)",
+                filter: "blur(24px)",
                 zIndex: 0,
                 pointerEvents: "none",
               }} />
 
-              {/* Laptop image — mask fade + lighten blend */}
+              {/* Laptop image — aggressive edge dissolve + lighten blend */}
               <img
                 src={laptopImg}
                 alt="URecruitHQ camp planning platform on laptop"
@@ -441,12 +454,12 @@ export default function Home() {
                   position: "relative",
                   zIndex: 1,
                   display: "block",
-                  width: "100%",
+                  width: "115%",
                   height: "auto",
-                  WebkitMaskImage: "radial-gradient(ellipse 85% 80% at 55% 45%, black 40%, transparent 80%)",
-                  maskImage: "radial-gradient(ellipse 85% 80% at 55% 45%, black 40%, transparent 80%)",
+                  WebkitMaskImage: "radial-gradient(ellipse 75% 70% at 60% 50%, black 30%, transparent 72%)",
+                  maskImage: "radial-gradient(ellipse 75% 70% at 60% 50%, black 30%, transparent 72%)",
                   mixBlendMode: "lighten",
-                  opacity: 0.92,
+                  opacity: 0.95,
                   animation: "hero-float 5s ease-in-out infinite",
                 }}
               />
