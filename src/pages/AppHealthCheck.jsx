@@ -2335,6 +2335,15 @@ const ALL_JOURNEYS = JOURNEY_GROUPS.flatMap(g => g.journeys);
 
 // ── Runner ───────────────────────────────────────────────────────────────────
 
+function hcSleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function isRateLimitErr(err) {
+  const msg = String(err?.message || err || "").toLowerCase();
+  return msg.includes("rate limit") || msg.includes("429") || msg.includes("too many");
+}
+
 async function runJourney(journey, onStep) {
   const ctx = {};
   const results = [];
@@ -2343,18 +2352,36 @@ async function runJourney(journey, onStep) {
 
   for (const step of journey.steps) {
     const stepStart = Date.now();
-    try {
-      const detail = await step.run(ctx);
-      const result = { name: step.name, status: "pass", detail: detail || "ok", ms: Date.now() - stepStart };
-      results.push(result);
-      onStep(results, failed ? "fail" : "running");
-    } catch (err) {
-      const result = { name: step.name, status: "fail", detail: err.message || String(err), ms: Date.now() - stepStart };
+    let detail = null;
+    let stepErr = null;
+
+    // Retry up to 2 times on rate-limit errors with exponential backoff
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      try {
+        detail = await step.run(ctx);
+        stepErr = null;
+        break;
+      } catch (err) {
+        stepErr = err;
+        if (isRateLimitErr(err) && attempt < 2) {
+          await hcSleep(600 * Math.pow(2, attempt)); // 600ms → 1200ms
+        } else {
+          break;
+        }
+      }
+    }
+
+    if (stepErr) {
+      const result = { name: step.name, status: "fail", detail: stepErr.message || String(stepErr), ms: Date.now() - stepStart };
       results.push(result);
       failed = true;
       onStep(results, "fail");
       break; // stop on first failure
     }
+
+    const result = { name: step.name, status: "pass", detail: detail || "ok", ms: Date.now() - stepStart };
+    results.push(result);
+    onStep(results, failed ? "fail" : "running");
   }
 
   // Always run cleanup
@@ -2552,7 +2579,9 @@ export default function AppHealthCheck() {
 
   async function runGroup(journeys) {
     const failures = [];
-    for (const j of journeys) {
+    for (let i = 0; i < journeys.length; i++) {
+      if (i > 0) await hcSleep(350); // throttle between journeys to avoid rate limits
+      const j = journeys[i];
       patchState(j.id, { status: "running", steps: [], duration: null });
       const result = await runJourney(j, (steps, status) => patchState(j.id, { steps, status }));
       patchState(j.id, result);
