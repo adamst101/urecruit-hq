@@ -371,10 +371,7 @@ export default function Home() {
                 margin: "0 0 28px",
                 maxWidth: 460,
               }}>
-                Camp dates are scattered across hundreds of school websites.
-                We pull them all together, flag scheduling conflicts, and warn
-                you when back-to-back camps require a flight — so your athlete
-                shows up to every camp that matters.
+                Easily discover, track, and plan for every college camp in the country. Avoid schedule conflicts and never miss out on an opportunity to get evaluated.
               </p>
 
               {/* CTAs */}
