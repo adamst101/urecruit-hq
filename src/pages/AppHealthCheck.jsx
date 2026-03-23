@@ -1690,6 +1690,7 @@ const JOURNEY_GROUPS = [
               } catch (err) {
                 const status = err?.response?.status ?? err?.status;
                 if (status === 400) return "replyToTicket reachable — returned 400 for missing ticketId ✓";
+                if (status === 403) return "replyToTicket reachable — admin guard enforced ✓";
                 if (status === 404) return "replyToTicket reachable — returned 404 ✓";
                 // 502 / 500 / network error = real failure
                 throw new Error(`replyToTicket unavailable (HTTP ${status ?? "unknown"}): ${err.message}`);
