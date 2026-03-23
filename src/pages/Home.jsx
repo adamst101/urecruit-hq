@@ -539,11 +539,11 @@ export default function Home() {
       </section>
 
       {/* ── ALL CAMPS IMAGE ── */}
-      <div style={{ textAlign: "center", padding: "0 24px 0", background: "#0a0e1a" }}>
+      <div style={{ textAlign: "center", padding: "0 24px", background: "#0a0e1a" }}>
         <img
           src={allCampsImg}
           alt="URecruitHQ - All Camps. One Place. Desktop and mobile platform view"
-          style={{ maxWidth: "100%", width: "100%", display: "block" }}
+          style={{ maxWidth: "100%", width: "auto", display: "inline-block" }}
         />
       </div>
 
