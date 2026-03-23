@@ -33,8 +33,6 @@ export const Event = pickEntity("Event", "Events");
 export const Position = pickEntity("Position", "Positions");
 export const Registration = pickEntity("Registration", "Registrations");
 
-export const Scenario = pickEntity("Scenario", "Scenarios");
-
 // IMPORTANT: ensure School resolves correctly
 export const School = pickEntity("School", "Schools");
 export const SchoolSportSite = pickEntity("SchoolSportSite", "SchoolSportSites");

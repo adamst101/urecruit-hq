@@ -132,8 +132,6 @@ export default function AdminFactoryReset() {
       { name: "CampIntentHistory", entity: E.CampIntentHistory || E.CampIntentHistories },
       { name: "CampIntent", entity: E.CampIntent || E.CampIntents },
 
-      { name: "Scenario", entity: E.Scenario || E.Scenarios },
-
       { name: "CampDemo", entity: E.CampDemo || E.CampDemos },
       { name: "Camp", entity: E.Camp || E.Camps },
 
@@ -152,7 +150,6 @@ export default function AdminFactoryReset() {
       { name: "CampIntentHistory", entity: E.CampIntentHistory || E.CampIntentHistories },
       { name: "CampIntent",        entity: E.CampIntent || E.CampIntents },
       { name: "Registration",      entity: E.Registration || E.Registrations },
-      { name: "Scenario",          entity: E.Scenario || E.Scenarios },
       { name: "Entitlement",       entity: E.Entitlement || E.Entitlements },
       { name: "AthleteProfile",    entity: E.AthleteProfile || E.AthleteProfiles },
     ],
@@ -372,7 +369,7 @@ export default function AdminFactoryReset() {
           <div className="mt-4 text-xs text-slate-500 font-medium uppercase tracking-wide">Will delete:</div>
           <ul className="mt-1 text-xs text-slate-600 list-disc list-inside space-y-0.5">
             {["AthleteProfile", "Entitlement", "CampIntent", "CampIntentHistory", "CampDecisionScore",
-              "Registration", "Scenario"].map(n => <li key={n}>{n}</li>)}
+              "Registration"].map(n => <li key={n}>{n}</li>)}
           </ul>
           <div className="mt-2 text-xs text-green-700">✓ Preserved: School, Camp, SchoolSportSite, Sport, Position</div>
 
