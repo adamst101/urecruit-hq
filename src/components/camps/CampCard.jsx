@@ -122,7 +122,7 @@ export default function CampCard({
         </div>
 
         {/* Action icons + register button */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="flex flex-col items-end gap-1 flex-shrink-0 sm:flex-row sm:items-center sm:gap-1.5">
           {/* Star — favorite toggle */}
           <button
             type="button"
