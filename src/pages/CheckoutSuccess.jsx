@@ -164,8 +164,7 @@ export default function CheckoutSuccess() {
       if (sessionId) sessionStorage.setItem("stripeSessionId", sessionId);
       if (data?.seasonYear) sessionStorage.setItem("paidSeasonYear", String(data.seasonYear));
     } catch {}
-    const returnUrl = `${window.location.origin}/AuthRedirect?next=/Workspace&source=post_payment_signup`;
-    base44.auth.redirectToLogin(returnUrl);
+    navigate("/Signup");
   }
 
   function handleLogin() {
