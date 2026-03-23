@@ -1,30 +1,15 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 import Stripe from 'npm:stripe@17.7.0';
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY"));
 
 Deno.serve(async (req) => {
   try {
-    const base44 = createClientFromRequest(req);
-    const [user, body] = await Promise.all([
-      base44.auth.me().catch(() => null),
-      req.json(),
-    ]);
-
-    if (!user?.id) return Response.json({ ok: false, error: "Authentication required" }, { status: 401 });
-
-    const { sessionId } = body;
+    const { sessionId } = await req.json();
     if (!sessionId) {
       return Response.json({ ok: false, error: "Missing sessionId" });
     }
 
     const session = await stripe.checkout.sessions.retrieve(sessionId);
-
-    // Verify the session belongs to the authenticated user unless admin.
-    const sessionAccountId = session.metadata?.account_id || "";
-    if (sessionAccountId && sessionAccountId !== user.id && user.role !== "admin") {
-      return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
-    }
 
     return Response.json({
       ok: true,

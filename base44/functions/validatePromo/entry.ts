@@ -1,13 +1,8 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 import Stripe from 'npm:stripe@17.7.0';
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY"));
 
 Deno.serve(async (req) => {
-  const base44 = createClientFromRequest(req);
-  const user = await base44.auth.me().catch(() => null);
-  if (!user?.id) return Response.json({ ok: false, error: "Authentication required" }, { status: 401 });
-
   const { promoCode } = await req.json();
 
   if (!promoCode || !promoCode.trim()) {
