@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Info,
   Lightbulb,
+  List,
 } from "lucide-react";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
@@ -19,7 +20,7 @@ import { trackEvent, trackEventOnce } from "../utils/trackEvent.js";
 import GuidePaywall from "../components/guides/GuidePaywall.jsx";
 import {
   KbSidebarDesktop,
-  KbTopicBarMobile,
+  KbMobileDrawer,
   KB_TOPICS_FLAT,
 } from "../components/guides/KbSidebar.jsx";
 
@@ -1018,6 +1019,7 @@ export default function KnowledgeBase() {
   const nextTopic = activeIndex < KB_TOPICS_FLAT.length - 1 ? KB_TOPICS_FLAT[activeIndex + 1] : null;
 
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     trackEventOnce("playbook_viewed", "evt_playbook_viewed_v1");
@@ -1086,14 +1088,14 @@ export default function KnowledgeBase() {
           }}>
             <div style={{
               display: "flex", alignItems: "center", gap: 8,
-              padding: "12px 20px",
+              padding: "12px 16px",
             }}>
               <button
                 onClick={() => nav("/Workspace")}
                 style={{
                   background: "none", border: "none",
                   color: "#cbd5e1", fontSize: 13, fontWeight: 600,
-                  cursor: "pointer",
+                  cursor: "pointer", flexShrink: 0,
                   display: "flex", alignItems: "center", gap: 4,
                   padding: 0, fontFamily: "inherit",
                 }}
@@ -1101,21 +1103,51 @@ export default function KnowledgeBase() {
                 <ChevronLeft style={{ width: 14, height: 14 }} />
                 HQ
               </button>
-              <span style={{ color: "rgba(255,255,255,0.15)", fontSize: 13 }}>/</span>
-              <span style={{ color: "rgba(255,255,255,0.40)", fontSize: 13 }}>
-                {activeTopic?.categoryLabel}
-              </span>
-              <span style={{ color: "rgba(255,255,255,0.15)", fontSize: 13 }}>/</span>
-              <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600 }}>
-                {activeTopic?.label}
-              </span>
-            </div>
 
-            {isMobile && (
-              <div style={{ borderTop: `1px solid ${C.shellBorder}` }}>
-                <KbTopicBarMobile activeId={activeTopicId} onSelect={selectTopic} />
-              </div>
-            )}
+              {/* Breadcrumb — truncates gracefully on mobile */}
+              {!isMobile && (
+                <>
+                  <span style={{ color: "rgba(255,255,255,0.15)", fontSize: 13, flexShrink: 0 }}>/</span>
+                  <span style={{ color: "rgba(255,255,255,0.40)", fontSize: 13, flexShrink: 0 }}>
+                    {activeTopic?.categoryLabel}
+                  </span>
+                  <span style={{ color: "rgba(255,255,255,0.15)", fontSize: 13, flexShrink: 0 }}>/</span>
+                  <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {activeTopic?.label}
+                  </span>
+                </>
+              )}
+
+              {/* On mobile: show current topic name, truncated */}
+              {isMobile && (
+                <span style={{
+                  color: "#e2e8f0", fontSize: 13, fontWeight: 600,
+                  flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  {activeTopic?.icon} {activeTopic?.label}
+                </span>
+              )}
+
+              {/* Mobile topics button */}
+              {isMobile && (
+                <button
+                  onClick={() => setDrawerOpen(true)}
+                  style={{
+                    flexShrink: 0,
+                    display: "flex", alignItems: "center", gap: 6,
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: 8,
+                    padding: "6px 12px",
+                    color: "#e2e8f0", fontSize: 12, fontWeight: 600,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >
+                  <List style={{ width: 13, height: 13 }} />
+                  All guides
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Article area */}
@@ -1228,6 +1260,16 @@ export default function KnowledgeBase() {
           </div>
         </div>
       </div>
+
+      {/* Mobile topic drawer — overlays everything */}
+      {isMobile && (
+        <KbMobileDrawer
+          activeId={activeTopicId}
+          onSelect={(id) => { selectTopic(id); setDrawerOpen(false); }}
+          isOpen={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
     </div>
   );
 }

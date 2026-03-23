@@ -1,6 +1,6 @@
 // src/components/guides/KbSidebar.jsx
-import React, { useState } from "react";
-import { Search, ChevronDown, ChevronRight, X } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Search, ChevronDown, ChevronRight, X, CheckCircle2 } from "lucide-react";
 
 export const KB_CATEGORIES = [
   {
@@ -164,33 +164,124 @@ export function KbSidebarDesktop({ activeId, onSelect }) {
   );
 }
 
-export function KbTopicBarMobile({ activeId, onSelect }) {
+// ── Mobile bottom-sheet drawer ────────────────────────────────────────────────
+export function KbMobileDrawer({ activeId, onSelect, isOpen, onClose }) {
+  // Prevent body scroll while drawer is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [isOpen]);
+
   return (
-    <div style={{
-      overflowX: "auto", display: "flex", gap: 6,
-      padding: "8px 16px", scrollbarWidth: "none",
-    }}>
-      {KB_TOPICS_FLAT.map((t) => {
-        const isActive = activeId === t.id;
-        return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: "rgba(0,0,0,0.52)",
+          opacity: isOpen ? 1 : 0,
+          pointerEvents: isOpen ? "auto" : "none",
+          transition: "opacity 0.22s ease",
+        }}
+      />
+
+      {/* Sheet */}
+      <div style={{
+        position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 201,
+        background: "#ffffff",
+        borderRadius: "18px 18px 0 0",
+        maxHeight: "82vh",
+        overflowY: "auto",
+        transform: isOpen ? "translateY(0)" : "translateY(100%)",
+        transition: "transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)",
+        boxShadow: "0 -8px 40px rgba(0,0,0,0.20)",
+        fontFamily: "'DM Sans', Inter, system-ui, sans-serif",
+        WebkitOverflowScrolling: "touch",
+      }}>
+
+        {/* Handle */}
+        <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: "#e2e8f0" }} />
+        </div>
+
+        {/* Sheet header */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "6px 20px 14px",
+          borderBottom: "1px solid #f1f5f9",
+        }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>
+            All guides
+          </div>
           <button
-            key={t.id}
-            onClick={() => onSelect(t.id)}
+            onClick={onClose}
             style={{
-              flexShrink: 0, padding: "5px 12px", borderRadius: 20,
-              border: isActive ? "none" : "1px solid rgba(255,255,255,0.08)",
-              fontSize: 12, fontWeight: 600,
-              cursor: "pointer", whiteSpace: "nowrap",
-              background: isActive ? "#f1f5f9" : "transparent",
-              color: isActive ? "#0f172a" : "#94a3b8",
-              transition: "all 0.12s",
-              fontFamily: "inherit",
+              background: "#f1f5f9", border: "none", borderRadius: 8,
+              padding: "6px 14px", fontSize: 13, fontWeight: 600,
+              color: "#374151", cursor: "pointer", fontFamily: "inherit",
             }}
           >
-            {t.icon} {t.label}
+            Done
           </button>
-        );
-      })}
-    </div>
+        </div>
+
+        {/* Topic list by category */}
+        <div style={{ paddingBottom: 32 }}>
+          {KB_CATEGORIES.map((cat, catIdx) => (
+            <div key={cat.id}>
+              {/* Category divider label */}
+              <div style={{
+                padding: "14px 20px 6px",
+                fontSize: 10, fontWeight: 700,
+                textTransform: "uppercase", letterSpacing: "0.09em",
+                color: "#94a3b8",
+                borderTop: catIdx > 0 ? "1px solid #f1f5f9" : "none",
+              }}>
+                {cat.label}
+              </div>
+
+              {cat.topics.map((topic) => {
+                const isActive = activeId === topic.id;
+                return (
+                  <button
+                    key={topic.id}
+                    onClick={() => onSelect(topic.id)}
+                    style={{
+                      width: "100%", textAlign: "left",
+                      display: "flex", alignItems: "center", gap: 14,
+                      padding: "13px 20px",
+                      border: "none",
+                      borderLeft: isActive ? "3px solid #2563eb" : "3px solid transparent",
+                      background: isActive ? "rgba(37,99,235,0.05)" : "transparent",
+                      cursor: "pointer", fontFamily: "inherit",
+                      transition: "background 0.1s",
+                    }}
+                  >
+                    <span style={{ fontSize: 20, flexShrink: 0 }}>{topic.icon}</span>
+                    <span style={{
+                      flex: 1,
+                      fontSize: 15,
+                      fontWeight: isActive ? 600 : 400,
+                      color: isActive ? "#1e3a8a" : "#374151",
+                      lineHeight: 1.3,
+                    }}>
+                      {topic.label}
+                    </span>
+                    {isActive && (
+                      <CheckCircle2 style={{ width: 16, height: 16, color: "#2563eb", flexShrink: 0 }} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
   );
 }
