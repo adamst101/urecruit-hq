@@ -19,6 +19,9 @@ async function computeToken(ticketId: string, secret: string): Promise<string> {
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
+    const user = await base44.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
+
     const body = await req.json();
 
     const { ticketId, message, messageType, newStatus, appUrl } = body;
