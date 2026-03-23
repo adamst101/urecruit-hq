@@ -188,6 +188,8 @@ export default function Home() {
           .hero-proof-strip { font-size: 11px !important; }
           .hero-proof-strip-wrap { display: none !important; }
           .hero-scroll-nudge { display: none !important; }
+          .stats-bar-desktop { display: none !important; }
+          .all-camps-img-mobile { display: block !important; }
         }
         @media (min-width: 768px) and (max-width: 1024px) {
           .hero-h1-line1 { font-size: 3.2vw !important; }
@@ -509,8 +511,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── STATIC STATS BAR ── */}
-      <div style={{
+      {/* ── STATIC STATS BAR — hidden on mobile ── */}
+      <div className="stats-bar-desktop" style={{
         background: "#e8a020",
         padding: "14px 24px",
         textAlign: "center",
@@ -526,6 +528,15 @@ export default function Home() {
         }}>
           {campDisplay} Verified College Football Camps &nbsp;·&nbsp; {schoolDisplay} Programs &nbsp;·&nbsp; FBS · FCS · D2 · D3 · NAIA · JUCO &nbsp;·&nbsp; Verified every Monday from official school athletic pages
         </span>
+      </div>
+
+      {/* ── MOBILE ONLY: laptop image break between hero and Why section ── */}
+      <div className="all-camps-img-mobile" style={{ display: "none", background: "#0a0e1a", padding: "0 0 0" }}>
+        <img
+          src={laptopImg}
+          alt="URecruitHQ camp planning platform"
+          style={{ display: "block", width: "100%", height: "auto" }}
+        />
       </div>
 
       {/* ── DIFFERENTIATORS ── */}
