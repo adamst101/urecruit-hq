@@ -365,7 +365,7 @@ export default function Home() {
             <div style={{ flex: "0 0 44%", minWidth: 0, position: "relative", zIndex: 2 }}>
               {/* Subtext */}
               <p style={{
-                fontSize: 17,
+                fontSize: 20,
                 color: "#9ca3af",
                 lineHeight: 1.65,
                 margin: "0 0 28px",
