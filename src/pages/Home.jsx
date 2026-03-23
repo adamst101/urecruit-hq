@@ -250,11 +250,8 @@ export default function Home() {
               </>
             ) : (
               <>
-                <button onClick={() => nav("/Signup")} style={S.navBtnAmber}>
-                  Create Account
-                </button>
                 <button onClick={handleMemberLogin} style={S.navBtnMemberLogin}>
-                  Sign In
+                  Membership Login
                 </button>
               </>
             )}
@@ -1140,7 +1137,7 @@ const S = {
   },
   navBtnMemberLogin: {
     background: "#e8a020",
-    color: "#0a0e1a",
+    color: "#ffffff",
     border: "none",
     borderRadius: 8,
     padding: "6px 14px",
