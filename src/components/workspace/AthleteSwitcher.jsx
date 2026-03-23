@@ -21,10 +21,15 @@ export default function AthleteSwitcher({ accountId, seasonYear, onAddAthlete })
           base44.entities.Entitlement.filter({ account_id: accountId, status: "active" }),
         ]);
         if (cancelled) return;
-        const aList = Array.isArray(athRows) ? athRows : [];
+        // Sort: primary athletes first, then by id (stable fallback)
+        const aList = (Array.isArray(athRows) ? athRows : []).sort((a, b) => {
+          if (a.is_primary && !b.is_primary) return -1;
+          if (!a.is_primary && b.is_primary) return 1;
+          return 0;
+        });
         setAthletes(aList);
         setEntitlements(Array.isArray(entRows) ? entRows : []);
-        // Default to primary athlete
+        // Default to primary athlete if nothing is selected
         if (!activeId && aList.length > 0) {
           const primary = aList.find(a => a.is_primary) || aList[0];
           const id = primary.id || primary._id;

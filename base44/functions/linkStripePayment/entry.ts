@@ -90,6 +90,7 @@ Deno.serve(async (req) => {
           first_name: firstName,
           last_name: lastName,
           athlete_name: athlete2Name,
+          display_name: athlete2Name,
           is_primary: false,
           active: true,
           sport_id: sportId || null,
