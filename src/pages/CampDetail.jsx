@@ -101,7 +101,7 @@ function CampDetailInner() {
   const location = useLocation();
   const queryClient = useQueryClient();
 
-  const { mode, isLoading: accessLoading, seasonYear } = useSeasonAccess();
+  const { mode, isLoading: accessLoading, seasonYear, accountId } = useSeasonAccess();
   const currentYear = new Date().getFullYear();
   const {
     athleteProfile,
@@ -260,6 +260,7 @@ function CampDetailInner() {
         await base44.entities.CampIntent.create({
           athlete_id: athleteId,
           camp_id: campId,
+          account_id: accountId || "",
           status: "favorite",
           priority: "medium"
         });
@@ -305,6 +306,7 @@ function CampDetailInner() {
         await base44.entities.CampIntent.create({
           athlete_id: athleteId,
           camp_id: campId,
+          account_id: accountId || "",
           status: "registered",
           priority: "high"
         });

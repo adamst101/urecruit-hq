@@ -382,6 +382,7 @@ export default function Discover() {
       const payload = {
         camp_id: key,
         status: String(nextStatus),
+        account_id: seasonAccountId || "",
       };
       if (aId) payload.athlete_id = String(aId);
 

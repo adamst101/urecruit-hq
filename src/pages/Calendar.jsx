@@ -563,7 +563,7 @@ export default function Calendar() {
       } else if (existing?.id) {
         await CampIntent.update(existing.id, { status: String(nextStatus) });
       } else {
-        await CampIntent.create({ camp_id: key, status: String(nextStatus), athlete_id: aId });
+        await CampIntent.create({ camp_id: key, status: String(nextStatus), athlete_id: aId, account_id: season.accountId || "" });
       }
       try { localStorage.setItem("intentUpdatedAt", Date.now().toString()); } catch {}
       window.dispatchEvent(new CustomEvent("intentUpdated"));
