@@ -1,4 +1,5 @@
 // functions/seedSchoolsMaster_membership.ts
+import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 // Deno + Base44 backend
 //
 // Seeds School master from official membership sources.
@@ -224,6 +225,12 @@ Deno.serve(async (req) => {
         status: 405,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    const base44Client = createClientFromRequest(req);
+    const user = await base44Client.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") {
+      return new Response(JSON.stringify({ ok: false, error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
     }
 
     const body = await req.json().catch(() => ({}));

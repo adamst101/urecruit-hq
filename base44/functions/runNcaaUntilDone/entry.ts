@@ -36,6 +36,11 @@ Deno.serve(async (req) => {
   try {
     if (req.method !== "POST") return jsonResp({ ok: false, error: "Method not allowed" });
 
+    // base44 client + function invoke
+    const client = createClientFromRequest(req);
+    const user = await client.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
+
     const body = await req.json().catch(() => ({}));
 
     // ---- operator knobs ----
@@ -56,9 +61,6 @@ Deno.serve(async (req) => {
     const invokeTries = Number(body?.invokeTries ?? 6);
     const baseBackoffMs = Number(body?.baseBackoffMs ?? 800);
     const jitterMs = Number(body?.jitterMs ?? 250);
-
-    // base44 client + function invoke
-    const client = createClientFromRequest(req);
     const fn = client?.functions?.invoke;
     if (typeof fn !== "function") {
       return jsonResp({ ok: false, error: "client.functions.invoke not available in this environment" });

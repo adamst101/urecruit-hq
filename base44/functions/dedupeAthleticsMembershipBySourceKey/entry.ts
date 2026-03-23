@@ -98,14 +98,16 @@ Deno.serve(async (req) => {
       return jsonResp({ ok: false, error: "Method not allowed", stats, debug, nextStartAt, done });
     }
 
+    const client = createClientFromRequest(req);
+    const user = await client.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") return jsonResp({ ok: false, error: "Forbidden" });
+
     const body = await req.json().catch(() => ({}));
     const dryRun = !!body?.dryRun;
     const startAt = Math.max(0, Number(body?.startAt || 0));
     const maxGroups = Number(body?.maxGroups || 0);
     const throttleMs = Number(body?.throttleMs || (dryRun ? 0 : 50));
     const timeBudgetMs = Math.max(5000, Number(body?.timeBudgetMs || 20000));
-
-    const client = createClientFromRequest(req);
     const AthleticsMembership = client.entities.AthleticsMembership || client.entities.AthleticsMemberships;
 
     if (!AthleticsMembership) {

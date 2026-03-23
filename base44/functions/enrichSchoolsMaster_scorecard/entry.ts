@@ -1,4 +1,5 @@
 // functions/enrichSchoolsMaster_scorecard.ts
+import { createClientFromRequest } from "npm:@base44/sdk@0.8.6";
 // Enrich School master with UNITID + city/state + website_url via College Scorecard API.
 // Requires backend secret: SCORECARD_API_KEY
 //
@@ -132,6 +133,10 @@ Deno.serve(async (req) => {
 
   try {
     if (req.method !== "POST") return jsonResp({ error: "Method not allowed", stats, debug });
+
+    const base44 = createClientFromRequest(req);
+    const user = await base44.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") return jsonResp({ ok: false, error: "Forbidden" });
 
     const body = await req.json().catch(() => ({}));
     const dryRun = !!body?.dryRun;

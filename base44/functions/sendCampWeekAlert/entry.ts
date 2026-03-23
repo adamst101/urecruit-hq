@@ -173,6 +173,8 @@ function renderAlertEmail(
 // ── Main ────────────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
+  const user = await base44.auth.me().catch(() => null);
+  if (!user || user.role !== "admin") return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const { accountId: targetAccountId, mode = "dry_run", targetDate } = body;
   // mode: "preview" | "dry_run" | "send" | "list_subscribers"

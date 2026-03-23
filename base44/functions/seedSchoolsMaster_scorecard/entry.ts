@@ -266,6 +266,9 @@ Deno.serve(async (req) => {
     if (req.method !== "POST") return jsonResp({ ok: false, error: "Method not allowed", stats, debug });
 
     const base44 = createClientFromRequest(req);
+    const user = await base44.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") return jsonResp({ ok: false, error: "Forbidden" });
+
     const School = base44?.entities?.School || base44?.entities?.Schools;
 
     if (!School) return jsonResp({ ok: false, error: "School entity not found in base44.entities", stats, debug });

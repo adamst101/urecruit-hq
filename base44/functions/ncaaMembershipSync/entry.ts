@@ -295,6 +295,10 @@ Deno.serve(async (req: Request) => {
   try {
     if (req.method !== "POST") return jsonResp({ ok: false, error: "Method not allowed", stats, debug, nextStartAt, done });
 
+    const client = createClientFromRequest(req) as any;
+    const user = await client.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") return jsonResp({ ok: false, error: "Forbidden" });
+
     const body: AnyObj = await req.json().catch(() => ({}));
     const dryRun = !!body?.dryRun;
     const seasonYear = body?.seasonYear != null ? Number(body.seasonYear) : null;
@@ -304,8 +308,6 @@ Deno.serve(async (req: Request) => {
     const throttleMs = Number(body?.throttleMs || (dryRun ? 0 : 8));
     const timeBudgetMs = Math.max(5000, Number(body?.timeBudgetMs || 22000));
     const sourcePlatform = s(body?.sourcePlatform) || "ncaa-api";
-
-    const client = createClientFromRequest(req) as any;
     const School = client.entities.School || client.entities.Schools;
     const AthleticsMembership = client.entities.AthleticsMembership || client.entities.AthleticsMemberships;
     const Unmatched = client.entities.UnmatchedAthleticsRow || client.entities.UnmatchedAthleticsRows;

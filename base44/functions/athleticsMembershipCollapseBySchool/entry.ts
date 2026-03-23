@@ -62,6 +62,10 @@ Deno.serve(async (req) => {
   try {
     if (req.method !== "POST") return jsonResp({ ok: false, error: "Method not allowed" });
 
+    const client = createClientFromRequest(req);
+    const user = await client.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") return jsonResp({ ok: false, error: "Forbidden" });
+
     const body = await req.json().catch(() => ({}));
     const dryRun = !!body?.dryRun;
     const org = lc(body?.org || "");
@@ -70,8 +74,6 @@ Deno.serve(async (req) => {
     const maxDelete = Math.max(0, Number(body?.maxDelete || 200));
     const throttleMs = Math.max(0, Number(body?.throttleMs || (dryRun ? 0 : 50)));
     const timeBudgetMs = Math.max(5000, Number(body?.timeBudgetMs || 20000));
-
-    const client = createClientFromRequest(req);
     const AthleticsMembership = client.entities.AthleticsMembership || client.entities.AthleticsMemberships;
     if (!AthleticsMembership) return jsonResp({ ok: false, error: "AthleticsMembership entity not found" });
 

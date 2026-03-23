@@ -136,6 +136,10 @@ Deno.serve(async (req) => {
       return jsonResp({ ok: false, error: "Method not allowed", stats, debug, nextStartAtGroup, done });
     }
 
+    const client = createClientFromRequest(req);
+    const user = await client.auth.me().catch(() => null);
+    if (!user || user.role !== "admin") return jsonResp({ ok: false, error: "Forbidden" });
+
     const body = await req.json().catch(() => ({}));
 
     const dryRun = !!body.dryRun;
@@ -152,8 +156,6 @@ Deno.serve(async (req) => {
     const normalizeSourceKey = body.normalizeSourceKey === undefined ? true : !!body.normalizeSourceKey;
 
     nextStartAtGroup = startAtGroup;
-
-    const client = createClientFromRequest(req);
     const AthleticsMembership =
       (client.entities && (client.entities.AthleticsMembership || client.entities.AthleticsMemberships)) || null;
 

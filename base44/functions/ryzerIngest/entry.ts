@@ -1,4 +1,5 @@
 // functions/ryzerIngest.js
+import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 // Base44 Backend Function (Deno)
 //
 // v14 goals:
@@ -260,6 +261,12 @@ Deno.serve(async function (req) {
         status: 405,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    var base44 = createClientFromRequest(req);
+    var user = await base44.auth.me().catch(function() { return null; });
+    if (!user || user.role !== "admin") {
+      return new Response(JSON.stringify({ ok: false, error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
     }
 
     var body = null;
