@@ -448,7 +448,6 @@ export default function Home() {
                 maskImage: "linear-gradient(to right, transparent, black 12%, black 88%, transparent), linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
                 WebkitMaskComposite: "destination-in",
                 maskComposite: "intersect",
-                animation: "hero-float 5s ease-in-out infinite",
               }}
             />
 
