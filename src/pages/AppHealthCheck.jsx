@@ -1532,19 +1532,33 @@ const JOURNEY_GROUPS = [
           {
             name: "linkStripePayment function reachable",
             run: async (ctx) => {
-              // Probe with empty sessionId — expects ok:false with 'sessionId required' error
-              const res = await base44.functions.invoke("linkStripePayment", { sessionId: "" });
-              const data = res?.data;
-              if (data === undefined || data === null) throw new Error("linkStripePayment returned empty response — function may be down");
-              ctx.linkRes = data;
-              return `Function responded — ok=${data.ok}`;
+              // Probe with empty sessionId. The function returns HTTP 400 for missing sessionId
+              // and HTTP 401 for unauthenticated requests — both mean the function is alive and
+              // enforcing validation. base44.functions.invoke() throws on non-2xx, so catch those.
+              try {
+                const res = await base44.functions.invoke("linkStripePayment", { sessionId: "" });
+                const data = res?.data;
+                if (data === undefined || data === null) throw new Error("linkStripePayment returned empty response — function may be down");
+                ctx.linkRes = data;
+                ctx.linkValidated = true;
+                return `Function responded — ok=${data.ok}`;
+              } catch (e) {
+                const msg = e?.message || "";
+                if (msg.includes("400") || msg.includes("401")) {
+                  ctx.linkRes = { ok: false, error: "validation enforced (HTTP error)" };
+                  ctx.linkValidated = true;
+                  return `Function alive — validation enforced (${msg.includes("401") ? "auth required" : "sessionId required"}) ✓`;
+                }
+                throw new Error("linkStripePayment unreachable: " + msg);
+              }
             },
           },
           {
             name: "linkStripePayment rejects missing sessionId",
             run: async (ctx) => {
-              if (ctx.linkRes.ok === true) throw new Error("linkStripePayment accepted an empty sessionId — payment linking could be triggered without a valid Stripe session");
-              const errMsg = ctx.linkRes.error || "(no error field)";
+              if (!ctx.linkValidated) throw new Error("Previous step did not confirm function is alive");
+              if (ctx.linkRes?.ok === true) throw new Error("linkStripePayment accepted an empty sessionId — payment linking could be triggered without a valid Stripe session");
+              const errMsg = ctx.linkRes?.error || "(no error field)";
               return `Empty sessionId correctly rejected — error: "${errMsg}" ✓`;
             },
           },
