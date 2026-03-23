@@ -25,7 +25,6 @@ export const Camp = pickEntity("Camp", "Camps");
 export const CampDecisionScore = pickEntity("CampDecisionScore", "CampDecisionScores");
 export const CampDemo = pickEntity("CampDemo", "CampDemos");
 export const CampIntent = pickEntity("CampIntent", "CampIntents");
-export const CampIntentHistory = pickEntity("CampIntentHistory", "CampIntentHistories");
 
 export const Entitlement = pickEntity("Entitlement", "Entitlements");
 export const Event = pickEntity("Event", "Events");

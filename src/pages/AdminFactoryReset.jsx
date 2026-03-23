@@ -129,7 +129,6 @@ export default function AdminFactoryReset() {
       { name: "Registration", entity: E.Registration || E.Registrations },
 
       { name: "CampDecisionScore", entity: E.CampDecisionScore || E.CampDecisionScores },
-      { name: "CampIntentHistory", entity: E.CampIntentHistory || E.CampIntentHistories },
       { name: "CampIntent", entity: E.CampIntent || E.CampIntents },
 
       { name: "CampDemo", entity: E.CampDemo || E.CampDemos },
@@ -147,7 +146,6 @@ export default function AdminFactoryReset() {
   const userPurgePlan = useMemo(
     () => [
       { name: "CampDecisionScore", entity: E.CampDecisionScore || E.CampDecisionScores },
-      { name: "CampIntentHistory", entity: E.CampIntentHistory || E.CampIntentHistories },
       { name: "CampIntent",        entity: E.CampIntent || E.CampIntents },
       { name: "Registration",      entity: E.Registration || E.Registrations },
       { name: "Entitlement",       entity: E.Entitlement || E.Entitlements },
@@ -368,7 +366,7 @@ export default function AdminFactoryReset() {
 
           <div className="mt-4 text-xs text-slate-500 font-medium uppercase tracking-wide">Will delete:</div>
           <ul className="mt-1 text-xs text-slate-600 list-disc list-inside space-y-0.5">
-            {["AthleteProfile", "Entitlement", "CampIntent", "CampIntentHistory", "CampDecisionScore",
+            {["AthleteProfile", "Entitlement", "CampIntent", "CampDecisionScore",
               "Registration"].map(n => <li key={n}>{n}</li>)}
           </ul>
           <div className="mt-2 text-xs text-green-700">✓ Preserved: School, Camp, SchoolSportSite, Sport, Position</div>
