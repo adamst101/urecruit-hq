@@ -693,6 +693,206 @@ const JOURNEY_GROUPS = [
   },
 
   {
+    label: "Conflict & Travel Warnings",
+    journeys: [
+      {
+        id: "travel_warning_engine",
+        name: "Travel Warning Logic",
+        icon: "✈️",
+        description: "Unit-tests detectConflicts() — far-from-home threshold, flight vs hotel language, stored coordinate preference, and state center fallback.",
+        steps: [
+          {
+            name: "detectConflicts and coordinate helpers are importable",
+            run: async (ctx) => {
+              const mod = await import("../components/hooks/useConflictDetection.jsx");
+              const coords = await import("../components/hooks/useCityCoords.jsx");
+              if (typeof mod.detectConflicts !== "function") throw new Error("detectConflicts is not exported");
+              if (typeof coords.getCityCoords !== "function") throw new Error("getCityCoords is not exported");
+              if (typeof coords.getStateCenter !== "function") throw new Error("getStateCenter is not exported — state-center fallback for home coords will silently fail");
+              if (typeof coords.haversine !== "function") throw new Error("haversine is not exported");
+              ctx.detectConflicts = mod.detectConflicts;
+              ctx.getCityCoords = coords.getCityCoords;
+              ctx.getStateCenter = coords.getStateCenter;
+              ctx.haversine = coords.haversine;
+              return "detectConflicts, getCityCoords, getStateCenter, haversine all exported ✓";
+            },
+          },
+          {
+            name: "getCityCoords resolves known college towns",
+            run: async (ctx) => {
+              const tests = [
+                { city: "West Lafayette", state: "IN", label: "Purdue" },
+                { city: "Boone", state: "NC", label: "Appalachian State" },
+                { city: "Chicago", state: "IL", label: "Chicago State" },
+                { city: "Magnolia", state: "TX", label: "Magnolia TX (home city)" },
+              ];
+              const failed = tests.filter(t => !ctx.getCityCoords(t.city, t.state));
+              if (failed.length > 0) throw new Error(`getCityCoords returned null for: ${failed.map(t => t.label).join(", ")}`);
+              return `All ${tests.length} test cities resolved ✓`;
+            },
+          },
+          {
+            name: "getStateCenter returns coords for all states used as fallback",
+            run: async (ctx) => {
+              const states = ["TX", "IL", "NC", "IN", "CA", "FL", "OH"];
+              const failed = states.filter(s => !ctx.getStateCenter(s));
+              if (failed.length > 0) throw new Error(`getStateCenter returned null for: ${failed.join(", ")}`);
+              return `State center fallback works for ${states.length} tested states ✓`;
+            },
+          },
+          {
+            name: "Far-from-home warning fires for camp >600 miles away",
+            run: async (ctx) => {
+              // Home: Magnolia TX (~30.21, -95.75)  |  Camp: Chicago (~41.88, -87.63) ≈ 1,050 mi
+              const warnings = ctx.detectConflicts({
+                camps: [{
+                  id: "test-chi", camp_name: "Chicago State Camp",
+                  start_date: "2026-06-14",
+                  city: "Chicago", state: "IL",
+                }],
+                homeCity: "Magnolia", homeState: "TX",
+                homeLat: 30.21, homeLng: -95.75,
+                isPaid: true,
+              });
+              const farWarn = warnings.find(w => w.type === "far_from_home");
+              if (!farWarn) throw new Error("No far_from_home warning fired for Chicago (~1,050 mi from Magnolia TX)");
+              ctx.farWarnDist = farWarn.distance;
+              return `far_from_home warning fired — distance ${farWarn.distance} mi ✓`;
+            },
+          },
+          {
+            name: "Far-from-home warning uses flight language when >400 miles",
+            run: async (ctx) => {
+              if (!ctx.farWarnDist) throw new Error("Previous step did not capture distance");
+              const warnings = ctx.detectConflicts({
+                camps: [{
+                  id: "test-chi2", camp_name: "Chicago State Camp",
+                  start_date: "2026-06-14",
+                  city: "Chicago", state: "IL",
+                }],
+                homeCity: "Magnolia", homeState: "TX",
+                homeLat: 30.21, homeLng: -95.75,
+                isPaid: true,
+              });
+              const w = warnings.find(w => w.type === "far_from_home");
+              if (!w?.message?.includes("✈️")) throw new Error(`Expected ✈️ flight language for ${ctx.farWarnDist} mi camp — got: "${w?.message}"`);
+              return `Flight language (✈️) present for ${ctx.farWarnDist} mi camp ✓`;
+            },
+          },
+          {
+            name: "Far-from-home does NOT fire for camps within 600 miles",
+            run: async (ctx) => {
+              // Home: Magnolia TX  |  Camp: Dallas TX (~30 mi) — should not fire
+              const warnings = ctx.detectConflicts({
+                camps: [{
+                  id: "test-dal", camp_name: "Dallas Camp",
+                  start_date: "2026-06-14",
+                  city: "Dallas", state: "TX",
+                }],
+                homeCity: "Magnolia", homeState: "TX",
+                homeLat: 30.21, homeLng: -95.75,
+                isPaid: true,
+              });
+              const farWarn = warnings.find(w => w.type === "far_from_home");
+              if (farWarn) throw new Error(`far_from_home incorrectly fired for Dallas TX (${farWarn.distance} mi from Magnolia TX)`);
+              return "No false far_from_home warning for nearby Dallas TX ✓";
+            },
+          },
+          {
+            name: "Far-from-home does NOT fire for non-paid users",
+            run: async (ctx) => {
+              const warnings = ctx.detectConflicts({
+                camps: [{
+                  id: "test-chi3", camp_name: "Chicago State Camp",
+                  start_date: "2026-06-14",
+                  city: "Chicago", state: "IL",
+                }],
+                homeCity: "Magnolia", homeState: "TX",
+                homeLat: 30.21, homeLng: -95.75,
+                isPaid: false,
+              });
+              const farWarn = warnings.find(w => w.type === "far_from_home");
+              if (farWarn) throw new Error("far_from_home warning fired for non-paid user — should be paid-only");
+              return "Far-from-home correctly suppressed for non-paid user ✓";
+            },
+          },
+          {
+            name: "State center fallback fires when no city coords and no stored lat/lng",
+            run: async (ctx) => {
+              // Use a fake home city not in the lookup — fallback to TX state center
+              const warnings = ctx.detectConflicts({
+                camps: [{
+                  id: "test-chi4", camp_name: "Chicago State Camp",
+                  start_date: "2026-06-14",
+                  city: "Chicago", state: "IL",
+                }],
+                homeCity: "FakeCityNotInLookup", homeState: "TX",
+                homeLat: null, homeLng: null,
+                isPaid: true,
+              });
+              const farWarn = warnings.find(w => w.type === "far_from_home");
+              if (!farWarn) throw new Error("State center fallback did not produce a far_from_home warning — home location resolution may be broken for cities not in the lookup table");
+              return `State center fallback working — warning fired at ~${farWarn.distance} mi ✓`;
+            },
+          },
+          {
+            name: "Stored _school_lat/_school_lng used over city lookup",
+            run: async (ctx) => {
+              // Pass a camp with explicit coords for a city NOT in the lookup
+              // If campCoords correctly uses _school_lat/_school_lng, warning fires
+              const warnings = ctx.detectConflicts({
+                camps: [{
+                  id: "test-stored", camp_name: "Remote Camp",
+                  start_date: "2026-06-14",
+                  city: "FakeTownNotInLookup", state: "MT",
+                  _school_lat: 41.88, _school_lng: -87.63, // Chicago coords — ~1050 mi from Magnolia TX
+                }],
+                homeCity: "Magnolia", homeState: "TX",
+                homeLat: 30.21, homeLng: -95.75,
+                isPaid: true,
+              });
+              const farWarn = warnings.find(w => w.type === "far_from_home");
+              if (!farWarn) throw new Error("campCoords ignored _school_lat/_school_lng — stored geocoded coords are not being used for conflict detection");
+              return `Stored _school_lat/_school_lng used correctly — warning fired at ~${farWarn.distance} mi ✓`;
+            },
+          },
+          {
+            name: "Back-to-back travel warning fires for camps 1 day apart and >200 miles",
+            run: async (ctx) => {
+              const warnings = ctx.detectConflicts({
+                camps: [
+                  { id: "a", camp_name: "Columbus Camp", start_date: "2026-06-14", city: "Columbus", state: "OH" },
+                  { id: "b", camp_name: "Chicago Camp",  start_date: "2026-06-15", city: "Chicago",  state: "IL" },
+                ],
+                isPaid: true,
+              });
+              const travelWarn = warnings.find(w => w.type === "back_to_back_travel");
+              if (!travelWarn) throw new Error("No back_to_back_travel warning for camps 1 day apart and ~300 miles");
+              return `back_to_back_travel fired — ${travelWarn.distance} mi, ${travelWarn.message.includes("✈️") ? "flight" : "drive"} ✓`;
+            },
+          },
+          {
+            name: "Same-day conflict detected",
+            run: async (ctx) => {
+              const warnings = ctx.detectConflicts({
+                camps: [
+                  { id: "x", camp_name: "Camp A", start_date: "2026-06-14", city: "Columbus", state: "OH" },
+                  { id: "y", camp_name: "Camp B", start_date: "2026-06-14", city: "Chicago",  state: "IL" },
+                ],
+                isPaid: false,
+              });
+              const conflict = warnings.find(w => w.type === "same_day");
+              if (!conflict) throw new Error("No same_day conflict detected for two camps on the same date");
+              if (conflict.severity !== "error") throw new Error(`Expected severity=error, got ${conflict.severity}`);
+              return "Same-day conflict detected with error severity ✓";
+            },
+          },
+        ],
+      },
+    ],
+  },
+
+  {
     label: "Data Quality",
     journeys: [
       {
