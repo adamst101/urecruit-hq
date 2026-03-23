@@ -126,6 +126,11 @@ function parseFlexibleDates(s) {
   return result;
 }
 
+function stripPipeSuffix(s) {
+  if (!s) return s;
+  return s.replace(/\s*\|.*$/, "").trim();
+}
+
 function extractRyzerCampDetails(html) {
   if (!html) return null;
   var text = stripTags(html);
@@ -133,12 +138,12 @@ function extractRyzerCampDetails(html) {
   var campName = null;
   var h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
   if (h1 && h1[1]) {
-    campName = stripTags(h1[1]).replace(/\s*\|\s*Event Registration.*$/i, "").replace(/\s*-\s*Registration.*$/i, "").replace(/\s*-\s*Event Registration.*$/i, "").trim();
+    campName = stripPipeSuffix(stripTags(h1[1]).replace(/\s*-\s*(?:Event\s+)?Registration.*$/i, "").trim());
   }
   if (!campName || campName.length < 4) {
     var titleM = /<title[^>]*>([^<]+)<\/title>/i.exec(html);
     if (titleM && titleM[1]) {
-      campName = stripNonAscii(titleM[1]).replace(/\s*\|\s*Event Registration.*$/i, "").replace(/\s*-\s*Registration.*$/i, "").trim();
+      campName = stripPipeSuffix(stripNonAscii(titleM[1]).replace(/\s*-\s*(?:Event\s+)?Registration.*$/i, "").trim());
     }
   }
 
