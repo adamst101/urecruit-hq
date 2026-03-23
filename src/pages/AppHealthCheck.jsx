@@ -3,6 +3,7 @@ import { useState, useCallback, useRef } from "react";
 import AdminRoute from "../components/auth/AdminRoute";
 import { base44 } from "../api/base44Client";
 import { toast } from "../components/ui/use-toast";
+import { ADMIN_EMAILS } from "../components/auth/adminEmails.jsx";
 
 // ── Demo localStorage helpers (mirrors demoRegistered.jsx) ──────────────────
 const _demoKey = (profileId) => `rm_demo_registered_${profileId || "default"}`;
@@ -2662,21 +2663,26 @@ export default function AppHealthCheck() {
     setEmailSending(true);
     setEmailSent(false);
     try {
-      const me = await base44.auth.me();
       const currentStates = statesRef.current;
       const failures = ALL_JOURNEYS
         .filter(j => currentStates[j.id]?.status === "fail")
         .map(j => ({ name: j.name, steps: currentStates[j.id].steps }));
-      const res = await base44.functions.invoke("sendHealthAlert", {
-        toEmail: me?.email,
-        failures,
-        runDate: new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
-      });
-      if (res?.data?.ok) {
+      const runDate = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+      // Send to all admins in parallel
+      const results = await Promise.allSettled(
+        ADMIN_EMAILS.map(email =>
+          base44.functions.invoke("sendHealthAlert", { toEmail: email, failures, runDate })
+        )
+      );
+      const anyOk = results.some(r => r.status === "fulfilled" && r.value?.data?.ok);
+      if (anyOk) {
         setEmailSent(true);
-        toast({ title: "Report sent", description: `Failure summary emailed to ${me?.email}` });
+        toast({ title: "Report sent", description: `Failure summary emailed to ${ADMIN_EMAILS.join(", ")}` });
       } else {
-        toast({ title: "Email failed", description: res?.data?.error || "Unknown error", variant: "destructive" });
+        const firstErr = results.find(r => r.status === "rejected")?.reason?.message
+          || results.find(r => r.status === "fulfilled")?.value?.data?.error
+          || "Unknown error";
+        toast({ title: "Email failed", description: firstErr, variant: "destructive" });
       }
     } catch (e) {
       toast({ title: "Email failed", description: e.message, variant: "destructive" });
