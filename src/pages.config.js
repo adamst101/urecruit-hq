@@ -85,6 +85,8 @@ import Subscribe from './pages/Subscribe';
 import SupportDashboard from './pages/SupportDashboard';
 import SupportReply from './pages/SupportReply';
 import TestFunctions from './pages/TestFunctions';
+import TermsOfService from './pages/TermsOfService';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 import Upgrade from './pages/Upgrade';
 import UserNotRegisteredError from './pages/UserNotRegisteredError';
 import Workspace from './pages/Workspace';
@@ -130,6 +132,8 @@ export const PAGES = {
     "SupportDashboard": SupportDashboard,
     "SupportReply": SupportReply,
     "TestFunctions": TestFunctions,
+    "TermsOfService": TermsOfService,
+    "PrivacyPolicy": PrivacyPolicy,
     "Upgrade": Upgrade,
     "UserNotRegisteredError": UserNotRegisteredError,
     "Workspace": Workspace,
