@@ -1144,6 +1144,17 @@ var JUNK_NAME_PATTERNS = [
   /^camp\s*$/i,
 ];
 
+// Date-only names (e.g. "06/15/2025", "June 15-17, 2025") — produced when
+// a pipe-suffix was the only real content after the date.
+var _MONTH_P = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+var _DAY_P   = "\\d{1,2}(?:st|nd|rd|th)?";
+var _YEAR_P  = "(?:[,\\s]+\\d{4})?";
+var _SEP_P   = "\\s*[-\u2013]\\s*";
+var DATE_ONLY_SLASH_RE = new RegExp("^\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}(?:" + _SEP_P + "\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})?$");
+var DATE_ONLY_MONTH_RE = new RegExp(
+  "^" + _MONTH_P + "\\s+" + _DAY_P + _YEAR_P + "(?:" + _SEP_P + "(?:" + _MONTH_P + "\\s+)?" + _DAY_P + _YEAR_P + ")?$", "i"
+);
+
 function isJunkCampName(name) {
   if (!name) return true;
   var n = safeStr(name);
@@ -1151,6 +1162,7 @@ function isJunkCampName(name) {
   for (var i = 0; i < JUNK_NAME_PATTERNS.length; i++) {
     if (JUNK_NAME_PATTERNS[i].test(n)) return true;
   }
+  if (DATE_ONLY_SLASH_RE.test(n) || DATE_ONLY_MONTH_RE.test(n)) return true;
   return false;
 }
 
