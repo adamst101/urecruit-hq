@@ -82,7 +82,7 @@ export default function Home() {
   const isAuthed = previewAnon ? false : !!season?.accountId;
   const isAdmin = !previewAnon && season?.role === "admin";
   const isMember = previewAnon ? false :
-    !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
+    !!season?.accountId && !!season?.hasAccess && (!!season?.entitlement || season?.role === "admin");
 
   useEffect(() => {
     const key = "evt_home_viewed_v24";

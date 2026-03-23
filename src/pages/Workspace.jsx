@@ -114,7 +114,7 @@ export default function Workspace() {
 
   const loading = !!season?.isLoading || !!identityLoading;
 
-  const isMember = !!season?.accountId && !!season?.hasAccess && !!season?.entitlement;
+  const isMember = !!season?.accountId && !!season?.hasAccess && (!!season?.entitlement || season?.role === "admin");
 
   useEffect(() => {
     trackEventOnce("workspace_viewed", "evt_workspace_viewed_v1", { paid: isMember });
