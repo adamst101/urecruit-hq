@@ -1634,15 +1634,24 @@ const JOURNEY_GROUPS = [
           {
             name: "submitSupportTicket function reachable",
             run: async (ctx) => {
-              const res = await base44.functions.invoke("submitSupportTicket", {
-                type: "support",
-                subject: "[HEALTHCHECK] Test Ticket — safe to ignore",
-                description: "Automated health check test. This ticket was created by the AppHealthCheck runner and will be closed immediately.",
-                userEmail: "healthcheck@example.com",
-                userName: "Health Check",
-                accountType: "admin",
-              });
-              const data = res?.data;
+              let res, data;
+              try {
+                res = await base44.functions.invoke("submitSupportTicket", {
+                  type: "support",
+                  subject: "[HEALTHCHECK] Test Ticket — safe to ignore",
+                  description: "Automated health check test. This ticket was created by the AppHealthCheck runner and will be closed immediately.",
+                  userEmail: "healthcheck@example.com",
+                  userName: "Health Check",
+                  accountType: "admin",
+                });
+                data = res?.data;
+              } catch (err) {
+                // Extract the actual server error message from the response body if available
+                const serverMsg = err?.response?.data?.error || err?.response?.data?.message || null;
+                throw new Error(serverMsg
+                  ? `submitSupportTicket 500 — server says: ${serverMsg}`
+                  : `submitSupportTicket unreachable (${err.message})`);
+              }
               if (!data?.ok) throw new Error(data?.error || "submitSupportTicket returned ok:false");
               ctx.ticketNumber = data.ticketNumber;
               return `Ticket created — #${data.ticketNumber}`;
