@@ -90,9 +90,9 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
               letterSpacing: 1,
             }}
           >
-            EVERYTHING IN ONE PLACE.
+            Plan Your Athlete's Camp Season —
             <br />
-            NOTHING LEFT OUT.
+            Without Missing Anything
           </h2>
         </div>
 
@@ -110,7 +110,7 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
             borderColor="#e8a020"
             emoji="🏟️"
             title={`${campDisplay} CAMPS. EVERY DIVISION.`}
-            body="Every college football camp from FBS to JUCO — in one searchable list. Updated every Monday. No club camps. No noise."
+            body="Every college football camp — from FBS to JUCO — in one place. Updated weekly so you don't miss new opportunities."
           >
             <span
               style={{
@@ -135,7 +135,7 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
             borderColor="#3b82f6"
             emoji="📅"
             title="NEVER DOUBLE-BOOK AGAIN."
-            body="URecruit HQ flags scheduling conflicts automatically and warns you when back-to-back camps require overnight travel — before you register for the wrong ones."
+            body={<>Automatically flags conflicts and overlapping dates<br />— before you commit to the wrong camps.</>}
           >
             <div>
               <span
@@ -172,8 +172,8 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
           <DiffCard
             borderColor="#10b981"
             emoji="📚"
-            title="THE RECRUITING PLAYBOOK."
-            body="Included with your Season Pass: NCAA rules, permissible dates, offer breakdowns, DM templates, and film strategy — everything coaches expect families to know."
+            title="MAKE SMARTER CAMP DECISIONS."
+            body="Understand which camps matter, key dates, and what coaches expect — so you're not guessing."
           >
             <span
               style={{
@@ -189,7 +189,7 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
                 borderRadius: 20,
               }}
             >
-              ✓ Included in Season Pass
+              ✓ Included with Season Pass
             </span>
           </DiffCard>
         </div>
