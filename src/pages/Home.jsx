@@ -572,7 +572,7 @@ export default function Home() {
               NEVER MISS A CAMP.<br />NEVER FORGET A DATE.
             </h2>
             <p style={{ fontSize: 18, color: '#9ca3af', maxWidth: 560, margin: '0 auto', lineHeight: 1.6 }}>
-              We send two types of emails that keep your family one step ahead all season long — no app-checking required.
+              Stay one step ahead all season — without constantly checking the app.
             </p>
           </div>
 
@@ -592,10 +592,10 @@ export default function Home() {
                   </div>
                 </div>
                 <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.65, margin: 0 }}>
-                  A curated list of every camp happening that month — organized by date, filterable by division, and ready to forward to your athlete. Plan the full month before it starts.
+                  A monthly list of every camp — organized, easy to scan, and ready to plan around.
                 </p>
                 <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {['All camps for the month in one place', 'Sorted by date — easy to scan', 'Includes price, location, and division', 'Printable format for the fridge'].map(item => (
+                  {['All camps for the month in one place', 'Sorted by date — easy to scan', 'Includes price, location, and division', 'Printable format for quick reference'].map(item => (
                     <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#d1d5db' }}>
                       <span style={{ color: '#e8a020', fontSize: 14, flexShrink: 0 }}>✓</span>
                       {item}
@@ -614,10 +614,10 @@ export default function Home() {
                   </div>
                 </div>
                 <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.65, margin: 0 }}>
-                  Seven days before any camp on your calendar, we send a prep reminder — what to bring, what coaches are watching for, and a final check on travel logistics. Show up prepared, not scrambling.
+                  7 days before each camp, we send everything you need to show up prepared — not scrambling.
                 </p>
                 <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {['Triggered by your personal calendar', 'What to bring checklist', 'Travel and timing reminders', 'What coaches evaluate at camp'].map(item => (
+                  {['Triggered by your camp schedule', 'What to bring checklist', 'Travel and timing reminders', 'What coaches are evaluating'].map(item => (
                     <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#d1d5db' }}>
                       <span style={{ color: '#10b981', fontSize: 14, flexShrink: 0 }}>✓</span>
                       {item}
