@@ -352,7 +352,7 @@ export default function Home() {
               fontSize: 18, letterSpacing: 3,
               color: "#e8a020", textTransform: "uppercase",
             }}>
-              THE COLLEGE FOOTBALL CAMP PLANNING PLATFORM
+              COLLEGE FOOTBALL CAMP PLANNING
             </span>
           </div>
 
@@ -367,7 +367,7 @@ export default function Home() {
               lineHeight: 1.0,
               whiteSpace: "nowrap",
             }}>
-              THE CAMPS THAT GET ATHLETES EVALUATED.
+              PLAN YOUR ATHLETE'S CAMP SEASON —
             </span>
             <span className="hero-h1-line2" style={{
               display: "block",
@@ -377,7 +377,7 @@ export default function Home() {
               letterSpacing: 1,
               lineHeight: 1.05,
             }}>
-              ALL IN ONE PLACE.
+              WITHOUT THE STRESS.
             </span>
           </h1>
 
@@ -390,41 +390,45 @@ export default function Home() {
                 fontSize: 20,
                 color: "#9ca3af",
                 lineHeight: 1.65,
-                margin: "0 0 28px",
+                margin: "0 0 12px",
                 maxWidth: 460,
               }}>
-                Easily discover, track, and plan for every college camp in the country. Avoid schedule conflicts and never miss out on an opportunity to get evaluated.
+                Find, compare, and organize 800+ college football camps in one place — without spreadsheets or scheduling conflicts.
+              </p>
+              <p style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.6, margin: "0 0 28px", maxWidth: 460 }}>
+                New camps added every week — so you never miss an opportunity.
+                <span style={{ color: "#6b7280" }}> · Built by parents who went through the process.</span>
               </p>
 
-              {/* CTAs */}
+              {/* CTAs — demo is primary conversion goal */}
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 28 }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <button onClick={handlePricingSignup} style={S.ctaPrimary}>
-                    Get Season Pass{" "}
+                  <button onClick={handleTryDemo} style={S.ctaPrimary}>
+                    Try Free Demo{" "}
                     <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
                   </button>
-                  <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>
-                    $49 · one season · one-time payment
-                  </span>
+                  <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   <button
-                    onClick={handleTryDemo}
+                    onClick={handlePricingSignup}
                     style={S.ctaOutline}
                     onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#0a0e1a"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
                   >
-                    Try Free Demo
+                    Get Season Pass
                   </button>
-                  <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
+                  <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>
+                    $49 · one season · one-time payment
+                  </span>
                 </div>
               </div>
 
               {/* Checkmark bullets */}
               {[
                 [campDisplay + " Verified", "College Football Camps"],
-                ["Weekly Updates", "from Official School Sites"],
-                ["Trusted by", "Recruiting Families Nationwide"],
+                ["New camps added", "every week from official school sites"],
+                ["Used by", "recruiting families nationwide"],
               ].map(([bold, rest]) => (
                 <div key={bold} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                   <CheckCircle2 style={{ width: 18, height: 18, color: "#e8a020", flexShrink: 0 }} />
@@ -435,10 +439,10 @@ export default function Home() {
               ))}
 
               <p style={{ fontSize: 12, color: "#ffffff", fontWeight: 600, marginTop: 18 }}>
-                ⚡ Summer camp season opens March–April. Early registrations fill fast.
+                ⚡ Summer camp season opens March–April — early registrations fill fast.
               </p>
               <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-                No auto-renew · Cancel anytime · Secure checkout via Stripe
+                No auto-renew · Cancel anytime · Secure checkout (Stripe)
               </p>
             </div>
 
@@ -531,7 +535,7 @@ export default function Home() {
           fontSize: 14, fontWeight: 700, color: "#0a0e1a",
           textTransform: "uppercase", letterSpacing: 1,
         }}>
-          {campDisplay} Verified College Football Camps &nbsp;·&nbsp; {schoolDisplay} Programs &nbsp;·&nbsp; FBS · FCS · D2 · D3 · NAIA · JUCO &nbsp;·&nbsp; Verified every Monday from official school athletic pages
+          {campDisplay} Verified College Football Camps &nbsp;·&nbsp; {schoolDisplay} Programs &nbsp;·&nbsp; FBS · FCS · D2 · D3 · NAIA · JUCO &nbsp;·&nbsp; New camps added every week from official school sites
         </span>
       </div>
 
