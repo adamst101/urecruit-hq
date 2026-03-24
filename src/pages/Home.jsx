@@ -201,7 +201,7 @@ export default function Home() {
           .hero-h1-line1 { font-size: 3.2vw !important; }
           .hero-h1-line2 { font-size: 3.2vw !important; }
           .hero-cols { margin-top: -16px !important; }
-          .hero-text-col { flex: 0 0 50% !important; }
+          .hero-text-col { flex: 0 0 50% !important; padding-top: 24px !important; }
           .hero-img-col { margin-left: -5% !important; }
         }
         @keyframes why-float {
@@ -386,17 +386,16 @@ export default function Home() {
           {/* Two-column row: subtext/CTAs left, image right with overlap */}
           <div className="hero-cols" style={{ display: "flex", alignItems: "center", gap: 0, marginTop: -32 }}>
             {/* LEFT — subtext, CTAs, bullets */}
-            <div className="hero-text-col" style={{ flex: "0 0 44%", minWidth: 0, position: "relative", zIndex: 2 }}>
+            <div className="hero-text-col" style={{ flex: "0 0 44%", minWidth: 0, position: "relative", zIndex: 2, paddingTop: 40 }}>
               {/* Subtext */}
               <p className="hero-subtext" style={{
-                fontSize: 20,
+                fontSize: 18,
                 color: "#9ca3af",
-                lineHeight: 1.6,
-                margin: "0 0 14px",
-                maxWidth: 460,
+                lineHeight: 1.65,
+                margin: "0 0 16px",
+                maxWidth: 420,
               }}>
-                Find, compare, and organize 800+ college football camps<br />
-                — all in one place, without spreadsheets or scheduling conflicts.
+                Find, compare, and organize 800+ college football camps — all in one place, without spreadsheets or scheduling conflicts.
               </p>
               <div style={{ margin: "0 0 28px", maxWidth: 460 }}>
                 <p style={{ fontSize: 14, fontWeight: 500, color: "#d1d5db", lineHeight: 1.55, margin: "0 0 5px" }}>
