@@ -190,6 +190,7 @@ export default function Home() {
           .hero-cols { flex-direction: column !important; margin-top: 8px !important; }
           .hero-text-col { flex: 0 0 100% !important; width: 100% !important; }
           .hero-subtext { font-size: 16px !important; max-width: 100% !important; }
+          .hero-subtext br { display: none !important; }
           .hero-proof-strip { font-size: 11px !important; }
           .hero-proof-strip-wrap { display: none !important; }
           .hero-scroll-nudge { display: none !important; }
@@ -389,16 +390,21 @@ export default function Home() {
               <p className="hero-subtext" style={{
                 fontSize: 20,
                 color: "#9ca3af",
-                lineHeight: 1.65,
-                margin: "0 0 12px",
+                lineHeight: 1.6,
+                margin: "0 0 14px",
                 maxWidth: 460,
               }}>
-                Find, compare, and organize 800+ college football camps in one place — without spreadsheets or scheduling conflicts.
+                Find, compare, and organize 800+ college football camps<br />
+                — all in one place, without spreadsheets or scheduling conflicts.
               </p>
-              <p style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.6, margin: "0 0 28px", maxWidth: 460 }}>
-                New camps added every week — so you never miss an opportunity.
-                <span style={{ color: "#6b7280" }}> · Built by parents who went through the process.</span>
-              </p>
+              <div style={{ margin: "0 0 28px", maxWidth: 460 }}>
+                <p style={{ fontSize: 14, fontWeight: 500, color: "#d1d5db", lineHeight: 1.55, margin: "0 0 5px" }}>
+                  New camps added every week — so you never miss an opportunity.
+                </p>
+                <p style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.55, margin: 0 }}>
+                  Built by parents who went through the process.
+                </p>
+              </div>
 
               {/* CTAs — demo is primary conversion goal */}
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 28 }}>
@@ -409,7 +415,7 @@ export default function Home() {
                   </button>
                   <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <button
                     onClick={handlePricingSignup}
                     style={S.ctaOutline}
@@ -418,8 +424,8 @@ export default function Home() {
                   >
                     Get Season Pass
                   </button>
-                  <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", letterSpacing: 0.3 }}>
-                    $49 · one season · one-time payment
+                  <span style={{ fontSize: 11, color: "#6b7280", textAlign: "center", letterSpacing: 0.3 }}>
+                    $49 · one season (one-time payment)
                   </span>
                 </div>
               </div>
@@ -427,7 +433,7 @@ export default function Home() {
               {/* Checkmark bullets */}
               {[
                 [campDisplay + " Verified", "College Football Camps"],
-                ["New camps added", "every week from official school sites"],
+                ["New camps added", "weekly from official school sites"],
                 ["Used by", "recruiting families nationwide"],
               ].map(([bold, rest]) => (
                 <div key={bold} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
