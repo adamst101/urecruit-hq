@@ -200,6 +200,7 @@ export default function Home() {
         @media (min-width: 768px) and (max-width: 1024px) {
           .hero-h1-line1 { font-size: 3.2vw !important; }
           .hero-h1-line2 { font-size: 3.2vw !important; }
+          .hero-cols { margin-top: -16px !important; }
           .hero-text-col { flex: 0 0 50% !important; }
           .hero-img-col { margin-left: -5% !important; }
         }
@@ -408,12 +409,11 @@ export default function Home() {
 
               {/* CTAs — demo is primary conversion goal */}
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 28 }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <div>
                   <button onClick={handleTryDemo} style={S.ctaPrimary}>
                     Try Free Demo{" "}
                     <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
                   </button>
-                  <span style={{ fontSize: 11, color: "transparent", userSelect: "none" }}>‎</span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <button
@@ -444,7 +444,7 @@ export default function Home() {
                 </div>
               ))}
 
-              <p style={{ fontSize: 12, color: "#ffffff", fontWeight: 600, marginTop: 18 }}>
+              <p style={{ fontSize: 12, color: "#e8a020", fontWeight: 500, marginTop: 18 }}>
                 ⚡ Summer camp season opens March–April — early registrations fill fast.
               </p>
               <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
