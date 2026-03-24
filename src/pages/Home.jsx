@@ -947,28 +947,15 @@ export default function Home() {
         </div>
       </footer>
 
-      <WhyPanel />
+      <WhyPanel onTryDemo={handleTryDemo} />
     </div>
   );
 }
 
 
 
-/* ── Why Speech Bubble ── */
-function WhyPanel() {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e) { if (e.key === "Escape") setOpen(false); }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  // Closed: floating speech bubble with tail pointing bottom-left (toward the hero text / CTAs)
-  // Open: expands in place to show content
-  // Color: white bubble, slate text — no amber
-
+/* ── Parent Insight Bubble — static, no expand/collapse ── */
+function WhyPanel({ onTryDemo }) {
   return (
     <div className="hidden md:block" style={{
       position: "fixed",
@@ -976,153 +963,46 @@ function WhyPanel() {
       right: 28,
       zIndex: 200,
       fontFamily: "'DM Sans', sans-serif",
-      maxWidth: "min(300px, calc(100vw - 48px))",
+      width: 248,
     }}>
-
-      {/* ── Closed: teaser bubble ── */}
-      {!open && (
-        <div style={{ position: "relative" }}>
-          <button
-            className="why-bubble-closed"
-            onClick={() => setOpen(true)}
-            aria-label="Why do I need this?"
-            style={{
-              background: "#f1f5f9",
-              border: "1.5px solid #e2e8f0",
-              borderRadius: 18,
-              padding: "14px 18px",
-              textAlign: "left",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15)",
-              display: "block",
-              width: "100%",
-              cursor: "pointer",
-            }}
-          >
-            {/* Avatar row */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <div style={{
-                width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
-                background: "#334155",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 15,
-              }}>👨‍👦</div>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.8 }}>
-                From a recruiting parent
-              </span>
-            </div>
-            <p style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", lineHeight: 1.4, margin: "0 0 6px" }}>
-              "We wish someone had told us this before junior year."
-            </p>
-            <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>
-              Tap to find out what we learned →
-            </span>
-          </button>
-
-          {/* Tail — bottom-left, pointing toward the hero CTAs */}
-          <div style={{
-            position: "absolute",
-            bottom: -10,
-            left: 24,
-            width: 0,
-            height: 0,
-            borderLeft: "10px solid transparent",
-            borderRight: "10px solid transparent",
-            borderTop: "11px solid #f1f5f9",
-            filter: "drop-shadow(0 3px 2px rgba(0,0,0,0.12))",
-          }} />
+      <div className="why-bubble-closed" style={{
+        position: "relative",
+        background: "#f1f5f9",
+        border: "1.5px solid #e2e8f0",
+        borderRadius: 16,
+        padding: "16px 18px",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15)",
+      }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>
+          From a recruiting parent
         </div>
-      )}
+        <p style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", lineHeight: 1.35, margin: "0 0 8px" }}>
+          The biggest mistake parents make?<br />Starting too late.
+        </p>
+        <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.5, margin: "0 0 12px" }}>
+          Most families are guessing. The ones with a system are already ahead.
+        </p>
+        <button
+          onClick={onTryDemo}
+          style={{
+            background: "none", border: "none", cursor: "pointer",
+            fontSize: 13, fontWeight: 700, color: "#e8a020",
+            padding: 0, textDecoration: "underline", textUnderlineOffset: 2,
+          }}
+        >
+          Try the demo →
+        </button>
 
-      {/* ── Open: expanded bubble ── */}
-      {open && (
+        {/* Tail pointing bottom-left toward the hero CTAs */}
         <div style={{
-          background: "#f1f5f9",
-          border: "1.5px solid #e2e8f0",
-          borderRadius: 18,
-          boxShadow: "0 12px 48px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15)",
-          overflow: "hidden",
-          animation: "why-fade-in 0.2s ease",
-          position: "relative",
-        }}>
-          {/* Header */}
-          <div style={{
-            background: "#1e293b",
-            padding: "12px 16px",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 16 }}>👨‍👦</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#f1f5f9" }}>
-                What recruiting families learn too late
-              </span>
-            </div>
-            <button
-              onClick={() => setOpen(false)}
-              style={{
-                background: "rgba(255,255,255,0.1)", border: "none", cursor: "pointer",
-                color: "#94a3b8", fontSize: 16, lineHeight: 1, padding: "2px 6px",
-                borderRadius: 6, flexShrink: 0,
-              }}
-              aria-label="Close"
-            >×</button>
-          </div>
-
-          <div style={{ padding: "16px 18px 18px" }}>
-            <p style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", lineHeight: 1.45, margin: "0 0 8px" }}>
-              The recruiting process starts before most parents realize it.
-            </p>
-            <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 14px" }}>
-              Here's what we wish someone had told us early.
-            </p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
-              {[
-                ["Other families already have a system.", " Starting early is the difference."],
-                ["Not all camps are equal.", " School-run camps where staff are evaluating for their roster are not the same as \"coaches in attendance.\""],
-                ["The paperwork adds up fast.", " Missed deadlines cost athletes real opportunities."],
-              ].map(([bold, rest], i) => (
-                <div key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "#334155", lineHeight: 1.5 }}>
-                  <span style={{ color: "#475569", flexShrink: 0, marginTop: 2, fontSize: 10 }}>●</span>
-                  <span><span style={{ fontWeight: 600, color: "#0f172a" }}>{bold}</span>{rest}</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", overflow: "hidden", marginBottom: 14 }}>
-              <div style={{ padding: "10px 12px" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.8 }}>Most families</div>
-                <p style={{ fontSize: 13, color: "#64748b", margin: "3px 0 0", lineHeight: 1.5 }}>
-                  Spreadsheets and manual tracking — until something slips.
-                </p>
-              </div>
-              <div style={{ height: 1, background: "#e2e8f0" }} />
-              <div style={{ padding: "10px 12px", background: "#f8fafc" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: 0.8 }}>URecruit HQ families</div>
-                <p style={{ fontSize: 13, color: "#0f172a", margin: "3px 0 0", lineHeight: 1.5, fontWeight: 500 }}>
-                  Let the app handle tracking. Focus on the right camps, the right coaches.
-                </p>
-              </div>
-            </div>
-
-            <p style={{ fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.5 }}>
-              Built by parents of NCAA athletes.
-            </p>
-          </div>
-
-          {/* Tail on open state too */}
-          <div style={{
-            position: "absolute",
-            bottom: -10,
-            left: 24,
-            width: 0,
-            height: 0,
-            borderLeft: "10px solid transparent",
-            borderRight: "10px solid transparent",
-            borderTop: "11px solid #f1f5f9",
-            filter: "drop-shadow(0 3px 2px rgba(0,0,0,0.12))",
-          }} />
-        </div>
-      )}
+          position: "absolute", bottom: -10, left: 24,
+          width: 0, height: 0,
+          borderLeft: "10px solid transparent",
+          borderRight: "10px solid transparent",
+          borderTop: "11px solid #f1f5f9",
+          filter: "drop-shadow(0 3px 2px rgba(0,0,0,0.12))",
+        }} />
+      </div>
     </div>
   );
 }
