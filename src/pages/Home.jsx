@@ -14,7 +14,6 @@ import { startMemberLogin } from "../components/utils/memberLogin.jsx";
 import TestimonialsSection from "../components/home/TestimonialsSection.jsx";
 import DifferentiatorsSection from "../components/home/DifferentiatorsSection.jsx";
 import laptopImg from "../../Images/laptop image.png";
-import lessStressImg from "../../Images/Less Stress.jpg";
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -555,42 +554,6 @@ export default function Home() {
 
       {/* ── DIFFERENTIATORS ── */}
       <DifferentiatorsSection campDisplay={campDisplay} schoolDisplay={schoolDisplay} />
-
-      {/* ── LESS STRESS ── */}
-      <section style={{ background: "#0a0e1a", padding: "0 24px 64px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 32 }}>
-            <span style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: 15, letterSpacing: 3,
-              color: "#e8a020", textTransform: "uppercase"
-            }}>
-              BEFORE &amp; AFTER
-            </span>
-            <h2 style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: "clamp(32px, 5vw, 52px)",
-              color: "#f9fafb",
-              margin: "8px 0 0",
-              lineHeight: 1.05
-            }}>
-              LESS STRESS. SMARTER PLANNING.
-            </h2>
-          </div>
-          <div style={{
-            borderRadius: 16,
-            overflow: "hidden",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
-            border: "1px solid #1f2937"
-          }}>
-            <img
-              src={lessStressImg}
-              alt="URecruitHQ before and after - Less stress, smarter planning"
-              style={{ display: "block", maxWidth: "100%", width: "100%" }}
-            />
-          </div>
-        </div>
-      </section>
 
       {/* ── EMAIL ALERTS ── */}
       <section style={{ background: '#0a0e1a', padding: '80px 24px', borderTop: '1px solid #1f2937' }}>
