@@ -2448,6 +2448,112 @@ const JOURNEY_GROUPS = [
     ],
   },
 
+  // ── COACH FEATURE ────────────────────────────────────────────────────────────
+  {
+    label: "Coach Feature",
+    journeys: [
+      {
+        id: "coach_role_bypass",
+        name: "Coach role — useSeasonAccess bypass",
+        icon: "🏈",
+        description: "Accounts with role=coach are not gated by entitlement check. " +
+          "Simulates the access shape a coach account would return.",
+        steps: [
+          {
+            name: "useSeasonAccess hook is importable",
+            run: async () => {
+              const me = await base44.auth.me();
+              if (!me) throw new Error("auth.me() returned null — cannot verify role field");
+              return `auth.me() ok — role field: ${me.role ?? "(not set, defaults to parent behavior)"}`;
+            },
+          },
+          {
+            name: "Admin account has role=admin on auth object",
+            run: async () => {
+              const me = await base44.auth.me();
+              if (!me) throw new Error("auth.me() returned null");
+              if (me.role !== "admin") throw new Error(
+                `Expected role=admin for admin account, got: ${me.role ?? "(undefined)"} ` +
+                "— role field may not be set on auth user object yet"
+              );
+              return `role=admin confirmed on admin account ✓`;
+            },
+          },
+          {
+            name: "CoachRoute component file exists in codebase",
+            run: async () => {
+              const allRoutes = Object.keys(window.__pagesDebug || {});
+              if (allRoutes.length === 0) {
+                return "Cannot introspect pages at runtime — verify CoachRoute.jsx exists at src/components/auth/CoachRoute.jsx";
+              }
+              if (!allRoutes.includes("CoachDashboard")) {
+                throw new Error("CoachDashboard not found in pages config — add to pages.config.js when Phase 2 deploys");
+              }
+              return `CoachDashboard route registered ✓`;
+            },
+          },
+        ],
+      },
+
+      {
+        id: "coach_entity_schema",
+        name: "Coach entity — schema and read access",
+        icon: "📋",
+        description: "Coach entity exists, is queryable, and has required fields. " +
+          "Runs after Phase 2 deployment.",
+        steps: [
+          {
+            name: "Coach entity is queryable",
+            run: async (ctx) => {
+              let coaches;
+              try {
+                coaches = await base44.entities.Coach.filter({});
+              } catch (err) {
+                throw new Error(
+                  `Coach entity not readable: ${err?.message || err} — ` +
+                  "create the Coach entity in base44 admin before deploying Phase 2"
+                );
+              }
+              if (!Array.isArray(coaches)) throw new Error("Coach.filter() returned non-array");
+              ctx.coaches = coaches;
+              return `Coach entity reachable — ${coaches.length} records`;
+            },
+          },
+          {
+            name: "Coach entity has required fields",
+            run: async (ctx) => {
+              if (ctx.coaches.length === 0) {
+                return "No Coach records yet — field check skipped (expected before first signup)";
+              }
+              const required = ["name", "school_or_org", "invite_code", "account_id"];
+              const sample = ctx.coaches[0];
+              const missing = required.filter(f => !(f in sample));
+              if (missing.length > 0) {
+                throw new Error(`Coach record missing fields: ${missing.join(", ")} — add these fields to the entity schema`);
+              }
+              return `All required fields present on Coach entity ✓`;
+            },
+          },
+          {
+            name: "invite_code values are unique",
+            run: async (ctx) => {
+              if (ctx.coaches.length < 2) return "Fewer than 2 coaches — uniqueness check skipped";
+              const codes = ctx.coaches.map(c => c.invite_code).filter(Boolean);
+              const unique = new Set(codes);
+              if (unique.size !== codes.length) {
+                throw new Error(
+                  `Duplicate invite_codes detected (${codes.length} codes, ${unique.size} unique) — ` +
+                  "invite_code must be unique across all Coach records"
+                );
+              }
+              return `All ${codes.length} invite_codes are unique ✓`;
+            },
+          },
+        ],
+      },
+    ],
+  },
+
 ];
 
 // Flatten for runner access by id

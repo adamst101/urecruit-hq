@@ -104,6 +104,13 @@ export default function AuthRedirect() {
 
     const accountId = season.accountId;
 
+    // ── Coach accounts → CoachDashboard directly ──
+    if (season?.role === "coach") {
+      didRoute.current = true;
+      nav("/CoachDashboard", { replace: true });
+      return;
+    }
+
     // ── Priority 1: Post-payment signup flow ──
     const postPayment = ssGet("postPaymentSignup");
     if (postPayment) {

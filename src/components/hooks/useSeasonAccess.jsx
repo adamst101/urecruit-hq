@@ -127,6 +127,24 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
     };
   }
 
+  // Coach accounts get a dedicated shape — no entitlement required
+  if (role === "coach") {
+    return {
+      currentYear: currentYear || null,
+      demoYear: demoYear || null,
+      mode: "coach",
+      hasAccess: false,
+      isCoach: true,
+      seasonYear: activeSeason || currentYear || null,
+      season: activeSeason || currentYear || null,
+      accountId,
+      entitlement: null,
+      role,
+      isAuthenticated: true,
+      lastCheckedAt: nowISO(),
+    };
+  }
+
   // Negative cache: skip entitlement API if we recently confirmed no entitlement
   if (_lastDemoCheck?.accountId === accountId) {
     const age = Date.now() - new Date(_lastDemoCheck.checkedAt).getTime();
