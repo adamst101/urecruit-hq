@@ -244,6 +244,7 @@ export default function Checkout() {
         sportId: sportId || undefined,
         homeCity: homeCity.trim() || undefined,
         homeState: homeState || undefined,
+        coachInviteCode: (() => { try { return localStorage.getItem("coachInviteCode") || undefined; } catch { return undefined; } })(),
       });
       const data = res.data;
       console.log("createStripeCheckout response:", data);

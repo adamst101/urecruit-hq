@@ -63,6 +63,8 @@ import CampPlaybook from './pages/CampPlaybook';
 import CampsManager from './pages/CampsManager';
 import Checkout from './pages/Checkout';
 import CheckoutSuccess from './pages/CheckoutSuccess';
+import CoachInviteLanding from './pages/CoachInviteLanding';
+import CoachSignup from './pages/CoachSignup';
 import Discover from './pages/Discover';
 import GenerateDemoCamps from './pages/GenerateDemoCamps';
 import GeocodeSchools from './pages/GeocodeSchools';
@@ -110,6 +112,8 @@ export const PAGES = {
     "CampsManager": CampsManager,
     "Checkout": Checkout,
     "CheckoutSuccess": CheckoutSuccess,
+    "CoachInviteLanding": CoachInviteLanding,
+    "CoachSignup": CoachSignup,
     "Discover": Discover,
     "GenerateDemoCamps": GenerateDemoCamps,
     "GeocodeSchools": GeocodeSchools,

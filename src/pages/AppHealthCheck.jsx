@@ -2496,6 +2496,115 @@ const JOURNEY_GROUPS = [
       },
 
       {
+        id: "coach_invite_code_flow",
+        name: "Coach invite code — localStorage persistence",
+        icon: "🔗",
+        description: "Coach invite code survives being stored in localStorage and is " +
+          "readable at checkout time. Does not require an actual coach account.",
+        steps: [
+          {
+            name: "localStorage read/write available",
+            run: async () => {
+              try {
+                localStorage.setItem("__hc_test__", "1");
+                const val = localStorage.getItem("__hc_test__");
+                localStorage.removeItem("__hc_test__");
+                if (val !== "1") throw new Error("localStorage write/read mismatch");
+                return "localStorage available ✓";
+              } catch (err) {
+                throw new Error(`localStorage not available: ${err.message} — coach invite code flow will fail`);
+              }
+            },
+          },
+          {
+            name: "Simulate invite code store and retrieve",
+            run: async (ctx) => {
+              const testCode = "SMITH-WHS-TEST";
+              localStorage.setItem("coachInviteCode", testCode);
+              const retrieved = localStorage.getItem("coachInviteCode");
+              localStorage.removeItem("coachInviteCode");
+              if (retrieved !== testCode) {
+                throw new Error(`Stored "${testCode}" but retrieved "${retrieved}" — localStorage key mismatch`);
+              }
+              ctx.codeFlowOk = true;
+              return `Invite code stored and retrieved correctly ✓`;
+            },
+          },
+          {
+            name: "Invalid coach code is handled gracefully",
+            run: async () => {
+              let result;
+              try {
+                result = await base44.entities.Coach.filter({ invite_code: "__INVALID_HC_CODE__" });
+              } catch (err) {
+                throw new Error(
+                  `Coach.filter() threw on unknown invite_code: ${err.message} — ` +
+                  "CoachInviteLanding will crash if code is not found"
+                );
+              }
+              if (!Array.isArray(result)) throw new Error("Coach.filter() returned non-array");
+              if (result.length > 0) throw new Error("Bogus invite code returned a match — data integrity issue");
+              return `Unknown invite_code correctly returns empty array ✓`;
+            },
+          },
+        ],
+      },
+
+      {
+        id: "coach_signup_functions",
+        name: "Coach signup — account creation path",
+        icon: "✍️",
+        description: "Auth register and role assignment are functional for coach account type.",
+        steps: [
+          {
+            name: "auth.register is callable (same as parent signup)",
+            run: async () => {
+              if (typeof base44.auth?.register !== "function") {
+                throw new Error("base44.auth.register not available — coach signup page will fail");
+              }
+              return "base44.auth.register available ✓";
+            },
+          },
+          {
+            name: "Coach entity create/delete cycle",
+            run: async (ctx) => {
+              const testCoach = await base44.entities.Coach.create({
+                name: "__healthcheck_coach__",
+                school_or_org: "Health Check HS",
+                sport: "Football",
+                invite_code: `HC-TEST-${Date.now()}`,
+                account_id: "hc_test_account",
+                active: true,
+              });
+              if (!testCoach?.id) throw new Error("Coach.create() returned no id — entity may be read-only");
+              ctx.testCoachId = testCoach.id;
+              ctx.testInviteCode = testCoach.invite_code;
+              return `Coach record created — id=${testCoach.id} code=${testCoach.invite_code}`;
+            },
+          },
+          {
+            name: "Coach record readable by invite_code",
+            run: async (ctx) => {
+              const found = await base44.entities.Coach.filter({ invite_code: ctx.testInviteCode });
+              if (!Array.isArray(found) || found.length === 0) {
+                throw new Error(`Coach not found by invite_code="${ctx.testInviteCode}" — filter index may be missing`);
+              }
+              return `Coach found by invite_code ✓`;
+            },
+          },
+          {
+            name: "Cleanup — delete test coach record",
+            run: async (ctx) => {
+              if (ctx.testCoachId) {
+                await base44.entities.Coach.delete(ctx.testCoachId);
+              }
+              return "Test Coach record deleted ✓";
+            },
+          },
+        ],
+      },
+
+      {
         id: "coach_entity_schema",
         name: "Coach entity — schema and read access",
         icon: "📋",

@@ -428,6 +428,17 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Coach / trainer link */}
+              <p style={{ fontSize: 13, color: "#4b5563", margin: "0 0 24px" }}>
+                Are you a coach or trainer?{" "}
+                <button
+                  onClick={() => nav("/CoachSignup")}
+                  style={{ background: "none", border: "none", color: "#6b7280", fontSize: 13, cursor: "pointer", textDecoration: "underline", padding: 0 }}
+                >
+                  Create a free coach account →
+                </button>
+              </p>
+
               {/* Checkmark bullets */}
               {[
                 [campDisplay + " Verified", "College Football Camps"],
