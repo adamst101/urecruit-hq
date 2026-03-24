@@ -43,6 +43,7 @@ Deno.serve(async (req) => {
     parentFirstName, parentLastName, parentPhone,
     athleteFirstName, athleteLastName, gradYear, sportId,
     homeCity, homeState,
+    coachInviteCode,
   } = body;
 
   const email = userEmail || user?.email || ""; // optional — Stripe collects if blank
@@ -160,6 +161,7 @@ Deno.serve(async (req) => {
       sport_id: sportId || "",
       home_city: homeCity || "",
       home_state: homeState || "",
+      coach_invite_code: coachInviteCode || "",
     },
     success_url: successUrl + "?session_id={CHECKOUT_SESSION_ID}",
     cancel_url: cancelUrl,

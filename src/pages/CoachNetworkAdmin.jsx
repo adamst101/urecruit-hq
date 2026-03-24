@@ -1,0 +1,162 @@
+// src/pages/CoachNetworkAdmin.jsx
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
+import { base44 } from "../api/base44Client";
+import AdminRoute from "../components/auth/AdminRoute";
+
+export default function CoachNetworkAdmin() {
+  const nav = useNavigate();
+  const [coaches, setCoaches] = useState([]);
+  const [rosterCounts, setRosterCounts] = useState({});
+  const [messageCounts, setMessageCounts] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [actioning, setActioning] = useState(null); // coachId being actioned
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [coachs, roster, msgs] = await Promise.all([
+          base44.entities.Coach.filter({}).catch(() => []),
+          base44.entities.CoachRoster.filter({}).catch(() => []),
+          base44.entities.CoachMessage.filter({}).catch(() => []),
+        ]);
+
+        const rc = {};
+        for (const r of (Array.isArray(roster) ? roster : [])) {
+          if (r.coach_id) rc[r.coach_id] = (rc[r.coach_id] || 0) + 1;
+        }
+        const mc = {};
+        for (const m of (Array.isArray(msgs) ? msgs : [])) {
+          if (m.coach_id) mc[m.coach_id] = (mc[m.coach_id] || 0) + 1;
+        }
+
+        setCoaches(Array.isArray(coachs) ? coachs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)) : []);
+        setRosterCounts(rc);
+        setMessageCounts(mc);
+      } catch (e) {
+        console.error("CoachNetworkAdmin load error:", e?.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  async function handleAction(coachId, action) {
+    setActioning(coachId);
+    try {
+      await base44.functions.invoke("approveCoach", { coachId, action });
+      setCoaches(prev => prev.map(c =>
+        c.id === coachId
+          ? { ...c, status: action === "approve" ? "approved" : "rejected", active: action !== "reject" }
+          : c
+      ));
+    } catch (e) {
+      console.error("approveCoach failed:", e?.message);
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  const filtered = coaches.filter(c => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      `${c.first_name} ${c.last_name}`.toLowerCase().includes(q) ||
+      (c.school_or_org || "").toLowerCase().includes(q) ||
+      (c.invite_code || "").toLowerCase().includes(q) ||
+      (c.sport || "").toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <AdminRoute>
+      <div style={{ minHeight: "100vh", background: "#0a0e1a", color: "#f9fafb", fontFamily: "'DM Sans', system-ui, sans-serif", padding: "32px 24px" }}>
+        <div style={{ maxWidth: 900, margin: "0 auto" }}>
+
+          <button
+            onClick={() => nav("/AdminOps")}
+            style={{ display: "flex", alignItems: "center", gap: 6, color: "#e8a020", fontSize: 13, fontWeight: 600, background: "none", border: "none", cursor: "pointer", marginBottom: 24, padding: 0 }}
+          >
+            <ArrowLeft style={{ width: 16, height: 16 }} /> Admin Ops
+          </button>
+
+          <div style={{ marginBottom: 28 }}>
+            <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, margin: "0 0 4px", letterSpacing: 1 }}>Coach Network</h1>
+            <p style={{ fontSize: 14, color: "#6b7280", margin: 0 }}>{coaches.length} coach{coaches.length !== 1 ? "es" : ""} total</p>
+          </div>
+
+          <input
+            style={{ width: "100%", background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "10px 14px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box", marginBottom: 20 }}
+            placeholder="Search by name, school, invite code, or sport…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+
+          {loading ? (
+            <p style={{ color: "#6b7280", fontSize: 14 }}>Loading…</p>
+          ) : filtered.length === 0 ? (
+            <p style={{ color: "#6b7280", fontSize: 14 }}>No coaches found.</p>
+          ) : (
+            <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, overflow: "hidden" }}>
+              {/* Header row */}
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr 1fr 1fr 1fr", gap: 8, padding: "12px 20px", borderBottom: "1px solid #1f2937", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                <span>Coach</span>
+                <span>School / Org</span>
+                <span>Sport</span>
+                <span>Invite Code</span>
+                <span>Roster</span>
+                <span>Msgs</span>
+                <span>Actions</span>
+              </div>
+              {filtered.map((c, i) => {
+                const statusColor = c.status === "approved" ? "#22c55e" : c.status === "rejected" ? "#ef4444" : "#e8a020";
+                const isActioning = actioning === c.id;
+                return (
+                  <div
+                    key={c.id || i}
+                    style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr 1fr 1fr 1fr", gap: 8, padding: "14px 20px", borderBottom: i < filtered.length - 1 ? "1px solid #1f2937" : "none", fontSize: 14, alignItems: "center" }}
+                  >
+                    <div>
+                      <span style={{ color: "#f9fafb", fontWeight: 600 }}>{c.first_name} {c.last_name}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, textTransform: "uppercase", letterSpacing: "0.08em" }}>{c.status || "pending"}</span>
+                        <span style={{ fontSize: 10, color: "#4b5563" }}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ""}</span>
+                      </div>
+                    </div>
+                    <span style={{ color: "#9ca3af" }}>{c.school_or_org || "—"}</span>
+                    <span style={{ color: "#9ca3af" }}>{c.sport || "—"}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: 13, color: c.status === "approved" ? "#e8a020" : "#6b7280" }}>{c.invite_code || "—"}</span>
+                    <span style={{ color: rosterCounts[c.id] > 0 ? "#22c55e" : "#6b7280", fontWeight: 600 }}>{rosterCounts[c.id] || 0}</span>
+                    <span style={{ color: messageCounts[c.id] > 0 ? "#f9fafb" : "#6b7280" }}>{messageCounts[c.id] || 0}</span>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {c.status !== "approved" && (
+                        <button
+                          onClick={() => handleAction(c.id, "approve")}
+                          disabled={isActioning}
+                          style={{ background: "#15803d", color: "#fff", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: isActioning ? "not-allowed" : "pointer", opacity: isActioning ? 0.6 : 1 }}
+                        >
+                          Approve
+                        </button>
+                      )}
+                      {c.status !== "rejected" && (
+                        <button
+                          onClick={() => handleAction(c.id, "reject")}
+                          disabled={isActioning}
+                          style={{ background: "#7f1d1d", color: "#fca5a5", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: isActioning ? "not-allowed" : "pointer", opacity: isActioning ? 0.6 : 1 }}
+                        >
+                          Reject
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </AdminRoute>
+  );
+}

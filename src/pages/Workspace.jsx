@@ -85,6 +85,8 @@ export default function Workspace() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [showAddAthlete, setShowAddAthlete] = useState(false);
   const [seasonConfig, setSeasonConfig] = useState(null);
+  const [coachMessages, setCoachMessages] = useState([]);
+  const [coachName, setCoachName] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +107,26 @@ export default function Workspace() {
         if (cancelled || !me) return;
         setMeEmail(String(me.email || "").toLowerCase());
         setMeName(String(me.full_name || ""));
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load coach messages for members who joined via a coach invite link
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const inviteCode = localStorage.getItem("coachInviteCode");
+        if (!inviteCode) return;
+        const coaches = await base44.entities.Coach.filter({ invite_code: inviteCode, active: true }).catch(() => []);
+        if (cancelled || !Array.isArray(coaches) || coaches.length === 0) return;
+        const coach = coaches[0];
+        setCoachName(`${coach.first_name || ""} ${coach.last_name || ""}`.trim() || coach.school_or_org || "Your Coach");
+        const msgs = await base44.entities.CoachMessage.filter({ coach_id: coach.id }).catch(() => []);
+        if (!cancelled) {
+          setCoachMessages(Array.isArray(msgs) ? msgs.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at)) : []);
+        }
       } catch {}
     })();
     return () => { cancelled = true; };
@@ -247,6 +269,24 @@ export default function Workspace() {
       <section style={{ padding: "0 24px 16px", maxWidth: 1100, margin: "0 auto" }}>
         <InstallButton />
       </section>
+
+      {/* ── COACH MESSAGES ── */}
+      {isMember && coachMessages.length > 0 && (
+        <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "24px 20px" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 16 }}>
+              Messages from {coachName}
+            </div>
+            {coachMessages.map((m, i) => (
+              <div key={m.id || i} style={{ padding: "14px 0", borderBottom: i < coachMessages.length - 1 ? "1px solid #1f2937" : "none" }}>
+                {m.subject && <div style={{ fontSize: 14, fontWeight: 600, color: "#f9fafb", marginBottom: 4 }}>{m.subject}</div>}
+                <div style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{m.message}</div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>{m.sent_at ? new Date(m.sent_at).toLocaleDateString() : ""}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── ADMIN SECTION ── */}
       {isAdmin && (

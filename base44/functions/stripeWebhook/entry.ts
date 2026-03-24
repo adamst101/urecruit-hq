@@ -84,6 +84,7 @@ Deno.serve(async (req) => {
     const accountId = session.metadata?.account_id || "";
     const athleteId = session.metadata?.athlete_id || "";
     const couponCode = session.metadata?.coupon_code || "";
+    const coachInviteCode = session.metadata?.coach_invite_code || "";
     const isAddOn = session.metadata?.is_add_on === "true";
     const hasSecondAthlete = session.metadata?.has_second_athlete === "true";
     const athleteTwoName = session.metadata?.athlete_2_name || "";
@@ -293,6 +294,34 @@ Deno.serve(async (req) => {
         });
       } catch (e) {
         console.warn("Event logging failed (non-critical):", e.message);
+      }
+      // Link athlete to coach roster if a coach invite code was used
+      if (coachInviteCode && accountId) {
+        try {
+          const coaches = await base44.asServiceRole.entities.Coach.filter({ invite_code: coachInviteCode, active: true }).catch(() => []);
+          if (Array.isArray(coaches) && coaches.length > 0) {
+            const coachId = coaches[0].id;
+            // Idempotency: skip if already on roster
+            const existing = await base44.asServiceRole.entities.CoachRoster.filter({ coach_id: coachId, account_id: accountId }).catch(() => []);
+            if (!Array.isArray(existing) || existing.length === 0) {
+              await base44.asServiceRole.entities.CoachRoster.create({
+                coach_id: coachId,
+                account_id: accountId,
+                athlete_id: athleteId || "",
+                athlete_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" ") || "",
+                invite_code: coachInviteCode,
+                joined_at: new Date().toISOString(),
+              });
+              console.log("Linked account", accountId, "to coach roster", coachId);
+            } else {
+              console.log("Account already on coach roster:", accountId, coachId);
+            }
+          } else {
+            console.warn("Coach not found for invite code:", coachInviteCode);
+          }
+        } catch (e) {
+          console.warn("CoachRoster linking failed (non-critical):", e.message);
+        }
       }
     } catch (err) {
       console.error("Failed to process checkout:", err.message);

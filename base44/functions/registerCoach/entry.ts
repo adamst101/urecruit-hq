@@ -1,68 +1,155 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
+const ADMIN_EMAILS = ["tom.adams101@gmail.com", "sadie_adams@icloud.com"];
+
 // Generates a unique invite code: LASTNAME-SCHOOLABBR-XXXX
-function generateInviteCode(name: string, schoolOrOrg: string): string {
-  const lastName = (name || "").trim().split(/\s+/).pop()?.toUpperCase().replace(/[^A-Z]/g, "") || "COACH";
+function generateInviteCode(lastName: string, schoolOrOrg: string): string {
+  const lastNamePart = (lastName || "").trim().toUpperCase().replace(/[^A-Z]/g, "") || "COACH";
   const schoolAbbr = (schoolOrOrg || "").trim().replace(/[^A-Za-z]/g, "").substring(0, 3).toUpperCase() || "SCH";
   const rand = Math.floor(1000 + Math.random() * 9000);
-  return `${lastName}-${schoolAbbr}-${rand}`;
+  return `${lastNamePart}-${schoolAbbr}-${rand}`;
 }
 
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  // Caller must be authenticated (just registered)
-  let me = null;
-  try {
-    me = await base44.auth.me();
-  } catch {}
-
-  if (!me?.id) {
-    return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
-  }
-
-  let body: { name?: string; school_or_org?: string; sport?: string } = {};
+  let body: { accountId?: string; first_name?: string; last_name?: string; school_or_org?: string; sport?: string; email?: string } = {};
   try {
     body = await req.json();
   } catch {
     return Response.json({ ok: false, error: "Invalid request body" }, { status: 400 });
   }
 
-  const { name, school_or_org, sport } = body;
+  // Accept explicit accountId from body (passed by AuthRedirect after login)
+  // Fall back to auth.me() for direct authenticated calls
+  let accountId = body.accountId || "";
+  let coachEmail = body.email || "";
+  if (!accountId) {
+    try {
+      const me = await base44.auth.me();
+      accountId = me?.id || "";
+      if (!coachEmail) coachEmail = me?.email || "";
+    } catch {}
+  }
 
-  if (!name || !school_or_org) {
-    return Response.json({ ok: false, error: "name and school_or_org are required" }, { status: 400 });
+  if (!accountId) {
+    return Response.json({ ok: false, error: "Not authenticated — accountId required" }, { status: 401 });
+  }
+
+  const { first_name, last_name, school_or_org, sport } = body;
+
+  if (!first_name || !last_name || !school_or_org) {
+    return Response.json({ ok: false, error: "first_name, last_name, and school_or_org are required" }, { status: 400 });
   }
 
   try {
-    // Generate invite code — retry once on collision (extremely rare)
-    let invite_code = generateInviteCode(name, school_or_org);
-    const existing = await base44.asServiceRole.entities.Coach.filter({ invite_code }).catch(() => []);
-    if (Array.isArray(existing) && existing.length > 0) {
-      invite_code = generateInviteCode(name, school_or_org);
+    // Check for existing coach record for this account (idempotent re-runs)
+    const existingCoach = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId }).catch(() => []);
+    if (Array.isArray(existingCoach) && existingCoach.length > 0) {
+      console.log("Coach record already exists for account:", accountId);
+      return Response.json({ ok: true, invite_code: existingCoach[0].invite_code, coach_id: existingCoach[0].id, already_existed: true });
     }
 
-    // Create the Coach entity record
+    // Generate invite code — retry once on collision (extremely rare)
+    let invite_code = generateInviteCode(last_name, school_or_org);
+    const collision = await base44.asServiceRole.entities.Coach.filter({ invite_code }).catch(() => []);
+    if (Array.isArray(collision) && collision.length > 0) {
+      invite_code = generateInviteCode(last_name, school_or_org);
+    }
+
+    // Create the Coach entity record — status starts as "pending" until admin approves
     const coach = await base44.asServiceRole.entities.Coach.create({
-      account_id: me.id,
-      name,
+      account_id: accountId,
+      first_name,
+      last_name,
       school_or_org,
       sport: sport || "Football",
       invite_code,
+      status: "pending",
       active: true,
       created_at: new Date().toISOString(),
     });
 
-    // Set role="coach" on the auth user account
+    // Set role="coach_pending" — full coach access granted only after admin approval
     try {
-      await base44.asServiceRole.entities.User.update(me.id, { role: "coach" });
-      console.log("Set role=coach on user:", me.id);
+      await base44.asServiceRole.entities.User.update(accountId, { role: "coach_pending" });
+      console.log("Set role=coach_pending on user:", accountId);
     } catch (e) {
-      console.warn("Could not set coach role on User entity:", (e as Error).message);
+      console.warn("Could not set coach_pending role on User entity:", (e as Error).message);
     }
 
-    console.log("Coach registered — id:", coach.id, "invite_code:", invite_code);
-    return Response.json({ ok: true, invite_code, coach_id: coach.id });
+    // Create a support ticket for admin review
+    try {
+      const existing = await base44.asServiceRole.entities.SupportTicket.filter({}).catch(() => []);
+      const num = String((Array.isArray(existing) ? existing.length : 0) + 1).padStart(4, "0");
+      const ticketNumber = `COACH-${new Date().getFullYear()}-${num}`;
+
+      await base44.asServiceRole.entities.SupportTicket.create({
+        ticket_number: ticketNumber,
+        type: "support",
+        status: "open",
+        priority: "normal",
+        subject: `Coach Application — ${first_name} ${last_name} · ${school_or_org}`,
+        description: `New coach account pending approval.\n\nName: ${first_name} ${last_name}\nSchool/Org: ${school_or_org}\nSport: ${sport || "Football"}\nEmail: ${coachEmail || "unknown"}\nAccount ID: ${accountId}\nCoach ID: ${coach.id}`,
+        user_id: accountId,
+        user_email: coachEmail || null,
+        user_name: `${first_name} ${last_name}`,
+        account_type: "coach_pending",
+      });
+      console.log("Support ticket created for coach application:", ticketNumber);
+    } catch (e) {
+      console.warn("Could not create support ticket (non-critical):", (e as Error).message);
+    }
+
+    // Send admin notification email
+    try {
+      const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Chicago", dateStyle: "medium", timeStyle: "short" });
+      const adminBody = `
+<div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+  <div style="background:#0B1F3B;padding:20px 24px;">
+    <h2 style="margin:0;color:#D4AF37;font-size:18px;">New Coach Application</h2>
+    <p style="margin:4px 0 0;color:#9ca3af;font-size:13px;">Pending your review and approval</p>
+  </div>
+  <div style="padding:24px;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;width:110px;vertical-align:top;">Name</td><td style="padding:8px 12px;color:#111827;font-weight:600;">${first_name} ${last_name}</td></tr>
+      <tr style="background:#f9fafb;"><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">School / Org</td><td style="padding:8px 12px;color:#111827;">${school_or_org}</td></tr>
+      <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Sport</td><td style="padding:8px 12px;color:#111827;">${sport || "Football"}</td></tr>
+      <tr style="background:#f9fafb;"><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Email</td><td style="padding:8px 12px;color:#111827;">${coachEmail || "—"}</td></tr>
+    </table>
+    <div style="margin-top:20px;padding:16px;background:#fef9ec;border:1px solid #e8a020;border-radius:8px;">
+      <p style="margin:0;font-size:14px;color:#92400e;line-height:1.6;">
+        <strong>Action required:</strong> Visit Coach Network Admin to approve or reject this application.
+      </p>
+    </div>
+    <div style="margin-top:20px;">
+      <a href="https://urecruithq.com/CoachNetworkAdmin" style="display:inline-block;background:#0B1F3B;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:7px;font-size:14px;font-weight:600;">
+        Review Application →
+      </a>
+    </div>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#9ca3af;">
+      <p style="margin:0;">Submitted: ${timestamp} CT</p>
+    </div>
+  </div>
+</div>`;
+
+      await Promise.allSettled(
+        ADMIN_EMAILS.map(email =>
+          base44.asServiceRole.integrations.Core.SendEmail({
+            to: email,
+            from_name: "URecruit HQ",
+            subject: `🎽 New Coach Application — ${first_name} ${last_name} · ${school_or_org}`,
+            body: adminBody,
+          })
+        )
+      );
+      console.log("Admin notification emails sent");
+    } catch (e) {
+      console.warn("Could not send admin notification (non-critical):", (e as Error).message);
+    }
+
+    console.log("Coach registered (pending) — id:", coach.id, "invite_code:", invite_code);
+    return Response.json({ ok: true, invite_code, coach_id: coach.id, status: "pending" });
   } catch (err) {
     console.error("registerCoach error:", (err as Error).message);
     return Response.json({ ok: false, error: (err as Error).message }, { status: 500 });

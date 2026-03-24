@@ -22,6 +22,7 @@ export default function CoachInviteLanding() {
           const coaches = await base44.entities.Coach.filter({
             invite_code: code,
             active: true,
+            status: "approved",
           });
 
           if (!cancelled && Array.isArray(coaches) && coaches.length > 0) {

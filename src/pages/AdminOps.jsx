@@ -130,6 +130,18 @@ const TOOLS = [
     ],
   },
   {
+    section: "Coach Network",
+    items: [
+      {
+        title: "Coach Network",
+        description: "View all coach accounts, roster sizes, invite codes, and message activity.",
+        route: "/CoachNetworkAdmin",
+        icon: "🎽",
+        color: "#1a6b3a",
+      },
+    ],
+  },
+  {
     section: "Quality",
     items: [
       {

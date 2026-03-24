@@ -11,11 +11,13 @@ import { useSeasonAccess, clearSeasonAccessCache } from "../components/hooks/use
  * Post-login routing hub. Decides where to send the user:
  *
  * 1. postPaymentSignup in sessionStorage → /Workspace (poll for entitlement if slow)
- * 2. pendingPromoCode in sessionStorage → /Checkout?promo=CODE
- * 3. loginReturnUrl in sessionStorage → that URL
- * 4. Authenticated + entitled → /Workspace (or sanitized next)
- * 5. Authenticated + NOT entitled → /Subscribe?newAccount=true
- * 6. Not authenticated → /Home
+ * 2. pendingCoachRegistration in sessionStorage → registerCoach → /CoachDashboard
+ * 3. coach role already set → /CoachDashboard directly
+ * 4. pendingPromoCode in sessionStorage → /Checkout?promo=CODE
+ * 5. loginReturnUrl in sessionStorage → that URL
+ * 6. Authenticated + entitled → /Workspace (or sanitized next)
+ * 7. Authenticated + NOT entitled → /Subscribe?newAccount=true
+ * 8. Not authenticated → /Home
  */
 
 const PATHS = {
@@ -104,8 +106,34 @@ export default function AuthRedirect() {
 
     const accountId = season.accountId;
 
-    // ── Coach accounts → CoachDashboard directly ──
-    if (season?.role === "coach") {
+    // ── Complete pending coach registration ──
+    const pendingCoach = ssGet("pendingCoachRegistration");
+    if (pendingCoach) {
+      ssRemove("pendingCoachRegistration");
+      didRoute.current = true;
+      setStatusMsg("Setting up your coach account…");
+      (async () => {
+        try {
+          const coachData = JSON.parse(pendingCoach);
+          await base44.functions.invoke("registerCoach", {
+            accountId,
+            first_name: coachData.first_name,
+            last_name: coachData.last_name,
+            school_or_org: coachData.school_or_org,
+            sport: coachData.sport,
+            email: coachData.email,
+          });
+          clearSeasonAccessCache();
+        } catch (e) {
+          console.error("registerCoach from AuthRedirect failed:", e?.message);
+        }
+        nav("/CoachDashboard", { replace: true });
+      })();
+      return;
+    }
+
+    // ── Coach accounts (approved or pending) → CoachDashboard ──
+    if (season?.role === "coach" || season?.role === "coach_pending") {
       didRoute.current = true;
       nav("/CoachDashboard", { replace: true });
       return;

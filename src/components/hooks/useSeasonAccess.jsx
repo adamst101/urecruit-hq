@@ -145,6 +145,24 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
     };
   }
 
+  // Pending coach — submitted but not yet approved by admin
+  if (role === "coach_pending") {
+    return {
+      currentYear: currentYear || null,
+      demoYear: demoYear || null,
+      mode: "coach_pending",
+      hasAccess: false,
+      isCoach: false,
+      seasonYear: activeSeason || currentYear || null,
+      season: activeSeason || currentYear || null,
+      accountId,
+      entitlement: null,
+      role,
+      isAuthenticated: true,
+      lastCheckedAt: nowISO(),
+    };
+  }
+
   // Negative cache: skip entitlement API if we recently confirmed no entitlement
   if (_lastDemoCheck?.accountId === accountId) {
     const age = Date.now() - new Date(_lastDemoCheck.checkedAt).getTime();

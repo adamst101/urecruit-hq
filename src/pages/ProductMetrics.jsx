@@ -83,16 +83,22 @@ export default function ProductMetrics() {
   const [events,       setEvents]       = useState([]);
   const [athletes,     setAthletes]     = useState([]);
   const [pageEvents,   setPageEvents]   = useState([]);
+  const [coaches,      setCoaches]      = useState([]);
+  const [coachRoster,  setCoachRoster]  = useState([]);
+  const [coachMsgs,    setCoachMsgs]    = useState([]);
 
   async function loadAll() {
     setLoading(true);
-    const [ents, intents, tix, evts, aths, pgEvts] = await Promise.all([
+    const [ents, intents, tix, evts, aths, pgEvts, coachs, roster, msgs] = await Promise.all([
       base44.entities.Entitlement.filter({}).catch(() => []),
       base44.entities.CampIntent.filter({}).catch(() => []),
       base44.entities.SupportTicket.filter({}).catch(() => []),
       base44.entities.Event.filter({ event_type: "purchase_completed" }).catch(() => []),
       base44.entities.Athlete.filter({}).catch(() => []),
       base44.entities.Event.filter({}).catch(() => []),
+      base44.entities.Coach.filter({}).catch(() => []),
+      base44.entities.CoachRoster.filter({}).catch(() => []),
+      base44.entities.CoachMessage.filter({}).catch(() => []),
     ]);
     setEntitlements(Array.isArray(ents) ? ents : []);
     setCampIntents(Array.isArray(intents) ? intents : []);
@@ -100,6 +106,9 @@ export default function ProductMetrics() {
     setEvents(Array.isArray(evts) ? evts : []);
     setAthletes(Array.isArray(aths) ? aths : []);
     setPageEvents(Array.isArray(pgEvts) ? pgEvts : []);
+    setCoaches(Array.isArray(coachs) ? coachs : []);
+    setCoachRoster(Array.isArray(roster) ? roster : []);
+    setCoachMsgs(Array.isArray(msgs) ? msgs : []);
     setLastLoaded(new Date());
     setLoading(false);
   }
@@ -398,6 +407,39 @@ export default function ProductMetrics() {
 
     return { wau, mau, stickiness, retentionRate, returned, priorWeekSize: priorWeekIds.size, chartData, activityBuckets, hasPhase3Data };
   }, [pageEvents]);
+
+  // ── Coach Network metrics ─────────────────────────────
+  const coachMetrics = useMemo(() => {
+    const totalCoaches = coaches.length;
+    const activeCoaches = coaches.filter(c => c.active).length;
+    const totalRosterSlots = coachRoster.length;
+    const totalMessages = coachMsgs.length;
+
+    const coachesWithRoster = new Set(coachRoster.map(r => r.coach_id).filter(Boolean)).size;
+
+    const now = new Date();
+    const monthAgo = new Date(now - 30 * 86400000);
+    const newThisMonth = coaches.filter(c => c.created_at && new Date(c.created_at) >= monthAgo).length;
+
+    // Roster size distribution
+    const rosterByCoacb = {};
+    for (const r of coachRoster) {
+      if (r.coach_id) rosterByCoacb[r.coach_id] = (rosterByCoacb[r.coach_id] || 0) + 1;
+    }
+    const rosterBuckets = [
+      { label: "0 athletes", count: totalCoaches - coachesWithRoster },
+      { label: "1–5", count: 0 },
+      { label: "6–20", count: 0 },
+      { label: "21+", count: 0 },
+    ];
+    for (const n of Object.values(rosterByCoacb)) {
+      if (n <= 5) rosterBuckets[1].count++;
+      else if (n <= 20) rosterBuckets[2].count++;
+      else rosterBuckets[3].count++;
+    }
+
+    return { totalCoaches, activeCoaches, totalRosterSlots, totalMessages, coachesWithRoster, newThisMonth, rosterBuckets };
+  }, [coaches, coachRoster, coachMsgs]);
 
   // ── render ────────────────────────────────────────────
   return (
@@ -773,6 +815,52 @@ export default function ProductMetrics() {
                   </div>
                 </>
               )}
+
+              {/* ── COACH NETWORK ────────────────────────── */}
+              <SectionHeader title="Coach Network" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <StatCard label="Total Coaches" value={coachMetrics.totalCoaches} color="#e8a020" />
+                <StatCard label="New This Month" value={coachMetrics.newThisMonth} color="#22c55e" />
+                <StatCard label="Total Roster Slots" value={coachMetrics.totalRosterSlots} sub="athletes linked" />
+                <StatCard label="Messages Sent" value={coachMetrics.totalMessages} color="#f9fafb" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                <Card className="p-4 border-[#1f2937] bg-[#111827]">
+                  <div className="text-xs text-[#6b7280] mb-3 font-semibold uppercase tracking-wide">Roster Size Distribution</div>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <BarChart data={coachMetrics.rosterBuckets} barSize={28}>
+                      <XAxis dataKey="label" tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                      <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => [v, "Coaches"]} />
+                      <Bar dataKey="count" fill="#e8a020" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Card>
+                <Card className="p-4 border-[#1f2937] bg-[#111827]">
+                  <div className="text-xs text-[#6b7280] mb-4 font-semibold uppercase tracking-wide">Coach Network Health</div>
+                  <div className="space-y-3">
+                    {[
+                      { label: "Coaches with ≥1 athlete", value: coachMetrics.coachesWithRoster, total: coachMetrics.totalCoaches, color: "#22c55e" },
+                      { label: "Avg athletes per coach", value: coachMetrics.totalCoaches ? (coachMetrics.totalRosterSlots / coachMetrics.totalCoaches).toFixed(1) : 0, isRaw: true },
+                      { label: "Avg messages per coach", value: coachMetrics.totalCoaches ? (coachMetrics.totalMessages / coachMetrics.totalCoaches).toFixed(1) : 0, isRaw: true },
+                    ].map(({ label, value, total, color, isRaw }) => (
+                      <div key={label}>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-[#9ca3af]">{label}</span>
+                          <span style={{ color: color || "#f9fafb" }} className="font-semibold">
+                            {isRaw ? value : `${value} / ${total}`}
+                          </span>
+                        </div>
+                        {!isRaw && total > 0 && (
+                          <div className="h-1.5 bg-[#1f2937] rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${(value / total) * 100}%`, background: color || "#e8a020" }} />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </div>
 
               <div className="mt-6 text-xs text-[#374151] text-center pb-4">
                 Phase 1–3 metrics — Entitlement, CampIntent, SupportTicket, Athlete, and Event tables.
