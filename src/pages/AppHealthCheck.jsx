@@ -2594,9 +2594,7 @@ const JOURNEY_GROUPS = [
               if (!testCoach?.id) throw new Error("Coach.create() returned no id — entity may be read-only");
               ctx.testCoachId = testCoach.id;
               ctx.testInviteCode = testCoach.invite_code;
-              await base44.entities.Coach.delete(testCoach.id).catch(() => {});
-              ctx.testCoachId = null;
-              return `Coach record created with first_name/last_name/status fields — schema up to date ✓`;
+              return `Coach record created — id=${testCoach.id} code=${testCoach.invite_code} (first_name/last_name/status fields accepted) ✓`;
             },
           },
           {
