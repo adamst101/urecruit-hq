@@ -52,7 +52,7 @@ function DiffCard({ borderColor, emoji, title, body, children }) {
 
 export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
   return (
-    <section style={{ background: "#0a0e1a", padding: "80px 24px" }}>
+    <section className="diff-section" style={{ background: "#0a0e1a", padding: "80px 24px" }}>
       <style>{`
         .diff-card:hover {
           transform: translateY(-4px);
@@ -61,6 +61,9 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
         @media (max-width: 768px) {
           .diff-cards-grid {
             grid-template-columns: 1fr !important;
+          }
+          .diff-section {
+            padding: 48px 20px !important;
           }
         }
       `}</style>
@@ -126,7 +129,7 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
                 borderRadius: 20,
               }}
             >
-              ✓ {schoolDisplay} programs · All divisions
+              ✓ {schoolDisplay} programs across all divisions
             </span>
           </DiffCard>
 
@@ -135,7 +138,7 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
             borderColor="#3b82f6"
             emoji="📅"
             title="NEVER DOUBLE-BOOK AGAIN."
-            body={<>Automatically flags conflicts and overlapping dates<br />— before you commit to the wrong camps.</>}
+            body="Automatically flags conflicts and overlapping dates — before you commit to the wrong camps."
           >
             <div>
               <span
@@ -152,7 +155,7 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
                   borderRadius: 20,
                 }}
               >
-                ⚠️ Conflict — Jun 14 &amp; Jun 15
+                ⚠️ Conflict Detected
               </span>
               <p
                 style={{
@@ -163,7 +166,7 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
                   lineHeight: 1.5,
                 }}
               >
-                TCU Horned Frogs overlaps with SMU Mustangs
+                Two camps overlap the same weekend
               </p>
             </div>
           </DiffCard>
