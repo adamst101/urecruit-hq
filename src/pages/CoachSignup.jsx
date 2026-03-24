@@ -141,8 +141,67 @@ export default function CoachSignup() {
   const [password, setPassword] = useState("");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState(null);
-  // Shown when email verification is required before login
+  // OTP verification state — set after register() when email confirmation is required
   const [needsVerification, setNeedsVerification] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(false);
+
+  async function handleVerify() {
+    if (!otpCode.trim()) { setError("Please enter the verification code."); return; }
+    setWorking(true);
+    setError(null);
+    const normalizedEmail = email.trim().toLowerCase();
+
+    try {
+      const result = await base44.auth.verifyOtp({ email: normalizedEmail, otpCode: otpCode.trim() });
+      const verifyErr = result?.error;
+      if (verifyErr) throw new Error(String(verifyErr));
+    } catch (err) {
+      setWorking(false);
+      const msg = String(err?.message || err || "");
+      setError(msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("expired")
+        ? "That code is invalid or expired. Please check it and try again, or request a new code."
+        : (msg || "Verification failed. Please try again."));
+      return;
+    }
+
+    let access_token;
+    try {
+      const loginResult = await base44.auth.loginViaEmailPassword(normalizedEmail, password);
+      access_token = loginResult?.access_token;
+      if (!access_token) throw new Error("No access token returned.");
+    } catch (err) {
+      setWorking(false);
+      setError("Email verified! Sign-in failed — please try signing in manually.");
+      return;
+    }
+
+    try {
+      sessionStorage.setItem("pendingCoachRegistration", JSON.stringify({
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        school_or_org: schoolOrOrg.trim(),
+        sport: sport || "Football",
+        email: normalizedEmail,
+      }));
+    } catch {}
+
+    window.location.assign(
+      `/AuthRedirect?access_token=${encodeURIComponent(access_token)}&source=coach_signup`
+    );
+  }
+
+  async function handleResend() {
+    if (resendCooldown) return;
+    setError(null);
+    try {
+      await base44.auth.resendOtp(email.trim().toLowerCase());
+      setResendCooldown(true);
+      setTimeout(() => setResendCooldown(false), 30000);
+    } catch {
+      setError("Could not resend code. Please try again.");
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -180,7 +239,7 @@ export default function CoachSignup() {
     }
 
     if (!access_token) {
-      // Email verification required — tell the user and stop here
+      // Email verification required — show OTP entry (same flow as Signup.jsx)
       setWorking(false);
       setNeedsVerification(true);
       return;
@@ -210,13 +269,42 @@ export default function CoachSignup() {
       <div style={S.root}>
         <style>{FONTS}</style>
         <div style={S.card}>
-          <div style={S.success}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>📧</div>
-            <strong>Check your email</strong>
-            <p style={{ marginTop: 8, marginBottom: 0 }}>
-              We sent a verification link to <strong>{email}</strong>.
-              Click the link to activate your coach account.
-            </p>
+          <span style={S.label}>For Coaches &amp; Trainers</span>
+          <h1 style={S.heading}>CHECK YOUR<br />EMAIL</h1>
+          <p style={S.sub}>
+            We sent a verification code to <strong style={{ color: "#f9fafb" }}>{email}</strong>.
+            Enter it below to activate your coach account.
+          </p>
+
+          {error && <div style={S.error}>{error}</div>}
+
+          <label style={S.fieldLabel}>Verification Code</label>
+          <input
+            style={{ ...S.input, fontSize: 22, letterSpacing: "0.15em", textAlign: "center" }}
+            value={otpCode}
+            onChange={e => setOtpCode(e.target.value)}
+            placeholder="000000"
+            autoComplete="one-time-code"
+            inputMode="numeric"
+            maxLength={8}
+          />
+
+          <button
+            onClick={handleVerify}
+            style={{ ...S.btn, ...(working ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}
+            disabled={working}
+          >
+            {working ? "Verifying…" : "Verify & Create Coach Account →"}
+          </button>
+
+          <div style={{ textAlign: "center", marginTop: 16 }}>
+            <button
+              onClick={handleResend}
+              disabled={resendCooldown}
+              style={{ ...S.backLink, color: resendCooldown ? "#374151" : "#e8a020" }}
+            >
+              {resendCooldown ? "Code sent — check your inbox" : "Resend code"}
+            </button>
           </div>
           <button style={S.backLink} onClick={() => nav("/Home")}>← Back to home</button>
         </div>
