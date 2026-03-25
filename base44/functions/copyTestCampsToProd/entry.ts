@@ -26,14 +26,14 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
     }
 
-    // Fetch all test (dev) camps
+    // Fetch all test (dev) camps using filter with environment param
     let allCamps = [];
     let offset = 0;
     const PAGE = 50;
 
     while (true) {
       const batch = await retryOp(() =>
-        base44.asServiceRole.entities.Camp.list('-created_date', PAGE, offset, 'dev')
+        base44.asServiceRole.entities.Camp.filter({}, '-created_date', PAGE, offset, 'dev')
       );
       if (!Array.isArray(batch) || batch.length === 0) break;
       allCamps = allCamps.concat(batch);
