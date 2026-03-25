@@ -176,6 +176,11 @@ export default function CoachSignup() {
       return;
     }
 
+    // Set the display name on the auth account so base44 admin shows the real name
+    try {
+      await base44.auth.updateMe({ full_name: `${firstName.trim()} ${lastName.trim()}` });
+    } catch {}
+
     try {
       sessionStorage.setItem("pendingCoachRegistration", JSON.stringify({
         first_name: firstName.trim(),
@@ -244,6 +249,11 @@ export default function CoachSignup() {
       setNeedsVerification(true);
       return;
     }
+
+    // Set display name on auth account
+    try {
+      await base44.auth.updateMe({ full_name: `${firstName.trim()} ${lastName.trim()}` });
+    } catch {}
 
     // Step 3 — store pending coach data so AuthRedirect can call registerCoach
     // after the session is fully established (same pattern as pendingPromoCode)
