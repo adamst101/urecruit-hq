@@ -333,6 +333,11 @@ export function useSeasonAccess() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentYear, demoYear]);
 
+  // Expose to window for browser-console diagnostics
+  useEffect(() => {
+    try { window.__seasonAccess = { ...state, soldSeason, activeSeason }; } catch {}
+  }, [state, soldSeason, activeSeason]);
+
   return {
     ...state,
     isLoading: !!state.isLoading,
