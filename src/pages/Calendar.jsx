@@ -275,7 +275,7 @@ export default function Calendar() {
 
   // Resolve school names/logos via the same hook Discover uses (more reliable than
   // fetchEntityMap in useCampSummariesClient which fails silently on some base44 configs)
-  const { resolveIdentity } = useSchoolIdentity(paidQuery.data || []);
+  const { schoolById } = useSchoolIdentity(paidQuery.data || []);
 
   const demoQuery = useDemoCampSummaries({
     seasonYear,
@@ -728,14 +728,14 @@ export default function Calendar() {
             price: r?.price ?? null, link_url: r?.link_url ?? null,
             notes: r?.notes ?? null, city: r?.city ?? null, state: r?.state ?? null,
           };
-          const schoolIdentity = resolveIdentity(schoolId, r);
+          const schoolRow = schoolId ? (schoolById[schoolId] || null) : null;
           const school = {
             id: schoolId,
-            school_name: schoolIdentity.name !== "School" ? schoolIdentity.name : (r?.school_name ?? null),
-            division: schoolIdentity.division ?? r?.school_division ?? null,
-            logo_url: schoolIdentity.logoUrl ?? r?.school_logo_url ?? null,
-            city: schoolIdentity.city ?? r?.school_city ?? null,
-            state: schoolIdentity.state ?? r?.school_state ?? null,
+            school_name: schoolRow?.school_name || schoolRow?.name || r?.school_name || null,
+            division: schoolRow?.division || schoolRow?.school_division || r?.school_division || null,
+            logo_url: schoolRow?.athletic_logo_url || schoolRow?.athletics_logo_url || schoolRow?.logo_url || r?.school_logo_url || null,
+            city: schoolRow?.city || r?.school_city || null,
+            state: schoolRow?.state || r?.school_state || null,
             conference: r?.school_conference ?? null,
           };
           const sport = { id: sportId, name: r?.sport_name ?? null, sport_name: r?.sport_name ?? null };
