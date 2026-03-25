@@ -75,6 +75,16 @@ async function batchFetchByIds(entity, ids) {
     out.push(...rows);
   }
 
+  // If bulk operator forms all returned empty, fall back to individual get() calls.
+  // The base44 SDK's get(id) hits a direct URL path and is guaranteed to work even
+  // when $in queries on the special `id` field are not supported by the server.
+  if (out.length === 0 && entity?.get) {
+    const results = await Promise.allSettled(cleanIds.map((id) => entity.get(id)));
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) out.push(r.value);
+    }
+  }
+
   // de-dupe by id
   const seen = new Set();
   const deduped = [];
