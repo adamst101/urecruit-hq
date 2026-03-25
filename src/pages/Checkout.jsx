@@ -26,7 +26,7 @@ export default function Checkout() {
   const [athleteFirstName, setAthleteFirstName] = useState("");
   const [athleteLastName, setAthleteLastName] = useState("");
   const [gradYear, setGradYear] = useState("");
-  const [sportId, setSportId] = useState("");
+  const [sportId, setSportId] = useState("football");
   const [homeCity, setHomeCity] = useState("");
   const [homeState, setHomeState] = useState("");
   const [parentFirstName, setParentFirstName] = useState("");
@@ -82,19 +82,9 @@ export default function Checkout() {
     base44.functions.invoke("validatePromo", { promoCode: "" }).catch(() => {});
   }, []);
 
-  // Load sports list — fall back to Football if entity is empty
+  // Sports list — Football only for now
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const rows = await base44.entities.Sport.list();
-        const list = Array.isArray(rows) ? rows.filter(r => r.active !== false) : [];
-        if (mounted) setSports(list.length ? list : [{ id: "football", sport_name: "Football" }]);
-      } catch {
-        if (mounted) setSports([{ id: "football", sport_name: "Football" }]);
-      }
-    })();
-    return () => { mounted = false; };
+    setSports([{ id: "football", sport_name: "Football" }]);
   }, []);
 
   // Auto-apply promo from URL param or sessionStorage
