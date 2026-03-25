@@ -40,13 +40,14 @@ function nowISO() {
 function isActiveInWindow(ent, now = new Date()) {
   try {
     const nowMs = now.getTime();
-    const starts = ent?.starts_at ? new Date(String(ent.starts_at)).getTime() : null;
+    // Only block if explicitly expired — do NOT block on starts_at being in the
+    // future: a user who just purchased should have access immediately regardless
+    // of when the season's access window officially "opens".
     const ends = ent?.ends_at ? new Date(String(ent.ends_at)).getTime() : null;
-    if (starts != null && !Number.isNaN(starts) && nowMs < starts) return false;
     if (ends != null && !Number.isNaN(ends) && nowMs >= ends) return false;
     return true;
   } catch {
-    return false;
+    return true; // default to accessible on error
   }
 }
 
