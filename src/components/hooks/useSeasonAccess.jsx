@@ -127,16 +127,23 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
     };
   }
 
-  // Coach accounts get a dedicated shape — no entitlement required
+  // Coach accounts get a dedicated shape — no entitlement required.
+  // Use getActiveSeason to get the real configured season year (not calendar math).
   if (role === "coach") {
+    let coachSeasonYear = activeSeason || currentYear;
+    try {
+      const res = await base44.functions.invoke("getActiveSeason", {});
+      const yr = Number(res?.data?.season?.season_year);
+      if (Number.isFinite(yr)) coachSeasonYear = yr;
+    } catch {}
     return {
       currentYear: currentYear || null,
       demoYear: demoYear || null,
       mode: "coach",
       hasAccess: false,
       isCoach: true,
-      seasonYear: activeSeason || currentYear || null,
-      season: activeSeason || currentYear || null,
+      seasonYear: coachSeasonYear,
+      season: coachSeasonYear,
       accountId,
       entitlement: null,
       role,
