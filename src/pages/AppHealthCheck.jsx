@@ -919,18 +919,22 @@ const JOURNEY_GROUPS = [
         description: "End-to-end: creates a favorite intent as Discover would, then walks every step the Calendar and My Camps hooks use to surface it. Fails at the exact step that breaks the pipeline.",
         steps: [
           {
-            name: "Resolve athlete profile (required for useCampSummariesClient)",
+            name: "Create test athlete profile (mirrors subscriber account setup)",
             run: async (ctx) => {
               const me = await base44.auth.me();
               if (!me?.id) throw new Error("auth.me() returned no id");
               ctx.myId = me.id;
-              const athletes = await base44.entities.AthleteProfile.filter({ account_id: me.id }).catch(() => []);
-              const active = (Array.isArray(athletes) ? athletes : []).filter(a => a.active !== false);
-              if (active.length === 0) throw new Error("No active AthleteProfile for this account — useCampSummariesClient would not run (enabled: false)");
-              ctx.athlete = active[0];
-              ctx.athleteId = String(ctx.athlete.id || ctx.athlete._id || "");
-              if (!ctx.athleteId) throw new Error("AthleteProfile has no id — athleteId would resolve to null");
-              return `Athlete resolved: id=${ctx.athleteId} (${ctx.athlete.first_name || "?"} ${ctx.athlete.last_name || "?"})`;
+              const profile = await base44.entities.AthleteProfile.create({
+                account_id: ctx.myId,
+                first_name: "__hc_cal__", last_name: "__test__",
+                athlete_name: "__hc_cal__ __test__",
+                active: true, sport_id: "test", grad_year: 2099,
+              });
+              if (!profile?.id) throw new Error("AthleteProfile.create returned no id — subscriber accounts cannot create athlete profiles");
+              ctx.athlete = profile;
+              ctx.athleteId = String(profile.id);
+              ctx.createdAthlete = true;
+              return `Test athlete created (id=${ctx.athleteId}) — mirrors a real subscriber's athlete profile`;
             },
           },
           {
@@ -1032,16 +1036,20 @@ const JOURNEY_GROUPS = [
             },
           },
           {
-            name: "Cleanup: delete test intent",
+            name: "Cleanup: delete test intent and athlete",
             run: async (ctx) => {
               if (ctx.intentId) await base44.entities.CampIntent.delete(ctx.intentId).catch(() => {});
-              return `Intent id=${ctx.intentId} deleted`;
+              if (ctx.createdAthlete && ctx.athleteId) await base44.entities.AthleteProfile.delete(ctx.athleteId).catch(() => {});
+              return `Cleaned up intent id=${ctx.intentId} and test athlete id=${ctx.athleteId}`;
             },
           },
         ],
         cleanup: async (ctx) => {
           if (ctx.intentId) {
             try { await base44.entities.CampIntent.delete(ctx.intentId); } catch {}
+          }
+          if (ctx.createdAthlete && ctx.athleteId) {
+            try { await base44.entities.AthleteProfile.delete(ctx.athleteId); } catch {}
           }
         },
       },
