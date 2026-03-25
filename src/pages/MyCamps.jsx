@@ -54,9 +54,10 @@ export default function MyCamps() {
   useEffect(() => { trackEventOnce("my_camps_viewed", "evt_my_camps_viewed_v1"); }, []);
 
   const dm = readDemoMode();
-  const isPaid = season?.mode === "paid";
+  const isPaid = season?.mode === "paid" || season?.mode === "coach";
   const isDemoMode = !isPaid;
   const isAdmin = season?.role === "admin";
+  const isCoach = season?.mode === "coach";
 
   const { allCamps: allAthletesCamps, athletes: allAthletes } = useAllAthletesCamps({ enabled: isPaid });
   const seasonYear = Number(dm?.seasonYear || season?.seasonYear || season?.currentYear || new Date().getFullYear());
@@ -73,9 +74,10 @@ export default function MyCamps() {
 
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId ? String(athleteId) : undefined,
+    accountId: !athleteId && isCoach ? (season?.accountId || undefined) : undefined,
     sportId: sportId ? String(sportId) : "",
     adminMode: isAdmin && !athleteId,
-    enabled: !season.isLoading && !isDemoMode && (!!athleteId || (isAdmin && !athleteId)),
+    enabled: !season.isLoading && !isDemoMode && (!!athleteId || (isAdmin && !athleteId) || (isCoach && !!season?.accountId)),
   });
 
   const demoQuery = useDemoCampSummaries({

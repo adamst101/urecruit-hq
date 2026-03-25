@@ -125,7 +125,8 @@ export default function Calendar() {
   // If season has resolved to paid, never let a stale ?mode=demo override it
   const forceDemo = url.mode === "demo" && season?.mode !== "paid";
   const effectiveMode = forceDemo ? "demo" : season?.mode;
-  const isPaid = effectiveMode === "paid";
+  const isPaid = effectiveMode === "paid" || effectiveMode === "coach";
+  const isCoach = effectiveMode === "coach";
 
   const seasonYear = useMemo(() => {
     if (forceDemo && url.seasonYear) return url.seasonYear;
@@ -242,9 +243,10 @@ export default function Calendar() {
 
   const paidQuery = useCampSummariesClient({
     athleteId: athleteId || undefined,
+    accountId: !athleteId && isCoach ? (season?.accountId || undefined) : undefined,
     sportId: nf?.sportId || undefined,
     adminMode: isAdmin && !athleteId,
-    enabled: !season.isLoading && isPaid && (!!athleteId || (isAdmin && !athleteId)),
+    enabled: !season.isLoading && isPaid && (!!athleteId || (isAdmin && !athleteId) || (isCoach && !!season?.accountId)),
   });
 
   const demoQuery = useDemoCampSummaries({

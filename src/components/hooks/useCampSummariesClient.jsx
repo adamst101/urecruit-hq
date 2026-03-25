@@ -164,6 +164,7 @@ async function fetchEntityMap(entityName, ids) {
 ------------------------- */
 export function useCampSummariesClient({
   athleteId,
+  accountId,
   sportId,
   limit = 500,
   includeAllCampsForSport = false,
@@ -171,11 +172,12 @@ export function useCampSummariesClient({
   enabled = true,
 } = {}) {
   const aId = clean(athleteId);
+  const acctId = clean(accountId);
   const sId = clean(sportId);
 
   return useQuery({
-    queryKey: ["myCampsSummaries_client", aId || null, sId || null, adminMode || false],
-    enabled: Boolean(enabled) && (adminMode || Boolean(aId)),
+    queryKey: ["myCampsSummaries_client", aId || null, acctId || null, sId || null, adminMode || false],
+    enabled: Boolean(enabled) && (adminMode || Boolean(aId) || Boolean(acctId)),
 
     retry: (count, err) => {
       if (isRateLimitError(err)) return count < 2;
@@ -190,7 +192,7 @@ export function useCampSummariesClient({
 
       if (!CampEntity?.filter || !IntentEntity?.filter) return [];
 
-      // 1) Load intents — skipped for admin (no athlete profile)
+      // 1) Load intents — by athlete_id (normal users) or account_id (coaches with no athlete profile)
       const intentByKey = new Map();
       const interestedKeys = [];
       if (aId) {
@@ -206,6 +208,17 @@ export function useCampSummariesClient({
           const key = String(rawKey);
           intentByKey.set(key, i);
 
+          const st = String(i?.status || "").toLowerCase();
+          if (st === "favorite" || st === "registered" || st === "completed") interestedKeys.push(key);
+        }
+      } else if (acctId) {
+        // Coach path: no athlete profile — query by account_id instead
+        const intentsRaw = await safeFilter(IntentEntity, { account_id: String(acctId) }, undefined, undefined, { retries: 2, baseDelayMs: 250 }).catch(() => []);
+        for (const i of (Array.isArray(intentsRaw) ? intentsRaw : [])) {
+          const rawKey = i?.camp_id;
+          if (!rawKey) continue;
+          const key = String(rawKey);
+          intentByKey.set(key, i);
           const st = String(i?.status || "").toLowerCase();
           if (st === "favorite" || st === "registered" || st === "completed") interestedKeys.push(key);
         }

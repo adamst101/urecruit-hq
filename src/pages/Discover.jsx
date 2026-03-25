@@ -327,15 +327,18 @@ export default function Discover() {
       const CampIntent = base44?.entities?.CampIntent;
       if (!CampIntent?.filter) return {};
       const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
-      if (!aId) return {};
+      // Coaches have no athlete profile — still load intents by account_id
+      if (!aId && !seasonAccountId) return {};
 
-      // Primary query: records correctly linked to this athlete
-      let rows;
-      try {
-        rows = await safeFilter(CampIntent, { athlete_id: String(aId) }, "-updated_date", 2000);
-      } catch (readErr) {
-        console.error("[loadIntents] CampIntent read failed:", String(readErr?.message || readErr));
-        return {};
+      // Primary query: records correctly linked to this athlete (skipped for coaches with no athlete profile)
+      let rows = [];
+      if (aId) {
+        try {
+          rows = await safeFilter(CampIntent, { athlete_id: String(aId) }, "-updated_date", 2000);
+        } catch (readErr) {
+          console.error("[loadIntents] CampIntent read failed:", String(readErr?.message || readErr));
+          return {};
+        }
       }
       const out = {};
       for (const r of asArray(rows)) {
@@ -375,16 +378,12 @@ export default function Discover() {
 
     const existing = intentByKey?.[key] || null;
 
-    // Resolve athlete_id — required to write and later retrieve the intent.
-    // Without it the record becomes permanently orphaned (loadIntents queries by athlete_id).
+    // Resolve athlete_id — present for normal users, null for coaches (they have no athlete profile).
+    // Coaches use account_id-only intents which are picked up by the secondary orphaned-record query.
     const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
-    if (!aId) {
-      console.warn("[upsertIntent] No athlete profile available — skipping DB write to avoid orphaned record");
-      return;
-    }
 
-    if (!seasonAccountId) {
-      console.warn("[upsertIntent] No account_id available — skipping DB write");
+    if (!aId && !seasonAccountId) {
+      console.warn("[upsertIntent] No athlete or account ID — skipping DB write");
       return;
     }
 
@@ -416,7 +415,7 @@ export default function Discover() {
         camp_id: key,
         status: String(nextStatus),
         account_id: seasonAccountId || "",
-        athlete_id: String(aId),
+        ...(aId ? { athlete_id: String(aId) } : {}),
       };
 
       const created = await CampIntent.create(payload);
