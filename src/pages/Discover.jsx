@@ -224,7 +224,28 @@ export default function Discover() {
 
   const { activeAthlete: athleteProfile } = useActiveAthlete();
   const { demoProfileId } = useDemoProfile();
-  const athleteSportId = athleteProfile?.sport_id != null ? String(athleteProfile.sport_id) : "";
+
+  // Resolve athlete sport_id to a proper entity UUID.
+  // Profiles created via checkout have a UUID; legacy/test profiles may store a
+  // name slug like "football". If it doesn't look like a 20+-char hex ID, look
+  // it up by sport_name so the camp filter works correctly.
+  const [athleteSportId, setAthleteSportId] = useState(() =>
+    athleteProfile?.sport_id != null ? String(athleteProfile.sport_id) : ""
+  );
+  useEffect(() => {
+    const raw = athleteProfile?.sport_id != null ? String(athleteProfile.sport_id) : "";
+    if (!raw) { setAthleteSportId(""); return; }
+    // Already looks like a hex entity ID — use as-is
+    if (/^[0-9a-f]{20,}$/i.test(raw)) { setAthleteSportId(raw); return; }
+    // Slug/name — resolve to UUID via Sport entity
+    base44.entities.Sport.filter({}).then((sports) => {
+      if (!Array.isArray(sports)) { setAthleteSportId(raw); return; }
+      const match = sports.find((s) =>
+        (s.sport_name || s.name || "").toLowerCase() === raw.toLowerCase()
+      );
+      setAthleteSportId(match?.id || raw);
+    }).catch(() => setAthleteSportId(raw));
+  }, [athleteProfile?.sport_id]);
 
   const { hasAccess, seasonYear: accessSeasonYear, accountId: seasonAccountId, mode: seasonMode, isLoading: seasonLoading } = useSeasonAccess();
   const writeGate = useWriteGate();
