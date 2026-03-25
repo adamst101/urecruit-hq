@@ -3540,16 +3540,16 @@ async function runJourney(journey, onStep) {
     let detail = null;
     let stepErr = null;
 
-    // Retry up to 2 times on rate-limit errors with exponential backoff
-    for (let attempt = 0; attempt <= 2; attempt++) {
+    // Retry up to 3 times on rate-limit errors with exponential backoff
+    for (let attempt = 0; attempt <= 3; attempt++) {
       try {
         detail = await step.run(ctx);
         stepErr = null;
         break;
       } catch (err) {
         stepErr = err;
-        if (isRateLimitErr(err) && attempt < 2) {
-          await hcSleep(600 * Math.pow(2, attempt)); // 600ms → 1200ms
+        if (isRateLimitErr(err) && attempt < 3) {
+          await hcSleep(2000 * Math.pow(2, attempt)); // 2s → 4s → 8s
         } else {
           break;
         }
@@ -3770,7 +3770,7 @@ export default function AppHealthCheck() {
   async function runGroup(journeys) {
     const failures = [];
     for (let i = 0; i < journeys.length; i++) {
-      if (i > 0) await hcSleep(350); // throttle between journeys to avoid rate limits
+      if (i > 0) await hcSleep(2000); // throttle between journeys to avoid rate limits
       const j = journeys[i];
       patchState(j.id, { status: "running", steps: [], duration: null });
       const result = await runJourney(j, (steps, status) => patchState(j.id, { steps, status }));
