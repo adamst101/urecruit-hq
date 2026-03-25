@@ -165,6 +165,7 @@ export default function CoachDashboard() {
   const [copied, setCopied] = useState(false);
   const [setupPolling, setSetupPolling] = useState(false);
   const [pollAttempts, setPollAttempts] = useState(0);
+  const [currentRole, setCurrentRole] = useState(null);
 
   // Compose state
   const [subject, setSubject] = useState("");
@@ -177,6 +178,7 @@ export default function CoachDashboard() {
     try {
       const me = await base44.auth.me();
       if (!me?.id) return null;
+      setCurrentRole(me.role || "");
       const coaches = await base44.entities.Coach.filter({ account_id: me.id });
       if (coaches?.length) {
         const c = coaches[0];
@@ -273,6 +275,8 @@ export default function CoachDashboard() {
 
   if (!coach) {
     const stillSetting = setupPolling && pollAttempts < 5;
+    const isCoachRole = currentRole === "coach" || currentRole === "coach_pending";
+
     return (
       <div style={S.root}>
         <style>{FONTS}</style>
@@ -288,7 +292,7 @@ export default function CoachDashboard() {
                   Your coach account is being created. This only takes a moment.
                 </p>
               </>
-            ) : (
+            ) : isCoachRole ? (
               <>
                 <div style={{ fontSize: 40, marginBottom: 16 }}>🎽</div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb", marginBottom: 12 }}>Application Received</div>
@@ -314,6 +318,16 @@ export default function CoachDashboard() {
                 <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
                   Questions? Email us at{" "}
                   <a href="mailto:support@urecruithq.com" style={{ color: "#e8a020" }}>support@urecruithq.com</a>
+                </p>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 40, marginBottom: 16 }}>🚫</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb", marginBottom: 12 }}>No Coach Account Found</div>
+                <p style={{ fontSize: 15, color: "#9ca3af", lineHeight: 1.6, maxWidth: 400, margin: "0 auto 20px" }}>
+                  There is no active coach account associated with this login. If you believe this is an error,
+                  please contact us at{" "}
+                  <a href="mailto:support@urecruithq.com" style={{ color: "#e8a020" }}>support@urecruithq.com</a>.
                 </p>
               </>
             )}
