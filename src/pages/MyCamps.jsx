@@ -53,10 +53,15 @@ export default function MyCamps() {
 
   useEffect(() => { trackEventOnce("my_camps_viewed", "evt_my_camps_viewed_v1"); }, []);
 
-  // Always invalidate on mount — MyCamps is intent-driven so stale cache is worse
-  // than an extra fetch. Also listens for cross-tab updates via storage event.
+  // Invalidate camp summaries cache on mount only if a new intent was saved since
+  // this page last saw the signal. Avoids concurrent refetches racing with Discover.
   useEffect(() => {
-    queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
+    const intentTs = localStorage.getItem("intentUpdatedAt");
+    const seenTs = sessionStorage.getItem("myCampsSeenIntentTs");
+    if (intentTs && intentTs !== seenTs) {
+      sessionStorage.setItem("myCampsSeenIntentTs", intentTs);
+      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
+    }
 
     function handleIntentUpdate(e) {
       if (e.type === "intentUpdated" || e.key === "intentUpdatedAt") {

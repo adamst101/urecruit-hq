@@ -407,6 +407,8 @@ export default function Discover() {
         if (existing?.id && CampIntent?.update) {
           await CampIntent.update(existing.id, { status: "" });
         }
+        try { localStorage.setItem("intentUpdatedAt", Date.now().toString()); } catch {}
+        try { window.dispatchEvent(new CustomEvent("intentUpdated")); } catch {}
         return;
       }
 
@@ -416,6 +418,8 @@ export default function Discover() {
         if (!existing.athlete_id && aId) updatePayload.athlete_id = String(aId);
         const updated = await CampIntent.update(existing.id, updatePayload);
         if (updated) setIntentByKey((p) => ({ ...p, [key]: updated }));
+        try { localStorage.setItem("intentUpdatedAt", Date.now().toString()); } catch {}
+        try { window.dispatchEvent(new CustomEvent("intentUpdated")); } catch {}
         return;
       }
 
@@ -428,6 +432,8 @@ export default function Discover() {
 
       const created = await CampIntent.create(payload);
       if (created) setIntentByKey((p) => ({ ...p, [key]: created }));
+      try { localStorage.setItem("intentUpdatedAt", Date.now().toString()); } catch {}
+      try { window.dispatchEvent(new CustomEvent("intentUpdated")); } catch {}
     } catch (err) {
       const msg = String(err?.message || err || "Unknown error");
       console.error("[upsertIntent] DB write failed:", msg, err);
