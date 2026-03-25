@@ -13,6 +13,7 @@ export default function CoachNetworkAdmin() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [actioning, setActioning] = useState(null); // coachId being actioned
+  const [actionError, setActionError] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -45,8 +46,14 @@ export default function CoachNetworkAdmin() {
 
   async function handleAction(coachId, action) {
     setActioning(coachId);
+    setActionError(null);
     try {
-      await base44.functions.invoke("approveCoach", { coachId, action });
+      const res = await base44.functions.invoke("approveCoach", { coachId, action });
+      const data = res?.data;
+      if (data?.ok === false) {
+        setActionError(`approveCoach returned error: ${data.error || "unknown"}`);
+        return;
+      }
       setCoaches(prev => prev.map(c =>
         c.id === coachId
           ? { ...c, status: action === "approve" ? "approved" : "rejected", active: action !== "reject" }
@@ -54,6 +61,7 @@ export default function CoachNetworkAdmin() {
       ));
     } catch (e) {
       console.error("approveCoach failed:", e?.message);
+      setActionError(`Failed to ${action} coach: ${e?.message || "function may not be deployed"}`);
     } finally {
       setActioning(null);
     }
@@ -88,11 +96,17 @@ export default function CoachNetworkAdmin() {
           </div>
 
           <input
-            style={{ width: "100%", background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "10px 14px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box", marginBottom: 20 }}
+            style={{ width: "100%", background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "10px 14px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box", marginBottom: 12 }}
             placeholder="Search by name, school, invite code, or sport…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
+
+          {actionError && (
+            <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "12px 16px", fontSize: 13, color: "#fca5a5", marginBottom: 16 }}>
+              ⚠️ {actionError}
+            </div>
+          )}
 
           {loading ? (
             <p style={{ color: "#6b7280", fontSize: 14 }}>Loading…</p>
@@ -120,6 +134,7 @@ export default function CoachNetworkAdmin() {
                   >
                     <div>
                       <span style={{ color: "#f9fafb", fontWeight: 600 }}>{c.first_name} {c.last_name}</span>
+                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{c.email || "—"}</div>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
                         <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, textTransform: "uppercase", letterSpacing: "0.08em" }}>{c.status || "pending"}</span>
                         <span style={{ fontSize: 10, color: "#4b5563" }}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ""}</span>

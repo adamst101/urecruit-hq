@@ -67,6 +67,7 @@ Deno.serve(async (req) => {
       invite_code,
       status: "pending",
       active: true,
+      email: coachEmail || null,
       created_at: new Date().toISOString(),
     });
 

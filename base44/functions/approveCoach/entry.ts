@@ -36,12 +36,13 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: "Coach not found" }, { status: 404 });
     }
 
-    // Fetch coach's email from User entity for notifications
-    let coachEmail = "";
-    if (coach.account_id) {
+    // Prefer email stored directly on Coach record (set by registerCoach).
+    // Fall back to User entity lookup in case the Coach record predates this field.
+    let coachEmail = (coach.email as string) || "";
+    if (!coachEmail && coach.account_id) {
       try {
         const user = await base44.asServiceRole.entities.User.get(coach.account_id);
-        coachEmail = user?.email || "";
+        coachEmail = (user?.email as string) || "";
       } catch {}
     }
 
