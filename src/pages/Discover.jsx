@@ -459,6 +459,16 @@ export default function Discover() {
         }
       }
 
+      // If no camps found for the configured season year, try the previous year.
+      // This handles the case where SeasonConfig is ahead of the ingested camp data.
+      if (!useDemoEntity && asArray(rows).length === 0 && seasonYear > 2020) {
+        try {
+          const fallbackYear = seasonYear - 1;
+          const fallbackRows = await safeFilter(CampEntity, { [filterField]: fallbackYear }, "-start_date", 2000);
+          if (asArray(fallbackRows).length > 0) rows = fallbackRows;
+        } catch {}
+      }
+
       const active = asArray(rows).filter(readActiveFlag);
       setAllRows(active);
 
