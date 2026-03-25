@@ -108,7 +108,11 @@ Deno.serve(async (req) => {
   let body: Record<string, any> = {};
   try { body = await req.json(); } catch {}
 
-  const entityName = String(body.entity || '');
+  const rawEntity  = String(body.entity || '');
+  // Case-insensitive match so "demoCamp", "democamp", "DemoCamp" all work
+  const entityName = (SUPPORTED_ENTITIES.find(
+    (e) => e.toLowerCase() === rawEntity.toLowerCase()
+  ) ?? rawEntity) as string;
   const dryRun     = body.dryRun !== false;   // default true — must explicitly pass false
   const clearFirst = body.clearFirst === true; // default false
   const limit      = Math.min(Number(body.limit) || 10000, 20000);
@@ -116,7 +120,7 @@ Deno.serve(async (req) => {
   if (!SUPPORTED_ENTITIES.includes(entityName as SupportedEntity)) {
     return Response.json({
       ok: false,
-      error: `Unsupported entity "${entityName}". Supported: ${SUPPORTED_ENTITIES.join(', ')}`,
+      error: `Unsupported entity "${rawEntity}". Supported: ${SUPPORTED_ENTITIES.join(', ')}`,
     }, { status: 400 });
   }
 
