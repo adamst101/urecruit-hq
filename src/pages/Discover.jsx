@@ -327,18 +327,18 @@ export default function Discover() {
       const CampIntent = base44?.entities?.CampIntent;
       if (!CampIntent?.filter) return {};
       const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
-      // Coaches have no athlete profile — still load intents by account_id
-      if (!aId && !seasonAccountId) return {};
+      // Coaches have no athlete profile — use accountId as the athlete_id substitute
+      // (matches the value stored by upsertIntent for coaches)
+      const effectiveAId = aId || (seasonAccountId ? seasonAccountId : null);
+      if (!effectiveAId) return {};
 
-      // Primary query: records correctly linked to this athlete (skipped for coaches with no athlete profile)
+      // Primary query: records linked to this athlete (or account_id sub for coaches)
       let rows = [];
-      if (aId) {
-        try {
-          rows = await safeFilter(CampIntent, { athlete_id: String(aId) }, "-updated_date", 2000);
-        } catch (readErr) {
-          console.error("[loadIntents] CampIntent read failed:", String(readErr?.message || readErr));
-          return {};
-        }
+      try {
+        rows = await safeFilter(CampIntent, { athlete_id: String(effectiveAId) }, "-updated_date", 2000);
+      } catch (readErr) {
+        console.error("[loadIntents] CampIntent read failed:", String(readErr?.message || readErr));
+        return {};
       }
       const out = {};
       for (const r of asArray(rows)) {
@@ -378,11 +378,13 @@ export default function Discover() {
 
     const existing = intentByKey?.[key] || null;
 
-    // Resolve athlete_id — present for normal users, null for coaches (they have no athlete profile).
-    // Coaches use account_id-only intents which are picked up by the secondary orphaned-record query.
+    // Resolve athlete_id — present for normal users, null for coaches (no athlete profile).
+    // For coaches, use seasonAccountId as the athlete_id substitute so CampIntent always has
+    // a non-null athlete_id and loadIntents can find the records on the next page load.
     const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
+    const effectiveAthleteId = aId || (seasonAccountId ? seasonAccountId : null);
 
-    if (!aId && !seasonAccountId) {
+    if (!effectiveAthleteId) {
       console.warn("[upsertIntent] No athlete or account ID — skipping DB write");
       return;
     }
@@ -415,7 +417,7 @@ export default function Discover() {
         camp_id: key,
         status: String(nextStatus),
         account_id: seasonAccountId || "",
-        ...(aId ? { athlete_id: String(aId) } : {}),
+        athlete_id: String(effectiveAthleteId),
       };
 
       const created = await CampIntent.create(payload);

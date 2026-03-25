@@ -212,8 +212,8 @@ export function useCampSummariesClient({
           if (st === "favorite" || st === "registered" || st === "completed") interestedKeys.push(key);
         }
       } else if (acctId) {
-        // Coach path: no athlete profile — query by account_id instead
-        const intentsRaw = await safeFilter(IntentEntity, { account_id: String(acctId) }, undefined, undefined, { retries: 2, baseDelayMs: 250 }).catch(() => []);
+        // Coach path: no athlete profile — Discover stores intents with athlete_id=accountId
+        const intentsRaw = await safeFilter(IntentEntity, { athlete_id: String(acctId) }, undefined, undefined, { retries: 2, baseDelayMs: 250 }).catch(() => []);
         for (const i of (Array.isArray(intentsRaw) ? intentsRaw : [])) {
           const rawKey = i?.camp_id;
           if (!rawKey) continue;
