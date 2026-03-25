@@ -106,7 +106,19 @@ export default function Workspace() {
         const me = await base44.auth.me();
         if (cancelled || !me) return;
         setMeEmail(String(me.email || "").toLowerCase());
-        setMeName(String(me.full_name || ""));
+
+        // Try full_name from auth first, then fall back to first_name/last_name on User entity
+        let name = String(me.full_name || "").trim();
+        if (!name && me.id) {
+          try {
+            const users = await base44.entities.User.filter({ id: me.id });
+            const u = Array.isArray(users) ? users[0] : null;
+            const fn = String(u?.first_name || "").trim();
+            const ln = String(u?.last_name || "").trim();
+            if (fn || ln) name = [fn, ln].filter(Boolean).join(" ");
+          } catch {}
+        }
+        setMeName(name);
       } catch {}
     })();
     return () => { cancelled = true; };
