@@ -96,9 +96,10 @@ export default function CampDetailPanel({ camp, school, status, isConflict, conf
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
           {school?.logo_url ? (
             <img
-              src={school.logo_url}
+              src={typeof school.logo_url === "object" ? (school.logo_url?.url || null) : school.logo_url}
               alt={schoolName}
               style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "contain", background: "#0f172a" }}
+              referrerPolicy="no-referrer"
               onError={(e) => { e.target.style.display = "none"; }}
             />
           ) : (

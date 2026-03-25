@@ -16,19 +16,29 @@ function safeFormatDate(d) {
   }
 }
 
+// base44 image fields can return either a plain URL string or an object like { url: "..." }
+function extractUrl(v) {
+  if (!v) return null;
+  if (typeof v === "string") return v.trim() || null;
+  if (typeof v === "object") return v.url || v.src || v.href || null;
+  return null;
+}
+
 function LogoAvatar({ schoolName, logoUrl }) {
   const [imgErr, setImgErr] = useState(false);
-  const showImg = !!logoUrl && !imgErr;
+  const resolvedUrl = extractUrl(logoUrl);
+  const showImg = !!resolvedUrl && !imgErr;
   const letter = (String(schoolName || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 1) || "?").toUpperCase();
 
   return (
     <div className="w-11 h-11 rounded-lg bg-[#0f172a] border border-[#1f2937] overflow-hidden flex items-center justify-center flex-shrink-0">
       {showImg ? (
         <img
-          src={logoUrl}
+          src={resolvedUrl}
           alt={`${schoolName} logo`}
           className="w-full h-full object-contain"
           loading="lazy"
+          referrerPolicy="no-referrer"
           onError={() => setImgErr(true)}
         />
       ) : (
