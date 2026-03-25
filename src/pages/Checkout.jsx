@@ -82,14 +82,17 @@ export default function Checkout() {
     base44.functions.invoke("validatePromo", { promoCode: "" }).catch(() => {});
   }, []);
 
-  // Load sports list
+  // Load sports list — fall back to Football if entity is empty
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         const rows = await base44.entities.Sport.list();
-        if (mounted) setSports(Array.isArray(rows) ? rows.filter(r => r.active !== false) : []);
-      } catch {}
+        const list = Array.isArray(rows) ? rows.filter(r => r.active !== false) : [];
+        if (mounted) setSports(list.length ? list : [{ id: "football", sport_name: "Football" }]);
+      } catch {
+        if (mounted) setSports([{ id: "football", sport_name: "Football" }]);
+      }
     })();
     return () => { mounted = false; };
   }, []);
