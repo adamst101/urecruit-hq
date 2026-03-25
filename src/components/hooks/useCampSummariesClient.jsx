@@ -293,6 +293,10 @@ export function useCampSummariesClient({
       const sports = sportMap.status === "fulfilled" ? sportMap.value : new Map();
       const positions = positionMap.status === "fulfilled" ? positionMap.value : new Map();
 
+      if (schoolIds.length > 0 && schools.size === 0) {
+        console.warn("[useCampSummariesClient] School fetch returned empty — check School entity read permissions in base44. IDs attempted:", schoolIds.slice(0, 5));
+      }
+
       return campsNorm.map((camp) => {
         const campId = String(camp._camp_id);
         const eventKey = camp._event_key;

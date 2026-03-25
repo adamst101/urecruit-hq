@@ -65,6 +65,10 @@ async function fetchDemoCampSummaries({ seasonYear, demoProfileId }) {
     fetchByIds(base44.entities.Sport, sportIds),
   ]);
 
+  if (schoolIds.length > 0 && (!Array.isArray(schools) || schools.length === 0)) {
+    console.warn("[useDemoCampSummaries] School fetch returned empty — check School entity read permissions in base44. IDs attempted:", schoolIds.slice(0, 5));
+  }
+
   const schoolById = {};
   for (const s of Array.isArray(schools) ? schools : []) {
     const id = String(normId(s) || "");
