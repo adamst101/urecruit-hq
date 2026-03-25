@@ -79,8 +79,10 @@ async function fetchAll(entity: any, env?: string, limit = 10000): Promise<any[]
 /** Strip base44-managed metadata fields before inserting into another environment. */
 function stripMeta(record: Record<string, any>): Record<string, any> {
   const d = { ...record };
+  // Preserve 'id' so foreign-key references between entities (e.g. camp.school_id → school.id)
+  // remain valid in the test DB. Strip only platform-managed metadata.
   for (const key of [
-    'id', 'created_date', 'updated_date', 'created_by', 'created_by_id',
+    'created_date', 'updated_date', 'created_by', 'created_by_id',
     'entity_name', 'app_id', 'is_sample', 'is_deleted', 'deleted_date', 'environment',
   ]) {
     delete d[key];
