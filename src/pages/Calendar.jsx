@@ -147,8 +147,8 @@ export default function Calendar() {
   }, [athleteProfile]);
 
   const paidMissingSport = useMemo(
-    () => isPaid && !!athleteId && !athleteSportId,
-    [isPaid, athleteId, athleteSportId],
+    () => isPaid && !isCoach && !!athleteId && !athleteSportId,
+    [isPaid, isCoach, athleteId, athleteSportId],
   );
 
   /* ── 3. ALL useState declarations ─── */
@@ -635,7 +635,7 @@ export default function Calendar() {
   const renderListBody = () => {
     if (loading) return <div className="py-10 text-center text-[#9ca3af]">Loading…</div>;
 
-    if (isPaid && !athleteId) {
+    if (isPaid && !isCoach && !athleteId) {
       return (
         <Card className="p-5 border-[#1f2937] bg-[#111827]">
           <div className="text-lg font-semibold text-[#f9fafb]">Complete your athlete profile</div>
@@ -738,7 +738,7 @@ export default function Calendar() {
   const renderMonthBody = () => {
     if (loading) return <div className="py-10 text-center text-[#9ca3af]">Loading…</div>;
 
-    if (isPaid && !athleteId) {
+    if (isPaid && !isCoach && !athleteId) {
       return (
         <Card className="p-5 border-[#1f2937] bg-[#111827]">
           <div className="text-lg font-semibold text-[#f9fafb]">Complete your athlete profile</div>
@@ -832,7 +832,7 @@ export default function Calendar() {
 
         <button
           type="button"
-          onClick={() => nav("/Workspace")}
+          onClick={() => nav(isCoach ? "/CoachDashboard" : "/Workspace")}
           className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
         >
           ← HQ
