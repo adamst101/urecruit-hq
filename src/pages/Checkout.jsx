@@ -32,6 +32,9 @@ export default function Checkout() {
   const [parentFirstName, setParentFirstName] = useState("");
   const [parentLastName, setParentLastName] = useState("");
   const [parentPhone, setParentPhone] = useState("");
+  const [coachInviteCode, setCoachInviteCode] = useState(() => {
+    try { return localStorage.getItem("coachInviteCode") || ""; } catch { return ""; }
+  });
 
   // Promo state
   const [promoCode, setPromoCode] = useState("");
@@ -117,6 +120,7 @@ export default function Checkout() {
       if (d.parentFirstName) setParentFirstName(d.parentFirstName);
       if (d.parentLastName) setParentLastName(d.parentLastName);
       if (d.parentPhone) setParentPhone(d.parentPhone);
+      if (d.coachInviteCode) setCoachInviteCode(d.coachInviteCode);
       // Skip straight to payment step — user already filled the form before login
       if (d.athleteFirstName) setStep("payment");
     } catch {}
@@ -191,6 +195,7 @@ export default function Checkout() {
         parentFirstName: isAddonMode ? undefined : (parentFirstName.trim() || undefined),
         parentLastName: isAddonMode ? undefined : (parentLastName.trim() || undefined),
         parentPhone: isAddonMode ? undefined : (parentPhone.trim() || undefined),
+        coachInviteCode: coachInviteCode.trim() || undefined,
       });
       const data = res.data;
       if (data?.ok) {
@@ -242,7 +247,7 @@ export default function Checkout() {
         sportId: sportId || undefined,
         homeCity: homeCity.trim() || undefined,
         homeState: homeState || undefined,
-        coachInviteCode: (() => { try { return localStorage.getItem("coachInviteCode") || undefined; } catch { return undefined; } })(),
+        coachInviteCode: coachInviteCode.trim() || undefined,
       });
       const data = res.data;
       console.log("createStripeCheckout response:", data);
@@ -254,6 +259,7 @@ export default function Checkout() {
             parentLastName: parentLastName.trim() || "",
             athleteFirstName: athleteFirstName.trim() || "",
             athleteLastName: athleteLastName.trim() || "",
+            coachInviteCode: coachInviteCode.trim() || "",
           }));
         } catch {}
         window.location.href = data.sessionUrl;
@@ -380,6 +386,18 @@ export default function Checkout() {
                 <label style={S.label}>Phone Number *</label>
                 <input value={parentPhone} onChange={e => setParentPhone(e.target.value)} placeholder="(555) 555-5555" type="tel" style={S.input} />
               </div>
+            </div>
+
+            {/* Coach Invite Code */}
+            <div style={{ background: "#111827", borderRadius: 12, border: "1px solid #1f2937", padding: "20px 24px" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#e8a020", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>Coach Invite Code</div>
+              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>If a coach sent you here, enter their code to connect automatically.</div>
+              <input
+                value={coachInviteCode}
+                onChange={e => setCoachInviteCode(e.target.value.toUpperCase())}
+                placeholder="e.g. ADAMS-SCH-1234 (optional)"
+                style={{ ...S.input, fontFamily: "monospace", letterSpacing: 1 }}
+              />
             </div>
 
             {error && (
