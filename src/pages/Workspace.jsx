@@ -184,8 +184,7 @@ export default function Workspace() {
 
   if (loading) return <div style={{ minHeight: "100vh", background: "#0a0e1a" }} />;
 
-  console.log("[Workspace] athleteProfile:", JSON.stringify(athleteProfile));
-  const parentName = (athleteProfile?.parent_first_name || "").trim();
+const parentName = (athleteProfile?.parent_first_name || "").trim();
   const parentLast = (athleteProfile?.parent_last_name || "").trim();
   const parentFull = parentName ? `${parentName}${parentLast ? ` ${parentLast}` : ""}` : null;
   const displayName = parentFull || athleteProfile?.athlete_name || meName || meEmail || "Athlete";

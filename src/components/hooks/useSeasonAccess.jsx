@@ -193,10 +193,8 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
 
   // Check entitlement for active season, then sold season (early-bird)
   let ent = await fetchEntitlement({ accountId, seasonYear: activeSeason });
-  console.log("[useSeasonAccess] fetchEntitlement activeSeason", activeSeason, "→", ent ? `found id=${ent.id} season=${ent.season_year} status=${ent.status}` : "null");
   if (!ent && soldSeason !== activeSeason) {
     ent = await fetchEntitlement({ accountId, seasonYear: soldSeason });
-    console.log("[useSeasonAccess] fetchEntitlement soldSeason", soldSeason, "→", ent ? `found id=${ent.id}` : "null");
   }
 
   // Fallback: check for ANY active entitlement regardless of season year
@@ -208,14 +206,11 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
         status: "active",
       });
       const list = Array.isArray(rows) ? rows : [];
-      console.log("[useSeasonAccess] fallback query returned", list.length, "rows:", JSON.stringify(list.map(r => ({ id: r.id, account_id: r.account_id, season_year: r.season_year, status: r.status, starts_at: r.starts_at, ends_at: r.ends_at }))));
       ent = list.find((x) => isActiveInWindow(x)) || list[0] || null;
-    } catch (e) {
-      console.error("[useSeasonAccess] fallback entitlement query threw:", e?.message);
+    } catch {
+      // ignore
     }
   }
-
-  console.log("[useSeasonAccess] final ent:", ent ? `id=${ent.id} season=${ent.season_year}` : "null", "accountId:", accountId);
 
   if (ent) {
     try { sessionStorage.removeItem("demoMode_v1"); } catch {}

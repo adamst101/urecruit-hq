@@ -225,27 +225,12 @@ export default function Discover() {
   const { activeAthlete: athleteProfile } = useActiveAthlete();
   const { demoProfileId } = useDemoProfile();
 
-  // Resolve athlete sport_id to a proper entity UUID.
-  // Profiles created via checkout have a UUID; legacy/test profiles may store a
-  // name slug like "football". If it doesn't look like a 20+-char hex ID, look
-  // it up by sport_name so the camp filter works correctly.
-  const [athleteSportId, setAthleteSportId] = useState(() =>
-    athleteProfile?.sport_id != null ? String(athleteProfile.sport_id) : ""
-  );
-  useEffect(() => {
-    const raw = athleteProfile?.sport_id != null ? String(athleteProfile.sport_id) : "";
-    if (!raw) { setAthleteSportId(""); return; }
-    // Already looks like a hex entity ID — use as-is
-    if (/^[0-9a-f]{20,}$/i.test(raw)) { setAthleteSportId(raw); return; }
-    // Slug/name — resolve to UUID via Sport entity
-    base44.entities.Sport.filter({}).then((sports) => {
-      if (!Array.isArray(sports)) { setAthleteSportId(raw); return; }
-      const match = sports.find((s) =>
-        (s.sport_name || s.name || "").toLowerCase() === raw.toLowerCase()
-      );
-      setAthleteSportId(match?.id || raw);
-    }).catch(() => setAthleteSportId(raw));
-  }, [athleteProfile?.sport_id]);
+  // Only use athlete sport_id for camp filtering if it looks like a real entity UUID.
+  // Profiles created via checkout have a 20+-char hex UUID. Legacy/test profiles
+  // may store a name slug like "football" which will never match camp sport_id UUIDs
+  // and would silently hide all camps. In that case, skip the auto-filter entirely.
+  const rawSportId = athleteProfile?.sport_id != null ? String(athleteProfile.sport_id) : "";
+  const athleteSportId = /^[0-9a-f]{20,}$/i.test(rawSportId) ? rawSportId : "";
 
   const { hasAccess, seasonYear: accessSeasonYear, accountId: seasonAccountId, mode: seasonMode, isLoading: seasonLoading } = useSeasonAccess();
   const writeGate = useWriteGate();
@@ -485,7 +470,7 @@ export default function Discover() {
 
       let rows = [];
       const filterField = useDemoEntity ? "demo_season_year" : "season_year";
-      console.log("[Discover] loadCamps — entity:", useDemoEntity ? "DemoCamp" : "Camp", "filterField:", filterField, "seasonYear:", seasonYear, "isPaid:", isPaid);
+
       try {
         rows = await safeFilter(CampEntity, { [filterField]: seasonYear }, "-start_date", 2000);
       } catch (e1) {
@@ -495,10 +480,7 @@ export default function Discover() {
           throw e2 || e1;
         }
       }
-      console.log("[Discover] loadCamps — raw rows returned:", Array.isArray(rows) ? rows.length : rows, rows?.[0] ? { season_year: rows[0].season_year, active: rows[0].active, camp_name: rows[0].camp_name, sport_id: rows[0].sport_id } : "none");
-
       const active = asArray(rows).filter(readActiveFlag);
-      console.log("[Discover] loadCamps — after active filter:", active.length);
       setAllRows(active);
 
       const keys    = active.map(campKeyForRow).filter(Boolean);
@@ -562,7 +544,6 @@ export default function Discover() {
       };
     });
 
-    console.log("[Discover] filter — athleteSportId:", athleteSportId, "allRows:", allRows.length, "isPaid:", isPaid);
     const filtered = enrichedRows.filter((enriched) => {
       if (isPaid) {
         if (!matchesSport(enriched, [athleteSportId].filter(Boolean))) return false;
