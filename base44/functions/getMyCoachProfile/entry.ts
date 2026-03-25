@@ -20,7 +20,7 @@ Deno.serve(async (req) => {
     const list = Array.isArray(coaches) ? coaches : [];
 
     if (!list.length) {
-      return Response.json({ ok: true, coach: null });
+      return Response.json({ ok: true, coach: null, roster: [], messages: [] });
     }
 
     const coach = list[0];
