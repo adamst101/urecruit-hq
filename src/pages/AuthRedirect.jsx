@@ -106,6 +106,20 @@ export default function AuthRedirect() {
 
     const accountId = season.accountId;
 
+    // ── Set auth full_name from checkout form (parent name) if available ──
+    // Runs once per login — covers both Stripe and promo code flows.
+    // Silently ignored if the form hasn't been filled in yet.
+    try {
+      const savedForm = ssGet("checkoutForm");
+      if (savedForm) {
+        const fd = JSON.parse(savedForm);
+        const fullName = [fd.parentFirstName, fd.parentLastName].filter(Boolean).join(" ").trim();
+        if (fullName) {
+          base44.auth.updateMe({ full_name: fullName }).catch(() => {});
+        }
+      }
+    } catch {}
+
     // ── Complete pending coach registration ──
     const pendingCoach = ssGet("pendingCoachRegistration");
     if (pendingCoach) {
