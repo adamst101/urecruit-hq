@@ -43,7 +43,9 @@ function friendlyAuthError(msg, step) {
   return msg || "Something went wrong. Please try again.";
 }
 
-function validate(email, password, confirm) {
+function validate(firstName, lastName, email, password, confirm) {
+  if (!firstName.trim()) return "Please enter your first name.";
+  if (!lastName.trim()) return "Please enter your last name.";
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return "Please enter a valid email address.";
   }
@@ -57,6 +59,8 @@ function validate(email, password, confirm) {
 }
 
 export default function Signup() {
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -103,6 +107,11 @@ export default function Signup() {
       return;
     }
 
+    // Set full_name on the auth user before redirecting
+    const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+    if (fullName) {
+      try { await base44.auth.updateMe({ full_name: fullName }); } catch {}
+    }
     window.location.assign(
       `/AuthRedirect?access_token=${encodeURIComponent(access_token)}&source=custom_signup`
     );
@@ -125,7 +134,7 @@ export default function Signup() {
     setError("");
     setExistingAccount(false);
 
-    const validationError = validate(email.trim(), password, confirm);
+    const validationError = validate(firstName, lastName, email.trim(), password, confirm);
     if (validationError) {
       setError(validationError);
       return;
@@ -161,6 +170,11 @@ export default function Signup() {
     }
 
     if (access_token) {
+      // Set full_name on the auth user before redirecting
+      const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+      if (fullName) {
+        try { await base44.auth.updateMe({ full_name: fullName }); } catch {}
+      }
       // Verification not required — go straight in
       window.location.assign(
         `/AuthRedirect?access_token=${encodeURIComponent(access_token)}&source=custom_signup`
@@ -257,8 +271,34 @@ export default function Signup() {
             </p>
 
             <form onSubmit={handleSubmit} noValidate>
+              {/* First / Last name */}
+              <div style={{ display: "flex", gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={LABEL}>First name</label>
+                  <input
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => { setFirstName(e.target.value); setError(""); }}
+                    placeholder="Jane"
+                    autoComplete="given-name"
+                    style={INPUT}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={LABEL}>Last name</label>
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => { setLastName(e.target.value); setError(""); }}
+                    placeholder="Smith"
+                    autoComplete="family-name"
+                    style={INPUT}
+                  />
+                </div>
+              </div>
+
               {/* Email */}
-              <label style={LABEL}>Email address</label>
+              <label style={{ ...LABEL, marginTop: 16 }}>Email address</label>
               <input
                 type="email"
                 value={email}
