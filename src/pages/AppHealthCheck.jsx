@@ -2,8 +2,22 @@
 import { useState, useCallback, useRef } from "react";
 import AdminRoute from "../components/auth/AdminRoute";
 import { base44 } from "../api/base44Client";
+import { appParams } from "../lib/app-params";
 import { toast } from "../components/ui/use-toast";
 import { ADMIN_EMAILS } from "../components/auth/adminEmails.jsx";
+
+// ── Environment detection ────────────────────────────────────────────────────
+// base44 stores the active app_id in localStorage (base44_app_id).
+// The production app has a different ID from the test/dev app.
+// We surface this so you can tell at a glance which env the health check targets.
+function getEnvLabel() {
+  const appId = appParams.appId || localStorage.getItem("base44_app_id") || "";
+  const serverUrl = appParams.serverUrl || localStorage.getItem("base44_server_url") || "";
+  // Heuristic: base44 test/dev URLs typically contain "dev", "test", or "staging"
+  const lowerUrl = serverUrl.toLowerCase();
+  const isDevUrl = lowerUrl.includes("dev") || lowerUrl.includes("test") || lowerUrl.includes("staging");
+  return { appId, serverUrl, isDevUrl };
+}
 
 // ── Demo localStorage helpers (mirrors demoRegistered.jsx) ──────────────────
 const _demoKey = (profileId) => `rm_demo_registered_${profileId || "default"}`;
@@ -3686,6 +3700,7 @@ function JourneyCard({ journey, state, onRun, disabled }) {
 const IDLE = () => ({ status: "idle", steps: [], duration: null });
 
 export default function AppHealthCheck() {
+  const { appId, serverUrl, isDevUrl } = getEnvLabel();
   const [states, setStates] = useState(() =>
     Object.fromEntries(ALL_JOURNEYS.map(j => [j.id, IDLE()]))
   );
@@ -3817,7 +3832,29 @@ export default function AppHealthCheck() {
         <div style={S.header}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div style={S.title}>App Health Check</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={S.title}>App Health Check</div>
+                {/* Environment badge */}
+                <span title={`App ID: ${appId || "unknown"}\nServer: ${serverUrl || "unknown"}`} style={{
+                  display: "inline-block",
+                  padding: "2px 10px",
+                  borderRadius: 12,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  background: isDevUrl ? "#fef3c7" : "#fee2e2",
+                  color: isDevUrl ? "#92400e" : "#991b1b",
+                  border: `1px solid ${isDevUrl ? "#fcd34d" : "#fca5a5"}`,
+                  cursor: "default",
+                }}>
+                  {isDevUrl ? "TEST / DEV" : "PRODUCTION"}
+                </span>
+                {appId && (
+                  <span style={{ fontSize: 11, color: "#9ca3af", fontFamily: "monospace" }}>
+                    {appId}
+                  </span>
+                )}
+              </div>
               <div style={S.subtitle}>
                 {totalJourneys} journeys across {JOURNEY_GROUPS.length} areas — run after deploys or data changes.
                 {allDone && (
