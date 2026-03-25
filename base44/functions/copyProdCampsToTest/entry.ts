@@ -4,6 +4,19 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function retryOp(fn, maxRetries = 3, baseDelay = 3000) {
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === maxRetries || !String(err?.message || '').includes('Rate limit')) throw err;
+      const delay = baseDelay * Math.pow(2, i);
+      console.log(`Rate limited, retrying in ${delay}ms...`);
+      await sleep(delay);
+    }
+  }
+}
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -14,64 +27,55 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const step = body.step || 'fetch'; // fetch | delete | insert
-    
-    // Step 1: Fetch all prod camps and store count
-    if (step === 'fetch') {
-      let allCamps = [];
-      let offset = 0;
-      const PAGE = 50;
+    const step = body.step || 'insert'; // delete | insert
 
-      while (true) {
-        const batch = await base44.asServiceRole.entities.Camp.list('-created_date', PAGE, offset);
-        if (!Array.isArray(batch) || batch.length === 0) break;
-        allCamps = allCamps.concat(batch);
-        offset += batch.length;
-        if (batch.length < PAGE) break;
-        if (allCamps.length >= 10000) break;
-      }
-
-      console.log(`Fetched ${allCamps.length} camps from production`);
-      return Response.json({ ok: true, step: 'fetch', count: allCamps.length, message: `Found ${allCamps.length} production camps. Call with step='delete' to clear test, then step='insert' to copy.` });
-    }
-
-    // Step 2: Delete all test camps (with throttling)
+    // Step 1: Delete all test camps
     if (step === 'delete') {
       let deleted = 0;
       const PAGE = 50;
 
       while (true) {
-        const testBatch = await base44.asServiceRole.entities.Camp.list('-created_date', PAGE, 0, 'dev');
+        const testBatch = await retryOp(() =>
+          base44.asServiceRole.entities.Camp.list('-created_date', PAGE, 0, 'dev')
+        );
         if (!Array.isArray(testBatch) || testBatch.length === 0) break;
-        
+
         for (const c of testBatch) {
-          await base44.asServiceRole.entities.Camp.delete(c.id, 'dev');
+          await retryOp(() => base44.asServiceRole.entities.Camp.delete(c.id, 'dev'));
           deleted++;
-          if (deleted % 10 === 0) await sleep(500);
+          if (deleted % 5 === 0) await sleep(300);
         }
         console.log(`Deleted ${deleted} test camps so far...`);
-        await sleep(1000);
+        await sleep(2000);
       }
 
       return Response.json({ ok: true, step: 'delete', deleted });
     }
 
-    // Step 3: Copy prod → test (with throttling)
+    // Step 2: Copy prod → test
     if (step === 'insert') {
+      // Fetch all prod camps
       let allCamps = [];
       let offset = 0;
       const PAGE = 50;
 
       while (true) {
-        const batch = await base44.asServiceRole.entities.Camp.list('-created_date', PAGE, offset);
+        const batch = await retryOp(() =>
+          base44.asServiceRole.entities.Camp.list('-created_date', PAGE, offset)
+        );
         if (!Array.isArray(batch) || batch.length === 0) break;
         allCamps = allCamps.concat(batch);
         offset += batch.length;
         if (batch.length < PAGE) break;
         if (allCamps.length >= 10000) break;
+        await sleep(500);
       }
 
-      console.log(`Fetched ${allCamps.length} camps from production, inserting into test...`);
+      console.log(`Fetched ${allCamps.length} camps from production`);
+
+      if (allCamps.length === 0) {
+        return Response.json({ ok: false, error: 'No production camps found (may still be rate limited, try again in a minute)' });
+      }
 
       let inserted = 0;
       const BULK = 10;
@@ -93,18 +97,17 @@ Deno.serve(async (req) => {
           return d;
         });
 
-        await base44.asServiceRole.entities.Camp.bulkCreate(slice, 'dev');
+        await retryOp(() => base44.asServiceRole.entities.Camp.bulkCreate(slice, 'dev'));
         inserted += slice.length;
-        if (inserted % 50 === 0) {
-          console.log(`Inserted ${inserted}/${allCamps.length}`);
-          await sleep(1000);
-        }
+        if (inserted % 50 === 0) console.log(`Inserted ${inserted}/${allCamps.length}`);
+        await sleep(800);
       }
 
+      console.log(`Done! Inserted ${inserted} camps into test`);
       return Response.json({ ok: true, step: 'insert', inserted, total: allCamps.length });
     }
 
-    return Response.json({ error: 'Invalid step. Use: fetch, delete, or insert' }, { status: 400 });
+    return Response.json({ error: 'Invalid step. Use: delete or insert' }, { status: 400 });
   } catch (error) {
     console.error('copyProdCampsToTest error:', error.message);
     return Response.json({ error: error.message }, { status: 500 });
