@@ -925,7 +925,7 @@ export default function Discover() {
             isCampRegistered={isCampRegistered}
             onFavoriteToggle={handleFavoriteToggle}
             onRegisteredToggle={isCoach ? null : handleRegisteredToggle}
-            onRegisterClick={isCoach ? null : (camp) => {
+            onRegisterClick={(camp) => {
               const url = camp?.link_url || camp?.source_url;
               if (url) window.open(String(url), "_blank", "noopener,noreferrer");
             }}

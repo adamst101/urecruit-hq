@@ -279,24 +279,22 @@ export default function SchoolGroupCard({
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {/* Star — hidden for coaches */}
-                    {!isCoach && (
-                      <button
-                        type="button"
-                        title={isFav ? "Remove from favorites" : "Add to favorites"}
-                        className={"h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937] " + (isFav ? "text-[#e8a020]" : "text-[#6b7280] hover:text-[#e8a020]")}
-                        style={{ background: "none", border: "none", cursor: "pointer", transition: "color 0.15s" }}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onFavoriteToggle?.(campId);
-                        }}
-                      >
-                        <span className="text-lg leading-none">
-                          {isFav ? "★" : "☆"}
-                        </span>
-                      </button>
-                    )}
+                    {/* Star — available for all users including coaches */}
+                    <button
+                      type="button"
+                      title={isFav ? "Remove from favorites" : "Add to favorites"}
+                      className={"h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937] " + (isFav ? "text-[#e8a020]" : "text-[#6b7280] hover:text-[#e8a020]")}
+                      style={{ background: "none", border: "none", cursor: "pointer", transition: "color 0.15s" }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onFavoriteToggle?.(campId);
+                      }}
+                    >
+                      <span className="text-lg leading-none">
+                        {isFav ? "★" : "☆"}
+                      </span>
+                    </button>
                     {/* Checkmark — hidden for coaches */}
                     {!isCoach && onRegisteredToggle && (
                       <button
@@ -325,21 +323,19 @@ export default function SchoolGroupCard({
                         ✓
                       </button>
                     )}
-                    {/* Register → opens Ryzer URL — hidden for coaches */}
-                    {!isCoach && (
-                      <button
-                        type="button"
-                        className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
-                        style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onRegisterClick?.(camp);
-                        }}
-                      >
-                        Register →
-                      </button>
-                    )}
+                    {/* Register → opens Ryzer URL — shown for all users including coaches */}
+                    <button
+                      type="button"
+                      className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
+                      style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onRegisterClick?.(camp);
+                      }}
+                    >
+                      Register →
+                    </button>
                     {/* Share with Roster — coaches only */}
                     {isCoach && (
                       <button
