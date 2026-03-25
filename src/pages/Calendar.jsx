@@ -121,9 +121,20 @@ export default function Calendar() {
 
   useEffect(() => { trackEventOnce("calendar_viewed", "evt_calendar_viewed_v1"); }, []);
 
-  // Invalidate camp summaries whenever any page writes an intent (e.g. Discover favorite/register).
-  // Without this, the 5-min React Query cache hides newly created intents on navigation.
+  // Invalidate camp summaries when intents change — handles both same-tab navigation
+  // (Discover → Calendar) and cross-tab updates.
+  // On mount: intentUpdated fires before this page mounts during same-tab navigation,
+  // so we compare localStorage timestamp against the query's last fetch time.
   useEffect(() => {
+    const updatedAt = parseInt(localStorage.getItem("intentUpdatedAt") || "0", 10);
+    if (updatedAt > 0) {
+      const qState = queryClient.getQueryState(["myCampsSummaries_client"]);
+      const lastFetch = qState?.dataUpdatedAt ?? 0;
+      if (updatedAt > lastFetch) {
+        queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
+      }
+    }
+
     function handleIntentUpdate(e) {
       if (e.type === "intentUpdated" || e.key === "intentUpdatedAt") {
         queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
