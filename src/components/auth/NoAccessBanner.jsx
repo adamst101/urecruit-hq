@@ -14,7 +14,7 @@ export default function NoAccessBanner() {
     try { return sessionStorage.getItem(DISMISS_KEY) === "true"; } catch { return false; }
   });
 
-  if (isLoading || !isAuthenticated || hasAccess || mode === "demo" || dismissed) return null;
+  if (isLoading || !isAuthenticated || hasAccess || mode === "demo" || mode === "coach_pending" || mode === "coach" || dismissed) return null;
 
   function handleDismiss() {
     setDismissed(true);

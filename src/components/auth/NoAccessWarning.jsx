@@ -11,13 +11,14 @@ const SESSION_KEY = "accessWarningShown";
 
 export default function NoAccessWarning() {
   const nav = useNavigate();
-  const { isLoading, isAuthenticated, hasAccess, mode, demoYear } = useSeasonAccess();
+  const { isLoading, isAuthenticated, hasAccess, mode, role, demoYear } = useSeasonAccess();
   const [show, setShow] = useState(false);
 
   useEffect(() => {
     if (isLoading) return;
     const alreadyShown = sessionStorage.getItem(SESSION_KEY);
-    if (isAuthenticated && !hasAccess && mode !== "demo" && !alreadyShown) {
+    const isCoachRole = role === "coach" || role === "coach_pending";
+    if (isAuthenticated && !hasAccess && mode !== "demo" && !isCoachRole && !alreadyShown) {
       setShow(true);
       sessionStorage.setItem(SESSION_KEY, "true");
     }
