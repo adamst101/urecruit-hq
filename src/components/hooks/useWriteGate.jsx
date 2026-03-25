@@ -48,7 +48,10 @@ export function useWriteGate() {
       }
 
       // 2) Not entitled (but if they have an accountId and entitlement, allow even in demo mode)
-      const isEntitled = season?.hasAccess || !!season?.entitlement;
+      // Coaches and admins bypass the entitlement check entirely
+      const isCoach = season?.mode === "coach";
+      const isAdmin = season?.role === "admin";
+      const isEntitled = season?.hasAccess || !!season?.entitlement || isCoach || isAdmin;
       if (!isEntitled) {
         nav(
           createPageUrl("Subscribe") +
@@ -60,8 +63,8 @@ export function useWriteGate() {
         return false;
       }
 
-      // 3) Entitled but missing athlete profile — only block in paid mode, not demo; admins bypass
-      if (!athleteProfile && season?.hasAccess && season?.role !== "admin") {
+      // 3) Entitled but missing athlete profile — only block in paid mode, not demo; admins and coaches bypass
+      if (!athleteProfile && season?.hasAccess && !isAdmin && !isCoach) {
         nav(createPageUrl("Profile") + `?next=${nextParam}`, { replace: true });
         return false;
       }
