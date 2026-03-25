@@ -39,6 +39,7 @@ import CampCard from "../components/camps/CampCard.jsx";
 import WarningBanner from "../components/camps/WarningBanner.jsx";
 import WarningBadge from "../components/camps/WarningBadge.jsx";
 import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
+import { useSchoolIdentity } from "../components/hooks/useSchoolIdentity.jsx";
 
 import CalendarViewToggle from "../components/calendar/CalendarViewToggle.jsx";
 import MonthSubToggle from "../components/calendar/MonthSubToggle.jsx";
@@ -271,6 +272,10 @@ export default function Calendar() {
     adminMode: isAdmin && !athleteId,
     enabled: !season.isLoading && isPaid && (!!athleteId || (isAdmin && !athleteId) || (isCoach && !!season?.accountId)),
   });
+
+  // Resolve school names/logos via the same hook Discover uses (more reliable than
+  // fetchEntityMap in useCampSummariesClient which fails silently on some base44 configs)
+  const { resolveIdentity } = useSchoolIdentity(paidQuery.data || []);
 
   const demoQuery = useDemoCampSummaries({
     seasonYear,
@@ -723,10 +728,14 @@ export default function Calendar() {
             price: r?.price ?? null, link_url: r?.link_url ?? null,
             notes: r?.notes ?? null, city: r?.city ?? null, state: r?.state ?? null,
           };
+          const schoolIdentity = resolveIdentity(schoolId, r);
           const school = {
-            id: schoolId, school_name: r?.school_name ?? null,
-            division: r?.school_division ?? null, logo_url: r?.school_logo_url ?? null,
-            city: r?.school_city ?? null, state: r?.school_state ?? null,
+            id: schoolId,
+            school_name: schoolIdentity.name !== "School" ? schoolIdentity.name : (r?.school_name ?? null),
+            division: schoolIdentity.division ?? r?.school_division ?? null,
+            logo_url: schoolIdentity.logoUrl ?? r?.school_logo_url ?? null,
+            city: schoolIdentity.city ?? r?.school_city ?? null,
+            state: schoolIdentity.state ?? r?.school_state ?? null,
             conference: r?.school_conference ?? null,
           };
           const sport = { id: sportId, name: r?.sport_name ?? null, sport_name: r?.sport_name ?? null };

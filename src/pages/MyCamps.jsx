@@ -17,6 +17,7 @@ import { trackEventOnce } from "../utils/trackEvent.js";
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
+import { useSchoolIdentity } from "../components/hooks/useSchoolIdentity.jsx";
 import { useAllAthletesCamps } from "../components/hooks/useAllAthletesCamps.jsx";
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
@@ -102,6 +103,8 @@ export default function MyCamps() {
     adminMode: isAdmin && !athleteId,
     enabled: !season.isLoading && !isDemoMode && (!!athleteId || (isAdmin && !athleteId) || (isCoach && !!season?.accountId)),
   });
+
+  const { resolveIdentity } = useSchoolIdentity(paidQuery.data || []);
 
   const demoQuery = useDemoCampSummaries({
     seasonYear,
@@ -405,12 +408,16 @@ export default function MyCamps() {
             city: r?.city ?? null,
             state: r?.state ?? null,
           }}
-          school={{
-            id: r?.school_id ? String(r.school_id) : null,
-            school_name: r?.school_name ?? null,
-            division: r?.school_division ?? r?.division ?? null,
-            logo_url: r?.school_logo_url ?? null,
-          }}
+          school={(() => {
+            const sid = r?.school_id ? String(r.school_id) : null;
+            const identity = resolveIdentity(sid, r);
+            return {
+              id: sid,
+              school_name: identity.name !== "School" ? identity.name : (r?.school_name ?? null),
+              division: identity.division ?? r?.school_division ?? r?.division ?? null,
+              logo_url: identity.logoUrl ?? r?.school_logo_url ?? null,
+            };
+          })()}
           sport={{}}
           positions={[]}
           isFavorite={isFavorite}
