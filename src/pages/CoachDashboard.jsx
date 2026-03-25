@@ -227,10 +227,9 @@ export default function CoachDashboard() {
     return () => clearTimeout(t);
   }, [setupPolling, pollAttempts]);
 
-  function copyLink() {
+  function copyCode() {
     if (!coach?.invite_code) return;
-    const link = `https://urecruithq.com/CoachInviteLanding?coach=${coach.invite_code}`;
-    navigator.clipboard.writeText(link).then(() => {
+    navigator.clipboard.writeText(coach.invite_code).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -344,7 +343,6 @@ export default function CoachDashboard() {
 
   const isRejected = coach.status === "rejected";
   const isPending = !isRejected && coach.status !== "approved";
-  const inviteLink = `https://urecruithq.com/CoachInviteLanding?coach=${coach.invite_code}`;
 
   if (isRejected) {
     return (
@@ -411,20 +409,19 @@ export default function CoachDashboard() {
           </div>
         </div>
 
-        {/* Invite link */}
+        {/* Invite code */}
         <div style={S.card}>
-          <div style={S.cardTitle}>Your Invite Link</div>
+          <div style={S.cardTitle}>Your Invite Code</div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>Invite Code</div>
-              <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 700, color: "#e8a020", letterSpacing: 1 }}>{coach.invite_code}</div>
+            <div style={{ flex: 1, fontFamily: "monospace", fontSize: 22, fontWeight: 700, color: "#e8a020", letterSpacing: 2 }}>
+              {coach.invite_code}
             </div>
-            <button style={S.copyBtn} onClick={copyLink}>
-              {copied ? "✓ Copied!" : "Copy Link"}
+            <button style={S.copyBtn} onClick={copyCode}>
+              {copied ? "✓ Copied!" : "Copy Code"}
             </button>
           </div>
           <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
-            Share your invite link with athletes — when they subscribe it'll automatically add them to your roster.
+            Share this code with athletes and parents. They enter it during signup at <span style={{ color: "#9ca3af" }}>urecruithq.com</span> to connect with you automatically.
           </p>
         </div>
 
