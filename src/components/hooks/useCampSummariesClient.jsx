@@ -62,11 +62,13 @@ async function batchFetchByIds(entity, ids) {
 
   const out = [];
   for (const part of chunk(cleanIds, 60)) {
-    const tries = [{ id: { in: part } }, { id: { $in: part } }, { _id: { in: part } }, { _id: { $in: part } }];
+    // Try $in first (matches useSchoolIdentity which is known to work).
+    // Pass sort="id" — omitting sort causes some base44 entities to return 0 rows silently.
+    const tries = [{ id: { $in: part } }, { id: { in: part } }, { _id: { $in: part } }, { _id: { in: part } }];
     let rows = [];
     for (const w of tries) {
       try {
-        rows = await safeFilter(entity, w, undefined, 2000, { retries: 2, baseDelayMs: 200 });
+        rows = await safeFilter(entity, w, "id", 2000, { retries: 2, baseDelayMs: 200 });
         if (rows.length) break;
       } catch {
         // keep trying other operator forms

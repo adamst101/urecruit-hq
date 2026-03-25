@@ -17,7 +17,6 @@ import { trackEventOnce } from "../utils/trackEvent.js";
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient";
-import { useSchoolIdentity } from "../components/hooks/useSchoolIdentity.jsx";
 import { useAllAthletesCamps } from "../components/hooks/useAllAthletesCamps.jsx";
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
@@ -103,8 +102,6 @@ export default function MyCamps() {
     adminMode: isAdmin && !athleteId,
     enabled: !season.isLoading && !isDemoMode && (!!athleteId || (isAdmin && !athleteId) || (isCoach && !!season?.accountId)),
   });
-
-  const { schoolById } = useSchoolIdentity(paidQuery.data || []);
 
   const demoQuery = useDemoCampSummaries({
     seasonYear,
@@ -408,16 +405,12 @@ export default function MyCamps() {
             city: r?.city ?? null,
             state: r?.state ?? null,
           }}
-          school={(() => {
-            const sid = r?.school_id ? String(r.school_id) : null;
-            const schoolRow = sid ? (schoolById[sid] || null) : null;
-            return {
-              id: sid,
-              school_name: schoolRow?.school_name || schoolRow?.name || r?.school_name || null,
-              division: schoolRow?.division || schoolRow?.school_division || r?.school_division || r?.division || null,
-              logo_url: schoolRow?.athletic_logo_url || schoolRow?.athletics_logo_url || schoolRow?.logo_url || r?.school_logo_url || null,
-            };
-          })()}
+          school={{
+            id: r?.school_id ? String(r.school_id) : null,
+            school_name: r?.school_name ?? null,
+            division: r?.school_division ?? r?.division ?? null,
+            logo_url: r?.school_logo_url ?? null,
+          }}
           sport={{}}
           positions={[]}
           isFavorite={isFavorite}
