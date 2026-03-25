@@ -268,11 +268,8 @@ export function useCampSummariesClient({
           merged.push(r);
         }
         camps = merged;
-
-        // sport guard (optional)
-        if (sId) {
-          camps = camps.filter((c) => String(normId(c?.sport_id) || c?.sport_id || "") === String(sId));
-        }
+        // No sport filter on the intent path — camps were explicitly favorited/registered
+        // by the user and must all appear regardless of sport_id format or value.
       }
 
       if (!camps.length) return [];
