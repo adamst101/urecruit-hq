@@ -104,12 +104,19 @@ Deno.serve(async (req) => {
       Your coach account at URecruit HQ has been approved. You now have full access to your Coach Dashboard,
       your personal invite link, and the ability to message your roster.
     </p>
+    <p style="font-size:14px;color:#374151;line-height:1.6;">
+      To access your dashboard, <strong>sign out and sign back in</strong> to activate your coach access —
+      then click the button below.
+    </p>
     <div style="margin-top:20px;">
       <a href="https://urecruithq.com/CoachDashboard" style="display:inline-block;background:#0B1F3B;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:7px;font-size:14px;font-weight:600;">
         Go to Your Dashboard →
       </a>
     </div>
-    <p style="margin-top:20px;font-size:13px;color:#9ca3af;">— URecruit HQ</p>
+    <p style="margin-top:20px;font-size:13px;color:#6b7280;">
+      If this email landed in your spam folder, please mark it as "Not Spam" so you receive future messages from us.
+    </p>
+    <p style="margin-top:4px;font-size:13px;color:#9ca3af;">— URecruit HQ</p>
   </div>
 </div>`,
           });
