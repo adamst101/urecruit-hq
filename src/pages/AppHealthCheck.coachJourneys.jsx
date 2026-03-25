@@ -1065,5 +1065,5 @@ export const COACH_JOURNEY_GROUP =
       },
 
     ],
-  },
-;
+  };
+
