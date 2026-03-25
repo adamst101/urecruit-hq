@@ -179,19 +179,21 @@ export default function CoachDashboard() {
       const me = await base44.auth.me();
       if (!me?.id) return null;
       setCurrentRole(me.role || "");
-      const coaches = await base44.entities.Coach.filter({ account_id: me.id });
-      if (coaches?.length) {
-        const c = coaches[0];
-        setCoach(c);
-        const [members, msgs] = await Promise.all([
-          base44.entities.CoachRoster.filter({ coach_id: c.id }).catch(() => []),
-          base44.entities.CoachMessage.filter({ coach_id: c.id }).catch(() => []),
-        ]);
-        setRoster(Array.isArray(members) ? members : []);
-        setMessages(Array.isArray(msgs) ? msgs.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at)) : []);
-        return c;
-      }
-      return null;
+
+      // Use backend function with service role to avoid entity read permission issues
+      const res = await base44.functions.invoke("getMyCoachProfile", {});
+      const data = res?.data;
+      if (!data?.ok || !data.coach) return null;
+
+      const c = data.coach;
+      setCoach(c);
+      setRoster(Array.isArray(data.roster) ? data.roster : []);
+      setMessages(
+        Array.isArray(data.messages)
+          ? data.messages.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))
+          : []
+      );
+      return c;
     } catch (e) {
       console.error("CoachDashboard load error:", e?.message);
       return null;
@@ -246,9 +248,12 @@ export default function CoachDashboard() {
         setSendSuccess(true);
         setSubject("");
         setMessage("");
-        // Reload messages
-        const msgs = await base44.entities.CoachMessage.filter({ coach_id: coach.id }).catch(() => []);
-        setMessages(Array.isArray(msgs) ? msgs.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at)) : []);
+        // Reload messages via service-role function
+        const reload = await base44.functions.invoke("getMyCoachProfile", {}).catch(() => null);
+        const reloadMsgs = reload?.data?.messages;
+        if (Array.isArray(reloadMsgs)) {
+          setMessages(reloadMsgs.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at)));
+        }
         setTimeout(() => setSendSuccess(false), 3000);
       } else {
         setSendError(res?.data?.error || res?.error || "Failed to send message.");
