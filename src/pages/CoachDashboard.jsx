@@ -414,12 +414,17 @@ export default function CoachDashboard() {
         {/* Invite link */}
         <div style={S.card}>
           <div style={S.cardTitle}>Your Invite Link</div>
-          <div style={S.inviteBox}>{inviteLink}</div>
-          <button style={S.copyBtn} onClick={copyLink}>
-            {copied ? "Copied!" : "Copy Link"}
-          </button>
-          <p style={{ fontSize: 13, color: "#6b7280", marginTop: 12, marginBottom: 0 }}>
-            Share this link with your athletes. When they subscribe, they'll appear on your roster below.
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>Invite Code</div>
+              <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 700, color: "#e8a020", letterSpacing: 1 }}>{coach.invite_code}</div>
+            </div>
+            <button style={S.copyBtn} onClick={copyLink}>
+              {copied ? "✓ Copied!" : "Copy Link"}
+            </button>
+          </div>
+          <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
+            Share your invite link with athletes — when they subscribe it'll automatically add them to your roster.
           </p>
         </div>
 
