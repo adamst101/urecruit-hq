@@ -121,6 +121,22 @@ export default function Calendar() {
 
   useEffect(() => { trackEventOnce("calendar_viewed", "evt_calendar_viewed_v1"); }, []);
 
+  // Invalidate camp summaries whenever any page writes an intent (e.g. Discover favorite/register).
+  // Without this, the 5-min React Query cache hides newly created intents on navigation.
+  useEffect(() => {
+    function handleIntentUpdate(e) {
+      if (e.type === "intentUpdated" || e.key === "intentUpdatedAt") {
+        queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
+      }
+    }
+    window.addEventListener("intentUpdated", handleIntentUpdate);
+    window.addEventListener("storage", handleIntentUpdate);
+    return () => {
+      window.removeEventListener("intentUpdated", handleIntentUpdate);
+      window.removeEventListener("storage", handleIntentUpdate);
+    };
+  }, [queryClient]);
+
   const url = useMemo(() => getUrlParams(loc.search), [loc.search]);
   // If season has resolved to paid, never let a stale ?mode=demo override it
   const forceDemo = url.mode === "demo" && season?.mode !== "paid";

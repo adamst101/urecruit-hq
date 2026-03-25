@@ -835,8 +835,8 @@ const JOURNEY_GROUPS = [
                 return "No athletes and no intents — clean state";
               }
               const missing = ctx.activeIntents.slice(0, 20).filter(i => !i.athlete_id).length;
-              if (missing > 2) throw new Error(`${missing}/20 intents missing athlete_id — useAllAthletesCamps filter would skip them`);
-              return `${Math.min(20, ctx.activeIntents.length) - missing}/${Math.min(20, ctx.activeIntents.length)} intents have athlete_id`;
+              if (missing > 0) throw new Error(`${missing}/20 intents missing athlete_id — useAllAthletesCamps filter would skip them`);
+              return `${Math.min(20, ctx.activeIntents.length)}/${Math.min(20, ctx.activeIntents.length)} intents have athlete_id`;
             },
           },
         ],
