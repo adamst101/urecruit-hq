@@ -3,14 +3,14 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  let body: { subject?: string; message?: string } = {};
+  let body: { subject?: string; message?: string; recipientAthleteId?: string; recipientName?: string } = {};
   try {
     body = await req.json();
   } catch {
     return Response.json({ ok: false, error: "Invalid request body" }, { status: 400 });
   }
 
-  const { subject, message } = body;
+  const { subject, message, recipientAthleteId, recipientName } = body;
 
   if (!message?.trim()) {
     return Response.json({ ok: false, error: "message is required" }, { status: 400 });
@@ -40,6 +40,8 @@ Deno.serve(async (req) => {
       subject: subject?.trim() || "",
       message: message.trim(),
       sent_at: new Date().toISOString(),
+      recipient_athlete_id: recipientAthleteId || null,
+      recipient_name: recipientName || null,
     });
 
     console.log("CoachMessage sent — coach:", coach.id, "id:", created.id);
