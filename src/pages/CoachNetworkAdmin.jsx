@@ -14,6 +14,7 @@ export default function CoachNetworkAdmin() {
   const [search, setSearch] = useState("");
   const [actioning, setActioning] = useState(null); // coachId being actioned
   const [actionError, setActionError] = useState(null);
+  const [confirmRemove, setConfirmRemove] = useState(null); // coach object pending removal
 
   useEffect(() => {
     (async () => {
@@ -43,6 +44,26 @@ export default function CoachNetworkAdmin() {
       }
     })();
   }, []);
+
+  async function handleRemove(coach) {
+    setActioning(coach.id);
+    setActionError(null);
+    setConfirmRemove(null);
+    try {
+      const res = await base44.functions.invoke("removeCoach", { coachId: coach.id });
+      const data = res?.data;
+      if (data?.ok === false) {
+        setActionError(`removeCoach error: ${data.error || "unknown"}`);
+        return;
+      }
+      setCoaches(prev => prev.filter(c => c.id !== coach.id));
+    } catch (e) {
+      console.error("removeCoach failed:", e?.message);
+      setActionError(`Failed to remove coach: ${e?.message || "function may not be deployed"}`);
+    } finally {
+      setActioning(null);
+    }
+  }
 
   async function handleAction(coachId, action) {
     setActioning(coachId);
@@ -145,7 +166,7 @@ export default function CoachNetworkAdmin() {
                     <span style={{ fontFamily: "monospace", fontSize: 13, color: c.status === "approved" ? "#e8a020" : "#6b7280" }}>{c.invite_code || "—"}</span>
                     <span style={{ color: rosterCounts[c.id] > 0 ? "#22c55e" : "#6b7280", fontWeight: 600 }}>{rosterCounts[c.id] || 0}</span>
                     <span style={{ color: messageCounts[c.id] > 0 ? "#f9fafb" : "#6b7280" }}>{messageCounts[c.id] || 0}</span>
-                    <div style={{ display: "flex", gap: 6 }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       {c.status !== "approved" && (
                         <button
                           onClick={() => handleAction(c.id, "approve")}
@@ -164,6 +185,13 @@ export default function CoachNetworkAdmin() {
                           Reject
                         </button>
                       )}
+                      <button
+                        onClick={() => setConfirmRemove(c)}
+                        disabled={isActioning}
+                        style={{ background: "transparent", color: "#6b7280", border: "1px solid #374151", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: isActioning ? "not-allowed" : "pointer", opacity: isActioning ? 0.6 : 1 }}
+                      >
+                        Remove
+                      </button>
                     </div>
                   </div>
                 );
@@ -172,6 +200,35 @@ export default function CoachNetworkAdmin() {
           )}
         </div>
       </div>
+      {/* Remove confirmation modal */}
+      {confirmRemove && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: "#111827", border: "1px solid #374151", borderRadius: 16, padding: 32, maxWidth: 420, width: "100%" }}>
+            <div style={{ fontSize: 28, marginBottom: 16, textAlign: "center" }}>🗑️</div>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb", margin: "0 0 8px", textAlign: "center" }}>Remove Coach?</h2>
+            <p style={{ fontSize: 14, color: "#9ca3af", lineHeight: 1.6, textAlign: "center", margin: "0 0 8px" }}>
+              This will permanently delete <strong style={{ color: "#f9fafb" }}>{confirmRemove.first_name} {confirmRemove.last_name}</strong>'s coach profile, all roster entries, and all messages sent to their roster.
+            </p>
+            <p style={{ fontSize: 13, color: "#fca5a5", textAlign: "center", margin: "0 0 24px" }}>
+              Their account will remain but all coach access and data will be cleared. This cannot be undone.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => setConfirmRemove(null)}
+                style={{ flex: 1, background: "transparent", color: "#f9fafb", border: "1px solid #374151", borderRadius: 8, padding: "12px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleRemove(confirmRemove)}
+                style={{ flex: 1, background: "#7f1d1d", color: "#fca5a5", border: "none", borderRadius: 8, padding: "12px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+              >
+                Yes, Remove Coach
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminRoute>
   );
 }
