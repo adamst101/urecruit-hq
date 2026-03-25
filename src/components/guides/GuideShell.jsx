@@ -1,12 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "../../utils";
+import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 import { ArrowLeft } from "lucide-react";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 
 export default function GuideShell({ title, subtitle, sections, children }) {
   const nav = useNavigate();
+  const season = useSeasonAccess();
+  const hqPage = season?.mode === "coach" ? "CoachDashboard" : "Workspace";
   const [activeId, setActiveId] = useState(sections[0]?.id || "");
   const observerRef = useRef(null);
 
@@ -71,7 +74,7 @@ export default function GuideShell({ title, subtitle, sections, children }) {
       <div style={{ maxWidth: 800, margin: "0 auto", padding: "32px 20px 80px" }}>
         {/* Back + Header */}
         <button
-          onClick={() => nav(createPageUrl("Workspace"))}
+          onClick={() => nav(createPageUrl(hqPage))}
           style={{ background: "none", border: "none", color: "#e8a020", fontSize: 14, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 24 }}
           onMouseEnter={(e) => { e.currentTarget.style.color = "#f3b13f"; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = "#e8a020"; }}

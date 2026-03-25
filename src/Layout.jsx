@@ -28,6 +28,7 @@ export default function Layout({ children }) {
 
   const [logoOk, setLogoOk] = useState(true);
   const [isAuthed, setIsAuthed] = useState(false);
+  const [userRole, setUserRole] = useState("");
 
   const isHomePage = useMemo(() => {
     const p = location.pathname || "";
@@ -41,6 +42,7 @@ export default function Layout({ children }) {
       const me = await safeMe();
       if (cancelled) return;
       setIsAuthed(!!me?.id);
+      setUserRole(me?.role || "");
     })();
     return () => {
       cancelled = true;
@@ -52,7 +54,8 @@ export default function Layout({ children }) {
   }
 
   function goWorkspace() {
-    navigate(createPageUrl("Workspace"));
+    const isCoach = userRole === "coach" || userRole === "coach_pending";
+    navigate(createPageUrl(isCoach ? "CoachDashboard" : "Workspace"));
   }
 
   function handleSubscribe() {

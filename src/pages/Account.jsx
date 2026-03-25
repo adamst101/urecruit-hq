@@ -44,7 +44,7 @@ async function safeLogout() {
 
 export default function Account() {
   const navigate = useNavigate();
-  const { hasAccess, entitlement, accountId, isLoading: seasonLoading } = useSeasonAccess();
+  const { hasAccess, entitlement, accountId, isLoading: seasonLoading, mode: seasonMode } = useSeasonAccess();
 
   const [user, setUser] = useState(null);
   const [athletes, setAthletes] = useState([]);
@@ -180,7 +180,7 @@ export default function Account() {
       <div style={{ maxWidth: 560, margin: "0 auto", padding: "24px 16px 0" }}>
         <button
           type="button"
-          onClick={() => navigate(ROUTES.Workspace)}
+          onClick={() => navigate(seasonMode === "coach" ? "/CoachDashboard" : ROUTES.Workspace)}
           style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500, color: "#e8a020", display: "flex", alignItems: "center", gap: 4, marginBottom: 12, padding: 0 }}
         >
           ← HQ
