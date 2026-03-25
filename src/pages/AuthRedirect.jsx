@@ -249,10 +249,11 @@ export default function AuthRedirect() {
             parentLastName: formData.parentLastName || undefined,
             parentPhone: formData.parentPhone || undefined,
           });
-          clearSeasonAccessCache();
         } catch (e) {
           console.error("activateFreeAccess failed in AuthRedirect:", e?.message);
         }
+        // Always clear cache before navigating so Workspace does a fresh entitlement check
+        clearSeasonAccessCache();
         nav(PATHS.WORKSPACE, { replace: true });
       })();
       return;

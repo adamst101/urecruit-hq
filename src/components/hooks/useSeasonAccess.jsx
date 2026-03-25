@@ -173,7 +173,7 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
   // Negative cache: skip entitlement API if we recently confirmed no entitlement
   if (_lastDemoCheck?.accountId === accountId) {
     const age = Date.now() - new Date(_lastDemoCheck.checkedAt).getTime();
-    if (age < 2 * 60 * 1000) {
+    if (age < 20 * 1000) {
       return {
         currentYear: currentYear || null,
         demoYear: demoYear || null,
@@ -194,6 +194,21 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
   let ent = await fetchEntitlement({ accountId, seasonYear: activeSeason });
   if (!ent && soldSeason !== activeSeason) {
     ent = await fetchEntitlement({ accountId, seasonYear: soldSeason });
+  }
+
+  // Fallback: check for ANY active entitlement regardless of season year
+  // Handles cases where the entitlement was created with a different season_year
+  if (!ent) {
+    try {
+      const rows = await base44.entities.Entitlement.filter({
+        account_id: accountId,
+        status: "active",
+      });
+      const list = Array.isArray(rows) ? rows : [];
+      ent = list.find((x) => isActiveInWindow(x)) || list[0] || null;
+    } catch {
+      // ignore — use whatever we have
+    }
   }
 
   if (ent) {
