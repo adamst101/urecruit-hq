@@ -229,7 +229,7 @@ export default function CoachDashboard() {
 
   function copyLink() {
     if (!coach?.invite_code) return;
-    const link = `${window.location.origin}/CoachInviteLanding?coach=${coach.invite_code}`;
+    const link = `https://urecruithq.com/CoachInviteLanding?coach=${coach.invite_code}`;
     navigator.clipboard.writeText(link).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -344,7 +344,7 @@ export default function CoachDashboard() {
 
   const isRejected = coach.status === "rejected";
   const isPending = !isRejected && coach.status !== "approved";
-  const inviteLink = `${window.location.origin}/CoachInviteLanding?coach=${coach.invite_code}`;
+  const inviteLink = `https://urecruithq.com/CoachInviteLanding?coach=${coach.invite_code}`;
 
   if (isRejected) {
     return (
