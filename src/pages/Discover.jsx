@@ -48,6 +48,10 @@ import {
 } from "../components/filters/filterUtils.jsx";
 import { toast } from "../components/ui/use-toast";
 
+/* ─── Module-level camp list cache (prevents re-fetch on every navigation) ── */
+let _discoverCache = { rows: [], ts: 0, seasonYear: null, isPaid: null };
+const DISCOVER_CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+
 /* ─── helpers ──────────────────────────────────────────────────────────────── */
 
 function sleep(ms) {
@@ -461,6 +465,22 @@ export default function Discover() {
   const { resolveIdentity, schoolById } = useSchoolIdentity(allRows);
 
   async function loadCamps() {
+    // Use module-level cache to avoid re-fetching all camps on every navigation.
+    // Intents are always reloaded so favorite/registered status stays current.
+    const now = Date.now();
+    if (
+      _discoverCache.ts &&
+      now - _discoverCache.ts < DISCOVER_CACHE_TTL &&
+      _discoverCache.seasonYear === seasonYear &&
+      _discoverCache.isPaid === isPaid
+    ) {
+      setAllRows(_discoverCache.rows);
+      const keys = _discoverCache.rows.map(campKeyForRow).filter(Boolean);
+      const intents = await loadIntents(keys);
+      setIntentByKey(intents);
+      return;
+    }
+
     setIsLoading(true);
     setCampErr(null);
 
@@ -487,6 +507,7 @@ export default function Discover() {
         }
       }
       const active = asArray(rows).filter(readActiveFlag);
+      _discoverCache = { rows: active, ts: Date.now(), seasonYear, isPaid };
       setAllRows(active);
 
       const keys    = active.map(campKeyForRow).filter(Boolean);

@@ -66,7 +66,7 @@ async function batchFetchByIds(entity, ids) {
     let rows = [];
     for (const w of tries) {
       try {
-        rows = await safeFilter(entity, w, undefined, undefined, { retries: 2, baseDelayMs: 200 });
+        rows = await safeFilter(entity, w, undefined, 2000, { retries: 2, baseDelayMs: 200 });
         if (rows.length) break;
       } catch {
         // keep trying other operator forms
