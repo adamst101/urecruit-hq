@@ -281,7 +281,7 @@ export default function Home() {
             ) : (
               <>
                 <button onClick={handleMemberLogin} style={S.navBtnMemberLogin}>
-                  Membership Login
+                  Members Login
                 </button>
               </>
             )}
