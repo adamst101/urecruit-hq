@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { User, LogOut } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { clearSeasonAccessCache } from "../components/hooks/useSeasonAccess.jsx";
+import BottomNav from "../components/navigation/BottomNav.jsx";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 const LOGO_URL = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -261,7 +262,7 @@ export default function CoachDashboard() {
 
   // ── Full approved dashboard ─────────────────────────────────────────────────
   return (
-    <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
+    <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", paddingBottom: 80, fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
       <style>{FONTS}</style>
 
       {/* ── HEADER ── */}
@@ -487,6 +488,8 @@ export default function CoachDashboard() {
           </div>
         </section>
       )}
+
+      <BottomNav />
     </div>
   );
 }

@@ -2,9 +2,11 @@
 import React, { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Search, CalendarDays, User, LayoutGrid, Heart } from "lucide-react";
+import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 
 const ROUTES = {
   Workspace: "/Workspace",
+  CoachDashboard: "/CoachDashboard",
   Discover: "/Discover",
   Calendar: "/Calendar",
   MyCamps: "/MyCamps",
@@ -20,16 +22,20 @@ function isActivePath(pathname, target) {
 export default function BottomNav() {
   const nav = useNavigate();
   const loc = useLocation();
+  const season = useSeasonAccess();
+  const isCoach = season?.mode === "coach";
+
+  const hqRoute = isCoach ? ROUTES.CoachDashboard : ROUTES.Workspace;
 
   const items = useMemo(
     () => [
-      { label: "HQ", to: ROUTES.Workspace, Icon: LayoutGrid },
+      { label: "HQ", to: hqRoute, Icon: LayoutGrid },
       { label: "Discover", to: ROUTES.Discover, Icon: Search },
       { label: "Calendar", to: ROUTES.Calendar, Icon: CalendarDays },
       { label: "My Camps", to: ROUTES.MyCamps, Icon: Heart },
       { label: "Profile", to: ROUTES.Profile, Icon: User },
     ],
-    []
+    [hqRoute]
   );
 
   function handleNav(to) {
