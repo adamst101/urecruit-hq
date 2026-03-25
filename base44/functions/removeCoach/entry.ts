@@ -1,16 +1,22 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
+const ADMIN_EMAILS = ["tom.adams101@gmail.com", "sadie_adams@icloud.com"];
+
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  // Admin-only
+  // Admin-only — verify by role OR by known admin email
+  let callerRole = "";
+  let callerEmail = "";
   try {
     const me = await base44.auth.me();
-    if (me?.role !== "admin") {
-      return Response.json({ ok: false, error: "Admin access required" }, { status: 403 });
-    }
-  } catch {
-    return Response.json({ ok: false, error: "Admin access required" }, { status: 403 });
+    callerRole = me?.role || "";
+    callerEmail = me?.email || "";
+  } catch {}
+
+  const isAdmin = callerRole === "admin" || ADMIN_EMAILS.includes(callerEmail);
+  if (!isAdmin) {
+    return Response.json({ ok: false, error: `Admin access required (role: ${callerRole || "none"})` }, { status: 403 });
   }
 
   let body: { coachId?: string } = {};

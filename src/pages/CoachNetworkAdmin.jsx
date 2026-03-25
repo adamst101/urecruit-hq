@@ -14,6 +14,7 @@ export default function CoachNetworkAdmin() {
   const [search, setSearch] = useState("");
   const [actioning, setActioning] = useState(null); // coachId being actioned
   const [actionError, setActionError] = useState(null);
+  const [actionResult, setActionResult] = useState(null); // last success detail
   const [confirmRemove, setConfirmRemove] = useState(null); // coach object pending removal
 
   useEffect(() => {
@@ -68,12 +69,19 @@ export default function CoachNetworkAdmin() {
   async function handleAction(coachId, action) {
     setActioning(coachId);
     setActionError(null);
+    setActionResult(null);
     try {
       const res = await base44.functions.invoke("approveCoach", { coachId, action });
       const data = res?.data;
-      if (data?.ok === false) {
-        setActionError(`approveCoach returned error: ${data.error || "unknown"}`);
+      // Require explicit ok: true — catches null/undefined (function not deployed) as well as ok: false
+      if (!data || data.ok !== true) {
+        setActionError(`approveCoach failed: ${data?.error || (data ? JSON.stringify(data) : "no response — function may not be deployed")}`);
         return;
+      }
+      // Show step-by-step results from the function
+      if (data.results) {
+        const parts = Object.entries(data.results).map(([k, v]) => `${k}: ${v}`).join(" · ");
+        setActionResult(`✓ ${action === "approve" ? "Approved" : "Rejected"} — ${parts}`);
       }
       setCoaches(prev => prev.map(c =>
         c.id === coachId
@@ -126,6 +134,11 @@ export default function CoachNetworkAdmin() {
           {actionError && (
             <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "12px 16px", fontSize: 13, color: "#fca5a5", marginBottom: 16 }}>
               ⚠️ {actionError}
+            </div>
+          )}
+          {actionResult && (
+            <div style={{ background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: 8, padding: "12px 16px", fontSize: 13, color: "#86efac", marginBottom: 16 }}>
+              {actionResult}
             </div>
           )}
 

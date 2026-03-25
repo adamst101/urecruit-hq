@@ -1,17 +1,22 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
+const ADMIN_EMAILS = ["tom.adams101@gmail.com", "sadie_adams@icloud.com"];
+
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  // Admin-only — verify caller is admin
+  // Admin-only — verify caller is admin by role OR by known admin email
   let callerRole = "";
+  let callerEmail = "";
   try {
     const me = await base44.auth.me();
     callerRole = me?.role || "";
+    callerEmail = me?.email || "";
   } catch {}
 
-  if (callerRole !== "admin") {
-    return Response.json({ ok: false, error: "Admin access required" }, { status: 403 });
+  const isAdmin = callerRole === "admin" || ADMIN_EMAILS.includes(callerEmail);
+  if (!isAdmin) {
+    return Response.json({ ok: false, error: `Admin access required (role: ${callerRole || "none"}, email: ${callerEmail || "unknown"})` }, { status: 403 });
   }
 
   let body: { coachId?: string; action?: "approve" | "reject" } = {};
@@ -36,6 +41,8 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: "Coach not found" }, { status: 404 });
     }
 
+    const results: Record<string, string> = {};
+
     // Prefer email stored directly on Coach record (set by registerCoach).
     // Fall back to User entity lookup in case the Coach record predates this field.
     let coachEmail = (coach.email as string) || "";
@@ -43,22 +50,43 @@ Deno.serve(async (req) => {
       try {
         const user = await base44.asServiceRole.entities.User.get(coach.account_id);
         coachEmail = (user?.email as string) || "";
-      } catch {}
+        if (coachEmail) results.emailSource = "fetched from User entity";
+      } catch (e) {
+        results.emailSource = `User lookup failed: ${(e as Error).message}`;
+      }
+    } else if (coachEmail) {
+      results.emailSource = "Coach record";
+    } else {
+      results.emailSource = "no email found";
+    }
+
+    if (!coach.account_id) {
+      results.accountId = "MISSING — role update skipped";
     }
 
     if (action === "approve") {
-      await base44.asServiceRole.entities.Coach.update(coachId, { status: "approved" });
+      // Update Coach status
+      try {
+        await base44.asServiceRole.entities.Coach.update(coachId, { status: "approved" });
+        results.coachStatus = "set to approved";
+      } catch (e) {
+        results.coachStatus = `FAILED: ${(e as Error).message}`;
+        return Response.json({ ok: false, error: `Coach status update failed: ${(e as Error).message}`, results }, { status: 500 });
+      }
 
+      // Update User role
       if (coach.account_id) {
         try {
           await base44.asServiceRole.entities.User.update(coach.account_id, { role: "coach" });
+          results.userRole = "set to coach";
           console.log("Upgraded role to coach for account:", coach.account_id);
         } catch (e) {
+          results.userRole = `FAILED: ${(e as Error).message}`;
           console.warn("Could not upgrade coach role:", (e as Error).message);
         }
       }
 
-      // Email the coach to let them know they're approved
+      // Email the coach
       if (coachEmail) {
         try {
           await base44.asServiceRole.integrations.Core.SendEmail({
@@ -85,29 +113,40 @@ Deno.serve(async (req) => {
   </div>
 </div>`,
           });
+          results.email = `sent to ${coachEmail}`;
         } catch (e) {
-          console.warn("Could not send approval email (non-critical):", (e as Error).message);
+          results.email = `FAILED: ${(e as Error).message}`;
+          console.warn("Could not send approval email:", (e as Error).message);
         }
+      } else {
+        results.email = "skipped — no email address";
       }
 
-      console.log("Coach approved:", coachId);
-      return Response.json({ ok: true, status: "approved" });
+      console.log("Coach approved:", coachId, results);
+      return Response.json({ ok: true, status: "approved", results });
 
     } else {
       // Reject — deactivate coach record, clear role completely
-      await base44.asServiceRole.entities.Coach.update(coachId, { status: "rejected", active: false });
+      try {
+        await base44.asServiceRole.entities.Coach.update(coachId, { status: "rejected", active: false });
+        results.coachStatus = "set to rejected";
+      } catch (e) {
+        results.coachStatus = `FAILED: ${(e as Error).message}`;
+        return Response.json({ ok: false, error: `Coach status update failed: ${(e as Error).message}`, results }, { status: 500 });
+      }
 
       if (coach.account_id) {
         try {
-          // Set role to empty string — no coach access, no special bypass, falls through to subscriber check
           await base44.asServiceRole.entities.User.update(coach.account_id, { role: "" });
+          results.userRole = "cleared";
           console.log("Cleared role for rejected coach account:", coach.account_id);
         } catch (e) {
+          results.userRole = `FAILED: ${(e as Error).message}`;
           console.warn("Could not clear role on rejected coach:", (e as Error).message);
         }
       }
 
-      // Email the coach to let them know they were not approved
+      // Email the coach
       if (coachEmail) {
         try {
           await base44.asServiceRole.integrations.Core.SendEmail({
@@ -133,13 +172,17 @@ Deno.serve(async (req) => {
   </div>
 </div>`,
           });
+          results.email = `sent to ${coachEmail}`;
         } catch (e) {
-          console.warn("Could not send rejection email (non-critical):", (e as Error).message);
+          results.email = `FAILED: ${(e as Error).message}`;
+          console.warn("Could not send rejection email:", (e as Error).message);
         }
+      } else {
+        results.email = "skipped — no email address";
       }
 
-      console.log("Coach rejected:", coachId);
-      return Response.json({ ok: true, status: "rejected" });
+      console.log("Coach rejected:", coachId, results);
+      return Response.json({ ok: true, status: "rejected", results });
     }
   } catch (err) {
     console.error("approveCoach error:", (err as Error).message);
