@@ -201,6 +201,11 @@ export default function Checkout() {
       });
       const data = res.data;
       if (data?.ok) {
+        // Set the auth user's display name now that we have parent info
+        const fullName = [parentFirstName.trim(), parentLastName.trim()].filter(Boolean).join(" ");
+        if (fullName) {
+          base44.auth.updateMe({ full_name: fullName }).catch(() => {});
+        }
         navigate("/Workspace", { replace: true });
       } else {
         setError(data?.error || "Failed to activate access");
@@ -249,6 +254,15 @@ export default function Checkout() {
       const data = res.data;
       console.log("createStripeCheckout response:", data);
       if (data?.ok && data?.sessionUrl) {
+        // Save form data so AuthRedirect can set the auth user's full_name after payment
+        try {
+          sessionStorage.setItem("checkoutForm", JSON.stringify({
+            parentFirstName: parentFirstName.trim() || "",
+            parentLastName: parentLastName.trim() || "",
+            athleteFirstName: athleteFirstName.trim() || "",
+            athleteLastName: athleteLastName.trim() || "",
+          }));
+        } catch {}
         window.location.href = data.sessionUrl;
         return;
       }
