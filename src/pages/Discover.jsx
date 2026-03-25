@@ -495,7 +495,7 @@ export default function Discover() {
           throw e2 || e1;
         }
       }
-      console.log("[Discover] loadCamps — raw rows returned:", Array.isArray(rows) ? rows.length : rows, rows?.[0] ? { season_year: rows[0].season_year, active: rows[0].active, camp_name: rows[0].camp_name } : "none");
+      console.log("[Discover] loadCamps — raw rows returned:", Array.isArray(rows) ? rows.length : rows, rows?.[0] ? { season_year: rows[0].season_year, active: rows[0].active, camp_name: rows[0].camp_name, sport_id: rows[0].sport_id } : "none");
 
       const active = asArray(rows).filter(readActiveFlag);
       console.log("[Discover] loadCamps — after active filter:", active.length);
@@ -562,6 +562,7 @@ export default function Discover() {
       };
     });
 
+    console.log("[Discover] filter — athleteSportId:", athleteSportId, "allRows:", allRows.length, "isPaid:", isPaid);
     const filtered = enrichedRows.filter((enriched) => {
       if (isPaid) {
         if (!matchesSport(enriched, [athleteSportId].filter(Boolean))) return false;
