@@ -910,6 +910,140 @@ const JOURNEY_GROUPS = [
           },
         ],
       },
+
+      {
+        id: "discover_to_calendar_flow",
+        name: "Discover → Calendar / My Camps Flow",
+        icon: "🗓️",
+        description: "End-to-end: creates a favorite intent as Discover would, then walks every step the Calendar and My Camps hooks use to surface it. Fails at the exact step that breaks the pipeline.",
+        steps: [
+          {
+            name: "Resolve athlete profile (required for useCampSummariesClient)",
+            run: async (ctx) => {
+              const me = await base44.auth.me();
+              if (!me?.id) throw new Error("auth.me() returned no id");
+              ctx.myId = me.id;
+              const athletes = await base44.entities.AthleteProfile.filter({ account_id: me.id }).catch(() => []);
+              const active = (Array.isArray(athletes) ? athletes : []).filter(a => a.active !== false);
+              if (active.length === 0) throw new Error("No active AthleteProfile for this account — useCampSummariesClient would not run (enabled: false)");
+              ctx.athlete = active[0];
+              ctx.athleteId = String(ctx.athlete.id || ctx.athlete._id || "");
+              if (!ctx.athleteId) throw new Error("AthleteProfile has no id — athleteId would resolve to null");
+              return `Athlete resolved: id=${ctx.athleteId} (${ctx.athlete.first_name || "?"} ${ctx.athlete.last_name || "?"})`;
+            },
+          },
+          {
+            name: "Find a camp to use as test target",
+            run: async (ctx) => {
+              const camps = await base44.entities.Camp.filter({ active: true }).catch(() => []);
+              if (!Array.isArray(camps) || camps.length === 0) throw new Error("No active camps found — Camp entity may be empty or unreadable");
+              ctx.testCamp = camps[0];
+              ctx.campId = String(ctx.testCamp.id || ctx.testCamp._id || "");
+              if (!ctx.campId) throw new Error("Camp record has no id");
+              return `Using camp: "${ctx.testCamp.camp_name}" (id=${ctx.campId})`;
+            },
+          },
+          {
+            name: "Create CampIntent — mirrors Discover favorite action",
+            run: async (ctx) => {
+              const intent = await base44.entities.CampIntent.create({
+                camp_id: ctx.campId,
+                athlete_id: ctx.athleteId,
+                account_id: ctx.myId,
+                status: "favorite",
+              });
+              if (!intent?.id) throw new Error("CampIntent.create returned no id — write permission may be missing");
+              ctx.intentId = intent.id;
+              return `CampIntent created (id=${ctx.intentId}, athlete_id=${ctx.athleteId}, status=favorite)`;
+            },
+          },
+          {
+            name: "Write intentUpdatedAt to localStorage — cache-bust signal Calendar/MyCamps read on mount",
+            run: async (ctx) => {
+              ctx.intentUpdatedAt = Date.now();
+              try {
+                localStorage.setItem("intentUpdatedAt", String(ctx.intentUpdatedAt));
+              } catch {
+                throw new Error("localStorage.setItem failed — cache invalidation signal cannot be written; Calendar/MyCamps won't know to refetch");
+              }
+              const readBack = localStorage.getItem("intentUpdatedAt");
+              if (readBack !== String(ctx.intentUpdatedAt)) throw new Error("localStorage round-trip failed — value not persisted");
+              return `intentUpdatedAt=${ctx.intentUpdatedAt} written and verified ✓`;
+            },
+          },
+          {
+            name: "Query intents by athlete_id — step 1 of useCampSummariesClient",
+            run: async (ctx) => {
+              const intents = await base44.entities.CampIntent.filter({ athlete_id: ctx.athleteId }).catch((e) => {
+                throw new Error(`CampIntent.filter({ athlete_id }) threw: ${e?.message || e}`);
+              });
+              if (!Array.isArray(intents)) throw new Error("CampIntent.filter() returned non-array — query broken");
+              const found = intents.find(i => i.id === ctx.intentId);
+              if (!found) throw new Error(`Intent id=${ctx.intentId} not found by athlete_id filter — useCampSummariesClient would return [] and Calendar/MyCamps would be empty`);
+              ctx.foundIntent = found;
+              return `Found ${intents.length} intent(s) for athlete — target intent present ✓`;
+            },
+          },
+          {
+            name: "Verify intent status passes the active filter (favorite / registered / completed)",
+            run: async (ctx) => {
+              const st = String(ctx.foundIntent?.status || "").toLowerCase();
+              const ACTIVE = new Set(["favorite", "registered", "completed"]);
+              if (!ACTIVE.has(st)) throw new Error(`Intent status="${st}" is not in {favorite, registered, completed} — would be excluded from interestedKeys and useCampSummariesClient returns []`);
+              return `status="${st}" passes active filter ✓`;
+            },
+          },
+          {
+            name: "Verify intent has camp_id — needed to build interestedKeys",
+            run: async (ctx) => {
+              const key = String(ctx.foundIntent?.camp_id || "");
+              if (!key) throw new Error("Intent is missing camp_id — cannot look up camp record; useCampSummariesClient skips it");
+              if (key !== ctx.campId) throw new Error(`Intent camp_id="${key}" does not match expected campId="${ctx.campId}"`);
+              return `camp_id=${key} present and matches ✓`;
+            },
+          },
+          {
+            name: "Fetch camp record by id — batchFetchByIds fallback (Camp.get)",
+            run: async (ctx) => {
+              let camp = null;
+              try {
+                camp = await base44.entities.Camp.get(ctx.campId);
+              } catch (e) {
+                throw new Error(`Camp.get(${ctx.campId}) threw: ${e?.message || e} — batchFetchByIds fallback would fail`);
+              }
+              if (!camp) throw new Error(`Camp.get(${ctx.campId}) returned null — camp record missing or unreadable`);
+              if (!camp.camp_name) throw new Error("Camp record has no camp_name — Calendar card would be blank");
+              if (!camp.start_date) throw new Error("Camp record has no start_date — Calendar cannot place it on grid");
+              ctx.campRecord = camp;
+              return `Camp fetched: "${camp.camp_name}" on ${camp.start_date} ✓`;
+            },
+          },
+          {
+            name: "Verify intent → camp join would produce an intent_status on the final row",
+            run: async (ctx) => {
+              // Simulate the join: intentByKey.get(campId) in useCampSummariesClient
+              const intentCampId = String(ctx.foundIntent.camp_id || "");
+              const campRecordId = String(ctx.campRecord.id || ctx.campRecord._id || "");
+              if (intentCampId !== campRecordId) throw new Error(`Key mismatch: intent.camp_id="${intentCampId}" vs Camp.id="${campRecordId}" — intentByKey.get(campId) returns null, intent_status would be null`);
+              const intentStatus = ctx.foundIntent.status || null;
+              if (!intentStatus) throw new Error("Join produced null intent_status — camp would not pass favorite/registered filter in Calendar/MyCamps");
+              return `Join OK — intent_status="${intentStatus}" would appear on the calendar row ✓`;
+            },
+          },
+          {
+            name: "Cleanup: delete test intent",
+            run: async (ctx) => {
+              if (ctx.intentId) await base44.entities.CampIntent.delete(ctx.intentId).catch(() => {});
+              return `Intent id=${ctx.intentId} deleted`;
+            },
+          },
+        ],
+        cleanup: async (ctx) => {
+          if (ctx.intentId) {
+            try { await base44.entities.CampIntent.delete(ctx.intentId); } catch {}
+          }
+        },
+      },
     ],
   },
 
