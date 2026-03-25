@@ -464,6 +464,7 @@ export default function Discover() {
 
       let rows = [];
       const filterField = useDemoEntity ? "demo_season_year" : "season_year";
+      console.log("[Discover] loadCamps — entity:", useDemoEntity ? "DemoCamp" : "Camp", "filterField:", filterField, "seasonYear:", seasonYear, "isPaid:", isPaid);
       try {
         rows = await safeFilter(CampEntity, { [filterField]: seasonYear }, "-start_date", 2000);
       } catch (e1) {
@@ -473,8 +474,10 @@ export default function Discover() {
           throw e2 || e1;
         }
       }
+      console.log("[Discover] loadCamps — raw rows returned:", Array.isArray(rows) ? rows.length : rows, rows?.[0] ? { season_year: rows[0].season_year, active: rows[0].active, camp_name: rows[0].camp_name } : "none");
 
       const active = asArray(rows).filter(readActiveFlag);
+      console.log("[Discover] loadCamps — after active filter:", active.length);
       setAllRows(active);
 
       const keys    = active.map(campKeyForRow).filter(Boolean);
