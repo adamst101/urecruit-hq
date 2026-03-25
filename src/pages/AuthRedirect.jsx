@@ -117,6 +117,13 @@ export default function AuthRedirect() {
         if (fullName) {
           base44.auth.updateMe({ full_name: fullName }).catch(() => {});
         }
+        // Also persist first_name / last_name on the User entity
+        if (accountId && (fd.parentFirstName || fd.parentLastName)) {
+          base44.entities.User.update(accountId, {
+            first_name: fd.parentFirstName?.trim() || null,
+            last_name: fd.parentLastName?.trim() || null,
+          }).catch(() => {});
+        }
       }
     } catch {}
 

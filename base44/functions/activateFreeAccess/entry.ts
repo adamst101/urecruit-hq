@@ -184,6 +184,19 @@ Deno.serve(async (req) => {
     console.warn("No athleteFirstName received — skipping profile creation");
   }
 
+  // Persist first_name / last_name on the User entity from registration form data
+  if (resolvedAccountId && (parentFirstName || parentLastName)) {
+    try {
+      await base44.asServiceRole.entities.User.update(resolvedAccountId, {
+        first_name: parentFirstName || null,
+        last_name: parentLastName || null,
+      });
+      console.log("Updated User first_name/last_name for account:", resolvedAccountId);
+    } catch (e) {
+      console.warn("Could not update User name fields (non-critical):", (e as Error).message);
+    }
+  }
+
   return Response.json({
     ok: true,
     free: true,

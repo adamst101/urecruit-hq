@@ -71,9 +71,13 @@ Deno.serve(async (req) => {
       created_at: new Date().toISOString(),
     });
 
-    // Set role="coach_pending" — full coach access granted only after admin approval
+    // Set role="coach_pending" and persist name — full coach access granted only after admin approval
     try {
-      await base44.asServiceRole.entities.User.update(accountId, { role: "coach_pending" });
+      await base44.asServiceRole.entities.User.update(accountId, {
+        role: "coach_pending",
+        first_name,
+        last_name,
+      });
       console.log("Set role=coach_pending on user:", accountId);
     } catch (e) {
       console.warn("Could not set coach_pending role on User entity:", (e as Error).message);

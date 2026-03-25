@@ -270,6 +270,19 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Persist first_name / last_name on the User entity from checkout form data
+      if (accountId && (parentFirstName || parentLastName)) {
+        try {
+          await base44.asServiceRole.entities.User.update(accountId, {
+            first_name: parentFirstName || null,
+            last_name: parentLastName || null,
+          });
+          console.log("Updated User first_name/last_name for account:", accountId);
+        } catch (e) {
+          console.warn("Could not update User name fields (non-critical):", (e as Error).message);
+        }
+      }
+
       // Log the event
       try {
         await base44.asServiceRole.entities.Event.create({
