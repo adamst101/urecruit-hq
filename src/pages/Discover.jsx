@@ -256,6 +256,20 @@ export default function Discover() {
   const [distanceWarning, setDistanceWarning] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("all");
   const [visibleCount, setVisibleCount]   = useState(50);
+  const [coachRoster, setCoachRoster]     = useState([]);
+
+  const isCoach = seasonMode === "coach";
+
+  // Load coach roster when in coach mode
+  useEffect(() => {
+    if (!isCoach) return;
+    base44.functions.invoke("getMyCoachProfile", {})
+      .then((res) => {
+        const roster = Array.isArray(res?.data?.roster) ? res.data.roster : [];
+        setCoachRoster(roster);
+      })
+      .catch(() => {});
+  }, [isCoach]);
 
   // Modal states
   const [conflictModal, setConflictModal] = useState({ open: false, warnings: [], campId: null, action: null });
@@ -905,16 +919,19 @@ export default function Discover() {
             isExpanded={!!expandedSchools[group.key]}
             onToggle={() => setExpandedSchools((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}
             isPaid={isPaid}
+            isCoach={isCoach}
+            coachRoster={coachRoster}
             isCampFavorite={isCampFavorite}
             isCampRegistered={isCampRegistered}
             onFavoriteToggle={handleFavoriteToggle}
-            onRegisteredToggle={handleRegisteredToggle}
-            onRegisterClick={(camp) => {
+            onRegisteredToggle={isCoach ? null : handleRegisteredToggle}
+            onRegisterClick={isCoach ? null : (camp) => {
               const url = camp?.link_url || camp?.source_url;
               if (url) window.open(String(url), "_blank", "noopener,noreferrer");
             }}
             onCampClick={() => {}}
             getWarningsForCamp={(campId) => {
+              if (isCoach) return [];
               const existing = getSavedCamps();
               if (!existing.some((r) => String(r?.id) === String(campId))) return [];
               return detectConflicts({
@@ -949,10 +966,10 @@ export default function Discover() {
         {/* ← HQ navigation */}
         <button
           type="button"
-          onClick={() => nav("/Workspace")}
+          onClick={() => nav(isCoach ? "/CoachDashboard" : "/Workspace")}
           className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
         >
-          ← HQ
+          ← {isCoach ? "Coach HQ" : "HQ"}
         </button>
 
         <div className="flex items-start justify-between gap-3">

@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import WarningBadge from "./WarningBadge.jsx";
+import { base44 } from "../../api/base44Client";
 
 function safeShortDate(d) {
   try {
@@ -51,6 +52,8 @@ export default function SchoolGroupCard({
   isExpanded,
   onToggle,
   isPaid,
+  isCoach,
+  coachRoster,
   isCampFavorite,
   isCampRegistered,
   onFavoriteToggle,
@@ -61,6 +64,62 @@ export default function SchoolGroupCard({
 }) {
   const { school_name, school_logo_url, division, camps } = group;
   const expanded = isExpanded;
+
+  // Coach share-with-roster state
+  const [sharePanelCampId, setSharePanelCampId] = useState(null);
+  const [shareRecipient, setShareRecipient] = useState("all");
+  const [shareMsg, setShareMsg] = useState("");
+  const [shareSending, setShareSending] = useState(false);
+  const [shareSentFor, setShareSentFor] = useState(null); // campId that was just sent
+
+  function openSharePanel(camp) {
+    const campId = String(camp?.id ?? "");
+    if (sharePanelCampId === campId) {
+      setSharePanelCampId(null);
+      return;
+    }
+    const startLabel = safeShortDate(camp.start_date) || "TBD";
+    const city = [camp.city, camp.state].filter(Boolean).join(", ");
+    const priceLabel = typeof camp.price === "number" && camp.price > 0 ? ` · $${camp.price}` : "";
+    const defaultMsg = `Check out this camp: ${camp.camp_name || "Camp"} at ${school_name}\n📅 ${startLabel}${city ? ` · 📍 ${city}` : ""}${priceLabel}\n\nRegister: ${camp.link_url || camp.source_url || "(see website)"}`;
+    setShareRecipient("all");
+    setShareMsg(defaultMsg);
+    setSharePanelCampId(campId);
+    setShareSentFor(null);
+  }
+
+  async function sendShare(camp) {
+    if (!shareMsg.trim() || shareSending) return;
+    setShareSending(true);
+    try {
+      const roster = Array.isArray(coachRoster) ? coachRoster : [];
+      const campId = String(camp?.id ?? "");
+      if (shareRecipient === "all") {
+        await Promise.all(roster.map((athlete) =>
+          base44.functions.invoke("sendCoachMessage", {
+            subject: `Camp Info: ${camp.camp_name || "Camp"}`,
+            message: shareMsg.trim(),
+            recipientAthleteId: String(athlete.id ?? ""),
+            recipientName: athlete.athlete_name || athlete.name || "",
+          }).catch(() => {})
+        ));
+      } else {
+        const athlete = roster.find((a) => String(a.id) === shareRecipient);
+        await base44.functions.invoke("sendCoachMessage", {
+          subject: `Camp Info: ${camp.camp_name || "Camp"}`,
+          message: shareMsg.trim(),
+          recipientAthleteId: shareRecipient,
+          recipientName: athlete?.athlete_name || athlete?.name || "",
+        });
+      }
+      setShareSentFor(campId);
+      setSharePanelCampId(null);
+    } catch {
+      // silently fail — user can retry
+    } finally {
+      setShareSending(false);
+    }
+  }
 
   // Aggregate stats
   const dates = camps
@@ -195,87 +254,181 @@ export default function SchoolGroupCard({
 
             const rowBg = isReg ? "#052e16" : (idx % 2 === 1 ? "rgba(15,23,42,0.4)" : "transparent");
             const rowBorder = isReg ? "#10b981" : isFav ? "#e8a020" : "transparent";
+            const shareOpen = sharePanelCampId === campId;
+            const justSent = shareSentFor === campId;
 
             return (
-              <div
-                key={campId}
-                className="flex items-center gap-3 px-5 py-3 hover:brightness-110 transition"
-                style={{ background: rowBg, borderLeft: `3px solid ${rowBorder}` }}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <div className="text-sm font-semibold text-[#f9fafb] truncate">
-                      {camp.camp_name || "Camp"}
+              <div key={campId}>
+                <div
+                  className="flex items-center gap-3 px-5 py-3 hover:brightness-110 transition"
+                  style={{ background: rowBg, borderLeft: `3px solid ${rowBorder}` }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-semibold text-[#f9fafb] truncate">
+                        {camp.camp_name || "Camp"}
+                      </div>
+                      <WarningBadge warnings={campWarnings} />
                     </div>
-                    <WarningBadge warnings={campWarnings} />
+                    <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[#9ca3af]">
+                      <span>{startLabel}</span>
+                      {city && <span>{city}</span>}
+                      {priceLabel && <span className="text-[#e8a020]">{priceLabel}</span>}
+                      {camp.grades && <span>{camp.grades}</span>}
+                    </div>
                   </div>
-                  <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[#9ca3af]">
-                    <span>{startLabel}</span>
-                    {city && <span>{city}</span>}
-                    {priceLabel && <span className="text-[#e8a020]">{priceLabel}</span>}
-                    {camp.grades && <span>{camp.grades}</span>}
+
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {/* Star — hidden for coaches */}
+                    {!isCoach && (
+                      <button
+                        type="button"
+                        title={isFav ? "Remove from favorites" : "Add to favorites"}
+                        className={"h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937] " + (isFav ? "text-[#e8a020]" : "text-[#6b7280] hover:text-[#e8a020]")}
+                        style={{ background: "none", border: "none", cursor: "pointer", transition: "color 0.15s" }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onFavoriteToggle?.(campId);
+                        }}
+                      >
+                        <span className="text-lg leading-none">
+                          {isFav ? "★" : "☆"}
+                        </span>
+                      </button>
+                    )}
+                    {/* Checkmark — hidden for coaches */}
+                    {!isCoach && onRegisteredToggle && (
+                      <button
+                        type="button"
+                        title={isReg ? "Remove registered status" : "Mark as registered"}
+                        className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937]"
+                        style={{
+                          background: "none", border: "none", cursor: "pointer",
+                          fontSize: 18, lineHeight: 1,
+                          fontWeight: isReg ? 700 : 300,
+                          color: isReg ? "#10b981" : "#6b7280",
+                          opacity: isReg ? 1 : 0.6,
+                          transition: "color 0.15s ease, opacity 0.15s ease",
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onRegisteredToggle(campId);
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }}
+                        onMouseLeave={(e) => {
+                          if (!isReg) { e.currentTarget.style.color = "#6b7280"; e.currentTarget.style.opacity = "0.6"; }
+                          else { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }
+                        }}
+                      >
+                        ✓
+                      </button>
+                    )}
+                    {/* Register → opens Ryzer URL — hidden for coaches */}
+                    {!isCoach && (
+                      <button
+                        type="button"
+                        className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
+                        style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onRegisterClick?.(camp);
+                        }}
+                      >
+                        Register →
+                      </button>
+                    )}
+                    {/* Share with Roster — coaches only */}
+                    {isCoach && (
+                      <button
+                        type="button"
+                        className="text-xs h-7 px-3 rounded-md font-medium border"
+                        style={{
+                          background: shareOpen ? "#1e3a5f" : "none",
+                          borderColor: shareOpen ? "#3b82f6" : "#374151",
+                          color: shareOpen ? "#93c5fd" : "#9ca3af",
+                          cursor: "pointer",
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openSharePanel(camp);
+                        }}
+                      >
+                        {justSent ? "✓ Sent" : "Share with Roster"}
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {/* Star */}
-                  <button
-                    type="button"
-                    title={isFav ? "Remove from favorites" : "Add to favorites"}
-                    className={"h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937] " + (isFav ? "text-[#e8a020]" : "text-[#6b7280] hover:text-[#e8a020]")}
-                    style={{ background: "none", border: "none", cursor: "pointer", transition: "color 0.15s" }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onFavoriteToggle?.(campId);
-                    }}
+                {/* Share panel — inline, below camp row */}
+                {isCoach && shareOpen && (
+                  <div
+                    className="px-5 py-4 border-t"
+                    style={{ background: "#0d1526", borderColor: "#1e3a5f" }}
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <span className="text-lg leading-none">
-                      {isFav ? "★" : "☆"}
-                    </span>
-                  </button>
-                  {/* Checkmark */}
-                  {onRegisteredToggle && (
-                    <button
-                      type="button"
-                      title={isReg ? "Remove registered status" : "Mark as registered"}
-                      className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937]"
-                      style={{
-                        background: "none", border: "none", cursor: "pointer",
-                        fontSize: 18, lineHeight: 1,
-                        fontWeight: isReg ? 700 : 300,
-                        color: isReg ? "#10b981" : "#6b7280",
-                        opacity: isReg ? 1 : 0.6,
-                        transition: "color 0.15s ease, opacity 0.15s ease",
-                      }}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onRegisteredToggle(campId);
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }}
-                      onMouseLeave={(e) => {
-                        if (!isReg) { e.currentTarget.style.color = "#6b7280"; e.currentTarget.style.opacity = "0.6"; }
-                        else { e.currentTarget.style.color = "#10b981"; e.currentTarget.style.opacity = "1"; }
-                      }}
-                    >
-                      ✓
-                    </button>
-                  )}
-                  {/* Register → opens Ryzer URL */}
-                  <button
-                    type="button"
-                    className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
-                    style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onRegisterClick?.(camp);
-                    }}
-                  >
-                    Register →
-                  </button>
-                </div>
+                    <div className="text-xs font-semibold text-[#93c5fd] mb-3">Share with Roster</div>
+
+                    {/* Recipient selector */}
+                    <div className="mb-3">
+                      <label className="block text-xs text-[#9ca3af] mb-1">To</label>
+                      <select
+                        value={shareRecipient}
+                        onChange={(e) => setShareRecipient(e.target.value)}
+                        className="w-full text-sm rounded-md px-3 py-1.5"
+                        style={{ background: "#1f2937", border: "1px solid #374151", color: "#f9fafb" }}
+                      >
+                        <option value="all">All Athletes ({Array.isArray(coachRoster) ? coachRoster.length : 0})</option>
+                        {(Array.isArray(coachRoster) ? coachRoster : []).map((athlete) => (
+                          <option key={String(athlete.id)} value={String(athlete.id)}>
+                            {athlete.athlete_name || athlete.name || `Athlete ${athlete.id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Message */}
+                    <div className="mb-3">
+                      <label className="block text-xs text-[#9ca3af] mb-1">Message</label>
+                      <textarea
+                        value={shareMsg}
+                        onChange={(e) => setShareMsg(e.target.value)}
+                        rows={4}
+                        className="w-full text-sm rounded-md px-3 py-2 resize-none"
+                        style={{ background: "#1f2937", border: "1px solid #374151", color: "#f9fafb" }}
+                      />
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={shareSending || !shareMsg.trim()}
+                        className="text-xs h-7 px-4 rounded-md font-medium"
+                        style={{
+                          background: shareSending ? "#374151" : "#e8a020",
+                          color: "#0a0e1a",
+                          cursor: shareSending ? "default" : "pointer",
+                          opacity: !shareMsg.trim() ? 0.5 : 1,
+                        }}
+                        onClick={() => sendShare(camp)}
+                      >
+                        {shareSending ? "Sending…" : "Send"}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs h-7 px-3 rounded-md"
+                        style={{ background: "none", border: "1px solid #374151", color: "#9ca3af", cursor: "pointer" }}
+                        onClick={() => setSharePanelCampId(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
