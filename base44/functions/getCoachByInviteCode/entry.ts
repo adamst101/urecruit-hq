@@ -3,10 +3,11 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  let body: { code?: string } = {};
+  let body: { code?: string; env?: string } = {};
   try { body = await req.json(); } catch {}
 
   const code = (body.code || "").trim();
+  const E = body.env === 'dev' ? { environment: 'dev' as const } : undefined;
   if (!code) {
     return Response.json({ ok: false, error: "code is required" }, { status: 400 });
   }
@@ -16,7 +17,7 @@ Deno.serve(async (req) => {
       invite_code: code,
       active: true,
       status: "approved",
-    });
+    }, E);
     const list = Array.isArray(coaches) ? coaches : [];
     if (!list.length) {
       return Response.json({ ok: false, error: "Invite code not found or inactive" });

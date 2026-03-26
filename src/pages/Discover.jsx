@@ -5,6 +5,7 @@ import { SlidersHorizontal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { base44 } from "../api/base44Client";
+import { getDataEnv } from "../lib/envUtils";
 import { trackEvent } from "../utils/trackEvent.js";
 
 import { Button } from "../components/ui/button";
@@ -273,7 +274,7 @@ export default function Discover() {
   // Load coach roster when in coach mode
   useEffect(() => {
     if (!isCoach) return;
-    base44.functions.invoke("getMyCoachProfile", {})
+    base44.functions.invoke("getMyCoachProfile", { env: getDataEnv() })
       .then((res) => {
         const roster = Array.isArray(res?.data?.roster) ? res.data.roster : [];
         setCoachRoster(roster);

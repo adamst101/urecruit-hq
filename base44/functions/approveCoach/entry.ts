@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: `Admin access required (role: ${callerRole || "none"}, email: ${callerEmail || "unknown"})` }, { status: 403 });
   }
 
-  let body: { coachId?: string; action?: "approve" | "reject" } = {};
+  let body: { coachId?: string; action?: "approve" | "reject"; env?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -27,6 +27,7 @@ Deno.serve(async (req) => {
   }
 
   const { coachId, action } = body;
+  const E = body.env === 'dev' ? { environment: 'dev' as const } : undefined;
 
   if (!coachId || !action) {
     return Response.json({ ok: false, error: "coachId and action are required" }, { status: 400 });
@@ -36,7 +37,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const coach = await base44.asServiceRole.entities.Coach.get(coachId);
+    const coach = await base44.asServiceRole.entities.Coach.get(coachId, E);
     if (!coach) {
       return Response.json({ ok: false, error: "Coach not found" }, { status: 404 });
     }
@@ -48,7 +49,7 @@ Deno.serve(async (req) => {
     let coachEmail = (coach.email as string) || "";
     if (!coachEmail && coach.account_id) {
       try {
-        const user = await base44.asServiceRole.entities.User.get(coach.account_id);
+        const user = await base44.asServiceRole.entities.User.get(coach.account_id, E);
         coachEmail = (user?.email as string) || "";
         if (coachEmail) results.emailSource = "fetched from User entity";
       } catch (e) {
@@ -67,7 +68,7 @@ Deno.serve(async (req) => {
     if (action === "approve") {
       // Update Coach status
       try {
-        await base44.asServiceRole.entities.Coach.update(coachId, { status: "approved" });
+        await base44.asServiceRole.entities.Coach.update(coachId, { status: "approved" }, E);
         results.coachStatus = "set to approved";
       } catch (e) {
         results.coachStatus = `FAILED: ${(e as Error).message}`;
@@ -77,7 +78,7 @@ Deno.serve(async (req) => {
       // Update User role
       if (coach.account_id) {
         try {
-          await base44.asServiceRole.entities.User.update(coach.account_id, { role: "coach" });
+          await base44.asServiceRole.entities.User.update(coach.account_id, { role: "coach" }, E);
           results.userRole = "set to coach";
           console.log("Upgraded role to coach for account:", coach.account_id);
         } catch (e) {
@@ -134,7 +135,7 @@ Deno.serve(async (req) => {
         const tickets = await base44.asServiceRole.entities.SupportTicket.filter({
           user_id: coach.account_id,
           account_type: "coach_pending",
-        }).catch(() => []);
+        }, E).catch(() => []);
         const openTicket = Array.isArray(tickets)
           ? tickets.find(t => t.status === "open" || t.status === "in_progress")
           : null;
@@ -147,7 +148,7 @@ Deno.serve(async (req) => {
             admin_notes: openTicket.admin_notes
               ? `${logEntry}\n\n${openTicket.admin_notes}`
               : logEntry,
-          });
+          }, E);
           results.ticket = `resolved ${openTicket.ticket_number || openTicket.id}`;
         } else {
           results.ticket = "no open ticket found";
@@ -163,7 +164,7 @@ Deno.serve(async (req) => {
     } else {
       // Reject — deactivate coach record, clear role completely
       try {
-        await base44.asServiceRole.entities.Coach.update(coachId, { status: "rejected", active: false });
+        await base44.asServiceRole.entities.Coach.update(coachId, { status: "rejected", active: false }, E);
         results.coachStatus = "set to rejected";
       } catch (e) {
         results.coachStatus = `FAILED: ${(e as Error).message}`;
@@ -172,7 +173,7 @@ Deno.serve(async (req) => {
 
       if (coach.account_id) {
         try {
-          await base44.asServiceRole.entities.User.update(coach.account_id, { role: "" });
+          await base44.asServiceRole.entities.User.update(coach.account_id, { role: "" }, E);
           results.userRole = "cleared";
           console.log("Cleared role for rejected coach account:", coach.account_id);
         } catch (e) {
@@ -221,7 +222,7 @@ Deno.serve(async (req) => {
         const tickets = await base44.asServiceRole.entities.SupportTicket.filter({
           user_id: coach.account_id,
           account_type: "coach_pending",
-        }).catch(() => []);
+        }, E).catch(() => []);
         const openTicket = Array.isArray(tickets)
           ? tickets.find(t => t.status === "open" || t.status === "in_progress")
           : null;
@@ -234,7 +235,7 @@ Deno.serve(async (req) => {
             admin_notes: openTicket.admin_notes
               ? `${logEntry}\n\n${openTicket.admin_notes}`
               : logEntry,
-          });
+          }, E);
           results.ticket = `resolved ${openTicket.ticket_number || openTicket.id}`;
         } else {
           results.ticket = "no open ticket found";

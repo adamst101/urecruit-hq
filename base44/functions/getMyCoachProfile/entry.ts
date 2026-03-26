@@ -5,10 +5,14 @@ Deno.serve(async (req) => {
 
   // Identify the caller
   let accountId = "";
+  let env: string | undefined;
   try {
     const me = await base44.auth.me();
     accountId = me?.id || "";
   } catch {}
+
+  try { const b = await req.json(); env = b?.env; } catch {}
+  const E = env === 'dev' ? { environment: 'dev' as const } : undefined;
 
   if (!accountId) {
     return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
@@ -16,7 +20,7 @@ Deno.serve(async (req) => {
 
   try {
     // Use service role so entity-level read permissions don't block the coach
-    const coaches = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId });
+    const coaches = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId }, E);
     const list = Array.isArray(coaches) ? coaches : [];
 
     if (!list.length) {
@@ -27,8 +31,8 @@ Deno.serve(async (req) => {
 
     // Fetch roster and messages in parallel
     const [roster, messages] = await Promise.all([
-      base44.asServiceRole.entities.CoachRoster.filter({ coach_id: coach.id }).catch(() => []),
-      base44.asServiceRole.entities.CoachMessage.filter({ coach_id: coach.id }).catch(() => []),
+      base44.asServiceRole.entities.CoachRoster.filter({ coach_id: coach.id }, E).catch(() => []),
+      base44.asServiceRole.entities.CoachMessage.filter({ coach_id: coach.id }, E).catch(() => []),
     ]);
 
     const rosterList = Array.isArray(roster) ? roster : [];
@@ -42,7 +46,7 @@ Deno.serve(async (req) => {
           // Get all CampIntent records for this account with registered/completed status
           const intents = await base44.asServiceRole.entities.CampIntent.filter({
             account_id: accountId,
-          }).catch(() => []);
+          }, E).catch(() => []);
           const registered = Array.isArray(intents)
             ? intents.filter(i => i.status === "registered" || i.status === "completed")
             : [];
@@ -51,7 +55,7 @@ Deno.serve(async (req) => {
           // Batch-fetch camp details
           const campIds = [...new Set(registered.map(i => i.camp_id).filter(Boolean))];
           const camps = await Promise.all(
-            campIds.map(id => base44.asServiceRole.entities.Camp.get(id).catch(() => null))
+            campIds.map(id => base44.asServiceRole.entities.Camp.get(id, E).catch(() => null))
           );
           const campMap: Record<string, { camp_name: string; school_name: string; start_date: string }> = {};
           for (const camp of camps) {

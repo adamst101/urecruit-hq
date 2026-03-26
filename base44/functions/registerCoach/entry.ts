@@ -13,7 +13,7 @@ function generateInviteCode(lastName: string, schoolOrOrg: string): string {
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  let body: { accountId?: string; first_name?: string; last_name?: string; title?: string; school_or_org?: string; sport?: string; email?: string; phone?: string; website?: string } = {};
+  let body: { accountId?: string; first_name?: string; last_name?: string; title?: string; school_or_org?: string; sport?: string; email?: string; phone?: string; website?: string; env?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -24,6 +24,7 @@ Deno.serve(async (req) => {
   // Fall back to auth.me() for direct authenticated calls
   let accountId = body.accountId || "";
   let coachEmail = body.email || "";
+  const E = body.env === 'dev' ? { environment: 'dev' as const } : undefined;
   if (!accountId) {
     try {
       const me = await base44.auth.me();
@@ -44,7 +45,7 @@ Deno.serve(async (req) => {
 
   try {
     // Check for existing coach record for this account (idempotent re-runs)
-    const existingCoach = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId }).catch(() => []);
+    const existingCoach = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId }, E).catch(() => []);
     if (Array.isArray(existingCoach) && existingCoach.length > 0) {
       console.log("Coach record already exists for account:", accountId);
       return Response.json({ ok: true, invite_code: existingCoach[0].invite_code, coach_id: existingCoach[0].id, already_existed: true });
@@ -52,7 +53,7 @@ Deno.serve(async (req) => {
 
     // Generate invite code — retry once on collision (extremely rare)
     let invite_code = generateInviteCode(last_name, school_or_org);
-    const collision = await base44.asServiceRole.entities.Coach.filter({ invite_code }).catch(() => []);
+    const collision = await base44.asServiceRole.entities.Coach.filter({ invite_code }, E).catch(() => []);
     if (Array.isArray(collision) && collision.length > 0) {
       invite_code = generateInviteCode(last_name, school_or_org);
     }
@@ -72,7 +73,7 @@ Deno.serve(async (req) => {
       active: true,
       email: coachEmail || null,
       created_at: new Date().toISOString(),
-    });
+    }, E);
 
     // Set role="coach_pending" and persist name — full coach access granted only after admin approval
     try {
@@ -80,7 +81,7 @@ Deno.serve(async (req) => {
         role: "coach_pending",
         first_name,
         last_name,
-      });
+      }, E);
       console.log("Set role=coach_pending on user:", accountId);
     } catch (e) {
       console.warn("Could not set coach_pending role on User entity:", (e as Error).message);
@@ -88,7 +89,7 @@ Deno.serve(async (req) => {
 
     // Create a support ticket for admin review
     try {
-      const existing = await base44.asServiceRole.entities.SupportTicket.filter({}).catch(() => []);
+      const existing = await base44.asServiceRole.entities.SupportTicket.filter({}, E).catch(() => []);
       const num = String((Array.isArray(existing) ? existing.length : 0) + 1).padStart(4, "0");
       const ticketNumber = `COACH-${new Date().getFullYear()}-${num}`;
 
@@ -103,7 +104,7 @@ Deno.serve(async (req) => {
         user_email: coachEmail || null,
         user_name: `${first_name} ${last_name}`,
         account_type: "coach_pending",
-      });
+      }, E);
       console.log("Support ticket created for coach application:", ticketNumber);
     } catch (e) {
       console.warn("Could not create support ticket (non-critical):", (e as Error).message);

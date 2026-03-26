@@ -3,7 +3,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  let body: { subject?: string; message?: string; recipientAthleteId?: string; recipientName?: string } = {};
+  let body: { subject?: string; message?: string; recipientAthleteId?: string; recipientName?: string; env?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -11,6 +11,7 @@ Deno.serve(async (req) => {
   }
 
   const { subject, message, recipientAthleteId, recipientName } = body;
+  const E = body.env === 'dev' ? { environment: 'dev' as const } : undefined;
 
   if (!message?.trim()) {
     return Response.json({ ok: false, error: "message is required" }, { status: 400 });
@@ -28,7 +29,7 @@ Deno.serve(async (req) => {
   }
 
   // Look up their Coach record
-  const coaches = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId }).catch(() => []);
+  const coaches = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId }, E).catch(() => []);
   if (!Array.isArray(coaches) || coaches.length === 0) {
     return Response.json({ ok: false, error: "No coach profile found for this account" }, { status: 403 });
   }
@@ -42,7 +43,7 @@ Deno.serve(async (req) => {
       sent_at: new Date().toISOString(),
       recipient_athlete_id: recipientAthleteId || null,
       recipient_name: recipientName || null,
-    });
+    }, E);
 
     console.log("CoachMessage sent — coach:", coach.id, "id:", created.id);
     return Response.json({ ok: true, message_id: created.id });

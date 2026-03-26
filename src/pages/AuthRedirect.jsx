@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess, clearSeasonAccessCache } from "../components/hooks/useSeasonAccess.jsx";
+import { getDataEnv } from "../lib/envUtils";
 
 /**
  * AuthRedirect.jsx
@@ -150,6 +151,7 @@ export default function AuthRedirect() {
             phone: coachData.phone,
             website: coachData.website,
             sport: coachData.sport,
+            env: getDataEnv(),
           });
           clearSeasonAccessCache();
         } catch (e) {
@@ -255,6 +257,7 @@ export default function AuthRedirect() {
             parentFirstName: formData.parentFirstName || undefined,
             parentLastName: formData.parentLastName || undefined,
             parentPhone: formData.parentPhone || undefined,
+            env: getDataEnv(),
           });
         } catch (e) {
           console.error("activateFreeAccess failed in AuthRedirect:", e?.message);
