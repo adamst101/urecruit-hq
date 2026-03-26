@@ -13,7 +13,7 @@ function generateInviteCode(lastName: string, schoolOrOrg: string): string {
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  let body: { accountId?: string; first_name?: string; last_name?: string; school_or_org?: string; sport?: string; email?: string } = {};
+  let body: { accountId?: string; first_name?: string; last_name?: string; title?: string; school_or_org?: string; sport?: string; email?: string; phone?: string; website?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "Not authenticated — accountId required" }, { status: 401 });
   }
 
-  const { first_name, last_name, school_or_org, sport } = body;
+  const { first_name, last_name, title, school_or_org, sport, phone, website } = body;
 
   if (!first_name || !last_name || !school_or_org) {
     return Response.json({ ok: false, error: "first_name, last_name, and school_or_org are required" }, { status: 400 });
@@ -62,8 +62,11 @@ Deno.serve(async (req) => {
       account_id: accountId,
       first_name,
       last_name,
+      title: title || null,
       school_or_org,
       sport: sport || "Football",
+      phone: phone || null,
+      website: website || null,
       invite_code,
       status: "pending",
       active: true,
@@ -95,7 +98,7 @@ Deno.serve(async (req) => {
         status: "open",
         priority: "normal",
         subject: `Coach Application — ${first_name} ${last_name} · ${school_or_org}`,
-        description: `New coach account pending approval.\n\nName: ${first_name} ${last_name}\nSchool/Org: ${school_or_org}\nSport: ${sport || "Football"}\nEmail: ${coachEmail || "unknown"}\nAccount ID: ${accountId}\nCoach ID: ${coach.id}`,
+        description: `New coach account pending approval.\n\nName: ${first_name} ${last_name}\nTitle: ${title || "—"}\nSchool/Org: ${school_or_org}\nSport: ${sport || "Football"}\nEmail: ${coachEmail || "unknown"}\nPhone: ${phone || "—"}\nWebsite: ${website || "—"}\nAccount ID: ${accountId}\nCoach ID: ${coach.id}`,
         user_id: accountId,
         user_email: coachEmail || null,
         user_name: `${first_name} ${last_name}`,
@@ -117,10 +120,13 @@ Deno.serve(async (req) => {
   </div>
   <div style="padding:24px;">
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
-      <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;width:110px;vertical-align:top;">Name</td><td style="padding:8px 12px;color:#111827;font-weight:600;">${first_name} ${last_name}</td></tr>
-      <tr style="background:#f9fafb;"><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">School / Org</td><td style="padding:8px 12px;color:#111827;">${school_or_org}</td></tr>
-      <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Sport</td><td style="padding:8px 12px;color:#111827;">${sport || "Football"}</td></tr>
-      <tr style="background:#f9fafb;"><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Email</td><td style="padding:8px 12px;color:#111827;">${coachEmail || "—"}</td></tr>
+      <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;width:130px;vertical-align:top;">Name</td><td style="padding:8px 12px;color:#111827;font-weight:600;">${first_name} ${last_name}</td></tr>
+      <tr style="background:#f9fafb;"><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Title</td><td style="padding:8px 12px;color:#111827;">${title || "—"}</td></tr>
+      <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">School / Org</td><td style="padding:8px 12px;color:#111827;">${school_or_org}</td></tr>
+      <tr style="background:#f9fafb;"><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Sport</td><td style="padding:8px 12px;color:#111827;">${sport || "Football"}</td></tr>
+      <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Email</td><td style="padding:8px 12px;color:#111827;">${coachEmail || "—"}</td></tr>
+      <tr style="background:#f9fafb;"><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Phone</td><td style="padding:8px 12px;color:#111827;">${phone || "—"}</td></tr>
+      <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Website</td><td style="padding:8px 12px;color:#111827;">${website ? `<a href="${website}" style="color:#0B1F3B;">${website}</a>` : "—"}</td></tr>
     </table>
     <div style="margin-top:20px;padding:16px;background:#fef9ec;border:1px solid #e8a020;border-radius:8px;">
       <p style="margin:0;font-size:14px;color:#92400e;line-height:1.6;">

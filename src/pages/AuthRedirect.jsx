@@ -144,9 +144,12 @@ export default function AuthRedirect() {
             accountId,
             first_name: coachData.first_name,
             last_name: coachData.last_name,
+            title: coachData.title,
             school_or_org: coachData.school_or_org,
-            sport: coachData.sport,
             email: coachData.email,
+            phone: coachData.phone,
+            website: coachData.website,
+            sport: coachData.sport,
           });
           clearSeasonAccessCache();
         } catch (e) {

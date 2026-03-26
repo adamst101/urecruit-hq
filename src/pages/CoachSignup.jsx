@@ -135,9 +135,12 @@ export default function CoachSignup() {
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [title, setTitle] = useState("");
   const [schoolOrOrg, setSchoolOrOrg] = useState("");
-  const [sport, setSport] = useState("Football");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [website, setWebsite] = useState("");
+  const [sport, setSport] = useState("Football");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [working, setWorking] = useState(false);
@@ -186,9 +189,12 @@ export default function CoachSignup() {
       sessionStorage.setItem("pendingCoachRegistration", JSON.stringify({
         first_name: firstName.trim(),
         last_name: lastName.trim(),
+        title: title.trim(),
         school_or_org: schoolOrOrg.trim(),
-        sport: sport || "Football",
         email: normalizedEmail,
+        phone: phone.trim(),
+        website: website.trim(),
+        sport: sport || "Football",
       }));
     } catch {}
 
@@ -211,8 +217,8 @@ export default function CoachSignup() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!firstName.trim() || !lastName.trim() || !schoolOrOrg.trim() || !email.trim() || !password) {
-      setError("Please fill out all fields.");
+    if (!firstName.trim() || !lastName.trim() || !title.trim() || !schoolOrOrg.trim() || !email.trim() || !phone.trim() || !password) {
+      setError("Please fill out all required fields.");
       return;
     }
     if (password.length < 8) {
@@ -266,9 +272,12 @@ export default function CoachSignup() {
       sessionStorage.setItem("pendingCoachRegistration", JSON.stringify({
         first_name: firstName.trim(),
         last_name: lastName.trim(),
+        title: title.trim(),
         school_or_org: schoolOrOrg.trim(),
-        sport: sport || "Football",
         email: normalizedEmail,
+        phone: phone.trim(),
+        website: website.trim(),
+        sport: sport || "Football",
       }));
     } catch {}
 
@@ -338,6 +347,7 @@ export default function CoachSignup() {
         {error && <div style={S.error}>{error}</div>}
 
         <form onSubmit={handleSubmit}>
+          {/* Full Name */}
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
               <label style={S.fieldLabel}>First Name</label>
@@ -361,12 +371,55 @@ export default function CoachSignup() {
             </div>
           </div>
 
+          <label style={S.fieldLabel}>Official Title</label>
+          <input
+            style={S.input}
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="Head Coach, Trainer, Coordinator…"
+            autoComplete="organization-title"
+          />
+
           <label style={S.fieldLabel}>School or Organization</label>
           <input
             style={S.input}
             value={schoolOrOrg}
             onChange={e => setSchoolOrOrg(e.target.value)}
             placeholder="Washington High School"
+            autoComplete="organization"
+          />
+
+          <label style={S.fieldLabel}>Official School or Club Email</label>
+          <input
+            style={S.input}
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="you@school.edu"
+            autoComplete="email"
+          />
+
+          <label style={S.fieldLabel}>Phone Number</label>
+          <input
+            style={S.input}
+            type="tel"
+            value={phone}
+            onChange={e => setPhone(e.target.value)}
+            placeholder="(555) 000-0000"
+            autoComplete="tel"
+          />
+
+          <label style={S.fieldLabel}>
+            Team Website or Profile Link
+            <span style={{ fontWeight: 400, color: "#6b7280", marginLeft: 6, textTransform: "none", letterSpacing: 0, fontSize: 12 }}>(optional)</span>
+          </label>
+          <input
+            style={S.input}
+            type="url"
+            value={website}
+            onChange={e => setWebsite(e.target.value)}
+            placeholder="https://…"
+            autoComplete="url"
           />
 
           <label style={S.fieldLabel}>Sport</label>
@@ -382,16 +435,6 @@ export default function CoachSignup() {
             <option value="Lacrosse">Lacrosse</option>
             <option value="Other">Other</option>
           </select>
-
-          <label style={S.fieldLabel}>Email</label>
-          <input
-            style={S.input}
-            type="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            placeholder="you@school.edu"
-            autoComplete="email"
-          />
 
           <label style={S.fieldLabel}>Password</label>
           <input
