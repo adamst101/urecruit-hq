@@ -76,21 +76,14 @@ async function batchFetchByIds(entity, ids, sort = "id") {
     out.push(...rows);
   }
 
-  // DIAGNOSTIC — log when bulk fetch returns nothing
-  if (out.length === 0) {
-    console.warn("[DIAG batchFetchByIds] all $in variants returned empty for ids:", cleanIds.slice(0, 5), "sort:", sort);
-  }
-
   // If bulk operator forms all returned empty, fall back to individual get() calls.
   // The base44 SDK's get(id) hits a direct URL path and is guaranteed to work even
   // when $in queries on the special `id` field are not supported by the server.
   if (out.length === 0 && entity?.get) {
-    console.log("[DIAG batchFetchByIds] trying individual get() fallback for", cleanIds.length, "ids");
     const results = await Promise.allSettled(cleanIds.map((id) => entity.get(id)));
     for (const r of results) {
       if (r.status === "fulfilled" && r.value) out.push(r.value);
     }
-    console.log("[DIAG batchFetchByIds] get() fallback returned", out.length, "rows");
   }
 
   // de-dupe by id
@@ -303,11 +296,6 @@ export function useCampSummariesClient({
       const sportIds = uniq(campsNorm.map((c) => c._sport_id));
       const positionIds = uniq(campsNorm.flatMap((c) => c._position_ids));
 
-      // DIAGNOSTIC — remove after confirming school names work
-      console.log("[DIAG useCampSummaries] camps fetched:", campsNorm.length);
-      console.log("[DIAG useCampSummaries] raw camp[0]:", JSON.stringify(camps[0] || {}, null, 2));
-      console.log("[DIAG useCampSummaries] schoolIds to fetch:", schoolIds);
-
       const [schoolMap, sportMap, positionMap] = await Promise.allSettled([
         fetchEntityMap("School", schoolIds),
         fetchEntityMap("Sport", sportIds),
@@ -318,12 +306,6 @@ export function useCampSummariesClient({
       const sports = sportMap.status === "fulfilled" ? sportMap.value : new Map();
       const positions = positionMap.status === "fulfilled" ? positionMap.value : new Map();
 
-      // DIAGNOSTIC — remove after confirming school names work
-      console.log("[DIAG useCampSummaries] schools map size:", schools.size, "keys:", [...schools.keys()]);
-      if (schools.size > 0) console.log("[DIAG useCampSummaries] school[0]:", JSON.stringify([...schools.values()][0], null, 2));
-      if (schoolIds.length > 0 && schools.size === 0) {
-        console.warn("[DIAG useCampSummaries] School fetch returned EMPTY. schoolIds:", schoolIds);
-      }
 
       return campsNorm.map((camp) => {
         const campId = String(camp._camp_id);
