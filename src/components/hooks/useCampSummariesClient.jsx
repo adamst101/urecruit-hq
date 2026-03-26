@@ -316,6 +316,18 @@ export function useCampSummariesClient({
         const school = schoolId ? schools.get(schoolId) : null;
         const sport = sportId2 ? sports.get(sportId2) : null;
 
+        // DIAGNOSTIC — remove after confirming logos work
+        if (school) {
+          console.log("[DIAG useCampSummaries] school record logo fields for", school?.school_name || schoolId, {
+            athletic_logo_url: school?.athletic_logo_url,
+            athletics_logo_url: school?.athletics_logo_url,
+            logo_url: school?.logo_url,
+            school_logo_url: school?.school_logo_url,
+          });
+        } else {
+          console.log("[DIAG useCampSummaries] no school record found for schoolId:", schoolId);
+        }
+
         // Intent can be stored by Camp.id OR event_key
         const intent = intentByKey.get(campId) || (eventKey ? intentByKey.get(eventKey) : null) || null;
 
