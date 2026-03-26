@@ -145,6 +145,10 @@ async function fetchSchoolsByIds(School, ids) {
 
   await ensureSchoolMap(School);
 
+  const mapSample = Array.from(_schoolMap.keys()).slice(0, 3);
+  console.log("[DIAG fetchSchoolsByIds] map size:", _schoolMap.size, "sample map keys:", mapSample);
+  console.log("[DIAG fetchSchoolsByIds] looking up IDs:", clean.slice(0, 5));
+
   const result = [];
   const missing = [];
   for (const id of clean) {
@@ -152,6 +156,7 @@ async function fetchSchoolsByIds(School, ids) {
     if (record) result.push(record);
     else missing.push(id);
   }
+  console.log("[DIAG fetchSchoolsByIds] hits:", result.length, "misses:", missing.length, "first miss:", missing[0]);
 
   // Fall back to individual get() for IDs not in the bulk-loaded map.
   if (missing.length && School?.get) {
