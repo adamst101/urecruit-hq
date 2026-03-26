@@ -1,5 +1,4 @@
 // src/components/hooks/useSchoolIdentity.jsx
-//
 // Resolves the best available school identity (logo, name, division) for a set of Camp rows.
 
 import { useEffect, useState } from "react";
