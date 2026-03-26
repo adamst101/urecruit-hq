@@ -149,11 +149,33 @@ async function fetchSchoolsByIds(School, ids) {
   await ensureSchoolMap(School);
 
   const result = [];
+  const missing = [];
   for (const id of clean) {
     const record = _schoolMap.get(id);
     if (record) result.push(record);
-    else console.warn("[DIAG schoolMap] miss for id:", id, "map size:", _schoolMap.size);
+    else missing.push(id);
   }
+
+  // DIAGNOSTIC
+  if (missing.length) console.warn("[DIAG schoolMap] misses:", missing.length, "of", clean.length, "— trying get() fallback");
+
+  // Fall back to individual get() for IDs not in the bulk-loaded map.
+  // School.get(id) hits a direct URL and works even when filter({}) doesn't return the record.
+  if (missing.length && School?.get) {
+    const settled = await Promise.allSettled(missing.map((id) => School.get(id)));
+    for (let i = 0; i < settled.length; i++) {
+      const r = settled[i];
+      if (r.status === "fulfilled" && r.value) {
+        const id = String(normId(r.value) || missing[i]);
+        _schoolMap.set(id, r.value); // cache for future lookups
+        result.push(r.value);
+        console.log("[DIAG schoolMap] get() found:", id, "athletic_logo_url:", r.value?.athletic_logo_url);
+      } else {
+        console.warn("[DIAG schoolMap] get() also missed:", missing[i]);
+      }
+    }
+  }
+
   return result;
 }
 
