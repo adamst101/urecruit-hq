@@ -125,15 +125,8 @@ export async function ensureSchoolMap(School) {
         const id = String(normId(r) || "");
         if (id) _schoolMap.set(id, r);
       }
-      // DIAGNOSTIC
-      console.log("[DIAG schoolMap] loaded", _schoolMap.size, "schools");
-      if (_schoolMap.size > 0) {
-        const first = [..._schoolMap.values()][0];
-        console.log("[DIAG schoolMap] first record keys:", Object.keys(first));
-        console.log("[DIAG schoolMap] first record athletic_logo_url:", first?.athletic_logo_url);
-      }
-    } catch (e) {
-      console.warn("[DIAG schoolMap] load failed:", e?.message);
+    } catch {
+      // leave map empty — lookups will return null
     }
     _schoolMapLoaded = true;
     _schoolMapLoading = null;
@@ -156,22 +149,15 @@ async function fetchSchoolsByIds(School, ids) {
     else missing.push(id);
   }
 
-  // DIAGNOSTIC
-  if (missing.length) console.warn("[DIAG schoolMap] misses:", missing.length, "of", clean.length, "— trying get() fallback");
-
   // Fall back to individual get() for IDs not in the bulk-loaded map.
-  // School.get(id) hits a direct URL and works even when filter({}) doesn't return the record.
   if (missing.length && School?.get) {
     const settled = await Promise.allSettled(missing.map((id) => School.get(id)));
     for (let i = 0; i < settled.length; i++) {
       const r = settled[i];
       if (r.status === "fulfilled" && r.value) {
         const id = String(normId(r.value) || missing[i]);
-        _schoolMap.set(id, r.value); // cache for future lookups
+        _schoolMap.set(id, r.value);
         result.push(r.value);
-        console.log("[DIAG schoolMap] get() found:", id, "athletic_logo_url:", r.value?.athletic_logo_url);
-      } else {
-        console.warn("[DIAG schoolMap] get() also missed:", missing[i]);
       }
     }
   }
