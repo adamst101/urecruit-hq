@@ -131,6 +131,51 @@ export default function CoachNetworkAdmin() {
             onChange={e => setSearch(e.target.value)}
           />
 
+          {/* Pending review callout */}
+          {(() => {
+            const pending = coaches.filter(c => !c.status || c.status === "pending");
+            if (pending.length === 0) return null;
+            return (
+              <div style={{ background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.35)", borderRadius: 10, padding: "16px 20px", marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#e8a020", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
+                  ⏳ Pending Review — {pending.length} application{pending.length !== 1 ? "s" : ""} awaiting decision
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {pending.map(c => {
+                    const isActioning = actioning === c.id;
+                    return (
+                      <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "12px 16px" }}>
+                        <div>
+                          <span style={{ fontWeight: 700, color: "#f9fafb", fontSize: 14 }}>{c.first_name} {c.last_name}</span>
+                          <span style={{ color: "#6b7280", fontSize: 13, marginLeft: 10 }}>{c.school_or_org}</span>
+                          <span style={{ color: "#6b7280", fontSize: 13, marginLeft: 8 }}>· {c.sport || "Football"}</span>
+                          {c.email && <span style={{ color: "#6b7280", fontSize: 12, marginLeft: 10 }}>{c.email}</span>}
+                          {c.created_at && <span style={{ color: "#4b5563", fontSize: 11, marginLeft: 10 }}>{new Date(c.created_at).toLocaleDateString()}</span>}
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            onClick={() => handleAction(c.id, "approve")}
+                            disabled={isActioning}
+                            style={{ background: "#15803d", color: "#fff", border: "none", borderRadius: 6, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: isActioning ? "not-allowed" : "pointer", opacity: isActioning ? 0.6 : 1 }}
+                          >
+                            {isActioning ? "…" : "Approve"}
+                          </button>
+                          <button
+                            onClick={() => handleAction(c.id, "reject")}
+                            disabled={isActioning}
+                            style={{ background: "#7f1d1d", color: "#fca5a5", border: "none", borderRadius: 6, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: isActioning ? "not-allowed" : "pointer", opacity: isActioning ? 0.6 : 1 }}
+                          >
+                            {isActioning ? "…" : "Reject"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
           {actionError && (
             <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "12px 16px", fontSize: 13, color: "#fca5a5", marginBottom: 16 }}>
               ⚠️ {actionError}

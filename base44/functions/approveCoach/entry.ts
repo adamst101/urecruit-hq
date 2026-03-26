@@ -129,6 +129,34 @@ Deno.serve(async (req) => {
         results.email = "skipped — no email address";
       }
 
+      // Resolve the support ticket that was opened when the coach applied
+      try {
+        const tickets = await base44.asServiceRole.entities.SupportTicket.filter({
+          user_id: coach.account_id,
+          account_type: "coach_pending",
+        }).catch(() => []);
+        const openTicket = Array.isArray(tickets)
+          ? tickets.find(t => t.status === "open" || t.status === "in_progress")
+          : null;
+        if (openTicket) {
+          const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Chicago", dateStyle: "medium", timeStyle: "short" });
+          const logEntry = `[${timestamp} CT] Application approved by admin. Coach role granted, approval email sent to ${coachEmail || "coach"}.`;
+          await base44.asServiceRole.entities.SupportTicket.update(openTicket.id, {
+            status: "resolved",
+            resolved_at: new Date().toISOString(),
+            admin_notes: openTicket.admin_notes
+              ? `${logEntry}\n\n${openTicket.admin_notes}`
+              : logEntry,
+          });
+          results.ticket = `resolved ${openTicket.ticket_number || openTicket.id}`;
+        } else {
+          results.ticket = "no open ticket found";
+        }
+      } catch (e) {
+        results.ticket = `FAILED: ${(e as Error).message}`;
+        console.warn("Could not resolve support ticket:", (e as Error).message);
+      }
+
       console.log("Coach approved:", coachId, results);
       return Response.json({ ok: true, status: "approved", results });
 
@@ -186,6 +214,34 @@ Deno.serve(async (req) => {
         }
       } else {
         results.email = "skipped — no email address";
+      }
+
+      // Resolve the support ticket
+      try {
+        const tickets = await base44.asServiceRole.entities.SupportTicket.filter({
+          user_id: coach.account_id,
+          account_type: "coach_pending",
+        }).catch(() => []);
+        const openTicket = Array.isArray(tickets)
+          ? tickets.find(t => t.status === "open" || t.status === "in_progress")
+          : null;
+        if (openTicket) {
+          const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Chicago", dateStyle: "medium", timeStyle: "short" });
+          const logEntry = `[${timestamp} CT] Application rejected by admin. Coach role cleared, rejection email sent to ${coachEmail || "coach"}.`;
+          await base44.asServiceRole.entities.SupportTicket.update(openTicket.id, {
+            status: "resolved",
+            resolved_at: new Date().toISOString(),
+            admin_notes: openTicket.admin_notes
+              ? `${logEntry}\n\n${openTicket.admin_notes}`
+              : logEntry,
+          });
+          results.ticket = `resolved ${openTicket.ticket_number || openTicket.id}`;
+        } else {
+          results.ticket = "no open ticket found";
+        }
+      } catch (e) {
+        results.ticket = `FAILED: ${(e as Error).message}`;
+        console.warn("Could not resolve support ticket:", (e as Error).message);
       }
 
       console.log("Coach rejected:", coachId, results);
