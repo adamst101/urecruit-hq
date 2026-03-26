@@ -169,8 +169,10 @@ export function buildIdentity(schoolRow, campRow) {
   const s = schoolRow || {};
   const r = campRow || {};
 
+  // Prefer school entity fields, then camp's embedded program name (host_org / ryzer_program_name),
+  // then camp_name as last resort. Never show a raw camp name as the school name if host_org exists.
   const name =
-    pickBestText(s.school_name, s.name, r.school_name, r.camp_name) || "School";
+    pickBestText(s.school_name, s.name, r.school_name, r.host_org, r.ryzer_program_name) || "School";
 
   const logoUrl = pickBestLogo(
     s.athletic_logo_url,

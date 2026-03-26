@@ -562,12 +562,12 @@ export default function Discover() {
         school_state: r?.school_state || sch?.state || null,
         _school_lat: campCoords?.lat ?? null,
         _school_lng: campCoords?.lng ?? null,
-        _school_name: sch?.school_name || sch?.name || r?.camp_name || "",
+        _school_name: sch?.school_name || sch?.name || r?.host_org || r?.ryzer_program_name || r?.camp_name || "",
       } : {
         ...r,
         _school_lat: campCoords?.lat ?? null,
         _school_lng: campCoords?.lng ?? null,
-        _school_name: r?.camp_name || "",
+        _school_name: r?.host_org || r?.ryzer_program_name || r?.camp_name || "",
       };
     });
 

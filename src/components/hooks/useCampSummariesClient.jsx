@@ -355,8 +355,8 @@ export function useCampSummariesClient({
           state: camp.state || null,
 
           school_id: schoolId,
-          // Fallback chain: School entity → camp's own embedded fields (if server denormalized them)
-          school_name: school?.school_name || school?.name || camp.school_name || null,
+          // Fallback chain: School entity → camp's embedded program name → last resort null
+          school_name: school?.school_name || school?.name || camp.school_name || camp.host_org || camp.ryzer_program_name || null,
           school_division: school?.division || school?.school_division || camp.school_division || null,
           school_logo_url: school?.athletic_logo_url || school?.athletics_logo_url || school?.logo_url || school?.school_logo_url || camp.school_logo_url || null,
 
