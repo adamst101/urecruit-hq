@@ -151,7 +151,7 @@ export default function AuthRedirect() {
             phone: coachData.phone,
             website: coachData.website,
             sport: coachData.sport,
-            env: getDataEnv(),
+            env: coachData.env ?? getDataEnv(),
           });
           clearSeasonAccessCache();
         } catch (e) {
