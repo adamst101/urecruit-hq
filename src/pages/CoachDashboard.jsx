@@ -50,6 +50,7 @@ export default function CoachDashboard() {
   const [coach, setCoach] = useState(null);
   const [roster, setRoster] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [campsByAccountId, setCampsByAccountId] = useState({});
   const [loading, setLoading] = useState(true);
   const [currentRole, setCurrentRole] = useState(null);
   const [setupPolling, setSetupPolling] = useState(false);
@@ -80,6 +81,7 @@ export default function CoachDashboard() {
       if (!data?.ok || !data.coach) return null;
       setCoach(data.coach);
       setRoster(Array.isArray(data.roster) ? data.roster : []);
+      setCampsByAccountId(data.campsByAccountId || {});
       setMessages(
         Array.isArray(data.messages)
           ? data.messages.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))
@@ -342,30 +344,44 @@ export default function CoachDashboard() {
             ) : (
               <div>
                 {/* Header row */}
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12, padding: "0 0 10px", borderBottom: "1px solid #1f2937", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 3fr", gap: 12, padding: "0 0 10px", borderBottom: "1px solid #1f2937", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                   <span>Athlete</span>
                   <span>Joined</span>
-                  <span>Status</span>
+                  <span>Registered Camps</span>
                 </div>
-                {roster.map((r, i) => (
-                  <div
-                    key={r.id || i}
-                    style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12, padding: "14px 0", borderBottom: i < roster.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15 }}>{r.athlete_name || "Athlete"}</div>
-                      {r.athlete_grad_year && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Class of {r.athlete_grad_year}</div>}
+                {roster.map((r, i) => {
+                  const athleteCamps = campsByAccountId[r.account_id] || [];
+                  return (
+                    <div
+                      key={r.id || i}
+                      style={{ display: "grid", gridTemplateColumns: "2fr 1fr 3fr", gap: 12, padding: "14px 0", borderBottom: i < roster.length - 1 ? "1px solid #1f2937" : "none", alignItems: "start" }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15 }}>{r.athlete_name || "Athlete"}</div>
+                        {r.athlete_grad_year && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Class of {r.athlete_grad_year}</div>}
+                      </div>
+                      <div style={{ fontSize: 13, color: "#9ca3af", paddingTop: 2 }}>
+                        {r.joined_at ? new Date(r.joined_at).toLocaleDateString() : "—"}
+                      </div>
+                      <div>
+                        {athleteCamps.length === 0 ? (
+                          <span style={{ fontSize: 13, color: "#4b5563" }}>No camps registered</span>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            {athleteCamps.map((c, ci) => (
+                              <div key={ci} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" }}>
+                                  {c.start_date ? new Date(c.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
+                                </span>
+                                <span style={{ fontSize: 13, color: "#d1d5db" }}>{c.school_name || c.camp_name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 13, color: "#9ca3af" }}>
-                      {r.joined_at ? new Date(r.joined_at).toLocaleDateString() : "—"}
-                    </div>
-                    <div>
-                      <span style={{ background: "rgba(34,197,94,0.15)", color: "#86efac", fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 20, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                        Active
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

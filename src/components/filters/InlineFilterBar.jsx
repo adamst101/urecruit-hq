@@ -45,7 +45,7 @@ export default function InlineFilterBar({ nf, setNF, isPaid, distanceMiles, dist
   const distActive = !!distanceMiles;
 
   const baseCls = "h-9 text-xs border";
-  const inactiveCls = `${baseCls} bg-[#111827] border-[#1f2937] text-[#9ca3af]`;
+  const inactiveCls = `${baseCls} bg-[#1e293b] border-[#2d4060] text-[#9ca3af]`;
   const activeCls = `${baseCls} bg-[#1a2744] border-[#e8a020] text-[#f9fafb]`;
 
   return (

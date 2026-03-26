@@ -33,6 +33,7 @@ Deno.serve(async (req) => {
     athleteFirstName, athleteLastName, gradYear, sportId,
     homeCity, homeState,
     parentFirstName, parentLastName, parentPhone,
+    coachInviteCode,
   } = await req.json();
 
   if (!promoCode) {
@@ -194,6 +195,42 @@ Deno.serve(async (req) => {
       console.log("Updated User first_name/last_name for account:", resolvedAccountId);
     } catch (e) {
       console.warn("Could not update User name fields (non-critical):", (e as Error).message);
+    }
+  }
+
+  // Link athlete to coach roster if a coach invite code was provided
+  if (coachInviteCode && resolvedAccountId) {
+    try {
+      const coaches = await base44.asServiceRole.entities.Coach.filter({
+        invite_code: coachInviteCode,
+        status: "approved",
+        active: true,
+      }).catch(() => []);
+      if (Array.isArray(coaches) && coaches.length > 0) {
+        const coachId = coaches[0].id;
+        const existing = await base44.asServiceRole.entities.CoachRoster.filter({
+          coach_id: coachId,
+          account_id: resolvedAccountId,
+        }).catch(() => []);
+        if (!Array.isArray(existing) || existing.length === 0) {
+          await base44.asServiceRole.entities.CoachRoster.create({
+            coach_id: coachId,
+            account_id: resolvedAccountId,
+            athlete_id: athleteId || "",
+            athlete_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" ") || "",
+            athlete_grad_year: gradYear ? parseInt(String(gradYear)) : null,
+            invite_code: coachInviteCode,
+            joined_at: new Date().toISOString(),
+          });
+          console.log("Linked account", resolvedAccountId, "to coach roster", coachId, "(free access path)");
+        } else {
+          console.log("Account already on coach roster:", resolvedAccountId, coachId);
+        }
+      } else {
+        console.warn("Coach not found for invite code (free access):", coachInviteCode);
+      }
+    } catch (e) {
+      console.warn("CoachRoster linking failed (non-critical):", (e as Error).message);
     }
   }
 

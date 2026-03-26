@@ -36,6 +36,12 @@ export default function Checkout() {
     try { return localStorage.getItem("coachInviteCode") || ""; } catch { return ""; }
   });
 
+  // Persist coach code to localStorage so Workspace can load coach messages after checkout
+  useEffect(() => {
+    if (!coachInviteCode) return;
+    try { localStorage.setItem("coachInviteCode", coachInviteCode); } catch {}
+  }, [coachInviteCode]);
+
   // Promo state
   const [promoCode, setPromoCode] = useState("");
   const [promoState, setPromoState] = useState(null); // null | "checking" | { ok, isFree, percentOff, amountOff, code, error }

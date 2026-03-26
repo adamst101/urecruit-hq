@@ -1086,7 +1086,7 @@ export default function Discover() {
             placeholder="Search schools…"
             value={schoolSearch}
             onChange={(e) => { setSchoolSearch(e.target.value); setVisibleCount(50); }}
-            className="w-full rounded-lg px-4 py-2 text-sm bg-[#111827] border border-[#1f2937] text-[#f9fafb] placeholder-[#6b7280] focus:outline-none focus:border-[#e8a020]"
+            className="w-full rounded-lg px-4 py-2 text-sm bg-[#1e293b] border border-[#2d4060] text-[#f9fafb] placeholder-[#6b7280] focus:outline-none focus:border-[#e8a020]"
           />
           {schoolSearch && (
             <button

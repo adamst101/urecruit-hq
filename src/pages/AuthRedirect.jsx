@@ -124,6 +124,10 @@ export default function AuthRedirect() {
             last_name: fd.parentLastName?.trim() || null,
           }).catch(() => {});
         }
+        // Persist coach invite code to localStorage so Workspace can load coach messages
+        if (fd.coachInviteCode) {
+          try { localStorage.setItem("coachInviteCode", fd.coachInviteCode); } catch {}
+        }
       }
     } catch {}
 

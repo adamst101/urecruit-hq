@@ -31,11 +31,57 @@ Deno.serve(async (req) => {
       base44.asServiceRole.entities.CoachMessage.filter({ coach_id: coach.id }).catch(() => []),
     ]);
 
+    const rosterList = Array.isArray(roster) ? roster : [];
+
+    // Fetch camp registrations for each roster athlete via their account_id
+    const campsByAccountId: Record<string, { camp_id: string; camp_name: string; school_name: string; start_date: string }[]> = {};
+    if (rosterList.length > 0) {
+      const accountIds = [...new Set(rosterList.map(r => r.account_id).filter(Boolean))];
+      await Promise.all(accountIds.map(async (accountId) => {
+        try {
+          // Get all CampIntent records for this account with registered/completed status
+          const intents = await base44.asServiceRole.entities.CampIntent.filter({
+            account_id: accountId,
+          }).catch(() => []);
+          const registered = Array.isArray(intents)
+            ? intents.filter(i => i.status === "registered" || i.status === "completed")
+            : [];
+          if (registered.length === 0) return;
+
+          // Batch-fetch camp details
+          const campIds = [...new Set(registered.map(i => i.camp_id).filter(Boolean))];
+          const camps = await Promise.all(
+            campIds.map(id => base44.asServiceRole.entities.Camp.get(id).catch(() => null))
+          );
+          const campMap: Record<string, { camp_name: string; school_name: string; start_date: string }> = {};
+          for (const camp of camps) {
+            if (camp?.id) {
+              campMap[camp.id] = {
+                camp_name: camp.camp_name || camp.name || "Camp",
+                school_name: camp.school_name || "",
+                start_date: camp.start_date || "",
+              };
+            }
+          }
+
+          campsByAccountId[accountId] = registered.map(i => ({
+            camp_id: i.camp_id,
+            camp_name: campMap[i.camp_id]?.camp_name || "Camp",
+            school_name: campMap[i.camp_id]?.school_name || "",
+            start_date: campMap[i.camp_id]?.start_date || "",
+          })).sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""));
+        } catch {
+          // Non-critical — skip this athlete's camps on error
+        }
+      }));
+    }
+
     return Response.json({
       ok: true,
       coach,
-      roster: Array.isArray(roster) ? roster : [],
+      roster: rosterList,
       messages: Array.isArray(messages) ? messages : [],
+      campsByAccountId,
     });
   } catch (err) {
     console.error("getMyCoachProfile error:", (err as Error).message);

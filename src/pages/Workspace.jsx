@@ -135,9 +135,29 @@ export default function Workspace() {
         if (cancelled || !Array.isArray(coaches) || coaches.length === 0) return;
         const coach = coaches[0];
         setCoachName(`${coach.first_name || ""} ${coach.last_name || ""}`.trim() || coach.school_or_org || "Your Coach");
-        const msgs = await base44.entities.CoachMessage.filter({ coach_id: coach.id }).catch(() => []);
+
+        // Resolve current athlete_id from CoachRoster to filter targeted messages
+        let myAthleteId = "";
+        try {
+          const me = await base44.auth.me();
+          if (me?.id) {
+            const rosterEntry = await base44.entities.CoachRoster.filter({
+              coach_id: coach.id,
+              account_id: me.id,
+            }).catch(() => []);
+            myAthleteId = Array.isArray(rosterEntry) && rosterEntry.length > 0
+              ? (rosterEntry[0].athlete_id || "")
+              : "";
+          }
+        } catch {}
+
+        const allMsgs = await base44.entities.CoachMessage.filter({ coach_id: coach.id }).catch(() => []);
         if (!cancelled) {
-          setCoachMessages(Array.isArray(msgs) ? msgs.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at)) : []);
+          // Show broadcast messages (no specific recipient) and messages addressed to this athlete
+          const filtered = Array.isArray(allMsgs)
+            ? allMsgs.filter(m => !m.recipient_athlete_id || (myAthleteId && m.recipient_athlete_id === myAthleteId))
+            : [];
+          setCoachMessages(filtered.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at)));
         }
       } catch {}
     })();
