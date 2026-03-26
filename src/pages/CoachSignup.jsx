@@ -139,6 +139,7 @@ export default function CoachSignup() {
   const [sport, setSport] = useState("Football");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState(null);
   // OTP verification state — set after register() when email confirmation is required
@@ -216,6 +217,10 @@ export default function CoachSignup() {
     }
     if (password.length < 8) {
       setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match. Please re-enter your password.");
       return;
     }
 
@@ -390,13 +395,32 @@ export default function CoachSignup() {
 
           <label style={S.fieldLabel}>Password</label>
           <input
-            style={{ ...S.input, marginBottom: 28 }}
+            style={S.input}
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
             placeholder="Min 8 characters"
             autoComplete="new-password"
           />
+
+          <label style={S.fieldLabel}>Confirm Password</label>
+          <input
+            style={{
+              ...S.input,
+              marginBottom: confirmPassword && confirmPassword !== password ? 6 : 28,
+              borderColor: confirmPassword && confirmPassword !== password ? "rgba(239,68,68,0.6)" : "#374151",
+            }}
+            type="password"
+            value={confirmPassword}
+            onChange={e => setConfirmPassword(e.target.value)}
+            placeholder="Re-enter your password"
+            autoComplete="new-password"
+          />
+          {confirmPassword && confirmPassword !== password && (
+            <div style={{ fontSize: 13, color: "#fca5a5", marginBottom: 28 }}>
+              Passwords do not match.
+            </div>
+          )}
 
           <button
             type="submit"
