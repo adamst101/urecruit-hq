@@ -174,9 +174,6 @@ export function buildIdentity(schoolRow, campRow) {
   const name =
     pickBestText(s.school_name, s.name, r.school_name, r.host_org, r.ryzer_program_name) || "School";
 
-  // DIAGNOSTIC — remove after confirming logos work
-  console.log("[DIAG buildIdentity]", name, "athletic_logo_url=", s.athletic_logo_url, "isBad=", isBadLogoUrl(s.athletic_logo_url));
-
   const logoUrl = pickBestLogo(
     s.athletic_logo_url,
     s.athletics_logo_url,
