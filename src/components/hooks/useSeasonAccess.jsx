@@ -23,15 +23,33 @@ import { isAdminEmail } from "../auth/adminEmails.jsx";
 // Persists across all hook instances and page navigations.
 let _cachedResult = null;   // null = not yet fetched
 let _fetchPromise = null;   // shared in-flight promise
-let _lastDemoCheck = null;  // { accountId, checkedAt } — negative cache for entitled check
+
+// Persist paid result in sessionStorage so module re-initializations
+// (hot-reload, soft rebuild) don't drop back to demo mode.
+const _PAID_KEY = "seasonAccess_paid_v2";
+(function _restorePaidCache() {
+  try {
+    const raw = sessionStorage.getItem(_PAID_KEY);
+    if (!raw) return;
+    const obj = JSON.parse(raw);
+    if (obj?.hasAccess !== true) return;
+    const age = Date.now() - new Date(obj.lastCheckedAt || 0).getTime();
+    if (age < 4 * 60 * 60 * 1000) _cachedResult = obj; // valid for 4 hours
+  } catch {}
+})();
 
 export function clearSeasonAccessCache() {
   _cachedResult = null;
   _fetchPromise = null;
-  _lastDemoCheck = null;
+  try { sessionStorage.removeItem(_PAID_KEY); } catch {}
 }
 
-// ─── Helpers (unchanged) ──────────────────────────────
+// ─── Helpers ──────────────────────────────────────────
+
+function isRateLimitError(e) {
+  const msg = String(e?.message || e || "").toLowerCase();
+  return msg.includes("rate limit") || msg.includes("429") || msg.includes("too many");
+}
 
 function nowISO() {
   return new Date().toISOString();
@@ -70,7 +88,10 @@ async function fetchEntitlement({ accountId, seasonYear }) {
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length) return null;
     return list.find((x) => isActiveInWindow(x)) || null;
-  } catch {
+  } catch (e) {
+    // Propagate rate-limit errors so the caller can treat them as transient failures
+    // rather than "no entitlement found" — prevents false demo-mode on 429.
+    if (isRateLimitError(e)) throw e;
     return null;
   }
 }
@@ -171,26 +192,6 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
     };
   }
 
-  // Negative cache: skip entitlement API if we recently confirmed no entitlement
-  if (_lastDemoCheck?.accountId === accountId) {
-    const age = Date.now() - new Date(_lastDemoCheck.checkedAt).getTime();
-    if (age < 20 * 1000) {
-      return {
-        currentYear: currentYear || null,
-        demoYear: demoYear || null,
-        mode: "demo",
-        hasAccess: false,
-        seasonYear: demoSeason || demoYear || currentYear || null,
-        season: demoSeason || demoYear || currentYear || null,
-        accountId,
-        entitlement: null,
-        role,
-        isAuthenticated: true,
-        lastCheckedAt: nowISO(),
-      };
-    }
-  }
-
   // Check entitlement for active season, then sold season (early-bird)
   let ent = await fetchEntitlement({ accountId, seasonYear: activeSeason });
   if (!ent && soldSeason !== activeSeason) {
@@ -214,7 +215,7 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
 
   if (ent) {
     try { sessionStorage.removeItem("demoMode_v1"); } catch {}
-    return {
+    const paidResult = {
       currentYear: currentYear || null,
       demoYear: demoYear || null,
       mode: "paid",
@@ -227,10 +228,11 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
       isAuthenticated: true,
       lastCheckedAt: nowISO(),
     };
+    try { sessionStorage.setItem(_PAID_KEY, JSON.stringify(paidResult)); } catch {}
+    return paidResult;
   }
 
-  // Signed in but NOT entitled → demo; record negative cache
-  _lastDemoCheck = { accountId, checkedAt: nowISO() };
+  // Signed in but NOT entitled → demo
   return {
     currentYear: currentYear || null,
     demoYear: demoYear || null,
@@ -309,7 +311,7 @@ export function useSeasonAccess() {
     try {
       const result = await _fetchPromise;
 
-      // Cache ONLY paid results
+      // Cache paid results in memory (already persisted in sessionStorage by doRefresh)
       if (result?.hasAccess === true) {
         _cachedResult = result;
       }
