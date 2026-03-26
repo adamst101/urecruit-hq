@@ -691,6 +691,7 @@ export default function Discover() {
   /* ─── School grouping ──────────────────────────────────────────────────── */
 
   const [expandedSchools, setExpandedSchools] = useState({});
+  const [schoolSearch, setSchoolSearch] = useState("");
 
   const schoolGroups = useMemo(() => {
     const rows = asArray(rawRows);
@@ -941,8 +942,12 @@ export default function Discover() {
       );
     }
 
-    const visibleGroups = schoolGroups.slice(0, visibleCount);
-    const hasMore = schoolGroups.length > visibleCount;
+    const searchTerm = schoolSearch.trim().toLowerCase();
+    const filteredGroups = searchTerm
+      ? schoolGroups.filter((g) => String(g.school_name || "").toLowerCase().includes(searchTerm))
+      : schoolGroups;
+    const visibleGroups = filteredGroups.slice(0, visibleCount);
+    const hasMore = filteredGroups.length > visibleCount;
 
     return (
       <div className="space-y-3">
@@ -985,7 +990,7 @@ export default function Discover() {
             onClick={() => setVisibleCount((c) => c + 50)}
             className="w-full py-3 text-sm font-semibold text-[#e8a020] bg-[#111827] border border-[#1f2937] rounded-lg hover:bg-[#1f2937] transition-colors"
           >
-            Load more ({schoolGroups.length - visibleCount} remaining)
+            Load more ({filteredGroups.length - visibleCount} remaining)
           </button>
         )}
       </div>
@@ -1072,6 +1077,26 @@ export default function Discover() {
             selectedMonth={selectedMonth}
             onMonthChange={setSelectedMonth}
           />
+        </div>
+
+        {/* School name search */}
+        <div className="mt-3 relative">
+          <input
+            type="text"
+            placeholder="Search schools…"
+            value={schoolSearch}
+            onChange={(e) => { setSchoolSearch(e.target.value); setVisibleCount(50); }}
+            className="w-full rounded-lg px-4 py-2 text-sm bg-[#111827] border border-[#1f2937] text-[#f9fafb] placeholder-[#6b7280] focus:outline-none focus:border-[#e8a020]"
+          />
+          {schoolSearch && (
+            <button
+              type="button"
+              onClick={() => setSchoolSearch("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6b7280] hover:text-[#f9fafb] text-lg leading-none"
+            >
+              ×
+            </button>
+          )}
         </div>
 
         <div className="mt-4">
