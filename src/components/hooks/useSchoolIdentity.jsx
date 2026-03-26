@@ -149,6 +149,9 @@ async function fetchSchoolsByIds(School, ids) {
       rows = await safeFilter(School, where, "school_name", 2000);
       if (rows.length) break;
     }
+    // DIAGNOSTIC — log full first record to see all fields returned
+    if (rows.length) console.log("[DIAG School record full]", JSON.stringify(rows[0], null, 2));
+    else console.warn("[DIAG School] filter returned 0 rows for ids:", part.slice(0, 3));
     out.push(...rows);
   }
 
