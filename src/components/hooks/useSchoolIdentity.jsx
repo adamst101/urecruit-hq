@@ -125,7 +125,11 @@ export async function ensureSchoolMap(School) {
         const id = String(normId(r) || "");
         if (id) _schoolMap.set(id, r);
       }
-    } catch {
+      const sample = rows?.[0];
+      console.log("[DIAG schoolMap] loaded", _schoolMap.size, "schools. Sample record keys:", sample ? Object.keys(sample) : "none");
+      if (sample) console.log("[DIAG schoolMap] sample athletic_logo_url:", sample.athletic_logo_url, "| logo_url:", sample.logo_url, "| id:", normId(sample));
+    } catch (e) {
+      console.warn("[DIAG schoolMap] load failed:", e?.message || e);
       // leave map empty — lookups will return null
     }
     _schoolMapLoaded = true;
@@ -252,9 +256,16 @@ export function useSchoolIdentity(campRows) {
     JSON.stringify(uniq(asArray(campRows).map((r) => normId(r?.school_id)).filter(Boolean)).sort()),
   ]);
 
+  // Diagnostic counter — log first few calls to show hits/misses
+  const _diagCount = { n: 0 };
   function resolveIdentity(schoolId, campRow) {
     const sid = String(schoolId || "");
     const srow = sid ? schoolById[sid] || null : null;
+    if (_diagCount.n < 3) {
+      _diagCount.n++;
+      console.log(`[DIAG resolveIdentity] sid="${sid}" hit=${!!srow} schoolById size=${Object.keys(schoolById).length}`);
+      if (srow) console.log("[DIAG resolveIdentity] school record:", JSON.stringify(srow).slice(0, 300));
+    }
     return buildIdentity(srow, campRow);
   }
 
