@@ -157,31 +157,15 @@ async function fetchEntityMap(entityName, ids) {
   if (!cleanIds.length) return map;
 
   const entity = base44.entities?.[entityName];
-
-  // DIAGNOSTIC — remove after confirming logos work
-  console.log(`[DIAG fetchEntityMap] ${entityName}: entity found=`, !!entity, "has filter=", !!entity?.filter, "has get=", !!entity?.get, "ids=", cleanIds);
-  if (!entity?.filter) {
-    console.warn(`[DIAG fetchEntityMap] ${entityName}: no filter method — available entities:`, Object.keys(base44.entities || {}));
-    return map;
-  }
-
-  // Try a direct filter call to see what base44 returns raw
-  try {
-    const testRows = await entity.filter({}, ENTITY_SORT[entityName] || "id", 3);
-    console.log(`[DIAG fetchEntityMap] ${entityName}: unrestricted filter(limit=3) returned`, testRows?.length, "rows, first=", JSON.stringify(testRows?.[0] || {}).slice(0, 200));
-  } catch (e) {
-    console.warn(`[DIAG fetchEntityMap] ${entityName}: unrestricted filter failed:`, e?.message);
-  }
+  if (!entity?.filter) return map;
 
   const sort = ENTITY_SORT[entityName] || "id";
   let rows = [];
   try {
     rows = await batchFetchByIds(entity, cleanIds, sort);
-  } catch (e) {
-    console.warn(`[DIAG fetchEntityMap] ${entityName}: batchFetchByIds threw:`, e?.message);
+  } catch {
     rows = [];
   }
-  console.log(`[DIAG fetchEntityMap] ${entityName}: batchFetchByIds returned`, rows.length, "rows");
 
   (rows || []).forEach((r) => {
     const key = normId(r);
@@ -332,17 +316,6 @@ export function useCampSummariesClient({
         const school = schoolId ? schools.get(schoolId) : null;
         const sport = sportId2 ? sports.get(sportId2) : null;
 
-        // DIAGNOSTIC — remove after confirming logos work
-        if (school) {
-          console.log("[DIAG useCampSummaries] school record logo fields for", school?.school_name || schoolId, {
-            athletic_logo_url: school?.athletic_logo_url,
-            athletics_logo_url: school?.athletics_logo_url,
-            logo_url: school?.logo_url,
-            school_logo_url: school?.school_logo_url,
-          });
-        } else {
-          console.log("[DIAG useCampSummaries] no school record found for schoolId:", schoolId);
-        }
 
         // Intent can be stored by Camp.id OR event_key
         const intent = intentByKey.get(campId) || (eventKey ? intentByKey.get(eventKey) : null) || null;

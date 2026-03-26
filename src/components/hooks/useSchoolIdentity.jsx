@@ -174,19 +174,6 @@ export function buildIdentity(schoolRow, campRow) {
   const name =
     pickBestText(s.school_name, s.name, r.school_name, r.host_org, r.ryzer_program_name) || "School";
 
-  // DIAGNOSTIC — remove after confirming logos work
-  console.log("[DIAG buildIdentity]", name, {
-    "s.athletic_logo_url": s.athletic_logo_url,
-    "s.athletics_logo_url": s.athletics_logo_url,
-    "s.team_logo_url": s.team_logo_url,
-    "s.logo_url": s.logo_url,
-    "s.school_logo_url": s.school_logo_url,
-    "s.primary_logo_url": s.primary_logo_url,
-    "s.logo": s.logo,
-    "r.school_logo_url": r.school_logo_url,
-    "r.logo_url": r.logo_url,
-  });
-
   const logoUrl = pickBestLogo(
     s.athletic_logo_url,
     s.athletics_logo_url,
@@ -201,8 +188,6 @@ export function buildIdentity(schoolRow, campRow) {
     r.logo_url,
     r.logo
   );
-
-  console.log("[DIAG buildIdentity] picked logoUrl for", name, "->", logoUrl);
 
   const division = pickBestDivision(
     s.division,
