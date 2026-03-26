@@ -103,7 +103,11 @@ export default function CoachNetworkAdmin() {
       `${c.first_name} ${c.last_name}`.toLowerCase().includes(q) ||
       (c.school_or_org || "").toLowerCase().includes(q) ||
       (c.invite_code || "").toLowerCase().includes(q) ||
-      (c.sport || "").toLowerCase().includes(q)
+      (c.sport || "").toLowerCase().includes(q) ||
+      (c.title || "").toLowerCase().includes(q) ||
+      (c.email || "").toLowerCase().includes(q) ||
+      (c.phone || "").toLowerCase().includes(q) ||
+      (c.website || "").toLowerCase().includes(q)
     );
   });
 
@@ -147,9 +151,12 @@ export default function CoachNetworkAdmin() {
                       <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "12px 16px" }}>
                         <div>
                           <span style={{ fontWeight: 700, color: "#f9fafb", fontSize: 14 }}>{c.first_name} {c.last_name}</span>
+                          {c.title && <span style={{ color: "#e8a020", fontSize: 12, marginLeft: 8 }}>{c.title}</span>}
                           <span style={{ color: "#6b7280", fontSize: 13, marginLeft: 10 }}>{c.school_or_org}</span>
                           <span style={{ color: "#6b7280", fontSize: 13, marginLeft: 8 }}>· {c.sport || "Football"}</span>
                           {c.email && <span style={{ color: "#6b7280", fontSize: 12, marginLeft: 10 }}>{c.email}</span>}
+                          {c.phone && <span style={{ color: "#6b7280", fontSize: 12, marginLeft: 10 }}>{c.phone}</span>}
+                          {c.website && <a href={c.website} target="_blank" rel="noopener noreferrer" style={{ color: "#4b5563", fontSize: 11, marginLeft: 10 }}>{c.website}</a>}
                           {c.created_at && <span style={{ color: "#4b5563", fontSize: 11, marginLeft: 10 }}>{new Date(c.created_at).toLocaleDateString()}</span>}
                         </div>
                         <div style={{ display: "flex", gap: 8 }}>
@@ -213,7 +220,10 @@ export default function CoachNetworkAdmin() {
                   >
                     <div>
                       <span style={{ color: "#f9fafb", fontWeight: 600 }}>{c.first_name} {c.last_name}</span>
-                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{c.email || "—"}</div>
+                      {c.title && <div style={{ fontSize: 12, color: "#e8a020", marginTop: 1 }}>{c.title}</div>}
+                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 1 }}>{c.email || "—"}</div>
+                      {c.phone && <div style={{ fontSize: 12, color: "#6b7280" }}>{c.phone}</div>}
+                      {c.website && <div style={{ fontSize: 11 }}><a href={c.website} target="_blank" rel="noopener noreferrer" style={{ color: "#4b5563" }}>{c.website}</a></div>}
                       <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
                         <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, textTransform: "uppercase", letterSpacing: "0.08em" }}>{c.status || "pending"}</span>
                         <span style={{ fontSize: 10, color: "#4b5563" }}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ""}</span>

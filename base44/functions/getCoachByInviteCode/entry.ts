@@ -29,6 +29,7 @@ Deno.serve(async (req) => {
       coach: {
         first_name: c.first_name,
         last_name: c.last_name,
+        title: c.title || null,
         school_or_org: c.school_or_org,
         sport: c.sport,
       },

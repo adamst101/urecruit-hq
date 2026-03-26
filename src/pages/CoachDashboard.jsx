@@ -255,6 +255,7 @@ export default function CoachDashboard() {
           <div style={{ background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "14px 20px", display: "inline-block" }}>
             <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Submitted as</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>{coach.first_name} {coach.last_name}</div>
+            {coach.title && <div style={{ fontSize: 13, color: "#e8a020" }}>{coach.title}</div>}
             <div style={{ fontSize: 13, color: "#9ca3af" }}>{coach.school_or_org} · {coach.sport}</div>
           </div>
         </div>
@@ -289,8 +290,15 @@ export default function CoachDashboard() {
           Welcome back, Coach {coach.last_name}
         </p>
         <p style={{ color: "#6b7280", fontSize: 14, marginTop: 4 }}>
-          {coach.school_or_org} · {coach.sport} · {roster.length} athlete{roster.length !== 1 ? "s" : ""} on roster
+          {coach.title ? `${coach.title} · ` : ""}{coach.school_or_org} · {coach.sport} · {roster.length} athlete{roster.length !== 1 ? "s" : ""} on roster
         </p>
+        {(coach.phone || coach.website) && (
+          <p style={{ color: "#4b5563", fontSize: 13, marginTop: 2 }}>
+            {coach.phone && <span>{coach.phone}</span>}
+            {coach.phone && coach.website && <span> · </span>}
+            {coach.website && <a href={coach.website} target="_blank" rel="noopener noreferrer" style={{ color: "#4b5563" }}>{coach.website}</a>}
+          </p>
+        )}
       </section>
 
       {/* ── TILES ── */}
