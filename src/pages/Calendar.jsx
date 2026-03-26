@@ -49,6 +49,34 @@ import CampDetailPanel from "../components/calendar/CampDetailPanel.jsx";
 import RegisterConfirmModal from "../components/camps/RegisterConfirmModal.jsx";
 import UnregisterConfirmModal from "../components/camps/UnregisterConfirmModal.jsx";
 
+/* ─── Module-level picklist caches (Sport + Position never change mid-session) ── */
+// These survive navigation without relying on React Query's in-memory cache,
+// preventing unnecessary API calls on every page visit.
+let _sportsCache = null;
+let _positionsCache = null;
+
+async function loadSports() {
+  if (_sportsCache) return _sportsCache;
+  try {
+    const rows = await base44?.entities?.Sport?.filter?.({}, "sport_name", 200);
+    _sportsCache = Array.isArray(rows) ? rows : [];
+  } catch {
+    _sportsCache = [];
+  }
+  return _sportsCache;
+}
+
+async function loadPositions() {
+  if (_positionsCache) return _positionsCache;
+  try {
+    const rows = await base44?.entities?.Position?.filter?.({}, "position_code", 500);
+    _positionsCache = Array.isArray(rows) ? rows : [];
+  } catch {
+    _positionsCache = [];
+  }
+  return _positionsCache;
+}
+
 /* ═══════════════════════════════════════
    Helpers
    ═══════════════════════════════════════ */
@@ -222,39 +250,20 @@ export default function Calendar() {
     }
   }, [isPaid, athleteSportId]);
 
-  // Load picklists (cached 30 min — these lists never change during a session)
+  // Load picklists — module-level cache means these only hit the API once per
+  // browser session regardless of navigation or React Query cache state.
   const sportsQuery = useQuery({
     queryKey: ["sports_list"],
-    staleTime: 30 * 60 * 1000,
-    queryFn: async () => {
-      try {
-        const r = await base44?.entities?.Sport?.list?.();
-        if (Array.isArray(r)) return r;
-      } catch {}
-      try {
-        const r2 = await base44?.entities?.Sport?.filter?.({});
-        return Array.isArray(r2) ? r2 : [];
-      } catch {
-        return [];
-      }
-    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+    queryFn: loadSports,
   });
 
   const positionsQuery = useQuery({
     queryKey: ["positions_list"],
-    staleTime: 30 * 60 * 1000,
-    queryFn: async () => {
-      try {
-        const r = await base44?.entities?.Position?.list?.();
-        if (Array.isArray(r)) return r;
-      } catch {}
-      try {
-        const r2 = await base44?.entities?.Position?.filter?.({});
-        return Array.isArray(r2) ? r2 : [];
-      } catch {
-        return [];
-      }
-    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+    queryFn: loadPositions,
   });
 
   const sports = sportsQuery.data || [];
