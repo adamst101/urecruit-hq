@@ -1,7 +1,7 @@
 // src/components/hooks/useCampSummariesClient.jsx
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
-import { ensureSchoolMap, schoolMapGet } from "../hooks/useSchoolIdentity.jsx";
+import { ensureSchoolMap, schoolMapGet } from "./useSchoolIdentity.jsx";
 
 /* -------------------------
    Helpers

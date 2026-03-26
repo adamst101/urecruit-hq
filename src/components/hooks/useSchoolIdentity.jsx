@@ -125,8 +125,15 @@ export async function ensureSchoolMap(School) {
         const id = String(normId(r) || "");
         if (id) _schoolMap.set(id, r);
       }
-    } catch {
-      // leave map empty — lookups will return null
+      // DIAGNOSTIC
+      console.log("[DIAG schoolMap] loaded", _schoolMap.size, "schools");
+      if (_schoolMap.size > 0) {
+        const first = [..._schoolMap.values()][0];
+        console.log("[DIAG schoolMap] first record keys:", Object.keys(first));
+        console.log("[DIAG schoolMap] first record athletic_logo_url:", first?.athletic_logo_url);
+      }
+    } catch (e) {
+      console.warn("[DIAG schoolMap] load failed:", e?.message);
     }
     _schoolMapLoaded = true;
     _schoolMapLoading = null;
@@ -145,6 +152,7 @@ async function fetchSchoolsByIds(School, ids) {
   for (const id of clean) {
     const record = _schoolMap.get(id);
     if (record) result.push(record);
+    else console.warn("[DIAG schoolMap] miss for id:", id, "map size:", _schoolMap.size);
   }
   return result;
 }
