@@ -56,19 +56,18 @@ async function safeFilter(entity, where, sort, limit, { retries = 2, baseDelayMs
   throw last;
 }
 
-async function batchFetchByIds(entity, ids) {
+async function batchFetchByIds(entity, ids, sort = "id") {
   const cleanIds = uniq(ids);
   if (!entity?.filter || cleanIds.length === 0) return [];
 
   const out = [];
   for (const part of chunk(cleanIds, 60)) {
     // Try $in first (matches useSchoolIdentity which is known to work).
-    // Pass sort="id" — omitting sort causes some base44 entities to return 0 rows silently.
     const tries = [{ id: { $in: part } }, { id: { in: part } }, { _id: { $in: part } }, { _id: { in: part } }];
     let rows = [];
     for (const w of tries) {
       try {
-        rows = await safeFilter(entity, w, "id", 2000, { retries: 2, baseDelayMs: 200 });
+        rows = await safeFilter(entity, w, sort, 2000, { retries: 2, baseDelayMs: 200 });
         if (rows.length) break;
       } catch {
         // keep trying other operator forms
@@ -77,14 +76,21 @@ async function batchFetchByIds(entity, ids) {
     out.push(...rows);
   }
 
+  // DIAGNOSTIC — log when bulk fetch returns nothing
+  if (out.length === 0) {
+    console.warn("[DIAG batchFetchByIds] all $in variants returned empty for ids:", cleanIds.slice(0, 5), "sort:", sort);
+  }
+
   // If bulk operator forms all returned empty, fall back to individual get() calls.
   // The base44 SDK's get(id) hits a direct URL path and is guaranteed to work even
   // when $in queries on the special `id` field are not supported by the server.
   if (out.length === 0 && entity?.get) {
+    console.log("[DIAG batchFetchByIds] trying individual get() fallback for", cleanIds.length, "ids");
     const results = await Promise.allSettled(cleanIds.map((id) => entity.get(id)));
     for (const r of results) {
       if (r.status === "fulfilled" && r.value) out.push(r.value);
     }
+    console.log("[DIAG batchFetchByIds] get() fallback returned", out.length, "rows");
   }
 
   // de-dupe by id
@@ -148,6 +154,10 @@ async function batchFetchByEventKey(CampEntity, keys) {
   return deduped;
 }
 
+// Sort fields that work for each entity — School requires "school_name" (not "id")
+// to match useSchoolIdentity's known-working query pattern.
+const ENTITY_SORT = { School: "school_name", Sport: "sport_name", Position: "position_code" };
+
 async function fetchEntityMap(entityName, ids) {
   const map = new Map();
   const cleanIds = uniq(ids);
@@ -156,9 +166,10 @@ async function fetchEntityMap(entityName, ids) {
   const entity = base44.entities?.[entityName];
   if (!entity?.filter) return map;
 
+  const sort = ENTITY_SORT[entityName] || "id";
   let rows = [];
   try {
-    rows = await batchFetchByIds(entity, cleanIds);
+    rows = await batchFetchByIds(entity, cleanIds, sort);
   } catch {
     rows = [];
   }
@@ -292,6 +303,11 @@ export function useCampSummariesClient({
       const sportIds = uniq(campsNorm.map((c) => c._sport_id));
       const positionIds = uniq(campsNorm.flatMap((c) => c._position_ids));
 
+      // DIAGNOSTIC — remove after confirming school names work
+      console.log("[DIAG useCampSummaries] camps fetched:", campsNorm.length);
+      console.log("[DIAG useCampSummaries] raw camp[0]:", JSON.stringify(camps[0] || {}, null, 2));
+      console.log("[DIAG useCampSummaries] schoolIds to fetch:", schoolIds);
+
       const [schoolMap, sportMap, positionMap] = await Promise.allSettled([
         fetchEntityMap("School", schoolIds),
         fetchEntityMap("Sport", sportIds),
@@ -302,8 +318,11 @@ export function useCampSummariesClient({
       const sports = sportMap.status === "fulfilled" ? sportMap.value : new Map();
       const positions = positionMap.status === "fulfilled" ? positionMap.value : new Map();
 
+      // DIAGNOSTIC — remove after confirming school names work
+      console.log("[DIAG useCampSummaries] schools map size:", schools.size, "keys:", [...schools.keys()]);
+      if (schools.size > 0) console.log("[DIAG useCampSummaries] school[0]:", JSON.stringify([...schools.values()][0], null, 2));
       if (schoolIds.length > 0 && schools.size === 0) {
-        console.warn("[useCampSummariesClient] School fetch returned empty — check School entity read permissions in base44. IDs attempted:", schoolIds.slice(0, 5));
+        console.warn("[DIAG useCampSummaries] School fetch returned EMPTY. schoolIds:", schoolIds);
       }
 
       return campsNorm.map((camp) => {
@@ -336,9 +355,10 @@ export function useCampSummariesClient({
           state: camp.state || null,
 
           school_id: schoolId,
-          school_name: school?.school_name || school?.name || null,
-          school_division: school?.division || school?.school_division || null,
-          school_logo_url: school?.athletic_logo_url || school?.athletics_logo_url || school?.logo_url || school?.school_logo_url || null,
+          // Fallback chain: School entity → camp's own embedded fields (if server denormalized them)
+          school_name: school?.school_name || school?.name || camp.school_name || null,
+          school_division: school?.division || school?.school_division || camp.school_division || null,
+          school_logo_url: school?.athletic_logo_url || school?.athletics_logo_url || school?.logo_url || school?.school_logo_url || camp.school_logo_url || null,
 
           sport_id: sportId2,
           sport_name: sport?.sport_name || sport?.name || null,
