@@ -1,6 +1,7 @@
 // src/components/hooks/useCampSummariesClient.jsx
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
+import { ensureSchoolMap, schoolMapGet } from "../hooks/useSchoolIdentity.jsx";
 
 /* -------------------------
    Helpers
@@ -155,6 +156,18 @@ async function fetchEntityMap(entityName, ids) {
   const map = new Map();
   const cleanIds = uniq(ids);
   if (!cleanIds.length) return map;
+
+  // School entity doesn't support $in filter on id — use the shared module-level
+  // map from useSchoolIdentity which loads all schools in one unrestricted call.
+  if (entityName === "School") {
+    const SchoolEntity = base44.entities?.School;
+    if (SchoolEntity?.filter) await ensureSchoolMap(SchoolEntity);
+    for (const id of cleanIds) {
+      const record = schoolMapGet(id);
+      if (record) map.set(String(id), record);
+    }
+    return map;
+  }
 
   const entity = base44.entities?.[entityName];
   if (!entity?.filter) return map;

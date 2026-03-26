@@ -103,68 +103,50 @@ async function safeFilter(entity, where, sort, limit, retries = 2) {
 }
 
 // Module-level school cache — survives across re-renders and navigations
-const _schoolCache = new Map();
-const _schoolCacheTime = { ts: 0 };
-const SCHOOL_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// Module-level school map — loaded once per session via a single unrestricted
+// filter call. Filtering School by id with $in doesn't work in base44, so we
+// load all schools upfront and look up locally by id.
+const _schoolMap = new Map(); // id → school record
+let _schoolMapLoaded = false;
+let _schoolMapLoading = null; // in-flight promise, prevents duplicate fetches
 
-function getSchoolFromCache(id) {
-  if (Date.now() - _schoolCacheTime.ts > SCHOOL_CACHE_TTL) {
-    _schoolCache.clear();
-    _schoolCacheTime.ts = 0;
-    return undefined;
-  }
-  return _schoolCache.get(id);
+export function schoolMapGet(id) {
+  return id ? _schoolMap.get(String(id)) || null : null;
 }
 
-function setSchoolCache(id, data) {
-  _schoolCache.set(id, data);
-  if (!_schoolCacheTime.ts) _schoolCacheTime.ts = Date.now();
+export async function ensureSchoolMap(School) {
+  if (_schoolMapLoaded) return;
+  if (_schoolMapLoading) return _schoolMapLoading;
+
+  _schoolMapLoading = (async () => {
+    try {
+      const rows = await safeFilter(School, {}, "school_name", 2000);
+      for (const r of (rows || [])) {
+        const id = String(normId(r) || "");
+        if (id) _schoolMap.set(id, r);
+      }
+    } catch {
+      // leave map empty — lookups will return null
+    }
+    _schoolMapLoaded = true;
+    _schoolMapLoading = null;
+  })();
+
+  return _schoolMapLoading;
 }
 
 async function fetchSchoolsByIds(School, ids) {
   const clean = uniq(ids);
   if (!School?.filter || clean.length === 0) return [];
 
-  // Check cache first — only fetch missing IDs
-  const cached = [];
-  const missing = [];
+  await ensureSchoolMap(School);
+
+  const result = [];
   for (const id of clean) {
-    const hit = getSchoolFromCache(id);
-    if (hit) cached.push(hit);
-    else missing.push(id);
+    const record = _schoolMap.get(id);
+    if (record) result.push(record);
   }
-
-  if (missing.length === 0) return cached;
-
-  const out = [];
-  for (const part of chunk(missing, 60)) {
-    const tries = [
-      { id: { $in: part } },
-      { id: { in: part } },
-    ];
-
-    let rows = [];
-    for (const where of tries) {
-      rows = await safeFilter(School, where, "school_name", 2000);
-      if (rows.length) break;
-    }
-    // DIAGNOSTIC — log full first record to see all fields returned
-    if (rows.length) console.log("[DIAG School record full]", JSON.stringify(rows[0], null, 2));
-    else console.warn("[DIAG School] filter returned 0 rows for ids:", part.slice(0, 3));
-    out.push(...rows);
-  }
-
-  // Cache fetched results
-  const seen = new Set();
-  const deduped = [];
-  for (const r of [...cached, ...out]) {
-    const id = String(normId(r) || "");
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    deduped.push(r);
-    setSchoolCache(id, r);
-  }
-  return deduped;
+  return result;
 }
 
 export function buildIdentity(schoolRow, campRow) {
