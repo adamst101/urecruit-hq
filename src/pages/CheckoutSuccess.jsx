@@ -252,6 +252,7 @@ export default function CheckoutSuccess() {
           onClick={() => {
             clearSeasonAccessCache();
             sessionStorage.setItem("postPaymentSignup", "true");
+            if (sessionId) sessionStorage.setItem("stripeSessionId", sessionId);
             navigate("/AuthRedirect?next=/Workspace", { replace: true });
           }}
           style={S.ctaBtn}
