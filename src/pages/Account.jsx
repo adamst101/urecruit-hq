@@ -64,14 +64,14 @@ export default function Account() {
     if (!accountId) return;
     if (showSpinner) setRefreshing(true);
     try {
-      const [me, athRows, entRes, prefRows] = await Promise.all([
+      const [me, athRes, entRes, prefRows] = await Promise.all([
         base44.auth.me().catch(() => null),
-        base44.entities.AthleteProfile.filter({ account_id: accountId }).catch(() => []),
+        base44.functions.invoke("getMyAthleteProfiles", {}).catch(() => null),
         base44.functions.invoke("checkEntitlement", {}).catch(() => null),
         base44.entities.EmailPreferences.filter({ account_id: accountId }).catch(() => []),
       ]);
       setUser(me);
-      setAthletes(Array.isArray(athRows) ? athRows : []);
+      setAthletes(Array.isArray(athRes?.data?.profiles) ? athRes.data.profiles : []);
       const entRows = Array.isArray(entRes?.data?.entitlements) ? entRes.data.entitlements : [];
       setEntitlements(entRows);
       const pref = Array.isArray(prefRows) ? prefRows[0] : null;

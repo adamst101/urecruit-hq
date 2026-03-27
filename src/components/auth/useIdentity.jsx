@@ -68,11 +68,9 @@ export function useIdentity() {
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       try {
-        const rows = await base44.entities.AthleteProfile.filter({
-          account_id: accountId,
-          active: true
-        });
-        return Array.isArray(rows) ? rows : [];
+        const res = await base44.functions.invoke("getMyAthleteProfiles", {});
+        const rows = Array.isArray(res?.data?.profiles) ? res.data.profiles : [];
+        return rows.filter(r => r.active !== false);
       } catch {
         return [];
       }

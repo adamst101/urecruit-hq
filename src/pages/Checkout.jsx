@@ -71,8 +71,9 @@ export default function Checkout() {
         // In add-on mode, pre-populate parent info from the primary athlete profile
         if (isAddonMode && authenticated) {
           try {
-            const profiles = await base44.entities.AthleteProfile.filter({ is_primary: true });
-            const primary = Array.isArray(profiles) ? profiles[0] : null;
+            const profileRes = await base44.functions.invoke("getMyAthleteProfiles", {}).catch(() => null);
+            const profiles = Array.isArray(profileRes?.data?.profiles) ? profileRes.data.profiles : [];
+            const primary = profiles.find(p => p.is_primary) || profiles[0] || null;
             if (primary) {
               if (primary.parent_first_name) setParentFirstName(primary.parent_first_name);
               if (primary.parent_last_name) setParentLastName(primary.parent_last_name);

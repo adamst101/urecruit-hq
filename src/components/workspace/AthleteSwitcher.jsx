@@ -16,19 +16,21 @@ export default function AthleteSwitcher({ accountId, seasonYear, onAddAthlete })
     let cancelled = false;
     (async () => {
       try {
-        const [athRows, entRows] = await Promise.all([
-          base44.entities.AthleteProfile.filter({ account_id: accountId }),
-          base44.entities.Entitlement.filter({ account_id: accountId, status: "active" }),
+        const [athRes, entRes] = await Promise.all([
+          base44.functions.invoke("getMyAthleteProfiles", {}),
+          base44.functions.invoke("checkEntitlement", {}),
         ]);
         if (cancelled) return;
+        const athRows = Array.isArray(athRes?.data?.profiles) ? athRes.data.profiles : [];
+        const entRows = Array.isArray(entRes?.data?.entitlements) ? entRes.data.entitlements : [];
         // Sort: primary athletes first, then by id (stable fallback)
-        const aList = (Array.isArray(athRows) ? athRows : []).sort((a, b) => {
+        const aList = athRows.sort((a, b) => {
           if (a.is_primary && !b.is_primary) return -1;
           if (!a.is_primary && b.is_primary) return 1;
           return 0;
         });
         setAthletes(aList);
-        setEntitlements(Array.isArray(entRows) ? entRows : []);
+        setEntitlements(entRows);
         // Default to primary athlete if nothing is selected
         if (!activeId && aList.length > 0) {
           const primary = aList.find(a => a.is_primary) || aList[0];

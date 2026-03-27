@@ -89,15 +89,16 @@ export default function CheckoutSuccess() {
         const accountId = me?.id;
         if (!accountId) { setAddonStatus("done"); return; }
 
-        const initial = await base44.entities.AthleteProfile.filter({ account_id: accountId }).catch(() => []);
-        const initialCount = Array.isArray(initial) ? initial.length : 0;
+        const initialRes = await base44.functions.invoke("getMyAthleteProfiles", {}).catch(() => null);
+        const initialCount = Array.isArray(initialRes?.data?.profiles) ? initialRes.data.profiles.length : 0;
 
         // Poll up to 8 s for webhook to create the athlete
         const deadline = Date.now() + 8000;
         while (!cancelled && Date.now() < deadline) {
           await sleep(1500);
-          const current = await base44.entities.AthleteProfile.filter({ account_id: accountId }).catch(() => []);
-          if (Array.isArray(current) && current.length > initialCount) {
+          const currentRes = await base44.functions.invoke("getMyAthleteProfiles", {}).catch(() => null);
+          const current = Array.isArray(currentRes?.data?.profiles) ? currentRes.data.profiles : [];
+          if (current.length > initialCount) {
             if (!cancelled) setAddonStatus("done");
             return;
           }
