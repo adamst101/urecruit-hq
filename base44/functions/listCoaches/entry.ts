@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
 
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
       messages: Array.isArray(messages) ? messages : [],
     });
   } catch (err) {
-    console.error("listCoaches error:", (err as Error).message);
-    return Response.json({ ok: false, error: (err as Error).message }, { status: 500 });
+    console.error("listCoaches error:", err.message);
+    return Response.json({ ok: false, error: err.message }, { status: 500 });
   }
 });
