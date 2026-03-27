@@ -205,19 +205,21 @@ export default function AuthRedirect() {
           // (user paid anonymously before creating their account).
           // Try to link the Stripe session to this account now.
           const stripeSessionId = ssGet("stripeSessionId");
-          ssRemove("stripeSessionId");
           if (stripeSessionId) {
             setStatusMsg("Linking your purchase…");
             try {
               const res = await base44.functions.invoke("linkStripePayment", { sessionId: stripeSessionId });
               const ok = res?.data?.ok || res?.ok;
               if (ok) {
+                ssRemove("stripeSessionId"); // only remove on success
                 clearSeasonAccessCache();
                 didRoute.current = true;
                 nav(PATHS.WORKSPACE, { replace: true });
                 return;
               }
             } catch {}
+            // linkStripePayment failed — leave stripeSessionId in sessionStorage so
+            // Workspace can retry it when the user clicks "Continue to HQ →".
           }
           setShowSlowWarning(true);
         }

@@ -1,5 +1,5 @@
 // src/pages/Workspace.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CalendarDays, Search, User, Shield, LogOut, Star, ArrowRight } from "lucide-react";
 
@@ -177,6 +177,36 @@ export default function Workspace() {
   const memberSeason = Number(season?.entitlement?.season_year) || season?.seasonYear || null;
   const currentYear = season?.currentYear || new Date().getFullYear();
   const demoYear = season?.demoYear || (currentYear - 1);
+
+  // Self-healing: if the user is authenticated but has no entitlement, and a
+  // stripeSessionId is in sessionStorage (payment made but webhook/AuthRedirect
+  // didn't link it in time), call linkStripePayment now and re-check access.
+  const _healedRef = useRef(false);
+  useEffect(() => {
+    if (_healedRef.current) return;
+    if (season?.isLoading) return;
+    if (!season?.accountId) return;
+    if (season?.hasAccess) return;
+
+    let stripeSessionId = null;
+    try { stripeSessionId = sessionStorage.getItem("stripeSessionId"); } catch {}
+    if (!stripeSessionId) return;
+
+    _healedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        sessionStorage.removeItem("stripeSessionId");
+        const res = await base44.functions.invoke("linkStripePayment", { sessionId: stripeSessionId });
+        const ok = res?.data?.ok || res?.ok;
+        if (ok && !cancelled) {
+          clearSeasonAccessCache();
+          season.refresh();
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [season?.isLoading, season?.accountId, season?.hasAccess]);
 
   async function handleLogout() {
     if (loggingOut) return;
