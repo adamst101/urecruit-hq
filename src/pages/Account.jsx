@@ -64,15 +64,16 @@ export default function Account() {
     if (!accountId) return;
     if (showSpinner) setRefreshing(true);
     try {
-      const [me, athRows, entRows, prefRows] = await Promise.all([
+      const [me, athRows, entRes, prefRows] = await Promise.all([
         base44.auth.me().catch(() => null),
         base44.entities.AthleteProfile.filter({ account_id: accountId }).catch(() => []),
-        base44.entities.Entitlement.filter({ account_id: accountId }).catch(() => []),
+        base44.functions.invoke("checkEntitlement", {}).catch(() => null),
         base44.entities.EmailPreferences.filter({ account_id: accountId }).catch(() => []),
       ]);
       setUser(me);
       setAthletes(Array.isArray(athRows) ? athRows : []);
-      setEntitlements(Array.isArray(entRows) ? entRows : []);
+      const entRows = Array.isArray(entRes?.data?.entitlements) ? entRes.data.entitlements : [];
+      setEntitlements(entRows);
       const pref = Array.isArray(prefRows) ? prefRows[0] : null;
       setEmailPrefsId(pref?.id || null);
       setMonthlyOptOut(pref?.monthly_agenda_opt_out === true);

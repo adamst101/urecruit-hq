@@ -203,6 +203,19 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Persist first_name / last_name on the User entity so Workspace "Welcome Back" shows the parent name
+  if (parentFirstName || parentLastName) {
+    try {
+      await base44.asServiceRole.entities.User.update(accountId, {
+        first_name: parentFirstName || null,
+        last_name: parentLastName || null,
+      });
+      console.log("Updated User name fields for account:", accountId);
+    } catch (e) {
+      console.warn("Could not update User name fields (non-critical):", (e as Error).message);
+    }
+  }
+
   // Link athlete to coach roster if a coach invite code was present in the session
   if (coachInviteCode && accountId) {
     try {

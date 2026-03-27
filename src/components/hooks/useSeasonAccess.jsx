@@ -83,7 +83,9 @@ async function safeMe() {
 async function fetchEntitlementViaFunction() {
   const res = await base44.functions.invoke("checkEntitlement", {});
   const list = Array.isArray(res?.data?.entitlements) ? res.data.entitlements : [];
-  return list;
+  const firstName = res?.data?.firstName || null;
+  const lastName = res?.data?.lastName || null;
+  return { list, firstName, lastName };
 }
 
 function readDemoSeasonOverride({ fallbackDemoYear }) {
@@ -188,8 +190,13 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
   // The Entitlement entity does not have client-read permissions, so
   // base44.entities.Entitlement.filter always returns [] — this bypasses that.
   let entitlements = [];
+  let userFirstName = null;
+  let userLastName = null;
   try {
-    entitlements = await fetchEntitlementViaFunction();
+    const fetched = await fetchEntitlementViaFunction();
+    entitlements = fetched.list;
+    userFirstName = fetched.firstName;
+    userLastName = fetched.lastName;
     console.log("[DIAG:SeasonAccess] server entitlements:", entitlements.length, entitlements.map(x => `id=${x.id} acct=${x.account_id} season=${x.season_year}`));
   } catch (e) {
     if (isRateLimitError(e)) throw e;
@@ -215,6 +222,8 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
       accountId,
       entitlement: ent,
       role,
+      firstName: userFirstName,
+      lastName: userLastName,
       isAuthenticated: true,
       lastCheckedAt: nowISO(),
     };
@@ -233,6 +242,8 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
     accountId,
     entitlement: null,
     role,
+    firstName: userFirstName,
+    lastName: userLastName,
     isAuthenticated: true,
     lastCheckedAt: nowISO(),
   };

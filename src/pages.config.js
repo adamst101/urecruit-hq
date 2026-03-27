@@ -81,6 +81,7 @@ import ProductMetrics from './pages/ProductMetrics';
 import ProductRoadmap from './pages/ProductRoadmap';
 import Profile from './pages/Profile';
 import RecruitingGuide from './pages/RecruitingGuide';
+import RecruitingJourney from './pages/RecruitingJourney';
 import SchoolAthleticsCleanup from './pages/SchoolAthleticsCleanup';
 import SchoolsManager from './pages/SchoolsManager';
 import SeasonManager from './pages/SeasonManager';
@@ -133,6 +134,7 @@ export const PAGES = {
     "ProductRoadmap": ProductRoadmap,
     "Profile": Profile,
     "RecruitingGuide": RecruitingGuide,
+    "RecruitingJourney": RecruitingJourney,
     "SchoolAthleticsCleanup": SchoolAthleticsCleanup,
     "SchoolsManager": SchoolsManager,
     "SeasonManager": SeasonManager,
