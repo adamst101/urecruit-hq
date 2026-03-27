@@ -11,6 +11,7 @@ const ROUTES = {
   Calendar: "/Calendar",
   MyCamps: "/MyCamps",
   Profile: "/Profile",
+  CoachProfile: "/CoachProfile",
 };
 
 function isActivePath(pathname, target) {
@@ -25,17 +26,18 @@ export default function BottomNav() {
   const season = useSeasonAccess();
   const isCoach = season?.mode === "coach" || season?.mode === "coach_pending";
 
-  const hqRoute = isCoach ? ROUTES.CoachDashboard : ROUTES.Workspace;
+  const hqRoute      = isCoach ? ROUTES.CoachDashboard : ROUTES.Workspace;
+  const profileRoute = isCoach ? ROUTES.CoachProfile   : ROUTES.Profile;
 
   const items = useMemo(
     () => [
-      { label: "HQ", to: hqRoute, Icon: LayoutGrid },
+      { label: "HQ",       to: hqRoute,      Icon: LayoutGrid },
       { label: "Discover", to: ROUTES.Discover, Icon: Search },
       { label: "Calendar", to: ROUTES.Calendar, Icon: CalendarDays },
-      { label: "My Camps", to: ROUTES.MyCamps, Icon: Heart },
-      { label: "Profile", to: ROUTES.Profile, Icon: User },
+      { label: "My Camps", to: ROUTES.MyCamps,  Icon: Heart },
+      { label: "Profile",  to: profileRoute,  Icon: User },
     ],
-    [hqRoute]
+    [hqRoute, profileRoute]
   );
 
   function handleNav(to) {

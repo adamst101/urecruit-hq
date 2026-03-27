@@ -64,6 +64,7 @@ import CampsManager from './pages/CampsManager';
 import Checkout from './pages/Checkout';
 import CheckoutSuccess from './pages/CheckoutSuccess';
 import CoachDashboard from './pages/CoachDashboard';
+import CoachProfile from './pages/CoachProfile';
 import CoachNetworkAdmin from './pages/CoachNetworkAdmin';
 import CoachInviteLanding from './pages/CoachInviteLanding';
 import CoachSignup from './pages/CoachSignup';
@@ -115,6 +116,7 @@ export const PAGES = {
     "Checkout": Checkout,
     "CheckoutSuccess": CheckoutSuccess,
     "CoachDashboard": CoachDashboard,
+    "CoachProfile": CoachProfile,
     "CoachNetworkAdmin": CoachNetworkAdmin,
     "CoachInviteLanding": CoachInviteLanding,
     "CoachSignup": CoachSignup,
