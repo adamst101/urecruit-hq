@@ -9,6 +9,10 @@ import BottomNav from "../components/navigation/BottomNav.jsx";
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 const LOGO_URL = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
+// Module-level cache — survives component unmount/remount within the same session.
+// Cleared on logout. Prevents "No Coach Account Found" when auth token expires mid-session.
+let _coachCache = null; // { coach, roster, messages, campsByAccountId }
+
 // ── Tile component matching Workspace style ───────────────────────────────────
 function CoachTile({ icon, title, desc, badge, onClick, active }) {
   return (
@@ -72,6 +76,16 @@ export default function CoachDashboard() {
 
   // ── Load coach profile ──────────────────────────────────────────────────────
   async function loadCoach() {
+    // If we have a cached profile from earlier in this session, use it immediately
+    // so the UI shows correctly even when the auth token has expired mid-session.
+    if (_coachCache) {
+      setCoach(_coachCache.coach);
+      setRoster(_coachCache.roster);
+      setCampsByAccountId(_coachCache.campsByAccountId);
+      setMessages(_coachCache.messages);
+      return _coachCache.coach;
+    }
+
     try {
       // Get accountId directly from frontend auth — more reliable than waiting
       // for useSeasonAccess to finish its async refresh on each mount
@@ -85,14 +99,20 @@ export default function CoachDashboard() {
       const res = await base44.functions.invoke("getMyCoachProfile", { accountId: frontendAccountId || undefined });
       const data = res?.data;
       if (!data?.ok || !data.coach) return null;
+      const sortedMessages = Array.isArray(data.messages)
+        ? data.messages.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))
+        : [];
+      // Cache for subsequent navigations within the same session
+      _coachCache = {
+        coach: data.coach,
+        roster: Array.isArray(data.roster) ? data.roster : [],
+        messages: sortedMessages,
+        campsByAccountId: data.campsByAccountId || {},
+      };
       setCoach(data.coach);
-      setRoster(Array.isArray(data.roster) ? data.roster : []);
-      setCampsByAccountId(data.campsByAccountId || {});
-      setMessages(
-        Array.isArray(data.messages)
-          ? data.messages.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))
-          : []
-      );
+      setRoster(_coachCache.roster);
+      setCampsByAccountId(_coachCache.campsByAccountId);
+      setMessages(sortedMessages);
       return data.coach;
     } catch (e) {
       console.error("CoachDashboard load error:", e?.message);
@@ -122,6 +142,7 @@ export default function CoachDashboard() {
   async function handleLogout() {
     if (loggingOut) return;
     setLoggingOut(true);
+    _coachCache = null;
     clearSeasonAccessCache();
     try { await base44.auth.logout(); } catch {}
     window.location.assign("/Home");
