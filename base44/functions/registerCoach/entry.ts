@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
 
     // Create a support ticket for admin review
     try {
-      const existing = await base44.asServiceRole.entities.SupportTicket.filter({}, E).catch(() => []);
+      const existing = await base44.asServiceRole.entities.SupportTicket.filter({}).catch(() => []);
       const num = String((Array.isArray(existing) ? existing.length : 0) + 1).padStart(4, "0");
       const ticketNumber = `COACH-${new Date().getFullYear()}-${num}`;
 

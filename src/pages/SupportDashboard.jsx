@@ -31,8 +31,8 @@ export default function SupportDashboard() {
 
   useEffect(() => {
     (async () => {
-      const rows = await base44.entities.SupportTicket.list("-created_date", 500);
-      setTickets(Array.isArray(rows) ? rows : []);
+      const res = await base44.functions.invoke("listSupportTickets", {});
+      setTickets(Array.isArray(res?.data?.tickets) ? res.data.tickets : []);
       setLoading(false);
     })();
   }, []);
@@ -60,14 +60,14 @@ export default function SupportDashboard() {
     setSaving(ticketId);
     const data = { status: newStatus };
     if (newStatus === "resolved") data.resolved_at = new Date().toISOString();
-    await base44.entities.SupportTicket.update(ticketId, data);
+    await base44.functions.invoke("updateSupportTicket", { ticketId, fields: data });
     setTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, ...data } : t)));
     setSaving(null);
   }
 
   async function saveNotes(ticketId) {
     setSaving(ticketId);
-    await base44.entities.SupportTicket.update(ticketId, { admin_notes: adminNotes[ticketId] || "" });
+    await base44.functions.invoke("updateSupportTicket", { ticketId, fields: { admin_notes: adminNotes[ticketId] || "" } });
     setTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, admin_notes: adminNotes[ticketId] || "" } : t)));
     setSaving(null);
   }
