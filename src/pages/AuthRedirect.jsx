@@ -190,12 +190,12 @@ export default function AuthRedirect() {
       const interval = setInterval(async () => {
         attempts++;
         try {
-          const ents = await base44.entities.Entitlement.filter({
-            account_id: accountId,
-            status: "active",
-          });
-          console.log("[DIAG:AuthRedirect] poll attempt", attempts, "— ents:", Array.isArray(ents) ? ents.length : "error", Array.isArray(ents) ? ents.map(e => `id=${e.id} acct=${e.account_id} season=${e.season_year}`) : []);
-          if (Array.isArray(ents) && ents.length > 0) {
+          // Use checkEntitlement (server-side, service role) — client-side
+          // base44.entities.Entitlement.filter has no read permissions and always returns [].
+          const res = await base44.functions.invoke("checkEntitlement", {});
+          const ents = Array.isArray(res?.data?.entitlements) ? res.data.entitlements : [];
+          console.log("[DIAG:AuthRedirect] poll attempt", attempts, "— ents:", ents.length, ents.map(e => `id=${e.id} acct=${e.account_id} season=${e.season_year}`));
+          if (ents.length > 0) {
             clearInterval(interval);
             clearSeasonAccessCache();
             didRoute.current = true;

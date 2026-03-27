@@ -78,22 +78,13 @@ async function safeMe() {
   }
 }
 
-async function fetchEntitlement({ accountId, seasonYear }) {
-  try {
-    const rows = await base44.entities.Entitlement.filter({
-      account_id: accountId,
-      season_year: seasonYear,
-      status: "active",
-    });
-    const list = Array.isArray(rows) ? rows : [];
-    if (!list.length) return null;
-    return list.find((x) => isActiveInWindow(x)) || null;
-  } catch (e) {
-    // Propagate rate-limit errors so the caller can treat them as transient failures
-    // rather than "no entitlement found" — prevents false demo-mode on 429.
-    if (isRateLimitError(e)) throw e;
-    return null;
-  }
+// NOTE: base44.entities.Entitlement.filter has no client-read permissions in this
+// Base44 project — it always returns []. Use checkEntitlement (server-side, service
+// role) instead. fetchEntitlement is kept as a dead-code reference only.
+async function fetchEntitlementViaFunction(accountId) {
+  const res = await base44.functions.invoke("checkEntitlement", {});
+  const list = Array.isArray(res?.data?.entitlements) ? res.data.entitlements : [];
+  return list;
 }
 
 function readDemoSeasonOverride({ fallbackDemoYear }) {
@@ -115,7 +106,7 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
   // Treat as admin if base44 role is "admin" OR if email is in the hardcoded admin list
   const role = (me?.role === "admin" || isAdminEmail(me?.email)) ? "admin" : (me?.role || null);
 
-  console.log("[DIAG:SeasonAccess] doRefresh — accountId:", accountId, "role:", role, "activeSeason:", activeSeason, "soldSeason:", soldSeason);
+  console.log("[DIAG:SeasonAccess] doRefresh — accountId:", accountId, "role:", role, "activeSeason:", activeSeason, "soldSeason:", soldSeason, "(using server-side checkEntitlement)");
 
   // Not signed in → demo
   if (!accountId) {
@@ -194,29 +185,24 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
     };
   }
 
-  // Check entitlement for active season, then sold season (early-bird)
-  let ent = await fetchEntitlement({ accountId, seasonYear: activeSeason });
-  console.log("[DIAG:SeasonAccess] entitlement for activeSeason", activeSeason, ":", ent ? `found id=${ent.id} season=${ent.season_year}` : "null");
-  if (!ent && soldSeason !== activeSeason) {
-    ent = await fetchEntitlement({ accountId, seasonYear: soldSeason });
-    console.log("[DIAG:SeasonAccess] entitlement for soldSeason", soldSeason, ":", ent ? `found id=${ent.id}` : "null");
+  // Fetch all active entitlements via server-side function (asServiceRole).
+  // The Entitlement entity does not have client-read permissions, so
+  // base44.entities.Entitlement.filter always returns [] — this bypasses that.
+  let entitlements = [];
+  try {
+    entitlements = await fetchEntitlementViaFunction(accountId);
+    console.log("[DIAG:SeasonAccess] server entitlements:", entitlements.length, entitlements.map(x => `id=${x.id} acct=${x.account_id} season=${x.season_year}`));
+  } catch (e) {
+    if (isRateLimitError(e)) throw e;
+    console.log("[DIAG:SeasonAccess] fetchEntitlementViaFunction threw:", e?.message);
   }
 
-  // Fallback: check for ANY active entitlement regardless of season year
-  // Handles cases where the entitlement was created with a different season_year
-  if (!ent) {
-    try {
-      const rows = await base44.entities.Entitlement.filter({
-        account_id: accountId,
-        status: "active",
-      });
-      const list = Array.isArray(rows) ? rows : [];
-      console.log("[DIAG:SeasonAccess] fallback any-season query returned", list.length, "rows:", list.map(x => `id=${x.id} acct=${x.account_id} season=${x.season_year}`));
-      ent = list.find((x) => isActiveInWindow(x)) || list[0] || null;
-    } catch (e) {
-      console.log("[DIAG:SeasonAccess] fallback query threw:", e?.message);
-    }
-  }
+  // Find best matching entitlement: active season first, sold season next, then any
+  let ent = entitlements.find(x => x.season_year === activeSeason && isActiveInWindow(x))
+    || entitlements.find(x => x.season_year === soldSeason && isActiveInWindow(x))
+    || entitlements.find(x => isActiveInWindow(x))
+    || entitlements[0]
+    || null;
 
   if (ent) {
     try { sessionStorage.removeItem("demoMode_v1"); } catch {}
