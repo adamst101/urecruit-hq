@@ -14,10 +14,28 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
   }
 
+  // Also grab the caller's email for fallback lookup
+  let callerEmail = "";
+  try {
+    const me2 = await base44.auth.me();
+    callerEmail = me2?.email || "";
+  } catch {}
+
   try {
     // Use service role so entity-level read permissions don't block the coach
-    const coaches = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId });
-    const list = Array.isArray(coaches) ? coaches : [];
+    let coaches = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId });
+    let list = Array.isArray(coaches) ? coaches : [];
+
+    // Fallback: if not found by account_id, try by email (handles cases where account_id
+    // was not saved correctly during registration)
+    if (!list.length && callerEmail) {
+      const byEmail = await base44.asServiceRole.entities.Coach.filter({ email: callerEmail }).catch(() => []);
+      list = Array.isArray(byEmail) ? byEmail : [];
+      // Backfill the account_id so future lookups work
+      if (list.length && !list[0].account_id) {
+        base44.asServiceRole.entities.Coach.update(list[0].id, { account_id: accountId }).catch(() => {});
+      }
+    }
 
     if (!list.length) {
       return Response.json({ ok: true, coach: null, roster: [], messages: [] });
