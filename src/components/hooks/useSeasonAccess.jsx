@@ -287,44 +287,54 @@ export function useSeasonAccess() {
   });
 
   const refresh = async () => {
-    // 1. Cached paid result → clear any stale sessionStorage demo flags, use instantly, skip network
-    if (_cachedResult?.hasAccess === true) {
-      clearDemoMode();
+    // 1. Cached authenticated result → use instantly, no loading flash
+    if (_cachedResult) {
+      if (_cachedResult.hasAccess === true) clearDemoMode();
       setState((p) => ({ ...p, ..._cachedResult, isLoading: false, loading: false }));
-      return;
+      // Paid results: skip re-fetch entirely (long-lived entitlement)
+      if (_cachedResult.hasAccess === true) return;
+      // Coach/pending: fall through to re-fetch in background without showing loading state
     }
 
     // 2. Another instance already fetching → share its promise
     if (_fetchPromise) {
       try {
         const result = await _fetchPromise;
-        setState((p) => ({ ...p, ...result, isLoading: false, loading: false }));
+        // Don't downgrade a cached coach to demo if re-fetch fails due to token expiry
+        const isDowngrade = result?.mode === "demo" && _cachedResult &&
+          (_cachedResult.mode === "coach" || _cachedResult.mode === "coach_pending");
+        if (!isDowngrade) setState((p) => ({ ...p, ...result, isLoading: false, loading: false }));
       } catch {}
       return;
     }
 
-    // 3. Start a new fetch, share via _fetchPromise
-    setState((p) => ({ ...p, isLoading: true, loading: true }));
+    // 3. Start a new fetch (only show loading spinner if we have no cached state at all)
+    if (!_cachedResult) setState((p) => ({ ...p, isLoading: true, loading: true }));
 
     _fetchPromise = doRefresh({ currentYear, demoYear, activeSeason, soldSeason });
 
     try {
       const result = await _fetchPromise;
 
-      // Cache paid results in memory (already persisted in sessionStorage by doRefresh)
-      if (result?.hasAccess === true) {
+      // Cache paid, coach, and coach_pending results for instant display on next navigation
+      if (result?.hasAccess === true || result?.mode === "coach" || result?.mode === "coach_pending") {
         _cachedResult = result;
       }
 
-      setState((p) => ({ ...p, ...result, isLoading: false, loading: false }));
+      // Don't downgrade a cached coach to demo (handles token expiry mid-session)
+      const isDowngrade = result?.mode === "demo" && _cachedResult &&
+        (_cachedResult.mode === "coach" || _cachedResult.mode === "coach_pending");
+      if (!isDowngrade) setState((p) => ({ ...p, ...result, isLoading: false, loading: false }));
     } catch {
-      // On error, fall through to demo gracefully
-      setState((p) => ({
-        ...p,
-        isLoading: false,
-        loading: false,
-        mode: p.mode === "loading" ? "demo" : p.mode,
-      }));
+      // On error, fall through to demo gracefully — but keep coach state if cached
+      if (!_cachedResult || (_cachedResult.mode !== "coach" && _cachedResult.mode !== "coach_pending")) {
+        setState((p) => ({
+          ...p,
+          isLoading: false,
+          loading: false,
+          mode: p.mode === "loading" ? "demo" : p.mode,
+        }));
+      }
     } finally {
       _fetchPromise = null;
     }
