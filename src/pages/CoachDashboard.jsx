@@ -1,5 +1,5 @@
 // src/pages/CoachDashboard.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { User, LogOut } from "lucide-react";
 import { base44 } from "../api/base44Client";
@@ -8,6 +8,35 @@ import BottomNav from "../components/navigation/BottomNav.jsx";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 const LOGO_URL = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
+
+// Responsive sheet styles: bottom-sheet on mobile, centered modal on desktop
+const SHEET_STYLES = `
+  .coach-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 85vh;
+    border-top: 3px solid #e8a020;
+    border-radius: 20px 20px 0 0;
+  }
+  @media (min-width: 640px) {
+    .coach-sheet {
+      top: 50%;
+      left: 50%;
+      right: auto;
+      bottom: auto;
+      transform: translate(-50%, -50%);
+      width: calc(100% - 48px);
+      max-width: 640px;
+      max-height: 80vh;
+      border-radius: 16px;
+      border-top: none;
+      border: 1px solid #374151;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+    }
+  }
+`;
 
 // Module-level cache — survives component unmount/remount within the same session.
 // Cleared on logout. Prevents "No Coach Account Found" when auth token expires mid-session.
@@ -63,14 +92,8 @@ export default function CoachDashboard() {
   const [logoOk, setLogoOk] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
 
-  // Active panel: null | "message" | "code"
-  const [activePanel, setActivePanel] = useState(null);
-
-  // Expanded Players Dashboard card: null | "roster" | "monthly" | "schools" | "noCamps"
-  const [dashCard, setDashCard] = useState(null);
-
-  // Ref for scrolling to Players Dashboard
-  const playersDashRef = useRef(null);
+  // Open sheet: null | "roster" | "monthly" | "schools" | "noCamps" | "message" | "code"
+  const [openSheet, setOpenSheet] = useState(null);
 
   // Message compose state
   const [recipient, setRecipient] = useState("all"); // "all" | athlete roster id
@@ -296,6 +319,32 @@ export default function CoachDashboard() {
     );
   }
 
+  // ── Computed data for Players Dashboard ────────────────────────────────────
+  const _now = new Date();
+  const _thisMonth = _now.getMonth();
+  const _thisYear = _now.getFullYear();
+  const _monthName = _now.toLocaleString("en-US", { month: "long" });
+
+  const athletesThisMonth = roster.filter(r => {
+    const camps = campsByAccountId[r.account_id] || [];
+    return camps.some(c => {
+      if (!c.start_date) return false;
+      const d = new Date(c.start_date + "T00:00:00");
+      return d.getMonth() === _thisMonth && d.getFullYear() === _thisYear;
+    });
+  });
+
+  const _schoolCounts = {};
+  Object.values(campsByAccountId).forEach(camps => {
+    camps.forEach(c => {
+      const name = c.school_name || c.camp_name || "Unknown";
+      _schoolCounts[name] = (_schoolCounts[name] || 0) + 1;
+    });
+  });
+  const topSchools = Object.entries(_schoolCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  const athletesNoCamps = roster.filter(r => (campsByAccountId[r.account_id] || []).length === 0);
+
   // ── Full approved dashboard ─────────────────────────────────────────────────
   return (
     <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", paddingBottom: 80, fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
@@ -342,16 +391,16 @@ export default function CoachDashboard() {
             title="PLAYERS DASHBOARD"
             desc="Player insights, camp attendance, and roster overview"
             badge={roster.length}
-            active={false}
-            onClick={() => playersDashRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            active={openSheet === "roster"}
+            onClick={() => setOpenSheet("roster")}
           />
           <CoachTile
             icon="💬"
             title="MESSAGE ROSTER"
             desc="Send a message to all athletes or an individual"
             badge={messages.length}
-            active={activePanel === "message"}
-            onClick={() => setActivePanel(activePanel === "message" ? null : "message")}
+            active={openSheet === "message"}
+            onClick={() => setOpenSheet("message")}
           />
           <CoachTile
             icon="🔍"
@@ -364,398 +413,307 @@ export default function CoachDashboard() {
             icon="🔗"
             title="INVITE CODE"
             desc="Share your code with athletes to connect them to your roster"
-            active={activePanel === "code"}
-            onClick={() => setActivePanel(activePanel === "code" ? null : "code")}
+            active={openSheet === "code"}
+            onClick={() => setOpenSheet("code")}
           />
         </div>
       </section>
 
       {/* ── PLAYERS DASHBOARD ── */}
-      {(() => {
-        const now = new Date();
-        const thisMonth = now.getMonth();
-        const thisYear = now.getFullYear();
-        const monthName = now.toLocaleString("en-US", { month: "long" });
+      <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <div style={{ width: 3, height: 22, background: "#e8a020", borderRadius: 2 }} />
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>PLAYERS DASHBOARD</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+          {[
+            { key: "roster",   label: "Players Connected",  value: roster.length,              sub: "Athletes on roster",             accent: "#e8a020", cta: "View Roster →" },
+            { key: "monthly",  label: "Camps This Month",   value: athletesThisMonth.length,   sub: `Players attending in ${_monthName}`, accent: "#e8a020", cta: "View Details →" },
+            { key: "schools",  label: "Top Schools",        value: topSchools.length,           sub: "Schools with registrations",     accent: "#e8a020", cta: "View Rankings →" },
+            { key: "noCamps",  label: "No Camps Planned",   value: athletesNoCamps.length,     sub: "Players with no registrations",  accent: athletesNoCamps.length > 0 ? "#f87171" : "#e8a020", cta: "View Players →" },
+          ].map(({ key, label, value, sub, accent, cta }) => (
+            <div
+              key={key}
+              onClick={() => setOpenSheet(key)}
+              style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, padding: "20px", cursor: "pointer", transition: "border-color 0.15s" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+            >
+              <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{label}</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: accent, lineHeight: 1 }}>{value}</div>
+              <div style={{ fontSize: 12, color: "#4b5563", marginTop: 4 }}>{sub}</div>
+              <div style={{ fontSize: 12, color: "#e8a020", marginTop: 12, fontWeight: 600 }}>{cta}</div>
+            </div>
+          ))}
+        </div>
+      </section>
 
-        // Card 2: athletes with at least one camp this month
-        const athletesThisMonth = roster.filter(r => {
-          const camps = campsByAccountId[r.account_id] || [];
-          return camps.some(c => {
-            if (!c.start_date) return false;
-            const d = new Date(c.start_date + "T00:00:00");
-            return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-          });
-        });
-
-        // Card 3: top schools by aggregate camp registrations across all athletes
-        const schoolCounts = {};
-        Object.values(campsByAccountId).forEach(camps => {
-          camps.forEach(c => {
-            const name = c.school_name || c.camp_name || "Unknown";
-            schoolCounts[name] = (schoolCounts[name] || 0) + 1;
-          });
-        });
-        const topSchools = Object.entries(schoolCounts)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 5);
-
-        // Card 4: athletes with no camps at all
-        const athletesNoCamps = roster.filter(r => {
-          const camps = campsByAccountId[r.account_id] || [];
-          return camps.length === 0;
-        });
-
-        const cardStyle = (key) => ({
-          background: dashCard === key ? "#1a2535" : "#111827",
-          border: `1px solid ${dashCard === key ? "#e8a020" : "#1f2937"}`,
-          borderRadius: 14,
-          padding: "20px 20px",
-          cursor: "pointer",
-          transition: "border-color 0.15s",
-        });
-
-        return (
-          <section ref={playersDashRef} style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
-            {/* Section header */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-              <div style={{ width: 3, height: 22, background: "#e8a020", borderRadius: 2 }} />
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>
-                PLAYERS DASHBOARD
-              </div>
+      {/* ── SHEET OVERLAY ── */}
+      {openSheet && (
+        <>
+          <style>{SHEET_STYLES}</style>
+          {/* Backdrop */}
+          <div
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 200 }}
+            onClick={() => setOpenSheet(null)}
+          />
+          {/* Sheet */}
+          <div
+            className="coach-sheet"
+            style={{ position: "fixed", zIndex: 201, background: "#111827", overflowY: "auto", WebkitOverflowScrolling: "touch" }}
+          >
+            {/* Drag handle (mobile visual) */}
+            <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 0" }}>
+              <div style={{ width: 40, height: 4, background: "#374151", borderRadius: 2 }} />
             </div>
 
-            {/* 4 insight cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 20 }}>
-
-              {/* Card 1: Players Connected */}
-              <div
-                style={cardStyle("roster")}
-                onClick={() => setDashCard(dashCard === "roster" ? null : "roster")}
-              >
-                <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Players Connected</div>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "#e8a020", lineHeight: 1 }}>{roster.length}</div>
-                <div style={{ fontSize: 12, color: "#4b5563", marginTop: 4 }}>Athletes on roster</div>
-                <div style={{ fontSize: 12, color: "#e8a020", marginTop: 12, fontWeight: 600 }}>{dashCard === "roster" ? "Hide ↑" : "View Roster →"}</div>
+            {/* Sheet header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 0", position: "sticky", top: 0, background: "#111827", zIndex: 1 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f9fafb" }}>
+                {openSheet === "roster"  && `ROSTER — ${roster.length} ATHLETE${roster.length !== 1 ? "S" : ""}`}
+                {openSheet === "monthly" && `CAMPS IN ${_monthName.toUpperCase()} — ${athletesThisMonth.length} PLAYER${athletesThisMonth.length !== 1 ? "S" : ""}`}
+                {openSheet === "schools" && "TOP SCHOOLS"}
+                {openSheet === "noCamps" && `NO CAMPS PLANNED — ${athletesNoCamps.length}`}
+                {openSheet === "message" && "MESSAGE ROSTER"}
+                {openSheet === "code"    && "INVITE CODE"}
               </div>
-
-              {/* Card 2: Attending Camps This Month */}
-              <div
-                style={cardStyle("monthly")}
-                onClick={() => setDashCard(dashCard === "monthly" ? null : "monthly")}
-              >
-                <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Camps This Month</div>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "#e8a020", lineHeight: 1 }}>{athletesThisMonth.length}</div>
-                <div style={{ fontSize: 12, color: "#4b5563", marginTop: 4 }}>Players attending in {monthName}</div>
-                <div style={{ fontSize: 12, color: "#e8a020", marginTop: 12, fontWeight: 600 }}>{dashCard === "monthly" ? "Hide ↑" : "View Details →"}</div>
-              </div>
-
-              {/* Card 3: Top Schools */}
-              <div
-                style={cardStyle("schools")}
-                onClick={() => setDashCard(dashCard === "schools" ? null : "schools")}
-              >
-                <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Top Schools</div>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "#e8a020", lineHeight: 1 }}>{topSchools.length}</div>
-                <div style={{ fontSize: 12, color: "#4b5563", marginTop: 4 }}>Schools with registrations</div>
-                <div style={{ fontSize: 12, color: "#e8a020", marginTop: 12, fontWeight: 600 }}>{dashCard === "schools" ? "Hide ↑" : "View Rankings →"}</div>
-              </div>
-
-              {/* Card 4: Players With No Camps */}
-              <div
-                style={cardStyle("noCamps")}
-                onClick={() => setDashCard(dashCard === "noCamps" ? null : "noCamps")}
-              >
-                <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>No Camps Planned</div>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: athletesNoCamps.length > 0 ? "#f87171" : "#e8a020", lineHeight: 1 }}>{athletesNoCamps.length}</div>
-                <div style={{ fontSize: 12, color: "#4b5563", marginTop: 4 }}>Players with no registrations</div>
-                <div style={{ fontSize: 12, color: "#e8a020", marginTop: 12, fontWeight: 600 }}>{dashCard === "noCamps" ? "Hide ↑" : "View Players →"}</div>
-              </div>
+              <button
+                onClick={() => setOpenSheet(null)}
+                style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 22, padding: "0 4px", lineHeight: 1, flexShrink: 0 }}
+                aria-label="Close"
+              >✕</button>
             </div>
 
-            {/* Detail panel */}
-            {dashCard && (
-              <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, padding: "24px" }}>
+            {/* Sheet body */}
+            <div style={{ padding: "16px 20px 32px" }}>
 
-                {/* Card 1 detail: full roster */}
-                {dashCard === "roster" && (
+              {/* ── Roster detail ── */}
+              {openSheet === "roster" && (
+                roster.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 0" }}>
+                    <div style={{ fontSize: 36, marginBottom: 12 }}>🏈</div>
+                    <p style={{ fontSize: 14, color: "#9ca3af" }}>No athletes yet. Share your invite code to get started.</p>
+                  </div>
+                ) : (
                   <>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, marginBottom: 16, color: "#f9fafb" }}>
-                      ROSTER — {roster.length} ATHLETE{roster.length !== 1 ? "S" : ""}
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 3fr", gap: 12, padding: "0 0 10px", borderBottom: "1px solid #1f2937", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>Athlete</span><span>Joined</span><span>Registered Camps</span>
                     </div>
-                    {roster.length === 0 ? (
-                      <div style={{ textAlign: "center", padding: "32px 0" }}>
-                        <div style={{ fontSize: 32, marginBottom: 10 }}>🏈</div>
-                        <p style={{ fontSize: 14, color: "#9ca3af" }}>No athletes yet. Share your invite code to get started.</p>
-                      </div>
-                    ) : (
-                      <div>
-                        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 3fr", gap: 12, padding: "0 0 10px", borderBottom: "1px solid #1f2937", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                          <span>Athlete</span><span>Joined</span><span>Registered Camps</span>
-                        </div>
-                        {roster.map((r, i) => {
-                          const athleteCamps = campsByAccountId[r.account_id] || [];
-                          return (
-                            <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 3fr", gap: 12, padding: "14px 0", borderBottom: i < roster.length - 1 ? "1px solid #1f2937" : "none", alignItems: "start" }}>
-                              <div>
-                                <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15 }}>{r.athlete_name || "Athlete"}</div>
-                                {r.athlete_grad_year && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Class of {r.athlete_grad_year}</div>}
-                              </div>
-                              <div style={{ fontSize: 13, color: "#9ca3af", paddingTop: 2 }}>
-                                {r.joined_at ? new Date(r.joined_at).toLocaleDateString() : "—"}
-                              </div>
-                              <div>
-                                {athleteCamps.length === 0 ? (
-                                  <span style={{ fontSize: 13, color: "#4b5563" }}>No camps registered</span>
-                                ) : (
-                                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {athleteCamps.map((c, ci) => (
-                                      <div key={ci} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                        <span style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" }}>
-                                          {c.start_date ? new Date(c.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
-                                        </span>
-                                        <span style={{ fontSize: 13, color: "#d1d5db" }}>{c.school_name || c.camp_name}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* Card 2 detail: players attending this month */}
-                {dashCard === "monthly" && (
-                  <>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, marginBottom: 16, color: "#f9fafb" }}>
-                      ATTENDING CAMPS IN {monthName.toUpperCase()} — {athletesThisMonth.length} PLAYER{athletesThisMonth.length !== 1 ? "S" : ""}
-                    </div>
-                    {athletesThisMonth.length === 0 ? (
-                      <div style={{ textAlign: "center", padding: "32px 0" }}>
-                        <div style={{ fontSize: 32, marginBottom: 10 }}>📅</div>
-                        <p style={{ fontSize: 14, color: "#9ca3af" }}>No athletes have camps scheduled this month.</p>
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                        {athletesThisMonth.map((r, i) => {
-                          const monthlyCamps = (campsByAccountId[r.account_id] || []).filter(c => {
-                            if (!c.start_date) return false;
-                            const d = new Date(c.start_date + "T00:00:00");
-                            return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-                          });
-                          return (
-                            <div key={r.id || i} style={{ padding: "14px 0", borderBottom: i < athletesThisMonth.length - 1 ? "1px solid #1f2937" : "none" }}>
-                              <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15, marginBottom: 6 }}>
-                                {r.athlete_name || "Athlete"}
-                                {r.athlete_grad_year && <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 8 }}>Class of {r.athlete_grad_year}</span>}
-                              </div>
+                    {roster.map((r, i) => {
+                      const athleteCamps = campsByAccountId[r.account_id] || [];
+                      return (
+                        <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 3fr", gap: 12, padding: "14px 0", borderBottom: i < roster.length - 1 ? "1px solid #1f2937" : "none", alignItems: "start" }}>
+                          <div>
+                            <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15 }}>{r.athlete_name || "Athlete"}</div>
+                            {r.athlete_grad_year && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Class of {r.athlete_grad_year}</div>}
+                          </div>
+                          <div style={{ fontSize: 13, color: "#9ca3af", paddingTop: 2 }}>
+                            {r.joined_at ? new Date(r.joined_at).toLocaleDateString() : "—"}
+                          </div>
+                          <div>
+                            {athleteCamps.length === 0 ? (
+                              <span style={{ fontSize: 13, color: "#4b5563" }}>No camps registered</span>
+                            ) : (
                               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                {monthlyCamps.map((c, ci) => (
+                                {athleteCamps.map((c, ci) => (
                                   <div key={ci} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                     <span style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" }}>
-                                      {new Date(c.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                      {c.start_date ? new Date(c.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
                                     </span>
                                     <span style={{ fontSize: 13, color: "#d1d5db" }}>{c.school_name || c.camp_name}</span>
                                   </div>
                                 ))}
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* Card 3 detail: top schools ranking */}
-                {dashCard === "schools" && (
-                  <>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, marginBottom: 16, color: "#f9fafb" }}>
-                      TOP SCHOOLS BY REGISTRATIONS
-                    </div>
-                    {topSchools.length === 0 ? (
-                      <div style={{ textAlign: "center", padding: "32px 0" }}>
-                        <div style={{ fontSize: 32, marginBottom: 10 }}>🏫</div>
-                        <p style={{ fontSize: 14, color: "#9ca3af" }}>No camp registrations yet. Rankings will appear once athletes register for camps.</p>
-                      </div>
-                    ) : (
-                      <div>
-                        {topSchools.map(([school, count], i) => (
-                          <div key={school} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 0", borderBottom: i < topSchools.length - 1 ? "1px solid #1f2937" : "none" }}>
-                            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: i === 0 ? "#e8a020" : "#4b5563", width: 28, textAlign: "center", flexShrink: 0 }}>
-                              {i + 1}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15 }}>{school}</div>
-                            </div>
-                            <div style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, whiteSpace: "nowrap" }}>
-                              {count} reg{count !== 1 ? "s" : ""}
-                            </div>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                        </div>
+                      );
+                    })}
                   </>
-                )}
+                )
+              )}
 
-                {/* Card 4 detail: players with no camps */}
-                {dashCard === "noCamps" && (
-                  <>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, marginBottom: 16, color: "#f9fafb" }}>
-                      PLAYERS WITH NO CAMPS PLANNED — {athletesNoCamps.length}
-                    </div>
-                    {athletesNoCamps.length === 0 ? (
-                      <div style={{ textAlign: "center", padding: "32px 0" }}>
-                        <div style={{ fontSize: 32, marginBottom: 10 }}>🎉</div>
-                        <p style={{ fontSize: 14, color: "#9ca3af" }}>All athletes have at least one camp registered.</p>
-                      </div>
-                    ) : (
-                      <div>
-                        <p style={{ fontSize: 13, color: "#6b7280", marginTop: 0, marginBottom: 16 }}>
-                          These athletes haven't registered for any camps yet — consider reaching out.
-                        </p>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                          {athletesNoCamps.map((r, i) => (
-                            <div key={r.id || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: i < athletesNoCamps.length - 1 ? "1px solid #1f2937" : "none" }}>
-                              <div style={{ width: 32, height: 32, background: "#1f2937", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#6b7280", fontWeight: 700, flexShrink: 0 }}>
-                                {(r.athlete_name || "?")[0].toUpperCase()}
-                              </div>
-                              <div>
-                                <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15 }}>{r.athlete_name || "Athlete"}</div>
-                                {r.athlete_grad_year && <div style={{ fontSize: 12, color: "#6b7280" }}>Class of {r.athlete_grad_year}</div>}
-                              </div>
+              {/* ── Monthly camps detail ── */}
+              {openSheet === "monthly" && (
+                athletesThisMonth.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 0" }}>
+                    <div style={{ fontSize: 36, marginBottom: 12 }}>📅</div>
+                    <p style={{ fontSize: 14, color: "#9ca3af" }}>No athletes have camps scheduled this month.</p>
+                  </div>
+                ) : (
+                  athletesThisMonth.map((r, i) => {
+                    const monthlyCamps = (campsByAccountId[r.account_id] || []).filter(c => {
+                      if (!c.start_date) return false;
+                      const d = new Date(c.start_date + "T00:00:00");
+                      return d.getMonth() === _thisMonth && d.getFullYear() === _thisYear;
+                    });
+                    return (
+                      <div key={r.id || i} style={{ padding: "14px 0", borderBottom: i < athletesThisMonth.length - 1 ? "1px solid #1f2937" : "none" }}>
+                        <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15, marginBottom: 6 }}>
+                          {r.athlete_name || "Athlete"}
+                          {r.athlete_grad_year && <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 8 }}>Class of {r.athlete_grad_year}</span>}
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {monthlyCamps.map((c, ci) => (
+                            <div key={ci} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" }}>
+                                {new Date(c.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              </span>
+                              <span style={{ fontSize: 13, color: "#d1d5db" }}>{c.school_name || c.camp_name}</span>
                             </div>
                           ))}
                         </div>
                       </div>
-                    )}
-                  </>
-                )}
+                    );
+                  })
+                )
+              )}
 
-              </div>
-            )}
-          </section>
-        );
-      })()}
-
-      {/* ── MESSAGE PANEL ── */}
-      {activePanel === "message" && (
-        <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ display: "grid", gridTemplateColumns: roster.length > 0 ? "1fr 1fr" : "1fr", gap: 16 }}>
-
-            {/* Compose */}
-            <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, padding: "24px" }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 20, color: "#f9fafb" }}>COMPOSE MESSAGE</div>
-              <form onSubmit={handleSendMessage} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-                {/* To */}
-                <div>
-                  <label style={{ display: "block", fontSize: 12, color: "#9ca3af", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>To</label>
-                  <select
-                    value={recipient}
-                    onChange={e => setRecipient(e.target.value)}
-                    style={{ width: "100%", background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box" }}
-                  >
-                    <option value="all">All Athletes ({roster.length})</option>
-                    {roster.map(r => (
-                      <option key={r.id} value={r.id}>{r.athlete_name || "Athlete"}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Subject */}
-                <div>
-                  <label style={{ display: "block", fontSize: 12, color: "#9ca3af", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Subject (optional)</label>
-                  <input
-                    value={subject}
-                    onChange={e => setSubject(e.target.value)}
-                    placeholder="Subject…"
-                    style={{ width: "100%", background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box" }}
-                  />
-                </div>
-
-                {/* Message */}
-                <div>
-                  <label style={{ display: "block", fontSize: 12, color: "#9ca3af", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Message</label>
-                  <textarea
-                    value={msgBody}
-                    onChange={e => setMsgBody(e.target.value)}
-                    placeholder="Write your message…"
-                    required
-                    style={{ width: "100%", background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box", resize: "vertical", minHeight: 120, fontFamily: "'DM Sans', system-ui" }}
-                  />
-                </div>
-
-                {sendError && <p style={{ fontSize: 13, color: "#fca5a5", margin: 0 }}>{sendError}</p>}
-                {sendSuccess && <p style={{ fontSize: 13, color: "#86efac", margin: 0 }}>✓ Message sent successfully</p>}
-
-                <button
-                  type="submit"
-                  disabled={sending || !msgBody.trim()}
-                  style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "12px 20px", fontSize: 15, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer", opacity: sending || !msgBody.trim() ? 0.6 : 1 }}
-                >
-                  {sending ? "Sending…" : recipient === "all" ? `Send to All ${roster.length} Athletes →` : `Send to ${roster.find(r => r.id === recipient)?.athlete_name || "Athlete"} →`}
-                </button>
-              </form>
-            </div>
-
-            {/* Sent messages history */}
-            <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, padding: "24px" }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 20, color: "#f9fafb" }}>
-                SENT MESSAGES ({messages.length})
-              </div>
-              {messages.length === 0 ? (
-                <p style={{ fontSize: 14, color: "#6b7280" }}>No messages sent yet.</p>
-              ) : (
-                <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                  {messages.map((m, i) => (
-                    <div key={m.id || i} style={{ padding: "14px 0", borderBottom: i < messages.length - 1 ? "1px solid #1f2937" : "none" }}>
-                      {m.recipient_name && (
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
-                          → {m.recipient_name}
-                        </div>
-                      )}
-                      {!m.recipient_name && !m.recipient_athlete_id && (
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
-                          → All Athletes
-                        </div>
-                      )}
-                      {m.subject && <div style={{ fontSize: 14, fontWeight: 600, color: "#f9fafb", marginBottom: 4 }}>{m.subject}</div>}
-                      <div style={{ fontSize: 14, color: "#9ca3af", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.message}</div>
-                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>{m.sent_at ? new Date(m.sent_at).toLocaleString() : ""}</div>
+              {/* ── Top schools detail ── */}
+              {openSheet === "schools" && (
+                topSchools.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 0" }}>
+                    <div style={{ fontSize: 36, marginBottom: 12 }}>🏫</div>
+                    <p style={{ fontSize: 14, color: "#9ca3af" }}>No camp registrations yet. Rankings will appear once athletes register for camps.</p>
+                  </div>
+                ) : (
+                  topSchools.map(([school, count], i) => (
+                    <div key={school} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 0", borderBottom: i < topSchools.length - 1 ? "1px solid #1f2937" : "none" }}>
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: i === 0 ? "#e8a020" : "#4b5563", width: 28, textAlign: "center", flexShrink: 0 }}>{i + 1}</div>
+                      <div style={{ flex: 1, fontWeight: 600, color: "#f9fafb", fontSize: 15 }}>{school}</div>
+                      <div style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, whiteSpace: "nowrap" }}>
+                        {count} reg{count !== 1 ? "s" : ""}
+                      </div>
                     </div>
-                  ))}
+                  ))
+                )
+              )}
+
+              {/* ── No camps detail ── */}
+              {openSheet === "noCamps" && (
+                athletesNoCamps.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 0" }}>
+                    <div style={{ fontSize: 36, marginBottom: 12 }}>🎉</div>
+                    <p style={{ fontSize: 14, color: "#9ca3af" }}>All athletes have at least one camp registered.</p>
+                  </div>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, color: "#6b7280", marginTop: 0, marginBottom: 16 }}>
+                      These athletes haven't registered for any camps yet — consider reaching out.
+                    </p>
+                    {athletesNoCamps.map((r, i) => (
+                      <div key={r.id || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: i < athletesNoCamps.length - 1 ? "1px solid #1f2937" : "none" }}>
+                        <div style={{ width: 32, height: 32, background: "#1f2937", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#6b7280", fontWeight: 700, flexShrink: 0 }}>
+                          {(r.athlete_name || "?")[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15 }}>{r.athlete_name || "Athlete"}</div>
+                          {r.athlete_grad_year && <div style={{ fontSize: 12, color: "#6b7280" }}>Class of {r.athlete_grad_year}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )
+              )}
+
+              {/* ── Message sheet ── */}
+              {openSheet === "message" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                  {/* Compose form */}
+                  <div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, marginBottom: 14, color: "#9ca3af" }}>COMPOSE</div>
+                    <form onSubmit={handleSendMessage} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, color: "#9ca3af", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>To</label>
+                        <select
+                          value={recipient}
+                          onChange={e => setRecipient(e.target.value)}
+                          style={{ width: "100%", background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box" }}
+                        >
+                          <option value="all">All Athletes ({roster.length})</option>
+                          {roster.map(r => (
+                            <option key={r.id} value={r.id}>{r.athlete_name || "Athlete"}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, color: "#9ca3af", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Subject (optional)</label>
+                        <input
+                          value={subject}
+                          onChange={e => setSubject(e.target.value)}
+                          placeholder="Subject…"
+                          style={{ width: "100%", background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box" }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, color: "#9ca3af", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Message</label>
+                        <textarea
+                          value={msgBody}
+                          onChange={e => setMsgBody(e.target.value)}
+                          placeholder="Write your message…"
+                          required
+                          style={{ width: "100%", background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box", resize: "vertical", minHeight: 100, fontFamily: "'DM Sans', system-ui" }}
+                        />
+                      </div>
+                      {sendError && <p style={{ fontSize: 13, color: "#fca5a5", margin: 0 }}>{sendError}</p>}
+                      {sendSuccess && <p style={{ fontSize: 13, color: "#86efac", margin: 0 }}>✓ Message sent successfully</p>}
+                      <button
+                        type="submit"
+                        disabled={sending || !msgBody.trim()}
+                        style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "12px 20px", fontSize: 15, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer", opacity: sending || !msgBody.trim() ? 0.6 : 1 }}
+                      >
+                        {sending ? "Sending…" : recipient === "all" ? `Send to All ${roster.length} Athletes →` : `Send to ${roster.find(r => r.id === recipient)?.athlete_name || "Athlete"} →`}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Sent history */}
+                  {messages.length > 0 && (
+                    <div>
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, marginBottom: 14, color: "#9ca3af" }}>SENT ({messages.length})</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                        {messages.map((m, i) => (
+                          <div key={m.id || i} style={{ padding: "12px 0", borderBottom: i < messages.length - 1 ? "1px solid #1f2937" : "none" }}>
+                            {m.recipient_name && (
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>→ {m.recipient_name}</div>
+                            )}
+                            {!m.recipient_name && !m.recipient_athlete_id && (
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>→ All Athletes</div>
+                            )}
+                            {m.subject && <div style={{ fontSize: 14, fontWeight: 600, color: "#f9fafb", marginBottom: 4 }}>{m.subject}</div>}
+                            <div style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.message}</div>
+                            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{m.sent_at ? new Date(m.sent_at).toLocaleString() : ""}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          </div>
-        </section>
-      )}
 
-      {/* ── INVITE CODE PANEL ── */}
-      {activePanel === "code" && (
-        <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, padding: "32px" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: 8, color: "#f9fafb" }}>YOUR INVITE CODE</div>
-            <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 24, marginTop: 0 }}>
-              Share this code with athletes and parents. They enter it during signup at <span style={{ color: "#9ca3af" }}>urecruithq.com</span> to connect with you automatically.
-            </p>
-            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ fontFamily: "monospace", fontSize: 32, fontWeight: 700, color: "#e8a020", letterSpacing: 3, background: "#0a0e1a", border: "1px solid #374151", borderRadius: 10, padding: "16px 24px" }}>
-                {coach.invite_code}
-              </div>
-              <button
-                onClick={copyCode}
-                style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "14px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}
-              >
-                {copied ? "✓ Copied!" : "Copy Code"}
-              </button>
+              {/* ── Invite code sheet ── */}
+              {openSheet === "code" && (
+                <>
+                  <p style={{ fontSize: 14, color: "#6b7280", marginTop: 0, marginBottom: 24 }}>
+                    Share this code with athletes and parents. They enter it during signup at <span style={{ color: "#9ca3af" }}>urecruithq.com</span> to connect with you automatically.
+                  </p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 32, fontWeight: 700, color: "#e8a020", letterSpacing: 3, background: "#0a0e1a", border: "1px solid #374151", borderRadius: 10, padding: "16px 24px" }}>
+                      {coach.invite_code}
+                    </div>
+                    <button
+                      onClick={copyCode}
+                      style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "14px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}
+                    >
+                      {copied ? "✓ Copied!" : "Copy Code"}
+                    </button>
+                  </div>
+                </>
+              )}
+
             </div>
           </div>
-        </section>
+        </>
       )}
 
       <BottomNav />
