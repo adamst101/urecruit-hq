@@ -23,7 +23,7 @@ export default function BottomNav() {
   const nav = useNavigate();
   const loc = useLocation();
   const season = useSeasonAccess();
-  const isCoach = season?.mode === "coach";
+  const isCoach = season?.mode === "coach" || season?.mode === "coach_pending";
 
   const hqRoute = isCoach ? ROUTES.CoachDashboard : ROUTES.Workspace;
 
