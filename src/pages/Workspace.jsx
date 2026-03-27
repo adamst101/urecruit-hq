@@ -190,6 +190,7 @@ export default function Workspace() {
 
     let stripeSessionId = null;
     try { stripeSessionId = sessionStorage.getItem("stripeSessionId"); } catch {}
+    console.log("[DIAG:Workspace] auth'd but no access — stripeSessionId in storage:", stripeSessionId, "accountId:", season?.accountId);
     if (!stripeSessionId) return;
 
     _healedRef.current = true;
@@ -197,13 +198,17 @@ export default function Workspace() {
     (async () => {
       try {
         sessionStorage.removeItem("stripeSessionId");
+        console.log("[DIAG:Workspace] calling linkStripePayment with sessionId:", stripeSessionId);
         const res = await base44.functions.invoke("linkStripePayment", { sessionId: stripeSessionId });
+        console.log("[DIAG:Workspace] linkStripePayment result:", JSON.stringify(res?.data || res));
         const ok = res?.data?.ok || res?.ok;
         if (ok && !cancelled) {
           clearSeasonAccessCache();
           season.refresh();
         }
-      } catch {}
+      } catch (e) {
+        console.log("[DIAG:Workspace] linkStripePayment threw:", e?.message);
+      }
     })();
     return () => { cancelled = true; };
   }, [season?.isLoading, season?.accountId, season?.hasAccess]);
@@ -303,6 +308,48 @@ const parentName = (athleteProfile?.parent_first_name || "").trim();
             <button onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_banner`)} style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
               Get Season Pass <ArrowRight style={{ width: 16, height: 16 }} />
             </button>
+          </div>
+        )}
+
+        {/* ── DIAGNOSTIC PANEL (remove after root cause found) ── */}
+        {!isMember && season?.accountId && (
+          <div style={{ marginTop: 12, background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "12px 16px", fontFamily: "monospace", fontSize: 12, color: "#9ca3af" }}>
+            <div style={{ color: "#e8a020", fontWeight: 700, marginBottom: 8 }}>🔍 DIAG (share with support)</div>
+            <div>accountId: {season?.accountId || "null"}</div>
+            <div>mode: {season?.mode || "?"} | hasAccess: {String(season?.hasAccess)}</div>
+            <div>activeSeason: {season?.activeSeason} | soldSeason: {season?.soldSeason}</div>
+            <div>entitlement: {season?.entitlement ? `id=${season.entitlement.id} season=${season.entitlement.season_year}` : "null"}</div>
+            <div style={{ marginTop: 4 }}>
+              <button
+                onClick={async () => {
+                  try {
+                    const rows = await base44.entities.Entitlement.filter({ account_id: season.accountId, status: "active" });
+                    const msg = JSON.stringify(rows, null, 2);
+                    alert("Client-side entitlement query result:\n" + msg);
+                    console.log("[DIAG:Workspace] manual entitlement check:", rows);
+                  } catch (e) {
+                    alert("Query threw: " + e?.message);
+                  }
+                }}
+                style={{ background: "#1f2937", color: "#f9fafb", border: "1px solid #374151", borderRadius: 4, padding: "4px 10px", fontSize: 11, cursor: "pointer", marginRight: 8 }}
+              >
+                Check Entitlement
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const me = await base44.auth.me();
+                    alert("auth.me():\n" + JSON.stringify(me, null, 2));
+                    console.log("[DIAG:Workspace] auth.me():", me);
+                  } catch (e) {
+                    alert("auth.me() threw: " + e?.message);
+                  }
+                }}
+                style={{ background: "#1f2937", color: "#f9fafb", border: "1px solid #374151", borderRadius: 4, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}
+              >
+                Check Auth
+              </button>
+            </div>
           </div>
         )}
       </section>

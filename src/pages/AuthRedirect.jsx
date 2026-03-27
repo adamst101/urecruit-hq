@@ -173,8 +173,11 @@ export default function AuthRedirect() {
       ssRemove("postPaymentSignup");
       ssRemove("paidSeasonYear");
 
+      console.log("[DIAG:AuthRedirect] postPaymentSignup flow — accountId:", accountId, "hasAccess:", season?.hasAccess);
+
       // Entitlement might already exist (webhook fast) — admins have hasAccess but no entitlement record
       if (season?.hasAccess && (season?.entitlement || season?.role === "admin")) {
+        console.log("[DIAG:AuthRedirect] already entitled — going direct to Workspace");
         didRoute.current = true;
         nav(PATHS.WORKSPACE, { replace: true });
         return;
@@ -191,6 +194,7 @@ export default function AuthRedirect() {
             account_id: accountId,
             status: "active",
           });
+          console.log("[DIAG:AuthRedirect] poll attempt", attempts, "— ents:", Array.isArray(ents) ? ents.length : "error", Array.isArray(ents) ? ents.map(e => `id=${e.id} acct=${e.account_id} season=${e.season_year}`) : []);
           if (Array.isArray(ents) && ents.length > 0) {
             clearInterval(interval);
             clearSeasonAccessCache();
@@ -198,17 +202,21 @@ export default function AuthRedirect() {
             nav(PATHS.WORKSPACE, { replace: true });
             return;
           }
-        } catch {}
+        } catch (e) {
+          console.log("[DIAG:AuthRedirect] poll attempt", attempts, "threw:", e?.message);
+        }
         if (attempts >= maxAttempts) {
           clearInterval(interval);
           // Webhook may have created the entitlement with no account_id
           // (user paid anonymously before creating their account).
           // Try to link the Stripe session to this account now.
           const stripeSessionId = ssGet("stripeSessionId");
+          console.log("[DIAG:AuthRedirect] maxAttempts reached — stripeSessionId:", stripeSessionId);
           if (stripeSessionId) {
             setStatusMsg("Linking your purchase…");
             try {
               const res = await base44.functions.invoke("linkStripePayment", { sessionId: stripeSessionId });
+              console.log("[DIAG:AuthRedirect] linkStripePayment result:", JSON.stringify(res?.data || res));
               const ok = res?.data?.ok || res?.ok;
               if (ok) {
                 ssRemove("stripeSessionId"); // only remove on success
@@ -217,7 +225,9 @@ export default function AuthRedirect() {
                 nav(PATHS.WORKSPACE, { replace: true });
                 return;
               }
-            } catch {}
+            } catch (e) {
+              console.log("[DIAG:AuthRedirect] linkStripePayment threw:", e?.message);
+            }
             // linkStripePayment failed — leave stripeSessionId in sessionStorage so
             // Workspace can retry it when the user clicks "Continue to HQ →".
           }

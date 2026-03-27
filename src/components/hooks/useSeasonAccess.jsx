@@ -115,6 +115,8 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
   // Treat as admin if base44 role is "admin" OR if email is in the hardcoded admin list
   const role = (me?.role === "admin" || isAdminEmail(me?.email)) ? "admin" : (me?.role || null);
 
+  console.log("[DIAG:SeasonAccess] doRefresh — accountId:", accountId, "role:", role, "activeSeason:", activeSeason, "soldSeason:", soldSeason);
+
   // Not signed in → demo
   if (!accountId) {
     return {
@@ -194,8 +196,10 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
 
   // Check entitlement for active season, then sold season (early-bird)
   let ent = await fetchEntitlement({ accountId, seasonYear: activeSeason });
+  console.log("[DIAG:SeasonAccess] entitlement for activeSeason", activeSeason, ":", ent ? `found id=${ent.id} season=${ent.season_year}` : "null");
   if (!ent && soldSeason !== activeSeason) {
     ent = await fetchEntitlement({ accountId, seasonYear: soldSeason });
+    console.log("[DIAG:SeasonAccess] entitlement for soldSeason", soldSeason, ":", ent ? `found id=${ent.id}` : "null");
   }
 
   // Fallback: check for ANY active entitlement regardless of season year
@@ -207,9 +211,10 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
         status: "active",
       });
       const list = Array.isArray(rows) ? rows : [];
+      console.log("[DIAG:SeasonAccess] fallback any-season query returned", list.length, "rows:", list.map(x => `id=${x.id} acct=${x.account_id} season=${x.season_year}`));
       ent = list.find((x) => isActiveInWindow(x)) || list[0] || null;
-    } catch {
-      // ignore
+    } catch (e) {
+      console.log("[DIAG:SeasonAccess] fallback query threw:", e?.message);
     }
   }
 
