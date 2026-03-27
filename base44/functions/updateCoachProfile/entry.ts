@@ -1,46 +1,44 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
 
-const ALLOWED_FIELDS = new Set([
-  "first_name", "last_name", "title", "school_or_org",
-  "sport", "phone", "website", "email",
-]);
+const SAFE_FIELDS = ["first_name", "last_name", "title", "school_or_org", "sport", "phone", "website", "email"];
 
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  // Authenticate caller
-  let accountId = "";
+  let me;
   try {
-    const me = await base44.auth.me();
-    accountId = me?.id || "";
-  } catch {}
+    me = await base44.auth.me();
+  } catch {
+    return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
+  }
 
+  const accountId = me?.id;
   if (!accountId) {
     return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
   }
 
-  let body: { fields?: Record<string, unknown> } = {};
+  let body = {};
   try { body = await req.json(); } catch {
     return Response.json({ ok: false, error: "Invalid request body" }, { status: 400 });
   }
 
-  const { fields } = body;
+  const fields = body.fields;
   if (!fields || typeof fields !== "object") {
-    return Response.json({ ok: false, error: "fields are required" }, { status: 400 });
+    return Response.json({ ok: false, error: "fields object is required" }, { status: 400 });
   }
 
-  // Whitelist — only allow safe profile fields, never status/invite_code/active etc.
-  const safeFields: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(fields)) {
-    if (ALLOWED_FIELDS.has(k)) safeFields[k] = v;
+  // Whitelist safe fields
+  const updates = {};
+  for (const key of SAFE_FIELDS) {
+    if (key in fields) updates[key] = fields[key];
   }
 
-  if (Object.keys(safeFields).length === 0) {
+  if (Object.keys(updates).length === 0) {
     return Response.json({ ok: false, error: "No valid fields to update" }, { status: 400 });
   }
 
   try {
-    // Find the coach record for this account
+    // Find coach record by account_id
     const coaches = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId });
     const list = Array.isArray(coaches) ? coaches : [];
 
@@ -48,20 +46,24 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: "Coach profile not found" }, { status: 404 });
     }
 
-    const coachId = list[0].id;
-    await base44.asServiceRole.entities.Coach.update(coachId, safeFields);
+    const coach = list[0];
 
-    // Also sync first_name / last_name to the User entity if they were updated
-    const nameUpdate: Record<string, unknown> = {};
-    if (safeFields.first_name !== undefined) nameUpdate.first_name = safeFields.first_name;
-    if (safeFields.last_name  !== undefined) nameUpdate.last_name  = safeFields.last_name;
-    if (Object.keys(nameUpdate).length > 0) {
-      base44.asServiceRole.entities.User.update(accountId, nameUpdate).catch(() => {});
+    // Update coach record
+    await base44.asServiceRole.entities.Coach.update(coach.id, updates);
+
+    // Sync name changes to User entity
+    if (updates.first_name || updates.last_name) {
+      const firstName = updates.first_name || coach.first_name || "";
+      const lastName = updates.last_name || coach.last_name || "";
+      const fullName = `${firstName} ${lastName}`.trim();
+      if (fullName) {
+        await base44.asServiceRole.entities.User.update(accountId, { full_name: fullName }).catch(() => {});
+      }
     }
 
     return Response.json({ ok: true });
   } catch (err) {
-    console.error("updateCoachProfile error:", (err as Error).message);
-    return Response.json({ ok: false, error: (err as Error).message }, { status: 500 });
+    console.error("updateCoachProfile error:", err.message);
+    return Response.json({ ok: false, error: err.message }, { status: 500 });
   }
 });
