@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
 
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
@@ -8,7 +8,7 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 
-  let body: { ticketId?: string; fields?: Record<string, unknown> } = {};
+  let body = {};
   try { body = await req.json(); } catch {
     return Response.json({ ok: false, error: "Invalid request body" }, { status: 400 });
   }
@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
     await base44.asServiceRole.entities.SupportTicket.update(ticketId, fields);
     return Response.json({ ok: true });
   } catch (err) {
-    console.error("updateSupportTicket error:", (err as Error).message);
-    return Response.json({ ok: false, error: (err as Error).message }, { status: 500 });
+    console.error("updateSupportTicket error:", err.message);
+    return Response.json({ ok: false, error: err.message }, { status: 500 });
   }
 });
