@@ -2,7 +2,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "../api/base44Client";
-import { getDataEnv } from "../lib/envUtils";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 
@@ -196,7 +195,6 @@ export default function CoachSignup() {
         phone: phone.trim(),
         website: website.trim(),
         sport: sport || "Football",
-        env: getDataEnv(),
       }));
     } catch {}
 
@@ -280,7 +278,6 @@ export default function CoachSignup() {
         phone: phone.trim(),
         website: website.trim(),
         sport: sport || "Football",
-        env: getDataEnv(),
       }));
     } catch {}
 

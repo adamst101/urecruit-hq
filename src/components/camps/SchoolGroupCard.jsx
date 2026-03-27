@@ -6,7 +6,6 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import WarningBadge from "./WarningBadge.jsx";
 import { base44 } from "../../api/base44Client";
-import { getDataEnv } from "../../lib/envUtils";
 
 function safeShortDate(d) {
   try {
@@ -111,8 +110,7 @@ export default function SchoolGroupCard({
             message: shareMsg.trim(),
             recipientAthleteId: String(athlete.id ?? ""),
             recipientName: athlete.athlete_name || athlete.name || "",
-            env: getDataEnv(),
-          }).catch(() => {})
+                      }).catch(() => {})
         ));
       } else {
         const athlete = roster.find((a) => String(a.id) === shareRecipient);
@@ -121,8 +119,7 @@ export default function SchoolGroupCard({
           message: shareMsg.trim(),
           recipientAthleteId: shareRecipient,
           recipientName: athlete?.athlete_name || athlete?.name || "",
-          env: getDataEnv(),
-        });
+                  });
       }
       setShareSentFor(campId);
       setSharePanelCampId(null);

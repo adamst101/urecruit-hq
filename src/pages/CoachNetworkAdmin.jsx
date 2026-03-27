@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import AdminRoute from "../components/auth/AdminRoute";
-import { getDataEnv } from "../lib/envUtils";
 
 export default function CoachNetworkAdmin() {
   const nav = useNavigate();
@@ -51,7 +50,7 @@ export default function CoachNetworkAdmin() {
     setActionError(null);
     setConfirmRemove(null);
     try {
-      const res = await base44.functions.invoke("removeCoach", { coachId: coach.id, env: getDataEnv() });
+      const res = await base44.functions.invoke("removeCoach", { coachId: coach.id });
       const data = res?.data;
       if (data?.ok === false) {
         setActionError(`removeCoach error: ${data.error || "unknown"}`);
@@ -71,7 +70,7 @@ export default function CoachNetworkAdmin() {
     setActionError(null);
     setActionResult(null);
     try {
-      const res = await base44.functions.invoke("approveCoach", { coachId, action, env: getDataEnv() });
+      const res = await base44.functions.invoke("approveCoach", { coachId, action });
       const data = res?.data;
       // Require explicit ok: true — catches null/undefined (function not deployed) as well as ok: false
       if (!data || data.ok !== true) {

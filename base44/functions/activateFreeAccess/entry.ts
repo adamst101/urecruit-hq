@@ -4,7 +4,7 @@ import Stripe from 'npm:stripe@17.7.0';
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY"));
 
 async function getActiveSeason(base44, E?) {
-  const seasons = await base44.asServiceRole.entities.SeasonConfig.filter({ active: true }, E);
+  const seasons = await base44.asServiceRole.entities.SeasonConfig.filter({ active: true });
   const list = Array.isArray(seasons) ? seasons : [];
   const now = new Date();
 
@@ -34,9 +34,7 @@ Deno.serve(async (req) => {
     homeCity, homeState,
     parentFirstName, parentLastName, parentPhone,
     coachInviteCode,
-    env,
   } = await req.json();
-  const E = env === 'dev' ? { environment: 'dev' as const } : undefined;
 
   if (!promoCode) {
     return Response.json({ ok: false, error: "Promo code required" }, { status: 400 });
@@ -71,7 +69,7 @@ Deno.serve(async (req) => {
   console.log("Free promo verified:", foundPromo.code, "coupon:", coupon.id);
 
   // Get active season
-  const season = await getActiveSeason(base44, E);
+  const season = await getActiveSeason(base44);
   if (!season) {
     return Response.json({ ok: false, error: "No active season configured" }, { status: 400 });
   }
@@ -99,7 +97,7 @@ Deno.serve(async (req) => {
     const entFilter = isAddOn
       ? { account_id: resolvedAccountId, season_year: soldSeason, status: "active", is_primary: false }
       : { account_id: resolvedAccountId, season_year: soldSeason, status: "active" };
-    const existing = await base44.asServiceRole.entities.Entitlement.filter(entFilter, E);
+    const existing = await base44.asServiceRole.entities.Entitlement.filter(entFilter);
     if (!existing || existing.length === 0) {
       await base44.asServiceRole.entities.Entitlement.create({
         account_id: resolvedAccountId,
@@ -111,7 +109,7 @@ Deno.serve(async (req) => {
         starts_at: startsAt,
         ends_at: endsAt,
         product: "RecruitMeSeasonAccess",
-      }, E);
+      });
       console.log("Created entitlement — account:", resolvedAccountId, "isAddOn:", !!isAddOn);
     } else {
       console.log("Entitlement already exists — skipping create");
@@ -127,7 +125,7 @@ Deno.serve(async (req) => {
     try {
       const existingProfiles = await base44.asServiceRole.entities.AthleteProfile.filter({
         account_id: resolvedAccountId,
-      }, E).catch(() => []);
+      }).catch(() => []);
 
       const profileList = Array.isArray(existingProfiles) ? existingProfiles : [];
       console.log("Existing profiles for account:", profileList.length);
@@ -152,7 +150,7 @@ Deno.serve(async (req) => {
             parent_phone: parentPhone || null,
             is_primary: false,
             active: true,
-          }, E);
+          });
           console.log("Created addon AthleteProfile:", athleteFirstName, athleteLastName);
         } else {
           console.log("Addon athlete already exists:", athleteFirstName, athleteLastName);
@@ -173,7 +171,7 @@ Deno.serve(async (req) => {
             parent_phone: parentPhone || null,
             is_primary: true,
             active: true,
-          }, E);
+          });
           console.log("Created primary AthleteProfile:", athleteFirstName, athleteLastName);
         } else {
           console.log("Primary athlete already exists, skipping");
@@ -193,7 +191,7 @@ Deno.serve(async (req) => {
       await base44.asServiceRole.entities.User.update(resolvedAccountId, {
         first_name: parentFirstName || null,
         last_name: parentLastName || null,
-      }, E);
+      });
       console.log("Updated User first_name/last_name for account:", resolvedAccountId);
     } catch (e) {
       console.warn("Could not update User name fields (non-critical):", (e as Error).message);
@@ -207,13 +205,13 @@ Deno.serve(async (req) => {
         invite_code: coachInviteCode,
         status: "approved",
         active: true,
-      }, E).catch(() => []);
+      }).catch(() => []);
       if (Array.isArray(coaches) && coaches.length > 0) {
         const coachId = coaches[0].id;
         const existing = await base44.asServiceRole.entities.CoachRoster.filter({
           coach_id: coachId,
           account_id: resolvedAccountId,
-        }, E).catch(() => []);
+        }).catch(() => []);
         if (!Array.isArray(existing) || existing.length === 0) {
           await base44.asServiceRole.entities.CoachRoster.create({
             coach_id: coachId,
@@ -223,7 +221,7 @@ Deno.serve(async (req) => {
             athlete_grad_year: gradYear ? parseInt(String(gradYear)) : null,
             invite_code: coachInviteCode,
             joined_at: new Date().toISOString(),
-          }, E);
+          });
           console.log("Linked account", resolvedAccountId, "to coach roster", coachId, "(free access path)");
         } else {
           console.log("Account already on coach roster:", resolvedAccountId, coachId);

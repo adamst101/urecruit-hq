@@ -13,7 +13,7 @@ function generateInviteCode(lastName: string, schoolOrOrg: string): string {
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  let body: { accountId?: string; first_name?: string; last_name?: string; title?: string; school_or_org?: string; sport?: string; email?: string; phone?: string; website?: string; env?: string } = {};
+  let body: { accountId?: string; first_name?: string; last_name?: string; title?: string; school_or_org?: string; sport?: string; email?: string; phone?: string; website?: string } = {};
   try {
     body = await req.json();
   } catch {

@@ -5,13 +5,10 @@ Deno.serve(async (req) => {
 
   // Identify the caller
   let accountId = "";
-  let env: string | undefined;
   try {
     const me = await base44.auth.me();
     accountId = me?.id || "";
   } catch {}
-
-  try { const b = await req.json(); env = b?.env; } catch {}
 
   if (!accountId) {
     return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });

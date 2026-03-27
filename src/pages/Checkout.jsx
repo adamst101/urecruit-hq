@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRight, ArrowLeft, Loader2, Check, X } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { createPageUrl } from "../utils";
-import { getDataEnv } from "../lib/envUtils";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 
@@ -203,7 +202,6 @@ export default function Checkout() {
         parentLastName: isAddonMode ? undefined : (parentLastName.trim() || undefined),
         parentPhone: isAddonMode ? undefined : (parentPhone.trim() || undefined),
         coachInviteCode: coachInviteCode.trim() || undefined,
-        env: getDataEnv(),
       });
       const data = res.data;
       if (data?.ok) {

@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { User, LogOut } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { clearSeasonAccessCache } from "../components/hooks/useSeasonAccess.jsx";
-import { getDataEnv } from "../lib/envUtils";
 import BottomNav from "../components/navigation/BottomNav.jsx";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
@@ -77,7 +76,7 @@ export default function CoachDashboard() {
       const me = await base44.auth.me();
       if (!me?.id) return null;
       setCurrentRole(me.role || "");
-      const res = await base44.functions.invoke("getMyCoachProfile", { env: getDataEnv() });
+      const res = await base44.functions.invoke("getMyCoachProfile", {});
       const data = res?.data;
       if (!data?.ok || !data.coach) return null;
       setCoach(data.coach);
@@ -145,7 +144,6 @@ export default function CoachDashboard() {
         message: msgBody.trim(),
         recipientAthleteId: selectedAthlete?.athlete_id || undefined,
         recipientName: selectedAthlete?.athlete_name || undefined,
-        env: getDataEnv(),
       });
       if (res?.data?.ok) {
         setSendSuccess(true);
@@ -154,7 +152,7 @@ export default function CoachDashboard() {
         setRecipient("all");
         setTimeout(() => setSendSuccess(false), 3000);
         // Reload messages
-        const reload = await base44.functions.invoke("getMyCoachProfile", { env: getDataEnv() }).catch(() => null);
+        const reload = await base44.functions.invoke("getMyCoachProfile", {}).catch(() => null);
         const reloadMsgs = reload?.data?.messages;
         if (Array.isArray(reloadMsgs)) {
           setMessages(reloadMsgs.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at)));
