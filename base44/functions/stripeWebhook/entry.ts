@@ -317,8 +317,9 @@ Deno.serve(async (req) => {
       // Link athlete to coach roster if a coach invite code was used
       if (coachInviteCode && accountId) {
         try {
-          const coaches = await base44.asServiceRole.entities.Coach.filter({ invite_code: coachInviteCode, status: "approved", active: true }).catch(() => []);
-          if (Array.isArray(coaches) && coaches.length > 0) {
+          const allCoaches = await base44.asServiceRole.entities.Coach.filter({ invite_code: coachInviteCode }).catch(() => []);
+          const coaches = Array.isArray(allCoaches) ? allCoaches.filter(c => c.status === "approved") : [];
+          if (coaches.length > 0) {
             const coachId = coaches[0].id;
             // Idempotency: skip if already on roster
             const existing = await base44.asServiceRole.entities.CoachRoster.filter({ coach_id: coachId, account_id: accountId }).catch(() => []);
