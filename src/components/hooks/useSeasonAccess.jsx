@@ -83,9 +83,7 @@ async function safeMe() {
 async function fetchEntitlementViaFunction() {
   const res = await base44.functions.invoke("checkEntitlement", {});
   const list = Array.isArray(res?.data?.entitlements) ? res.data.entitlements : [];
-  const firstName = res?.data?.firstName || null;
-  const lastName = res?.data?.lastName || null;
-  return { list, firstName, lastName };
+  return list;
 }
 
 function readDemoSeasonOverride({ fallbackDemoYear }) {
@@ -106,6 +104,13 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
   const accountId = me?.id || null;
   // Treat as admin if base44 role is "admin" OR if email is in the hardcoded admin list
   const role = (me?.role === "admin" || isAdminEmail(me?.email)) ? "admin" : (me?.role || null);
+
+  // Derive first/last name from auth full_name — set by updateMe() during checkout flows.
+  // This avoids any extra API calls and is available on all code paths.
+  const _authFull = String(me?.full_name || "").trim();
+  const _authParts = _authFull ? _authFull.split(/\s+/) : [];
+  const userFirstName = _authParts[0] || null;
+  const userLastName = _authParts.slice(1).join(" ") || null;
 
   console.log("[DIAG:SeasonAccess] doRefresh — accountId:", accountId, "role:", role, "activeSeason:", activeSeason, "soldSeason:", soldSeason, "(using server-side checkEntitlement)");
 
@@ -138,6 +143,8 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
       accountId,
       entitlement: null,
       role,
+      firstName: userFirstName,
+      lastName: userLastName,
       isAuthenticated: true,
       lastCheckedAt: nowISO(),
     };
@@ -190,13 +197,8 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
   // The Entitlement entity does not have client-read permissions, so
   // base44.entities.Entitlement.filter always returns [] — this bypasses that.
   let entitlements = [];
-  let userFirstName = null;
-  let userLastName = null;
   try {
-    const fetched = await fetchEntitlementViaFunction();
-    entitlements = fetched.list;
-    userFirstName = fetched.firstName;
-    userLastName = fetched.lastName;
+    entitlements = await fetchEntitlementViaFunction();
     console.log("[DIAG:SeasonAccess] server entitlements:", entitlements.length, entitlements.map(x => `id=${x.id} acct=${x.account_id} season=${x.season_year}`));
   } catch (e) {
     if (isRateLimitError(e)) throw e;

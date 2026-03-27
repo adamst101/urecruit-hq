@@ -234,7 +234,7 @@ export default function Workspace() {
   const parentName = (athleteProfile?.parent_first_name || "").trim();
   const parentLast = (athleteProfile?.parent_last_name || "").trim();
   const parentFull = parentName ? `${parentName}${parentLast ? ` ${parentLast}` : ""}` : null;
-  // season.firstName/lastName come from the User entity via checkEntitlement (server-side, always current)
+  // season.firstName/lastName come from auth.me() full_name (set during checkout flows)
   const seasonName = season?.firstName
     ? [season.firstName, season.lastName].filter(Boolean).join(" ")
     : null;

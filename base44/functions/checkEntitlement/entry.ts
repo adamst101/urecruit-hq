@@ -17,23 +17,17 @@ Deno.serve(async (req) => {
   const accountId = user.id;
 
   try {
-    const [rows, userRows] = await Promise.all([
-      base44.asServiceRole.entities.Entitlement.filter({
-        account_id: accountId,
-        status: "active",
-      }),
-      base44.asServiceRole.entities.User.filter({ id: accountId }).catch(() => []),
-    ]);
+    const rows = await base44.asServiceRole.entities.Entitlement.filter({
+      account_id: accountId,
+      status: "active",
+    });
 
     const list = Array.isArray(rows) ? rows : [];
-    const userProfile = Array.isArray(userRows) ? userRows[0] : null;
 
     return Response.json({
       ok: true,
       accountId,
       entitlements: list,
-      firstName: userProfile?.first_name || null,
-      lastName: userProfile?.last_name || null,
     });
   } catch (e) {
     console.error("checkEntitlement error:", (e as Error).message);
