@@ -21,11 +21,10 @@ export default function CoachNetworkAdmin() {
   useEffect(() => {
     (async () => {
       try {
-        const [coachs, roster, msgs] = await Promise.all([
-          base44.entities.Coach.filter({}).catch(() => []),
-          base44.entities.CoachRoster.filter({}).catch(() => []),
-          base44.entities.CoachMessage.filter({}).catch(() => []),
-        ]);
+        const res = await base44.functions.invoke("listCoaches", {});
+        const coachs = res?.coaches ?? [];
+        const roster = res?.rosters ?? [];
+        const msgs = res?.messages ?? [];
 
         const rc = {};
         for (const r of (Array.isArray(roster) ? roster : [])) {

@@ -42,15 +42,6 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "first_name, last_name, and school_or_org are required" }, { status: 400 });
   }
 
-  // Dev/test mode — skip all DB writes to avoid polluting production data.
-  // The share URL (share-- hostname) uses the same prod function endpoint and entity store,
-  // so there is no separate test database. Return a mock success so the UI flow can be tested.
-  if (body.env === 'dev') {
-    console.log("registerCoach: dev mode — skipping DB writes for test registration");
-    const mock_invite_code = generateInviteCode(last_name, school_or_org);
-    return Response.json({ ok: true, invite_code: mock_invite_code, coach_id: "dev-test", status: "pending" });
-  }
-
   try {
     // Check for existing coach record for this account (idempotent re-runs)
     const existingCoach = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId }).catch(() => []);

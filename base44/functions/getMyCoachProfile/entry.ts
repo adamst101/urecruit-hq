@@ -17,17 +17,6 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
   }
 
-  // Dev/test mode — return a mock pending profile so the dashboard renders after a test registration.
-  if (env === 'dev') {
-    return Response.json({
-      ok: true,
-      coach: { id: "dev-test", status: "pending", first_name: "Test", last_name: "Coach", school_or_org: "Test School", sport: "Football", active: true },
-      roster: [],
-      messages: [],
-      campsByAccountId: {},
-    });
-  }
-
   try {
     // Use service role so entity-level read permissions don't block the coach
     const coaches = await base44.asServiceRole.entities.Coach.filter({ account_id: accountId });
