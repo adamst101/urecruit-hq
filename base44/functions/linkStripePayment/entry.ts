@@ -141,6 +141,7 @@ Deno.serve(async (req) => {
   const athleteFirstName = session.metadata?.athlete_first_name || "";
   const athleteLastName = session.metadata?.athlete_last_name || "";
   const gradYear = session.metadata?.grad_year ? parseInt(session.metadata.grad_year) : null;
+  const coachInviteCode = session.metadata?.coach_invite_code || "";
 
   // Check if entitlement already exists for this account+season
   const existing = await base44.asServiceRole.entities.Entitlement.filter({
@@ -195,6 +196,43 @@ Deno.serve(async (req) => {
       }
     } catch (e) {
       console.error("AthleteProfile creation failed:", e.message);
+    }
+  }
+
+  // Link athlete to coach roster if a coach invite code was present in the session
+  if (coachInviteCode && accountId) {
+    try {
+      const coaches = await base44.asServiceRole.entities.Coach.filter({
+        invite_code: coachInviteCode,
+        status: "approved",
+        active: true,
+      }).catch(() => []);
+      if (Array.isArray(coaches) && coaches.length > 0) {
+        const coachId = coaches[0].id;
+        // Idempotency: skip if already on roster
+        const existing = await base44.asServiceRole.entities.CoachRoster.filter({
+          coach_id: coachId,
+          account_id: accountId,
+        }).catch(() => []);
+        if (!Array.isArray(existing) || existing.length === 0) {
+          await base44.asServiceRole.entities.CoachRoster.create({
+            coach_id: coachId,
+            account_id: accountId,
+            athlete_id: "",
+            athlete_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" ") || "",
+            athlete_grad_year: gradYear || null,
+            invite_code: coachInviteCode,
+            joined_at: new Date().toISOString(),
+          });
+          console.log("Linked account", accountId, "to coach roster", coachId, "(via linkStripePayment)");
+        } else {
+          console.log("Account already on coach roster:", accountId, coachId);
+        }
+      } else {
+        console.warn("Coach not found for invite code (linkStripePayment):", coachInviteCode);
+      }
+    } catch (e) {
+      console.warn("CoachRoster linking failed (non-critical):", (e as Error).message);
     }
   }
 

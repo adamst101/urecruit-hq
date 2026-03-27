@@ -255,6 +255,7 @@ export default function AuthRedirect() {
             parentFirstName: formData.parentFirstName || undefined,
             parentLastName: formData.parentLastName || undefined,
             parentPhone: formData.parentPhone || undefined,
+            coachInviteCode: formData.coachInviteCode || undefined,
           });
         } catch (e) {
           console.error("activateFreeAccess failed in AuthRedirect:", e?.message);
