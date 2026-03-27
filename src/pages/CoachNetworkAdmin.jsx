@@ -21,9 +21,9 @@ export default function CoachNetworkAdmin() {
     (async () => {
       try {
         const res = await base44.functions.invoke("listCoaches", {});
-        const coachs = res?.coaches ?? [];
-        const roster = res?.rosters ?? [];
-        const msgs = res?.messages ?? [];
+        const coachs = res?.data?.coaches ?? [];
+        const roster = res?.data?.rosters ?? [];
+        const msgs = res?.data?.messages ?? [];
 
         const rc = {};
         for (const r of (Array.isArray(roster) ? roster : [])) {
