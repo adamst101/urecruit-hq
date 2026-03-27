@@ -20,17 +20,17 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "Invalid request body" }, { status: 400 });
   }
 
-  // Accept explicit accountId from body (passed by AuthRedirect after login)
-  // Fall back to auth.me() for direct authenticated calls
+  // auth.me() is the authoritative source for the account ID — it uses the
+  // token on the request so it always matches what getMyCoachProfile will use
+  // later to look up the coach record. body.accountId is kept as a fallback
+  // for the rare case where auth.me() fails immediately after account creation.
   let accountId = body.accountId || "";
   let coachEmail = body.email || "";
-  if (!accountId) {
-    try {
-      const me = await base44.auth.me();
-      accountId = me?.id || "";
-      if (!coachEmail) coachEmail = me?.email || "";
-    } catch {}
-  }
+  try {
+    const me = await base44.auth.me();
+    if (me?.id) accountId = me.id; // always prefer the server-side ID
+    if (!coachEmail && me?.email) coachEmail = me.email;
+  } catch {}
 
   if (!accountId) {
     return Response.json({ ok: false, error: "Not authenticated — accountId required" }, { status: 401 });
