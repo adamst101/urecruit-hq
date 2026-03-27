@@ -1,25 +1,20 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
 
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
   // Identify the caller
   let accountId = "";
+  let callerEmail = "";
   try {
     const me = await base44.auth.me();
     accountId = me?.id || "";
+    callerEmail = me?.email || "";
   } catch {}
 
   if (!accountId) {
     return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
   }
-
-  // Also grab the caller's email for fallback lookup
-  let callerEmail = "";
-  try {
-    const me2 = await base44.auth.me();
-    callerEmail = me2?.email || "";
-  } catch {}
 
   try {
     // Use service role so entity-level read permissions don't block the coach
@@ -52,26 +47,24 @@ Deno.serve(async (req) => {
     const rosterList = Array.isArray(roster) ? roster : [];
 
     // Fetch camp registrations for each roster athlete via their account_id
-    const campsByAccountId: Record<string, { camp_id: string; camp_name: string; school_name: string; start_date: string }[]> = {};
+    const campsByAccountId = {};
     if (rosterList.length > 0) {
       const accountIds = [...new Set(rosterList.map(r => r.account_id).filter(Boolean))];
-      await Promise.all(accountIds.map(async (accountId) => {
+      await Promise.all(accountIds.map(async (acctId) => {
         try {
-          // Get all CampIntent records for this account with registered/completed status
           const intents = await base44.asServiceRole.entities.CampIntent.filter({
-            account_id: accountId,
+            account_id: acctId,
           }).catch(() => []);
           const registered = Array.isArray(intents)
             ? intents.filter(i => i.status === "registered" || i.status === "completed")
             : [];
           if (registered.length === 0) return;
 
-          // Batch-fetch camp details
           const campIds = [...new Set(registered.map(i => i.camp_id).filter(Boolean))];
           const camps = await Promise.all(
             campIds.map(id => base44.asServiceRole.entities.Camp.get(id).catch(() => null))
           );
-          const campMap: Record<string, { camp_name: string; school_name: string; start_date: string }> = {};
+          const campMap = {};
           for (const camp of camps) {
             if (camp?.id) {
               campMap[camp.id] = {
@@ -82,7 +75,7 @@ Deno.serve(async (req) => {
             }
           }
 
-          campsByAccountId[accountId] = registered.map(i => ({
+          campsByAccountId[acctId] = registered.map(i => ({
             camp_id: i.camp_id,
             camp_name: campMap[i.camp_id]?.camp_name || "Camp",
             school_name: campMap[i.camp_id]?.school_name || "",
@@ -102,7 +95,7 @@ Deno.serve(async (req) => {
       campsByAccountId,
     });
   } catch (err) {
-    console.error("getMyCoachProfile error:", (err as Error).message);
-    return Response.json({ ok: false, error: (err as Error).message }, { status: 500 });
+    console.error("getMyCoachProfile error:", err.message);
+    return Response.json({ ok: false, error: err.message }, { status: 500 });
   }
 });
