@@ -78,10 +78,9 @@ async function safeMe() {
   }
 }
 
-// NOTE: base44.entities.Entitlement.filter has no client-read permissions in this
-// Base44 project — it always returns []. Use checkEntitlement (server-side, service
-// role) instead. fetchEntitlement is kept as a dead-code reference only.
-async function fetchEntitlementViaFunction(accountId) {
+// base44.entities.Entitlement.filter always returns [] on the client (no client-read
+// permission on this entity). Use checkEntitlement (server-side, asServiceRole) instead.
+async function fetchEntitlementViaFunction() {
   const res = await base44.functions.invoke("checkEntitlement", {});
   const list = Array.isArray(res?.data?.entitlements) ? res.data.entitlements : [];
   return list;
@@ -190,7 +189,7 @@ async function doRefresh({ currentYear, demoYear, activeSeason, soldSeason }) {
   // base44.entities.Entitlement.filter always returns [] — this bypasses that.
   let entitlements = [];
   try {
-    entitlements = await fetchEntitlementViaFunction(accountId);
+    entitlements = await fetchEntitlementViaFunction();
     console.log("[DIAG:SeasonAccess] server entitlements:", entitlements.length, entitlements.map(x => `id=${x.id} acct=${x.account_id} season=${x.season_year}`));
   } catch (e) {
     if (isRateLimitError(e)) throw e;
