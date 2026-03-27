@@ -180,7 +180,7 @@ export default function Account() {
       <div style={{ maxWidth: 560, margin: "0 auto", padding: "24px 16px 0" }}>
         <button
           type="button"
-          onClick={() => navigate(seasonMode === "coach" ? "/CoachDashboard" : ROUTES.Workspace)}
+          onClick={() => navigate(seasonMode === "coach" || seasonMode === "coach_pending" ? "/CoachDashboard" : ROUTES.Workspace)}
           style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500, color: "#e8a020", display: "flex", alignItems: "center", gap: 4, marginBottom: 12, padding: 0 }}
         >
           ← HQ

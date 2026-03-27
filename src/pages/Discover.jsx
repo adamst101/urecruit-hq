@@ -268,7 +268,7 @@ export default function Discover() {
   const [visibleCount, setVisibleCount]   = useState(50);
   const [coachRoster, setCoachRoster]     = useState([]);
 
-  const isCoach = seasonMode === "coach";
+  const isCoach = seasonMode === "coach" || seasonMode === "coach_pending";
 
   // Load coach roster when in coach mode
   useEffect(() => {
