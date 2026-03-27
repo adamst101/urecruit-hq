@@ -73,7 +73,16 @@ export default function CoachDashboard() {
   // ── Load coach profile ──────────────────────────────────────────────────────
   async function loadCoach() {
     try {
-      const res = await base44.functions.invoke("getMyCoachProfile", { accountId: seasonAccountId || undefined });
+      // Get accountId directly from frontend auth — more reliable than waiting
+      // for useSeasonAccess to finish its async refresh on each mount
+      let frontendAccountId = seasonAccountId || "";
+      if (!frontendAccountId) {
+        try {
+          const me = await base44.auth.me();
+          frontendAccountId = me?.id || "";
+        } catch {}
+      }
+      const res = await base44.functions.invoke("getMyCoachProfile", { accountId: frontendAccountId || undefined });
       const data = res?.data;
       if (!data?.ok || !data.coach) return null;
       setCoach(data.coach);
