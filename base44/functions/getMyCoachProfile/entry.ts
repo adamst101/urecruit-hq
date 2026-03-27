@@ -26,8 +26,8 @@ Deno.serve(async (req) => {
     if (!list.length && callerEmail) {
       const byEmail = await base44.asServiceRole.entities.Coach.filter({ email: callerEmail }).catch(() => []);
       list = Array.isArray(byEmail) ? byEmail : [];
-      // Backfill the account_id so future lookups work
-      if (list.length && !list[0].account_id) {
+      // Backfill the account_id so future lookups work (covers missing or wrong value)
+      if (list.length && list[0].account_id !== accountId) {
         base44.asServiceRole.entities.Coach.update(list[0].id, { account_id: accountId }).catch(() => {});
       }
     }

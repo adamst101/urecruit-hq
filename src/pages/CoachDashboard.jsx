@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { User, LogOut } from "lucide-react";
 import { base44 } from "../api/base44Client";
-import { clearSeasonAccessCache } from "../components/hooks/useSeasonAccess.jsx";
+import { clearSeasonAccessCache, useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import BottomNav from "../components/navigation/BottomNav.jsx";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
@@ -52,7 +52,7 @@ export default function CoachDashboard() {
   const [messages, setMessages] = useState([]);
   const [campsByAccountId, setCampsByAccountId] = useState({});
   const [loading, setLoading] = useState(true);
-  const [currentRole, setCurrentRole] = useState(null);
+  const { mode: seasonMode, role: seasonRole } = useSeasonAccess();
   const [setupPolling, setSetupPolling] = useState(false);
   const [pollAttempts, setPollAttempts] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -73,9 +73,6 @@ export default function CoachDashboard() {
   // ── Load coach profile ──────────────────────────────────────────────────────
   async function loadCoach() {
     try {
-      const me = await base44.auth.me();
-      if (!me?.id) return null;
-      setCurrentRole(me.role || "");
       const res = await base44.functions.invoke("getMyCoachProfile", {});
       const data = res?.data;
       if (!data?.ok || !data.coach) return null;
@@ -181,7 +178,7 @@ export default function CoachDashboard() {
   // ── No coach record ─────────────────────────────────────────────────────────
   if (!coach) {
     const stillSetting = setupPolling && pollAttempts < 5;
-    const isCoachRole = currentRole === "coach" || currentRole === "coach_pending";
+    const isCoachRole = seasonMode === "coach" || seasonMode === "coach_pending" || seasonRole === "coach" || seasonRole === "coach_pending";
     return (
       <div style={{ minHeight: "100vh", background: "#0a0e1a", color: "#f9fafb", fontFamily: "'DM Sans', system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <style>{FONTS}</style>
