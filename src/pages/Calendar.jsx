@@ -176,8 +176,8 @@ export default function Calendar() {
   // If season has resolved to paid, never let a stale ?mode=demo override it
   const forceDemo = url.mode === "demo" && season?.mode !== "paid";
   const effectiveMode = forceDemo ? "demo" : season?.mode;
-  const isPaid = effectiveMode === "paid" || effectiveMode === "coach";
-  const isCoach = effectiveMode === "coach";
+  const isPaid = effectiveMode === "paid" || effectiveMode === "coach" || effectiveMode === "coach_pending";
+  const isCoach = effectiveMode === "coach" || effectiveMode === "coach_pending";
 
   const seasonYear = useMemo(() => {
     if (forceDemo && url.seasonYear) return url.seasonYear;

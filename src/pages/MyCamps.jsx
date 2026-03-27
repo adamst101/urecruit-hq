@@ -77,10 +77,10 @@ export default function MyCamps() {
   }, [queryClient]);
 
   const dm = readDemoMode();
-  const isPaid = season?.mode === "paid" || season?.mode === "coach";
+  const isPaid = season?.mode === "paid" || season?.mode === "coach" || season?.mode === "coach_pending";
   const isDemoMode = !isPaid;
   const isAdmin = season?.role === "admin";
-  const isCoach = season?.mode === "coach";
+  const isCoach = season?.mode === "coach" || season?.mode === "coach_pending";
 
   const { allCamps: allAthletesCamps, athletes: allAthletes } = useAllAthletesCamps({ enabled: isPaid });
   const seasonYear = Number(dm?.seasonYear || season?.seasonYear || season?.currentYear || new Date().getFullYear());

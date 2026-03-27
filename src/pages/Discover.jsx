@@ -241,7 +241,7 @@ export default function Discover() {
 
   // Use useSeasonAccess as single source of truth for paid vs demo.
   // readDemoMode() can have stale data before useSeasonAccess clears it.
-  const isPaid = seasonMode === "paid" || seasonMode === "coach";
+  const isPaid = seasonMode === "paid" || seasonMode === "coach" || seasonMode === "coach_pending";
 
   // Read demo mode only for season year override (not for isPaid determination)
   const dm             = readDemoMode();           // null | { mode, seasonYear, setAt }
