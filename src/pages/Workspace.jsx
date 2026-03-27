@@ -28,6 +28,7 @@ const ROUTES = {
   Subscribe: "/Subscribe",
   MyCamps: "/MyCamps",
   KnowledgeBase: "/KnowledgeBase",
+  RecruitingJourney: "/RecruitingJourney",
   Account: "/Account",
   AdminImport: "/AdminImport",
   AdminOps: "/AdminOps",
@@ -291,6 +292,7 @@ const parentName = (athleteProfile?.parent_first_name || "").trim();
             highlight={!athleteId}
           />
           <WorkspaceTile icon="📚" title="THE PLAYBOOK" desc="Recruiting rules, camp strategy, film, offers & more" btnLabel="Read →" onClick={() => nav(ROUTES.KnowledgeBase)} />
+          <WorkspaceTile icon="🏈" title="RECRUITING JOURNEY" desc="Track recruiting interest, DMs, camp conversations, and offers" btnLabel="View →" onClick={() => nav(ROUTES.RecruitingJourney)} />
         </div>
       </section>
 

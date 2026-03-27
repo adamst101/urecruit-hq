@@ -50,6 +50,10 @@ export const RoadmapItem = pickEntity("RoadmapItem", "RoadmapItems");
 
 export const Query = pickEntity("Query", "Queries");
 
+// --- Recruiting Journey (Phase 2) ---
+export const RecruitingActivity = pickEntity("RecruitingActivity", "RecruitingActivities");
+export const SchoolPreference   = pickEntity("SchoolPreference",   "SchoolPreferences");
+
 // --- Auth SDK ---
 export const User = base44?.auth;
 
