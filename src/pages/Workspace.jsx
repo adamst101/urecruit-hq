@@ -88,6 +88,8 @@ export default function Workspace() {
   const [seasonConfig, setSeasonConfig] = useState(null);
   const [coachMessages, setCoachMessages] = useState([]);
   const [coachName, setCoachName] = useState("");
+  const [coachCodeInput, setCoachCodeInput] = useState("");
+  const [coachLinkState, setCoachLinkState] = useState(null); // null | "loading" | { ok, msg, error }
 
   useEffect(() => {
     let cancelled = false;
@@ -203,6 +205,32 @@ export default function Workspace() {
     })();
     return () => { cancelled = true; };
   }, [season?.isLoading, season?.accountId, season?.hasAccess]);
+
+  async function handleCoachLink(e) {
+    e.preventDefault();
+    const code = coachCodeInput.trim().toUpperCase();
+    if (!code) return;
+    setCoachLinkState("loading");
+    try {
+      const res = await base44.functions.invoke("linkToCoach", { inviteCode: code });
+      const d = res?.data;
+      if (d?.ok) {
+        const name = d.coachName || d.schoolOrOrg || "your coach";
+        const msg = d.already_connected
+          ? `You're already connected to ${name}.`
+          : `Connected! You're now on ${name}'s roster.`;
+        setCoachLinkState({ ok: true, msg });
+        setCoachCodeInput("");
+        if (!d.already_connected) {
+          try { localStorage.setItem("coachInviteCode", code); } catch {}
+        }
+      } else {
+        setCoachLinkState({ ok: false, error: d?.error || "Could not connect. Check the code and try again." });
+      }
+    } catch {
+      setCoachLinkState({ ok: false, error: "Something went wrong. Please try again." });
+    }
+  }
 
   async function handleLogout() {
     if (loggingOut) return;
@@ -369,6 +397,50 @@ export default function Workspace() {
       </section>
 
 
+
+      {/* ── CONNECT TO COACH ── */}
+      {isMember && (
+        <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "20px 24px" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
+              🔗 Connect to a Coach
+            </div>
+            <p style={{ fontSize: 14, color: "#6b7280", margin: "0 0 14px" }}>
+              If a coach gave you an invite code, enter it here to appear on their roster.
+            </p>
+            <form onSubmit={handleCoachLink} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
+              <input
+                value={coachCodeInput}
+                onChange={e => { setCoachCodeInput(e.target.value.toUpperCase()); setCoachLinkState(null); }}
+                placeholder="e.g. ADAMS-SCH-1234"
+                style={{
+                  background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8,
+                  padding: "10px 14px", fontSize: 14, color: "#f9fafb", fontFamily: "monospace",
+                  letterSpacing: 1, outline: "none", flexGrow: 1, minWidth: 200,
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!coachCodeInput.trim() || coachLinkState === "loading"}
+                style={{
+                  background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8,
+                  padding: "10px 20px", fontSize: 14, fontWeight: 700,
+                  cursor: (!coachCodeInput.trim() || coachLinkState === "loading") ? "not-allowed" : "pointer",
+                  opacity: (!coachCodeInput.trim() || coachLinkState === "loading") ? 0.6 : 1,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {coachLinkState === "loading" ? "Connecting…" : "Connect →"}
+              </button>
+            </form>
+            {coachLinkState && coachLinkState !== "loading" && (
+              <p style={{ margin: "10px 0 0", fontSize: 14, color: coachLinkState.ok ? "#22c55e" : "#f87171" }}>
+                {coachLinkState.ok ? coachLinkState.msg : coachLinkState.error}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* ── PWA INSTALL PROMPT ── */}
       <section style={{ padding: "0 24px 16px", maxWidth: 1100, margin: "0 auto" }}>
