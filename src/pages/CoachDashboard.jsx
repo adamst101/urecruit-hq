@@ -52,7 +52,7 @@ export default function CoachDashboard() {
   const [messages, setMessages] = useState([]);
   const [campsByAccountId, setCampsByAccountId] = useState({});
   const [loading, setLoading] = useState(true);
-  const { mode: seasonMode, role: seasonRole } = useSeasonAccess();
+  const { mode: seasonMode, role: seasonRole, accountId: seasonAccountId } = useSeasonAccess();
   const [setupPolling, setSetupPolling] = useState(false);
   const [pollAttempts, setPollAttempts] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -73,7 +73,7 @@ export default function CoachDashboard() {
   // ── Load coach profile ──────────────────────────────────────────────────────
   async function loadCoach() {
     try {
-      const res = await base44.functions.invoke("getMyCoachProfile", {});
+      const res = await base44.functions.invoke("getMyCoachProfile", { accountId: seasonAccountId || undefined });
       const data = res?.data;
       if (!data?.ok || !data.coach) return null;
       setCoach(data.coach);

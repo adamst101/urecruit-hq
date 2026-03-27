@@ -3,7 +3,15 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  // Identify the caller
+  // Accept accountId hint from the frontend session as a fallback — covers cases
+  // where auth.me() in the function is inconsistent with the frontend session.
+  let bodyAccountId = "";
+  try {
+    const body = await req.clone().json().catch(() => ({}));
+    bodyAccountId = body?.accountId || "";
+  } catch {}
+
+  // Identify the caller — auth.me() is authoritative; bodyAccountId is a fallback
   let accountId = "";
   let callerEmail = "";
   try {
@@ -11,6 +19,9 @@ Deno.serve(async (req) => {
     accountId = me?.id || "";
     callerEmail = me?.email || "";
   } catch {}
+
+  // If auth.me() failed, fall back to the client-supplied accountId
+  if (!accountId && bodyAccountId) accountId = bodyAccountId;
 
   if (!accountId) {
     return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
