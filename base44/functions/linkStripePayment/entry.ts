@@ -167,7 +167,9 @@ Deno.serve(async (req) => {
     product: "RecruitMeSeasonAccess",
   });
 
-  // Create AthleteProfile if we have the athlete's name and none exists yet
+  // Create AthleteProfile if we have the athlete's name and none exists yet.
+  // Track the resolved ID so CoachRoster can reference it correctly.
+  let resolvedAthleteId = "";
   if (athleteFirstName) {
     try {
       const existingProfiles = await base44.asServiceRole.entities.AthleteProfile.filter({
@@ -175,7 +177,7 @@ Deno.serve(async (req) => {
       }).catch(() => []);
 
       if (!existingProfiles || existingProfiles.length === 0) {
-        await base44.asServiceRole.entities.AthleteProfile.create({
+        const newProfile = await base44.asServiceRole.entities.AthleteProfile.create({
           account_id: accountId,
           first_name: athleteFirstName,
           last_name: athleteLastName || null,
@@ -190,8 +192,10 @@ Deno.serve(async (req) => {
           is_primary: true,
           active: true,
         });
-        console.log("Created AthleteProfile for account:", accountId);
+        resolvedAthleteId = newProfile?.id || "";
+        console.log("Created AthleteProfile for account:", accountId, "id:", resolvedAthleteId);
       } else {
+        resolvedAthleteId = existingProfiles[0]?.id || "";
         console.log("AthleteProfile already exists for account:", accountId, "— skipping creation");
       }
     } catch (e) {
@@ -218,13 +222,13 @@ Deno.serve(async (req) => {
           await base44.asServiceRole.entities.CoachRoster.create({
             coach_id: coachId,
             account_id: accountId,
-            athlete_id: "",
+            athlete_id: resolvedAthleteId,
             athlete_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" ") || "",
             athlete_grad_year: gradYear || null,
             invite_code: coachInviteCode,
             joined_at: new Date().toISOString(),
           });
-          console.log("Linked account", accountId, "to coach roster", coachId, "(via linkStripePayment)");
+          console.log("Linked account", accountId, "to coach roster", coachId, "athlete:", resolvedAthleteId, "(via linkStripePayment)");
         } else {
           console.log("Account already on coach roster:", accountId, coachId);
         }

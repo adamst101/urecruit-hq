@@ -123,6 +123,11 @@ Deno.serve(async (req) => {
     }
 
     try {
+      // Tracks the AthleteProfile id resolved during this webhook run.
+      // Starts as the metadata value (non-empty when user already had a profile);
+      // updated below when a new profile is created so CoachRoster gets the real id.
+      let resolvedAthleteId = athleteId;
+
       // SCENARIO A — Primary athlete purchase (or standalone add-on)
       if (!isAddOn) {
         const primaryAmount = hasSecondAthlete ? 49 : amountTotal;
@@ -166,6 +171,7 @@ Deno.serve(async (req) => {
                 active: true,
                 sport_id: sportId || null,
               });
+              resolvedAthleteId = newProfile?.id || "";
               console.log("Created AthleteProfile from checkout:", newProfile.id);
             }
           } catch (e) {
@@ -320,13 +326,13 @@ Deno.serve(async (req) => {
               await base44.asServiceRole.entities.CoachRoster.create({
                 coach_id: coachId,
                 account_id: accountId,
-                athlete_id: athleteId || "",
+                athlete_id: resolvedAthleteId || "",
                 athlete_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" ") || "",
                 athlete_grad_year: gradYear || null,
                 invite_code: coachInviteCode,
                 joined_at: new Date().toISOString(),
               });
-              console.log("Linked account", accountId, "to coach roster", coachId);
+              console.log("Linked account", accountId, "to coach roster", coachId, "athlete:", resolvedAthleteId);
             } else {
               console.log("Account already on coach roster:", accountId, coachId);
             }

@@ -120,7 +120,9 @@ Deno.serve(async (req) => {
   }
 
   // Always attempt AthleteProfile creation — even if entitlement already existed
-  // (a prior run may have created the entitlement but failed on the profile)
+  // (a prior run may have created the entitlement but failed on the profile).
+  // Track the resolved ID so CoachRoster can reference it correctly.
+  let resolvedAthleteId = athleteId || "";
   if (athleteFirstName) {
     try {
       const existingProfiles = await base44.asServiceRole.entities.AthleteProfile.filter({
@@ -136,7 +138,7 @@ Deno.serve(async (req) => {
           (p.last_name || "") === (athleteLastName || "")
         );
         if (!alreadyExists) {
-          await base44.asServiceRole.entities.AthleteProfile.create({
+          const newProfile = await base44.asServiceRole.entities.AthleteProfile.create({
             account_id: resolvedAccountId,
             first_name: athleteFirstName,
             last_name: athleteLastName || null,
@@ -151,13 +153,19 @@ Deno.serve(async (req) => {
             is_primary: false,
             active: true,
           });
-          console.log("Created addon AthleteProfile:", athleteFirstName, athleteLastName);
+          resolvedAthleteId = newProfile?.id || "";
+          console.log("Created addon AthleteProfile:", athleteFirstName, athleteLastName, "id:", resolvedAthleteId);
         } else {
+          const match = profileList.find(p =>
+            (p.first_name || "").toLowerCase() === athleteFirstName.toLowerCase() &&
+            (p.last_name || "") === (athleteLastName || "")
+          );
+          resolvedAthleteId = match?.id || "";
           console.log("Addon athlete already exists:", athleteFirstName, athleteLastName);
         }
       } else {
         if (profileList.length === 0) {
-          await base44.asServiceRole.entities.AthleteProfile.create({
+          const newProfile = await base44.asServiceRole.entities.AthleteProfile.create({
             account_id: resolvedAccountId,
             first_name: athleteFirstName,
             last_name: athleteLastName || null,
@@ -172,8 +180,10 @@ Deno.serve(async (req) => {
             is_primary: true,
             active: true,
           });
-          console.log("Created primary AthleteProfile:", athleteFirstName, athleteLastName);
+          resolvedAthleteId = newProfile?.id || "";
+          console.log("Created primary AthleteProfile:", athleteFirstName, athleteLastName, "id:", resolvedAthleteId);
         } else {
+          resolvedAthleteId = profileList[0]?.id || "";
           console.log("Primary athlete already exists, skipping");
         }
       }
@@ -216,13 +226,13 @@ Deno.serve(async (req) => {
           await base44.asServiceRole.entities.CoachRoster.create({
             coach_id: coachId,
             account_id: resolvedAccountId,
-            athlete_id: athleteId || "",
+            athlete_id: resolvedAthleteId,
             athlete_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" ") || "",
             athlete_grad_year: gradYear ? parseInt(String(gradYear)) : null,
             invite_code: coachInviteCode,
             joined_at: new Date().toISOString(),
           });
-          console.log("Linked account", resolvedAccountId, "to coach roster", coachId, "(free access path)");
+          console.log("Linked account", resolvedAccountId, "to coach roster", coachId, "athlete:", resolvedAthleteId, "(free access path)");
         } else {
           console.log("Account already on coach roster:", resolvedAccountId, coachId);
         }
