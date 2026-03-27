@@ -150,22 +150,24 @@ Deno.serve(async (req) => {
     status: "active",
   }).catch(() => []);
 
-  if (existing && existing.length > 0) {
-    return Response.json({ ok: true, already_linked: true });
-  }
+  const alreadyLinked = Array.isArray(existing) && existing.length > 0;
 
-  // Create primary entitlement
-  await base44.asServiceRole.entities.Entitlement.create({
-    account_id: accountId,
-    athlete_id: "",
-    season_year: seasonYear,
-    status: "active",
-    is_primary: true,
-    amount_paid: amountPaid,
-    starts_at: accessStartsAt,
-    ends_at: accessEndsAt,
-    product: "RecruitMeSeasonAccess",
-  });
+  // If entitlement doesn't exist yet, create it.
+  // Do NOT early-return here — fall through so CoachRoster linking always runs
+  // (the webhook may have created the entitlement but failed on CoachRoster).
+  if (!alreadyLinked) {
+    await base44.asServiceRole.entities.Entitlement.create({
+      account_id: accountId,
+      athlete_id: "",
+      season_year: seasonYear,
+      status: "active",
+      is_primary: true,
+      amount_paid: amountPaid,
+      starts_at: accessStartsAt,
+      ends_at: accessEndsAt,
+      product: "RecruitMeSeasonAccess",
+    });
+  }
 
   // Create AthleteProfile if we have the athlete's name and none exists yet.
   // Track the resolved ID so CoachRoster can reference it correctly.
@@ -253,5 +255,5 @@ Deno.serve(async (req) => {
     }
   }
 
-  return Response.json({ ok: true, linked: true, accountId, seasonYear });
+  return Response.json({ ok: true, linked: true, accountId, seasonYear, already_linked: alreadyLinked });
 });

@@ -167,6 +167,14 @@ export default function CoachDashboard() {
     return () => clearTimeout(t);
   }, [setupPolling, pollAttempts]);
 
+  // ── Refresh roster (clears module cache so fresh data is fetched) ───────────
+  async function handleRefresh() {
+    _coachCache = null;
+    setLoading(true);
+    await loadCoach();
+    setLoading(false);
+  }
+
   // ── Logout ──────────────────────────────────────────────────────────────────
   async function handleLogout() {
     if (loggingOut) return;
@@ -358,6 +366,13 @@ export default function CoachDashboard() {
             COACH HQ
           </h1>
           <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={handleRefresh}
+              disabled={loading}
+              style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", color: "#9ca3af", fontSize: 13, fontWeight: 600 }}
+            >
+              ↻ Refresh
+            </button>
             <button
               onClick={handleLogout}
               disabled={loggingOut}
