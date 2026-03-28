@@ -57,6 +57,9 @@ Deno.serve(async (req) => {
 
     const rosterList = Array.isArray(roster) ? roster : [];
 
+    console.log("[getMyCoachProfile] roster entries:", rosterList.length,
+      rosterList.map(r => `acct=${r.account_id || "(empty)"} athlete=${r.athlete_id || "(empty)"} name=${r.athlete_name || "(none)"}`));
+
     // Fetch camp registrations for each roster athlete.
     // CampIntent records are created with athlete_id as the primary FK (and account_id as secondary).
     // Query by athlete_id first (matches what the app writes); fall back to account_id.
@@ -76,6 +79,7 @@ Deno.serve(async (req) => {
               athlete_id: athleteId,
             }).catch(() => []);
             intents = Array.isArray(byAthlete) ? byAthlete : [];
+            console.log(`[getMyCoachProfile] athlete_id lookup (${athleteId}): ${intents.length} intents`);
           }
           // Fall back to account_id when athlete_id lookup found nothing
           if (intents.length === 0 && acctId) {
@@ -83,6 +87,7 @@ Deno.serve(async (req) => {
               account_id: acctId,
             }).catch(() => []);
             intents = Array.isArray(byAccount) ? byAccount : [];
+            console.log(`[getMyCoachProfile] account_id fallback (${acctId}): ${intents.length} intents`);
           }
 
           const registered = intents.filter((i: any) => i.status === "registered" || i.status === "completed");
@@ -126,6 +131,9 @@ Deno.serve(async (req) => {
         }
       }));
     }
+
+    console.log("[getMyCoachProfile] campsByAccountId keys:", Object.keys(campsByAccountId),
+      "totals:", Object.entries(campsByAccountId).map(([k, v]) => `${k}:${(v as any[]).length}`));
 
     return Response.json({
       ok: true,
