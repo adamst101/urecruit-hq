@@ -230,6 +230,14 @@ Deno.serve(async (req) => {
             joined_at: new Date().toISOString(),
           });
           console.log("Linked account", resolvedAccountId, "to coach roster", coachId, "athlete:", resolvedAthleteId, "(free access path)");
+        } else if (resolvedAthleteId && !existing[0].athlete_id) {
+          // Entry exists (created earlier by linkToCoach before profile was ready) — backfill athlete_id now
+          await base44.asServiceRole.entities.CoachRoster.update(existing[0].id, {
+            athlete_id: resolvedAthleteId,
+            athlete_name: [athleteFirstName, athleteLastName].filter(Boolean).join(" ") || existing[0].athlete_name || "",
+            athlete_grad_year: gradYear ? parseInt(String(gradYear)) : (existing[0].athlete_grad_year || null),
+          });
+          console.log("Backfilled athlete_id on CoachRoster", existing[0].id, "athlete:", resolvedAthleteId, "(free access path)");
         } else {
           console.log("Account already on coach roster:", resolvedAccountId, coachId);
         }
