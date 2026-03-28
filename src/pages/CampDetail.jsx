@@ -222,33 +222,13 @@ function CampDetailInner() {
         return;
       }
 
-      // PAID: backend write
-      const existing = await base44.entities.CampIntent.filter({
-        athlete_id: athleteId,
-        camp_id: campId
+      // PAID: server-side write so it always lands in the production entity store
+      await base44.functions.invoke("saveCampIntent", {
+        accountId,
+        athleteId,
+        campId,
+        action: "favorite",
       });
-
-      const intent = existing?.[0] || null;
-
-      // registered/completed are not toggleable via favorite button
-      if (intent?.status === "registered" || intent?.status === "completed") return;
-
-      if (!intent) {
-        await base44.entities.CampIntent.create({
-          athlete_id: athleteId,
-          camp_id: campId,
-          account_id: accountId || "",
-          status: "favorite",
-          priority: "medium"
-        });
-        return;
-      }
-
-      if (intent.status === "favorite") {
-        await base44.entities.CampIntent.update(intent.id, { status: "removed" });
-      } else {
-        await base44.entities.CampIntent.update(intent.id, { status: "favorite" });
-      }
     },
     onSuccess: () => {
       invalidateSummaries();
@@ -278,29 +258,13 @@ function CampDetailInner() {
         return;
       }
 
-      // PAID: backend write
-      const existing = await base44.entities.CampIntent.filter({
-        athlete_id: athleteId,
-        camp_id: campId
+      // PAID: server-side write so it always lands in the production entity store
+      await base44.functions.invoke("saveCampIntent", {
+        accountId,
+        athleteId,
+        campId,
+        action: "register",
       });
-
-      const intent = existing?.[0] || null;
-
-      if (!intent) {
-        await base44.entities.CampIntent.create({
-          athlete_id: athleteId,
-          camp_id: campId,
-          account_id: accountId || "",
-          status: "registered",
-          priority: "high"
-        });
-        return;
-      }
-
-      // If already registered/completed, do nothing
-      if (intent.status === "registered" || intent.status === "completed") return;
-
-      await base44.entities.CampIntent.update(intent.id, { status: "registered" });
     },
     onSuccess: () => {
       invalidateSummaries();

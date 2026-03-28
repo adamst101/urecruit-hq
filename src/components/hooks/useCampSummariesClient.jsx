@@ -3,6 +3,20 @@ import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
 import { ensureSchoolMap, schoolMapGet } from "./useSchoolIdentity.jsx";
 
+// Fetch intents from production entity store via server-side function.
+// Falls back to client-side filter if the function call fails (e.g. during local dev).
+async function fetchIntentsFromServer({ athleteId, accountId }) {
+  try {
+    const res = await base44.functions.invoke("getMyCampIntents", { athleteId, accountId });
+    if (res?.data?.ok && Array.isArray(res.data.intents)) {
+      return res.data.intents;
+    }
+  } catch {
+    // fall through to client-side fallback
+  }
+  return null; // signal to caller: use client-side fallback
+}
+
 /* -------------------------
    Helpers
 ------------------------- */
@@ -221,29 +235,29 @@ export function useCampSummariesClient({
 
       if (!CampEntity?.filter || !IntentEntity?.filter) return [];
 
-      // 1) Load intents — by athlete_id (normal users) or account_id (coaches with no athlete profile)
+      // 1) Load intents from production store via server-side function.
+      //    Client-side filter (base44.entities.CampIntent) reads the TEST entity store
+      //    when accessed via the Base44 editor URL — server functions always read production.
       const intentByKey = new Map();
       const interestedKeys = [];
-      if (aId) {
-        const intentsRaw = await Promise.allSettled([
-          safeFilter(IntentEntity, { athlete_id: String(aId) }, undefined, undefined, { retries: 2, baseDelayMs: 250 }),
-        ]);
+      if (aId || acctId) {
+        // Try server-side first (always production); fall back to client-side on failure
+        let intents = await fetchIntentsFromServer({ athleteId: aId, accountId: acctId });
 
-        const intents = intentsRaw[0].status === "fulfilled" && Array.isArray(intentsRaw[0].value) ? intentsRaw[0].value : [];
+        if (intents === null) {
+          // Fallback: client-side filter (may read test store in editor URL context)
+          if (aId) {
+            const res = await safeFilter(IntentEntity, { athlete_id: String(aId) }, undefined, undefined, { retries: 2, baseDelayMs: 250 }).catch(() => []);
+            intents = Array.isArray(res) ? res : [];
+          } else if (acctId) {
+            const res = await safeFilter(IntentEntity, { athlete_id: String(acctId) }, undefined, undefined, { retries: 2, baseDelayMs: 250 }).catch(() => []);
+            intents = Array.isArray(res) ? res : [];
+          } else {
+            intents = [];
+          }
+        }
 
         for (const i of intents) {
-          const rawKey = i?.camp_id;
-          if (!rawKey) continue;
-          const key = String(rawKey);
-          intentByKey.set(key, i);
-
-          const st = String(i?.status || "").toLowerCase();
-          if (st === "favorite" || st === "registered" || st === "completed") interestedKeys.push(key);
-        }
-      } else if (acctId) {
-        // Coach path: no athlete profile — Discover stores intents with athlete_id=accountId
-        const intentsRaw = await safeFilter(IntentEntity, { athlete_id: String(acctId) }, undefined, undefined, { retries: 2, baseDelayMs: 250 }).catch(() => []);
-        for (const i of (Array.isArray(intentsRaw) ? intentsRaw : [])) {
           const rawKey = i?.camp_id;
           if (!rawKey) continue;
           const key = String(rawKey);
