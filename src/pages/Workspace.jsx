@@ -90,6 +90,7 @@ export default function Workspace() {
   const [coachName, setCoachName] = useState("");
   const [coachCodeInput, setCoachCodeInput] = useState("");
   const [coachLinkState, setCoachLinkState] = useState(null); // null | "loading" | { ok, msg, error }
+  const [snapshotStats, setSnapshotStats] = useState({ campsSaved: null, upcomingCamps: null }); // null = loading
 
   useEffect(() => {
     let cancelled = false;
@@ -157,6 +158,33 @@ export default function Workspace() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Load snapshot stats (camp count) for progress row — members only
+  useEffect(() => {
+    if (!isMember) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await base44.functions.invoke("getMyCampIntents", {
+          athleteId: athleteId || undefined,
+          accountId: season?.accountId || undefined,
+        });
+        if (cancelled) return;
+        const intents = Array.isArray(res?.data?.intents) ? res.data.intents : [];
+        const active = intents.filter(i => {
+          const st = String(i?.status || "").toLowerCase();
+          return st === "favorite" || st === "registered";
+        });
+        const now = new Date();
+        // Upcoming requires camp start_date — we only have intent here, so count registered
+        const registered = intents.filter(i => String(i?.status || "").toLowerCase() === "registered");
+        setSnapshotStats({ campsSaved: active.length, upcomingCamps: registered.length });
+      } catch {
+        setSnapshotStats({ campsSaved: 0, upcomingCamps: 0 });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isMember, athleteId, season?.accountId]);
 
   const isAdmin = isAdminEmail(meEmail);
 
@@ -262,17 +290,49 @@ export default function Workspace() {
   const parentName = (athleteProfile?.parent_first_name || "").trim();
   const parentLast = (athleteProfile?.parent_last_name || "").trim();
   const parentFull = parentName ? `${parentName}${parentLast ? ` ${parentLast}` : ""}` : null;
-  // season.firstName/lastName come from auth.me() full_name (set during checkout flows)
   const seasonName = season?.firstName
     ? [season.firstName, season.lastName].filter(Boolean).join(" ")
     : null;
   const displayName = parentFull || seasonName || athleteProfile?.athlete_name || meName || meEmail || "Athlete";
 
+  // Next Step panel — dynamic based on what the family has done
+  const profileComplete = !!athleteId;
+  const hasCampsSaved = (snapshotStats.campsSaved ?? 0) > 0;
+
+  const nextStep = !profileComplete
+    ? {
+        eyebrow: "START HERE",
+        headline: "Build your athlete's profile first.",
+        body: "The profile is the foundation. Add your athlete's measurables, grad year, and details so every other tool works better from the start.",
+        actions: [
+          { label: "Complete Profile →", route: athleteId ? `${ROUTES.Profile}?id=${athleteId}` : ROUTES.Profile },
+          { label: "Find Camps →", route: ROUTES.Discover },
+        ],
+      }
+    : !hasCampsSaved
+    ? {
+        eyebrow: "YOUR NEXT STEP",
+        headline: "Profile set. Now find your target camps.",
+        body: "Search college football camps by division, state, and date. Save the ones that fit your athlete's timeline and start building your plan.",
+        actions: [
+          { label: "Find Camps →", route: ROUTES.Discover },
+          { label: "Read the Playbook →", route: ROUTES.KnowledgeBase },
+        ],
+      }
+    : {
+        eyebrow: "YOUR NEXT STEP",
+        headline: "Keep building momentum.",
+        body: "Review your saved camps, check your calendar for conflicts, and start logging recruiting activity as conversations and camp invites come in.",
+        actions: [
+          { label: "View My Camps →", route: ROUTES.MyCamps },
+          { label: "View Calendar →", route: ROUTES.Calendar },
+          { label: "Recruiting Tracker →", route: ROUTES.RecruitingJourney },
+        ],
+      };
+
   return (
-    <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
+    <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", paddingBottom: 80, fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
-
-
 
       {/* ── ATHLETE SWITCHER ── */}
       {isMember && season?.accountId && (
@@ -285,7 +345,6 @@ export default function Workspace() {
         </section>
       )}
 
-      {/* Add Athlete Modal */}
       {showAddAthlete && (
         <AddAthleteModal
           seasonConfig={seasonConfig}
@@ -294,11 +353,28 @@ export default function Workspace() {
         />
       )}
 
-      {/* ── HERO GREETING ── */}
-      <section style={{ padding: "48px 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          <div style={{ width: 3, height: 32, background: "#e8a020", borderRadius: 2 }} />
-          <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(36px, 5vw, 56px)", lineHeight: 1, margin: 0, letterSpacing: 1, flex: 1 }}>YOUR RECRUITING HQ</h1>
+      {/* ── HEADER ── */}
+      <section style={{ padding: "48px 24px 24px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
+          <div style={{ width: 3, height: 40, background: "#e8a020", borderRadius: 2, flexShrink: 0, marginTop: 4 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(36px, 5vw, 56px)", lineHeight: 1, margin: 0, letterSpacing: 1 }}>
+              YOUR RECRUITING HQ
+            </h1>
+            {season?.accountId && (
+              <p style={{ color: "#9ca3af", fontSize: 16, margin: "8px 0 0" }}>
+                Welcome back, {displayName}
+              </p>
+            )}
+            <p style={{ color: "#6b7280", fontSize: 14, margin: "4px 0 0" }}>
+              Support your athlete's goal of playing college football with a clearer plan, better organization, and smarter next steps.
+            </p>
+            {isMember && (
+              <p style={{ color: "#4b5563", fontSize: 12, margin: "4px 0 0", letterSpacing: "0.04em" }}>
+                Season {memberSeason} · Active
+              </p>
+            )}
+          </div>
           {season?.accountId && (
             <button
               onClick={() => nav(ROUTES.Account)}
@@ -314,12 +390,6 @@ export default function Workspace() {
             </button>
           )}
         </div>
-        {season?.accountId && <p style={{ color: "#9ca3af", fontSize: 17, margin: 0 }}>Welcome back, {displayName}</p>}
-        <p style={{ color: "#6b7280", fontSize: 15, marginTop: 4 }}>
-          {isMember
-            ? `Season ${memberSeason} · Active`
-            : `Demo Mode · ${demoYear} Season`}
-        </p>
 
         {/* Demo banner */}
         {!isMember && (
@@ -334,7 +404,7 @@ export default function Workspace() {
           </div>
         )}
 
-        {/* ── DIAGNOSTIC PANEL (remove after root cause found) ── */}
+        {/* Diagnostic panel */}
         {!isMember && season?.accountId && (
           <div style={{ marginTop: 12, background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "12px 16px", fontFamily: "monospace", fontSize: 12, color: "#9ca3af" }}>
             <div style={{ color: "#e8a020", fontWeight: 700, marginBottom: 8 }}>🔍 DIAG (share with support)</div>
@@ -347,66 +417,200 @@ export default function Workspace() {
                 onClick={async () => {
                   try {
                     const rows = await base44.entities.Entitlement.filter({ account_id: season.accountId, status: "active" });
-                    const msg = JSON.stringify(rows, null, 2);
-                    alert("Client-side entitlement query result:\n" + msg);
-                    console.log("[DIAG:Workspace] manual entitlement check:", rows);
-                  } catch (e) {
-                    alert("Query threw: " + e?.message);
-                  }
+                    alert("Client-side entitlement query result:\n" + JSON.stringify(rows, null, 2));
+                  } catch (e) { alert("Query threw: " + e?.message); }
                 }}
                 style={{ background: "#1f2937", color: "#f9fafb", border: "1px solid #374151", borderRadius: 4, padding: "4px 10px", fontSize: 11, cursor: "pointer", marginRight: 8 }}
-              >
-                Check Entitlement
-              </button>
+              >Check Entitlement</button>
               <button
                 onClick={async () => {
                   try {
                     const me = await base44.auth.me();
                     alert("auth.me():\n" + JSON.stringify(me, null, 2));
-                    console.log("[DIAG:Workspace] auth.me():", me);
-                  } catch (e) {
-                    alert("auth.me() threw: " + e?.message);
-                  }
+                  } catch (e) { alert("auth.me() threw: " + e?.message); }
                 }}
                 style={{ background: "#1f2937", color: "#f9fafb", border: "1px solid #374151", borderRadius: 4, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}
-              >
-                Check Auth
-              </button>
+              >Check Auth</button>
             </div>
           </div>
         )}
       </section>
 
-      {/* ── MAIN TILES ── */}
-      <section style={{ padding: "0 24px 40px", maxWidth: 1100, margin: "0 auto" }}>
+      {/* ── YOUR NEXT STEP PANEL ── */}
+      {isMember && (
+        <section style={{ padding: "0 24px 24px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{
+            background: "linear-gradient(135deg, #0f1a2e 0%, #111827 100%)",
+            border: "1px solid #e8a020",
+            borderLeft: "4px solid #e8a020",
+            borderRadius: 14,
+            padding: "24px 28px",
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 8 }}>
+              {nextStep.eyebrow}
+            </div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(20px, 3vw, 26px)", color: "#f9fafb", letterSpacing: 1, marginBottom: 10 }}>
+              {nextStep.headline}
+            </div>
+            <p style={{ fontSize: 14, color: "#9ca3af", margin: "0 0 20px", lineHeight: 1.65, maxWidth: 640 }}>
+              {nextStep.body}
+            </p>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {nextStep.actions.map((a, i) => (
+                <button
+                  key={a.label}
+                  onClick={() => nav(a.route)}
+                  style={{
+                    background: i === 0 ? "#e8a020" : "transparent",
+                    color: i === 0 ? "#0a0e1a" : "#e8a020",
+                    border: i === 0 ? "none" : "1px solid #e8a020",
+                    borderRadius: 8,
+                    padding: "10px 20px",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── PROGRESS SNAPSHOT ROW ── */}
+      {isMember && (
+        <section style={{ padding: "0 24px 24px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+            {[
+              {
+                label: "Profile",
+                value: profileComplete ? "Complete" : "Incomplete",
+                sub: profileComplete ? "Athlete details ready" : "Add athlete details",
+                accent: profileComplete ? "#22c55e" : "#f87171",
+                onClick: () => nav(athleteId ? `${ROUTES.Profile}?id=${athleteId}` : ROUTES.Profile),
+              },
+              {
+                label: "Camps Saved",
+                value: snapshotStats.campsSaved === null ? "—" : String(snapshotStats.campsSaved),
+                sub: "Target camps in your plan",
+                accent: "#e8a020",
+                onClick: () => nav(ROUTES.MyCamps),
+              },
+              {
+                label: "Registered",
+                value: snapshotStats.upcomingCamps === null ? "—" : String(snapshotStats.upcomingCamps),
+                sub: "Camps you've signed up for",
+                accent: "#e8a020",
+                onClick: () => nav(ROUTES.MyCamps),
+              },
+              {
+                label: "Activity",
+                value: "Track",
+                sub: "Log recruiting progress",
+                accent: "#6b7280",
+                onClick: () => nav(ROUTES.RecruitingJourney),
+              },
+            ].map(({ label, value, sub, accent, onClick }) => (
+              <div
+                key={label}
+                onClick={onClick}
+                style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, padding: "14px 16px", cursor: "pointer", transition: "border-color 0.15s" }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "#374151"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+              >
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{label}</div>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: accent, lineHeight: 1 }}>{value}</div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>{sub}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── MICRO MESSAGE ── */}
+      {isMember && (
+        <section style={{ padding: "0 24px 24px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ borderLeft: "3px solid #1f2937", paddingLeft: 16 }}>
+            <p style={{ fontSize: 14, color: "#4b5563", margin: 0, lineHeight: 1.7, fontStyle: "italic" }}>
+              Most families start with camps, posts, and hope. This workspace helps you build something more intentional — a clearer plan, better structure, and smarter next steps for your athlete's path to college football.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* ── MAIN MODULES ── */}
+      <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <div style={{ width: 3, height: 18, background: "#e8a020", borderRadius: 2 }} />
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#6b7280" }}>YOUR TOOLS</div>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
-          <WorkspaceTile icon="🔍" title="DISCOVER CAMPS" desc="Browse football camps by division, state, and date" btnLabel="Go →" onClick={() => nav(ROUTES.Discover)} />
-          <WorkspaceTile icon="📅" title="MY CALENDAR" desc="View your schedule · Spot conflicts" btnLabel="Go →" onClick={() => nav(ROUTES.Calendar)} />
-          <WorkspaceTile icon="⭐" title="MY CAMPS" desc="Favorites & registrations" btnLabel="Go →" onClick={() => nav(ROUTES.MyCamps)} />
+          {/* 1 — Athlete Profile */}
           <WorkspaceTile
             icon="👤"
             title="ATHLETE PROFILE"
-            desc={athleteId ? (athleteProfile?.athlete_name || "Profile set up") : "Set up your athlete profile"}
-            btnLabel={athleteId ? "View Profile" : "Create Profile"}
+            desc="Build the foundation with your athlete's info, measurables, and profile details."
+            btnLabel={profileComplete ? "View Profile →" : "Complete Profile →"}
             onClick={() => nav(athleteId ? `${ROUTES.Profile}?id=${athleteId}` : ROUTES.Profile)}
-            highlight={!athleteId}
+            highlight={!profileComplete}
           />
-          <WorkspaceTile icon="📚" title="THE PLAYBOOK" desc="Recruiting rules, camp strategy, film, offers & more" btnLabel="Read →" onClick={() => nav(ROUTES.KnowledgeBase)} />
-          <WorkspaceTile icon="🏈" title="RECRUITING JOURNEY" desc="Track recruiting interest, DMs, camp conversations, and offers" btnLabel="View →" onClick={() => nav(ROUTES.RecruitingJourney)} />
+          {/* 2 — The Playbook */}
+          <WorkspaceTile
+            icon="📚"
+            title="THE PLAYBOOK"
+            desc="Learn how recruiting works — timelines, camp strategy, film, offers, and what to do next."
+            btnLabel="Read →"
+            onClick={() => nav(ROUTES.KnowledgeBase)}
+          />
+          {/* 3 — Discover Camps */}
+          <WorkspaceTile
+            icon="🔍"
+            title="DISCOVER CAMPS"
+            desc="Find the right college football camps by division, state, and date."
+            btnLabel="Find Camps →"
+            onClick={() => nav(ROUTES.Discover)}
+          />
+          {/* 4 — My Camps */}
+          <WorkspaceTile
+            icon="⭐"
+            title="MY CAMPS"
+            desc="Keep track of saved camps, registrations, and your target list."
+            btnLabel="View Camps →"
+            onClick={() => nav(ROUTES.MyCamps)}
+          />
+          {/* 5 — My Calendar */}
+          <WorkspaceTile
+            icon="📅"
+            title="MY CALENDAR"
+            desc="See your camp plan, avoid conflicts, and stay organized."
+            btnLabel="View Calendar →"
+            onClick={() => nav(ROUTES.Calendar)}
+          />
+          {/* 6 — Recruiting Tracker (renamed from Recruiting Journey) */}
+          <WorkspaceTile
+            icon="🏈"
+            title="RECRUITING TRACKER"
+            desc="Track progress as interest builds — from early activity to camp invites, conversations, and offers."
+            btnLabel="View Tracker →"
+            onClick={() => nav(ROUTES.RecruitingJourney)}
+          />
         </div>
       </section>
 
-
-
-      {/* ── CONNECT TO COACH ── */}
+      {/* ── CONNECT TO COACH OR TRAINER ── */}
       {isMember && (
         <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "20px 24px" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
-              🔗 Connect to a Coach
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                Connect to a Coach or Trainer
+              </div>
             </div>
             <p style={{ fontSize: 14, color: "#6b7280", margin: "0 0 14px" }}>
-              If a coach gave you an invite code, enter it here to appear on their roster.
+              If a high school coach or trainer gave you a code, enter it here so they can support your athlete's camp planning and recruiting progress.
             </p>
             <form onSubmit={handleCoachLink} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
               <input
@@ -451,8 +655,11 @@ export default function Workspace() {
       {isMember && coachMessages.length > 0 && (
         <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "24px 20px" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 16 }}>
-              Messages from {coachName}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                Messages from {coachName}
+              </div>
             </div>
             {coachMessages.map((m, i) => (
               <div key={m.id || i} style={{ padding: "14px 0", borderBottom: i < coachMessages.length - 1 ? "1px solid #1f2937" : "none" }}>
@@ -495,22 +702,29 @@ export default function Workspace() {
 
 function WorkspaceTile({ icon, title, desc, btnLabel, onClick, highlight }) {
   return (
-    <div style={{
-      background: "#111827", border: highlight ? "1px solid #e8a020" : "1px solid #1f2937",
-      borderRadius: 14, padding: "24px 22px", display: "flex", flexDirection: "column", justifyContent: "space-between",
-      transition: "border-color 0.15s, transform 0.15s", cursor: "pointer",
-    }}
+    <div
+      style={{
+        background: "#111827",
+        border: highlight ? "1px solid #e8a020" : "1px solid #1f2937",
+        borderRadius: 14,
+        padding: "24px 22px",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        transition: "border-color 0.15s, transform 0.15s",
+        cursor: "pointer",
+      }}
       onClick={onClick}
       onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; e.currentTarget.style.transform = "translateY(-2px)"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = highlight ? "#e8a020" : "#1f2937"; e.currentTarget.style.transform = "translateY(0)"; }}
     >
       <div>
-        <div style={{ fontSize: 28, marginBottom: 12 }}>{icon}</div>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#f9fafb", letterSpacing: 1 }}>{title}</div>
-        <p style={{ fontSize: 16, color: "#9ca3af", marginTop: 8, lineHeight: 1.5 }}>{desc}</p>
+        <div style={{ fontSize: 26, marginBottom: 12 }}>{icon}</div>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "#f9fafb", letterSpacing: 1 }}>{title}</div>
+        <p style={{ fontSize: 14, color: "#9ca3af", marginTop: 8, lineHeight: 1.6, margin: "8px 0 0" }}>{desc}</p>
       </div>
       <div style={{ marginTop: 20 }}>
-        <span style={{ color: "#e8a020", fontSize: 16, fontWeight: 700 }}>{btnLabel}</span>
+        <span style={{ color: "#e8a020", fontSize: 14, fontWeight: 700 }}>{btnLabel}</span>
       </div>
     </div>
   );
