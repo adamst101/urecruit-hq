@@ -65,7 +65,7 @@ function normId(x) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function RecruitingJourney() {
   const nav = useNavigate();
-  useSeasonAccess(); // for auth context
+  const { accountId, isLoading: seasonLoading } = useSeasonAccess();
   const { activeAthlete: athleteProfile } = useActiveAthlete();
   const athleteId = normId(athleteProfile);
 
@@ -110,7 +110,10 @@ export default function RecruitingJourney() {
     }
   }, []);
 
-  useEffect(() => { loadJourney(); }, [loadJourney]);
+  useEffect(() => {
+    if (seasonLoading || !accountId) return;
+    loadJourney();
+  }, [loadJourney, seasonLoading, accountId]);
 
   // ── Add activity ─────────────────────────────────────────────────────────
   function openAdd(type) {
