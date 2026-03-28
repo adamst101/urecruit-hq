@@ -122,10 +122,11 @@ export default function RecruitingJourney() {
 
   // ── Load ─────────────────────────────────────────────────────────────────
   const loadJourney = useCallback(async () => {
+    if (!accountId) return;
     setLoading(true);
     setLoadError("");
     try {
-      const res = await base44.functions.invoke("getRecruitingJourney", {});
+      const res = await base44.functions.invoke("getRecruitingJourney", { accountId });
       if (res?.data?.ok) {
         setActivities(Array.isArray(res.data.activities) ? res.data.activities : []);
         const p = res.data.preferences;
@@ -141,7 +142,7 @@ export default function RecruitingJourney() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [accountId]);
 
   useEffect(() => {
     if (seasonLoading || !accountId) return;
@@ -162,7 +163,7 @@ export default function RecruitingJourney() {
     setSaving(true);
     setAddError("");
     try {
-      const payload = { ...addForm, athlete_id: athleteId || null };
+      const payload = { ...addForm, accountId, athlete_id: athleteId || null };
       // Convert empty strings to null for cleaner storage
       for (const k of Object.keys(payload)) {
         if (payload[k] === "") payload[k] = null;
@@ -188,7 +189,7 @@ export default function RecruitingJourney() {
     setSavingPrefs(true);
     setPrefsError("");
     try {
-      const payload = { ...prefsForm, athlete_id: athleteId || null };
+      const payload = { ...prefsForm, accountId, athlete_id: athleteId || null };
       for (const k of Object.keys(payload)) {
         if (payload[k] === "") payload[k] = null;
       }

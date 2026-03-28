@@ -3,11 +3,19 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
+  let bodyAccountId = "";
+  try {
+    const body = await req.clone().json().catch(() => ({}));
+    bodyAccountId = body?.accountId || "";
+  } catch {}
+
   let accountId = "";
   try {
     const me = await base44.auth.me();
     accountId = me?.id || "";
   } catch {}
+
+  if (!accountId && bodyAccountId) accountId = bodyAccountId;
 
   if (!accountId) {
     return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });

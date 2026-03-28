@@ -4,6 +4,7 @@ Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
   let body: {
+    accountId?: string;
     athlete_id?: string;
     fbs_1?: string; fbs_2?: string; fbs_3?: string;
     fcs_1?: string; fcs_2?: string; fcs_3?: string;
@@ -22,6 +23,8 @@ Deno.serve(async (req) => {
     const me = await base44.auth.me();
     accountId = me?.id || "";
   } catch {}
+
+  if (!accountId && body.accountId) accountId = body.accountId;
 
   if (!accountId) {
     return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
