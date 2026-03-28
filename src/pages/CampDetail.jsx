@@ -211,6 +211,9 @@ function CampDetailInner() {
   // Mutations
   const toggleFavorite = useMutation({
     mutationFn: async () => {
+      if (accessLoading) return;
+      if (paid && !athleteId) return;
+
       // DEMO: local-only using the SAME store as Discover
       if (!paid) {
         // registered in demo behaves like registered in paid: block favorite toggle
@@ -263,6 +266,10 @@ function CampDetailInner() {
       // Never write demo registration while access state is still loading —
       // the user may be paid but mode hasn't resolved yet.
       if (accessLoading) return;
+
+      // Never write a paid registration without a valid athlete profile —
+      // would create a CampIntent with athlete_id: null that can't be found.
+      if (paid && !athleteId) return;
 
       // DEMO: local-only register marker (no backend)
       if (!paid) {

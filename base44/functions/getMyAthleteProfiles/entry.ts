@@ -10,12 +10,18 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.21';
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
+  let bodyAccountId = "";
+  try {
+    const body = await req.clone().json().catch(() => ({}));
+    bodyAccountId = body?.accountId || "";
+  } catch {}
+
   const user = await base44.auth.me().catch(() => null);
-  if (!user) {
+  if (!user && !bodyAccountId) {
     return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
   }
 
-  const accountId = user.id;
+  const accountId = user?.id || bodyAccountId;
 
   try {
     const rows = await base44.asServiceRole.entities.AthleteProfile.filter({

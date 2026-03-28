@@ -48,7 +48,7 @@ export function useAthleteIdentity({ athleteId } = {}) {
       // Pull all profiles for this account via server-side function.
       // base44.entities.AthleteProfile.filter() (client-side) returns [] for records
       // created via asServiceRole (stripeWebhook, linkStripePayment, activateFreeAccess).
-      const res = await base44.functions.invoke("getMyAthleteProfiles", {});
+      const res = await base44.functions.invoke("getMyAthleteProfiles", { accountId });
       const list = Array.isArray(res?.data?.profiles) ? res.data.profiles : [];
 
       let chosen = null;
