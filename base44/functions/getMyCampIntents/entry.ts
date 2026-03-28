@@ -27,22 +27,34 @@ Deno.serve(async (req) => {
 
   const athleteId: string = body?.athleteId ? String(body.athleteId) : "";
 
+  console.log("getMyCampIntents received:", { accountId, athleteId });
+
   try {
     const IntentEntity = base44.asServiceRole.entities.CampIntent;
 
     let intents: any[] = [];
 
     if (athleteId) {
-      const rows = await IntentEntity.filter({ athlete_id: athleteId }).catch(() => []);
+      const rows = await IntentEntity.filter({ athlete_id: athleteId }).catch((e: any) => {
+        console.error("filter by athleteId failed:", e?.message);
+        return [];
+      });
       intents = Array.isArray(rows) ? rows : [];
+      console.log(`filter by athleteId=${athleteId}: ${intents.length} results`);
     }
 
     // If no results by athleteId, fall back to accountId (older records may have
     // accountId stored in athlete_id field, e.g. from coach/demo paths)
     if (intents.length === 0 && accountId) {
-      const rows = await IntentEntity.filter({ athlete_id: accountId }).catch(() => []);
+      const rows = await IntentEntity.filter({ athlete_id: accountId }).catch((e: any) => {
+        console.error("filter by accountId failed:", e?.message);
+        return [];
+      });
       intents = Array.isArray(rows) ? rows : [];
+      console.log(`filter by accountId=${accountId}: ${intents.length} results`);
     }
+
+    console.log("getMyCampIntents returning:", intents.length, "intents:", intents.map((i: any) => ({ id: i.id, athlete_id: i.athlete_id, camp_id: i.camp_id, status: i.status })));
 
     return Response.json({ ok: true, intents });
   } catch (err: any) {
