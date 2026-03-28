@@ -127,6 +127,9 @@ export default function AuthRedirect() {
         // Persist coach invite code to localStorage so Workspace can load coach messages
         if (fd.coachInviteCode) {
           try { localStorage.setItem("coachInviteCode", fd.coachInviteCode); } catch {}
+          // Link athlete to coach roster now that we have an authenticated account.
+          // Fire-and-forget — linkToCoach is idempotent so duplicate calls are safe.
+          base44.functions.invoke("linkToCoach", { inviteCode: fd.coachInviteCode }).catch(() => {});
         }
       }
     } catch {}
