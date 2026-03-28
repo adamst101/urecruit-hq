@@ -72,14 +72,30 @@ Deno.serve(async (req) => {
         if (!acctId && !athleteId) return;
 
         try {
-          // Prefer athlete_id lookup (precise, matches CampDetail/Calendar/MyCamps writes)
+          // Resolve athlete_id: use roster value if present, otherwise look up from AthleteProfile
+          let resolvedAthleteId: string = athleteId;
+          if (!resolvedAthleteId && acctId) {
+            const profiles = await base44.asServiceRole.entities.AthleteProfile.filter({
+              account_id: acctId,
+            }).catch(() => []);
+            const profileList = Array.isArray(profiles) ? profiles : [];
+            // Prefer primary+active, then active, then first
+            const profile = profileList.find((p: any) => p.is_primary && p.active !== false)
+              || profileList.find((p: any) => p.active !== false)
+              || profileList[0]
+              || null;
+            resolvedAthleteId = profile?.id || "";
+            console.log(`[getMyCoachProfile] resolved athlete_id from profile for acct ${acctId}: ${resolvedAthleteId || "(none)"}`);
+          }
+
+          // Query CampIntent by athlete_id (primary FK used by the app)
           let intents: object[] = [];
-          if (athleteId) {
+          if (resolvedAthleteId) {
             const byAthlete = await base44.asServiceRole.entities.CampIntent.filter({
-              athlete_id: athleteId,
+              athlete_id: resolvedAthleteId,
             }).catch(() => []);
             intents = Array.isArray(byAthlete) ? byAthlete : [];
-            console.log(`[getMyCoachProfile] athlete_id lookup (${athleteId}): ${intents.length} intents`);
+            console.log(`[getMyCoachProfile] athlete_id lookup (${resolvedAthleteId}): ${intents.length} intents`);
           }
           // Fall back to account_id when athlete_id lookup found nothing
           if (intents.length === 0 && acctId) {
