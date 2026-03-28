@@ -159,6 +159,12 @@ export default function Workspace() {
     return () => { cancelled = true; };
   }, []);
 
+  const isAdmin = isAdminEmail(meEmail);
+
+  const loading = !!season?.isLoading;
+
+  const isMember = !!season?.accountId && !!season?.hasAccess && (!!season?.entitlement || season?.role === "admin");
+
   // Load snapshot stats (camp count) for progress row — members only
   useEffect(() => {
     if (!isMember) return;
@@ -175,8 +181,6 @@ export default function Workspace() {
           const st = String(i?.status || "").toLowerCase();
           return st === "favorite" || st === "registered";
         });
-        const now = new Date();
-        // Upcoming requires camp start_date — we only have intent here, so count registered
         const registered = intents.filter(i => String(i?.status || "").toLowerCase() === "registered");
         setSnapshotStats({ campsSaved: active.length, upcomingCamps: registered.length });
       } catch {
@@ -185,12 +189,6 @@ export default function Workspace() {
     })();
     return () => { cancelled = true; };
   }, [isMember, athleteId, season?.accountId]);
-
-  const isAdmin = isAdminEmail(meEmail);
-
-  const loading = !!season?.isLoading;
-
-  const isMember = !!season?.accountId && !!season?.hasAccess && (!!season?.entitlement || season?.role === "admin");
 
   useEffect(() => {
     trackEventOnce("workspace_viewed", "evt_workspace_viewed_v1", { paid: isMember });
