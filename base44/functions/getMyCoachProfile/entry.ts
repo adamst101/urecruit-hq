@@ -57,77 +57,50 @@ Deno.serve(async (req) => {
 
     const rosterList = Array.isArray(roster) ? roster : [];
 
-    console.log("[getMyCoachProfile] roster entries:", rosterList.length,
-      rosterList.map(r => `acct=${r.account_id || "(empty)"} athlete=${r.athlete_id || "(empty)"} name=${r.athlete_name || "(none)"}`));
-
-    // Fetch camp registrations for each roster athlete.
-    // CampIntent records are created with athlete_id as the primary FK (and account_id as secondary).
-    // Query by athlete_id first (matches what the app writes); fall back to account_id.
-    // Results are keyed by account_id for CoachDashboard compatibility.
+    // Fetch camp registrations for roster athletes.
+    // Strategy: fetch ALL registered/completed CampIntents (account_id is null on all records —
+    // the entity doesn't store it — so filtering by account_id never works). Match in memory
+    // by athlete_id resolved from AthleteProfile. Limit 500 to stay within reason.
     const campsByAccountId: Record<string, object[]> = {};
     if (rosterList.length > 0) {
+      // Step 1: resolve athlete_id for every roster entry that is missing one
+      const resolvedRoster: Array<{ acctId: string; athleteId: string }> = [];
       await Promise.all(rosterList.map(async (r) => {
         const acctId: string = r.account_id || "";
-        const athleteId: string = r.athlete_id || "";
-        if (!acctId && !athleteId) return;
+        let athleteId: string = r.athlete_id || "";
+        if (!athleteId && acctId) {
+          const profiles = await base44.asServiceRole.entities.AthleteProfile.filter({ account_id: acctId }).catch(() => []);
+          const profileList = Array.isArray(profiles) ? profiles : [];
+          const profile = profileList.find((p: any) => p.is_primary && p.active !== false)
+            || profileList.find((p: any) => p.active !== false)
+            || profileList[0]
+            || null;
+          athleteId = profile?.id || "";
+        }
+        if (acctId || athleteId) resolvedRoster.push({ acctId, athleteId });
+      }));
 
-        try {
-          // Resolve athlete_id: use roster value if present, otherwise look up from AthleteProfile
-          let resolvedAthleteId: string = athleteId;
-          if (!resolvedAthleteId && acctId) {
-            const profiles = await base44.asServiceRole.entities.AthleteProfile.filter({
-              account_id: acctId,
-            }).catch(() => []);
-            const profileList = Array.isArray(profiles) ? profiles : [];
-            // Prefer primary+active, then active, then first
-            const profile = profileList.find((p: any) => p.is_primary && p.active !== false)
-              || profileList.find((p: any) => p.active !== false)
-              || profileList[0]
-              || null;
-            resolvedAthleteId = profile?.id || "";
-            console.log(`[getMyCoachProfile] resolved athlete_id from profile for acct ${acctId}: ${resolvedAthleteId || "(none)"}`);
-          }
+      const knownAthleteIds = new Set(resolvedRoster.map(r => r.athleteId).filter(Boolean));
+      console.log("[getMyCoachProfile] resolved roster athlete_ids:", [...knownAthleteIds]);
 
-          // Query CampIntent by athlete_id (primary FK used by the app)
-          let intents: object[] = [];
-          if (resolvedAthleteId) {
-            const byAthlete = await base44.asServiceRole.entities.CampIntent.filter({
-              athlete_id: resolvedAthleteId,
-            }).catch(() => []);
-            intents = Array.isArray(byAthlete) ? byAthlete : [];
-            console.log(`[getMyCoachProfile] athlete_id lookup (${resolvedAthleteId}): ${intents.length} intents`);
-          }
-          // Fall back to account_id when athlete_id lookup found nothing
-          if (intents.length === 0 && acctId) {
-            const byAccount = await base44.asServiceRole.entities.CampIntent.filter({
-              account_id: acctId,
-            }).catch(() => []);
-            intents = Array.isArray(byAccount) ? byAccount : [];
-            console.log(`[getMyCoachProfile] account_id fallback (${acctId}): ${intents.length} intents`);
-          }
+      if (knownAthleteIds.size > 0) {
+        // Step 2: fetch all registered/completed CampIntents and match by athlete_id in memory
+        const allIntents = await base44.asServiceRole.entities.CampIntent.filter(
+          { status: "registered" }, undefined, 500
+        ).catch(() => []);
+        const completedIntents = await base44.asServiceRole.entities.CampIntent.filter(
+          { status: "completed" }, undefined, 500
+        ).catch(() => []);
+        const allRegistered = [
+          ...(Array.isArray(allIntents) ? allIntents : []),
+          ...(Array.isArray(completedIntents) ? completedIntents : []),
+        ].filter((i: any) => knownAthleteIds.has(i.athlete_id));
 
-          // If still nothing found, dump a sample of ALL CampIntents (no filter) to see
-          // what athlete_id / account_id values are actually stored in the database.
-          if (intents.length === 0 && (resolvedAthleteId || acctId)) {
-            try {
-              // Fetch up to 10 most recent CampIntents regardless of owner
-              const sample = await base44.asServiceRole.entities.CampIntent.filter({}, undefined, 10).catch(() => []);
-              const rows = Array.isArray(sample) ? sample : [];
-              console.log(`[getMyCoachProfile] DIAG — sample of all CampIntents (limit 10): ${rows.length}`,
-                JSON.stringify(rows.map((i: any) => ({
-                  id: i.id, status: i.status,
-                  athlete_id: i.athlete_id || "(null)",
-                  account_id: i.account_id || "(null)",
-                }))));
-            } catch (e: any) {
-              console.log(`[getMyCoachProfile] DIAG — CampIntent unfiltered fetch threw: ${(e as Error).message}`);
-            }
-          }
+        console.log(`[getMyCoachProfile] registered intents matched to roster: ${allRegistered.length}`);
 
-          const registered = intents.filter((i: any) => i.status === "registered" || i.status === "completed");
-          if (registered.length === 0) return;
-
-          const campIds = [...new Set(registered.map((i: any) => i.camp_id).filter(Boolean))];
+        if (allRegistered.length > 0) {
+          // Step 3: fetch unique camp details
+          const campIds = [...new Set(allRegistered.map((i: any) => i.camp_id).filter(Boolean))];
           const camps = await Promise.all(
             campIds.map((id: any) => base44.asServiceRole.entities.Camp.get(id).catch(() => null))
           );
@@ -142,28 +115,30 @@ Deno.serve(async (req) => {
             }
           }
 
-          const athleteCamps = registered.map((i: any) => ({
-            camp_id: i.camp_id,
-            camp_name: (campMap[i.camp_id] as any)?.camp_name || "Camp",
-            school_name: (campMap[i.camp_id] as any)?.school_name || "",
-            start_date: (campMap[i.camp_id] as any)?.start_date || "",
-          })).sort((a: any, b: any) => (a.start_date || "").localeCompare(b.start_date || ""));
-
-          // Merge into account_id bucket (multiple athletes per account are combined)
-          if (acctId) {
-            const existing = campsByAccountId[acctId] as any[] | undefined;
-            if (existing) {
-              // Dedupe by camp_id before merging
-              const existingIds = new Set(existing.map((c: any) => c.camp_id));
-              campsByAccountId[acctId] = [...existing, ...athleteCamps.filter((c: any) => !existingIds.has(c.camp_id))];
-            } else {
-              campsByAccountId[acctId] = athleteCamps;
+          // Step 4: group by account_id (keyed for CoachDashboard)
+          for (const r of resolvedRoster) {
+            if (!r.acctId || !r.athleteId) continue;
+            const athleteCamps = allRegistered
+              .filter((i: any) => i.athlete_id === r.athleteId)
+              .map((i: any) => ({
+                camp_id: i.camp_id,
+                camp_name: (campMap[i.camp_id] as any)?.camp_name || "Camp",
+                school_name: (campMap[i.camp_id] as any)?.school_name || "",
+                start_date: (campMap[i.camp_id] as any)?.start_date || "",
+              }))
+              .sort((a: any, b: any) => (a.start_date || "").localeCompare(b.start_date || ""));
+            if (athleteCamps.length > 0) {
+              const existing = campsByAccountId[r.acctId] as any[] | undefined;
+              if (existing) {
+                const existingIds = new Set(existing.map((c: any) => c.camp_id));
+                campsByAccountId[r.acctId] = [...existing, ...athleteCamps.filter((c: any) => !existingIds.has(c.camp_id))];
+              } else {
+                campsByAccountId[r.acctId] = athleteCamps;
+              }
             }
           }
-        } catch {
-          // Non-critical — skip this athlete's camps on error
         }
-      }));
+      }
     }
 
     console.log("[getMyCoachProfile] campsByAccountId keys:", Object.keys(campsByAccountId),
