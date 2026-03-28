@@ -133,6 +133,7 @@ const S = {
 export default function CoachSignup() {
   const nav = useNavigate();
 
+  const [coachType, setCoachType] = useState("HS Coach"); // "HS Coach" | "Trainer"
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [title, setTitle] = useState("");
@@ -187,6 +188,7 @@ export default function CoachSignup() {
 
     try {
       sessionStorage.setItem("pendingCoachRegistration", JSON.stringify({
+        coach_type: coachType,
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         title: title.trim(),
@@ -270,6 +272,7 @@ export default function CoachSignup() {
     // after the session is fully established (same pattern as pendingPromoCode)
     try {
       sessionStorage.setItem("pendingCoachRegistration", JSON.stringify({
+        coach_type: coachType,
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         title: title.trim(),
@@ -340,9 +343,34 @@ export default function CoachSignup() {
     <div style={S.root}>
       <style>{FONTS}</style>
       <div style={S.card}>
-        <span style={S.label}>For Coaches &amp; Trainers</span>
-        <h1 style={S.heading}>CREATE YOUR<br />COACH ACCOUNT</h1>
+        <span style={S.label}>Staff Registration</span>
+        <h1 style={S.heading}>CREATE YOUR<br />{coachType === "Trainer" ? "TRAINER" : "COACH"} ACCOUNT</h1>
         <p style={S.sub}>Free to join. Share your invite link and see which athletes are attending your camps.</p>
+
+        {/* Role selector */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 28 }}>
+          {["HS Coach", "Trainer"].map(type => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => setCoachType(type)}
+              style={{
+                flex: 1,
+                padding: "12px 0",
+                borderRadius: 8,
+                border: coachType === type ? "2px solid #e8a020" : "1px solid #374151",
+                background: coachType === type ? "rgba(232,160,32,0.1)" : "#0a0e1a",
+                color: coachType === type ? "#e8a020" : "#9ca3af",
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              {type === "HS Coach" ? "🏈 HS Coach" : "⚡ Trainer"}
+            </button>
+          ))}
+        </div>
 
         {error && <div style={S.error}>{error}</div>}
 
@@ -376,20 +404,20 @@ export default function CoachSignup() {
             style={S.input}
             value={title}
             onChange={e => setTitle(e.target.value)}
-            placeholder="Head Coach, Trainer, Coordinator…"
+            placeholder={coachType === "Trainer" ? "Speed & Agility Trainer, Skills Coach…" : "Head Coach, Offensive Coordinator…"}
             autoComplete="organization-title"
           />
 
-          <label style={S.fieldLabel}>School or Organization</label>
+          <label style={S.fieldLabel}>{coachType === "Trainer" ? "Organization or Training Facility" : "School or Organization"}</label>
           <input
             style={S.input}
             value={schoolOrOrg}
             onChange={e => setSchoolOrOrg(e.target.value)}
-            placeholder="Washington High School"
+            placeholder={coachType === "Trainer" ? "Elite Speed Academy" : "Washington High School"}
             autoComplete="organization"
           />
 
-          <label style={S.fieldLabel}>Official School or Club Email</label>
+          <label style={S.fieldLabel}>{coachType === "Trainer" ? "Business or Club Email" : "Official School or Club Email"}</label>
           <input
             style={S.input}
             type="email"
@@ -410,7 +438,7 @@ export default function CoachSignup() {
           />
 
           <label style={S.fieldLabel}>
-            Team Website or Profile Link
+            {coachType === "Trainer" ? "Training Website or Social Profile" : "Team Website or Profile Link"}
             <span style={{ fontWeight: 400, color: "#6b7280", marginLeft: 6, textTransform: "none", letterSpacing: 0, fontSize: 12 }}>(optional)</span>
           </label>
           <input
@@ -470,7 +498,7 @@ export default function CoachSignup() {
             style={{ ...S.btn, ...(working ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}
             disabled={working}
           >
-            {working ? "Creating account…" : "Create Coach Account →"}
+            {working ? "Creating account…" : coachType === "Trainer" ? "Create Trainer Account →" : "Create Coach Account →"}
           </button>
         </form>
 

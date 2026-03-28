@@ -148,6 +148,7 @@ export default function AuthRedirect() {
           const coachData = JSON.parse(pendingCoach);
           await base44.functions.invoke("registerCoach", {
             accountId,
+            coach_type: coachData.coach_type,
             first_name: coachData.first_name,
             last_name: coachData.last_name,
             title: coachData.title,

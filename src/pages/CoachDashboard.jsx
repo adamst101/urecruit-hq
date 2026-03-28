@@ -353,10 +353,10 @@ export default function CoachDashboard() {
 
   const athletesNoCamps = roster.filter(r => (campsByAccountId[r.account_id] || []).length === 0);
 
-  // Role detection — check any role/type field on the coach record, default to "coach"
-  const coachType = coach.role || coach.coach_type || coach.type || "coach";
-  const isTrainer = coachType === "trainer";
-  const dashTitle = isTrainer ? "TRAINER HQ" : coachType === "staff" ? "STAFF HQ" : "COACH HQ";
+  // Role detection — use coach_type stored on the Coach entity ("HS Coach" | "Trainer")
+  const coachType = coach.coach_type || "HS Coach";
+  const isTrainer = coachType === "Trainer";
+  const dashTitle = isTrainer ? "TRAINER HQ" : "COACH HQ";
   const boardTitle = isTrainer ? "CAMP ACTIVITY TRACKER" : "RECRUITING BOARD";
 
   // Sort board: athletes with no camps first (action needed), then by joined date
@@ -395,7 +395,7 @@ export default function CoachDashboard() {
               {dashTitle}
             </h1>
             <p style={{ color: "#9ca3af", fontSize: 15, margin: "6px 0 0" }}>
-              {coach.first_name} {coach.last_name}
+              Welcome back, {isTrainer ? "Trainer" : "Coach"} {coach.last_name}
               {coach.title ? ` · ${coach.title}` : ""}
             </p>
             <p style={{ color: "#6b7280", fontSize: 13, marginTop: 2 }}>

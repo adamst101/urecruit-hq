@@ -13,7 +13,7 @@ function generateInviteCode(lastName: string, schoolOrOrg: string): string {
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  let body: { accountId?: string; first_name?: string; last_name?: string; title?: string; school_or_org?: string; sport?: string; email?: string; phone?: string; website?: string } = {};
+  let body: { accountId?: string; coach_type?: string; first_name?: string; last_name?: string; title?: string; school_or_org?: string; sport?: string; email?: string; phone?: string; website?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -36,7 +36,8 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: "Not authenticated — accountId required" }, { status: 401 });
   }
 
-  const { first_name, last_name, title, school_or_org, sport, phone, website } = body;
+  const { coach_type, first_name, last_name, title, school_or_org, sport, phone, website } = body;
+  const resolvedCoachType = (coach_type === "Trainer" || coach_type === "HS Coach") ? coach_type : "HS Coach";
 
   if (!first_name || !last_name || !school_or_org) {
     return Response.json({ ok: false, error: "first_name, last_name, and school_or_org are required" }, { status: 400 });
@@ -60,6 +61,7 @@ Deno.serve(async (req) => {
     // Create the Coach entity record — status starts as "pending" until admin approves
     const coach = await base44.asServiceRole.entities.Coach.create({
       account_id: accountId,
+      coach_type: resolvedCoachType,
       first_name,
       last_name,
       title: title || null,
@@ -97,8 +99,8 @@ Deno.serve(async (req) => {
         type: "support",
         status: "open",
         priority: "normal",
-        subject: `Coach Application — ${first_name} ${last_name} · ${school_or_org}`,
-        description: `New coach account pending approval.\n\nName: ${first_name} ${last_name}\nTitle: ${title || "—"}\nSchool/Org: ${school_or_org}\nSport: ${sport || "Football"}\nEmail: ${coachEmail || "unknown"}\nPhone: ${phone || "—"}\nWebsite: ${website || "—"}\nAccount ID: ${accountId}\nCoach ID: ${coach.id}`,
+        subject: `${resolvedCoachType} Application — ${first_name} ${last_name} · ${school_or_org}`,
+        description: `New ${resolvedCoachType} account pending approval.\n\nType: ${resolvedCoachType}\nName: ${first_name} ${last_name}\nTitle: ${title || "—"}\nSchool/Org: ${school_or_org}\nSport: ${sport || "Football"}\nEmail: ${coachEmail || "unknown"}\nPhone: ${phone || "—"}\nWebsite: ${website || "—"}\nAccount ID: ${accountId}\nCoach ID: ${coach.id}`,
         user_id: accountId,
         user_email: coachEmail || null,
         user_name: `${first_name} ${last_name}`,
@@ -115,13 +117,14 @@ Deno.serve(async (req) => {
       const adminBody = `
 <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
   <div style="background:#0B1F3B;padding:20px 24px;">
-    <h2 style="margin:0;color:#D4AF37;font-size:18px;">New Coach Application</h2>
+    <h2 style="margin:0;color:#D4AF37;font-size:18px;">New ${resolvedCoachType} Application</h2>
     <p style="margin:4px 0 0;color:#9ca3af;font-size:13px;">Pending your review and approval</p>
   </div>
   <div style="padding:24px;">
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
-      <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;width:130px;vertical-align:top;">Name</td><td style="padding:8px 12px;color:#111827;font-weight:600;">${first_name} ${last_name}</td></tr>
-      <tr style="background:#f9fafb;"><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Title</td><td style="padding:8px 12px;color:#111827;">${title || "—"}</td></tr>
+      <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;width:130px;vertical-align:top;">Type</td><td style="padding:8px 12px;color:#111827;font-weight:600;">${resolvedCoachType}</td></tr>
+      <tr style="background:#f9fafb;"><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Name</td><td style="padding:8px 12px;color:#111827;font-weight:600;">${first_name} ${last_name}</td></tr>
+      <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Title</td><td style="padding:8px 12px;color:#111827;">${title || "—"}</td></tr>
       <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">School / Org</td><td style="padding:8px 12px;color:#111827;">${school_or_org}</td></tr>
       <tr style="background:#f9fafb;"><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Sport</td><td style="padding:8px 12px;color:#111827;">${sport || "Football"}</td></tr>
       <tr><td style="padding:8px 12px;color:#6b7280;font-weight:600;vertical-align:top;">Email</td><td style="padding:8px 12px;color:#111827;">${coachEmail || "—"}</td></tr>
@@ -149,7 +152,7 @@ Deno.serve(async (req) => {
           base44.asServiceRole.integrations.Core.SendEmail({
             to: email,
             from_name: "URecruit HQ",
-            subject: `🎽 New Coach Application — ${first_name} ${last_name} · ${school_or_org}`,
+            subject: `🎽 New ${resolvedCoachType} Application — ${first_name} ${last_name} · ${school_or_org}`,
             body: adminBody,
           })
         )
