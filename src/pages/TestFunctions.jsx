@@ -2,9 +2,34 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AutoBatchRunner from "../components/admin/AutoBatchRunner";
 import AdminRoute from "../components/auth/AdminRoute";
+import { base44 } from "../api/base44Client";
 
 export default function TestFunctions() {
   const nav = useNavigate();
+
+  // ── Coach Roster Diag ──
+  const [diagCode, setDiagCode] = useState("");
+  const [diagDry, setDiagDry] = useState(true);
+  const [diagRunning, setDiagRunning] = useState(false);
+  const [diagResult, setDiagResult] = useState(null);
+
+  async function runDiag() {
+    if (!diagCode.trim()) return;
+    setDiagRunning(true);
+    setDiagResult(null);
+    try {
+      const res = await base44.functions.invoke("diagCoachRoster", {
+        inviteCode: diagCode.trim().toUpperCase(),
+        dryRun: diagDry,
+      });
+      setDiagResult(res?.data ?? res);
+    } catch (e) {
+      setDiagResult({ ok: false, error: e?.message });
+    } finally {
+      setDiagRunning(false);
+    }
+  }
+
   const [dryRun, setDryRun] = useState(true);
   const [sportKey, setSportKey] = useState("football");
   const [maxSchools, setMaxSchools] = useState(20);
@@ -33,6 +58,44 @@ export default function TestFunctions() {
       </div>
 
       <div style={{ padding: "20px 24px", maxWidth: 900 }}>
+
+        {/* ── Coach Roster Diagnostic ── */}
+        <div style={{ background: "#FFF", border: "2px solid #e8a020", borderRadius: 8, padding: "16px 20px", marginBottom: 24 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#0B1F3B", marginBottom: 12 }}>🔍 Coach Roster Diagnostic</div>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 12 }}>
+            <div>
+              <span style={S.label}>Invite Code</span>
+              <input
+                value={diagCode}
+                onChange={e => setDiagCode(e.target.value.toUpperCase())}
+                placeholder="e.g. ADAMS-SCH-1234"
+                style={{ ...S.input, width: 220, fontFamily: "monospace" }}
+              />
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+              <input type="checkbox" checked={diagDry} onChange={e => setDiagDry(e.target.checked)} />
+              Dry run (no write)
+            </label>
+            <button
+              onClick={runDiag}
+              disabled={diagRunning || !diagCode.trim()}
+              style={{ ...S.btn, background: "#e8a020", color: "#fff", border: "none", opacity: diagRunning ? 0.6 : 1 }}
+            >
+              {diagRunning ? "Running…" : "Run Diagnostic"}
+            </button>
+          </div>
+          {diagResult && (
+            <pre style={{
+              background: "#F3F4F6", border: "1px solid #E5E7EB", borderRadius: 6,
+              padding: "12px 14px", fontSize: 12, overflowX: "auto",
+              whiteSpace: "pre-wrap", wordBreak: "break-all",
+              color: diagResult.ok ? "#065f46" : "#991b1b",
+            }}>
+              {JSON.stringify(diagResult, null, 2)}
+            </pre>
+          )}
+        </div>
+
         {/* Config */}
         <div style={{ background: "#FFF", border: "1px solid #E5E7EB", borderRadius: 8, padding: "16px 20px", marginBottom: 16, display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
