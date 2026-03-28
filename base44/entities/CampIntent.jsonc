@@ -1,0 +1,39 @@
+{
+  "name": "CampIntent",
+  "type": "object",
+  "properties": {
+    "athlete_id": {
+      "type": "string",
+      "description": "Reference to AthleteProfile"
+    },
+    "account_id": {
+      "type": "string",
+      "description": "Reference to Account (user)"
+    },
+    "camp_id": {
+      "type": "string",
+      "description": "Reference to Camp"
+    },
+    "status": {
+      "type": "string",
+      "description": "favorite|interested|planning|registered|attended|not_interested|removed"
+    },
+    "priority": {
+      "type": "string",
+      "description": "high|medium|low (optional)"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional notes"
+    },
+    "updated_at": {
+      "type": "string",
+      "description": "ISO timestamp",
+      "default": null
+    }
+  },
+  "required": [
+    "camp_id",
+    "status"
+  ]
+}
