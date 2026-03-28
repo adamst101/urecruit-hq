@@ -327,7 +327,7 @@ export default function CoachDashboard() {
     );
   }
 
-  // ── Computed data for Players Dashboard ────────────────────────────────────
+  // ── Computed data ───────────────────────────────────────────────────────────
   const _now = new Date();
   const _thisMonth = _now.getMonth();
   const _thisYear = _now.getFullYear();
@@ -353,19 +353,64 @@ export default function CoachDashboard() {
 
   const athletesNoCamps = roster.filter(r => (campsByAccountId[r.account_id] || []).length === 0);
 
+  // Role detection — check any role/type field on the coach record, default to "coach"
+  const coachType = coach.role || coach.coach_type || coach.type || "coach";
+  const isTrainer = coachType === "trainer";
+  const dashTitle = isTrainer ? "TRAINER HQ" : coachType === "staff" ? "STAFF HQ" : "COACH HQ";
+  const boardTitle = isTrainer ? "CAMP ACTIVITY TRACKER" : "RECRUITING BOARD";
+
+  // Sort board: athletes with no camps first (action needed), then by joined date
+  const boardRoster = [...roster].sort((a, b) => {
+    const aCamps = (campsByAccountId[a.account_id] || []).length;
+    const bCamps = (campsByAccountId[b.account_id] || []).length;
+    if (aCamps === 0 && bCamps > 0) return -1;
+    if (bCamps === 0 && aCamps > 0) return 1;
+    return 0;
+  });
+
+  // Next upcoming camp across all athletes
+  const _allUpcoming = [];
+  roster.forEach(r => {
+    (campsByAccountId[r.account_id] || []).forEach(c => {
+      if (c.start_date) {
+        const d = new Date(c.start_date + "T00:00:00");
+        if (d >= _now) _allUpcoming.push({ athlete: r.athlete_name, camp: c, date: d });
+      }
+    });
+  });
+  _allUpcoming.sort((a, b) => a.date - b.date);
+  const nextCamps = _allUpcoming.slice(0, 4);
+
   // ── Full approved dashboard ─────────────────────────────────────────────────
   return (
-    <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", paddingBottom: 80, fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
+    <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", paddingBottom: 100, fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
       <style>{FONTS}</style>
 
       {/* ── HEADER ── */}
-      <section style={{ padding: "48px 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          <div style={{ width: 3, height: 32, background: "#e8a020", borderRadius: 2 }} />
-          <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(32px, 5vw, 52px)", lineHeight: 1, margin: 0, letterSpacing: 1, flex: 1 }}>
-            COACH HQ
-          </h1>
-          <div style={{ display: "flex", gap: 8 }}>
+      <section style={{ padding: "48px 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
+          <div style={{ width: 3, height: 40, background: "#e8a020", borderRadius: 2, flexShrink: 0, marginTop: 4 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(32px, 5vw, 52px)", lineHeight: 1, margin: 0, letterSpacing: 1 }}>
+              {dashTitle}
+            </h1>
+            <p style={{ color: "#9ca3af", fontSize: 15, margin: "6px 0 0" }}>
+              {coach.first_name} {coach.last_name}
+              {coach.title ? ` · ${coach.title}` : ""}
+            </p>
+            <p style={{ color: "#6b7280", fontSize: 13, marginTop: 2 }}>
+              {coach.school_or_org}{coach.sport ? ` · ${coach.sport}` : ""}
+              {(coach.phone || coach.website) && (
+                <>
+                  {coach.phone ? ` · ${coach.phone}` : ""}
+                  {coach.website && (
+                    <> · <a href={coach.website} target="_blank" rel="noopener noreferrer" style={{ color: "#4b5563" }}>{coach.website}</a></>
+                  )}
+                </>
+              )}
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             <button
               onClick={handleRefresh}
               disabled={loading}
@@ -383,81 +428,244 @@ export default function CoachDashboard() {
             </button>
           </div>
         </div>
-        <p style={{ color: "#9ca3af", fontSize: 17, margin: 0 }}>
-          Welcome back, Coach {coach.last_name}
-        </p>
-        <p style={{ color: "#6b7280", fontSize: 14, marginTop: 4 }}>
-          {coach.title ? `${coach.title} · ` : ""}{coach.school_or_org} · {coach.sport} · {roster.length} athlete{roster.length !== 1 ? "s" : ""} on roster
-        </p>
-        {(coach.phone || coach.website) && (
-          <p style={{ color: "#4b5563", fontSize: 13, marginTop: 2 }}>
-            {coach.phone && <span>{coach.phone}</span>}
-            {coach.phone && coach.website && <span> · </span>}
-            {coach.website && <a href={coach.website} target="_blank" rel="noopener noreferrer" style={{ color: "#4b5563" }}>{coach.website}</a>}
-          </p>
-        )}
       </section>
 
-      {/* ── TILES ── */}
-      <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
-          <CoachTile
-            icon="👥"
-            title="PLAYERS DASHBOARD"
-            desc="Player insights, camp attendance, and roster overview"
-            badge={roster.length}
-            active={openSheet === "roster"}
-            onClick={() => setOpenSheet("roster")}
-          />
-          <CoachTile
-            icon="💬"
-            title="MESSAGE ROSTER"
-            desc="Send a message to all athletes or an individual"
-            badge={messages.length}
-            active={openSheet === "message"}
-            onClick={() => setOpenSheet("message")}
-          />
-          <CoachTile
-            icon="🔍"
-            title="DISCOVER CAMPS"
-            desc="Browse football camps by division, state, and date"
-            active={false}
-            onClick={() => nav("/Discover")}
-          />
-          <CoachTile
-            icon="🔗"
-            title="INVITE CODE"
-            desc="Share your code with athletes to connect them to your roster"
-            active={openSheet === "code"}
-            onClick={() => setOpenSheet("code")}
-          />
-        </div>
-      </section>
-
-      {/* ── PLAYERS DASHBOARD ── */}
-      <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-          <div style={{ width: 3, height: 22, background: "#e8a020", borderRadius: 2 }} />
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>PLAYERS DASHBOARD</div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+      {/* ── SNAPSHOT METRICS ── */}
+      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
           {[
-            { key: "roster",   label: "Players Connected",  value: roster.length,              sub: "Athletes on roster",             accent: "#e8a020", cta: "View Roster →" },
-            { key: "monthly",  label: "Camps This Month",   value: athletesThisMonth.length,   sub: `Players attending in ${_monthName}`, accent: "#e8a020", cta: "View Details →" },
-            { key: "schools",  label: "Top Schools",        value: topSchools.length,           sub: "Schools with registrations",     accent: "#e8a020", cta: "View Rankings →" },
-            { key: "noCamps",  label: "No Camps Planned",   value: athletesNoCamps.length,     sub: "Players with no registrations",  accent: athletesNoCamps.length > 0 ? "#f87171" : "#e8a020", cta: "View Players →" },
-          ].map(({ key, label, value, sub, accent, cta }) => (
+            { key: "roster",  label: "Athletes",        value: roster.length,             sub: "on roster",                    accent: "#e8a020" },
+            { key: "monthly", label: "Active This Month", value: athletesThisMonth.length, sub: `camps in ${_monthName}`,       accent: "#e8a020" },
+            { key: "schools", label: "Schools Targeted",  value: topSchools.length,         sub: "with registrations",           accent: "#e8a020" },
+            { key: "noCamps", label: "Need Attention",    value: athletesNoCamps.length,    sub: "no camps registered",          accent: athletesNoCamps.length > 0 ? "#f87171" : "#6b7280" },
+          ].map(({ key, label, value, sub, accent }) => (
             <div
               key={key}
               onClick={() => setOpenSheet(key)}
-              style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, padding: "20px", cursor: "pointer", transition: "border-color 0.15s" }}
+              style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
             >
-              <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{label}</div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: accent, lineHeight: 1 }}>{value}</div>
-              <div style={{ fontSize: 12, color: "#4b5563", marginTop: 4 }}>{sub}</div>
-              <div style={{ fontSize: 12, color: "#e8a020", marginTop: 12, fontWeight: 600 }}>{cta}</div>
+              <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{label}</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: accent, lineHeight: 1 }}>{value}</div>
+              <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>{sub}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── PRIMARY BOARD ── */}
+      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f9fafb" }}>{boardTitle}</div>
+          </div>
+          <button
+            onClick={() => setOpenSheet("roster")}
+            style={{ background: "none", border: "none", color: "#e8a020", fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0 }}
+          >
+            Full Roster →
+          </button>
+        </div>
+
+        <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
+          {boardRoster.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "40px 24px" }}>
+              <div style={{ fontSize: 32, marginBottom: 10 }}>🏈</div>
+              <p style={{ fontSize: 14, color: "#9ca3af", margin: 0 }}>No athletes yet. Share your invite code to connect with players.</p>
+              <button
+                onClick={() => setOpenSheet("code")}
+                style={{ marginTop: 16, background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+              >
+                Get Invite Code →
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Column headers */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 1fr", gap: 12, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                <span>Athlete</span>
+                <span>Class</span>
+                <span>Registered Camps</span>
+              </div>
+              {boardRoster.slice(0, 10).map((r, i) => {
+                const athleteCamps = campsByAccountId[r.account_id] || [];
+                const noCamps = athleteCamps.length === 0;
+                return (
+                  <div
+                    key={r.id || i}
+                    style={{ display: "grid", gridTemplateColumns: "1fr 80px 1fr", gap: 12, padding: "14px 20px", borderBottom: i < Math.min(boardRoster.length, 10) - 1 ? "1px solid #1f2937" : "none", alignItems: "center", background: noCamps ? "rgba(248,113,113,0.03)" : "transparent" }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{r.athlete_name || "Athlete"}</div>
+                      {noCamps && (
+                        <div style={{ fontSize: 11, color: "#f87171", marginTop: 2, fontWeight: 600 }}>No camps registered</div>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 13, color: "#9ca3af" }}>
+                      {r.athlete_grad_year ? `'${String(r.athlete_grad_year).slice(-2)}` : "—"}
+                    </div>
+                    <div>
+                      {noCamps ? (
+                        <button
+                          onClick={() => nav("/Discover")}
+                          style={{ background: "none", border: "1px solid #374151", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "#9ca3af", cursor: "pointer" }}
+                        >
+                          Browse Camps →
+                        </button>
+                      ) : (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {athleteCamps.slice(0, 3).map((c, ci) => (
+                            <span key={ci} style={{ background: "rgba(232,160,32,0.1)", color: "#e8a020", fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 20, whiteSpace: "nowrap" }}>
+                              {c.start_date ? new Date(c.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
+                              {" "}{c.school_name ? c.school_name.split(" ").slice(-1)[0] : c.camp_name?.split(" ")[0] || ""}
+                            </span>
+                          ))}
+                          {athleteCamps.length > 3 && (
+                            <span style={{ fontSize: 11, color: "#6b7280", padding: "3px 0" }}>+{athleteCamps.length - 3} more</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {boardRoster.length > 10 && (
+                <div
+                  onClick={() => setOpenSheet("roster")}
+                  style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "#e8a020", fontWeight: 600, cursor: "pointer", borderTop: "1px solid #1f2937" }}
+                >
+                  View all {boardRoster.length} athletes →
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* ── SECONDARY INSIGHTS ── */}
+      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+
+          {/* Top Schools */}
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
+            <div
+              onClick={() => setOpenSheet("schools")}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", cursor: "pointer", borderBottom: "1px solid #1f2937" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>TOP SCHOOLS</span>
+              </div>
+              <span style={{ fontSize: 12, color: "#e8a020", fontWeight: 600 }}>View All →</span>
+            </div>
+            <div style={{ padding: "8px 0" }}>
+              {topSchools.length === 0 ? (
+                <p style={{ fontSize: 13, color: "#4b5563", padding: "16px 20px", margin: 0 }}>No registrations yet. Rankings appear once athletes register.</p>
+              ) : (
+                topSchools.map(([school, count], i) => (
+                  <div key={school} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 20px", borderBottom: i < topSchools.length - 1 ? "1px solid #1f2937" : "none" }}>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: i === 0 ? "#e8a020" : "#374151", width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</div>
+                    <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "#d1d5db", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{school}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#9ca3af", flexShrink: 0 }}>{count} reg{count !== 1 ? "s" : ""}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Upcoming Camps */}
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
+            <div
+              onClick={() => setOpenSheet("monthly")}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", cursor: "pointer", borderBottom: "1px solid #1f2937" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>UPCOMING CAMPS</span>
+              </div>
+              <span style={{ fontSize: 12, color: "#e8a020", fontWeight: 600 }}>View Month →</span>
+            </div>
+            <div style={{ padding: "8px 0" }}>
+              {nextCamps.length === 0 ? (
+                <p style={{ fontSize: 13, color: "#4b5563", padding: "16px 20px", margin: 0 }}>No upcoming camps scheduled.</p>
+              ) : (
+                nextCamps.map(({ athlete, camp, date }, i) => (
+                  <div key={i} style={{ display: "flex", gap: 12, padding: "10px 20px", borderBottom: i < nextCamps.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                    <div style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 8, textAlign: "center", flexShrink: 0, minWidth: 44 }}>
+                      <div>{date.toLocaleDateString("en-US", { month: "short" })}</div>
+                      <div style={{ fontSize: 15, lineHeight: 1 }}>{date.getDate()}</div>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#d1d5db", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{camp.school_name || camp.camp_name}</div>
+                      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>{athlete}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* ── RECENT MESSAGES ── */}
+      {messages.length > 0 && (
+        <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
+            <div
+              onClick={() => setOpenSheet("message")}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", cursor: "pointer", borderBottom: "1px solid #1f2937" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>RECENT MESSAGES</span>
+              </div>
+              <span style={{ fontSize: 12, color: "#e8a020", fontWeight: 600 }}>Compose + View →</span>
+            </div>
+            <div style={{ padding: "4px 0" }}>
+              {messages.slice(0, 3).map((m, i) => (
+                <div key={m.id || i} style={{ padding: "12px 20px", borderBottom: i < Math.min(messages.length, 3) - 1 ? "1px solid #1f2937" : "none" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 2 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                      → {m.recipient_name || "All Athletes"}
+                    </span>
+                    <span style={{ fontSize: 11, color: "#4b5563", flexShrink: 0 }}>{m.sent_at ? new Date(m.sent_at).toLocaleDateString() : ""}</span>
+                  </div>
+                  {m.subject && <div style={{ fontSize: 13, fontWeight: 600, color: "#d1d5db", marginBottom: 2 }}>{m.subject}</div>}
+                  <div style={{ fontSize: 13, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.message}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── UTILITY ACTIONS ── */}
+      <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: "#6b7280" }}>QUICK ACTIONS</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+          {[
+            { icon: "💬", label: "Message Roster", sub: `${messages.length} sent`, sheet: "message" },
+            { icon: "🔗", label: "Invite Code", sub: coach.invite_code || "Share with athletes", sheet: "code" },
+            { icon: "🔍", label: "Discover Camps", sub: "Browse by school, state, date", nav: "/Discover" },
+          ].map(({ icon, label, sub, sheet, nav: navTo }) => (
+            <div
+              key={label}
+              onClick={() => navTo ? nav(navTo) : setOpenSheet(sheet)}
+              style={{ background: "#0d1421", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", transition: "border-color 0.15s" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "#374151"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+            >
+              <span style={{ fontSize: 22, flexShrink: 0 }}>{icon}</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#d1d5db" }}>{label}</div>
+                <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2 }}>{sub}</div>
+              </div>
             </div>
           ))}
         </div>
