@@ -13,6 +13,27 @@ export default function TestFunctions() {
   const [diagRunning, setDiagRunning] = useState(false);
   const [diagResult, setDiagResult] = useState(null);
 
+  // ── Stripe Session Diag ──
+  const [sessionId, setSessionId] = useState("");
+  const [sessionRunning, setSessionRunning] = useState(false);
+  const [sessionResult, setSessionResult] = useState(null);
+
+  async function runSessionDiag() {
+    if (!sessionId.trim()) return;
+    setSessionRunning(true);
+    setSessionResult(null);
+    try {
+      const res = await base44.functions.invoke("diagStripeSession", {
+        sessionId: sessionId.trim(),
+      });
+      setSessionResult(res?.data ?? res);
+    } catch (e) {
+      setSessionResult({ ok: false, error: e?.message });
+    } finally {
+      setSessionRunning(false);
+    }
+  }
+
   async function runDiag() {
     if (!diagCode.trim()) return;
     setDiagRunning(true);
@@ -92,6 +113,42 @@ export default function TestFunctions() {
               color: diagResult.ok ? "#065f46" : "#991b1b",
             }}>
               {JSON.stringify(diagResult, null, 2)}
+            </pre>
+          )}
+        </div>
+
+        {/* ── Stripe Session Diagnostic ── */}
+        <div style={{ background: "#FFF", border: "2px solid #6366f1", borderRadius: 8, padding: "16px 20px", marginBottom: 24 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#0B1F3B", marginBottom: 12 }}>🔍 Stripe Session Diagnostic</div>
+          <div style={{ fontSize: 13, color: "#6B7280", marginBottom: 12 }}>
+            Paste a Stripe session ID (from the success URL <code style={{ background: "#F3F4F6", padding: "1px 5px", borderRadius: 4 }}>?session_id=cs_...</code>) to see what metadata was captured, including <code style={{ background: "#F3F4F6", padding: "1px 5px", borderRadius: 4 }}>coach_invite_code</code>.
+          </div>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 12 }}>
+            <div>
+              <span style={S.label}>Session ID</span>
+              <input
+                value={sessionId}
+                onChange={e => setSessionId(e.target.value)}
+                placeholder="cs_live_... or cs_test_..."
+                style={{ ...S.input, width: 320, fontFamily: "monospace" }}
+              />
+            </div>
+            <button
+              onClick={runSessionDiag}
+              disabled={sessionRunning || !sessionId.trim()}
+              style={{ ...S.btn, background: "#6366f1", color: "#fff", border: "none", opacity: sessionRunning ? 0.6 : 1 }}
+            >
+              {sessionRunning ? "Looking up…" : "Look Up Session"}
+            </button>
+          </div>
+          {sessionResult && (
+            <pre style={{
+              background: "#F3F4F6", border: "1px solid #E5E7EB", borderRadius: 6,
+              padding: "12px 14px", fontSize: 12, overflowX: "auto",
+              whiteSpace: "pre-wrap", wordBreak: "break-all",
+              color: sessionResult.ok ? "#065f46" : "#991b1b",
+            }}>
+              {JSON.stringify(sessionResult, null, 2)}
             </pre>
           )}
         </div>
