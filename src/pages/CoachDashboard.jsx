@@ -354,7 +354,7 @@ export default function CoachDashboard() {
   const _schoolCounts = {};
   Object.values(campsByAccountId).forEach(camps => {
     camps.forEach(c => {
-      const name = c.school_name || c.camp_name || "Unknown";
+      const name = c.school_name || c.host_org || c.ryzer_program_name || c.camp_name || "Unknown";
       _schoolCounts[name] = (_schoolCounts[name] || 0) + 1;
     });
   });
@@ -420,7 +420,7 @@ export default function CoachDashboard() {
     Object.entries(campsByAccountId).forEach(([accountId, camps]) => {
       const ath = roster.find(r => r.account_id === accountId);
       camps.forEach(c => {
-        const name = c.school_name || c.camp_name || "Unknown School";
+        const name = c.school_name || c.host_org || c.ryzer_program_name || c.camp_name || "Unknown School";
         if (!m.has(name)) m.set(name, { name, division: null, count: 0, athletes: new Set() });
         const e = m.get(name);
         e.count++;
@@ -1024,7 +1024,7 @@ export default function CoachDashboard() {
                                       <span style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" }}>
                                         {new Date(c.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                                       </span>
-                                      <span style={{ fontSize: 13, color: "#d1d5db", flex: 1 }}>{c.school_name || c.camp_name}</span>
+                                      <span style={{ fontSize: 13, color: "#d1d5db", flex: 1 }}>{c.school_name || c.host_org || c.ryzer_program_name || c.camp_name}</span>
                                       {days !== null && days >= 0 && days <= 7 && (
                                         <span style={{ fontSize: 11, color: "#f59e0b", whiteSpace: "nowrap" }}>{days === 0 ? "Today" : `${days}d`}</span>
                                       )}

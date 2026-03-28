@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
               campMap[(camp as any).id] = {
                 camp_id:         (camp as any).id,
                 camp_name:       (camp as any).camp_name || (camp as any).name || "Camp",
-                school_name:     (camp as any).school_name || "",
+                school_name:     (camp as any).school_name || (camp as any).host_org || (camp as any).ryzer_program_name || "",
                 start_date:      (camp as any).start_date || "",
                 end_date:        (camp as any).end_date || "",
                 city:            (camp as any).city || "",
