@@ -68,14 +68,31 @@ Deno.serve(async (req) => {
       await Promise.all(rosterList.map(async (r) => {
         const acctId: string = r.account_id || "";
         let athleteId: string = r.athlete_id || "";
-        if (!athleteId && acctId) {
+        let needsNameBackfill = !r.athlete_name;
+
+        if ((!athleteId || needsNameBackfill) && acctId) {
           const profiles = await base44.asServiceRole.entities.AthleteProfile.filter({ account_id: acctId }).catch(() => []);
           const profileList = Array.isArray(profiles) ? profiles : [];
           const profile = profileList.find((p: any) => p.is_primary && p.active !== false)
             || profileList.find((p: any) => p.active !== false)
             || profileList[0]
             || null;
-          athleteId = profile?.id || "";
+          if (!athleteId) athleteId = profile?.id || "";
+
+          // Backfill name and grad year onto the in-memory roster entry so the
+          // dashboard shows real names, and patch the entity record for future calls.
+          if (profile && needsNameBackfill) {
+            const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ");
+            if (fullName) {
+              (r as any).athlete_name = fullName;
+              (r as any).athlete_grad_year = (r as any).athlete_grad_year || profile.grad_year || null;
+              base44.asServiceRole.entities.CoachRoster.update(r.id, {
+                athlete_name: fullName,
+                athlete_id: athleteId || undefined,
+                athlete_grad_year: profile.grad_year || undefined,
+              }).catch(() => {});
+            }
+          }
         }
         if (acctId || athleteId) resolvedRoster.push({ acctId, athleteId });
       }));
