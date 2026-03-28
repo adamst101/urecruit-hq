@@ -598,6 +598,17 @@ export default function Discover() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seasonYear, isPaid, seasonLoading]);
 
+  // Re-run loadIntents once athleteProfile becomes available.
+  // loadCamps() fires as soon as seasonLoading resolves, but athleteProfile
+  // may not be loaded yet — causing loadIntents to send athleteId="" and find
+  // nothing. This effect re-fetches intents as soon as the athlete ID is known.
+  const athleteProfileId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
+  useEffect(() => {
+    if (!isPaid || !athleteProfileId || allRows.length === 0) return;
+    loadIntents(allRows.map(campKeyForRow).filter(Boolean)).then(setIntentByKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [athleteProfileId, isPaid]);
+
   // Reload intents when Calendar/MyCamps writes an intent (same-window CustomEvent
   // or cross-tab storage event) so the favorite star updates without a full reload.
   useEffect(() => {
