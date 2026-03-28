@@ -93,10 +93,13 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
               letterSpacing: 1,
             }}
           >
-            Plan Your Athlete's Camp Season —
+            Turn the goal of playing in college
             <br />
-            Without Missing Anything
+            into a smarter plan.
           </h2>
+          <p style={{ fontSize: 18, color: "#9ca3af", maxWidth: 600, margin: "12px auto 0", lineHeight: 1.6 }}>
+            URecruit HQ helps football families move from guesswork and scattered effort to more structure, better visibility, and clearer next steps.
+          </p>
         </div>
 
         {/* Cards grid */}
@@ -108,12 +111,12 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
             gap: 24,
           }}
         >
-          {/* Card 1 — Data */}
+          {/* Card 1 */}
           <DiffCard
             borderColor="#e8a020"
             emoji="🏟️"
-            title={`${campDisplay} CAMPS. EVERY DIVISION.`}
-            body="Every college football camp — from FBS to JUCO — in one place. Updated weekly so you don't miss new opportunities."
+            title="FIND THE RIGHT COLLEGE FOOTBALL CAMPS"
+            body="Search verified college football camps across divisions, updated weekly from official school sites."
           >
             <span
               style={{
@@ -129,16 +132,16 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
                 borderRadius: 20,
               }}
             >
-              ✓ {schoolDisplay} programs across all divisions
+              ✓ Football available now
             </span>
           </DiffCard>
 
-          {/* Card 2 — Conflicts */}
+          {/* Card 2 */}
           <DiffCard
             borderColor="#3b82f6"
             emoji="📅"
-            title="NEVER DOUBLE-BOOK AGAIN."
-            body="Automatically flags conflicts and overlapping dates — before you commit to the wrong camps."
+            title="STAY ORGANIZED AS THE PROCESS GROWS"
+            body="Keep dates, favorites, registrations, and schedule conflicts in one place instead of trying to manage everything through notes, tabs, and memory."
           >
             <div>
               <span
@@ -155,28 +158,17 @@ export default function DifferentiatorsSection({ campDisplay, schoolDisplay }) {
                   borderRadius: 20,
                 }}
               >
-                ⚠️ Conflict Detected
+                ⚠️ Avoid overlap and missed dates
               </span>
-              <p
-                style={{
-                  fontSize: 13,
-                  color: "#6b7280",
-                  marginTop: 8,
-                  marginBottom: 0,
-                  lineHeight: 1.5,
-                }}
-              >
-                Two camps overlap the same weekend
-              </p>
             </div>
           </DiffCard>
 
-          {/* Card 3 — Playbook */}
+          {/* Card 3 */}
           <DiffCard
             borderColor="#10b981"
             emoji="📚"
-            title="MAKE SMARTER CAMP DECISIONS."
-            body="Understand which camps matter, key dates, and what coaches expect — so you're not guessing."
+            title="SUPPORT YOUR ATHLETE WITH BETTER DECISIONS"
+            body="Use practical recruiting guidance to understand timing, camp strategy, and what matters next — without guessing."
           >
             <span
               style={{

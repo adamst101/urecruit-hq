@@ -355,7 +355,7 @@ export default function Home() {
               fontSize: 18, letterSpacing: 3,
               color: "#e8a020", textTransform: "uppercase",
             }}>
-              COLLEGE FOOTBALL CAMP PLANNING
+              COLLEGE FOOTBALL, WITH A SMARTER PLAN
             </span>
           </div>
 
@@ -370,7 +370,7 @@ export default function Home() {
               lineHeight: 1.0,
               whiteSpace: "nowrap",
             }}>
-              PLAN YOUR ATHLETE'S CAMP SEASON —
+              YOUR ATHLETE WANTS TO PLAY COLLEGE FOOTBALL.
             </span>
             <span className="hero-h1-line2" style={{
               display: "block",
@@ -380,7 +380,7 @@ export default function Home() {
               letterSpacing: 1,
               lineHeight: 1.05,
             }}>
-              WITHOUT THE STRESS.
+              NOW WHAT?
             </span>
           </h1>
 
@@ -396,14 +396,14 @@ export default function Home() {
                 margin: "0 0 16px",
                 maxWidth: 420,
               }}>
-                Find, compare, and organize 800+ college football camps — all in one place, without spreadsheets or scheduling conflicts.
+                URecruit HQ helps football families organize camps, track progress, and understand the process earlier — so they can support the dream with more clarity, structure, and confidence.
               </p>
               <div style={{ margin: "0 0 28px", maxWidth: 460 }}>
                 <p style={{ fontSize: 14, fontWeight: 500, color: "#d1d5db", lineHeight: 1.55, margin: "0 0 5px" }}>
-                  New camps added every week — so you never miss an opportunity.
+                  Support the dream with more than camps, posts, and hope.
                 </p>
                 <p style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.55, margin: 0 }}>
-                  Built by parents who went through the process.
+                  Built by a parent who went through the process and wanted one place to manage it all.
                 </p>
               </div>
 
@@ -445,7 +445,7 @@ export default function Home() {
               {[
                 [campDisplay + " Verified", "College Football Camps"],
                 ["New camps added", "weekly from official school sites"],
-                ["Used by", "recruiting families nationwide"],
+                ["Built for", "football families"],
               ].map(([bold, rest]) => (
                 <div key={bold} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                   <CheckCircle2 style={{ width: 18, height: 18, color: "#e8a020", flexShrink: 0 }} />
@@ -565,6 +565,99 @@ export default function Home() {
         />
       </div>
 
+      {/* ── HIDDEN TRUTH ── */}
+      <section style={{ background: '#0d1117', padding: '80px 24px', borderTop: '1px solid #1f2937' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 3, color: '#e8a020', textTransform: 'uppercase' }}>
+                WHAT MOST FAMILIES DO NOT REALIZE
+              </span>
+              <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
+            </div>
+            <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(32px, 4.5vw, 52px)', color: '#f9fafb', margin: '0 0 16px', lineHeight: 1.05, letterSpacing: 1 }}>
+              Playing college football does not usually<br />happen by accident.
+            </h2>
+            <p style={{ fontSize: 18, color: '#9ca3af', maxWidth: 600, margin: '0 auto', lineHeight: 1.65 }}>
+              Most families want to help, but they do not realize early enough how much visibility, timing, and organization can shape the path.
+            </p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24 }}>
+            {[
+              {
+                accent: '#e8a020',
+                icon: '📣',
+                title: 'Camps and posting are not the whole plan',
+                body: 'Most families start with social posts and camps, then hope interest follows. But without structure and intentional next steps, effort can stay scattered.'
+              },
+              {
+                accent: '#3b82f6',
+                icon: '🎯',
+                title: 'Exposure often has to be built',
+                body: 'For many athletes, the path to opportunity is not passive. It usually takes better timing, more focused effort, and a clearer plan than families expect.'
+              },
+              {
+                accent: '#10b981',
+                icon: '⏱️',
+                title: 'Waiting for interest can put families behind',
+                body: 'A lack of early attention does not mean a lack of potential. It often means the family needs more direction before time, money, and opportunities are wasted.'
+              }
+            ].map(({ accent, icon, title, body }) => (
+              <div key={title} style={{ background: '#111827', borderRadius: 16, padding: 32, borderTop: `4px solid ${accent}` }}>
+                <div style={{ fontSize: 40, marginBottom: 16, lineHeight: 1 }}>{icon}</div>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: '#f9fafb', letterSpacing: 0.5, marginBottom: 12, lineHeight: 1.2 }}>{title}</div>
+                <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.7, margin: 0 }}>{body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── SOUND FAMILIAR ── */}
+      <section style={{ background: '#111827', padding: '80px 24px' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 3, color: '#e8a020', textTransform: 'uppercase' }}>
+                FOR FOOTBALL FAMILIES
+              </span>
+              <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
+            </div>
+            <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(36px, 5vw, 56px)', color: '#f9fafb', margin: '0 0 14px', lineHeight: 1.05, letterSpacing: 1 }}>
+              Sound familiar?
+            </h2>
+            <p style={{ fontSize: 18, color: '#9ca3af', maxWidth: 540, margin: '0 auto', lineHeight: 1.6 }}>
+              Most parents are trying to support the goal without a clear system.
+            </p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24 }}>
+            {[
+              {
+                quote: '"We post on X, go to camps, and hope the right coaches see him."',
+                body: 'That is where many families start. But most do not realize how much more intentional the process often needs to be.'
+              },
+              {
+                quote: '"We are spending time and money, but we are not sure what is actually moving things forward."',
+                body: 'Without better structure, families can stay busy without knowing whether they are making the right decisions.'
+              },
+              {
+                quote: '"We want to help, but we do not really know what to do next."',
+                body: 'That uncertainty is common. URecruit HQ is designed to give families more clarity and a better path forward.'
+              }
+            ].map(({ quote, body }) => (
+              <div key={quote} style={{ background: '#0a0e1a', borderRadius: 16, padding: 32, border: '1px solid #1f2937', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={{ borderLeft: '3px solid #e8a020', paddingLeft: 16 }}>
+                  <p style={{ fontSize: 16, fontWeight: 600, color: '#f9fafb', lineHeight: 1.55, margin: 0, fontStyle: 'italic' }}>{quote}</p>
+                </div>
+                <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.7, margin: 0 }}>{body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── DIFFERENTIATORS ── */}
       <DifferentiatorsSection campDisplay={campDisplay} schoolDisplay={schoolDisplay} />
 
@@ -577,15 +670,15 @@ export default function Home() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 }}>
               <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
               <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 3, color: '#e8a020', textTransform: 'uppercase' }}>
-                WE DO THE WORK. YOU SHOW UP READY.
+                STAY AHEAD OF CAMP SEASON
               </span>
               <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
             </div>
             <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(36px, 5vw, 56px)', color: '#f9fafb', margin: '0 0 16px', lineHeight: 1.05 }}>
-              NEVER MISS A CAMP.<br />NEVER FORGET A DATE.
+              Stay ahead without carrying the whole<br />process in your head.
             </h2>
             <p style={{ fontSize: 18, color: '#9ca3af', maxWidth: 560, margin: '0 auto', lineHeight: 1.6 }}>
-              Stay one step ahead all season — without constantly checking the app.
+              URecruit HQ helps football families keep up with camp season, key dates, and next steps — without relying on memory, screenshots, or spreadsheets.
             </p>
           </div>
 
@@ -605,10 +698,10 @@ export default function Home() {
                   </div>
                 </div>
                 <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.65, margin: 0 }}>
-                  A monthly list of every camp — organized, easy to scan, and ready to plan around.
+                  A clean monthly view so your family can plan smarter, spot issues earlier, and stay ahead of deadlines.
                 </p>
                 <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {['All camps for the month in one place', 'Sorted by date — easy to scan', 'Includes price, location, and division', 'Printable format for quick reference'].map(item => (
+                  {['All camps for the month in one place', 'Sorted by date for fast scanning', 'Includes price, location, and division', 'Easy to use as a planning reference'].map(item => (
                     <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#d1d5db' }}>
                       <span style={{ color: '#e8a020', fontSize: 14, flexShrink: 0 }}>✓</span>
                       {item}
@@ -627,10 +720,10 @@ export default function Home() {
                   </div>
                 </div>
                 <p style={{ fontSize: 15, color: '#9ca3af', lineHeight: 1.65, margin: 0 }}>
-                  7 days before each camp, we send everything you need to show up prepared — not scrambling.
+                  Everything your family needs before camp week — logistics, reminders, and prep — so your athlete shows up ready.
                 </p>
                 <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {['Triggered by your camp schedule', 'What to bring checklist', 'Travel and timing reminders', 'What coaches are evaluating'].map(item => (
+                  {['Triggered by your saved camp schedule', 'Helps reduce last-minute scrambling', 'Includes prep and timing reminders', 'Keeps camp week organized'].map(item => (
                     <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#d1d5db' }}>
                       <span style={{ color: '#10b981', fontSize: 14, flexShrink: 0 }}>✓</span>
                       {item}
@@ -708,8 +801,81 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── TESTIMONIALS ── */}
-      <TestimonialsSection />
+      {/* ── CLARITY NOT CHAOS ── */}
+      <section style={{ background: '#f9fafb', padding: '80px 24px' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 3, color: '#b45309', textTransform: 'uppercase' }}>
+                FOR FAMILIES WHO WANT TO HELP THE RIGHT WAY
+              </span>
+              <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
+            </div>
+            <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(32px, 4.5vw, 52px)', color: '#0a0e1a', margin: '0 0 16px', lineHeight: 1.05, letterSpacing: 1 }}>
+              Replace guesswork with a clearer plan.
+            </h2>
+            <p style={{ fontSize: 18, color: '#4b5563', maxWidth: 600, margin: '0 auto', lineHeight: 1.65 }}>
+              URecruit HQ helps football families support the goal of playing in college with more structure, less wasted effort, and more confidence.
+            </p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 24 }}>
+            {[
+              { icon: '🧭', title: 'Less guesswork', body: 'Know what matters, when it matters, and where to focus next.' },
+              { icon: '⏳', title: 'Less wasted time and money', body: 'Avoid bad scheduling, unnecessary camp mistakes, and scattered effort that does not move the process forward.' },
+              { icon: '💪', title: 'More confidence', body: 'Support your athlete with a plan instead of just hoping the right things happen.' }
+            ].map(({ icon, title, body }) => (
+              <div key={title} style={{ background: '#ffffff', borderRadius: 16, padding: 32, border: '1px solid #e5e7eb', boxShadow: '0 2px 16px rgba(0,0,0,0.06)' }}>
+                <div style={{ fontSize: 40, marginBottom: 16, lineHeight: 1 }}>{icon}</div>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: '#0a0e1a', letterSpacing: 0.5, marginBottom: 12 }}>{title}</div>
+                <p style={{ fontSize: 15, color: '#4b5563', lineHeight: 1.7, margin: 0 }}>{body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── RECRUITING GUIDANCE ── */}
+      <section style={{ background: '#0a0e1a', padding: '80px 24px', borderTop: '1px solid #1f2937' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 3, color: '#e8a020', textTransform: 'uppercase' }}>
+                PRACTICAL RECRUITING GUIDANCE
+              </span>
+              <div style={{ width: 3, height: 28, background: '#e8a020', borderRadius: 2 }} />
+            </div>
+            <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(32px, 4.5vw, 52px)', color: '#f9fafb', margin: '0 0 16px', lineHeight: 1.05, letterSpacing: 1 }}>
+              The recruiting guidance most football<br />parents wish they had earlier
+            </h2>
+            <p style={{ fontSize: 18, color: '#9ca3af', maxWidth: 600, margin: '0 auto', lineHeight: 1.65 }}>
+              Clear, parent-friendly guidance on timelines, contact rules, camps, offers, film, and social media — all in one place.
+            </p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 20 }}>
+            {[
+              { icon: '📆', title: 'Recruiting Timeline', desc: 'Understand when each phase of recruiting typically happens and when to take action.' },
+              { icon: '📧', title: 'How to Contact Coaches', desc: 'What to say, when to reach out, and how to make the right impression.' },
+              { icon: '🏆', title: 'Understanding Offers', desc: 'What different types of offers actually mean and how to evaluate them.' },
+              { icon: '🏕️', title: 'Building Your Camp Strategy', desc: 'Which camps matter most, how to prioritize, and how to make each visit count.' },
+              { icon: '🎬', title: 'Film That Coaches Watch', desc: 'What coaches look for in film and how to make sure the right people see the right things.' },
+              { icon: '📱', title: 'Social Media Strategy', desc: 'How to use X and other platforms to support visibility without making costly mistakes.' }
+            ].map(({ icon, title, desc }) => (
+              <div key={title} style={{ background: '#111827', borderRadius: 14, padding: '24px 24px', border: '1px solid #1f2937', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(232,160,32,0.1)', border: '1px solid rgba(232,160,32,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{icon}</div>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: '#f9fafb', letterSpacing: 0.5, lineHeight: 1.2 }}>{title}</div>
+                </div>
+                <p style={{ fontSize: 14, color: '#9ca3af', lineHeight: 1.65, margin: 0 }}>{desc}</p>
+                <div style={{ marginTop: 'auto', paddingTop: 8 }}>
+                  <span style={{ fontSize: 12, color: '#e8a020', fontWeight: 600 }}>Included with Season Pass →</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* ── PRICING ── */}
       <section style={{ background: "#111827", padding: "80px 24px" }}>
@@ -722,8 +888,12 @@ export default function Home() {
               marginBottom: 32
             }}
           >
-            ONE SEASON. ONE PRICE.
+            ONE SEASON. ONE PRICE.<br />ONE SMARTER WAY TO SUPPORT THE GOAL.
           </h2>
+
+          <p style={{ fontSize: 17, color: '#9ca3af', maxWidth: 480, margin: '0 auto 32px', lineHeight: 1.6, textAlign: 'center' }}>
+            For less than the cost of one extra camp mistake, URecruit HQ helps your family plan smarter all season.
+          </p>
 
           <div
             style={{
@@ -773,7 +943,9 @@ export default function Home() {
                 "Current season camp data",
                 "Unlimited favorites & registration tracking",
                 "Calendar conflict detection",
-                "Multiple athletes under one account"
+                "Multiple athletes under one account",
+                "Monthly camp agenda + camp week alerts",
+                "Practical recruiting guidance"
               ].map((f) => (
                 <div
                   key={f}
@@ -809,7 +981,8 @@ export default function Home() {
               {[
                 { icon: "🔒", label: "Secure checkout via Stripe" },
                 { icon: "📅", label: "No auto-renew" },
-                { icon: "🛡️", label: "We never sell your data" }
+                { icon: "🛡️", label: "We never sell your data" },
+                { icon: "🏈", label: "Built for football families" }
               ].map((b) => (
                 <span key={b.label} style={{ fontSize: 12, color: "#6b7280", display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ fontSize: 13 }}>{b.icon}</span> {b.label}
@@ -835,8 +1008,11 @@ export default function Home() {
       <section style={{ padding: "0 24px 48px", maxWidth: 560, margin: "0 auto", textAlign: "center" }}>
         <div style={{ borderTop: "1px solid #1f2937", paddingTop: 40 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>
-            More sports coming soon
+            MORE SPORTS COMING SOON
           </div>
+          <h3 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: '#f9fafb', margin: '0 0 20px', letterSpacing: 1 }}>
+            We're starting with football.
+          </h3>
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, marginBottom: 20 }}>
             {["Baseball", "Basketball", "Gymnastics", "Lacrosse", "Soccer", "Softball", "Volleyball"].map((s) => (
               <span key={s} style={{
@@ -849,7 +1025,7 @@ export default function Home() {
             ))}
           </div>
           <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 16 }}>
-            Follow along for updates as we expand to new sports.
+            URecruit HQ is currently built for football families. We plan to expand next to Baseball, Basketball, Gymnastics, Lacrosse, Soccer, Softball, and Volleyball. Follow along as we expand.
           </p>
           <div style={{ display: "flex", justifyContent: "center", gap: 16 }}>
             <a
@@ -955,13 +1131,13 @@ function WhyPanel({ onTryDemo }) {
         boxShadow: "0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15)",
       }}>
         <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>
-          From a recruiting parent
+          FROM A RECRUITING PARENT
         </div>
         <p style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", lineHeight: 1.35, margin: "0 0 8px" }}>
-          The biggest mistake parents make?<br />Starting too late.
+          Most families think camps, posts, and patience are enough.
         </p>
         <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.5, margin: "0 0 12px" }}>
-          Most families are guessing. The ones with a system are already ahead.
+          They usually don't realize how intentional this process really is. A better plan gives your athlete a better chance.
         </p>
         <button
           onClick={onTryDemo}
