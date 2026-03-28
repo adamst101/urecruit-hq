@@ -1,5 +1,5 @@
 // src/pages/RecruitingJourney.jsx
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "../api/base44Client";
@@ -38,6 +38,13 @@ const DIVISIONS = [
   { key: "d2",  label: "D-II" },
   { key: "d3",  label: "D-III" },
 ];
+
+const DIVISION_DB_VALUE = {
+  fbs: "NCAA Division I FBS",
+  fcs: "NCAA Division I FCS",
+  d2:  "NCAA Division II",
+  d3:  "NCAA Division III",
+};
 
 const BLANK_FORM = {
   activity_type: "social_like",
@@ -87,6 +94,46 @@ export default function RecruitingJourney() {
   const [prefsError, setPrefsError]       = useState("");
   const [prefsSaved, setPrefsSaved]       = useState(false);
 
+  // Division school lists for target-school comboboxes
+  const [divisionSchools, setDivisionSchools] = useState({ fbs: [], fcs: [], d2: [], d3: [] });
+  const [schoolsLoading, setSchoolsLoading]   = useState(false);
+
+  // All schools for activity-logging combobox
+  const [allSchools, setAllSchools]         = useState([]);
+  const [allSchoolsLoading, setAllSchoolsLoading] = useState(false);
+
+  async function loadAllSchools() {
+    if (allSchools.length > 0) return;
+    setAllSchoolsLoading(true);
+    try {
+      const rows = await base44.entities.School.filter({}, "school_name", 9999).catch(() => []);
+      setAllSchools(Array.isArray(rows) ? rows : []);
+    } finally {
+      setAllSchoolsLoading(false);
+    }
+  }
+
+  async function loadSchoolsByDivision() {
+    setSchoolsLoading(true);
+    try {
+      const [fbs, fcs, d2, d3] = await Promise.all(
+        ["fbs", "fcs", "d2", "d3"].map(key =>
+          base44.entities.School
+            .filter({ division: DIVISION_DB_VALUE[key] }, "school_name", 999)
+            .catch(() => [])
+        )
+      );
+      setDivisionSchools({
+        fbs: Array.isArray(fbs) ? fbs : [],
+        fcs: Array.isArray(fcs) ? fcs : [],
+        d2:  Array.isArray(d2)  ? d2  : [],
+        d3:  Array.isArray(d3)  ? d3  : [],
+      });
+    } finally {
+      setSchoolsLoading(false);
+    }
+  }
+
   // ── Load ─────────────────────────────────────────────────────────────────
   const loadJourney = useCallback(async () => {
     setLoading(true);
@@ -120,6 +167,7 @@ export default function RecruitingJourney() {
     setAddForm({ ...BLANK_FORM, activity_type: type });
     setAddError("");
     setShowAdd(true);
+    loadAllSchools();
   }
 
   async function submitAdd() {
@@ -383,6 +431,7 @@ export default function RecruitingJourney() {
                       setPrefsForm({ ...BLANK_PREFS, ...preferences });
                       setEditingPrefs(true);
                       setPrefsError("");
+                      if (divisionSchools.fbs.length === 0) loadSchoolsByDivision();
                     }}
                     style={{
                       background: "transparent", border: "1px solid #1f2937",
@@ -456,20 +505,13 @@ export default function RecruitingJourney() {
                       const fk  = `${div.key}_${n}`;
                       const val = editingPrefs ? prefsForm[fk] : preferences[fk];
                       return editingPrefs ? (
-                        <input
-                          key={n}
+                        <SchoolCombobox
+                          key={fk}
                           value={prefsForm[fk] || ""}
-                          onChange={e => setPrefsField(fk)(e.target.value)}
+                          onChange={setPrefsField(fk)}
+                          schools={divisionSchools[div.key]}
+                          loading={schoolsLoading}
                           placeholder={`#${n} ${div.label} school`}
-                          style={{
-                            width: "100%", boxSizing: "border-box",
-                            background: "#0a0e1a", border: "1px solid #374151",
-                            borderRadius: 8, padding: "9px 12px",
-                            color: "#f9fafb", fontSize: 14, marginBottom: 8,
-                            outline: "none", fontFamily: "inherit",
-                          }}
-                          onFocus={e => { e.target.style.borderColor = "#e8a020"; }}
-                          onBlur={e => { e.target.style.borderColor = "#374151"; }}
                         />
                       ) : (
                         <div
@@ -575,12 +617,21 @@ export default function RecruitingJourney() {
             {/* Dynamic fields */}
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {currentFields.includes("school_name") && (
-                <FormField
-                  label="School Name"
-                  value={addForm.school_name}
-                  onChange={setField("school_name")}
-                  placeholder="e.g. Ohio State, Alabama"
-                />
+                <div>
+                  <div style={{
+                    fontSize: 12, fontWeight: 600, color: "#6b7280",
+                    textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6,
+                  }}>
+                    School Name
+                  </div>
+                  <SchoolCombobox
+                    value={addForm.school_name || ""}
+                    onChange={setField("school_name")}
+                    schools={allSchools}
+                    loading={allSchoolsLoading}
+                    placeholder="Search schools…"
+                  />
+                </div>
               )}
               {currentFields.includes("activity_date") && (
                 <FormField
@@ -656,6 +707,103 @@ export default function RecruitingJourney() {
   );
 }
 
+// ── School combobox ───────────────────────────────────────────────────────────
+function SchoolCombobox({ value, onChange, schools, loading, placeholder }) {
+  const [query, setQuery]   = useState(value || "");
+  const [open, setOpen]     = useState(false);
+  const containerRef        = useRef(null);
+
+  // Sync query when parent resets the form
+  useEffect(() => { setQuery(value || ""); }, [value]);
+
+  const filtered = loading ? [] : (() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return schools.slice(0, 10);
+    return schools
+      .filter(s => (s.school_name || "").toLowerCase().includes(q))
+      .slice(0, 12);
+  })();
+
+  function select(name) {
+    setQuery(name);
+    onChange(name);
+    setOpen(false);
+  }
+
+  function clear(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setQuery("");
+    onChange("");
+  }
+
+  useEffect(() => {
+    function handleOutside(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{ position: "relative", marginBottom: 8 }}>
+      <div style={{ position: "relative" }}>
+        <input
+          value={query}
+          onChange={e => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
+          onFocus={e => { setOpen(true); e.currentTarget.style.borderColor = "#e8a020"; }}
+          onBlur={e => { e.currentTarget.style.borderColor = "#374151"; }}
+          onKeyDown={e => { if (e.key === "Escape") setOpen(false); }}
+          placeholder={loading ? "Loading schools…" : placeholder}
+          disabled={loading}
+          style={{
+            width: "100%", boxSizing: "border-box",
+            background: "#0a0e1a", border: "1px solid #374151",
+            borderRadius: 8, padding: query ? "9px 32px 9px 12px" : "9px 12px",
+            color: "#f9fafb", fontSize: 14, fontFamily: "inherit", outline: "none",
+            opacity: loading ? 0.5 : 1,
+          }}
+        />
+        {query && (
+          <button
+            onMouseDown={clear}
+            style={{
+              position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+              background: "none", border: "none", color: "#6b7280",
+              cursor: "pointer", fontSize: 18, padding: 0, lineHeight: 1,
+            }}
+          >×</button>
+        )}
+      </div>
+
+      {open && filtered.length > 0 && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 3px)", left: 0, right: 0, zIndex: 200,
+          background: "#1f2937", border: "1px solid #374151", borderRadius: 8,
+          maxHeight: 220, overflowY: "auto",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+        }}>
+          {filtered.map((s, i) => (
+            <div
+              key={s.id || s.school_name}
+              onMouseDown={() => select(s.school_name)}
+              style={{
+                padding: "9px 12px", cursor: "pointer", fontSize: 13, color: "#f9fafb",
+                borderBottom: i < filtered.length - 1 ? "1px solid #111827" : "none",
+                userSelect: "none",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(232,160,32,0.1)"; e.currentTarget.style.color = "#e8a020"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#f9fafb"; }}
+            >
+              {s.school_name}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Shared form field component ───────────────────────────────────────────────
 function FormField({ label, value, onChange, placeholder, type = "text", multiline }) {
   const inputStyle = {
@@ -664,6 +812,7 @@ function FormField({ label, value, onChange, placeholder, type = "text", multili
     borderRadius: 10, padding: "10px 14px",
     color: "#f9fafb", fontSize: 14, fontFamily: "inherit",
     outline: "none",
+    ...(type === "date" ? { colorScheme: "dark" } : {}),
   };
 
   return (
