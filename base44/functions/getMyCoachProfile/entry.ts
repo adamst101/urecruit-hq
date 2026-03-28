@@ -81,7 +81,6 @@ Deno.serve(async (req) => {
       }));
 
       const knownAthleteIds = new Set(resolvedRoster.map(r => r.athleteId).filter(Boolean));
-      console.log("[getMyCoachProfile] resolved roster athlete_ids:", [...knownAthleteIds]);
 
       if (knownAthleteIds.size > 0) {
         // Step 2: fetch all registered/completed CampIntents and match by athlete_id in memory
@@ -95,13 +94,7 @@ Deno.serve(async (req) => {
           ...(Array.isArray(allIntents) ? allIntents : []),
           ...(Array.isArray(completedIntents) ? completedIntents : []),
         ];
-        console.log(`[getMyCoachProfile] total registered+completed intents in DB: ${allFetched.length}`,
-          JSON.stringify(allFetched.slice(0, 20).map((i: any) => ({
-            id: i.id, status: i.status, athlete_id: i.athlete_id || "(null)"
-          }))));
-
         const allRegistered = allFetched.filter((i: any) => knownAthleteIds.has(i.athlete_id));
-        console.log(`[getMyCoachProfile] registered intents matched to roster: ${allRegistered.length}`);
 
         if (allRegistered.length > 0) {
           // Step 3: fetch unique camp details
@@ -145,9 +138,6 @@ Deno.serve(async (req) => {
         }
       }
     }
-
-    console.log("[getMyCoachProfile] campsByAccountId keys:", Object.keys(campsByAccountId),
-      "totals:", Object.entries(campsByAccountId).map(([k, v]) => `${k}:${(v as any[]).length}`));
 
     return Response.json({
       ok: true,

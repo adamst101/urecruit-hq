@@ -260,6 +260,10 @@ function CampDetailInner() {
 
   const registerCamp = useMutation({
     mutationFn: async () => {
+      // Never write demo registration while access state is still loading —
+      // the user may be paid but mode hasn't resolved yet.
+      if (accessLoading) return;
+
       // DEMO: local-only register marker (no backend)
       if (!paid) {
         if (isDemoRegistered(effectiveDemoProfileId, campId)) return;
