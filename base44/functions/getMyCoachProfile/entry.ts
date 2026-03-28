@@ -57,41 +57,70 @@ Deno.serve(async (req) => {
 
     const rosterList = Array.isArray(roster) ? roster : [];
 
-    // Fetch camp registrations for each roster athlete via their account_id
-    const campsByAccountId = {};
+    // Fetch camp registrations for each roster athlete.
+    // CampIntent records are created with athlete_id as the primary FK (and account_id as secondary).
+    // Query by athlete_id first (matches what the app writes); fall back to account_id.
+    // Results are keyed by account_id for CoachDashboard compatibility.
+    const campsByAccountId: Record<string, object[]> = {};
     if (rosterList.length > 0) {
-      const accountIds = [...new Set(rosterList.map(r => r.account_id).filter(Boolean))];
-      await Promise.all(accountIds.map(async (acctId) => {
+      await Promise.all(rosterList.map(async (r) => {
+        const acctId: string = r.account_id || "";
+        const athleteId: string = r.athlete_id || "";
+        if (!acctId && !athleteId) return;
+
         try {
-          const intents = await base44.asServiceRole.entities.CampIntent.filter({
-            account_id: acctId,
-          }).catch(() => []);
-          const registered = Array.isArray(intents)
-            ? intents.filter(i => i.status === "registered" || i.status === "completed")
-            : [];
+          // Prefer athlete_id lookup (precise, matches CampDetail/Calendar/MyCamps writes)
+          let intents: object[] = [];
+          if (athleteId) {
+            const byAthlete = await base44.asServiceRole.entities.CampIntent.filter({
+              athlete_id: athleteId,
+            }).catch(() => []);
+            intents = Array.isArray(byAthlete) ? byAthlete : [];
+          }
+          // Fall back to account_id when athlete_id lookup found nothing
+          if (intents.length === 0 && acctId) {
+            const byAccount = await base44.asServiceRole.entities.CampIntent.filter({
+              account_id: acctId,
+            }).catch(() => []);
+            intents = Array.isArray(byAccount) ? byAccount : [];
+          }
+
+          const registered = intents.filter((i: any) => i.status === "registered" || i.status === "completed");
           if (registered.length === 0) return;
 
-          const campIds = [...new Set(registered.map(i => i.camp_id).filter(Boolean))];
+          const campIds = [...new Set(registered.map((i: any) => i.camp_id).filter(Boolean))];
           const camps = await Promise.all(
-            campIds.map(id => base44.asServiceRole.entities.Camp.get(id).catch(() => null))
+            campIds.map((id: any) => base44.asServiceRole.entities.Camp.get(id).catch(() => null))
           );
-          const campMap = {};
+          const campMap: Record<string, object> = {};
           for (const camp of camps) {
-            if (camp?.id) {
-              campMap[camp.id] = {
-                camp_name: camp.camp_name || camp.name || "Camp",
-                school_name: camp.school_name || "",
-                start_date: camp.start_date || "",
+            if ((camp as any)?.id) {
+              campMap[(camp as any).id] = {
+                camp_name: (camp as any).camp_name || (camp as any).name || "Camp",
+                school_name: (camp as any).school_name || "",
+                start_date: (camp as any).start_date || "",
               };
             }
           }
 
-          campsByAccountId[acctId] = registered.map(i => ({
+          const athleteCamps = registered.map((i: any) => ({
             camp_id: i.camp_id,
-            camp_name: campMap[i.camp_id]?.camp_name || "Camp",
-            school_name: campMap[i.camp_id]?.school_name || "",
-            start_date: campMap[i.camp_id]?.start_date || "",
-          })).sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""));
+            camp_name: (campMap[i.camp_id] as any)?.camp_name || "Camp",
+            school_name: (campMap[i.camp_id] as any)?.school_name || "",
+            start_date: (campMap[i.camp_id] as any)?.start_date || "",
+          })).sort((a: any, b: any) => (a.start_date || "").localeCompare(b.start_date || ""));
+
+          // Merge into account_id bucket (multiple athletes per account are combined)
+          if (acctId) {
+            const existing = campsByAccountId[acctId] as any[] | undefined;
+            if (existing) {
+              // Dedupe by camp_id before merging
+              const existingIds = new Set(existing.map((c: any) => c.camp_id));
+              campsByAccountId[acctId] = [...existing, ...athleteCamps.filter((c: any) => !existingIds.has(c.camp_id))];
+            } else {
+              campsByAccountId[acctId] = athleteCamps;
+            }
+          }
         } catch {
           // Non-critical — skip this athlete's camps on error
         }
