@@ -3,18 +3,35 @@ import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
 import { ensureSchoolMap, schoolMapGet } from "./useSchoolIdentity.jsx";
 
+// Module-level in-flight deduplication: if the same athlete's intents are already
+// being fetched (e.g. Calendar and MyCamps both mounting at the same time), reuse
+// the same promise instead of firing two concurrent requests — reduces rate-limit hits.
+const _intentFetchInFlight = new Map();
+
 // Fetch intents from production entity store via server-side function.
 // Falls back to client-side filter if the function call fails (e.g. during local dev).
 async function fetchIntentsFromServer({ athleteId, accountId }) {
-  try {
-    const res = await base44.functions.invoke("getMyCampIntents", { athleteId, accountId });
-    if (res?.data?.ok && Array.isArray(res.data.intents)) {
-      return res.data.intents;
-    }
-  } catch {
-    // fall through to client-side fallback
+  const key = `${athleteId || ""}|${accountId || ""}`;
+  if (_intentFetchInFlight.has(key)) {
+    return _intentFetchInFlight.get(key);
   }
-  return null; // signal to caller: use client-side fallback
+
+  const promise = (async () => {
+    try {
+      const res = await base44.functions.invoke("getMyCampIntents", { athleteId, accountId });
+      if (res?.data?.ok && Array.isArray(res.data.intents)) {
+        return res.data.intents;
+      }
+    } catch {
+      // fall through to client-side fallback
+    }
+    return null; // signal to caller: use client-side fallback
+  })().finally(() => {
+    _intentFetchInFlight.delete(key);
+  });
+
+  _intentFetchInFlight.set(key, promise);
+  return promise;
 }
 
 /* -------------------------
