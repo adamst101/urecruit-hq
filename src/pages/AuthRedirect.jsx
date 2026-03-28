@@ -178,6 +178,16 @@ export default function AuthRedirect() {
       // Entitlement might already exist (webhook fast) — admins have hasAccess but no entitlement record
       if (season?.hasAccess && (season?.entitlement || season?.role === "admin")) {
         console.log("[DIAG:AuthRedirect] already entitled — going direct to Workspace");
+
+        // Even though entitlement exists, the webhook may have silently failed to create
+        // the CoachRoster entry. Call linkStripePayment as fire-and-forget so coach
+        // roster linking always runs regardless of webhook timing.
+        const pendingSession = ssGet("stripeSessionId");
+        if (pendingSession) {
+          ssRemove("stripeSessionId");
+          base44.functions.invoke("linkStripePayment", { sessionId: pendingSession }).catch(() => {});
+        }
+
         didRoute.current = true;
         nav(PATHS.WORKSPACE, { replace: true });
         return;
