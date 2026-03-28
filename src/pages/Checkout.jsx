@@ -32,6 +32,7 @@ export default function Checkout() {
   const [parentFirstName, setParentFirstName] = useState("");
   const [parentLastName, setParentLastName] = useState("");
   const [parentPhone, setParentPhone] = useState("");
+  const [parentEmail, setParentEmail] = useState("");
   const [coachInviteCode, setCoachInviteCode] = useState(() => {
     try { return localStorage.getItem("coachInviteCode") || ""; } catch { return ""; }
   });
@@ -127,6 +128,7 @@ export default function Checkout() {
       if (d.parentFirstName) setParentFirstName(d.parentFirstName);
       if (d.parentLastName) setParentLastName(d.parentLastName);
       if (d.parentPhone) setParentPhone(d.parentPhone);
+      if (d.parentEmail) setParentEmail(d.parentEmail);
       if (d.coachInviteCode) setCoachInviteCode(d.coachInviteCode);
       // Skip straight to payment step — user already filled the form before login
       if (d.athleteFirstName) setStep("payment");
@@ -143,6 +145,9 @@ export default function Checkout() {
       if (!parentFirstName.trim()) { setError("Parent / guardian first name is required"); return; }
       if (!parentLastName.trim()) { setError("Parent / guardian last name is required"); return; }
       if (!parentPhone.trim()) { setError("Parent / guardian phone number is required"); return; }
+      if (!parentEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail.trim())) {
+        setError("A valid parent / guardian email is required"); return;
+      }
     }
     setError(null);
     setStep("payment");
@@ -191,7 +196,7 @@ export default function Checkout() {
       const res = await base44.functions.invoke("activateFreeAccess", {
         promoCode: code || promoCode.trim(),
         accountId: me?.id,
-        userEmail: me?.email,
+        userEmail: me?.email || parentEmail.trim() || undefined,
         isAddOn: isAddonMode || undefined,
         athleteFirstName: athleteFirstName.trim() || undefined,
         athleteLastName: athleteLastName.trim() || undefined,
@@ -236,6 +241,7 @@ export default function Checkout() {
       const athleteFullName = [athleteFirstName.trim(), athleteLastName.trim()].filter(Boolean).join(" ");
 
       const res = await base44.functions.invoke("createStripeCheckout", {
+        userEmail: parentEmail.trim() || undefined,
         couponCode: promoCode.trim() || undefined,
         promoId: promoState?.promoId || undefined,
         successUrl,
@@ -264,6 +270,7 @@ export default function Checkout() {
           sessionStorage.setItem("checkoutForm", JSON.stringify({
             parentFirstName: parentFirstName.trim() || "",
             parentLastName: parentLastName.trim() || "",
+            parentEmail: parentEmail.trim() || "",
             athleteFirstName: athleteFirstName.trim() || "",
             athleteLastName: athleteLastName.trim() || "",
             coachInviteCode: coachInviteCode.trim() || "",
@@ -392,6 +399,11 @@ export default function Checkout() {
               <div style={{ marginTop: 12 }}>
                 <label style={S.label}>Phone Number *</label>
                 <input value={parentPhone} onChange={e => setParentPhone(e.target.value)} placeholder="(555) 555-5555" type="tel" style={S.input} />
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <label style={S.label}>Email Address *</label>
+                <input value={parentEmail} onChange={e => setParentEmail(e.target.value)} placeholder="you@example.com" type="email" autoComplete="email" style={S.input} />
+                <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>Used for your account and your Stripe receipt — enter once, auto-filled throughout.</p>
               </div>
             </div>
 

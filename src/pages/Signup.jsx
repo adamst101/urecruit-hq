@@ -58,10 +58,17 @@ function validate(firstName, lastName, email, password, confirm) {
   return null;
 }
 
+function getCheckoutForm() {
+  try {
+    const raw = sessionStorage.getItem("checkoutForm");
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
 export default function Signup() {
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
+  const [firstName, setFirstName] = useState(() => getCheckoutForm()?.parentFirstName || "");
+  const [lastName, setLastName] = useState(() => getCheckoutForm()?.parentLastName || "");
+  const [email, setEmail] = useState(() => getCheckoutForm()?.parentEmail || "");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
