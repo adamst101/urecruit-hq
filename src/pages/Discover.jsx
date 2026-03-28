@@ -334,43 +334,38 @@ export default function Discover() {
   async function loadIntents(keys) {
     try {
       if (!isPaid) return {}; // Demo mode doesn't use CampIntent
-      const CampIntent = base44?.entities?.CampIntent;
-      if (!CampIntent?.filter) return {};
       const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
-      // Coaches have no athlete profile — use accountId as the athlete_id substitute
-      // (matches the value stored by upsertIntent for coaches)
       const effectiveAId = aId || (seasonAccountId ? seasonAccountId : null);
       if (!effectiveAId) return {};
 
-      // Primary query: records linked to this athlete (or account_id sub for coaches)
+      // Read from production entity store via server-side function
+      const res = await base44.functions.invoke("getMyCampIntents", {
+        athleteId: String(aId || ""),
+        accountId: String(seasonAccountId || ""),
+      }).catch(() => null);
+
+      const intents = res?.data?.ok && Array.isArray(res.data.intents) ? res.data.intents : null;
+
+      // Fallback to client-side if function call fails
       let rows = [];
-      try {
-        rows = await safeFilter(CampIntent, { athlete_id: String(effectiveAId) }, "-updated_date", 2000);
-      } catch (readErr) {
-        console.error("[loadIntents] CampIntent read failed:", String(readErr?.message || readErr));
-        return {};
+      if (intents !== null) {
+        rows = intents;
+      } else {
+        const CampIntent = base44?.entities?.CampIntent;
+        if (!CampIntent?.filter) return {};
+        try {
+          rows = await safeFilter(CampIntent, { athlete_id: String(effectiveAId) }, "-updated_date", 2000);
+        } catch (readErr) {
+          console.error("[loadIntents] CampIntent read failed:", String(readErr?.message || readErr));
+          return {};
+        }
       }
+
       const out = {};
       for (const r of asArray(rows)) {
         const k = String(r?.camp_id || "");
         if (k) out[k] = r;
       }
-
-      // Secondary query: orphaned records (no athlete_id) for this account.
-      // These exist from a prior bug where athlete_id was omitted on create.
-      // Loading them lets upsertIntent use UPDATE instead of CREATE, avoiding
-      // a uniqueness-constraint failure on (camp_id, account_id).
-      if (seasonAccountId) {
-        try {
-          const accountRows = await safeFilter(CampIntent, { account_id: String(seasonAccountId) }, "-updated_date", 500);
-          for (const r of asArray(accountRows)) {
-            const k = String(r?.camp_id || "");
-            if (!k || out[k]) continue; // athlete-linked record already takes precedence
-            if (!r?.athlete_id) out[k] = r; // only include truly orphaned records
-          }
-        } catch {}
-      }
-
       return out;
     } catch {
       return {};
@@ -378,19 +373,11 @@ export default function Discover() {
   }
 
   async function upsertIntent(intentKey, nextStatus) {
-    const CampIntent = base44?.entities?.CampIntent;
-    if (!CampIntent?.create) {
-      console.error("[upsertIntent] CampIntent entity not available");
-      return;
-    }
     const key = String(intentKey || "");
     if (!key) return;
 
     const existing = intentByKey?.[key] || null;
 
-    // Resolve athlete_id — present for normal users, null for coaches (no athlete profile).
-    // For coaches, use seasonAccountId as the athlete_id substitute so CampIntent always has
-    // a non-null athlete_id and loadIntents can find the records on the next page load.
     const aId = athleteProfile?.id || athleteProfile?._id || athleteProfile?.uuid || null;
     const effectiveAthleteId = aId || (seasonAccountId ? seasonAccountId : null);
 
@@ -407,35 +394,15 @@ export default function Discover() {
     }));
 
     try {
-      if (!nextStatus) {
-        if (existing?.id && CampIntent?.update) {
-          await CampIntent.update(existing.id, { status: "" });
-        }
-        try { localStorage.setItem("intentUpdatedAt", Date.now().toString()); } catch {}
-        try { window.dispatchEvent(new CustomEvent("intentUpdated")); } catch {}
-        return;
+      const res = await base44.functions.invoke("saveCampIntent", {
+        accountId: seasonAccountId || "",
+        athleteId: String(effectiveAthleteId),
+        campId: key,
+        status: nextStatus || "",
+      });
+      if (res?.data?.intent) {
+        setIntentByKey((p) => ({ ...p, [key]: res.data.intent }));
       }
-
-      if (existing?.id && CampIntent?.update) {
-        // Also set athlete_id if this is an orphaned record being healed
-        const updatePayload = { status: String(nextStatus) };
-        if (!existing.athlete_id && aId) updatePayload.athlete_id = String(aId);
-        const updated = await CampIntent.update(existing.id, updatePayload);
-        if (updated) setIntentByKey((p) => ({ ...p, [key]: updated }));
-        try { localStorage.setItem("intentUpdatedAt", Date.now().toString()); } catch {}
-        try { window.dispatchEvent(new CustomEvent("intentUpdated")); } catch {}
-        return;
-      }
-
-      const payload = {
-        camp_id: key,
-        status: String(nextStatus),
-        account_id: seasonAccountId || "",
-        athlete_id: String(effectiveAthleteId),
-      };
-
-      const created = await CampIntent.create(payload);
-      if (created) setIntentByKey((p) => ({ ...p, [key]: created }));
       try { localStorage.setItem("intentUpdatedAt", Date.now().toString()); } catch {}
       try { window.dispatchEvent(new CustomEvent("intentUpdated")); } catch {}
     } catch (err) {

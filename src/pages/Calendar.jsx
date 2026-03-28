@@ -571,8 +571,6 @@ export default function Calendar() {
   }
 
   async function upsertIntent(campId, nextStatus) {
-    const CampIntent = base44?.entities?.CampIntent;
-    if (!CampIntent?.create) return;
     const key = String(campId || "");
     if (!key) return;
     const aId = athleteId;
@@ -590,18 +588,12 @@ export default function Calendar() {
     });
 
     try {
-      // Find existing intent for this camp
-      const existing = await CampIntent.filter({ athlete_id: aId, camp_id: key }).then(
-        (rows) => (Array.isArray(rows) && rows.length > 0 ? rows[0] : null)
-      ).catch(() => null);
-
-      if (!nextStatus) {
-        if (existing?.id) await CampIntent.update(existing.id, { status: "" });
-      } else if (existing?.id) {
-        await CampIntent.update(existing.id, { status: String(nextStatus) });
-      } else {
-        await CampIntent.create({ camp_id: key, status: String(nextStatus), athlete_id: aId, account_id: season.accountId || "" });
-      }
+      await base44.functions.invoke("saveCampIntent", {
+        accountId: season.accountId || "",
+        athleteId: aId,
+        campId: key,
+        status: nextStatus || "",
+      });
       try { localStorage.setItem("intentUpdatedAt", Date.now().toString()); } catch {}
       window.dispatchEvent(new CustomEvent("intentUpdated"));
     } catch (err) {
