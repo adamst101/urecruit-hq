@@ -1,0 +1,67 @@
+{
+  "name": "Coach",
+  "type": "object",
+  "properties": {
+    "account_id": {
+      "type": "string",
+      "description": "Links to the auth user who owns this coach profile"
+    },
+    "first_name": {
+      "type": "string",
+      "description": "Coach's first name"
+    },
+    "last_name": {
+      "type": "string",
+      "description": "Coach's last name"
+    },
+    "email": {
+      "type": "string",
+      "description": "Coach's email address"
+    },
+    "school_or_org": {
+      "type": "string",
+      "description": "School or organization name"
+    },
+    "sport": {
+      "type": "string",
+      "description": "e.g. Football"
+    },
+    "coach_type": {
+      "type": "string",
+      "description": "Type of coach e.g. HS Coach, Trainer",
+      "default": "HS Coach"
+    },
+    "invite_code": {
+      "type": "string",
+      "description": "Unique code \u2014 format LASTNAME-SCHOOLABBR-XXXX"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "default": "pending",
+      "description": "Coach approval status"
+    },
+    "active": {
+      "type": "boolean",
+      "description": "Used to deactivate coaches",
+      "default": true
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO timestamp of when the coach was created"
+    }
+  },
+  "required": [
+    "account_id",
+    "first_name",
+    "last_name",
+    "school_or_org",
+    "sport",
+    "invite_code"
+  ]
+}
