@@ -28,7 +28,7 @@ const SHEET_STYLES = `
       bottom: auto;
       transform: translate(-50%, -50%);
       width: calc(100% - 48px);
-      max-width: 640px;
+      max-width: 860px;
       max-height: 80vh;
       border-radius: 16px;
       border-top: none;
@@ -94,6 +94,9 @@ export default function CoachDashboard() {
 
   // Open sheet: null | "roster" | "monthly" | "schools" | "noCamps" | "message" | "code"
   const [openSheet, setOpenSheet] = useState(null);
+  const [rosterFilter, setRosterFilter] = useState("all"); // "all" | "hasCamps" | "noCamps" | "thisMonth"
+  const [monthlyView, setMonthlyView] = useState("byCamp"); // "byCamp" | "byAthlete"
+  const [expandedSchool, setExpandedSchool] = useState(null); // school name string
 
   // Message compose state
   const [recipient, setRecipient] = useState("all"); // "all" | athlete roster id
@@ -231,6 +234,12 @@ export default function CoachDashboard() {
     }
   }
 
+  // ── Quick-message a specific athlete from another sheet ───────────────────
+  function messageAthlete(rosterEntry) {
+    if (rosterEntry) setRecipient(rosterEntry.id || "all");
+    setOpenSheet("message");
+  }
+
   // ── Loading spinner ─────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -352,6 +361,119 @@ export default function CoachDashboard() {
   const topSchools = Object.entries(_schoolCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   const athletesNoCamps = roster.filter(r => (campsByAccountId[r.account_id] || []).length === 0);
+
+  // Per-athlete helpers used across sheets
+  function getNextCamp(r) {
+    const camps = campsByAccountId[r.account_id] || [];
+    const upcoming = camps
+      .filter(c => c.start_date && new Date(c.start_date + "T00:00:00") >= _now)
+      .sort((a, b) => new Date(a.start_date + "T00:00:00") - new Date(b.start_date + "T00:00:00"));
+    return upcoming[0] || null;
+  }
+
+  function uniqueSchoolCount(r) {
+    return new Set((campsByAccountId[r.account_id] || []).map(c => c.school_name).filter(Boolean)).size;
+  }
+
+  function daysUntil(dateStr) {
+    if (!dateStr) return null;
+    return Math.ceil((new Date(dateStr + "T00:00:00") - _now) / 86400000);
+  }
+
+  // Filtered roster for the roster sheet
+  const filteredRoster = roster.filter(r => {
+    const camps = campsByAccountId[r.account_id] || [];
+    if (rosterFilter === "hasCamps") return camps.length > 0;
+    if (rosterFilter === "noCamps") return camps.length === 0;
+    if (rosterFilter === "thisMonth") return camps.some(c => {
+      if (!c.start_date) return false;
+      const d = new Date(c.start_date + "T00:00:00");
+      return d.getMonth() === _thisMonth && d.getFullYear() === _thisYear;
+    });
+    return true;
+  });
+
+  // Camp-centric groups for monthly/upcoming sheet
+  function buildCampGroups(upcomingOnly) {
+    const campMap = new Map();
+    roster.forEach(r => {
+      (campsByAccountId[r.account_id] || []).forEach(c => {
+        if (!c.start_date) return;
+        const d = new Date(c.start_date + "T00:00:00");
+        const include = upcomingOnly
+          ? d >= _now
+          : (d.getMonth() === _thisMonth && d.getFullYear() === _thisYear);
+        if (!include) return;
+        const key = c.camp_id || c.event_key || (String(c.school_name) + "|" + c.start_date);
+        if (!campMap.has(key)) campMap.set(key, { camp: c, athletes: [] });
+        campMap.get(key).athletes.push(r);
+      });
+    });
+    return Array.from(campMap.values()).sort((a, b) =>
+      new Date(a.camp.start_date + "T00:00:00") - new Date(b.camp.start_date + "T00:00:00")
+    );
+  }
+
+  // School detail map for schools sheet
+  const schoolRows = (() => {
+    const m = new Map();
+    Object.entries(campsByAccountId).forEach(([accountId, camps]) => {
+      const ath = roster.find(r => r.account_id === accountId);
+      camps.forEach(c => {
+        const name = c.school_name || c.camp_name || "Unknown School";
+        if (!m.has(name)) m.set(name, { name, division: null, count: 0, athletes: new Set() });
+        const e = m.get(name);
+        e.count++;
+        if (!e.division && c.school_division) e.division = c.school_division;
+        if (ath) e.athletes.add(ath.athlete_name || "Athlete");
+      });
+    });
+    return Array.from(m.values()).sort((a, b) => b.count - a.count);
+  })();
+
+  // Attention items queue
+  const attentionItems = (() => {
+    const items = [];
+    // No camps — high priority
+    athletesNoCamps.forEach(r => {
+      items.push({ athlete: r, issue: "No camps planned", detail: "Has not saved or registered for any camps yet", priority: "high", color: "#f87171" });
+    });
+    // Upcoming within 7 days — urgent (send reminder)
+    roster.forEach(r => {
+      const next = getNextCamp(r);
+      if (!next) return;
+      const days = daysUntil(next.start_date);
+      if (days !== null && days >= 0 && days <= 7) {
+        items.push({
+          athlete: r,
+          issue: days === 0 ? "Camp today" : `Camp in ${days} day${days === 1 ? "" : "s"}`,
+          detail: (next.school_name || next.camp_name || "Camp") + " · " + new Date(next.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          priority: "urgent",
+          color: "#f59e0b",
+        });
+      }
+    });
+    // Recently joined (≤ 21 days) with no camps
+    const twentyOneDaysAgo = new Date(_now - 21 * 86400000);
+    roster.forEach(r => {
+      if (!r.joined_at) return;
+      const joinDate = new Date(r.joined_at);
+      const camps = campsByAccountId[r.account_id] || [];
+      if (joinDate >= twentyOneDaysAgo && camps.length === 0) {
+        // Only add if not already in the no-camps list
+        if (!items.find(i => i.athlete.id === r.id && i.priority === "high")) {
+          items.push({
+            athlete: r,
+            issue: "Recently joined",
+            detail: `Connected ${Math.ceil((_now - joinDate) / 86400000)} days ago — no camps saved yet`,
+            priority: "medium",
+            color: "#818cf8",
+          });
+        }
+      }
+    });
+    return items;
+  })();
 
   // Role detection — use coach_type stored on the Coach entity ("HS Coach" | "Trainer")
   const coachType = coach.coach_type || "HS Coach";
@@ -693,10 +815,10 @@ export default function CoachDashboard() {
             {/* Sheet header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 0", position: "sticky", top: 0, background: "#111827", zIndex: 1 }}>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f9fafb" }}>
-                {openSheet === "roster"  && `ROSTER — ${roster.length} ATHLETE${roster.length !== 1 ? "S" : ""}`}
-                {openSheet === "monthly" && `CAMPS IN ${_monthName.toUpperCase()} — ${athletesThisMonth.length} PLAYER${athletesThisMonth.length !== 1 ? "S" : ""}`}
-                {openSheet === "schools" && "TOP SCHOOLS"}
-                {openSheet === "noCamps" && `NO CAMPS PLANNED — ${athletesNoCamps.length}`}
+                {openSheet === "roster"  && `ATHLETE ROSTER — ${filteredRoster.length} OF ${roster.length}`}
+                {openSheet === "monthly" && (monthlyView === "upcoming" ? "UPCOMING CAMPS" : `CAMP ACTIVITY — ${_monthName.toUpperCase()}`)}
+                {openSheet === "schools" && `SCHOOLS TARGETED — ${schoolRows.length}`}
+                {openSheet === "noCamps" && `NEEDS ATTENTION — ${attentionItems.length}`}
                 {openSheet === "message" && "MESSAGE ROSTER"}
                 {openSheet === "code"    && "INVITE CODE"}
               </div>
@@ -710,45 +832,266 @@ export default function CoachDashboard() {
             {/* Sheet body */}
             <div style={{ padding: "16px 20px 32px" }}>
 
-              {/* ── Roster detail ── */}
+              {/* ── ROSTER SHEET ── */}
               {openSheet === "roster" && (
-                roster.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "40px 0" }}>
-                    <div style={{ fontSize: 36, marginBottom: 12 }}>🏈</div>
-                    <p style={{ fontSize: 14, color: "#9ca3af" }}>No athletes yet. Share your invite code to get started.</p>
+                <>
+                  <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>
+                    Full roster view — track camp activity and follow up with athletes who need support.
+                  </p>
+                  {/* Filter chips */}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+                    {[
+                      { key: "all", label: `All (${roster.length})` },
+                      { key: "hasCamps", label: "Has Camps" },
+                      { key: "noCamps", label: "No Camps" },
+                      { key: "thisMonth", label: "This Month" },
+                    ].map(f => (
+                      <button
+                        key={f.key}
+                        onClick={() => setRosterFilter(f.key)}
+                        style={{
+                          padding: "5px 12px", fontSize: 12, fontWeight: 700, borderRadius: 20, cursor: "pointer",
+                          background: rosterFilter === f.key ? "#e8a020" : "#1f2937",
+                          color: rosterFilter === f.key ? "#0a0e1a" : "#9ca3af",
+                          border: "none",
+                        }}
+                      >{f.label}</button>
+                    ))}
+                  </div>
+
+                  {filteredRoster.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "32px 0" }}>
+                      <div style={{ fontSize: 32, marginBottom: 10 }}>🏈</div>
+                      {roster.length === 0
+                        ? <p style={{ fontSize: 14, color: "#9ca3af" }}>No athletes connected yet. Once athletes connect to your roster, you'll be able to track camps, activity, and who may need support.</p>
+                        : <p style={{ fontSize: 14, color: "#9ca3af" }}>No athletes match this filter.</p>
+                      }
+                    </div>
+                  ) : (
+                    <>
+                      {/* Column headers */}
+                      <div style={{ display: "grid", gridTemplateColumns: "2fr 52px 80px 60px 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                        <span>Athlete</span><span>Camps</span><span>Next Camp</span><span>Schools</span><span>Action</span>
+                      </div>
+                      {filteredRoster.map((r, i) => {
+                        const athleteCamps = campsByAccountId[r.account_id] || [];
+                        const noCamps = athleteCamps.length === 0;
+                        const nextCamp = getNextCamp(r);
+                        const schoolCount = uniqueSchoolCount(r);
+                        const days = nextCamp ? daysUntil(nextCamp.start_date) : null;
+                        return (
+                          <div
+                            key={r.id || i}
+                            style={{ display: "grid", gridTemplateColumns: "2fr 52px 80px 60px 80px", gap: 8, padding: "12px 0", borderBottom: i < filteredRoster.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}
+                          >
+                            <div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                {noCamps && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#f87171", display: "inline-block", flexShrink: 0 }} title="Needs attention" />}
+                                <span style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{r.athlete_name || "Athlete"}</span>
+                              </div>
+                              {r.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>Class of {r.athlete_grad_year}</div>}
+                            </div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: noCamps ? "#f87171" : "#e8a020", textAlign: "center" }}>
+                              {athleteCamps.length}
+                            </div>
+                            <div style={{ fontSize: 12, color: nextCamp ? "#d1d5db" : "#4b5563" }}>
+                              {nextCamp
+                                ? <><div>{new Date(nextCamp.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                                    {days !== null && days <= 14 && <div style={{ fontSize: 10, color: days <= 7 ? "#f59e0b" : "#6b7280" }}>{days === 0 ? "Today" : `${days}d away`}</div>}
+                                  </>
+                                : "—"
+                              }
+                            </div>
+                            <div style={{ fontSize: 13, color: schoolCount > 0 ? "#9ca3af" : "#4b5563", textAlign: "center" }}>
+                              {schoolCount > 0 ? schoolCount : "—"}
+                            </div>
+                            <div>
+                              <button
+                                onClick={() => messageAthlete(r)}
+                                style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", background: "none", border: "1px solid #374151", borderRadius: 6, padding: "4px 8px", cursor: "pointer", whiteSpace: "nowrap" }}
+                              >
+                                Message →
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* ── MONTHLY / UPCOMING CAMPS SHEET ── */}
+              {openSheet === "monthly" && (() => {
+                const upcomingOnly = monthlyView === "upcoming";
+                const campGroups = buildCampGroups(upcomingOnly);
+                const byAthleteList = roster.filter(r => {
+                  const camps = (campsByAccountId[r.account_id] || []).filter(c => {
+                    if (!c.start_date) return false;
+                    const d = new Date(c.start_date + "T00:00:00");
+                    return upcomingOnly ? d >= _now : (d.getMonth() === _thisMonth && d.getFullYear() === _thisYear);
+                  });
+                  return camps.length > 0;
+                });
+
+                return (
+                  <>
+                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>
+                      {upcomingOnly ? "All upcoming camp activity across the roster." : `Camp activity across the roster for ${_monthName}.`}
+                    </p>
+                    {/* View toggle */}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+                      {[
+                        { key: "byCamp", label: "By Camp" },
+                        { key: "byAthlete", label: "By Athlete" },
+                        { key: "upcoming", label: "All Upcoming" },
+                      ].map(v => (
+                        <button
+                          key={v.key}
+                          onClick={() => setMonthlyView(v.key)}
+                          style={{
+                            padding: "5px 12px", fontSize: 12, fontWeight: 700, borderRadius: 20, cursor: "pointer",
+                            background: monthlyView === v.key ? "#e8a020" : "#1f2937",
+                            color: monthlyView === v.key ? "#0a0e1a" : "#9ca3af",
+                            border: "none",
+                          }}
+                        >{v.label}</button>
+                      ))}
+                    </div>
+
+                    {monthlyView !== "byAthlete" ? (
+                      campGroups.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: "32px 0" }}>
+                          <div style={{ fontSize: 32, marginBottom: 10 }}>📅</div>
+                          <p style={{ fontSize: 14, color: "#9ca3af" }}>No camp activity {upcomingOnly ? "upcoming" : "for this month"} yet. As athletes register for camps, this view will help you track who is going where and what needs follow-up.</p>
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: "grid", gridTemplateColumns: "2fr 70px 100px 1fr", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                            <span>Camp</span><span>Date</span><span>Location</span><span>Athletes</span>
+                          </div>
+                          {campGroups.map(({ camp, athletes }, i) => {
+                            const d = new Date(camp.start_date + "T00:00:00");
+                            const days = daysUntil(camp.start_date);
+                            return (
+                              <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 70px 100px 1fr", gap: 8, padding: "12px 0", borderBottom: i < campGroups.length - 1 ? "1px solid #1f2937" : "none", alignItems: "start" }}>
+                                <div>
+                                  <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 13, lineHeight: 1.3 }}>{camp.school_name || camp.camp_name}</div>
+                                  {days !== null && days >= 0 && days <= 14 && (
+                                    <div style={{ fontSize: 10, color: days <= 7 ? "#f59e0b" : "#6b7280", marginTop: 2 }}>{days === 0 ? "Today" : `${days}d away`}</div>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: 12, color: "#d1d5db" }}>
+                                  {d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                </div>
+                                <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                                  {[camp.city, camp.state].filter(Boolean).join(", ") || "—"}
+                                </div>
+                                <div>
+                                  {athletes.map((a, ai) => (
+                                    <div key={ai} style={{ fontSize: 12, color: "#d1d5db" }}>{a.athlete_name || "Athlete"}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </>
+                      )
+                    ) : (
+                      byAthleteList.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: "32px 0" }}>
+                          <div style={{ fontSize: 32, marginBottom: 10 }}>📅</div>
+                          <p style={{ fontSize: 14, color: "#9ca3af" }}>No camp activity {upcomingOnly ? "upcoming" : "this month"} yet.</p>
+                        </div>
+                      ) : (
+                        byAthleteList.map((r, i) => {
+                          const camps = (campsByAccountId[r.account_id] || []).filter(c => {
+                            if (!c.start_date) return false;
+                            const d = new Date(c.start_date + "T00:00:00");
+                            return upcomingOnly ? d >= _now : (d.getMonth() === _thisMonth && d.getFullYear() === _thisYear);
+                          }).sort((a, b) => new Date(a.start_date + "T00:00:00") - new Date(b.start_date + "T00:00:00"));
+                          return (
+                            <div key={r.id || i} style={{ padding: "12px 0", borderBottom: i < byAthleteList.length - 1 ? "1px solid #1f2937" : "none" }}>
+                              <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14, marginBottom: 6 }}>
+                                {r.athlete_name || "Athlete"}
+                                {r.athlete_grad_year && <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>Class of {r.athlete_grad_year}</span>}
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                                {camps.map((c, ci) => {
+                                  const days = daysUntil(c.start_date);
+                                  return (
+                                    <div key={ci} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                      <span style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" }}>
+                                        {new Date(c.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                      </span>
+                                      <span style={{ fontSize: 13, color: "#d1d5db", flex: 1 }}>{c.school_name || c.camp_name}</span>
+                                      {days !== null && days >= 0 && days <= 7 && (
+                                        <span style={{ fontSize: 11, color: "#f59e0b", whiteSpace: "nowrap" }}>{days === 0 ? "Today" : `${days}d`}</span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )
+                    )}
+                  </>
+                );
+              })()}
+
+              {/* ── SCHOOLS TARGETED SHEET ── */}
+              {openSheet === "schools" && (
+                schoolRows.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "32px 0" }}>
+                    <div style={{ fontSize: 32, marginBottom: 10 }}>🏫</div>
+                    <p style={{ fontSize: 14, color: "#9ca3af" }}>No school activity tracked yet. As athletes save camps, register, and log activity, this view will show which programs are most connected to your roster.</p>
                   </div>
                 ) : (
                   <>
-                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 3fr", gap: 12, padding: "0 0 10px", borderBottom: "1px solid #1f2937", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                      <span>Athlete</span><span>Joined</span><span>Registered Camps</span>
+                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>
+                      Programs ranked by camp registrations across the roster. Tap a school to see which athletes are connected.
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 60px 70px 50px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>#</span><span>School</span><span>Division</span><span>Regs</span><span>Athletes</span>
                     </div>
-                    {roster.map((r, i) => {
-                      const athleteCamps = campsByAccountId[r.account_id] || [];
+                    {schoolRows.map((s, i) => {
+                      const isExpanded = expandedSchool === s.name;
+                      const athleteList = Array.from(s.athletes);
                       return (
-                        <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 3fr", gap: 12, padding: "14px 0", borderBottom: i < roster.length - 1 ? "1px solid #1f2937" : "none", alignItems: "start" }}>
-                          <div>
-                            <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15 }}>{r.athlete_name || "Athlete"}</div>
-                            {r.athlete_grad_year && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Class of {r.athlete_grad_year}</div>}
+                        <div key={s.name}>
+                          <div
+                            onClick={() => setExpandedSchool(isExpanded ? null : s.name)}
+                            style={{ display: "grid", gridTemplateColumns: "28px 1fr 60px 70px 50px", gap: 8, padding: "12px 0", borderBottom: isExpanded ? "none" : (i < schoolRows.length - 1 ? "1px solid #1f2937" : "none"), alignItems: "center", cursor: "pointer" }}
+                          >
+                            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: i === 0 ? "#e8a020" : "#4b5563", textAlign: "center" }}>{i + 1}</div>
+                            <div>
+                              <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{s.name}</div>
+                              <div style={{ fontSize: 10, color: "#6b7280", marginTop: 1 }}>{isExpanded ? "▲ collapse" : "▼ show athletes"}</div>
+                            </div>
+                            <div style={{ fontSize: 11, color: "#6b7280" }}>{s.division || "—"}</div>
+                            <div style={{ textAlign: "center" }}>
+                              <span style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 12, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>{s.count}</span>
+                            </div>
+                            <div style={{ fontSize: 13, color: "#9ca3af", textAlign: "center" }}>{s.athletes.size}</div>
                           </div>
-                          <div style={{ fontSize: 13, color: "#9ca3af", paddingTop: 2 }}>
-                            {r.joined_at ? new Date(r.joined_at).toLocaleDateString() : "—"}
-                          </div>
-                          <div>
-                            {athleteCamps.length === 0 ? (
-                              <span style={{ fontSize: 13, color: "#4b5563" }}>No camps registered</span>
-                            ) : (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                {athleteCamps.map((c, ci) => (
-                                  <div key={ci} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <span style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" }}>
-                                      {c.start_date ? new Date(c.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
-                                    </span>
-                                    <span style={{ fontSize: 13, color: "#d1d5db" }}>{c.school_name || c.camp_name}</span>
-                                  </div>
+                          {isExpanded && (
+                            <div style={{ background: "#0d1421", borderRadius: 8, padding: "10px 14px", marginBottom: 8, borderBottom: i < schoolRows.length - 1 ? "1px solid #1f2937" : "none" }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Athletes</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {athleteList.map(name => (
+                                  <span key={name} style={{ background: "#1f2937", color: "#d1d5db", fontSize: 12, padding: "4px 10px", borderRadius: 20 }}>{name}</span>
                                 ))}
                               </div>
-                            )}
-                          </div>
+                              <button
+                                onClick={() => nav("/Discover")}
+                                style={{ marginTop: 10, fontSize: 12, fontWeight: 700, color: "#e8a020", background: "none", border: "1px solid #374151", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}
+                              >
+                                Find Similar Camps →
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -756,82 +1099,41 @@ export default function CoachDashboard() {
                 )
               )}
 
-              {/* ── Monthly camps detail ── */}
-              {openSheet === "monthly" && (
-                athletesThisMonth.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "40px 0" }}>
-                    <div style={{ fontSize: 36, marginBottom: 12 }}>📅</div>
-                    <p style={{ fontSize: 14, color: "#9ca3af" }}>No athletes have camps scheduled this month.</p>
-                  </div>
-                ) : (
-                  athletesThisMonth.map((r, i) => {
-                    const monthlyCamps = (campsByAccountId[r.account_id] || []).filter(c => {
-                      if (!c.start_date) return false;
-                      const d = new Date(c.start_date + "T00:00:00");
-                      return d.getMonth() === _thisMonth && d.getFullYear() === _thisYear;
-                    });
-                    return (
-                      <div key={r.id || i} style={{ padding: "14px 0", borderBottom: i < athletesThisMonth.length - 1 ? "1px solid #1f2937" : "none" }}>
-                        <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15, marginBottom: 6 }}>
-                          {r.athlete_name || "Athlete"}
-                          {r.athlete_grad_year && <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 8 }}>Class of {r.athlete_grad_year}</span>}
-                        </div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          {monthlyCamps.map((c, ci) => (
-                            <div key={ci} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" }}>
-                                {new Date(c.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                              </span>
-                              <span style={{ fontSize: 13, color: "#d1d5db" }}>{c.school_name || c.camp_name}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })
-                )
-              )}
-
-              {/* ── Top schools detail ── */}
-              {openSheet === "schools" && (
-                topSchools.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "40px 0" }}>
-                    <div style={{ fontSize: 36, marginBottom: 12 }}>🏫</div>
-                    <p style={{ fontSize: 14, color: "#9ca3af" }}>No camp registrations yet. Rankings will appear once athletes register for camps.</p>
-                  </div>
-                ) : (
-                  topSchools.map(([school, count], i) => (
-                    <div key={school} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 0", borderBottom: i < topSchools.length - 1 ? "1px solid #1f2937" : "none" }}>
-                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: i === 0 ? "#e8a020" : "#4b5563", width: 28, textAlign: "center", flexShrink: 0 }}>{i + 1}</div>
-                      <div style={{ flex: 1, fontWeight: 600, color: "#f9fafb", fontSize: 15 }}>{school}</div>
-                      <div style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, whiteSpace: "nowrap" }}>
-                        {count} reg{count !== 1 ? "s" : ""}
-                      </div>
-                    </div>
-                  ))
-                )
-              )}
-
-              {/* ── No camps detail ── */}
+              {/* ── NEEDS ATTENTION SHEET ── */}
               {openSheet === "noCamps" && (
-                athletesNoCamps.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "40px 0" }}>
-                    <div style={{ fontSize: 36, marginBottom: 12 }}>🎉</div>
-                    <p style={{ fontSize: 14, color: "#9ca3af" }}>All athletes have at least one camp registered.</p>
+                attentionItems.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "32px 0" }}>
+                    <div style={{ fontSize: 32, marginBottom: 10 }}>✅</div>
+                    <p style={{ fontSize: 14, color: "#9ca3af" }}>Nothing needs attention right now. This view will surface athletes and camp situations that may need follow-up.</p>
                   </div>
                 ) : (
                   <>
-                    <p style={{ fontSize: 13, color: "#6b7280", marginTop: 0, marginBottom: 16 }}>
-                      These athletes haven't registered for any camps yet — consider reaching out.
+                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>
+                      Athletes or situations that may need your follow-up, sorted by priority.
                     </p>
-                    {athletesNoCamps.map((r, i) => (
-                      <div key={r.id || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: i < athletesNoCamps.length - 1 ? "1px solid #1f2937" : "none" }}>
-                        <div style={{ width: 32, height: 32, background: "#1f2937", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#6b7280", fontWeight: 700, flexShrink: 0 }}>
-                          {(r.athlete_name || "?")[0].toUpperCase()}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>Athlete</span><span>Issue</span><span>Action</span>
+                    </div>
+                    {attentionItems.map((item, i) => (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px", gap: 8, padding: "12px 0", borderBottom: i < attentionItems.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{item.athlete.athlete_name || "Athlete"}</div>
+                          {item.athlete.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>Class of {item.athlete.athlete_grad_year}</div>}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 15 }}>{r.athlete_name || "Athlete"}</div>
-                          {r.athlete_grad_year && <div style={{ fontSize: 12, color: "#6b7280" }}>Class of {r.athlete_grad_year}</div>}
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: item.color, display: "inline-block", flexShrink: 0 }} />
+                            <span style={{ fontSize: 13, fontWeight: 600, color: item.color }}>{item.issue}</span>
+                          </div>
+                          <div style={{ fontSize: 12, color: "#6b7280" }}>{item.detail}</div>
+                        </div>
+                        <div>
+                          <button
+                            onClick={() => messageAthlete(item.athlete)}
+                            style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", background: "none", border: "1px solid #374151", borderRadius: 6, padding: "4px 8px", cursor: "pointer", whiteSpace: "nowrap" }}
+                          >
+                            Message →
+                          </button>
                         </div>
                       </div>
                     ))}
