@@ -106,6 +106,20 @@ Deno.serve(async (req) => {
             console.log(`[getMyCoachProfile] account_id fallback (${acctId}): ${intents.length} intents`);
           }
 
+          // If still nothing found, log ALL CampIntents (any status) to diagnose ID mismatch
+          if (intents.length === 0 && (resolvedAthleteId || acctId)) {
+            const allByAthlete = resolvedAthleteId
+              ? await base44.asServiceRole.entities.CampIntent.filter({ athlete_id: resolvedAthleteId }).catch(() => [])
+              : [];
+            const allByAccount = acctId
+              ? await base44.asServiceRole.entities.CampIntent.filter({ account_id: acctId }).catch(() => [])
+              : [];
+            console.log(`[getMyCoachProfile] DIAG — all CampIntents by athlete_id (any status): ${(Array.isArray(allByAthlete) ? allByAthlete : []).length}`,
+              JSON.stringify((Array.isArray(allByAthlete) ? allByAthlete : []).map((i: any) => ({ id: i.id, athlete_id: i.athlete_id, account_id: i.account_id, status: i.status }))));
+            console.log(`[getMyCoachProfile] DIAG — all CampIntents by account_id (any status): ${(Array.isArray(allByAccount) ? allByAccount : []).length}`,
+              JSON.stringify((Array.isArray(allByAccount) ? allByAccount : []).map((i: any) => ({ id: i.id, athlete_id: i.athlete_id, account_id: i.account_id, status: i.status }))));
+          }
+
           const registered = intents.filter((i: any) => i.status === "registered" || i.status === "completed");
           if (registered.length === 0) return;
 
