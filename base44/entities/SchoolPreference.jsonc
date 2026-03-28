@@ -1,0 +1,75 @@
+{
+  "name": "SchoolPreference",
+  "type": "object",
+  "properties": {
+    "account_id": {
+      "type": "string",
+      "description": "Reference to User/Account"
+    },
+    "athlete_id": {
+      "type": "string",
+      "description": "Reference to AthleteProfile (optional)"
+    },
+    "fbs_1": {
+      "type": "string",
+      "description": "FBS school preference 1"
+    },
+    "fbs_2": {
+      "type": "string",
+      "description": "FBS school preference 2"
+    },
+    "fbs_3": {
+      "type": "string",
+      "description": "FBS school preference 3"
+    },
+    "fcs_1": {
+      "type": "string",
+      "description": "FCS school preference 1"
+    },
+    "fcs_2": {
+      "type": "string",
+      "description": "FCS school preference 2"
+    },
+    "fcs_3": {
+      "type": "string",
+      "description": "FCS school preference 3"
+    },
+    "d2_1": {
+      "type": "string",
+      "description": "D2 school preference 1"
+    },
+    "d2_2": {
+      "type": "string",
+      "description": "D2 school preference 2"
+    },
+    "d2_3": {
+      "type": "string",
+      "description": "D2 school preference 3"
+    },
+    "d3_1": {
+      "type": "string",
+      "description": "D3 school preference 1"
+    },
+    "d3_2": {
+      "type": "string",
+      "description": "D3 school preference 2"
+    },
+    "d3_3": {
+      "type": "string",
+      "description": "D3 school preference 3"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO timestamp of creation"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO timestamp of last update"
+    }
+  },
+  "required": [
+    "account_id"
+  ]
+}
