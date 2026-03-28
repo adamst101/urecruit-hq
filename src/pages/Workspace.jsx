@@ -160,7 +160,7 @@ export default function Workspace() {
 
   const isAdmin = isAdminEmail(meEmail);
 
-  const loading = !!season?.isLoading || !!identityLoading;
+  const loading = !!season?.isLoading;
 
   const isMember = !!season?.accountId && !!season?.hasAccess && (!!season?.entitlement || season?.role === "admin");
 
