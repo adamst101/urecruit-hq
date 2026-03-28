@@ -106,25 +106,21 @@ Deno.serve(async (req) => {
             console.log(`[getMyCoachProfile] account_id fallback (${acctId}): ${intents.length} intents`);
           }
 
-          // If still nothing found, test whether service role CampIntent filter works at all
+          // If still nothing found, dump a sample of ALL CampIntents (no filter) to see
+          // what athlete_id / account_id values are actually stored in the database.
           if (intents.length === 0 && (resolvedAthleteId || acctId)) {
-            // Test with no filter to see if ANY records come back (checks service role access)
-            let errorMsg = "";
-            let allRecords: object[] = [];
             try {
-              const raw = await base44.asServiceRole.entities.CampIntent.filter({ athlete_id: resolvedAthleteId });
-              allRecords = Array.isArray(raw) ? raw : [];
-              console.log(`[getMyCoachProfile] DIAG serviceRole CampIntent.filter({athlete_id}): ${allRecords.length} records`);
+              // Fetch up to 10 most recent CampIntents regardless of owner
+              const sample = await base44.asServiceRole.entities.CampIntent.filter({}, undefined, 10).catch(() => []);
+              const rows = Array.isArray(sample) ? sample : [];
+              console.log(`[getMyCoachProfile] DIAG — sample of all CampIntents (limit 10): ${rows.length}`,
+                JSON.stringify(rows.map((i: any) => ({
+                  id: i.id, status: i.status,
+                  athlete_id: i.athlete_id || "(null)",
+                  account_id: i.account_id || "(null)",
+                }))));
             } catch (e: any) {
-              errorMsg = e?.message || String(e);
-              console.log(`[getMyCoachProfile] DIAG serviceRole CampIntent.filter threw: ${errorMsg}`);
-            }
-            // Also try without service role (using caller's token) to see if that works
-            try {
-              const raw2 = await (base44 as any).entities.CampIntent.filter({ athlete_id: resolvedAthleteId });
-              console.log(`[getMyCoachProfile] DIAG callerRole CampIntent.filter({athlete_id}): ${Array.isArray(raw2) ? raw2.length : "non-array"}`);
-            } catch (e: any) {
-              console.log(`[getMyCoachProfile] DIAG callerRole CampIntent.filter threw: ${(e as Error).message}`);
+              console.log(`[getMyCoachProfile] DIAG — CampIntent unfiltered fetch threw: ${(e as Error).message}`);
             }
           }
 
