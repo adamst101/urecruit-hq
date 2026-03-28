@@ -94,12 +94,9 @@ export default function RecruitingJourney() {
   const [prefsError, setPrefsError]       = useState("");
   const [prefsSaved, setPrefsSaved]       = useState(false);
 
-  // Division school lists for target-school comboboxes
-  const [divisionSchools, setDivisionSchools] = useState({ fbs: [], fcs: [], d2: [], d3: [] });
-  const [schoolsLoading, setSchoolsLoading]   = useState(false);
-
-  // All schools for activity-logging combobox
-  const [allSchools, setAllSchools]         = useState([]);
+  // Single school list used for both activity-logging and target-school comboboxes.
+  // Division filtering is done client-side from this one fetch.
+  const [allSchools, setAllSchools]               = useState([]);
   const [allSchoolsLoading, setAllSchoolsLoading] = useState(false);
 
   async function loadAllSchools() {
@@ -113,26 +110,13 @@ export default function RecruitingJourney() {
     }
   }
 
-  async function loadSchoolsByDivision() {
-    setSchoolsLoading(true);
-    try {
-      const [fbs, fcs, d2, d3] = await Promise.all(
-        ["fbs", "fcs", "d2", "d3"].map(key =>
-          base44.entities.School
-            .filter({ division: DIVISION_DB_VALUE[key] }, "school_name", 999)
-            .catch(() => [])
-        )
-      );
-      setDivisionSchools({
-        fbs: Array.isArray(fbs) ? fbs : [],
-        fcs: Array.isArray(fcs) ? fcs : [],
-        d2:  Array.isArray(d2)  ? d2  : [],
-        d3:  Array.isArray(d3)  ? d3  : [],
-      });
-    } finally {
-      setSchoolsLoading(false);
-    }
-  }
+  // Per-division slices derived from the single list
+  const divisionSchools = {
+    fbs: allSchools.filter(s => s.division === DIVISION_DB_VALUE.fbs),
+    fcs: allSchools.filter(s => s.division === DIVISION_DB_VALUE.fcs),
+    d2:  allSchools.filter(s => s.division === DIVISION_DB_VALUE.d2),
+    d3:  allSchools.filter(s => s.division === DIVISION_DB_VALUE.d3),
+  };
 
   // ── Load ─────────────────────────────────────────────────────────────────
   const loadJourney = useCallback(async () => {
@@ -431,7 +415,7 @@ export default function RecruitingJourney() {
                       setPrefsForm({ ...BLANK_PREFS, ...preferences });
                       setEditingPrefs(true);
                       setPrefsError("");
-                      if (divisionSchools.fbs.length === 0) loadSchoolsByDivision();
+                      loadAllSchools();
                     }}
                     style={{
                       background: "transparent", border: "1px solid #1f2937",
@@ -510,7 +494,7 @@ export default function RecruitingJourney() {
                           value={prefsForm[fk] || ""}
                           onChange={setPrefsField(fk)}
                           schools={divisionSchools[div.key]}
-                          loading={schoolsLoading}
+                          loading={allSchoolsLoading}
                           placeholder={`#${n} ${div.label} school`}
                         />
                       ) : (
