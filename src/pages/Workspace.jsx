@@ -299,7 +299,7 @@ export default function Workspace() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
           <div style={{ width: 3, height: 32, background: "#e8a020", borderRadius: 2 }} />
           <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(36px, 5vw, 56px)", lineHeight: 1, margin: 0, letterSpacing: 1, flex: 1 }}>YOUR RECRUITING HQ</h1>
-          {meEmail && (
+          {season?.accountId && (
             <button
               onClick={() => nav(ROUTES.Account)}
               style={{
@@ -314,7 +314,7 @@ export default function Workspace() {
             </button>
           )}
         </div>
-        {meEmail && <p style={{ color: "#9ca3af", fontSize: 17, margin: 0 }}>Welcome back, {displayName}</p>}
+        {season?.accountId && <p style={{ color: "#9ca3af", fontSize: 17, margin: 0 }}>Welcome back, {displayName}</p>}
         <p style={{ color: "#6b7280", fontSize: 15, marginTop: 4 }}>
           {isMember
             ? `Season ${memberSeason} · Active`
