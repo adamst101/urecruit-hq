@@ -91,11 +91,16 @@ Deno.serve(async (req) => {
         const completedIntents = await base44.asServiceRole.entities.CampIntent.filter(
           { status: "completed" }, undefined, 500
         ).catch(() => []);
-        const allRegistered = [
+        const allFetched = [
           ...(Array.isArray(allIntents) ? allIntents : []),
           ...(Array.isArray(completedIntents) ? completedIntents : []),
-        ].filter((i: any) => knownAthleteIds.has(i.athlete_id));
+        ];
+        console.log(`[getMyCoachProfile] total registered+completed intents in DB: ${allFetched.length}`,
+          JSON.stringify(allFetched.slice(0, 20).map((i: any) => ({
+            id: i.id, status: i.status, athlete_id: i.athlete_id || "(null)"
+          }))));
 
+        const allRegistered = allFetched.filter((i: any) => knownAthleteIds.has(i.athlete_id));
         console.log(`[getMyCoachProfile] registered intents matched to roster: ${allRegistered.length}`);
 
         if (allRegistered.length > 0) {
