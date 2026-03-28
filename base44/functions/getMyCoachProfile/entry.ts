@@ -106,9 +106,18 @@ Deno.serve(async (req) => {
           for (const camp of camps) {
             if ((camp as any)?.id) {
               campMap[(camp as any).id] = {
-                camp_name: (camp as any).camp_name || (camp as any).name || "Camp",
-                school_name: (camp as any).school_name || "",
-                start_date: (camp as any).start_date || "",
+                camp_id:         (camp as any).id,
+                camp_name:       (camp as any).camp_name || (camp as any).name || "Camp",
+                school_name:     (camp as any).school_name || "",
+                start_date:      (camp as any).start_date || "",
+                end_date:        (camp as any).end_date || "",
+                city:            (camp as any).city || "",
+                state:           (camp as any).state || "",
+                school_division: (camp as any).school_division || "",
+                link_url:        (camp as any).link_url || "",
+                event_key:       (camp as any).event_key || "",
+                school_logo_url: (camp as any).school_logo_url || (camp as any).athletics_logo_url || "",
+                sport_name:      (camp as any).sport_name || "",
               };
             }
           }
@@ -118,12 +127,7 @@ Deno.serve(async (req) => {
             if (!r.acctId || !r.athleteId) continue;
             const athleteCamps = allRegistered
               .filter((i: any) => i.athlete_id === r.athleteId)
-              .map((i: any) => ({
-                camp_id: i.camp_id,
-                camp_name: (campMap[i.camp_id] as any)?.camp_name || "Camp",
-                school_name: (campMap[i.camp_id] as any)?.school_name || "",
-                start_date: (campMap[i.camp_id] as any)?.start_date || "",
-              }))
+              .map((i: any) => ({ ...(campMap[i.camp_id] as object || {}), camp_id: i.camp_id }))
               .sort((a: any, b: any) => (a.start_date || "").localeCompare(b.start_date || ""));
             if (athleteCamps.length > 0) {
               const existing = campsByAccountId[r.acctId] as any[] | undefined;
