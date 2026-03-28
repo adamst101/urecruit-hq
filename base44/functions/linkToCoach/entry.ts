@@ -66,9 +66,13 @@ Deno.serve(async (req) => {
     : null;
 
   const athleteId = primaryProfile?.id || "";
+  // Use profile names only — never fall back to user.full_name/email which
+  // would store the auth display name (often an email prefix) on the roster.
+  // linkStripePayment/activateFreeAccess will backfill name+id once the
+  // AthleteProfile is created if this runs before the profile exists.
   const athleteName = primaryProfile
     ? [primaryProfile.first_name, primaryProfile.last_name].filter(Boolean).join(" ")
-    : (String(user.full_name || "").trim() || "");
+    : "";
   const gradYear = primaryProfile?.grad_year || null;
 
   try {
