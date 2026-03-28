@@ -1,0 +1,60 @@
+{
+  "name": "RecruitingActivity",
+  "type": "object",
+  "properties": {
+    "account_id": {
+      "type": "string",
+      "description": "Reference to User/Account"
+    },
+    "athlete_id": {
+      "type": "string",
+      "description": "Reference to AthleteProfile (optional)"
+    },
+    "activity_type": {
+      "type": "string",
+      "enum": [
+        "social_like",
+        "dm_received",
+        "camp_invite",
+        "camp_meeting",
+        "offer"
+      ],
+      "description": "Type of recruiting activity"
+    },
+    "school_name": {
+      "type": "string",
+      "description": "School name"
+    },
+    "coach_name": {
+      "type": "string",
+      "description": "Coach name"
+    },
+    "coach_title": {
+      "type": "string",
+      "description": "Coach title (for camp_meeting, offer)"
+    },
+    "coach_twitter": {
+      "type": "string",
+      "description": "Coach Twitter/X handle (for social_like, dm_received)"
+    },
+    "activity_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of the activity"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional notes",
+      "format": "long_text"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO timestamp of creation"
+    }
+  },
+  "required": [
+    "account_id",
+    "activity_type"
+  ]
+}
