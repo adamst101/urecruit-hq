@@ -87,12 +87,12 @@ export default function RecruitingJourney() {
   const [saving, setSaving]     = useState(false);
   const [addError, setAddError] = useState("");
 
-  // School preferences
-  const [editingPrefs, setEditingPrefs]   = useState(false);
-  const [prefsForm, setPrefsForm]         = useState(BLANK_PREFS);
-  const [savingPrefs, setSavingPrefs]     = useState(false);
-  const [prefsError, setPrefsError]       = useState("");
-  const [prefsSaved, setPrefsSaved]       = useState(false);
+  // School preferences (always-on comboboxes)
+  const [prefsForm, setPrefsForm]     = useState(BLANK_PREFS);
+  const [prefsDirty, setPrefsDirty]   = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const [prefsError, setPrefsError]   = useState("");
+  const [prefsSaved, setPrefsSaved]   = useState(false);
 
   // Single school list used for both activity-logging and target-school comboboxes.
   // Division filtering is done client-side from this one fetch.
@@ -144,6 +144,7 @@ export default function RecruitingJourney() {
   useEffect(() => {
     if (seasonLoading || !accountId) return;
     loadJourney();
+    loadAllSchools();
   }, [loadJourney, seasonLoading, accountId]);
 
   // ── Add activity ─────────────────────────────────────────────────────────
@@ -192,7 +193,7 @@ export default function RecruitingJourney() {
       const res = await base44.functions.invoke("saveSchoolPreferences", payload);
       if (res?.data?.ok) {
         setPreferences({ ...BLANK_PREFS, ...res.data.preferences });
-        setEditingPrefs(false);
+        setPrefsDirty(false);
         setPrefsSaved(true);
         setTimeout(() => setPrefsSaved(false), 3000);
       } else {
@@ -409,48 +410,21 @@ export default function RecruitingJourney() {
                 }}>
                   Target Schools
                 </div>
-                {!editingPrefs ? (
-                  <button
-                    onClick={() => {
-                      setPrefsForm({ ...BLANK_PREFS, ...preferences });
-                      setEditingPrefs(true);
-                      setPrefsError("");
-                      loadAllSchools();
-                    }}
-                    style={{
-                      background: "transparent", border: "1px solid #1f2937",
-                      borderRadius: 8, padding: "6px 16px",
-                      color: "#e8a020", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                    }}
-                  >
-                    Edit
-                  </button>
-                ) : (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      onClick={() => { setEditingPrefs(false); setPrefsError(""); }}
-                      style={{
-                        background: "transparent", border: "1px solid #374151",
-                        borderRadius: 8, padding: "6px 14px",
-                        color: "#9ca3af", fontSize: 13, cursor: "pointer",
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={submitPrefs}
-                      disabled={savingPrefs}
-                      style={{
-                        background: "#e8a020", border: "none", borderRadius: 8,
-                        padding: "6px 16px", color: "#0a0e1a", fontSize: 13,
-                        fontWeight: 700, cursor: savingPrefs ? "not-allowed" : "pointer",
-                        opacity: savingPrefs ? 0.7 : 1,
-                      }}
-                    >
-                      {savingPrefs ? "Saving..." : "Save"}
-                    </button>
-                  </div>
-                )}
+                <button
+                  onClick={submitPrefs}
+                  disabled={savingPrefs || !prefsDirty}
+                  style={{
+                    background: prefsDirty ? "#e8a020" : "transparent",
+                    border: prefsDirty ? "none" : "1px solid #374151",
+                    borderRadius: 8, padding: "6px 16px", color: prefsDirty ? "#0a0e1a" : "#6b7280",
+                    fontSize: 13, fontWeight: 700,
+                    cursor: (savingPrefs || !prefsDirty) ? "not-allowed" : "pointer",
+                    opacity: savingPrefs ? 0.7 : 1,
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {savingPrefs ? "Saving…" : "Save"}
+                </button>
               </div>
 
               {prefsSaved && (
@@ -486,29 +460,19 @@ export default function RecruitingJourney() {
                       {div.label} — Top 3
                     </div>
                     {[1, 2, 3].map(n => {
-                      const fk  = `${div.key}_${n}`;
-                      const val = editingPrefs ? prefsForm[fk] : preferences[fk];
-                      return editingPrefs ? (
+                      const fk = `${div.key}_${n}`;
+                      return (
                         <SchoolCombobox
                           key={fk}
                           value={prefsForm[fk] || ""}
-                          onChange={setPrefsField(fk)}
+                          onChange={val => {
+                            setPrefsField(fk)(val);
+                            setPrefsDirty(true);
+                          }}
                           schools={divisionSchools[div.key]}
                           loading={allSchoolsLoading}
                           placeholder={`#${n} ${div.label} school`}
                         />
-                      ) : (
-                        <div
-                          key={n}
-                          style={{
-                            padding: "9px 12px", background: "#0a0e1a",
-                            border: "1px solid #1f2937", borderRadius: 8,
-                            fontSize: 14, color: val ? "#f9fafb" : "#374151",
-                            marginBottom: 8,
-                          }}
-                        >
-                          {val || `#${n} —`}
-                        </div>
                       );
                     })}
                   </div>
