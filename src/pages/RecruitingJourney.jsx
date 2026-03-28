@@ -110,10 +110,12 @@ export default function RecruitingJourney() {
     }
   }
 
-  // Per-division slices derived from the single list
+  // Per-division slices derived from the single list.
+  // FBS/FCS schools may be stored two ways: division="NCAA Division I FBS" (audit path)
+  // OR division="NCAA Division I" + subdivision="FBS" (Wikipedia seed path).
   const divisionSchools = {
-    fbs: allSchools.filter(s => s.division === DIVISION_DB_VALUE.fbs),
-    fcs: allSchools.filter(s => s.division === DIVISION_DB_VALUE.fcs),
+    fbs: allSchools.filter(s => s.division === DIVISION_DB_VALUE.fbs || (s.division === "NCAA Division I" && s.subdivision === "FBS")),
+    fcs: allSchools.filter(s => s.division === DIVISION_DB_VALUE.fcs || (s.division === "NCAA Division I" && s.subdivision === "FCS")),
     d2:  allSchools.filter(s => s.division === DIVISION_DB_VALUE.d2),
     d3:  allSchools.filter(s => s.division === DIVISION_DB_VALUE.d3),
   };
