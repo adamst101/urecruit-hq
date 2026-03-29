@@ -128,7 +128,7 @@ function clientTractionLevel(act) {
        "official_visit_requested","official_visit_completed"].includes(t)) return 4;
   if (["personal_camp_invite","post_camp_personal_response","phone_call"].includes(t)) return 3;
   if (t === "camp_meeting" || t === "personal_email") return 2;
-  if ((act.is_verified_personal === true || act.is_two_way_engagement === true) &&
+  if (act.is_two_way_engagement === true && act.is_athlete_specific === true &&
       ["dm_received","dm_sent","text_received","text_sent","post_camp_followup_sent"].includes(t)) return 2;
   if (["social_like","social_follow","generic_email","generic_camp_invite","camp_invite",
        "camp_registered","camp_attended","post_camp_followup_sent",

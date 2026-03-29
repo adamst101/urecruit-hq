@@ -33,7 +33,7 @@ function computeTractionLevel(a: any): number {
   if (t === "camp_meeting" || t === "personal_email") return 2;
   // For ambiguous types: require explicit verification flags
   if (
-    (a.is_verified_personal === true || a.is_two_way_engagement === true) &&
+    a.is_two_way_engagement === true && a.is_athlete_specific === true &&
     ["dm_received", "dm_sent", "text_received", "text_sent", "post_camp_followup_sent"].includes(t)
   ) return 2;
 
