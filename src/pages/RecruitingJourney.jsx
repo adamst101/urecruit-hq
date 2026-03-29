@@ -206,6 +206,9 @@ export default function RecruitingJourney() {
   // Advanced signal quality section in modal
   const [showAdvanced, setShowAdvanced]       = useState(false);
 
+  // Edit state
+  const [editingId, setEditingId] = useState(null);
+
   // Delete confirmation state
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [deletingId, setDeletingId]           = useState(null);
@@ -271,6 +274,31 @@ export default function RecruitingJourney() {
   // ── Add activity ─────────────────────────────────────────────────────────
   function openAdd(type) {
     setAddForm({ ...BLANK_FORM, activity_type: type });
+    setEditingId(null);
+    setAddError("");
+    setShowAdvanced(false);
+    setShowAdd(true);
+    loadAllSchools();
+  }
+
+  // ── Edit activity ─────────────────────────────────────────────────────────
+  function openEdit(act) {
+    setAddForm({
+      activity_type:         act.activity_type         || "social_like",
+      school_name:           act.school_name           || "",
+      school_id:             act.school_id             || "",
+      coach_name:            act.coach_name            || "",
+      coach_title:           act.coach_title           || "",
+      coach_twitter:         act.coach_twitter         || "",
+      activity_date:         act.activity_date         || "",
+      notes:                 act.notes                 || "",
+      is_athlete_specific:   act.is_athlete_specific   ?? null,
+      is_two_way_engagement: act.is_two_way_engagement ?? null,
+      evidence_reference:    act.evidence_reference    || "",
+      offer_type:            act.offer_type            || "",
+      offer_status:          act.offer_status          || "",
+    });
+    setEditingId(act.id);
     setAddError("");
     setShowAdvanced(false);
     setShowAdd(true);
@@ -307,6 +335,41 @@ export default function RecruitingJourney() {
       }
     } catch (err) {
       setAddError(err?.message || "Failed to save activity");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Update (edit) activity ────────────────────────────────────────────────
+  async function submitEdit() {
+    if (saving) return;
+    setSaving(true);
+    setAddError("");
+    try {
+      const payload = { ...addForm, activityId: editingId, accountId };
+      for (const k of Object.keys(payload)) {
+        if (payload[k] === "") payload[k] = null;
+      }
+      const res = await base44.functions.invoke("updateRecruitingActivity", payload);
+      if (res?.data?.ok) {
+        // Same boolean-merge guard as submitAdd — SDK may not echo back booleans
+        const act = res.data.activity || { id: editingId };
+        const enriched = {
+          ...act,
+          is_two_way_engagement: act.is_two_way_engagement ?? addForm.is_two_way_engagement,
+          is_verified_personal:  act.is_verified_personal  ?? addForm.is_verified_personal,
+          is_athlete_specific:   act.is_athlete_specific   ?? addForm.is_athlete_specific,
+        };
+        enriched._traction_level = clientTractionLevel(enriched);
+        setActivities(prev => prev.map(a => a.id === editingId ? enriched : a));
+        setShowAdd(false);
+        setEditingId(null);
+        setAddForm(BLANK_FORM);
+      } else {
+        setAddError(res?.data?.error || "Failed to save changes");
+      }
+    } catch (err) {
+      setAddError(err?.message || "Failed to save changes");
     } finally {
       setSaving(false);
     }
@@ -585,11 +648,18 @@ export default function RecruitingJourney() {
                         )}
                       </div>
                       {act.id && deleteConfirmId !== act.id && (
-                        <button
-                          onClick={() => setDeleteConfirmId(act.id)}
-                          style={{ background: "none", border: "none", color: "#374151", cursor: "pointer", padding: "4px 6px", fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}
-                          title="Remove entry"
-                        >×</button>
+                        <div style={{ display: "flex", gap: 1, flexShrink: 0, marginTop: 1 }}>
+                          <button
+                            onClick={() => openEdit(act)}
+                            style={{ background: "none", border: "none", color: "#374151", cursor: "pointer", padding: "4px 6px", fontSize: 14, lineHeight: 1 }}
+                            title="Edit entry"
+                          >✎</button>
+                          <button
+                            onClick={() => setDeleteConfirmId(act.id)}
+                            style={{ background: "none", border: "none", color: "#374151", cursor: "pointer", padding: "4px 6px", fontSize: 18, lineHeight: 1 }}
+                            title="Remove entry"
+                          >×</button>
+                        </div>
                       )}
                     </div>
                     {deleteConfirmId === act.id && (
@@ -714,7 +784,7 @@ export default function RecruitingJourney() {
         }}>
           {/* Backdrop */}
           <div
-            onClick={() => { if (!saving) setShowAdd(false); }}
+            onClick={() => { if (!saving) { setShowAdd(false); setEditingId(null); setAddForm(BLANK_FORM); } }}
             style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.72)" }}
           />
           {/* Sheet */}
@@ -740,10 +810,10 @@ export default function RecruitingJourney() {
                 fontFamily: "'Bebas Neue', sans-serif",
                 fontSize: 24, letterSpacing: 1,
               }}>
-                Log {typeInfo.label}
+                {editingId ? "Edit" : "Log"} {typeInfo.label}
               </div>
               <button
-                onClick={() => { if (!saving) setShowAdd(false); }}
+                onClick={() => { if (!saving) { setShowAdd(false); setEditingId(null); setAddForm(BLANK_FORM); } }}
                 style={{
                   marginLeft: "auto", background: "none", border: "none",
                   color: "#6b7280", fontSize: 22, cursor: "pointer", lineHeight: 1,
@@ -1007,7 +1077,7 @@ export default function RecruitingJourney() {
             )}
 
             <button
-              onClick={submitAdd}
+              onClick={editingId ? submitEdit : submitAdd}
               disabled={saving}
               style={{
                 marginTop: 24, width: "100%",
@@ -1018,7 +1088,7 @@ export default function RecruitingJourney() {
                 opacity: saving ? 0.7 : 1,
               }}
             >
-              {saving ? "Saving..." : `Save ${typeInfo.label}`}
+              {saving ? "Saving..." : editingId ? "Save Changes" : `Save ${typeInfo.label}`}
             </button>
           </div>
         </div>
