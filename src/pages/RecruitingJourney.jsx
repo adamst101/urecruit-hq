@@ -158,6 +158,16 @@ const AUTO_EXPAND_SIGNAL_TYPES = new Set([
   "dm_received", "dm_sent", "text_received", "text_sent", "post_camp_followup_sent",
 ]);
 
+// Activity types where school identity matters for coach-visible reporting.
+// A warning is shown when school_name is typed free-text (no school_id set).
+const COACH_VISIBLE_TYPES = new Set([
+  "dm_received", "dm_sent", "text_received", "text_sent", "personal_email",
+  "phone_call", "personal_camp_invite", "post_camp_followup_sent",
+  "unofficial_visit_requested", "unofficial_visit_completed",
+  "official_visit_requested",   "official_visit_completed",
+  "offer_received", "offer_updated", "commitment", "signed",
+]);
+
 function normId(x) {
   if (!x) return null;
   if (typeof x === "string") return x;
@@ -195,6 +205,10 @@ export default function RecruitingJourney() {
 
   // Advanced signal quality section in modal
   const [showAdvanced, setShowAdvanced]       = useState(false);
+
+  // Delete confirmation state
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [deletingId, setDeletingId]           = useState(null);
 
   // Single school list used for both activity-logging and target-school comboboxes.
   // Division filtering is done client-side from this one fetch.
@@ -258,7 +272,7 @@ export default function RecruitingJourney() {
   function openAdd(type) {
     setAddForm({ ...BLANK_FORM, activity_type: type });
     setAddError("");
-    setShowAdvanced(AUTO_EXPAND_SIGNAL_TYPES.has(type));
+    setShowAdvanced(false);
     setShowAdd(true);
     loadAllSchools();
   }
@@ -311,6 +325,23 @@ export default function RecruitingJourney() {
       setPrefsError(err?.message || "Failed to save preferences");
     } finally {
       setSavingPrefs(false);
+    }
+  }
+
+  // ── Delete activity ──────────────────────────────────────────────────────
+  async function deleteActivity(actId) {
+    if (deletingId) return;
+    setDeletingId(actId);
+    try {
+      const res = await base44.functions.invoke("deleteRecruitingActivity", { activityId: actId, accountId });
+      if (res?.data?.ok) {
+        setActivities(prev => prev.filter(a => a.id !== actId));
+      }
+      setDeleteConfirmId(null);
+    } catch {
+      setDeleteConfirmId(null);
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -479,12 +510,9 @@ export default function RecruitingJourney() {
                   return (
                     <div
                       key={act.id || i}
-                      style={{
-                        padding: "16px 0",
-                        borderBottom: i < sortedActivities.length - 1 ? "1px solid #1f2937" : "none",
-                        display: "flex", gap: 14, alignItems: "flex-start",
-                      }}
+                      style={{ borderBottom: i < sortedActivities.length - 1 ? "1px solid #1f2937" : "none" }}
                     >
+                    <div style={{ padding: "16px 0", display: "flex", gap: 14, alignItems: "flex-start" }}>
                       <div style={{
                         width: 40, height: 40, borderRadius: 10, flexShrink: 0,
                         background: "rgba(232,160,32,0.07)",
@@ -546,6 +574,32 @@ export default function RecruitingJourney() {
                           <div style={{ fontSize: 12, color: "#4b5563", marginTop: 6 }}>{dateStr}</div>
                         )}
                       </div>
+                      {act.id && deleteConfirmId !== act.id && (
+                        <button
+                          onClick={() => setDeleteConfirmId(act.id)}
+                          style={{ background: "none", border: "none", color: "#374151", cursor: "pointer", padding: "4px 6px", fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}
+                          title="Remove entry"
+                        >×</button>
+                      )}
+                    </div>
+                    {deleteConfirmId === act.id && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0 12px" }}>
+                        <span style={{ fontSize: 12, color: "#6b7280", flex: 1 }}>Remove this entry?</span>
+                        <button
+                          onClick={() => deleteActivity(act.id)}
+                          disabled={deletingId === act.id}
+                          style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 6, padding: "4px 12px", color: "#f87171", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                        >
+                          {deletingId === act.id ? "Removing…" : "Remove"}
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmId(null)}
+                          style={{ background: "none", border: "1px solid #374151", borderRadius: 6, padding: "4px 12px", color: "#9ca3af", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
                     </div>
                   );
                 })
@@ -709,7 +763,7 @@ export default function RecruitingJourney() {
                         return (
                           <button
                             key={key}
-                            onClick={() => { setAddForm(p => ({ ...p, activity_type: key })); setShowAdvanced(AUTO_EXPAND_SIGNAL_TYPES.has(key)); }}
+                            onClick={() => { setAddForm(p => ({ ...p, activity_type: key })); setShowAdvanced(false); }}
                             style={{
                               background: active ? "rgba(232,160,32,0.12)" : "#0a0e1a",
                               border: active ? "1px solid #e8a020" : "1px solid #374151",
@@ -748,6 +802,11 @@ export default function RecruitingJourney() {
                     loading={allSchoolsLoading}
                     placeholder="Search schools…"
                   />
+                  {COACH_VISIBLE_TYPES.has(addForm.activity_type) && addForm.school_name && !addForm.school_id && (
+                    <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 5, lineHeight: 1.5 }}>
+                      ⚠ Select a school from the list so Coach HQ can group interest correctly.
+                    </div>
+                  )}
                 </div>
               )}
               {currentFields.includes("activity_date") && (
@@ -793,63 +852,96 @@ export default function RecruitingJourney() {
               )}
             </div>
 
-            {/* ── Signal Quality (optional, shown for types with is_athlete_specific relevance) ── */}
+            {/* ── Signal Quality ── */}
             {currentFields.includes("signal_quality") && (
-              <div style={{ marginTop: 16, borderTop: "1px solid #1f2937", paddingTop: 14 }}>
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanced(p => !p)}
-                  style={{ background: "none", border: "none", color: "#e8a020", fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: showAdvanced ? 14 : 0 }}
-                >
-                  {showAdvanced ? "▲ Hide details" : "▼ Add signal details (affects traction level)"}
-                </button>
-                {showAdvanced && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                    <div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>Was this specifically directed at your athlete?</div>
-                      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                        {[{ val: true, label: "Yes — athlete-specific" }, { val: false, label: "No — generic/template" }, { val: null, label: "Not sure" }].map(opt => (
-                          <button
-                            key={String(opt.val)}
-                            type="button"
-                            onClick={() => setAddForm(p => ({ ...p, is_athlete_specific: opt.val }))}
-                            style={{
-                              padding: "5px 11px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
-                              background: addForm.is_athlete_specific === opt.val ? "rgba(232,160,32,0.12)" : "#0a0e1a",
-                              border: addForm.is_athlete_specific === opt.val ? "1px solid #e8a020" : "1px solid #374151",
-                              color: addForm.is_athlete_specific === opt.val ? "#e8a020" : "#9ca3af",
-                            }}
-                          >{opt.label}</button>
-                        ))}
-                      </div>
+              <>
+                {/* PRIMARY: two-way exchange — inline card for dm/text/post-camp types */}
+                {AUTO_EXPAND_SIGNAL_TYPES.has(addForm.activity_type) && (
+                  <div style={{ marginTop: 16, background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: 10, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#34d399", marginBottom: 3 }}>
+                      Was this a real back-and-forth exchange?
                     </div>
-                    <div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>Was there a personal reply / two-way exchange?</div>
-                      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                        {[{ val: true, label: "Yes — both sides responded" }, { val: false, label: "No reply yet" }, { val: null, label: "Not sure" }].map(opt => (
-                          <button
-                            key={String(opt.val)}
-                            type="button"
-                            onClick={() => setAddForm(p => ({ ...p, is_two_way_engagement: opt.val }))}
-                            style={{
-                              padding: "5px 11px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
-                              background: addForm.is_two_way_engagement === opt.val ? "rgba(232,160,32,0.12)" : "#0a0e1a",
-                              border: addForm.is_two_way_engagement === opt.val ? "1px solid #e8a020" : "1px solid #374151",
-                              color: addForm.is_two_way_engagement === opt.val ? "#e8a020" : "#9ca3af",
-                            }}
-                          >{opt.label}</button>
-                        ))}
-                      </div>
+                    <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 12, lineHeight: 1.5 }}>
+                      This affects whether Coach HQ treats this as true traction.
                     </div>
-                    <FormField
-                      label="Evidence Reference (optional)"
-                      value={addForm.evidence_reference}
-                      onChange={setField("evidence_reference")}
-                      placeholder="Screenshot filename, DM link, etc."
-                    />
+                    <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                      {[{ val: true, label: "Yes — both responded" }, { val: false, label: "No reply yet" }, { val: null, label: "Not sure" }].map(opt => (
+                        <button
+                          key={String(opt.val)}
+                          type="button"
+                          onClick={() => setAddForm(p => ({ ...p, is_two_way_engagement: opt.val }))}
+                          style={{
+                            padding: "6px 12px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
+                            background: addForm.is_two_way_engagement === opt.val ? "rgba(52,211,153,0.15)" : "#0a0e1a",
+                            border: addForm.is_two_way_engagement === opt.val ? "1px solid #34d399" : "1px solid #374151",
+                            color: addForm.is_two_way_engagement === opt.val ? "#34d399" : "#9ca3af",
+                          }}
+                        >{opt.label}</button>
+                      ))}
+                    </div>
                   </div>
                 )}
-              </div>
+
+                {/* SECONDARY: optional details (collapsed) */}
+                <div style={{ marginTop: 12, borderTop: "1px solid #1f2937", paddingTop: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvanced(p => !p)}
+                    style={{ background: "none", border: "none", color: "#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: showAdvanced ? 12 : 0 }}
+                  >
+                    {showAdvanced ? "▲ Hide optional details" : "▼ More details (optional)"}
+                  </button>
+                  {showAdvanced && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                      {/* For non-dm/text types, show two-way engagement here */}
+                      {!AUTO_EXPAND_SIGNAL_TYPES.has(addForm.activity_type) && (
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>Was there a personal reply / two-way exchange?</div>
+                          <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                            {[{ val: true, label: "Yes — both sides responded" }, { val: false, label: "No reply yet" }, { val: null, label: "Not sure" }].map(opt => (
+                              <button
+                                key={String(opt.val)}
+                                type="button"
+                                onClick={() => setAddForm(p => ({ ...p, is_two_way_engagement: opt.val }))}
+                                style={{
+                                  padding: "5px 11px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
+                                  background: addForm.is_two_way_engagement === opt.val ? "rgba(232,160,32,0.12)" : "#0a0e1a",
+                                  border: addForm.is_two_way_engagement === opt.val ? "1px solid #e8a020" : "1px solid #374151",
+                                  color: addForm.is_two_way_engagement === opt.val ? "#e8a020" : "#9ca3af",
+                                }}
+                              >{opt.label}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>Was this specifically directed at your athlete?</div>
+                        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                          {[{ val: true, label: "Yes — athlete-specific" }, { val: false, label: "No — generic/template" }, { val: null, label: "Not sure" }].map(opt => (
+                            <button
+                              key={String(opt.val)}
+                              type="button"
+                              onClick={() => setAddForm(p => ({ ...p, is_athlete_specific: opt.val }))}
+                              style={{
+                                padding: "5px 11px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
+                                background: addForm.is_athlete_specific === opt.val ? "rgba(232,160,32,0.12)" : "#0a0e1a",
+                                border: addForm.is_athlete_specific === opt.val ? "1px solid #e8a020" : "1px solid #374151",
+                                color: addForm.is_athlete_specific === opt.val ? "#e8a020" : "#9ca3af",
+                              }}
+                            >{opt.label}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <FormField
+                        label="Evidence Reference (optional)"
+                        value={addForm.evidence_reference}
+                        onChange={setField("evidence_reference")}
+                        placeholder="Screenshot filename, DM link, etc."
+                      />
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
             {/* ── Offer fields ── */}
