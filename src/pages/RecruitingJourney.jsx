@@ -289,7 +289,17 @@ export default function RecruitingJourney() {
       }
       const res = await base44.functions.invoke("createRecruitingActivity", payload);
       if (res?.data?.ok) {
-        setActivities(prev => [res.data.activity, ...prev]);
+        // base44 SDK .create() may not echo back boolean fields in its response.
+        // Merge them from the known form state so the immediate badge is correct.
+        const act = res.data.activity || {};
+        const enriched = {
+          ...act,
+          is_two_way_engagement: act.is_two_way_engagement ?? addForm.is_two_way_engagement,
+          is_verified_personal:  act.is_verified_personal  ?? addForm.is_verified_personal,
+          is_athlete_specific:   act.is_athlete_specific   ?? addForm.is_athlete_specific,
+        };
+        enriched._traction_level = clientTractionLevel(enriched);
+        setActivities(prev => [enriched, ...prev]);
         setShowAdd(false);
         setAddForm(BLANK_FORM);
       } else {
