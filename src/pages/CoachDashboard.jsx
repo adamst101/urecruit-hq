@@ -1110,7 +1110,7 @@ export default function CoachDashboard() {
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(148px, 1fr))", gap: 12 }}>
           {/* 1. Players w/ Any Interest */}
-          <div onClick={() => setOpenSheet("roster")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#34d399"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
+          <div onClick={() => setOpenSheet("tile_any_interest")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#34d399"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
             <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players w/ Any Interest</div>
             {journeyLoading && playersWithAnyInterest === null ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
@@ -1122,7 +1122,7 @@ export default function CoachDashboard() {
             )}
           </div>
           {/* 2. Players w/ True Traction */}
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}>
+          <div onClick={() => setOpenSheet("tile_true_traction")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#60a5fa"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
             <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players w/ True Traction</div>
             {journeyLoading && !programMetrics ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
@@ -1134,7 +1134,7 @@ export default function CoachDashboard() {
             )}
           </div>
           {/* 3. Visits / Offers */}
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}>
+          <div onClick={() => setOpenSheet("tile_visits_offers")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#f59e0b"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
             <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Visits / Offers</div>
             {journeyLoading && !programMetrics ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
@@ -1146,7 +1146,7 @@ export default function CoachDashboard() {
             )}
           </div>
           {/* 4. Colleges Engaging Program */}
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}>
+          <div onClick={() => setOpenSheet("tile_colleges")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#a78bfa"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
             <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Colleges Engaging Program</div>
             {journeyLoading && !programMetrics ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
@@ -1158,7 +1158,7 @@ export default function CoachDashboard() {
             )}
           </div>
           {/* 5. Players Heating Up */}
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}>
+          <div onClick={() => setOpenSheet("tile_heating_up")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#fb923c"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
             <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players Heating Up</div>
             {journeyLoading && playersHeatingUpCount === null ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#fb923c", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
@@ -1170,7 +1170,7 @@ export default function CoachDashboard() {
             )}
           </div>
           {/* 6. Repeat-Interest Colleges */}
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}>
+          <div onClick={() => setOpenSheet("tile_repeat_colleges")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
             <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Repeat-Interest Colleges</div>
             {journeyLoading && !programMetrics ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
@@ -1884,12 +1884,18 @@ export default function CoachDashboard() {
             {/* Sheet header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 0", position: "sticky", top: 0, background: "#111827", zIndex: 1 }}>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f9fafb" }}>
-                {openSheet === "roster"  && `ATHLETE ROSTER — ${filteredRoster.length} OF ${roster.length}`}
-                {openSheet === "monthly" && (monthlyView === "upcoming" ? "UPCOMING CAMPS" : `CAMP ACTIVITY — ${_monthName.toUpperCase()}`)}
-                {openSheet === "schools" && `SCHOOLS ENGAGED — ${schoolRows.length}`}
-                {openSheet === "noCamps" && `WATCH LIST — ${attentionItems.length}`}
-                {openSheet === "message" && "MESSAGE ROSTER"}
-                {openSheet === "code"    && "INVITE CODE"}
+                {openSheet === "roster"               && `ATHLETE ROSTER — ${filteredRoster.length} OF ${roster.length}`}
+                {openSheet === "monthly"              && (monthlyView === "upcoming" ? "UPCOMING CAMPS" : `CAMP ACTIVITY — ${_monthName.toUpperCase()}`)}
+                {openSheet === "schools"              && `SCHOOLS ENGAGED — ${schoolRows.length}`}
+                {openSheet === "noCamps"              && `WATCH LIST — ${attentionItems.length}`}
+                {openSheet === "message"              && "MESSAGE ROSTER"}
+                {openSheet === "code"                 && "INVITE CODE"}
+                {openSheet === "tile_any_interest"    && `PLAYERS W/ ANY INTEREST — ${playersWithAnyInterest ?? 0}`}
+                {openSheet === "tile_true_traction"   && `PLAYERS W/ TRUE TRACTION — ${tractionPairs.length > 0 ? new Set(tractionPairs.map(p => p.athlete_name)).size : (programMetrics?.players_with_true_traction ?? 0)}`}
+                {openSheet === "tile_visits_offers"   && `VISITS & OFFERS — ${tractionPairs.filter(p => p.traction_level === 4).length}`}
+                {openSheet === "tile_colleges"        && `COLLEGES ENGAGING PROGRAM — ${collegesEngagingRows.length}`}
+                {openSheet === "tile_heating_up"      && `PLAYERS HEATING UP — ${playersHeatingUpRows.length}`}
+                {openSheet === "tile_repeat_colleges" && `REPEAT-INTEREST COLLEGES — ${collegesEngagingRows.filter(r => r.repeatInterest).length}`}
               </div>
               <button
                 onClick={() => setOpenSheet(null)}
@@ -2284,6 +2290,206 @@ export default function CoachDashboard() {
                   )}
                 </div>
               )}
+
+              {/* ── TILE 1: Players w/ Any Interest ── */}
+              {openSheet === "tile_any_interest" && (() => {
+                const rows = roster.map(r => {
+                  const j = athleteJourneys[r.account_id];
+                  if (!j) return null;
+                  const engaging = Object.values(j.school_traction || {}).filter(s => s.traction_level >= 1);
+                  if (engaging.length === 0) return null;
+                  const hl = j.highest_traction_level || 0;
+                  let stage;
+                  if (hl >= 4) stage = "Visit / Offer";
+                  else if (hl >= 2) stage = "True Traction";
+                  else if (hl === 1) stage = engaging.some(s => SIGNAL_PERSONAL_TYPES.has(s.top_activity_type)) ? "Personal Signal" : "Watching";
+                  else stage = "Watching";
+                  const stageColor = hl >= 4 ? "#f59e0b" : hl >= 2 ? "#60a5fa" : hl === 1 ? "#9ca3af" : "#4b5563";
+                  const topCollege = [...engaging].sort((a, b) => b.traction_level - a.traction_level || (b.last_activity_date || "").localeCompare(a.last_activity_date || ""))[0]?.school_name || "—";
+                  const lastDate = j.last_activity_date || "";
+                  return { athlete_name: r.athlete_name, athlete_grad_year: r.athlete_grad_year, stage, stageColor, schoolsEngaging: engaging.length, topCollege, lastDate };
+                }).filter(Boolean);
+                rows.sort((a, b) => {
+                  const so = { "Visit / Offer": 0, "True Traction": 1, "Personal Signal": 2, "Watching": 3 };
+                  return (so[a.stage] ?? 3) - (so[b.stage] ?? 3) || (b.lastDate || "").localeCompare(a.lastDate || "");
+                });
+                return rows.length === 0 ? (
+                  <p style={{ fontSize: 14, color: "#6b7280" }}>No athletes with recruiting interest logged yet.</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>All athletes with at least one recruiting signal from any college.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 110px 50px 1fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>Athlete</span><span>Stage</span><span>Schools</span><span>Top College</span><span>Last Activity</span>
+                    </div>
+                    {rows.map((r, i) => (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 110px 50px 1fr 80px", gap: 8, padding: "11px 0", borderBottom: i < rows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{r.athlete_name}</div>
+                          {r.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280" }}>Class of {r.athlete_grad_year}</div>}
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: r.stageColor }}>{r.stage}</div>
+                        <div style={{ fontSize: 13, color: "#d1d5db", textAlign: "center" }}>{r.schoolsEngaging}</div>
+                        <div style={{ fontSize: 13, color: "#9ca3af" }}>{r.topCollege}</div>
+                        <div style={{ fontSize: 12, color: "#6b7280" }}>{r.lastDate ? new Date(r.lastDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                      </div>
+                    ))}
+                  </>
+                );
+              })()}
+
+              {/* ── TILE 2: Players w/ True Traction ── */}
+              {openSheet === "tile_true_traction" && (() => {
+                return tractionPairs.length === 0 ? (
+                  <p style={{ fontSize: 14, color: "#6b7280" }}>No athletes with verified personal contact or higher logged yet.</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>All athlete-school pairs with verified personal contact (level 2+). Sorted by traction level, then recency.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 100px 80px 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>Athlete</span><span>School</span><span>Status</span><span>Level</span><span>Last Activity</span>
+                    </div>
+                    {tractionPairs.map((p, i) => {
+                      const statusColor = RELATIONSHIP_COLOR[p.relationship_status] || "#9ca3af";
+                      const levelLabel = p.traction_level >= 4 ? "Major Outcome" : p.traction_level === 3 ? "Direct Action" : "Verified Contact";
+                      return (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 100px 80px 80px", gap: 8, padding: "11px 0", borderBottom: i < tractionPairs.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                          <div>
+                            <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{p.athlete_name}</div>
+                            {p.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280" }}>Class of {p.athlete_grad_year}</div>}
+                          </div>
+                          <div style={{ fontSize: 13, color: "#d1d5db" }}>{p.school_name}</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: statusColor }}>{RELATIONSHIP_LABEL[p.relationship_status] || p.relationship_status}</div>
+                          <div style={{ fontSize: 11, color: "#9ca3af" }}>{levelLabel}</div>
+                          <div style={{ fontSize: 12, color: "#6b7280" }}>{p.last_activity_date ? new Date(p.last_activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                        </div>
+                      );
+                    })}
+                  </>
+                );
+              })()}
+
+              {/* ── TILE 3: Visits / Offers ── */}
+              {openSheet === "tile_visits_offers" && (() => {
+                const voRows = tractionPairs.filter(p => p.traction_level === 4);
+                const outcomeLabel = (rs) => {
+                  if (rs === "committed") return "Commitment";
+                  if (rs === "offer")     return "Offer";
+                  if (rs === "visit")     return "Visit";
+                  return RELATIONSHIP_LABEL[rs] || rs;
+                };
+                const outcomeColor = (rs) => {
+                  if (rs === "committed") return "#e8a020";
+                  if (rs === "offer")     return "#f59e0b";
+                  if (rs === "visit")     return "#34d399";
+                  return "#9ca3af";
+                };
+                return voRows.length === 0 ? (
+                  <p style={{ fontSize: 14, color: "#6b7280" }}>No visits or offers logged yet.</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>All athletes with a visit request, completed visit, offer, or commitment on record.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 100px 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>Athlete</span><span>School</span><span>Outcome</span><span>Last Activity</span>
+                    </div>
+                    {voRows.map((p, i) => (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 100px 80px", gap: 8, padding: "11px 0", borderBottom: i < voRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{p.athlete_name}</div>
+                          {p.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280" }}>Class of {p.athlete_grad_year}</div>}
+                        </div>
+                        <div style={{ fontSize: 13, color: "#d1d5db" }}>{p.school_name}</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: outcomeColor(p.relationship_status) }}>{outcomeLabel(p.relationship_status)}</div>
+                        <div style={{ fontSize: 12, color: "#6b7280" }}>{p.last_activity_date ? new Date(p.last_activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                      </div>
+                    ))}
+                  </>
+                );
+              })()}
+
+              {/* ── TILE 4: Colleges Engaging Program ── */}
+              {openSheet === "tile_colleges" && (() => {
+                return collegesEngagingRows.length === 0 ? (
+                  <p style={{ fontSize: 14, color: "#6b7280" }}>No colleges with recruiting activity logged yet.</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>All colleges with at least one recruiting signal logged across the program. Sorted by highest traction level.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>College</span><span>Athletes</span><span>Stage</span><span>Athletes</span><span>Last Activity</span>
+                    </div>
+                    {collegesEngagingRows.map((c, i) => {
+                      const stageColor = c.highestLevel >= 4 ? "#f59e0b" : c.highestLevel >= 2 ? "#60a5fa" : "#9ca3af";
+                      return (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "11px 0", borderBottom: i < collegesEngagingRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                          <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{c.college}</div>
+                          <div style={{ fontSize: 13, color: "#d1d5db", textAlign: "center" }}>{c.athletesEngaged}</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: stageColor }}>{c.highestStage}</div>
+                          <div style={{ fontSize: 12, color: "#9ca3af" }}>{c.athleteNames.slice(0, 3).join(", ")}{c.athleteNames.length > 3 ? ` +${c.athleteNames.length - 3}` : ""}</div>
+                          <div style={{ fontSize: 12, color: "#6b7280" }}>{c.lastActivityDate ? new Date(c.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                        </div>
+                      );
+                    })}
+                  </>
+                );
+              })()}
+
+              {/* ── TILE 5: Players Heating Up ── */}
+              {openSheet === "tile_heating_up" && (() => {
+                return playersHeatingUpRows.length === 0 ? (
+                  <p style={{ fontSize: 14, color: "#6b7280" }}>No athletes with activity in the last 30 days.</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>Athletes with recruiting activity in the last 30 days, ranked by stage and momentum.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 100px 50px 1fr 90px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>Athlete</span><span>Stage</span><span>Schools</span><span>Top College</span><span>Coach Action</span>
+                    </div>
+                    {playersHeatingUpRows.map((r, i) => {
+                      const stageColor = r.currentStage === "Visit / Offer" ? "#f59e0b" : r.currentStage === "True Traction" ? "#60a5fa" : r.currentStage === "Personal Signal" ? "#a78bfa" : "#9ca3af";
+                      const actionColor = r.coachAttention === "High Priority" ? "#f87171" : r.coachAttention === "Heating Up" ? "#fb923c" : "#6b7280";
+                      return (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "1.5fr 100px 50px 1fr 90px", gap: 8, padding: "11px 0", borderBottom: i < playersHeatingUpRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                          <div>
+                            <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{r.athlete_name}</div>
+                            {r.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280" }}>Class of {r.athlete_grad_year}</div>}
+                          </div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: stageColor }}>{r.currentStage}</div>
+                          <div style={{ fontSize: 13, color: "#d1d5db", textAlign: "center" }}>{r.schoolsEngaging}</div>
+                          <div style={{ fontSize: 13, color: "#9ca3af" }}>{r.topCollege}</div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: actionColor }}>{r.coachAttention}</div>
+                        </div>
+                      );
+                    })}
+                  </>
+                );
+              })()}
+
+              {/* ── TILE 6: Repeat-Interest Colleges ── */}
+              {openSheet === "tile_repeat_colleges" && (() => {
+                const repeatRows = collegesEngagingRows.filter(r => r.repeatInterest);
+                return repeatRows.length === 0 ? (
+                  <p style={{ fontSize: 14, color: "#6b7280" }}>No colleges engaging multiple athletes yet.</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>Colleges showing interest in 2 or more athletes on the roster, or with repeated contact. Sorted by highest traction level.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>College</span><span>Athletes</span><span>Stage</span><span>Athletes</span><span>Last Activity</span>
+                    </div>
+                    {repeatRows.map((c, i) => {
+                      const stageColor = c.highestLevel >= 4 ? "#f59e0b" : c.highestLevel >= 2 ? "#60a5fa" : "#9ca3af";
+                      return (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "11px 0", borderBottom: i < repeatRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                          <div>
+                            <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{c.college}</div>
+                            {c.repeatLabel && <div style={{ fontSize: 11, color: "#e8a020" }}>{c.repeatLabel}</div>}
+                          </div>
+                          <div style={{ fontSize: 13, color: "#d1d5db", textAlign: "center" }}>{c.athletesEngaged}</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: stageColor }}>{c.highestStage}</div>
+                          <div style={{ fontSize: 12, color: "#9ca3af" }}>{c.athleteNames.slice(0, 3).join(", ")}{c.athleteNames.length > 3 ? ` +${c.athleteNames.length - 3}` : ""}</div>
+                          <div style={{ fontSize: 12, color: "#6b7280" }}>{c.lastActivityDate ? new Date(c.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                        </div>
+                      );
+                    })}
+                  </>
+                );
+              })()}
 
               {/* ── Invite code sheet ── */}
               {openSheet === "code" && (
