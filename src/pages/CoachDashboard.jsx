@@ -838,9 +838,16 @@ export default function CoachDashboard() {
                           {col.athlete_count > 1 && <span style={{ color: "#4b5563" }}> · {col.athlete_count} athletes</span>}
                         </div>
                       </div>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, borderRadius: 20, padding: "2px 7px", whiteSpace: "nowrap", flexShrink: 0 }}>
-                        {RELATIONSHIP_LABEL[col.relationship_status] || col.relationship_status}
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                        {col.is_repeated_interest && (
+                          <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", background: "#e8a02018", border: "1px solid #e8a02040", borderRadius: 20, padding: "2px 7px", whiteSpace: "nowrap" }}>
+                            {col.athlete_count >= 2 ? `×${col.athlete_count}` : "Repeat"}
+                          </span>
+                        )}
+                        <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, borderRadius: 20, padding: "2px 7px", whiteSpace: "nowrap" }}>
+                          {RELATIONSHIP_LABEL[col.relationship_status] || col.relationship_status}
+                        </span>
+                      </div>
                     </div>
                   );
                 })
@@ -892,6 +899,7 @@ export default function CoachDashboard() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                   {[
                     { label: "True Traction Players",  value: programMetrics?.players_with_true_traction ?? 0,  color: "#60a5fa" },
+                    { label: "Players Progressing",    value: programMetrics?.players_progressing ?? 0,          color: "#34d399" },
                     { label: "Unofficial Visits",      value: programMetrics?.unofficial_visit_count ?? 0,       color: "#34d399" },
                     { label: "Official Visits",        value: programMetrics?.official_visit_count ?? 0,         color: "#34d399" },
                     { label: "Offers",                 value: programMetrics?.offer_count ?? 0,                  color: "#f59e0b" },
