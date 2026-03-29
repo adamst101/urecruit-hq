@@ -40,7 +40,8 @@ const SHEET_STYLES = `
 
 // Module-level cache — survives component unmount/remount within the same session.
 // Cleared on logout. Prevents "No Coach Account Found" when auth token expires mid-session.
-let _coachCache = null; // { coach, roster, messages, campsByAccountId }
+let _coachCache = null;   // { coach, roster, messages, campsByAccountId }
+let _journeyCache = null; // { athleteJourneys, programMetrics }
 
 // ── Tile component matching Workspace style ───────────────────────────────────
 function CoachTile({ icon, title, desc, badge, onClick, active }) {
@@ -92,6 +93,11 @@ export default function CoachDashboard() {
   const [logoOk, setLogoOk] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
 
+  // Journey data — loaded non-blocking after main profile loads
+  const [athleteJourneys, setAthleteJourneys] = useState({});
+  const [programMetrics, setProgramMetrics] = useState(null);
+  const [journeyLoading, setJourneyLoading] = useState(false);
+
   // Open sheet: null | "roster" | "monthly" | "schools" | "noCamps" | "message" | "code"
   const [openSheet, setOpenSheet] = useState(null);
   const [rosterFilter, setRosterFilter] = useState("all"); // "all" | "hasCamps" | "noCamps" | "thisMonth"
@@ -105,6 +111,36 @@ export default function CoachDashboard() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
   const [sendSuccess, setSendSuccess] = useState(false);
+
+  // ── Load recruiting journey data (non-blocking, called after loadCoach) ─────
+  async function loadJourneyData() {
+    if (_journeyCache) {
+      setAthleteJourneys(_journeyCache.athleteJourneys);
+      setProgramMetrics(_journeyCache.programMetrics);
+      return;
+    }
+    setJourneyLoading(true);
+    try {
+      let frontendAccountId = seasonAccountId || "";
+      if (!frontendAccountId) {
+        try { const me = await base44.auth.me(); frontendAccountId = me?.id || ""; } catch {}
+      }
+      const res = await base44.functions.invoke("getCoachRosterMetrics", { accountId: frontendAccountId || undefined });
+      const data = res?.data;
+      if (data?.ok) {
+        _journeyCache = {
+          athleteJourneys: data.athleteJourneys || {},
+          programMetrics: data.program_metrics || null,
+        };
+        setAthleteJourneys(_journeyCache.athleteJourneys);
+        setProgramMetrics(_journeyCache.programMetrics);
+      }
+    } catch (e) {
+      console.error("CoachDashboard journey load error:", e?.message);
+    } finally {
+      setJourneyLoading(false);
+    }
+  }
 
   // ── Load coach profile ──────────────────────────────────────────────────────
   async function loadCoach() {
@@ -156,6 +192,7 @@ export default function CoachDashboard() {
     (async () => {
       const found = await loadCoach();
       if (!found) setSetupPolling(true);
+      else loadJourneyData(); // non-blocking: runs in background
       setLoading(false);
     })();
   }, []);
@@ -173,9 +210,11 @@ export default function CoachDashboard() {
   // ── Refresh roster (clears module cache so fresh data is fetched) ───────────
   async function handleRefresh() {
     _coachCache = null;
+    _journeyCache = null;
     setLoading(true);
-    await loadCoach();
+    const found = await loadCoach();
     setLoading(false);
+    if (found) loadJourneyData(); // non-blocking
   }
 
   // ── Logout ──────────────────────────────────────────────────────────────────
@@ -183,6 +222,7 @@ export default function CoachDashboard() {
     if (loggingOut) return;
     setLoggingOut(true);
     _coachCache = null;
+    _journeyCache = null;
     clearSeasonAccessCache();
     try { await base44.auth.logout(); } catch {}
     window.location.assign("/Home");
@@ -503,6 +543,69 @@ export default function CoachDashboard() {
   _allUpcoming.sort((a, b) => a.date - b.date);
   const nextCamps = _allUpcoming.slice(0, 4);
 
+  // ── Journey-derived computed data ──────────────────────────────────────────
+  // Athlete-school pairs with true traction (level ≥ 2), sorted by traction desc
+  const tractionPairs = (() => {
+    const pairs = [];
+    for (const rEntry of roster) {
+      const journey = athleteJourneys[rEntry.account_id];
+      if (!journey) continue;
+      for (const [school, sData] of Object.entries(journey.school_traction || {})) {
+        if (sData.true_traction) {
+          pairs.push({
+            athlete_name: rEntry.athlete_name,
+            athlete_grad_year: rEntry.athlete_grad_year,
+            school_name: school,
+            traction_level: sData.traction_level,
+            relationship_status: sData.relationship_status,
+            last_activity_date: sData.last_activity_date || "",
+          });
+        }
+      }
+    }
+    pairs.sort((a, b) =>
+      b.traction_level - a.traction_level ||
+      b.last_activity_date.localeCompare(a.last_activity_date)
+    );
+    return pairs;
+  })();
+
+  // Merged recent activities across all roster athletes, newest first
+  const recentJourneyActivity = (() => {
+    const all = [];
+    for (const [accountId, journey] of Object.entries(athleteJourneys)) {
+      const rEntry = roster.find(r => r.account_id === accountId);
+      for (const act of (journey.recent_activities || [])) {
+        all.push({ ...act, _athlete_name: rEntry?.athlete_name || "Athlete" });
+      }
+    }
+    all.sort((a, b) =>
+      (b.activity_date || b.created_at || "").localeCompare(a.activity_date || a.created_at || "")
+    );
+    return all.slice(0, 15);
+  })();
+
+  const RELATIONSHIP_LABEL = {
+    no_signal: "No Signal", general_signal: "Signal", verified_contact: "Verified",
+    invite: "Invite", visit: "Visit", offer: "Offer", committed: "Committed",
+  };
+  const RELATIONSHIP_COLOR = {
+    no_signal: "#4b5563", general_signal: "#9ca3af", verified_contact: "#60a5fa",
+    invite: "#a78bfa", visit: "#34d399", offer: "#f59e0b", committed: "#e8a020",
+  };
+  const ACTIVITY_LABEL = {
+    social_like: "Social Like", social_follow: "Follow", dm_received: "DM Received",
+    dm_sent: "DM Sent", text_received: "Text Received", text_sent: "Text Sent",
+    phone_call: "Phone Call", generic_email: "Generic Email", personal_email: "Personal Email",
+    camp_invite: "Camp Invite", generic_camp_invite: "Camp Invite", personal_camp_invite: "Personal Invite",
+    camp_registered: "Camp Registered", camp_attended: "Camp Attended", camp_meeting: "Camp Meeting",
+    post_camp_followup_sent: "Camp Follow-up", post_camp_personal_response: "Personal Response",
+    unofficial_visit_requested: "Unofficial Visit", unofficial_visit_completed: "Unofficial Visit ✓",
+    official_visit_requested: "Official Visit", official_visit_completed: "Official Visit ✓",
+    offer: "Offer", offer_received: "Offer Received", offer_updated: "Offer Updated",
+    commitment: "Commitment", signed: "Signed NLI",
+  };
+
   // ── Full approved dashboard ─────────────────────────────────────────────────
   return (
     <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", paddingBottom: 100, fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
@@ -554,10 +657,11 @@ export default function CoachDashboard() {
 
       {/* ── SNAPSHOT METRICS ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+        {/* Row 1: Camp-based stats */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: programMetrics || journeyLoading ? 12 : 0 }}>
           {[
             { key: "roster",  label: "Athletes",        value: roster.length,             sub: "on roster",                    accent: "#e8a020" },
-            { key: "monthly", label: "Camp Activity",    value: athletesThisMonth.length,  sub: `athletes active this month`,   accent: "#e8a020" },
+            { key: "monthly", label: "Camp Activity",    value: athletesThisMonth.length,  sub: "athletes active this month",   accent: "#e8a020" },
             { key: "schools", label: "Schools Engaged", value: topSchools.length,         sub: "unique programs",               accent: "#e8a020" },
             { key: "noCamps", label: "Watch List",      value: attentionItems.length,     sub: "athletes needing follow-up",    accent: attentionItems.length > 0 ? "#f87171" : "#6b7280" },
           ].map(({ key, label, value, sub, accent }) => (
@@ -574,7 +678,79 @@ export default function CoachDashboard() {
             </div>
           ))}
         </div>
+
+        {/* Row 2: Traction stats — shown when journey data is available or loading */}
+        {(programMetrics || journeyLoading) && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+            {[
+              { label: "True Traction",     value: programMetrics?.players_with_true_traction ?? "—", sub: "players w/ verified contact+",  accent: "#60a5fa" },
+              { label: "Colleges Interested", value: programMetrics?.colleges_with_true_interest ?? "—", sub: "schools showing real interest", accent: "#a78bfa" },
+              { label: "Offers",            value: programMetrics?.offer_count ?? "—",             sub: "offers across roster",             accent: "#f59e0b" },
+              { label: "Visits",            value: programMetrics ? (programMetrics.unofficial_visit_count + programMetrics.official_visit_count) : "—", sub: "official + unofficial visits", accent: "#34d399" },
+            ].map(({ label, value, sub, accent }) => (
+              <div
+                key={label}
+                style={{ background: "#0d1421", border: "1px solid #1e293b", borderRadius: 12, padding: "16px 18px" }}
+              >
+                {journeyLoading && !programMetrics ? (
+                  <div style={{ height: 40, display: "flex", alignItems: "center" }}>
+                    <div style={{ width: 20, height: 20, border: "2px solid #374151", borderTopColor: accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 11, color: "#4b5563", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{label}</div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: accent, lineHeight: 1 }}>{value}</div>
+                    <div style={{ fontSize: 11, color: "#374151", marginTop: 4 }}>{sub}</div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
+
+      {/* ── TRUE TRACTION BOARD ── */}
+      {tractionPairs.length > 0 && (
+        <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 3, height: 20, background: "#60a5fa", borderRadius: 2 }} />
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f9fafb" }}>TRUE TRACTION BOARD</div>
+              <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>verified contact & above</span>
+            </div>
+          </div>
+          <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 80px 80px", gap: 10, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 11, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              <span>Athlete</span><span>School</span><span>Status</span><span>Last Activity</span>
+            </div>
+            {tractionPairs.slice(0, 12).map((p, i) => {
+              const statusColor = RELATIONSHIP_COLOR[p.relationship_status] || "#9ca3af";
+              return (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 80px 80px", gap: 10, padding: "11px 20px", borderBottom: i < Math.min(tractionPairs.length, 12) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{p.athlete_name || "Athlete"}</div>
+                    {p.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280" }}>'{String(p.athlete_grad_year).slice(-2)}</div>}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#d1d5db", fontWeight: 500 }}>{p.school_name}</div>
+                  <div>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>
+                      {RELATIONSHIP_LABEL[p.relationship_status] || p.relationship_status}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#6b7280" }}>
+                    {p.last_activity_date ? new Date(p.last_activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
+                  </div>
+                </div>
+              );
+            })}
+            {tractionPairs.length > 12 && (
+              <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "#4b5563", borderTop: "1px solid #1f2937" }}>
+                +{tractionPairs.length - 12} more athlete-school pairs with traction
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* ── PRIMARY BOARD ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
@@ -676,7 +852,7 @@ export default function CoachDashboard() {
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
 
-          {/* Top Schools */}
+          {/* Colleges with True Interest — uses journey data if available, falls back to camp registrations */}
           <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
             <div
               onClick={() => setOpenSheet("schools")}
@@ -684,12 +860,31 @@ export default function CoachDashboard() {
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>SCHOOLS ENGAGED</span>
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>
+                  {programMetrics?.colleges_detail?.length > 0 ? "COLLEGES SHOWING INTEREST" : "SCHOOLS ENGAGED"}
+                </span>
               </div>
               <span style={{ fontSize: 12, color: "#e8a020", fontWeight: 600 }}>View All →</span>
             </div>
             <div style={{ padding: "8px 0" }}>
-              {topSchools.length === 0 ? (
+              {programMetrics?.colleges_detail?.length > 0 ? (
+                // Show colleges from recruiting journey data
+                (programMetrics.colleges_detail).slice(0, 5).map((col, i) => {
+                  const statusColor = RELATIONSHIP_COLOR[col.relationship_status] || "#9ca3af";
+                  return (
+                    <div key={col.school_name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", borderBottom: i < Math.min(programMetrics.colleges_detail.length, 5) - 1 ? "1px solid #1f2937" : "none" }}>
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: i === 0 ? "#e8a020" : "#374151", width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "#d1d5db", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.school_name}</div>
+                        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>{col.athlete_names.slice(0, 2).join(", ")}{col.athlete_count > 2 ? ` +${col.athlete_count - 2}` : ""}</div>
+                      </div>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, borderRadius: 20, padding: "2px 7px", whiteSpace: "nowrap", flexShrink: 0 }}>
+                        {RELATIONSHIP_LABEL[col.relationship_status] || col.relationship_status}
+                      </span>
+                    </div>
+                  );
+                })
+              ) : topSchools.length === 0 ? (
                 <p style={{ fontSize: 13, color: "#4b5563", padding: "16px 20px", margin: 0 }}>No registrations yet. Rankings appear once athletes register.</p>
               ) : (
                 topSchools.map(([school, count], i) => (
@@ -739,22 +934,55 @@ export default function CoachDashboard() {
       </section>
 
       {/* ── RECENT RECRUITING ACTIVITY ── */}
-      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #1f2937" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
-              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>RECENT RECRUITING ACTIVITY</span>
+      {(recentJourneyActivity.length > 0 || journeyLoading || Object.keys(athleteJourneys).length > 0) && (
+        <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #1f2937" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>RECENT RECRUITING ACTIVITY</span>
+              </div>
+              {journeyLoading && (
+                <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+              )}
             </div>
+            {recentJourneyActivity.length === 0 ? (
+              <div style={{ padding: "28px 24px", textAlign: "center" }}>
+                <div style={{ fontSize: 28, marginBottom: 10 }}>📋</div>
+                <p style={{ fontSize: 14, color: "#6b7280", margin: 0, lineHeight: 1.65, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
+                  No recruiting activity logged yet. As athletes track school interest, DMs, camp invites, and offers, updates will appear here.
+                </p>
+              </div>
+            ) : (
+              <div style={{ padding: "4px 0" }}>
+                {recentJourneyActivity.map((act, i) => {
+                  const tractionLevel = act._traction_level ?? 0;
+                  const tractionColor = tractionLevel >= 4 ? "#f59e0b" : tractionLevel === 3 ? "#a78bfa" : tractionLevel === 2 ? "#60a5fa" : "#4b5563";
+                  return (
+                    <div key={act.id || i} style={{ display: "flex", gap: 14, padding: "11px 20px", borderBottom: i < recentJourneyActivity.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: tractionColor, flexShrink: 0, marginTop: 1 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "#d1d5db" }}>{act._athlete_name}</span>
+                          <span style={{ fontSize: 12, color: "#6b7280" }}>→</span>
+                          <span style={{ fontSize: 13, color: "#9ca3af" }}>{act.school_name || "—"}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
+                          {ACTIVITY_LABEL[act.activity_type] || act.activity_type}
+                          {act.coach_name && <span style={{ color: "#4b5563" }}> · {act.coach_name}</span>}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 11, color: "#4b5563", flexShrink: 0 }}>
+                        {(act.activity_date || (act.created_at || "").slice(0, 10)) || ""}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <div style={{ padding: "28px 24px", textAlign: "center" }}>
-            <div style={{ fontSize: 28, marginBottom: 10 }}>📋</div>
-            <p style={{ fontSize: 14, color: "#6b7280", margin: 0, lineHeight: 1.65, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
-              No recruiting activity has been logged yet. As athletes begin tracking school interest, DMs, camp invites, conversations, and offers, those updates will appear here.
-            </p>
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* ── RECENT MESSAGES ── */}
       {messages.length > 0 && (
