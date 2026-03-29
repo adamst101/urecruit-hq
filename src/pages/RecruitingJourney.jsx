@@ -932,142 +932,85 @@ export default function RecruitingJourney() {
               )}
             </div>
 
-            {/* ── Signal Quality ── */}
+            {/* ── Signal Quality ── always visible for all signal_quality types */}
             {currentFields.includes("signal_quality") && (
-              <>
-                {/* PRIMARY: traction check card — two paired questions for dm/text/post-camp types */}
+              <div style={{ marginTop: 16, background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: 10, padding: "14px 16px" }}>
+
+                {/* Q1: Two-way exchange */}
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#34d399", marginBottom: 3 }}>
+                  Was this a real back-and-forth exchange?
+                </div>
+                <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10, lineHeight: 1.5 }}>
+                  This helps confirm there was real two-way communication.
+                </div>
+                <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 16 }}>
+                  {[{ val: true, label: "Yes — both responded" }, { val: false, label: "No reply yet" }, { val: null, label: "Not sure" }].map(opt => (
+                    <button
+                      key={String(opt.val)}
+                      type="button"
+                      onClick={() => setAddForm(p => ({ ...p, is_two_way_engagement: opt.val }))}
+                      style={{
+                        padding: "6px 12px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
+                        background: addForm.is_two_way_engagement === opt.val ? "rgba(52,211,153,0.15)" : "#0a0e1a",
+                        border: addForm.is_two_way_engagement === opt.val ? "1px solid #34d399" : "1px solid #374151",
+                        color: addForm.is_two_way_engagement === opt.val ? "#34d399" : "#9ca3af",
+                      }}
+                    >{opt.label}</button>
+                  ))}
+                </div>
+
+                {/* Divider */}
+                <div style={{ borderTop: "1px solid rgba(52,211,153,0.15)", marginBottom: 14 }} />
+
+                {/* Q2: Athlete-specific */}
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#34d399", marginBottom: 3 }}>
+                  Was this specifically directed at your athlete?
+                </div>
+                <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10, lineHeight: 1.5 }}>
+                  Coach HQ only counts this as true traction when the contact was personal to your athlete.
+                </div>
+                <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                  {[{ val: true, label: "Yes — athlete-specific" }, { val: false, label: "No — generic/template" }].map(opt => (
+                    <button
+                      key={String(opt.val)}
+                      type="button"
+                      onClick={() => setAddForm(p => ({ ...p, is_athlete_specific: opt.val }))}
+                      style={{
+                        padding: "6px 12px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
+                        background: addForm.is_athlete_specific === opt.val ? "rgba(52,211,153,0.15)" : "#0a0e1a",
+                        border: addForm.is_athlete_specific === opt.val
+                          ? "1px solid #34d399"
+                          : addForm.is_athlete_specific === null && addForm.is_two_way_engagement === true
+                            ? "1px solid rgba(245,158,11,0.6)"
+                            : "1px solid #374151",
+                        color: addForm.is_athlete_specific === opt.val ? "#34d399" : "#9ca3af",
+                      }}
+                    >{opt.label}</button>
+                  ))}
+                </div>
+                {/* Nudge — only relevant for dm/text types where both flags gate traction */}
+                {AUTO_EXPAND_SIGNAL_TYPES.has(addForm.activity_type) && addForm.is_two_way_engagement === true && addForm.is_athlete_specific === null && (
+                  <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 8, lineHeight: 1.5 }}>
+                    ↑ Choose whether this was personal to your athlete to complete the traction check.
+                  </div>
+                )}
+                {/* Combined note — only for types where both flags gate classification */}
                 {AUTO_EXPAND_SIGNAL_TYPES.has(addForm.activity_type) && (
-                  <div style={{ marginTop: 16, background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: 10, padding: "14px 16px" }}>
-
-                    {/* Q1: Two-way exchange */}
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#34d399", marginBottom: 3 }}>
-                      Was this a real back-and-forth exchange?
-                    </div>
-                    <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10, lineHeight: 1.5 }}>
-                      This helps confirm there was real two-way communication.
-                    </div>
-                    <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 16 }}>
-                      {[{ val: true, label: "Yes — both responded" }, { val: false, label: "No reply yet" }, { val: null, label: "Not sure" }].map(opt => (
-                        <button
-                          key={String(opt.val)}
-                          type="button"
-                          onClick={() => setAddForm(p => ({ ...p, is_two_way_engagement: opt.val }))}
-                          style={{
-                            padding: "6px 12px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
-                            background: addForm.is_two_way_engagement === opt.val ? "rgba(52,211,153,0.15)" : "#0a0e1a",
-                            border: addForm.is_two_way_engagement === opt.val ? "1px solid #34d399" : "1px solid #374151",
-                            color: addForm.is_two_way_engagement === opt.val ? "#34d399" : "#9ca3af",
-                          }}
-                        >{opt.label}</button>
-                      ))}
-                    </div>
-
-                    {/* Divider */}
-                    <div style={{ borderTop: "1px solid rgba(52,211,153,0.15)", marginBottom: 14 }} />
-
-                    {/* Q2: Athlete-specific — promoted here; required alongside Q1 for true traction */}
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#34d399", marginBottom: 3 }}>
-                      Was this specifically directed at your athlete?
-                    </div>
-                    <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10, lineHeight: 1.5 }}>
-                      Coach HQ only counts this as true traction when the contact was personal to your athlete.
-                    </div>
-                    <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                      {[{ val: true, label: "Yes — athlete-specific" }, { val: false, label: "No — generic/template" }].map(opt => (
-                        <button
-                          key={String(opt.val)}
-                          type="button"
-                          onClick={() => setAddForm(p => ({ ...p, is_athlete_specific: opt.val }))}
-                          style={{
-                            padding: "6px 12px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
-                            background: addForm.is_athlete_specific === opt.val ? "rgba(52,211,153,0.15)" : "#0a0e1a",
-                            border: addForm.is_athlete_specific === opt.val
-                              ? "1px solid #34d399"
-                              : addForm.is_athlete_specific === null && addForm.is_two_way_engagement === true
-                                ? "1px solid rgba(245,158,11,0.6)"
-                                : "1px solid #374151",
-                            color: addForm.is_athlete_specific === opt.val ? "#34d399" : "#9ca3af",
-                          }}
-                        >{opt.label}</button>
-                      ))}
-                    </div>
-                    {/* Nudge when Q1 = Yes but Q2 not yet answered */}
-                    {addForm.is_two_way_engagement === true && addForm.is_athlete_specific === null && (
-                      <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 8, lineHeight: 1.5 }}>
-                        ↑ Choose whether this was personal to your athlete to complete the traction check.
-                      </div>
-                    )}
-
-                    {/* Combined note */}
-                    <div style={{ fontSize: 11, color: "#4b5563", marginTop: 12, lineHeight: 1.5 }}>
-                      True traction requires both answers to be Yes.
-                    </div>
+                  <div style={{ fontSize: 11, color: "#4b5563", marginTop: 12, lineHeight: 1.5 }}>
+                    True traction requires both answers to be Yes.
                   </div>
                 )}
 
-                {/* SECONDARY: optional details (collapsed) */}
-                <div style={{ marginTop: 12, borderTop: "1px solid #1f2937", paddingTop: 12 }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvanced(p => !p)}
-                    style={{ background: "none", border: "none", color: "#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: showAdvanced ? 12 : 0 }}
-                  >
-                    {showAdvanced ? "▲ Hide optional details" : "▼ More details (optional)"}
-                  </button>
-                  {showAdvanced && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                      {/* For non-dm/text types, show two-way engagement here */}
-                      {!AUTO_EXPAND_SIGNAL_TYPES.has(addForm.activity_type) && (
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>Was there a personal reply / two-way exchange?</div>
-                          <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                            {[{ val: true, label: "Yes — both sides responded" }, { val: false, label: "No reply yet" }, { val: null, label: "Not sure" }].map(opt => (
-                              <button
-                                key={String(opt.val)}
-                                type="button"
-                                onClick={() => setAddForm(p => ({ ...p, is_two_way_engagement: opt.val }))}
-                                style={{
-                                  padding: "5px 11px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
-                                  background: addForm.is_two_way_engagement === opt.val ? "rgba(232,160,32,0.12)" : "#0a0e1a",
-                                  border: addForm.is_two_way_engagement === opt.val ? "1px solid #e8a020" : "1px solid #374151",
-                                  color: addForm.is_two_way_engagement === opt.val ? "#e8a020" : "#9ca3af",
-                                }}
-                              >{opt.label}</button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {/* Only show for non-dm/text types; promoted to the traction check card above for AUTO_EXPAND types */}
-                      {!AUTO_EXPAND_SIGNAL_TYPES.has(addForm.activity_type) && (
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>Was this specifically directed at your athlete?</div>
-                          <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                            {[{ val: true, label: "Yes — athlete-specific" }, { val: false, label: "No — generic/template" }, { val: null, label: "Not sure" }].map(opt => (
-                              <button
-                                key={String(opt.val)}
-                                type="button"
-                                onClick={() => setAddForm(p => ({ ...p, is_athlete_specific: opt.val }))}
-                                style={{
-                                  padding: "5px 11px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
-                                  background: addForm.is_athlete_specific === opt.val ? "rgba(232,160,32,0.12)" : "#0a0e1a",
-                                  border: addForm.is_athlete_specific === opt.val ? "1px solid #e8a020" : "1px solid #374151",
-                                  color: addForm.is_athlete_specific === opt.val ? "#e8a020" : "#9ca3af",
-                                }}
-                              >{opt.label}</button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <FormField
-                        label="Evidence Reference (optional)"
-                        value={addForm.evidence_reference}
-                        onChange={setField("evidence_reference")}
-                        placeholder="Screenshot filename, DM link, etc."
-                      />
-                    </div>
-                  )}
+                {/* Evidence reference — always visible, no collapse */}
+                <div style={{ borderTop: "1px solid rgba(52,211,153,0.15)", marginTop: 14, paddingTop: 14 }}>
+                  <FormField
+                    label="Evidence Reference (optional)"
+                    value={addForm.evidence_reference}
+                    onChange={setField("evidence_reference")}
+                    placeholder="Screenshot filename, DM link, etc."
+                  />
                 </div>
-              </>
+              </div>
             )}
 
             {/* ── Offer fields ── */}
