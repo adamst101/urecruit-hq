@@ -587,66 +587,221 @@ export default function CoachDashboard() {
     return all.slice(0, 15);
   })();
 
-  // ── Early interest: level-1 schools sub-classified as Watching vs Personal Signal ──
-  // Only schools at exactly traction_level=1 are included here.
-  // Schools at level 0 (no signal) and ≥2 (true traction) are excluded.
+  // ── Signal classification helpers ────────────────────────────────────────
   const SIGNAL_PERSONAL_TYPES = new Set([
     "dm_received", "dm_sent", "text_received", "text_sent", "post_camp_followup_sent",
   ]);
 
-  const earlyInterestRows = (() => {
-    const rows = [];
-    for (const rEntry of roster) {
-      const journey = athleteJourneys[rEntry.account_id];
-      if (!journey) continue;
+  const _d30 = new Date(_now.getTime() - 30 * 86400000).toISOString().slice(0, 10);
+  const _d60 = new Date(_now.getTime() - 60 * 86400000).toISOString().slice(0, 10);
 
-      const watchingSchools = [];
-      const personalSignalSchools = [];
+  function _get30dCount(journey) {
+    return (journey.recent_activities || []).filter(a =>
+      (a.activity_date || a.created_at || "").slice(0, 10) >= _d30
+    ).length;
+  }
+  function _get30dHighestLevel(journey) {
+    let max = 0;
+    for (const a of (journey.recent_activities || [])) {
+      if ((a.activity_date || a.created_at || "").slice(0, 10) < _d30) continue;
+      const lvl = a._traction_level ?? 0;
+      if (lvl > max) max = lvl;
+    }
+    return max;
+  }
 
-      for (const sData of Object.values(journey.school_traction || {})) {
-        if (sData.traction_level !== 1) continue; // exclude level 0 (no signal) and ≥2 (true traction)
-        const school = (sData.school_name || "").trim();
-        if (!school) continue;
-        if (SIGNAL_PERSONAL_TYPES.has(sData.top_activity_type)) {
-          personalSignalSchools.push({ name: school, last_date: sData.last_activity_date || "" });
-        } else {
-          watchingSchools.push({ name: school, last_date: sData.last_activity_date || "" });
-        }
+  // ── Headline metric: Players w/ Any Interest ──────────────────────────────
+  const playersWithAnyInterest = (() => {
+    if (Object.keys(athleteJourneys).length === 0) return null;
+    let n = 0;
+    for (const r of roster) {
+      const j = athleteJourneys[r.account_id];
+      if (j && Object.values(j.school_traction || {}).some(s => s.traction_level >= 1)) n++;
+    }
+    return n;
+  })();
+
+  // ── Headline metric: Colleges Engaging Program (any level ≥ 1, broadened) ─
+  const collegesEngagingProgramCount = (() => {
+    const names = new Set();
+    for (const j of Object.values(athleteJourneys)) {
+      for (const [key, s] of Object.entries(j.school_traction || {})) {
+        if (s.traction_level >= 1) names.add((s.school_name || "").trim() || key);
       }
+    }
+    return names.size;
+  })();
 
-      if (watchingSchools.length === 0 && personalSignalSchools.length === 0) continue;
+  // ── Headline metric: Players Heating Up (active in last 30d) ─────────────
+  const playersHeatingUpCount = (() => {
+    if (Object.keys(athleteJourneys).length === 0) return null;
+    let n = 0;
+    for (const r of roster) {
+      const j = athleteJourneys[r.account_id];
+      if (j && (j.last_activity_date || "") >= _d30) n++;
+    }
+    return n;
+  })();
 
-      const strongestTier = personalSignalSchools.length > 0 ? "personal_signal" : "watching";
+  // ── Headline metric: Repeat-Interest Colleges ────────────────────────────
+  const repeatInterestCollegesCount = programMetrics?.repeated_interest_college_count ?? (() => {
+    const m = {};
+    for (const r of roster) {
+      const j = athleteJourneys[r.account_id];
+      if (!j) continue;
+      for (const [key, s] of Object.entries(j.school_traction || {})) {
+        if (s.traction_level < 1) continue;
+        const name = (s.school_name || "").trim() || key;
+        if (!m[name]) m[name] = new Set();
+        m[name].add(r.account_id);
+      }
+    }
+    return Object.values(m).filter(s => s.size >= 2).length;
+  })();
 
-      // Top college: most-recent personal signal school first, then watching
-      const sorted = [
-        ...personalSignalSchools.sort((a, b) => b.last_date.localeCompare(a.last_date)),
-        ...watchingSchools.sort((a, b) => b.last_date.localeCompare(a.last_date)),
-      ];
+  // ── Players Heating Up table (ranked coach action list) ───────────────────
+  const playersHeatingUpRows = (() => {
+    const stageOrder = { "Visit / Offer": 0, "True Traction": 1, "Personal Signal": 2, "Watching": 3 };
+    const changeOrder = c => c === "New visit / offer" ? 0 : c === "New personal outreach" ? 1 : c === "New true traction" ? 2 : c.startsWith("+") ? 3 : 4;
+    const rows = [];
 
-      rows.push({
-        athlete_name:          rEntry.athlete_name,
-        athlete_grad_year:     rEntry.athlete_grad_year,
-        account_id:            rEntry.account_id,
-        watching_count:        watchingSchools.length,
-        personal_signal_count: personalSignalSchools.length,
-        strongest_tier:        strongestTier,
-        top_college:           sorted[0]?.name || "—",
-        last_date:             sorted[0]?.last_date || "",
-      });
+    for (const rEntry of roster) {
+      const j = athleteJourneys[rEntry.account_id];
+      if (!j) continue;
+      const st = j.school_traction || {};
+      const hl = j.highest_traction_level || 0;
+      const engaging = Object.values(st).filter(s => s.traction_level >= 1);
+      if (engaging.length === 0 && hl === 0) continue;
+
+      let currentStage;
+      if (hl >= 4) currentStage = "Visit / Offer";
+      else if (hl >= 2) currentStage = "True Traction";
+      else if (hl === 1) currentStage = engaging.some(s => SIGNAL_PERSONAL_TYPES.has(s.top_activity_type)) ? "Personal Signal" : "Watching";
+      else currentStage = "Watching";
+
+      let strongestSignal;
+      if (hl >= 4) {
+        const top = [...engaging].sort((a, b) => b.traction_level - a.traction_level)[0];
+        strongestSignal = top?.relationship_status === "committed" ? "Committed" : top?.relationship_status === "offer" ? "Offer" : "Visit";
+      } else if (hl === 3) strongestSignal = "Personal Invite";
+      else if (hl === 2) strongestSignal = "DM / Text / Email";
+      else if (hl === 1) strongestSignal = engaging.some(s => SIGNAL_PERSONAL_TYPES.has(s.top_activity_type)) ? "DM / Text" : "Follow / Like";
+      else strongestSignal = "—";
+
+      const topCollege = [...engaging].sort((a, b) => b.traction_level - a.traction_level || (b.last_activity_date || "").localeCompare(a.last_activity_date || ""))[0]?.school_name || "—";
+      const lastDate = j.last_activity_date || "";
+      const count30d = _get30dCount(j);
+      const level30d = _get30dHighestLevel(j);
+
+      let change30d;
+      if (count30d === 0) change30d = "No change";
+      else if (level30d >= 4) change30d = "New visit / offer";
+      else if (level30d >= 3) change30d = "New personal outreach";
+      else if (level30d >= 2) change30d = "New true traction";
+      else change30d = `+${count30d} activit${count30d === 1 ? "y" : "ies"}`;
+
+      const coachAttention = (hl >= 4 || (hl >= 2 && count30d > 0)) ? "High Priority" : (count30d > 0 || hl >= 2) ? "Heating Up" : "Watching";
+
+      rows.push({ account_id: rEntry.account_id, athlete_name: rEntry.athlete_name, athlete_grad_year: rEntry.athlete_grad_year, currentStage, schoolsEngaging: engaging.length, strongestSignal, topCollege, change30d, coachAttention, hl, count30d, lastDate });
     }
 
-    // Sort: personal signal athletes first, then by total signal school count, then recency
     rows.sort((a, b) => {
-      if (a.strongest_tier !== b.strongest_tier) {
-        return a.strongest_tier === "personal_signal" ? -1 : 1;
-      }
-      const diff = (b.watching_count + b.personal_signal_count) - (a.watching_count + a.personal_signal_count);
-      if (diff !== 0) return diff;
-      return b.last_date.localeCompare(a.last_date);
+      const sd = (stageOrder[a.currentStage] ?? 3) - (stageOrder[b.currentStage] ?? 3);
+      if (sd !== 0) return sd;
+      const cd = changeOrder(a.change30d) - changeOrder(b.change30d);
+      if (cd !== 0) return cd;
+      const dd = b.schoolsEngaging - a.schoolsEngaging;
+      if (dd !== 0) return dd;
+      return (b.lastDate || "").localeCompare(a.lastDate || "");
     });
-
     return rows;
+  })();
+
+  // ── Colleges Engaging the Program (cross-athlete, all level ≥ 1) ─────────
+  const collegesEngagingRows = (() => {
+    const map = {};
+    for (const rEntry of roster) {
+      const j = athleteJourneys[rEntry.account_id];
+      if (!j) continue;
+      for (const [key, s] of Object.entries(j.school_traction || {})) {
+        if (s.traction_level < 1) continue;
+        const name = (s.school_name || "").trim() || key;
+        if (!name) continue;
+        if (!map[name]) map[name] = { college: name, ids: new Set(), names: [], hl: 0, hs: "general_signal", lastDate: "", totalCount: 0, hasPersonal: false };
+        const e = map[name];
+        if (!e.ids.has(rEntry.account_id)) { e.ids.add(rEntry.account_id); if (rEntry.athlete_name) e.names.push(rEntry.athlete_name); }
+        if (s.traction_level > e.hl) { e.hl = s.traction_level; e.hs = s.relationship_status; }
+        if (s.traction_level === 1 && SIGNAL_PERSONAL_TYPES.has(s.top_activity_type)) e.hasPersonal = true;
+        if ((s.last_activity_date || "") > e.lastDate) e.lastDate = s.last_activity_date;
+        e.totalCount += s.activity_count || 1;
+      }
+    }
+    return Object.values(map).map(e => {
+      const ac = e.ids.size;
+      let hs; if (e.hl >= 4) hs = "Visit / Offer"; else if (e.hl >= 2) hs = "True Traction"; else hs = e.hasPersonal ? "Personal Signal" : "Watching";
+      let pv; if (e.hl >= 3 || ac >= 3) pv = "Strong"; else if (e.hl >= 2 || ac >= 2 || e.totalCount >= 3) pv = "Growing"; else pv = "Low";
+      let rl = null; if (ac >= 3) rl = `×${ac} athletes`; else if (ac === 2) rl = "×2 athletes"; else if (e.totalCount >= 3) rl = "Repeat"; else if (e.lastDate >= _d30) rl = "New This Month";
+      return { college: e.college, athletesEngaged: ac, athleteNames: e.names, highestStage: hs, highestLevel: e.hl, highestStatus: e.hs, lastActivityDate: e.lastDate, repeatInterest: ac >= 2 || e.totalCount >= 3, repeatLabel: rl, programValue: pv };
+    }).sort((a, b) => b.highestLevel - a.highestLevel || b.athletesEngaged - a.athletesEngaged);
+  })();
+
+  // ── Recruiting Momentum (30d vs prior 30d) ────────────────────────────────
+  const recruitingMomentum = (() => {
+    let p30 = 0, pP = 0, tt30 = 0, ttP = 0;
+    for (const rEntry of roster) {
+      const j = athleteJourneys[rEntry.account_id];
+      if (!j) continue;
+      const acts = j.recent_activities || [];
+      const has30 = acts.some(a => (a.activity_date || a.created_at || "").slice(0, 10) >= _d30);
+      const hasPrior = acts.some(a => { const d = (a.activity_date || a.created_at || "").slice(0, 10); return d >= _d60 && d < _d30; });
+      if (has30) p30++;
+      if (hasPrior) pP++;
+      const hasTT = Object.values(j.school_traction || {}).some(s => s.true_traction);
+      if (hasTT && has30) tt30++;
+      if (hasTT && hasPrior) ttP++;
+    }
+    const c30 = new Set(), cP = new Set();
+    for (const j of Object.values(athleteJourneys)) {
+      for (const [key, s] of Object.entries(j.school_traction || {})) {
+        if (s.traction_level < 1) continue;
+        const name = (s.school_name || "").trim() || key;
+        if (!name) continue;
+        if ((s.last_activity_date || "") >= _d30) c30.add(name);
+        else if ((s.last_activity_date || "") >= _d60) cP.add(name);
+      }
+    }
+    const totalVO = (programMetrics?.offer_count || 0) + (programMetrics?.unofficial_visit_count || 0) + (programMetrics?.official_visit_count || 0);
+    return { players30d: p30, players_prior: pP, trueTraction30d: tt30, trueTraction_prior: ttP, colleges30d: c30.size, colleges_prior: cP.size, totalVO };
+  })();
+
+  // ── Players Needing Attention ─────────────────────────────────────────────
+  const playersNeedingAttentionRows = (() => {
+    const rows = [];
+    for (const rEntry of roster) {
+      const j = athleteJourneys[rEntry.account_id];
+      if (!j) continue;
+      const st = j.school_traction || {};
+      const hl = j.highest_traction_level || 0;
+      const lastDate = j.last_activity_date || "";
+      const count30d = _get30dCount(j);
+      const engaging = Object.values(st).filter(s => s.traction_level >= 1);
+      const tractionSchools = Object.values(st).filter(s => s.true_traction);
+      const hasVisitOffer = Object.values(st).some(s => ["visit","offer","committed"].includes(s.relationship_status));
+      const hasTT = tractionSchools.length > 0;
+
+      if (hasTT && count30d === 0 && lastDate) {
+        rows.push({ athlete_name: rEntry.athlete_name, athlete_grad_year: rEntry.athlete_grad_year, lastActivity: lastDate, stage: hl >= 4 ? "Visit / Offer" : "True Traction", reason: "No activity in 30 days", suggestedAction: hl >= 4 ? "High Priority Conversation" : "Follow Up", priority: hl >= 4 ? 0 : 1 });
+      } else if (engaging.length >= 3 && !hasTT) {
+        const hasP = engaging.some(s => SIGNAL_PERSONAL_TYPES.has(s.top_activity_type));
+        rows.push({ athlete_name: rEntry.athlete_name, athlete_grad_year: rEntry.athlete_grad_year, lastActivity: lastDate, stage: hasP ? "Personal Signal" : "Watching", reason: `${engaging.length} schools engaging, no true traction`, suggestedAction: "Encourage Follow-Up", priority: 2 });
+      } else if (tractionSchools.length >= 2 && !hasVisitOffer) {
+        rows.push({ athlete_name: rEntry.athlete_name, athlete_grad_year: rEntry.athlete_grad_year, lastActivity: lastDate, stage: "True Traction", reason: `${tractionSchools.length} schools with traction, no visit yet`, suggestedAction: "Track Closely", priority: 2 });
+      } else if (hl === 1 && !hasTT && engaging.length > 0 && !j.player_progressing) {
+        rows.push({ athlete_name: rEntry.athlete_name, athlete_grad_year: rEntry.athlete_grad_year, lastActivity: lastDate, stage: "Watching", reason: "Watching only, no progression", suggestedAction: "Check In", priority: 3 });
+      }
+    }
+    rows.sort((a, b) => a.priority - b.priority || (b.lastActivity || "").localeCompare(a.lastActivity || ""));
+    return rows.slice(0, 12);
   })();
 
   const RELATIONSHIP_LABEL = {
@@ -687,7 +842,7 @@ export default function CoachDashboard() {
             <p style={{ color: "#9ca3af", fontSize: 15, margin: "6px 0 0" }}>
               {isTrainer
                 ? `Welcome back, Trainer ${coach.last_name}${coach.title ? ` · ${coach.title}` : ""}`
-                : "True recruiting traction and program outcomes across your athletes"
+                : "Program recruiting performance, player momentum, and college engagement across your roster"
               }
             </p>
             <p style={{ color: "#6b7280", fontSize: 13, marginTop: 2 }}>
@@ -722,89 +877,199 @@ export default function CoachDashboard() {
         </div>
       </section>
 
-      {/* ── PRIMARY STAT ROW ── */}
+      {/* ── SECTION 2: HEADLINE PROGRAM METRICS (6 cards) ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-          {/* Athletes — always available */}
-          <div
-            onClick={() => setOpenSheet("roster")}
-            style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
-          >
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Athletes</div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#e8a020", lineHeight: 1 }}>{roster.length}</div>
-            <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>on roster</div>
-          </div>
-
-          {/* True Traction Players */}
-          <div
-            style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}
-          >
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>True Traction Players</div>
-            {journeyLoading && !programMetrics ? (
-              <div style={{ height: 40, display: "flex", alignItems: "center" }}>
-                <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-              </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(148px, 1fr))", gap: 12 }}>
+          {/* 1. Players w/ Any Interest */}
+          <div onClick={() => setOpenSheet("roster")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#34d399"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players w/ Any Interest</div>
+            {journeyLoading && playersWithAnyInterest === null ? (
+              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
             ) : (
               <>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#60a5fa", lineHeight: 1 }}>
-                  {programMetrics?.players_with_true_traction ?? (roster.length > 0 ? "0" : "—")}
-                </div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>with verified personal contact+</div>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#34d399", lineHeight: 1 }}>{playersWithAnyInterest ?? (roster.length > 0 ? "0" : "—")}</div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>any recruiting signal</div>
               </>
             )}
           </div>
-
-          {/* Colleges Showing Interest */}
-          <div
-            style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}
-          >
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Colleges w/ Real Interest</div>
+          {/* 2. Players w/ True Traction */}
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}>
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players w/ True Traction</div>
             {journeyLoading && !programMetrics ? (
-              <div style={{ height: 40, display: "flex", alignItems: "center" }}>
-                <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-              </div>
+              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
             ) : (
               <>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#a78bfa", lineHeight: 1 }}>
-                  {programMetrics?.colleges_with_true_interest ?? (roster.length > 0 ? "0" : "—")}
-                </div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>colleges with verified traction</div>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#60a5fa", lineHeight: 1 }}>{programMetrics?.players_with_true_traction ?? (roster.length > 0 ? "0" : "—")}</div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>verified personal contact+</div>
               </>
             )}
           </div>
-
-          {/* Offers / Visits */}
-          <div
-            style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}
-          >
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Offers / Visits</div>
+          {/* 3. Visits / Offers */}
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}>
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Visits / Offers</div>
             {journeyLoading && !programMetrics ? (
-              <div style={{ height: 40, display: "flex", alignItems: "center" }}>
-                <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-              </div>
+              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
             ) : (
               <>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#f59e0b", lineHeight: 1 }}>
-                  {programMetrics
-                    ? programMetrics.offer_count + programMetrics.unofficial_visit_count + programMetrics.official_visit_count
-                    : (roster.length > 0 ? "0" : "—")}
-                </div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>offers + visits across roster</div>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#f59e0b", lineHeight: 1 }}>{programMetrics ? programMetrics.offer_count + programMetrics.unofficial_visit_count + programMetrics.official_visit_count : (roster.length > 0 ? "0" : "—")}</div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>unofficial + official + offers</div>
+              </>
+            )}
+          </div>
+          {/* 4. Colleges Engaging Program */}
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}>
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Colleges Engaging Program</div>
+            {journeyLoading && !programMetrics ? (
+              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
+            ) : (
+              <>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#a78bfa", lineHeight: 1 }}>{collegesEngagingProgramCount > 0 ? collegesEngagingProgramCount : (roster.length > 0 ? "0" : "—")}</div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>unique colleges, any signal</div>
+              </>
+            )}
+          </div>
+          {/* 5. Players Heating Up */}
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}>
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players Heating Up</div>
+            {journeyLoading && playersHeatingUpCount === null ? (
+              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#fb923c", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
+            ) : (
+              <>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#fb923c", lineHeight: 1 }}>{playersHeatingUpCount ?? (roster.length > 0 ? "0" : "—")}</div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>active in last 30 days</div>
+              </>
+            )}
+          </div>
+          {/* 6. Repeat-Interest Colleges */}
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}>
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Repeat-Interest Colleges</div>
+            {journeyLoading && !programMetrics ? (
+              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
+            ) : (
+              <>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#e8a020", lineHeight: 1 }}>{repeatInterestCollegesCount > 0 ? repeatInterestCollegesCount : (roster.length > 0 ? "0" : "—")}</div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>engaging multiple athletes</div>
               </>
             )}
           </div>
         </div>
       </section>
 
-      {/* ── TRUE TRACTION BOARD (main centerpiece) ── */}
+      {/* ── SECTION 3: PROGRAM RECRUITING SNAPSHOT ── */}
+      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "20px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+            <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f9fafb" }}>PROGRAM RECRUITING SNAPSHOT</div>
+            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>AD-ready proof summary</span>
+            {journeyLoading && !programMetrics && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />}
+          </div>
+          {journeyLoading && !programMetrics ? (
+            <div style={{ fontSize: 13, color: "#4b5563" }}>Loading…</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 32px" }}>
+              <div>
+                {[
+                  { label: "Players w/ Any Interest", value: playersWithAnyInterest ?? 0, color: "#34d399" },
+                  { label: "Players w/ True Traction", value: programMetrics?.players_with_true_traction ?? 0, color: "#60a5fa" },
+                  { label: "Unofficial Visits", value: programMetrics?.unofficial_visit_count ?? 0, color: "#a78bfa" },
+                  { label: "Official Visits", value: programMetrics?.official_visit_count ?? 0, color: "#a78bfa" },
+                  { label: "Offers", value: programMetrics?.offer_count ?? 0, color: "#f59e0b" },
+                  { label: "Commitments", value: programMetrics?.commitment_count ?? 0, color: "#e8a020" },
+                ].map(({ label, value, color }, idx, arr) => (
+                  <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid #1f2937" : "none" }}>
+                    <span style={{ fontSize: 13, color: value > 0 ? "#d1d5db" : "#6b7280" }}>{label}</span>
+                    <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: value > 0 ? color : "#374151", lineHeight: 1 }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ borderLeft: "1px solid #1f2937", paddingLeft: 28 }}>
+                <div style={{ fontSize: 11, color: "#4b5563", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>30-Day Pulse</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>New Interest Last 30 Days</div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: recruitingMomentum.players30d > 0 ? "#34d399" : "#374151", lineHeight: 1 }}>{recruitingMomentum.players30d}</span>
+                      <span style={{ fontSize: 12, color: "#4b5563" }}>players active</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>New Colleges Engaging Last 30 Days</div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: recruitingMomentum.colleges30d > 0 ? "#a78bfa" : "#374151", lineHeight: 1 }}>{recruitingMomentum.colleges30d}</span>
+                      <span style={{ fontSize: 12, color: "#4b5563" }}>colleges active</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── SECTION 4: PLAYERS HEATING UP ── */}
+      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+          <div style={{ width: 3, height: 24, background: "#fb923c", borderRadius: 2, flexShrink: 0 }} />
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>PLAYERS HEATING UP</div>
+          <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>ranked coach action list — all tiers</span>
+          {journeyLoading && Object.keys(athleteJourneys).length === 0 && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#fb923c", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />}
+        </div>
+        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
+          {playersHeatingUpRows.length === 0 ? (
+            <div style={{ padding: "40px 32px", textAlign: "center" }}>
+              {journeyLoading ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "#4b5563", fontSize: 14 }}>
+                  <div style={{ width: 16, height: 16, border: "2px solid #374151", borderTopColor: "#fb923c", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  Loading recruiting data…
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#374151", letterSpacing: 1, marginBottom: 10 }}>NO RECRUITING ACTIVITY YET</div>
+                  <p style={{ fontSize: 13, color: "#4b5563", margin: 0, lineHeight: 1.7 }}>When athletes log recruiting activity, this table will rank them by momentum.</p>
+                </>
+              )}
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 100px 60px 120px 1fr 130px 100px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                <span>Athlete</span><span>Current Stage</span><span>Schools</span><span>Strongest Signal</span><span>Top College</span><span>30-Day Change</span><span>Coach Attention</span>
+              </div>
+              {playersHeatingUpRows.slice(0, 15).map((row, i) => {
+                const stageColors = { "Visit / Offer": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#34d399", "Watching": "#6b7280" };
+                const attentionColors = { "High Priority": "#f59e0b", "Heating Up": "#fb923c", "Watching": "#6b7280" };
+                const sc = stageColors[row.currentStage] || "#6b7280";
+                const ac = attentionColors[row.coachAttention] || "#6b7280";
+                return (
+                  <div key={row.account_id || i} style={{ display: "grid", gridTemplateColumns: "1.2fr 100px 60px 120px 1fr 130px 100px", gap: 8, padding: "12px 20px", borderBottom: i < Math.min(playersHeatingUpRows.length, 15) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{row.athlete_name || "Athlete"}</div>
+                      {row.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>'{String(row.athlete_grad_year).slice(-2)}</div>}
+                    </div>
+                    <div><span style={{ fontSize: 10, fontWeight: 700, color: sc, background: `${sc}14`, border: `1px solid ${sc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.currentStage}</span></div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: row.schoolsEngaging > 0 ? "#d1d5db" : "#374151", lineHeight: 1 }}>{row.schoolsEngaging || "—"}</div>
+                    <div style={{ fontSize: 11, color: "#9ca3af" }}>{row.strongestSignal}</div>
+                    <div style={{ fontSize: 13, color: "#d1d5db", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.topCollege}</div>
+                    <div style={{ fontSize: 11, color: row.change30d === "No change" ? "#4b5563" : "#34d399", fontWeight: row.change30d === "No change" ? 400 : 600 }}>{row.change30d}</div>
+                    <div><span style={{ fontSize: 10, fontWeight: 700, color: ac, background: `${ac}14`, border: `1px solid ${ac}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.coachAttention}</span></div>
+                  </div>
+                );
+              })}
+              {playersHeatingUpRows.length > 15 && (
+                <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "#4b5563", borderTop: "1px solid #1f2937" }}>+{playersHeatingUpRows.length - 15} more athletes with recruiting activity</div>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* ── SECTION 5: TRUE TRACTION BOARD ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 3, height: 24, background: "#60a5fa", borderRadius: 2 }} />
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>TRUE TRACTION BOARD</div>
-            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>verified personal contact and above</span>
+            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>verified personal contact and above only</span>
           </div>
           {journeyLoading && !programMetrics && (
             <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
@@ -822,41 +1087,33 @@ export default function CoachDashboard() {
                 <>
                   <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#374151", letterSpacing: 1, marginBottom: 10 }}>NO TRUE TRACTION YET</div>
                   <p style={{ fontSize: 13, color: "#4b5563", margin: 0, lineHeight: 1.7, maxWidth: 460, marginLeft: "auto", marginRight: "auto" }}>
-                    No colleges have logged verified personal contact, visit requests, or offers for athletes on your roster. When real, athlete-specific recruiting interest is recorded, those relationships will appear here.
+                    No colleges have logged verified personal contact, visit requests, or offers. Signal-only activity appears in Players Heating Up above.
                   </p>
                 </>
               )}
             </div>
           ) : (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 110px 90px 80px", gap: 10, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                <span>Athlete</span><span>College</span><span>Traction Type</span><span>Last Date</span><span>Status</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 90px 90px 110px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                <span>Athlete</span><span>College</span><span>Highest Traction Type</span><span>Last Date</span><span>Status</span><span>Next Step</span>
               </div>
               {tractionPairs.slice(0, 15).map((p, i) => {
                 const statusColor = RELATIONSHIP_COLOR[p.relationship_status] || "#9ca3af";
-                const tractionLabel =
-                  p.traction_level === 4 ? "Visit / Offer Stage" :
-                  p.traction_level === 3 ? "Direct Recruiting Action" :
-                  "Verified Personal Contact";
-                const tractionColor =
-                  p.traction_level === 4 ? "#f59e0b" :
-                  p.traction_level === 3 ? "#a78bfa" : "#60a5fa";
+                const tractionLabel = p.traction_level === 4 ? "Visit / Offer Stage" : p.traction_level === 3 ? "Direct Recruiting Action" : "Verified Personal Contact";
+                const tractionColor = p.traction_level === 4 ? "#f59e0b" : p.traction_level === 3 ? "#a78bfa" : "#60a5fa";
+                const nextStep = p.traction_level >= 4 ? "High Priority" : p.traction_level === 3 ? "Follow Up" : p.relationship_status === "verified_contact" ? "Coach Conversation" : "Monitor";
+                const nsc = nextStep === "High Priority" ? "#f59e0b" : nextStep === "Follow Up" ? "#a78bfa" : nextStep === "Coach Conversation" ? "#60a5fa" : "#4b5563";
                 return (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 110px 90px 80px", gap: 10, padding: "12px 20px", borderBottom: i < Math.min(tractionPairs.length, 15) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 90px 90px 110px", gap: 8, padding: "12px 20px", borderBottom: i < Math.min(tractionPairs.length, 15) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                     <div>
                       <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{p.athlete_name || "Athlete"}</div>
                       {p.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>'{String(p.athlete_grad_year).slice(-2)}</div>}
                     </div>
                     <div style={{ fontSize: 13, color: "#d1d5db", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.school_name}</div>
                     <div style={{ fontSize: 11, color: tractionColor, fontWeight: 600 }}>{tractionLabel}</div>
-                    <div style={{ fontSize: 12, color: "#6b7280" }}>
-                      {p.last_activity_date ? new Date(p.last_activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
-                    </div>
-                    <div>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>
-                        {RELATIONSHIP_LABEL[p.relationship_status] || p.relationship_status}
-                      </span>
-                    </div>
+                    <div style={{ fontSize: 12, color: "#6b7280" }}>{p.last_activity_date ? new Date(p.last_activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                    <div><span style={{ fontSize: 10, fontWeight: 700, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{RELATIONSHIP_LABEL[p.relationship_status] || p.relationship_status}</span></div>
+                    <div><span style={{ fontSize: 10, fontWeight: 700, color: nsc, background: `${nsc}14`, border: `1px solid ${nsc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{nextStep}</span></div>
                   </div>
                 );
               })}
@@ -870,79 +1127,46 @@ export default function CoachDashboard() {
         </div>
       </section>
 
-      {/* ── PLAYERS SHOWING EARLY INTEREST ── */}
-      {(earlyInterestRows.length > 0 || (journeyLoading && Object.keys(athleteJourneys).length === 0)) && (
+      {/* ── SECTION 6: COLLEGES ENGAGING THE PROGRAM ── */}
+      {(collegesEngagingRows.length > 0 || journeyLoading) && (
         <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-            <div style={{ width: 3, height: 24, background: "#34d399", borderRadius: 2, flexShrink: 0 }} />
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>PLAYERS SHOWING EARLY INTEREST</div>
-            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>signal-stage activity — below true traction</span>
-            {journeyLoading && Object.keys(athleteJourneys).length === 0 && (
-              <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />
-            )}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <div style={{ width: 3, height: 24, background: "#a78bfa", borderRadius: 2 }} />
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>COLLEGES ENGAGING THE PROGRAM</div>
+            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>all signal levels · cross-roster</span>
           </div>
           <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
-            {earlyInterestRows.length === 0 ? (
-              <div style={{ padding: "32px 24px", textAlign: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "#4b5563", fontSize: 14 }}>
-                  <div style={{ width: 16, height: 16, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                  Loading recruiting data…
-                </div>
+            {collegesEngagingRows.length === 0 ? (
+              <div style={{ padding: "28px 24px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "#4b5563", fontSize: 14 }}>
+                <div style={{ width: 16, height: 16, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                Loading…
               </div>
             ) : (
               <>
-                {/* Column headers */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 72px 110px 1fr 80px", gap: 10, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  <span>Athlete</span>
-                  <span>Watching</span>
-                  <span>Personal</span>
-                  <span>Signal Tier</span>
-                  <span>Top College</span>
-                  <span>Last Activity</span>
+                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 70px 110px 90px 110px 90px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  <span>College</span><span>Athletes</span><span>Highest Stage</span><span>Last Activity</span><span>Repeat Interest</span><span>Program Value</span>
                 </div>
-                {earlyInterestRows.slice(0, 12).map((row, i) => {
-                  const isPersonal = row.strongest_tier === "personal_signal";
-                  const tierColor = isPersonal ? "#34d399" : "#6b7280";
-                  const tierLabel = isPersonal ? "Personal Signal" : "Watching";
+                {collegesEngagingRows.slice(0, 15).map((col, i) => {
+                  const stageColors = { "Visit / Offer": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#34d399", "Watching": "#6b7280" };
+                  const pvColors = { "Strong": "#f59e0b", "Growing": "#34d399", "Low": "#4b5563" };
+                  const sc = stageColors[col.highestStage] || "#6b7280";
+                  const pvc = pvColors[col.programValue] || "#4b5563";
                   return (
-                    <div
-                      key={row.account_id || i}
-                      style={{ display: "grid", gridTemplateColumns: "1fr 72px 72px 110px 1fr 80px", gap: 10, padding: "12px 20px", borderBottom: i < Math.min(earlyInterestRows.length, 12) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}
-                    >
-                      {/* Athlete */}
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1.5fr 70px 110px 90px 110px 90px", gap: 8, padding: "12px 20px", borderBottom: i < Math.min(collegesEngagingRows.length, 15) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                       <div>
-                        <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{row.athlete_name || "Athlete"}</div>
-                        {row.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>'{String(row.athlete_grad_year).slice(-2)}</div>}
+                        <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.college}</div>
+                        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>{col.athleteNames.slice(0, 2).join(", ")}{col.athleteNames.length > 2 ? ` +${col.athleteNames.length - 2}` : ""}</div>
                       </div>
-                      {/* Watching count */}
-                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: row.watching_count > 0 ? "#9ca3af" : "#374151", lineHeight: 1 }}>
-                        {row.watching_count > 0 ? row.watching_count : "—"}
-                      </div>
-                      {/* Personal signal count */}
-                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: row.personal_signal_count > 0 ? "#34d399" : "#374151", lineHeight: 1 }}>
-                        {row.personal_signal_count > 0 ? row.personal_signal_count : "—"}
-                      </div>
-                      {/* Signal tier badge */}
-                      <div>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: tierColor, background: `${tierColor}14`, border: `1px solid ${tierColor}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>
-                          {tierLabel}
-                        </span>
-                      </div>
-                      {/* Top college */}
-                      <div style={{ fontSize: 13, color: "#d1d5db", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {row.top_college}
-                      </div>
-                      {/* Last activity */}
-                      <div style={{ fontSize: 12, color: "#6b7280" }}>
-                        {row.last_date ? new Date(row.last_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
-                      </div>
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: col.athletesEngaged >= 2 ? "#e8a020" : "#9ca3af", lineHeight: 1 }}>{col.athletesEngaged}</div>
+                      <div><span style={{ fontSize: 10, fontWeight: 700, color: sc, background: `${sc}14`, border: `1px solid ${sc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.highestStage}</span></div>
+                      <div style={{ fontSize: 12, color: "#6b7280" }}>{col.lastActivityDate ? new Date(col.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                      <div>{col.repeatLabel ? <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", background: "#e8a02014", border: "1px solid #e8a02030", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.repeatLabel}</span> : <span style={{ fontSize: 11, color: "#4b5563" }}>—</span>}</div>
+                      <div><span style={{ fontSize: 10, fontWeight: 700, color: pvc, background: `${pvc}14`, border: `1px solid ${pvc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.programValue}</span></div>
                     </div>
                   );
                 })}
-                {earlyInterestRows.length > 12 && (
-                  <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "#4b5563", borderTop: "1px solid #1f2937" }}>
-                    +{earlyInterestRows.length - 12} more athletes with early signal activity
-                  </div>
+                {collegesEngagingRows.length > 15 && (
+                  <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "#4b5563", borderTop: "1px solid #1f2937" }}>+{collegesEngagingRows.length - 15} more colleges</div>
                 )}
               </>
             )}
@@ -950,176 +1174,116 @@ export default function CoachDashboard() {
         </section>
       )}
 
-      {/* ── SECONDARY INSIGHTS ── */}
+      {/* ── SECTION 7: RECRUITING MOMENTUM ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-
-          {/* LEFT: Colleges Showing True Interest */}
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
-            <div
-              onClick={() => setOpenSheet("schools")}
-              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", cursor: "pointer", borderBottom: "1px solid #1f2937" }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 3, height: 16, background: "#a78bfa", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>COLLEGES SHOWING TRUE INTEREST</span>
-              </div>
-              <span style={{ fontSize: 12, color: "#e8a020", fontWeight: 600 }}>All →</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <div style={{ width: 3, height: 20, background: "#34d399", borderRadius: 2 }} />
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f9fafb" }}>RECRUITING MOMENTUM</div>
+          <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>this 30 days vs prior 30 days</span>
+        </div>
+        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
+          {journeyLoading && !programMetrics ? (
+            <div style={{ padding: "20px 24px", display: "flex", alignItems: "center", gap: 10, color: "#4b5563", fontSize: 13 }}>
+              <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />Loading…
             </div>
-            <div style={{ padding: "8px 0" }}>
-              {programMetrics?.colleges_detail?.length > 0 ? (
-                programMetrics.colleges_detail.slice(0, 5).map((col, i) => {
-                  const statusColor = RELATIONSHIP_COLOR[col.relationship_status] || "#9ca3af";
-                  return (
-                    <div key={col.school_name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", borderBottom: i < Math.min(programMetrics.colleges_detail.length, 5) - 1 ? "1px solid #1f2937" : "none" }}>
-                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: i === 0 ? "#a78bfa" : "#374151", width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: "#d1d5db", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.school_name}</div>
-                        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>
-                          {col.athlete_names.slice(0, 2).join(", ")}{col.athlete_count > 2 ? ` +${col.athlete_count - 2}` : ""}
-                          {col.athlete_count > 1 && <span style={{ color: "#4b5563" }}> · {col.athlete_count} athletes</span>}
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-                        {col.is_repeated_interest && (
-                          <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", background: "#e8a02018", border: "1px solid #e8a02040", borderRadius: 20, padding: "2px 7px", whiteSpace: "nowrap" }}>
-                            {col.athlete_count >= 2 ? `×${col.athlete_count}` : "Repeat"}
-                          </span>
-                        )}
-                        <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, borderRadius: 20, padding: "2px 7px", whiteSpace: "nowrap" }}>
-                          {RELATIONSHIP_LABEL[col.relationship_status] || col.relationship_status}
-                        </span>
-                      </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+              {[
+                { label: "Players w/ Any Interest", cur: recruitingMomentum.players30d, prior: recruitingMomentum.players_prior, color: "#34d399" },
+                { label: "True Traction Players", cur: recruitingMomentum.trueTraction30d, prior: recruitingMomentum.trueTraction_prior, color: "#60a5fa" },
+                { label: "New Colleges Engaging", cur: recruitingMomentum.colleges30d, prior: recruitingMomentum.colleges_prior, color: "#a78bfa" },
+                { label: "Visits / Offers", cur: recruitingMomentum.totalVO, prior: null, color: "#f59e0b" },
+              ].map(({ label, cur, prior, color }, idx, arr) => {
+                const delta = prior !== null ? cur - prior : null;
+                const dir = delta === null ? null : delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
+                const dc = delta === null ? "#4b5563" : delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#6b7280";
+                return (
+                  <div key={label} style={{ padding: "16px 20px", borderRight: idx < arr.length - 1 ? "1px solid #1f2937" : "none" }}>
+                    <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{label}</div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color, lineHeight: 1 }}>{cur}</span>
+                      {delta !== null && <span style={{ fontSize: 13, fontWeight: 700, color: dc }}>{dir}{Math.abs(delta) > 0 ? Math.abs(delta) : ""}</span>}
+                      {delta === null && <span style={{ fontSize: 11, color: "#4b5563" }}>all-time</span>}
                     </div>
-                  );
-                })
-              ) : journeyLoading ? (
-                <div style={{ padding: "20px", display: "flex", alignItems: "center", gap: 10, color: "#4b5563", fontSize: 13 }}>
-                  <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                  Loading…
-                </div>
-              ) : topSchools.length > 0 ? (
-                <>
-                  <div style={{ padding: "8px 20px 4px", fontSize: 11, color: "#4b5563" }}>Based on camp registrations — log recruiting activity to see true traction.</div>
-                  {topSchools.map(([school, count], i) => (
-                    <div key={school} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 20px", borderBottom: i < topSchools.length - 1 ? "1px solid #1f2937" : "none" }}>
-                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "#374151", width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</div>
-                      <div style={{ flex: 1, fontSize: 13, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{school}</div>
-                      <div style={{ fontSize: 11, color: "#4b5563", flexShrink: 0 }}>{count} reg{count !== 1 ? "s" : ""}</div>
-                    </div>
-                  ))}
-                </>
-              ) : (
-                <div style={{ padding: "20px 20px 16px" }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>No verified college interest yet</div>
-                  <p style={{ fontSize: 12, color: "#4b5563", margin: 0, lineHeight: 1.6 }}>
-                    When athletes receive real personal outreach, visit requests, or offers, those colleges will appear here.
-                  </p>
-                </div>
-              )}
+                    {prior !== null && <div style={{ fontSize: 11, color: "#4b5563", marginTop: 2 }}>prior 30d: {prior}</div>}
+                  </div>
+                );
+              })}
             </div>
-          </div>
-
-          {/* RIGHT: Program Recruiting Outcomes */}
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #1f2937" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
-                <div style={{ width: 3, height: 16, background: "#f59e0b", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>PROGRAM RECRUITING OUTCOMES</span>
-              </div>
-            </div>
-            <div style={{ padding: "12px 20px 8px" }}>
-              <p style={{ fontSize: 12, color: "#4b5563", margin: "0 0 16px", lineHeight: 1.5 }}>
-                Meaningful recruiting milestones across your roster.
-              </p>
-              {journeyLoading && !programMetrics ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#4b5563", fontSize: 13, padding: "8px 0" }}>
-                  <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                  Loading outcomes…
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                  {[
-                    { label: "Players w/ Early Interest", value: earlyInterestRows.length,                            color: "#34d399" },
-                    { label: "True Traction Players",     value: programMetrics?.players_with_true_traction ?? 0,     color: "#60a5fa" },
-                    { label: "Players Progressing",       value: programMetrics?.players_progressing ?? 0,             color: "#34d399" },
-                    { label: "Unofficial Visits",         value: programMetrics?.unofficial_visit_count ?? 0,          color: "#34d399" },
-                    { label: "Official Visits",           value: programMetrics?.official_visit_count ?? 0,            color: "#34d399" },
-                    { label: "Offers",                    value: programMetrics?.offer_count ?? 0,                     color: "#f59e0b" },
-                    { label: "Commitments",               value: programMetrics?.commitment_count ?? 0,                color: "#e8a020" },
-                  ].map(({ label, value, color }, idx, arr) => (
-                    <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: idx < arr.length - 1 ? "1px solid #1f2937" : "none" }}>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: value > 0 ? "#d1d5db" : "#6b7280" }}>{label}</span>
-                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: value > 0 ? color : "#374151", lineHeight: 1 }}>{value}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
+          )}
         </div>
       </section>
 
-      {/* ── RECENT RECRUITING ACTIVITY ── */}
+      {/* ── SECTION 8: RECENT RECRUITING ACTIVITY ── */}
       {(recentJourneyActivity.length > 0 || journeyLoading || Object.keys(athleteJourneys).length > 0) && (
         <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #1f2937" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>RECENT RECRUITING ACTIVITY</span>
+                <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#9ca3af" }}>RECENT RECRUITING ACTIVITY</span>
+                <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>supporting evidence</span>
               </div>
-              {journeyLoading && (
-                <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-              )}
+              {journeyLoading && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#6b7280", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
             </div>
             {recentJourneyActivity.length === 0 ? (
               <div style={{ padding: "28px 24px", textAlign: "center" }}>
-                <div style={{ fontSize: 28, marginBottom: 10 }}>📋</div>
-                <p style={{ fontSize: 14, color: "#6b7280", margin: 0, lineHeight: 1.65, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
-                  {journeyLoading ? "Loading recruiting activity…" : "No recruiting activity logged yet. As athletes track school interest, DMs, camp invites, and offers, updates will appear here."}
-                </p>
+                <p style={{ fontSize: 14, color: "#6b7280", margin: 0, lineHeight: 1.65 }}>{journeyLoading ? "Loading recruiting activity…" : "No recruiting activity logged yet."}</p>
               </div>
             ) : (
               <>
-              <div style={{ padding: "8px 20px 0", fontSize: 12, color: "#4b5563", lineHeight: 1.5 }}>
-                Recent recruiting updates across the roster, including both early signals and major traction events.
-              </div>
-              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px 100px 80px", gap: 8, padding: "8px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  <span>Athlete</span><span>College</span><span>Activity</span><span>Tier</span><span>Date</span>
+                </div>
                 {recentJourneyActivity.map((act, i) => {
-                  const tractionLevel = act._traction_level ?? 0;
-                  const tractionColor = tractionLevel >= 4 ? "#f59e0b" : tractionLevel === 3 ? "#a78bfa" : tractionLevel === 2 ? "#60a5fa" : "#374151";
-                  const actDate = act.activity_date || (act.created_at || "").slice(0, 10);
-                  const schoolDisplay = act.school_name || "—";
+                  const tl = act._traction_level ?? 0;
+                  const tierLabel = tl >= 4 ? "Major Outcome" : tl >= 2 ? "True Traction" : tl === 1 ? (SIGNAL_PERSONAL_TYPES.has(act.activity_type) ? "Personal Signal" : "Watching") : "Watching";
+                  const tierColors = { "Major Outcome": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#34d399", "Watching": "#4b5563" };
+                  const tc = tierColors[tierLabel] || "#4b5563";
                   return (
-                    <div key={act.id || i} style={{ display: "flex", gap: 14, padding: "13px 20px", borderBottom: i < recentJourneyActivity.length - 1 ? "1px solid #1f2937" : "none", alignItems: "flex-start" }}>
-                      {/* Traction signal dot */}
-                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: tractionColor, flexShrink: 0, marginTop: 5, border: tractionLevel >= 2 ? `1px solid ${tractionColor}` : "1px solid #4b5563", boxShadow: tractionLevel >= 2 ? `0 0 4px ${tractionColor}60` : "none" }} />
-                      {/* Main content */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        {/* Row 1: Athlete → School */}
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: "#f9fafb" }}>{act._athlete_name}</span>
-                          <span style={{ fontSize: 12, color: "#374151" }}>·</span>
-                          <span style={{ fontSize: 13, fontWeight: 500, color: "#9ca3af" }}>{schoolDisplay}</span>
-                        </div>
-                        {/* Row 2: Activity type pill + coach name */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: tractionLevel >= 2 ? tractionColor : "#6b7280", background: tractionLevel >= 2 ? `${tractionColor}14` : "#1f2937", border: `1px solid ${tractionLevel >= 2 ? `${tractionColor}30` : "#374151"}`, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>
-                            {ACTIVITY_LABEL[act.activity_type] || act.activity_type}
-                          </span>
-                          {act.coach_name && <span style={{ fontSize: 11, color: "#4b5563" }}>{act.coach_name}</span>}
-                        </div>
-                      </div>
-                      {/* Date */}
-                      <div style={{ fontSize: 11, color: "#4b5563", flexShrink: 0, marginTop: 2, whiteSpace: "nowrap" }}>{actDate}</div>
+                    <div key={act.id || i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px 100px 80px", gap: 8, padding: "10px 20px", borderBottom: i < recentJourneyActivity.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#f9fafb" }}>{act._athlete_name}</div>
+                      <div style={{ fontSize: 13, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.school_name || "—"}</div>
+                      <div style={{ fontSize: 11, color: "#9ca3af" }}>{ACTIVITY_LABEL[act.activity_type] || act.activity_type}</div>
+                      <div><span style={{ fontSize: 10, fontWeight: 700, color: tc, background: `${tc}14`, border: `1px solid ${tc}30`, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{tierLabel}</span></div>
+                      <div style={{ fontSize: 11, color: "#4b5563" }}>{act.activity_date || (act.created_at || "").slice(0, 10) || "—"}</div>
                     </div>
                   );
                 })}
-              </div>
               </>
             )}
+          </div>
+        </section>
+      )}
+
+      {/* ── SECTION 9: PLAYERS NEEDING ATTENTION ── */}
+      {(playersNeedingAttentionRows.length > 0) && (
+        <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <div style={{ width: 3, height: 24, background: "#f87171", borderRadius: 2 }} />
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>PLAYERS NEEDING ATTENTION</div>
+            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>stalled momentum or at-risk athletes</span>
+          </div>
+          <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 90px 110px 1fr 140px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              <span>Athlete</span><span>Last Activity</span><span>Stage</span><span>Reason</span><span>Suggested Action</span>
+            </div>
+            {playersNeedingAttentionRows.map((row, i) => {
+              const actionColors = { "High Priority Conversation": "#f59e0b", "Track Closely": "#a78bfa", "Follow Up": "#60a5fa", "Encourage Follow-Up": "#34d399", "Check In": "#6b7280" };
+              const ac = actionColors[row.suggestedAction] || "#6b7280";
+              return (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 90px 110px 1fr 140px", gap: 8, padding: "12px 20px", borderBottom: i < playersNeedingAttentionRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{row.athlete_name || "Athlete"}</div>
+                    {row.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>'{String(row.athlete_grad_year).slice(-2)}</div>}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>{row.lastActivity ? new Date(row.lastActivity + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                  <div><span style={{ fontSize: 10, fontWeight: 600, color: "#9ca3af", background: "#1f2937", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.stage}</span></div>
+                  <div style={{ fontSize: 12, color: "#9ca3af" }}>{row.reason}</div>
+                  <div><span style={{ fontSize: 10, fontWeight: 700, color: ac, background: `${ac}14`, border: `1px solid ${ac}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.suggestedAction}</span></div>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
