@@ -587,6 +587,68 @@ export default function CoachDashboard() {
     return all.slice(0, 15);
   })();
 
+  // ── Early interest: level-1 schools sub-classified as Watching vs Personal Signal ──
+  // Only schools at exactly traction_level=1 are included here.
+  // Schools at level 0 (no signal) and ≥2 (true traction) are excluded.
+  const SIGNAL_PERSONAL_TYPES = new Set([
+    "dm_received", "dm_sent", "text_received", "text_sent", "post_camp_followup_sent",
+  ]);
+
+  const earlyInterestRows = (() => {
+    const rows = [];
+    for (const rEntry of roster) {
+      const journey = athleteJourneys[rEntry.account_id];
+      if (!journey) continue;
+
+      const watchingSchools = [];
+      const personalSignalSchools = [];
+
+      for (const sData of Object.values(journey.school_traction || {})) {
+        if (sData.traction_level !== 1) continue; // exclude level 0 (no signal) and ≥2 (true traction)
+        const school = (sData.school_name || "").trim();
+        if (!school) continue;
+        if (SIGNAL_PERSONAL_TYPES.has(sData.top_activity_type)) {
+          personalSignalSchools.push({ name: school, last_date: sData.last_activity_date || "" });
+        } else {
+          watchingSchools.push({ name: school, last_date: sData.last_activity_date || "" });
+        }
+      }
+
+      if (watchingSchools.length === 0 && personalSignalSchools.length === 0) continue;
+
+      const strongestTier = personalSignalSchools.length > 0 ? "personal_signal" : "watching";
+
+      // Top college: most-recent personal signal school first, then watching
+      const sorted = [
+        ...personalSignalSchools.sort((a, b) => b.last_date.localeCompare(a.last_date)),
+        ...watchingSchools.sort((a, b) => b.last_date.localeCompare(a.last_date)),
+      ];
+
+      rows.push({
+        athlete_name:          rEntry.athlete_name,
+        athlete_grad_year:     rEntry.athlete_grad_year,
+        account_id:            rEntry.account_id,
+        watching_count:        watchingSchools.length,
+        personal_signal_count: personalSignalSchools.length,
+        strongest_tier:        strongestTier,
+        top_college:           sorted[0]?.name || "—",
+        last_date:             sorted[0]?.last_date || "",
+      });
+    }
+
+    // Sort: personal signal athletes first, then by total signal school count, then recency
+    rows.sort((a, b) => {
+      if (a.strongest_tier !== b.strongest_tier) {
+        return a.strongest_tier === "personal_signal" ? -1 : 1;
+      }
+      const diff = (b.watching_count + b.personal_signal_count) - (a.watching_count + a.personal_signal_count);
+      if (diff !== 0) return diff;
+      return b.last_date.localeCompare(a.last_date);
+    });
+
+    return rows;
+  })();
+
   const RELATIONSHIP_LABEL = {
     no_signal: "No Signal", general_signal: "Signal", verified_contact: "Verified",
     invite: "Invite", visit: "Visit", offer: "Offer", committed: "Committed",
@@ -808,6 +870,86 @@ export default function CoachDashboard() {
         </div>
       </section>
 
+      {/* ── PLAYERS SHOWING EARLY INTEREST ── */}
+      {(earlyInterestRows.length > 0 || (journeyLoading && Object.keys(athleteJourneys).length === 0)) && (
+        <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+            <div style={{ width: 3, height: 24, background: "#34d399", borderRadius: 2, flexShrink: 0 }} />
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>PLAYERS SHOWING EARLY INTEREST</div>
+            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>signal-stage activity — below true traction</span>
+            {journeyLoading && Object.keys(athleteJourneys).length === 0 && (
+              <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />
+            )}
+          </div>
+          <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
+            {earlyInterestRows.length === 0 ? (
+              <div style={{ padding: "32px 24px", textAlign: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "#4b5563", fontSize: 14 }}>
+                  <div style={{ width: 16, height: 16, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  Loading recruiting data…
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Column headers */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 72px 110px 1fr 80px", gap: 10, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  <span>Athlete</span>
+                  <span>Watching</span>
+                  <span>Personal</span>
+                  <span>Signal Tier</span>
+                  <span>Top College</span>
+                  <span>Last Activity</span>
+                </div>
+                {earlyInterestRows.slice(0, 12).map((row, i) => {
+                  const isPersonal = row.strongest_tier === "personal_signal";
+                  const tierColor = isPersonal ? "#34d399" : "#6b7280";
+                  const tierLabel = isPersonal ? "Personal Signal" : "Watching";
+                  return (
+                    <div
+                      key={row.account_id || i}
+                      style={{ display: "grid", gridTemplateColumns: "1fr 72px 72px 110px 1fr 80px", gap: 10, padding: "12px 20px", borderBottom: i < Math.min(earlyInterestRows.length, 12) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}
+                    >
+                      {/* Athlete */}
+                      <div>
+                        <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{row.athlete_name || "Athlete"}</div>
+                        {row.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>'{String(row.athlete_grad_year).slice(-2)}</div>}
+                      </div>
+                      {/* Watching count */}
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: row.watching_count > 0 ? "#9ca3af" : "#374151", lineHeight: 1 }}>
+                        {row.watching_count > 0 ? row.watching_count : "—"}
+                      </div>
+                      {/* Personal signal count */}
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: row.personal_signal_count > 0 ? "#34d399" : "#374151", lineHeight: 1 }}>
+                        {row.personal_signal_count > 0 ? row.personal_signal_count : "—"}
+                      </div>
+                      {/* Signal tier badge */}
+                      <div>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: tierColor, background: `${tierColor}14`, border: `1px solid ${tierColor}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>
+                          {tierLabel}
+                        </span>
+                      </div>
+                      {/* Top college */}
+                      <div style={{ fontSize: 13, color: "#d1d5db", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {row.top_college}
+                      </div>
+                      {/* Last activity */}
+                      <div style={{ fontSize: 12, color: "#6b7280" }}>
+                        {row.last_date ? new Date(row.last_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
+                      </div>
+                    </div>
+                  );
+                })}
+                {earlyInterestRows.length > 12 && (
+                  <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "#4b5563", borderTop: "1px solid #1f2937" }}>
+                    +{earlyInterestRows.length - 12} more athletes with early signal activity
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* ── SECONDARY INSIGHTS ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
@@ -898,12 +1040,13 @@ export default function CoachDashboard() {
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                   {[
-                    { label: "True Traction Players",  value: programMetrics?.players_with_true_traction ?? 0,  color: "#60a5fa" },
-                    { label: "Players Progressing",    value: programMetrics?.players_progressing ?? 0,          color: "#34d399" },
-                    { label: "Unofficial Visits",      value: programMetrics?.unofficial_visit_count ?? 0,       color: "#34d399" },
-                    { label: "Official Visits",        value: programMetrics?.official_visit_count ?? 0,         color: "#34d399" },
-                    { label: "Offers",                 value: programMetrics?.offer_count ?? 0,                  color: "#f59e0b" },
-                    { label: "Commitments",            value: programMetrics?.commitment_count ?? 0,             color: "#e8a020" },
+                    { label: "Players w/ Early Interest", value: earlyInterestRows.length,                            color: "#34d399" },
+                    { label: "True Traction Players",     value: programMetrics?.players_with_true_traction ?? 0,     color: "#60a5fa" },
+                    { label: "Players Progressing",       value: programMetrics?.players_progressing ?? 0,             color: "#34d399" },
+                    { label: "Unofficial Visits",         value: programMetrics?.unofficial_visit_count ?? 0,          color: "#34d399" },
+                    { label: "Official Visits",           value: programMetrics?.official_visit_count ?? 0,            color: "#34d399" },
+                    { label: "Offers",                    value: programMetrics?.offer_count ?? 0,                     color: "#f59e0b" },
+                    { label: "Commitments",               value: programMetrics?.commitment_count ?? 0,                color: "#e8a020" },
                   ].map(({ label, value, color }, idx, arr) => (
                     <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: idx < arr.length - 1 ? "1px solid #1f2937" : "none" }}>
                       <span style={{ fontSize: 13, fontWeight: 500, color: value > 0 ? "#d1d5db" : "#6b7280" }}>{label}</span>
