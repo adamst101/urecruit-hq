@@ -828,11 +828,30 @@ export default function CoachDashboard() {
     const commitCount = majorActs.filter(a => COMMIT_TYPES.has(a.activity_type)).length;
     const majorCount  = majorActs.length;
 
-    // Row 4 — camp registrations (NOT true traction, NOT major outcomes)
-    const CAMP_REG_TYPES = new Set(["camp_registered", "camp_attended"]);
-    const campRegActs    = filtered.filter(a => CAMP_REG_TYPES.has(a.activity_type));
-    const campRegCount   = campRegActs.length;
-    const campRegAthletes = new Set(campRegActs.map(a => a._account_id)).size;
+    // Row 4 — camp activity (NOT true traction, NOT major outcomes)
+    // Distinguish: camp_registered = signed up, camp_attended = actually attended
+    const CAMP_REG_TYPES  = new Set(["camp_registered", "camp_attended"]);
+    const campRegActs     = filtered.filter(a => a.activity_type === "camp_registered");
+    const campAttendActs  = filtered.filter(a => a.activity_type === "camp_attended");
+    const campAllActs     = filtered.filter(a => CAMP_REG_TYPES.has(a.activity_type));
+    const campRegOnly     = campRegActs.length;
+    const campAttendOnly  = campAttendActs.length;
+    const campRegCount    = campAllActs.length; // total for row value
+    const campRegAthletes = new Set(campAllActs.map(a => a._account_id)).size;
+
+    // Label that accurately reflects the mix
+    const campRowLabel =
+      campRegOnly > 0 && campAttendOnly > 0 ? "New camp registrations & attendance"
+      : campAttendOnly > 0                  ? "New camp attendance"
+      :                                       "New camp registrations";
+
+    // Short narrative phrase used in sentence-1 (no stronger outcomes) and sentence-2 (alongside stronger outcomes)
+    const campNarrativePhrase = (n) =>
+      campRegOnly > 0 && campAttendOnly > 0
+        ? (n === 1 ? "one new camp registration or attendance" : `${n} new camp registrations and attendance events`)
+        : campAttendOnly > 0
+          ? (n === 1 ? "one camp attendance"   : `${n} camp attendance events`)
+          : (n === 1 ? "one new camp registration" : `${n} new camp registrations`);
 
     // Row 5 — most active colleges (by activity count in period)
     const collegeMap = {};
@@ -866,7 +885,7 @@ export default function CoachDashboard() {
       if (offerCount  > 0) outcomes.push(offerCount  === 1 ? "one offer"      : `${offerCount} offers`);
       if (visitCount  > 0) outcomes.push(visitCount  === 1 ? "one visit request" : `${visitCount} visit requests`);
       if (campRegCount > 0 && majorCount === 0 && tractionAthletes === 0) {
-        outcomes.push(campRegCount === 1 ? "one new camp registration" : `${campRegCount} new camp registrations`);
+        outcomes.push(campNarrativePhrase(campRegCount));
       }
 
       let s1 = `${capLabel}, ${athleteCount} athlete${athleteCount !== 1 ? "s" : ""} logged new recruiting activity`;
@@ -883,8 +902,8 @@ export default function CoachDashboard() {
       if (filtered.some(a => ["camp_invite","generic_camp_invite","personal_camp_invite"].includes(a.activity_type))) sigTypes.push("camp invites");
       if (filtered.some(a => ["post_camp_followup_sent","post_camp_personal_response"].includes(a.activity_type)))    sigTypes.push("post-camp follow-up");
       if (campRegCount > 0 && (majorCount > 0 || tractionAthletes > 0)) {
-        // include camp registrations in sentence 2 when stronger outcomes were already in s1
-        sigTypes.unshift(campRegCount === 1 ? "one new camp registration" : `${campRegCount} new camp registrations`);
+        // include camp activity in sentence 2 when stronger outcomes were already in s1
+        sigTypes.unshift(campNarrativePhrase(campRegCount));
       }
 
       let s2 = "";
@@ -919,7 +938,8 @@ export default function CoachDashboard() {
       if (t === "unofficial_visit_requested") return "unofficial visit request";
       if (t === "unofficial_visit_completed") return "unofficial visit completed";
       if ((act._traction_level ?? 0) >= 2) return "direct personal contact";
-      if (CAMP_REG_TYPES.has(t)) return "camp registration";
+      if (t === "camp_registered") return "camp registration";
+      if (t === "camp_attended")   return "camp attended";
       if (t === "phone_call")    return "phone call";
       if (t === "personal_email") return "personal email";
       if (["dm_received","dm_sent"].includes(t)) return "direct message";
@@ -941,7 +961,7 @@ export default function CoachDashboard() {
       if (detailLines.length >= 3) break;
     }
 
-    return { cutoff, athleteCount, tractionAthletes, tractionSchools, majorCount, visitCount, offerCount, commitCount, campRegCount, campRegAthletes, topColleges, narrative, detailLines, totalFiltered: filtered.length };
+    return { cutoff, athleteCount, tractionAthletes, tractionSchools, majorCount, visitCount, offerCount, commitCount, campRegCount, campRegAthletes, campRowLabel, topColleges, narrative, detailLines, totalFiltered: filtered.length };
   })();
 
   // ── Players Needing Attention ─────────────────────────────────────────────
@@ -1342,7 +1362,7 @@ export default function CoachDashboard() {
                     color: coachUpdateData.majorCount > 0 ? "#f59e0b" : "#374151",
                   },
                   {
-                    label: "New camp registrations",
+                    label: coachUpdateData.campRowLabel,
                     value: coachUpdateData.campRegCount > 0 ? coachUpdateData.campRegCount : "—",
                     sub: coachUpdateData.campRegAthletes > 1 ? `${coachUpdateData.campRegAthletes} athletes` : null,
                     color: coachUpdateData.campRegCount > 0 ? "#a78bfa" : "#374151",
