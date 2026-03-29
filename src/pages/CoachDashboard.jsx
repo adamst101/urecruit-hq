@@ -102,7 +102,9 @@ export default function CoachDashboard() {
   const [openSheet, setOpenSheet] = useState(null);
   const [rosterFilter, setRosterFilter] = useState("all"); // "all" | "hasCamps" | "noCamps" | "thisMonth"
   const [monthlyView, setMonthlyView] = useState("byCamp"); // "byCamp" | "byAthlete"
-  const [expandedSchool, setExpandedSchool] = useState(null); // school name string
+  const [expandedSchool, setExpandedSchool] = useState(null); // school name string (used in schools sheet)
+  const [expandedCollege, setExpandedCollege] = useState(null); // college name string (Colleges Engaging section)
+  const [selectedCoachContact, setSelectedCoachContact] = useState(null); // coach contact popup data
   const [activityExpanded, setActivityExpanded] = useState(false);
 
   // COACH UPDATE — period filter + last-visit tracking via localStorage
@@ -755,6 +757,72 @@ export default function CoachDashboard() {
       let rl = null; if (ac >= 3) rl = `×${ac} athletes`; else if (ac === 2) rl = "×2 athletes"; else if (e.totalCount >= 3) rl = "Repeat"; else if (e.lastDate >= _d30) rl = "New This Month";
       return { college: e.college, athletesEngaged: ac, athleteNames: e.names, highestStage: hs, highestLevel: e.hl, highestStatus: e.hs, lastActivityDate: e.lastDate, repeatInterest: ac >= 2 || e.totalCount >= 3, repeatLabel: rl, programValue: pv };
     }).sort((a, b) => b.highestLevel - a.highestLevel || b.athletesEngaged - a.athletesEngaged);
+  })();
+
+  // ── Colleges Engaging — enriched view model with coaches + athlete detail ──
+  // Derives coach contact info (name, title, twitter) from per-athlete activity records.
+  // No email/phone in schema — those fields gracefully fall back to "Not on record".
+  const collegesEngagingViewModel = (() => {
+    if (Object.keys(athleteJourneys).length === 0) return collegesEngagingRows.map(col => ({ ...col, coaches: [], athletes: [] }));
+    return collegesEngagingRows.map(col => {
+      const coachMap = {};
+      const athleteDetailMap = {};
+      for (const rEntry of roster) {
+        const j = athleteJourneys[rEntry.account_id];
+        if (!j) continue;
+        // Find traction entry for this college in this athlete's school_traction
+        const stData = Object.entries(j.school_traction || {}).reduce((found, [key, s]) => {
+          if (found) return found;
+          if ((s.school_name || "").trim() === col.college || key === col.college) return s;
+          return null;
+        }, null);
+        if (!stData || stData.traction_level < 1) continue;
+        // Stage for this athlete at this college
+        const hl = stData.traction_level;
+        let stage, stageColor;
+        if (hl >= 4)      { stage = "Visit / Offer"; stageColor = "#f59e0b"; }
+        else if (hl >= 2) { stage = "True Traction"; stageColor = "#60a5fa"; }
+        else if (SIGNAL_PERSONAL_TYPES.has(stData.top_activity_type)) { stage = "Personal Signal"; stageColor = "#a78bfa"; }
+        else              { stage = "Watching"; stageColor = "#9ca3af"; }
+        // Scan this athlete's activities at this college for coach info
+        const collegeActs = (j.recent_activities || [])
+          .filter(a => (a.school_name || "").trim() === col.college)
+          .sort((a, b) => (b.activity_date || b.created_at || "").localeCompare(a.activity_date || a.created_at || ""));
+        let topCoachName = null;
+        for (const act of collegeActs) {
+          const cname = (act.coach_name || "").trim();
+          if (cname) {
+            if (!topCoachName) topCoachName = cname;
+            if (!coachMap[cname]) {
+              coachMap[cname] = { name: cname, title: null, twitter: null, athleteIds: new Set(), lastDate: "", lastActivityType: null };
+            }
+            if (!coachMap[cname].title && act.coach_title)   coachMap[cname].title   = act.coach_title.trim();
+            if (!coachMap[cname].twitter && act.coach_twitter) coachMap[cname].twitter = (act.coach_twitter || "").trim().replace(/^@/, "");
+            coachMap[cname].athleteIds.add(rEntry.account_id);
+            const d = (act.activity_date || act.created_at || "").slice(0, 10);
+            if (!coachMap[cname].lastDate || d > coachMap[cname].lastDate) {
+              coachMap[cname].lastDate = d;
+              coachMap[cname].lastActivityType = act.activity_type;
+            }
+          }
+        }
+        athleteDetailMap[rEntry.account_id] = {
+          name: rEntry.athlete_name || "Athlete",
+          gradYear: rEntry.athlete_grad_year,
+          stage, stageColor,
+          lastDate: stData.last_activity_date || "",
+          topCoachName,
+        };
+      }
+      const coaches = Object.values(coachMap)
+        .map(c => ({ ...c, athleteIds: [...c.athleteIds] }))
+        .sort((a, b) => (b.lastDate || "").localeCompare(a.lastDate || ""));
+      const athletes = Object.values(athleteDetailMap).sort((a, b) => {
+        const so = { "Visit / Offer": 0, "True Traction": 1, "Personal Signal": 2, "Watching": 3 };
+        return (so[a.stage] ?? 3) - (so[b.stage] ?? 3) || (b.lastDate || "").localeCompare(a.lastDate || "");
+      });
+      return { ...col, coaches, athletes };
+    });
   })();
 
   // ── Recruiting Momentum (30d vs prior 30d) ────────────────────────────────
@@ -1456,42 +1524,156 @@ export default function CoachDashboard() {
 
 
       {/* ── SECTION 6: COLLEGES ENGAGING THE PROGRAM ── */}
-      {(collegesEngagingRows.length > 0 || journeyLoading) && (
+      {(collegesEngagingViewModel.length > 0 || journeyLoading) && (
         <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <div style={{ width: 3, height: 24, background: "#a78bfa", borderRadius: 2 }} />
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>COLLEGES ENGAGING THE PROGRAM</div>
-            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>all signal levels · cross-roster</span>
+            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>all signal levels · cross-roster · click to expand</span>
           </div>
           <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
-            {collegesEngagingRows.length === 0 ? (
+            {collegesEngagingViewModel.length === 0 ? (
               <div style={{ padding: "28px 24px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "#4b5563", fontSize: 14 }}>
                 <div style={{ width: 16, height: 16, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
                 Loading…
               </div>
             ) : (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 70px 110px 90px 130px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  <span>College</span><span>Athletes</span><span>Highest Stage</span><span>Last Activity</span><span>Repeat Interest</span>
+                {/* Column headers */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  <span>College</span><span>Athletes</span><span>Highest Stage</span><span>Last Activity</span><span>Repeat Interest</span><span></span>
                 </div>
-                {collegesEngagingRows.slice(0, 15).map((col, i) => {
-                  const stageColors = { "Visit / Offer": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#34d399", "Watching": "#6b7280" };
+
+                {collegesEngagingViewModel.slice(0, 20).map((col, i) => {
+                  const isExpanded = expandedCollege === col.college;
+                  const isLast = i === Math.min(collegesEngagingViewModel.length, 20) - 1;
+                  const stageColors = { "Visit / Offer": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#a78bfa", "Watching": "#6b7280" };
                   const sc = stageColors[col.highestStage] || "#6b7280";
+                  const athleteCount = col.athletesEngaged;
+                  const coachCount = col.coaches.length;
+
                   return (
-                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1.5fr 70px 110px 90px 130px", gap: 8, padding: "12px 20px", borderBottom: i < Math.min(collegesEngagingRows.length, 15) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                      <div>
-                        <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.college}</div>
-                        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>{col.athleteNames.slice(0, 2).join(", ")}{col.athleteNames.length > 2 ? ` +${col.athleteNames.length - 2}` : ""}</div>
+                    <div key={col.college} style={{ borderBottom: (!isLast || isExpanded) ? "1px solid #1f2937" : "none" }}>
+
+                      {/* ── Collapsed summary row ── */}
+                      <div
+                        onClick={() => setExpandedCollege(isExpanded ? null : col.college)}
+                        style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "12px 20px", alignItems: "center", cursor: "pointer", transition: "background 0.1s" }}
+                        onMouseEnter={e => { e.currentTarget.style.background = "#0d1421"; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                      >
+                        {/* College name + secondary */}
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.college}</div>
+                          <div style={{ fontSize: 11, color: "#4b5563", marginTop: 2 }}>
+                            {athleteCount} athlete{athleteCount !== 1 ? "s" : ""}
+                            {coachCount > 0 ? ` · ${coachCount} coach${coachCount !== 1 ? "es" : ""}` : ""}
+                          </div>
+                        </div>
+                        {/* Athlete count */}
+                        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: athleteCount >= 2 ? "#e8a020" : "#9ca3af", lineHeight: 1 }}>{athleteCount}</div>
+                        {/* Stage badge */}
+                        <div><span style={{ fontSize: 10, fontWeight: 700, color: sc, background: `${sc}14`, border: `1px solid ${sc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.highestStage}</span></div>
+                        {/* Last activity */}
+                        <div style={{ fontSize: 12, color: "#6b7280" }}>{col.lastActivityDate ? new Date(col.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                        {/* Repeat label */}
+                        <div>{col.repeatLabel ? <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", background: "#e8a02014", border: "1px solid #e8a02030", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.repeatLabel}</span> : <span style={{ fontSize: 11, color: "#374151" }}>—</span>}</div>
+                        {/* Chevron */}
+                        <div style={{ fontSize: 13, color: "#4b5563", textAlign: "center", transition: "transform 0.2s", transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)" }}>⌄</div>
                       </div>
-                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: col.athletesEngaged >= 2 ? "#e8a020" : "#9ca3af", lineHeight: 1 }}>{col.athletesEngaged}</div>
-                      <div><span style={{ fontSize: 10, fontWeight: 700, color: sc, background: `${sc}14`, border: `1px solid ${sc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.highestStage}</span></div>
-                      <div style={{ fontSize: 12, color: "#6b7280" }}>{col.lastActivityDate ? new Date(col.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
-                      <div>{col.repeatLabel ? <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", background: "#e8a02014", border: "1px solid #e8a02030", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.repeatLabel}</span> : <span style={{ fontSize: 11, color: "#4b5563" }}>—</span>}</div>
+
+                      {/* ── Expanded detail area ── */}
+                      <div style={{ maxHeight: isExpanded ? "900px" : "0px", overflow: "hidden", transition: "max-height 0.28s ease" }}>
+                        <div style={{ padding: "4px 20px 20px", borderTop: "1px solid #1a2535" }}>
+                          <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+
+                            {/* BLOCK 1 — COACHES */}
+                            <div style={{ flex: "1 1 220px", minWidth: 200 }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10, marginTop: 14 }}>Coaches</div>
+                              {col.coaches.length === 0 ? (
+                                <div style={{ fontSize: 12, color: "#374151", fontStyle: "italic" }}>No coach details logged yet</div>
+                              ) : (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                  {col.coaches.map((coach, ci) => (
+                                    <div
+                                      key={ci}
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        setSelectedCoachContact({
+                                          name: coach.name,
+                                          title: coach.title,
+                                          twitter: coach.twitter,
+                                          collegeName: col.college,
+                                          athleteNames: coach.athleteIds.map(id => roster.find(r => r.account_id === id)?.athlete_name || "Athlete").filter(Boolean),
+                                          lastDate: coach.lastDate,
+                                          lastActivityType: coach.lastActivityType,
+                                        });
+                                        setOpenSheet("coach_contact");
+                                      }}
+                                      style={{ background: "#0d1421", border: "1px solid #1f2937", borderRadius: 10, padding: "10px 14px", cursor: "pointer", transition: "border-color 0.15s" }}
+                                      onMouseEnter={e => { e.currentTarget.style.borderColor = "#a78bfa"; }}
+                                      onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+                                    >
+                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                                        <div style={{ minWidth: 0 }}>
+                                          <div style={{ fontWeight: 700, color: "#f9fafb", fontSize: 13 }}>{coach.name}</div>
+                                          {coach.title && <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{coach.title}</div>}
+                                          {coach.twitter && (
+                                            <a
+                                              href={`https://twitter.com/${coach.twitter}`}
+                                              onClick={e => e.stopPropagation()}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              style={{ fontSize: 11, color: "#60a5fa", textDecoration: "none", display: "inline-block", marginTop: 3 }}
+                                            >
+                                              @{coach.twitter}
+                                            </a>
+                                          )}
+                                        </div>
+                                        <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, whiteSpace: "nowrap", marginTop: 2 }}>Details →</div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* BLOCK 2 — ATHLETES */}
+                            <div style={{ flex: "1 1 220px", minWidth: 200 }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10, marginTop: 14 }}>Athletes</div>
+                              {col.athletes.length === 0 ? (
+                                <div style={{ fontSize: 12, color: "#374151", fontStyle: "italic" }}>No athlete detail available</div>
+                              ) : (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                  {col.athletes.map((ath, ai) => (
+                                    <div key={ai} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#0d1421", border: "1px solid #1a2535", borderRadius: 10 }}>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 13 }}>
+                                          {ath.name}
+                                          {ath.gradYear && <span style={{ fontSize: 10, color: "#6b7280", marginLeft: 6 }}>'{String(ath.gradYear).slice(-2)}</span>}
+                                        </div>
+                                        {ath.topCoachName && <div style={{ fontSize: 11, color: "#4b5563", marginTop: 2 }}>via {ath.topCoachName}</div>}
+                                      </div>
+                                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
+                                        <span style={{ fontSize: 10, fontWeight: 700, color: ath.stageColor, background: `${ath.stageColor}14`, border: `1px solid ${ath.stageColor}30`, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{ath.stage}</span>
+                                        {ath.lastDate && <div style={{ fontSize: 10, color: "#4b5563" }}>{new Date(ath.lastDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                          </div>
+                        </div>
+                      </div>
+
                     </div>
                   );
                 })}
-                {collegesEngagingRows.length > 15 && (
-                  <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "#4b5563", borderTop: "1px solid #1f2937" }}>+{collegesEngagingRows.length - 15} more colleges</div>
+
+                {collegesEngagingViewModel.length > 20 && (
+                  <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "#4b5563", borderTop: "1px solid #1f2937" }}>+{collegesEngagingViewModel.length - 20} more colleges</div>
                 )}
               </>
             )}
@@ -1767,6 +1949,7 @@ export default function CoachDashboard() {
                 {openSheet === "tile_colleges"        && `COLLEGES ENGAGING PROGRAM — ${collegesEngagingRows.length}`}
                 {openSheet === "tile_heating_up"      && `PLAYERS HEATING UP — ${playersHeatingUpRows.length}`}
                 {openSheet === "tile_repeat_colleges" && `REPEAT-INTEREST COLLEGES — ${collegesEngagingRows.filter(r => r.repeatInterest).length}`}
+                {openSheet === "coach_contact"        && (selectedCoachContact ? `COACH — ${selectedCoachContact.name.toUpperCase()}` : "COACH CONTACT")}
               </div>
               <button
                 onClick={() => setOpenSheet(null)}
@@ -2359,6 +2542,69 @@ export default function CoachDashboard() {
                       );
                     })}
                   </>
+                );
+              })()}
+
+              {/* ── Coach contact popup ── */}
+              {openSheet === "coach_contact" && selectedCoachContact && (() => {
+                const c = selectedCoachContact;
+                const twitterHandle = c.twitter ? c.twitter.replace(/^@/, "") : null;
+                const lastDateFmt = c.lastDate ? new Date(c.lastDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
+                const lastActLabel = c.lastActivityType ? (ACTIVITY_LABEL[c.lastActivityType] || c.lastActivityType) : null;
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                    {/* Identity */}
+                    <div style={{ marginBottom: 20 }}>
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#f9fafb", letterSpacing: 1, lineHeight: 1 }}>{c.name}</div>
+                      {c.title && <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 4 }}>{c.title}</div>}
+                      <div style={{ fontSize: 13, color: "#a78bfa", marginTop: 4, fontWeight: 600 }}>{c.collegeName}</div>
+                    </div>
+
+                    {/* Contact fields */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 0, borderTop: "1px solid #1f2937", marginBottom: 20 }}>
+                      {/* Twitter */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: "1px solid #1f2937" }}>
+                        <div style={{ width: 68, fontSize: 11, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>X / Twitter</div>
+                        {twitterHandle
+                          ? <a href={`https://twitter.com/${twitterHandle}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, color: "#60a5fa", textDecoration: "none", fontWeight: 600 }}>@{twitterHandle}</a>
+                          : <span style={{ fontSize: 13, color: "#374151" }}>Not on record</span>
+                        }
+                      </div>
+                      {/* Email */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: "1px solid #1f2937" }}>
+                        <div style={{ width: 68, fontSize: 11, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>Email</div>
+                        <span style={{ fontSize: 13, color: "#374151" }}>Not on record</span>
+                      </div>
+                      {/* Cell */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0" }}>
+                        <div style={{ width: 68, fontSize: 11, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>Cell</div>
+                        <span style={{ fontSize: 13, color: "#374151" }}>Not on record</span>
+                      </div>
+                    </div>
+
+                    {/* Associated athletes */}
+                    {c.athleteNames.length > 0 && (
+                      <div style={{ marginBottom: 20 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Athletes</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {c.athleteNames.map((name, ni) => (
+                            <span key={ni} style={{ background: "#1f2937", color: "#d1d5db", fontSize: 13, fontWeight: 600, padding: "5px 12px", borderRadius: 20 }}>{name}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Last interaction */}
+                    {(lastDateFmt || lastActLabel) && (
+                      <div style={{ borderTop: "1px solid #1f2937", paddingTop: 16 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Most Recent Interaction</div>
+                        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                          {lastActLabel && <span style={{ fontSize: 12, fontWeight: 700, color: "#9ca3af", background: "#1f2937", borderRadius: 20, padding: "3px 10px" }}>{lastActLabel}</span>}
+                          {lastDateFmt && <span style={{ fontSize: 12, color: "#6b7280" }}>{lastDateFmt}</span>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 );
               })()}
 
