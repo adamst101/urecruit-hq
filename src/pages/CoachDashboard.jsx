@@ -103,6 +103,7 @@ export default function CoachDashboard() {
   const [rosterFilter, setRosterFilter] = useState("all"); // "all" | "hasCamps" | "noCamps" | "thisMonth"
   const [monthlyView, setMonthlyView] = useState("byCamp"); // "byCamp" | "byAthlete"
   const [expandedSchool, setExpandedSchool] = useState(null); // school name string
+  const [activityExpanded, setActivityExpanded] = useState(false);
 
   // Message compose state
   const [recipient, setRecipient] = useState("all"); // "all" | athlete roster id
@@ -955,54 +956,81 @@ export default function CoachDashboard() {
         </div>
       </section>
 
-      {/* ── SECTION 3: PROGRAM RECRUITING SNAPSHOT ── */}
+      {/* ── SECTION 3: PROGRAM PROOF & MOMENTUM ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+          <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f9fafb" }}>PROGRAM PROOF &amp; MOMENTUM</div>
+          <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>AD-ready proof + 30-day pulse</span>
+          {journeyLoading && !programMetrics && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />}
+        </div>
         <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "20px 24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-            <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f9fafb" }}>PROGRAM RECRUITING SNAPSHOT</div>
-            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>AD-ready proof summary</span>
-            {journeyLoading && !programMetrics && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />}
-          </div>
           {journeyLoading && !programMetrics ? (
             <div style={{ fontSize: 13, color: "#4b5563" }}>Loading…</div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 32px" }}>
-              <div>
-                {[
-                  { label: "Players w/ Any Interest", value: playersWithAnyInterest ?? 0, color: "#34d399" },
-                  { label: "Players w/ True Traction", value: programMetrics?.players_with_true_traction ?? 0, color: "#60a5fa" },
-                  { label: "Unofficial Visits", value: programMetrics?.unofficial_visit_count ?? 0, color: "#a78bfa" },
-                  { label: "Official Visits", value: programMetrics?.official_visit_count ?? 0, color: "#a78bfa" },
-                  { label: "Offers", value: programMetrics?.offer_count ?? 0, color: "#f59e0b" },
-                  { label: "Commitments", value: programMetrics?.commitment_count ?? 0, color: "#e8a020" },
-                ].map(({ label, value, color }, idx, arr) => (
-                  <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid #1f2937" : "none" }}>
-                    <span style={{ fontSize: 13, color: value > 0 ? "#d1d5db" : "#6b7280" }}>{label}</span>
-                    <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: value > 0 ? color : "#374151", lineHeight: 1 }}>{value}</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ borderLeft: "1px solid #1f2937", paddingLeft: 28 }}>
-                <div style={{ fontSize: 11, color: "#4b5563", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>30-Day Pulse</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>New Interest Last 30 Days</div>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: recruitingMomentum.players30d > 0 ? "#34d399" : "#374151", lineHeight: 1 }}>{recruitingMomentum.players30d}</span>
-                      <span style={{ fontSize: 12, color: "#4b5563" }}>players active</span>
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 32px" }}>
+                {/* Left — Program Proof */}
+                <div>
+                  <div style={{ fontSize: 11, color: "#4b5563", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Program Proof</div>
+                  {[
+                    { label: "Players w/ Any Interest", value: playersWithAnyInterest ?? 0, color: "#34d399" },
+                    { label: "Players w/ True Traction", value: programMetrics?.players_with_true_traction ?? 0, color: "#60a5fa" },
+                    { label: "Unofficial Visits", value: programMetrics?.unofficial_visit_count ?? 0, color: "#a78bfa" },
+                    { label: "Official Visits", value: programMetrics?.official_visit_count ?? 0, color: "#a78bfa" },
+                    { label: "Offers", value: programMetrics?.offer_count ?? 0, color: "#f59e0b" },
+                    { label: "Commitments", value: programMetrics?.commitment_count ?? 0, color: "#e8a020" },
+                  ].map(({ label, value, color }, idx, arr) => (
+                    <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid #1f2937" : "none" }}>
+                      <span style={{ fontSize: 13, color: value > 0 ? "#d1d5db" : "#6b7280" }}>{label}</span>
+                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: value > 0 ? color : "#374151", lineHeight: 1 }}>{value}</span>
                     </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>New Colleges Engaging Last 30 Days</div>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: recruitingMomentum.colleges30d > 0 ? "#a78bfa" : "#374151", lineHeight: 1 }}>{recruitingMomentum.colleges30d}</span>
-                      <span style={{ fontSize: 12, color: "#4b5563" }}>colleges active</span>
-                    </div>
+                  ))}
+                </div>
+                {/* Right — Momentum */}
+                <div style={{ borderLeft: "1px solid #1f2937", paddingLeft: 28 }}>
+                  <div style={{ fontSize: 11, color: "#4b5563", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Momentum</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                    {[
+                      { label: "Players w/ Any Interest", cur: recruitingMomentum.players30d, prior: recruitingMomentum.players_prior, color: "#34d399" },
+                      { label: "True Traction Players", cur: recruitingMomentum.trueTraction30d, prior: recruitingMomentum.trueTraction_prior, color: "#60a5fa" },
+                      { label: "New Colleges Engaging", cur: recruitingMomentum.colleges30d, prior: recruitingMomentum.colleges_prior, color: "#a78bfa" },
+                      { label: "Visits / Offers", cur: recruitingMomentum.totalVO, prior: null, color: "#f59e0b" },
+                    ].map(({ label, cur, prior, color }, idx, arr) => {
+                      const delta = prior !== null ? cur - prior : null;
+                      const dir = delta === null ? null : delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
+                      const dc = delta === null ? "#4b5563" : delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#6b7280";
+                      return (
+                        <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid #1f2937" : "none" }}>
+                          <span style={{ fontSize: 13, color: "#d1d5db" }}>{label}</span>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color, lineHeight: 1 }}>{cur}</span>
+                            {delta !== null && <span style={{ fontSize: 12, fontWeight: 700, color: dc }}>{dir}{Math.abs(delta) > 0 ? Math.abs(delta) : ""}</span>}
+                            {delta === null && <span style={{ fontSize: 11, color: "#4b5563" }}>all-time</span>}
+                            {prior !== null && <span style={{ fontSize: 11, color: "#4b5563" }}>vs {prior} prior</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
-            </div>
+              {/* Summary sentence */}
+              {(() => {
+                const anyInt = playersWithAnyInterest ?? 0;
+                const tt = programMetrics?.players_with_true_traction ?? 0;
+                const vo = recruitingMomentum.totalVO;
+                const m30 = recruitingMomentum.players30d;
+                if (anyInt === 0) return null;
+                return (
+                  <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #1f2937", fontSize: 13, color: "#6b7280", lineHeight: 1.6 }}>
+                    {anyInt} player{anyInt !== 1 ? "s" : ""} have drawn interest from colleges{tt > 0 ? `, ${tt} with verified personal contact or higher` : ""}
+                    {vo > 0 ? `, and ${vo} visit${vo !== 1 ? "s" : ""} or offer${vo !== 1 ? "s" : ""} recorded` : ""}
+                    {m30 > 0 ? ` — ${m30} active in the last 30 days` : ""}.
+                  </div>
+                );
+              })()}
+            </>
           )}
         </div>
       </section>
@@ -1032,26 +1060,36 @@ export default function CoachDashboard() {
             </div>
           ) : (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 100px 60px 120px 1fr 130px 100px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                <span>Athlete</span><span>Current Stage</span><span>Schools</span><span>Strongest Signal</span><span>Top College</span><span>30-Day Change</span><span>Coach Attention</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 110px 60px 1fr 140px 110px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                <span>Athlete</span><span>Stage</span><span>Schools</span><span>Top College</span><span>What Changed</span><span>Coach Action</span>
               </div>
               {playersHeatingUpRows.slice(0, 15).map((row, i) => {
                 const stageColors = { "Visit / Offer": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#34d399", "Watching": "#6b7280" };
-                const attentionColors = { "High Priority": "#f59e0b", "Heating Up": "#fb923c", "Watching": "#6b7280" };
+                const whatChanged = row.change30d === "No change" ? "No Change"
+                  : row.change30d === "New visit / offer" ? "Visit or Offer"
+                  : row.change30d === "New personal outreach" ? "Personal Outreach"
+                  : row.change30d === "New true traction" ? "True Traction"
+                  : row.change30d.replace("activit", "Activit").replace("y", "y").replace("ies", "ies");
+                const coachAction = row.hl >= 4 ? "Prioritize"
+                  : (row.hl >= 2 && row.count30d === 0) ? "Reconnect"
+                  : row.hl >= 2 ? "Follow Up"
+                  : row.count30d > 0 ? "Monitor"
+                  : "Watch";
+                const actionColors = { "Prioritize": "#f59e0b", "Reconnect": "#f87171", "Follow Up": "#60a5fa", "Monitor": "#34d399", "Watch": "#4b5563" };
                 const sc = stageColors[row.currentStage] || "#6b7280";
-                const ac = attentionColors[row.coachAttention] || "#6b7280";
+                const ac = actionColors[coachAction] || "#4b5563";
+                const wcc = whatChanged === "No Change" ? "#4b5563" : "#34d399";
                 return (
-                  <div key={row.account_id || i} style={{ display: "grid", gridTemplateColumns: "1.2fr 100px 60px 120px 1fr 130px 100px", gap: 8, padding: "12px 20px", borderBottom: i < Math.min(playersHeatingUpRows.length, 15) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                  <div key={row.account_id || i} style={{ display: "grid", gridTemplateColumns: "1.2fr 110px 60px 1fr 140px 110px", gap: 8, padding: "12px 20px", borderBottom: i < Math.min(playersHeatingUpRows.length, 15) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                     <div>
                       <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{row.athlete_name || "Athlete"}</div>
                       {row.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>'{String(row.athlete_grad_year).slice(-2)}</div>}
                     </div>
                     <div><span style={{ fontSize: 10, fontWeight: 700, color: sc, background: `${sc}14`, border: `1px solid ${sc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.currentStage}</span></div>
                     <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: row.schoolsEngaging > 0 ? "#d1d5db" : "#374151", lineHeight: 1 }}>{row.schoolsEngaging || "—"}</div>
-                    <div style={{ fontSize: 11, color: "#9ca3af" }}>{row.strongestSignal}</div>
                     <div style={{ fontSize: 13, color: "#d1d5db", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.topCollege}</div>
-                    <div style={{ fontSize: 11, color: row.change30d === "No change" ? "#4b5563" : "#34d399", fontWeight: row.change30d === "No change" ? 400 : 600 }}>{row.change30d}</div>
-                    <div><span style={{ fontSize: 10, fontWeight: 700, color: ac, background: `${ac}14`, border: `1px solid ${ac}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.coachAttention}</span></div>
+                    <div style={{ fontSize: 11, color: wcc, fontWeight: whatChanged === "No Change" ? 400 : 600 }}>{whatChanged}</div>
+                    <div><span style={{ fontSize: 10, fontWeight: 700, color: ac, background: `${ac}14`, border: `1px solid ${ac}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{coachAction}</span></div>
                   </div>
                 );
               })}
@@ -1143,16 +1181,14 @@ export default function CoachDashboard() {
               </div>
             ) : (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 70px 110px 90px 110px 90px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  <span>College</span><span>Athletes</span><span>Highest Stage</span><span>Last Activity</span><span>Repeat Interest</span><span>Program Value</span>
+                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 70px 110px 90px 130px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  <span>College</span><span>Athletes</span><span>Highest Stage</span><span>Last Activity</span><span>Repeat Interest</span>
                 </div>
                 {collegesEngagingRows.slice(0, 15).map((col, i) => {
                   const stageColors = { "Visit / Offer": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#34d399", "Watching": "#6b7280" };
-                  const pvColors = { "Strong": "#f59e0b", "Growing": "#34d399", "Low": "#4b5563" };
                   const sc = stageColors[col.highestStage] || "#6b7280";
-                  const pvc = pvColors[col.programValue] || "#4b5563";
                   return (
-                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1.5fr 70px 110px 90px 110px 90px", gap: 8, padding: "12px 20px", borderBottom: i < Math.min(collegesEngagingRows.length, 15) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1.5fr 70px 110px 90px 130px", gap: 8, padding: "12px 20px", borderBottom: i < Math.min(collegesEngagingRows.length, 15) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                       <div>
                         <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.college}</div>
                         <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>{col.athleteNames.slice(0, 2).join(", ")}{col.athleteNames.length > 2 ? ` +${col.athleteNames.length - 2}` : ""}</div>
@@ -1161,7 +1197,6 @@ export default function CoachDashboard() {
                       <div><span style={{ fontSize: 10, fontWeight: 700, color: sc, background: `${sc}14`, border: `1px solid ${sc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.highestStage}</span></div>
                       <div style={{ fontSize: 12, color: "#6b7280" }}>{col.lastActivityDate ? new Date(col.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
                       <div>{col.repeatLabel ? <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", background: "#e8a02014", border: "1px solid #e8a02030", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.repeatLabel}</span> : <span style={{ fontSize: 11, color: "#4b5563" }}>—</span>}</div>
-                      <div><span style={{ fontSize: 10, fontWeight: 700, color: pvc, background: `${pvc}14`, border: `1px solid ${pvc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.programValue}</span></div>
                     </div>
                   );
                 })}
@@ -1173,46 +1208,6 @@ export default function CoachDashboard() {
           </div>
         </section>
       )}
-
-      {/* ── SECTION 7: RECRUITING MOMENTUM ── */}
-      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-          <div style={{ width: 3, height: 20, background: "#34d399", borderRadius: 2 }} />
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f9fafb" }}>RECRUITING MOMENTUM</div>
-          <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>this 30 days vs prior 30 days</span>
-        </div>
-        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
-          {journeyLoading && !programMetrics ? (
-            <div style={{ padding: "20px 24px", display: "flex", alignItems: "center", gap: 10, color: "#4b5563", fontSize: 13 }}>
-              <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />Loading…
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-              {[
-                { label: "Players w/ Any Interest", cur: recruitingMomentum.players30d, prior: recruitingMomentum.players_prior, color: "#34d399" },
-                { label: "True Traction Players", cur: recruitingMomentum.trueTraction30d, prior: recruitingMomentum.trueTraction_prior, color: "#60a5fa" },
-                { label: "New Colleges Engaging", cur: recruitingMomentum.colleges30d, prior: recruitingMomentum.colleges_prior, color: "#a78bfa" },
-                { label: "Visits / Offers", cur: recruitingMomentum.totalVO, prior: null, color: "#f59e0b" },
-              ].map(({ label, cur, prior, color }, idx, arr) => {
-                const delta = prior !== null ? cur - prior : null;
-                const dir = delta === null ? null : delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
-                const dc = delta === null ? "#4b5563" : delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#6b7280";
-                return (
-                  <div key={label} style={{ padding: "16px 20px", borderRight: idx < arr.length - 1 ? "1px solid #1f2937" : "none" }}>
-                    <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{label}</div>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color, lineHeight: 1 }}>{cur}</span>
-                      {delta !== null && <span style={{ fontSize: 13, fontWeight: 700, color: dc }}>{dir}{Math.abs(delta) > 0 ? Math.abs(delta) : ""}</span>}
-                      {delta === null && <span style={{ fontSize: 11, color: "#4b5563" }}>all-time</span>}
-                    </div>
-                    {prior !== null && <div style={{ fontSize: 11, color: "#4b5563", marginTop: 2 }}>prior 30d: {prior}</div>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </section>
 
       {/* ── SECTION 8: RECENT RECRUITING ACTIVITY ── */}
       {(recentJourneyActivity.length > 0 || journeyLoading || Object.keys(athleteJourneys).length > 0) && (
@@ -1235,13 +1230,13 @@ export default function CoachDashboard() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px 100px 80px", gap: 8, padding: "8px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                   <span>Athlete</span><span>College</span><span>Activity</span><span>Tier</span><span>Date</span>
                 </div>
-                {recentJourneyActivity.map((act, i) => {
+                {(activityExpanded ? recentJourneyActivity : recentJourneyActivity.slice(0, 5)).map((act, i, arr) => {
                   const tl = act._traction_level ?? 0;
                   const tierLabel = tl >= 4 ? "Major Outcome" : tl >= 2 ? "True Traction" : tl === 1 ? (SIGNAL_PERSONAL_TYPES.has(act.activity_type) ? "Personal Signal" : "Watching") : "Watching";
                   const tierColors = { "Major Outcome": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#34d399", "Watching": "#4b5563" };
                   const tc = tierColors[tierLabel] || "#4b5563";
                   return (
-                    <div key={act.id || i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px 100px 80px", gap: 8, padding: "10px 20px", borderBottom: i < recentJourneyActivity.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                    <div key={act.id || i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px 100px 80px", gap: 8, padding: "10px 20px", borderBottom: i < arr.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: "#f9fafb" }}>{act._athlete_name}</div>
                       <div style={{ fontSize: 13, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.school_name || "—"}</div>
                       <div style={{ fontSize: 11, color: "#9ca3af" }}>{ACTIVITY_LABEL[act.activity_type] || act.activity_type}</div>
@@ -1250,6 +1245,13 @@ export default function CoachDashboard() {
                     </div>
                   );
                 })}
+                {recentJourneyActivity.length > 5 && (
+                  <div style={{ padding: "12px 20px", borderTop: "1px solid #1f2937", textAlign: "center" }}>
+                    <button onClick={() => setActivityExpanded(e => !e)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: "0.08em", textTransform: "uppercase", padding: "4px 12px" }}>
+                      {activityExpanded ? "SHOW LESS" : `VIEW ALL ACTIVITY (${recentJourneyActivity.length})`}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
