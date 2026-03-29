@@ -105,6 +105,14 @@ export default function CoachDashboard() {
   const [expandedSchool, setExpandedSchool] = useState(null); // school name string
   const [activityExpanded, setActivityExpanded] = useState(false);
 
+  // COACH UPDATE — period filter + last-visit tracking via localStorage
+  const [lastVisitDate] = useState(() => {
+    try { return localStorage.getItem("urecruit_coach_last_visit") || null; } catch { return null; }
+  });
+  const [cuPeriod, setCuPeriod] = useState(() => {
+    try { return localStorage.getItem("urecruit_coach_last_visit") ? "last_visit" : "30d"; } catch { return "30d"; }
+  });
+
   // Message compose state
   const [recipient, setRecipient] = useState("all"); // "all" | athlete roster id
   const [subject, setSubject] = useState("");
@@ -196,6 +204,8 @@ export default function CoachDashboard() {
       else loadJourneyData(); // non-blocking: runs in background
       setLoading(false);
     })();
+    // Record this visit so the next session can use "Since Last Visit"
+    try { localStorage.setItem("urecruit_coach_last_visit", new Date().toISOString()); } catch {}
   }, []);
 
   useEffect(() => {
@@ -595,6 +605,7 @@ export default function CoachDashboard() {
 
   const _d30 = new Date(_now.getTime() - 30 * 86400000).toISOString().slice(0, 10);
   const _d60 = new Date(_now.getTime() - 60 * 86400000).toISOString().slice(0, 10);
+  const _d90 = new Date(_now.getTime() - 90 * 86400000).toISOString().slice(0, 10);
 
   function _get30dCount(journey) {
     return (journey.recent_activities || []).filter(a =>
@@ -773,6 +784,164 @@ export default function CoachDashboard() {
     }
     const totalVO = (programMetrics?.offer_count || 0) + (programMetrics?.unofficial_visit_count || 0) + (programMetrics?.official_visit_count || 0);
     return { players30d: p30, players_prior: pP, trueTraction30d: tt30, trueTraction_prior: ttP, colleges30d: c30.size, colleges_prior: cP.size, totalVO };
+  })();
+
+  // ── COACH UPDATE — computed data ─────────────────────────────────────────
+  const coachUpdateData = (() => {
+    // Date cutoff based on selected period
+    const cutoff =
+      cuPeriod === "last_visit" && lastVisitDate ? lastVisitDate.slice(0, 10) :
+      cuPeriod === "60d" ? _d60 :
+      cuPeriod === "90d" ? _d90 :
+      _d30;
+
+    // Full uncapped activity list across all athletes (recentJourneyActivity is capped at 15)
+    const allActs = [];
+    for (const [accountId, journey] of Object.entries(athleteJourneys)) {
+      const rEntry = roster.find(r => r.account_id === accountId);
+      for (const act of (journey.recent_activities || [])) {
+        allActs.push({ ...act, _account_id: accountId, _athlete_name: rEntry?.athlete_name || "Athlete" });
+      }
+    }
+
+    const filtered = allActs.filter(a => (a.activity_date || a.created_at || "").slice(0, 10) >= cutoff);
+    filtered.sort((a, b) =>
+      (b.activity_date || b.created_at || "").localeCompare(a.activity_date || a.created_at || "")
+    );
+
+    // Row 1 — unique athletes with any activity
+    const athleteIds = new Set(filtered.map(a => a._account_id));
+    const athleteCount = athleteIds.size;
+
+    // Row 2 — new true traction (level >= 2, excludes level 4 major outcomes for labeling but counts both)
+    const tractionActs = filtered.filter(a => (a._traction_level ?? 0) >= 2);
+    const tractionAthletes = new Set(tractionActs.map(a => a._account_id)).size;
+    const tractionSchools = new Set(tractionActs.map(a => (a.school_name || "").trim()).filter(Boolean)).size;
+
+    // Row 3 — major outcomes (level 4: visits, offers, commitments)
+    const VISIT_TYPES  = new Set(["unofficial_visit_requested","unofficial_visit_completed","official_visit_requested","official_visit_completed"]);
+    const OFFER_TYPES  = new Set(["offer","offer_received","offer_updated"]);
+    const COMMIT_TYPES = new Set(["commitment","signed"]);
+    const majorActs   = filtered.filter(a => (a._traction_level ?? 0) >= 4);
+    const visitCount  = majorActs.filter(a => VISIT_TYPES.has(a.activity_type)).length;
+    const offerCount  = majorActs.filter(a => OFFER_TYPES.has(a.activity_type)).length;
+    const commitCount = majorActs.filter(a => COMMIT_TYPES.has(a.activity_type)).length;
+    const majorCount  = majorActs.length;
+
+    // Row 4 — camp registrations (NOT true traction, NOT major outcomes)
+    const CAMP_REG_TYPES = new Set(["camp_registered", "camp_attended"]);
+    const campRegActs    = filtered.filter(a => CAMP_REG_TYPES.has(a.activity_type));
+    const campRegCount   = campRegActs.length;
+    const campRegAthletes = new Set(campRegActs.map(a => a._account_id)).size;
+
+    // Row 5 — most active colleges (by activity count in period)
+    const collegeMap = {};
+    for (const a of filtered) {
+      const name = (a.school_name || "").trim();
+      if (!name) continue;
+      collegeMap[name] = (collegeMap[name] || 0) + 1;
+    }
+    const topColleges = Object.entries(collegeMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name]) => name);
+
+    // ── Narrative paragraph ───────────────────────────────────────────────
+    const periodLabel =
+      cuPeriod === "last_visit" ? "since your last visit" :
+      cuPeriod === "60d" ? "over the last 60 days" :
+      cuPeriod === "90d" ? "over the last 90 days" :
+      "over the last 30 days";
+    const capLabel = periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1);
+
+    let narrative = "";
+    if (filtered.length === 0) {
+      narrative = cuPeriod === "last_visit"
+        ? "No new recruiting activity since your last visit."
+        : "No new recruiting activity in this period.";
+    } else {
+      // Sentence 1: who did what
+      const outcomes = [];
+      if (commitCount > 0) outcomes.push(commitCount === 1 ? "one commitment" : `${commitCount} commitments`);
+      if (offerCount  > 0) outcomes.push(offerCount  === 1 ? "one offer"      : `${offerCount} offers`);
+      if (visitCount  > 0) outcomes.push(visitCount  === 1 ? "one visit request" : `${visitCount} visit requests`);
+      if (campRegCount > 0 && majorCount === 0 && tractionAthletes === 0) {
+        outcomes.push(campRegCount === 1 ? "one new camp registration" : `${campRegCount} new camp registrations`);
+      }
+
+      let s1 = `${capLabel}, ${athleteCount} athlete${athleteCount !== 1 ? "s" : ""} logged new recruiting activity`;
+      if (outcomes.length > 0) s1 += `, including ${outcomes.join(", ")}`;
+      s1 += ".";
+
+      // Sentence 2: broader signals
+      const sigTypes = [];
+      if (filtered.some(a => ["dm_received","dm_sent"].includes(a.activity_type)))                           sigTypes.push("direct messages");
+      if (filtered.some(a => ["text_received","text_sent"].includes(a.activity_type)))                       sigTypes.push("texts");
+      if (filtered.some(a => ["generic_email","personal_email"].includes(a.activity_type)))                  sigTypes.push("emails");
+      if (filtered.some(a => ["social_follow"].includes(a.activity_type)))                                   sigTypes.push("follows");
+      if (filtered.some(a => ["social_like"].includes(a.activity_type)))                                     sigTypes.push("likes");
+      if (filtered.some(a => ["camp_invite","generic_camp_invite","personal_camp_invite"].includes(a.activity_type))) sigTypes.push("camp invites");
+      if (filtered.some(a => ["post_camp_followup_sent","post_camp_personal_response"].includes(a.activity_type)))    sigTypes.push("post-camp follow-up");
+      if (campRegCount > 0 && (majorCount > 0 || tractionAthletes > 0)) {
+        // include camp registrations in sentence 2 when stronger outcomes were already in s1
+        sigTypes.unshift(campRegCount === 1 ? "one new camp registration" : `${campRegCount} new camp registrations`);
+      }
+
+      let s2 = "";
+      if (sigTypes.length > 0) {
+        const typeList = sigTypes.length === 1 ? sigTypes[0]
+          : sigTypes.slice(0, -1).join(", ") + ", and " + sigTypes[sigTypes.length - 1];
+        const collegeCount = Object.keys(collegeMap).length;
+        s2 = `${collegeCount > 0 ? `${collegeCount} college${collegeCount !== 1 ? "s" : ""}` : "Additional colleges"} engaged through ${typeList}.`;
+      }
+
+      narrative = s2 ? `${s1} ${s2}` : s1;
+    }
+
+    // ── Detail lines (up to 3, priority-ordered) ─────────────────────────
+    const PRIORITY_RANK = (act) => {
+      const t = act.activity_type || "";
+      if (COMMIT_TYPES.has(t)) return 1;
+      if (OFFER_TYPES.has(t))  return 2;
+      if (["official_visit_requested","official_visit_completed"].includes(t))   return 3;
+      if (["unofficial_visit_requested","unofficial_visit_completed"].includes(t)) return 4;
+      if ((act._traction_level ?? 0) >= 2) return 5;
+      if (CAMP_REG_TYPES.has(t)) return 6;
+      if (new Set(["dm_received","dm_sent","text_received","text_sent","post_camp_followup_sent","phone_call","personal_email"]).has(t)) return 7;
+      return 99;
+    };
+    const EVENT_LABEL = (act) => {
+      const t = act.activity_type || "";
+      if (COMMIT_TYPES.has(t)) return "commitment";
+      if (OFFER_TYPES.has(t))  return "scholarship offer";
+      if (t === "official_visit_requested")   return "official visit request";
+      if (t === "official_visit_completed")   return "official visit completed";
+      if (t === "unofficial_visit_requested") return "unofficial visit request";
+      if (t === "unofficial_visit_completed") return "unofficial visit completed";
+      if ((act._traction_level ?? 0) >= 2) return "direct personal contact";
+      if (CAMP_REG_TYPES.has(t)) return "camp registration";
+      if (t === "phone_call")    return "phone call";
+      if (t === "personal_email") return "personal email";
+      if (["dm_received","dm_sent"].includes(t)) return "direct message";
+      if (["text_received","text_sent"].includes(t)) return "text";
+      if (t === "post_camp_followup_sent") return "post-camp follow-up";
+      return "activity";
+    };
+
+    const seen = new Set();
+    const detailLines = [];
+    const ranked = [...filtered].sort((a, b) => PRIORITY_RANK(a) - PRIORITY_RANK(b));
+    for (const act of ranked) {
+      const rank = PRIORITY_RANK(act);
+      if (rank === 99) continue;
+      const key = `${act._account_id}|${(act.school_name || "").trim()}|${rank}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      detailLines.push({ athlete: act._athlete_name, event: EVENT_LABEL(act), college: (act.school_name || "").trim() || null });
+      if (detailLines.length >= 3) break;
+    }
+
+    return { cutoff, athleteCount, tractionAthletes, tractionSchools, majorCount, visitCount, offerCount, commitCount, campRegCount, campRegAthletes, topColleges, narrative, detailLines, totalFiltered: filtered.length };
   })();
 
   // ── Players Needing Attention ─────────────────────────────────────────────
@@ -1105,7 +1274,126 @@ export default function CoachDashboard() {
         </div>
       </section>
 
-      {/* ── SECTION 4: PLAYERS HEATING UP ── */}
+      {/* ── SECTION 4: COACH UPDATE ── */}
+      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+          <div style={{ width: 3, height: 20, background: "#34d399", borderRadius: 2 }} />
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f9fafb" }}>COACH UPDATE</div>
+          <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>what changed in the selected period</span>
+          {journeyLoading && Object.keys(athleteJourneys).length === 0 && (
+            <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />
+          )}
+          {/* Period toggle */}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+            {[
+              ...(lastVisitDate ? [{ key: "last_visit", label: "Since Last Visit" }] : []),
+              { key: "30d", label: "30D" },
+              { key: "60d", label: "60D" },
+              { key: "90d", label: "90D" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setCuPeriod(key)}
+                style={{
+                  padding: "4px 10px", borderRadius: 6, border: "1px solid",
+                  fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", cursor: "pointer",
+                  background: cuPeriod === key ? "#34d399" : "transparent",
+                  color:      cuPeriod === key ? "#111827" : "#6b7280",
+                  borderColor: cuPeriod === key ? "#34d399" : "#374151",
+                  transition: "all 0.15s",
+                }}
+              >{label}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 24px" }}>
+          {journeyLoading && Object.keys(athleteJourneys).length === 0 ? (
+            <div style={{ fontSize: 13, color: "#4b5563" }}>Loading…</div>
+          ) : (
+            <>
+              {/* 5 summary rows */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 0, marginBottom: 16 }}>
+                {[
+                  {
+                    label: "New athlete activity",
+                    value: coachUpdateData.athleteCount > 0 ? coachUpdateData.athleteCount : "—",
+                    sub: null,
+                    color: coachUpdateData.athleteCount > 0 ? "#34d399" : "#374151",
+                  },
+                  {
+                    label: "New true traction",
+                    value: coachUpdateData.tractionAthletes > 0 ? coachUpdateData.tractionAthletes : "—",
+                    sub: coachUpdateData.tractionAthletes > 0 && coachUpdateData.tractionSchools > 1
+                      ? `${coachUpdateData.tractionSchools} schools`
+                      : null,
+                    color: coachUpdateData.tractionAthletes > 0 ? "#60a5fa" : "#374151",
+                  },
+                  {
+                    label: "New major outcomes",
+                    value: coachUpdateData.majorCount > 0 ? coachUpdateData.majorCount : "—",
+                    sub: coachUpdateData.majorCount > 0
+                      ? [
+                          coachUpdateData.commitCount > 0 && `${coachUpdateData.commitCount} commit`,
+                          coachUpdateData.offerCount  > 0 && `${coachUpdateData.offerCount} offer`,
+                          coachUpdateData.visitCount  > 0 && `${coachUpdateData.visitCount} visit`,
+                        ].filter(Boolean).join(" · ")
+                      : null,
+                    color: coachUpdateData.majorCount > 0 ? "#f59e0b" : "#374151",
+                  },
+                  {
+                    label: "New camp registrations",
+                    value: coachUpdateData.campRegCount > 0 ? coachUpdateData.campRegCount : "—",
+                    sub: coachUpdateData.campRegAthletes > 1 ? `${coachUpdateData.campRegAthletes} athletes` : null,
+                    color: coachUpdateData.campRegCount > 0 ? "#a78bfa" : "#374151",
+                  },
+                  {
+                    label: "Most active colleges",
+                    value: coachUpdateData.topColleges.length > 0 ? coachUpdateData.topColleges[0] : "—",
+                    sub: coachUpdateData.topColleges.length > 1 ? coachUpdateData.topColleges.slice(1).join(", ") : null,
+                    color: coachUpdateData.topColleges.length > 0 ? "#e8a020" : "#374151",
+                    wide: true,
+                  },
+                ].map(({ label, value, sub, color, wide }, idx, arr) => (
+                  <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid #1f2937" : "none", gap: 8 }}>
+                    <span style={{ fontSize: 13, color: "#6b7280" }}>{label}</span>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexShrink: 0 }}>
+                      {wide
+                        ? <span style={{ fontSize: 13, fontWeight: 600, color, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
+                        : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color, lineHeight: 1 }}>{value}</span>
+                      }
+                      {sub && <span style={{ fontSize: 11, color: "#4b5563" }}>{sub}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Narrative */}
+              <div style={{ paddingTop: 14, borderTop: "1px solid #1f2937" }}>
+                <p style={{ margin: 0, fontSize: 14, color: coachUpdateData.totalFiltered > 0 ? "#d1d5db" : "#6b7280", lineHeight: 1.7 }}>
+                  {coachUpdateData.narrative}
+                </p>
+
+                {/* Detail lines */}
+                {coachUpdateData.detailLines.length > 0 && (
+                  <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                    {coachUpdateData.detailLines.map((line, i) => (
+                      <div key={i} style={{ fontSize: 13, color: "#9ca3af" }}>
+                        <span style={{ color: "#f9fafb", fontWeight: 600 }}>{line.athlete}</span>
+                        {" — "}
+                        <span style={{ color: "#d1d5db" }}>{line.event}</span>
+                        {line.college && <>{" — "}<span style={{ color: "#9ca3af" }}>{line.college}</span></>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* ── SECTION 5: PLAYERS HEATING UP ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ width: 3, height: 24, background: "#fb923c", borderRadius: 2, flexShrink: 0 }} />
