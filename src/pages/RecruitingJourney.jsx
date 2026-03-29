@@ -73,7 +73,7 @@ const FIELDS_FOR = {
   camp_registered:             ["school_name", "activity_date", "notes"],
   camp_attended:               ["school_name", "activity_date", "coach_name", "coach_title", "notes"],
   camp_meeting:                ["school_name", "activity_date", "coach_name", "coach_title", "notes"],
-  post_camp_followup_sent:     ["school_name", "activity_date", "coach_name", "notes"],
+  post_camp_followup_sent:     ["school_name", "activity_date", "coach_name", "notes", "signal_quality"],
   post_camp_personal_response: ["school_name", "activity_date", "coach_name", "notes", "signal_quality"],
   unofficial_visit_requested:  ["school_name", "activity_date", "coach_name", "coach_title", "notes", "signal_quality"],
   unofficial_visit_completed:  ["school_name", "activity_date", "coach_name", "coach_title", "notes"],
@@ -128,7 +128,7 @@ function clientTractionLevel(act) {
   if (["personal_camp_invite","post_camp_personal_response","phone_call"].includes(t)) return 3;
   if (t === "camp_meeting" || t === "personal_email") return 2;
   if ((act.is_verified_personal === true || act.is_two_way_engagement === true) &&
-      ["dm_received","dm_sent","text_received","text_sent"].includes(t)) return 2;
+      ["dm_received","dm_sent","text_received","text_sent","post_camp_followup_sent"].includes(t)) return 2;
   if (["social_like","social_follow","generic_email","generic_camp_invite","camp_invite",
        "camp_registered","camp_attended","post_camp_followup_sent",
        "dm_received","dm_sent","text_received","text_sent"].includes(t)) return 1;
@@ -148,6 +148,14 @@ const BLANK_PREFS = {
   d2_1: "",  d2_2: "",  d2_3: "",
   d3_1: "",  d3_2: "",  d3_3: "",
 };
+
+// Activity types where the signal quality section starts expanded by default.
+// For these types, is_two_way_engagement directly gates traction classification
+// (level 1 vs level 2), so the question should be visible without requiring
+// the user to discover a collapsed toggle.
+const AUTO_EXPAND_SIGNAL_TYPES = new Set([
+  "dm_received", "dm_sent", "text_received", "text_sent", "post_camp_followup_sent",
+]);
 
 function normId(x) {
   if (!x) return null;
@@ -249,7 +257,7 @@ export default function RecruitingJourney() {
   function openAdd(type) {
     setAddForm({ ...BLANK_FORM, activity_type: type });
     setAddError("");
-    setShowAdvanced(false);
+    setShowAdvanced(AUTO_EXPAND_SIGNAL_TYPES.has(type));
     setShowAdd(true);
     loadAllSchools();
   }
@@ -700,7 +708,7 @@ export default function RecruitingJourney() {
                         return (
                           <button
                             key={key}
-                            onClick={() => { setAddForm(p => ({ ...p, activity_type: key })); setShowAdvanced(false); }}
+                            onClick={() => { setAddForm(p => ({ ...p, activity_type: key })); setShowAdvanced(AUTO_EXPAND_SIGNAL_TYPES.has(key)); }}
                             style={{
                               background: active ? "rgba(232,160,32,0.12)" : "#0a0e1a",
                               border: active ? "1px solid #e8a020" : "1px solid #374151",
@@ -790,7 +798,7 @@ export default function RecruitingJourney() {
                   onClick={() => setShowAdvanced(p => !p)}
                   style={{ background: "none", border: "none", color: "#e8a020", fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: showAdvanced ? 14 : 0 }}
                 >
-                  {showAdvanced ? "▲ Hide details" : "▼ Add verification details (optional)"}
+                  {showAdvanced ? "▲ Hide details" : "▼ Add signal details (affects traction level)"}
                 </button>
                 {showAdvanced && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
