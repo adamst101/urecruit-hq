@@ -1022,73 +1022,73 @@ export default function CoachDashboard() {
                 ? _typeArr[0]
                 : _typeArr.slice(0, -1).join(", ") + ", and " + _typeArr[_typeArr.length - 1];
 
-            // ── Traction description for verified-contact / invite tier ────
-            const topStatus    = topPair?.relationship_status || "";
-            const tractionDesc = topStatus === "invite"
-              ? "a personal camp invite and direct recruiting outreach"
-              : "verified personal traction";
+            // ── Contact description for true-traction tier (no visit/offer) ─
+            const topStatus     = topPair?.relationship_status || "";
+            const contactDesc   = topStatus === "invite"
+              ? "a personal camp invite"
+              : "direct coach contact";
 
             // ── Build sentence 1 and sentence 2 ───────────────────────────
             let s1 = "", s2 = "";
 
             if (commitCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} has committed to ${proofCollege}, giving the program a signed commitment — the strongest recruiting outcome currently on the board.`
-                : `The program has a signed commitment on the board, the strongest recruiting outcome logged this season.`;
+                ? `${proofAthlete} has committed to ${proofCollege}, giving the program a signed commitment on the board.`
+                : `The program has a signed commitment on the board.`;
               s2 = additionalColleges > 0
-                ? `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are also engaging the roster through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
-                : `${proofCollege || "That program"} is the only school with contact logged — no other recruiting activity is on the board yet.`;
+                ? `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are also engaging the roster through ${earlyTypeDesc}${hasRecent ? `, including ${recentCount} with activity in the last 30 days` : ""}.`
+                : `${proofCollege || "That program"} is the only school with contact on the board right now.`;
 
             } else if (offerCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} has an offer from ${proofCollege}, the strongest confirmed recruiting proof currently on the board.`
+                ? `${proofAthlete} currently has an offer from ${proofCollege}, the highest confirmed recruiting proof on the board.`
                 : proofAthlete
                   ? `${proofAthlete} has a scholarship offer on the board, the highest confirmed recruiting proof for the program this cycle.`
                   : `The program has a scholarship offer on the board, the highest confirmed recruiting proof this cycle.`;
               s2 = additionalColleges > 0
-                ? `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are also showing early interest through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
-                : `${proofCollege || "That program"} is the only school in the pipeline right now — getting additional schools engaged would help build leverage around the offer.`;
+                ? `Beyond that, ${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are engaging the roster through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
+                : `${proofCollege || "That program"} is the only school in the pipeline right now.`;
 
             } else if (officialVisitCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} has an official visit on record with ${proofCollege}, the highest-stage recruiting event currently logged for the program.`
-                : `The program has an official visit on record, the highest-stage recruiting event logged this cycle.`;
+                ? `${proofAthlete} currently has an official visit on record with ${proofCollege}, the program's highest-stage recruiting contact.`
+                : `The program has an official visit on record, the highest-stage recruiting contact logged this cycle.`;
               s2 = additionalColleges > 0
-                ? `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are showing early interest through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
-                : `${proofCollege || "That program"} is the only school with contact logged so far — no other schools are yet in the pipeline.`;
+                ? `Beyond that, ${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are engaging the roster through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
+                : `${proofCollege || "That program"} is the only school with contact on the board right now.`;
 
             } else if (unofficialVisitCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} has an unofficial visit request on record with ${proofCollege}${trueTractionCount > 1 ? `, and the program has direct personal contact confirmed at ${trueTractionCount} schools` : ""}.`
-                : `The program has an unofficial visit request on record${trueTractionCount > 1 ? `, with direct personal contact confirmed at ${trueTractionCount} schools` : ""}.`;
+                ? `${proofAthlete} currently has an unofficial visit on record with ${proofCollege}${trueTractionCount > 1 ? `, and the program has direct coach contact confirmed at ${trueTractionCount} schools` : ""}.`
+                : `The program has an unofficial visit on record${trueTractionCount > 1 ? `, with direct coach contact confirmed at ${trueTractionCount} schools` : ""}.`;
               s2 = additionalColleges > 0
-                ? `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are also engaging the roster through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
-                : `${proofCollege || "That program"} is the only school with recruiting contact on record right now.`;
+                ? `Beyond that, ${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are engaging the roster through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
+                : `${proofCollege || "That program"} is the only school with direct recruiting contact on the board right now.`;
 
             } else if (trueTractionCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} is generating the strongest recruiting movement on the roster, led by ${tractionDesc} from ${proofCollege}.`
+                ? `${proofAthlete} currently has the strongest recruiting contact in the program, with ${contactDesc} on record from ${proofCollege}.`
                 : proofAthlete
-                  ? `${proofAthlete} has ${tractionDesc} on record with at least one college program, the strongest confirmed contact for the roster.`
-                  : `The program has ${tractionDesc} on record at ${trueTractionCount} school${trueTractionCount !== 1 ? "s" : ""}, confirmed direct two-way contact.`;
+                  ? `${proofAthlete} has ${contactDesc} on record with at least one college, the strongest direct recruiting contact logged for the roster.`
+                  : `The program has ${contactDesc} on record at ${trueTractionCount} school${trueTractionCount !== 1 ? "s" : ""}.`;
               s2 = additionalColleges > 0
-                ? `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are showing early interest through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
+                ? `Beyond that, ${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are engaging the roster through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
                 : proofCollege
-                  ? `${proofCollege} is the only school with confirmed contact so far — no other schools are showing direct recruiting activity yet.`
-                  : `No other schools are showing direct recruiting activity yet — building broader visibility would help generate competitive interest.`;
+                  ? `${proofCollege} is the only school with direct contact on the board — no other schools have made direct coach contact yet.`
+                  : `No other schools have made direct coach contact yet.`;
 
             } else if (anyInterest > 0) {
               const isPersonal = playersHeatingUpRows[0]?.currentStage === "Personal Signal";
               s1 = isPersonal && proofAthlete && proofCollege
-                ? `${proofAthlete} is drawing the strongest current recruiting interest on the roster, with direct personal outreach on record from ${proofCollege}.`
+                ? `${proofAthlete} is drawing the most direct college contact on the roster, with personal outreach on record from ${proofCollege}.`
                 : proofAthlete && proofCollege
-                  ? `${proofAthlete} is drawing the most early college interest on the roster, with ${proofCollege} showing the strongest engagement through ${earlyTypeDesc}.`
-                  : `The roster has early college interest on record from ${totalColleges} school${totalColleges !== 1 ? "s" : ""}, with no verified personal contact logged yet.`;
+                  ? `${proofAthlete} is drawing the most early college interest on the roster, with ${proofCollege} engaging through ${earlyTypeDesc}.`
+                  : `The roster has early college interest from ${totalColleges} school${totalColleges !== 1 ? "s" : ""}, with no direct coach contact logged yet.`;
               s2 = additionalColleges > 0
-                ? `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are also showing early interest through ${earlyTypeDesc}${hasRecent ? ` — ${recentCount} with activity in the last 30 days` : ""}, with no verified personal recruiting contact logged yet.`
+                ? `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are also engaging through ${earlyTypeDesc}${hasRecent ? ` — ${recentCount} with activity in the last 30 days` : ""}; no direct coach contact has been logged yet.`
                 : totalColleges === 1 && proofCollege
-                  ? `${proofCollege} is the only school showing interest so far — no verified personal recruiting contact has been logged yet.`
-                  : `No verified personal recruiting contact has been logged yet across the roster.`;
+                  ? `${proofCollege} is the only school showing interest so far, and no direct coach contact has been logged yet.`
+                  : `No direct coach contact has been logged yet across the roster.`;
 
             } else {
               s1 = `No college recruiting activity has been logged for the program yet.`;
