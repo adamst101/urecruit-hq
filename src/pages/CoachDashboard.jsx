@@ -1371,8 +1371,29 @@ export default function CoachDashboard() {
             <div style={{ fontSize: 13, color: "#4b5563" }}>Loading…</div>
           ) : (
             <>
+              {/* Narrative */}
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ margin: 0, fontSize: 14, color: coachUpdateData.totalFiltered > 0 ? "#d1d5db" : "#6b7280", lineHeight: 1.7 }}>
+                  {coachUpdateData.narrative}
+                </p>
+
+                {/* Detail lines */}
+                {coachUpdateData.detailLines.length > 0 && (
+                  <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                    {coachUpdateData.detailLines.map((line, i) => (
+                      <div key={i} style={{ fontSize: 13, color: "#9ca3af" }}>
+                        <span style={{ color: "#f9fafb", fontWeight: 600 }}>{line.athlete}</span>
+                        {" — "}
+                        <span style={{ color: "#d1d5db" }}>{line.event}</span>
+                        {line.college && <>{" — "}<span style={{ color: "#9ca3af" }}>{line.college}</span></>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* 5 summary rows */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 0, marginBottom: 16 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 0, borderTop: "1px solid #1f2937", paddingTop: 14 }}>
                 {[
                   {
                     label: "New athlete activity",
@@ -1427,27 +1448,6 @@ export default function CoachDashboard() {
                     }
                   </div>
                 </div>
-              </div>
-
-              {/* Narrative */}
-              <div style={{ paddingTop: 14, borderTop: "1px solid #1f2937" }}>
-                <p style={{ margin: 0, fontSize: 14, color: coachUpdateData.totalFiltered > 0 ? "#d1d5db" : "#6b7280", lineHeight: 1.7 }}>
-                  {coachUpdateData.narrative}
-                </p>
-
-                {/* Detail lines */}
-                {coachUpdateData.detailLines.length > 0 && (
-                  <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-                    {coachUpdateData.detailLines.map((line, i) => (
-                      <div key={i} style={{ fontSize: 13, color: "#9ca3af" }}>
-                        <span style={{ color: "#f9fafb", fontWeight: 600 }}>{line.athlete}</span>
-                        {" — "}
-                        <span style={{ color: "#d1d5db" }}>{line.event}</span>
-                        {line.college && <>{" — "}<span style={{ color: "#9ca3af" }}>{line.college}</span></>}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </>
           )}
