@@ -394,7 +394,8 @@ export default function CoachDashboard() {
   const _schoolCounts = {};
   Object.values(campsByAccountId).forEach(camps => {
     camps.forEach(c => {
-      const name = c.school_name || c.host_org || c.ryzer_program_name || c.camp_name || "Unknown";
+      const name = c.school_name || c.host_org || c.ryzer_program_name || c.camp_name;
+      if (!name) return; // skip unresolvable entries rather than showing "Unknown"
       _schoolCounts[name] = (_schoolCounts[name] || 0) + 1;
     });
   });
@@ -460,7 +461,8 @@ export default function CoachDashboard() {
     Object.entries(campsByAccountId).forEach(([accountId, camps]) => {
       const ath = roster.find(r => r.account_id === accountId);
       camps.forEach(c => {
-        const name = c.school_name || c.host_org || c.ryzer_program_name || c.camp_name || "Unknown School";
+        const name = c.school_name || c.host_org || c.ryzer_program_name || c.camp_name;
+        if (!name) return; // skip entries with no resolvable school name
         if (!m.has(name)) m.set(name, { name, division: null, count: 0, athletes: new Set() });
         const e = m.get(name);
         e.count++;
@@ -610,6 +612,7 @@ export default function CoachDashboard() {
   return (
     <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", paddingBottom: 100, fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
       <style>{FONTS}</style>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* ── HEADER ── */}
       <section style={{ padding: "48px 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
@@ -620,8 +623,10 @@ export default function CoachDashboard() {
               {dashTitle}
             </h1>
             <p style={{ color: "#9ca3af", fontSize: 15, margin: "6px 0 0" }}>
-              Welcome back, {isTrainer ? "Trainer" : "Coach"} {coach.last_name}
-              {coach.title ? ` · ${coach.title}` : ""}
+              {isTrainer
+                ? `Welcome back, Trainer ${coach.last_name}${coach.title ? ` · ${coach.title}` : ""}`
+                : "True recruiting traction and program outcomes across your athletes"
+              }
             </p>
             <p style={{ color: "#6b7280", fontSize: 13, marginTop: 2 }}>
               {coach.school_or_org}{coach.sport ? ` · ${coach.sport}` : ""}
@@ -655,192 +660,148 @@ export default function CoachDashboard() {
         </div>
       </section>
 
-      {/* ── SNAPSHOT METRICS ── */}
+      {/* ── PRIMARY STAT ROW ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-        {/* Row 1: Camp-based stats */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: programMetrics || journeyLoading ? 12 : 0 }}>
-          {[
-            { key: "roster",  label: "Athletes",        value: roster.length,             sub: "on roster",                    accent: "#e8a020" },
-            { key: "monthly", label: "Camp Activity",    value: athletesThisMonth.length,  sub: "athletes active this month",   accent: "#e8a020" },
-            { key: "schools", label: "Schools Engaged", value: topSchools.length,         sub: "unique programs",               accent: "#e8a020" },
-            { key: "noCamps", label: "Watch List",      value: attentionItems.length,     sub: "athletes needing follow-up",    accent: attentionItems.length > 0 ? "#f87171" : "#6b7280" },
-          ].map(({ key, label, value, sub, accent }) => (
-            <div
-              key={key}
-              onClick={() => setOpenSheet(key)}
-              style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
-            >
-              <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{label}</div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: accent, lineHeight: 1 }}>{value}</div>
-              <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>{sub}</div>
-            </div>
-          ))}
-        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+          {/* Athletes — always available */}
+          <div
+            onClick={() => setOpenSheet("roster")}
+            style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+          >
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Athletes</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#e8a020", lineHeight: 1 }}>{roster.length}</div>
+            <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>on roster</div>
+          </div>
 
-        {/* Row 2: Traction stats — shown when journey data is available or loading */}
-        {(programMetrics || journeyLoading) && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-            {[
-              { label: "True Traction",     value: programMetrics?.players_with_true_traction ?? "—", sub: "players w/ verified contact+",  accent: "#60a5fa" },
-              { label: "Colleges Interested", value: programMetrics?.colleges_with_true_interest ?? "—", sub: "schools showing real interest", accent: "#a78bfa" },
-              { label: "Offers",            value: programMetrics?.offer_count ?? "—",             sub: "offers across roster",             accent: "#f59e0b" },
-              { label: "Visits",            value: programMetrics ? (programMetrics.unofficial_visit_count + programMetrics.official_visit_count) : "—", sub: "official + unofficial visits", accent: "#34d399" },
-            ].map(({ label, value, sub, accent }) => (
-              <div
-                key={label}
-                style={{ background: "#0d1421", border: "1px solid #1e293b", borderRadius: 12, padding: "16px 18px" }}
-              >
-                {journeyLoading && !programMetrics ? (
-                  <div style={{ height: 40, display: "flex", alignItems: "center" }}>
-                    <div style={{ width: 20, height: 20, border: "2px solid #374151", borderTopColor: accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ fontSize: 11, color: "#4b5563", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{label}</div>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: accent, lineHeight: 1 }}>{value}</div>
-                    <div style={{ fontSize: 11, color: "#374151", marginTop: 4 }}>{sub}</div>
-                  </>
-                )}
+          {/* True Traction Players */}
+          <div
+            style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}
+          >
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>True Traction</div>
+            {journeyLoading && !programMetrics ? (
+              <div style={{ height: 40, display: "flex", alignItems: "center" }}>
+                <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
               </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ── TRUE TRACTION BOARD ── */}
-      {tractionPairs.length > 0 && (
-        <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 3, height: 20, background: "#60a5fa", borderRadius: 2 }} />
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f9fafb" }}>TRUE TRACTION BOARD</div>
-              <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>verified contact & above</span>
-            </div>
-          </div>
-          <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 80px 80px", gap: 10, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 11, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              <span>Athlete</span><span>School</span><span>Status</span><span>Last Activity</span>
-            </div>
-            {tractionPairs.slice(0, 12).map((p, i) => {
-              const statusColor = RELATIONSHIP_COLOR[p.relationship_status] || "#9ca3af";
-              return (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 80px 80px", gap: 10, padding: "11px 20px", borderBottom: i < Math.min(tractionPairs.length, 12) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{p.athlete_name || "Athlete"}</div>
-                    {p.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280" }}>'{String(p.athlete_grad_year).slice(-2)}</div>}
-                  </div>
-                  <div style={{ fontSize: 13, color: "#d1d5db", fontWeight: 500 }}>{p.school_name}</div>
-                  <div>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>
-                      {RELATIONSHIP_LABEL[p.relationship_status] || p.relationship_status}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11, color: "#6b7280" }}>
-                    {p.last_activity_date ? new Date(p.last_activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
-                  </div>
+            ) : (
+              <>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#60a5fa", lineHeight: 1 }}>
+                  {programMetrics?.players_with_true_traction ?? (roster.length > 0 ? "0" : "—")}
                 </div>
-              );
-            })}
-            {tractionPairs.length > 12 && (
-              <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "#4b5563", borderTop: "1px solid #1f2937" }}>
-                +{tractionPairs.length - 12} more athlete-school pairs with traction
-              </div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>players w/ verified interest</div>
+              </>
             )}
           </div>
-        </section>
-      )}
 
-      {/* ── PRIMARY BOARD ── */}
+          {/* Colleges Showing Interest */}
+          <div
+            style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}
+          >
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Colleges Interested</div>
+            {journeyLoading && !programMetrics ? (
+              <div style={{ height: 40, display: "flex", alignItems: "center" }}>
+                <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+              </div>
+            ) : (
+              <>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#a78bfa", lineHeight: 1 }}>
+                  {programMetrics?.colleges_with_true_interest ?? (roster.length > 0 ? "0" : "—")}
+                </div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>schools showing real interest</div>
+              </>
+            )}
+          </div>
+
+          {/* Offers / Visits */}
+          <div
+            style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}
+          >
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Offers / Visits</div>
+            {journeyLoading && !programMetrics ? (
+              <div style={{ height: 40, display: "flex", alignItems: "center" }}>
+                <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+              </div>
+            ) : (
+              <>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#f59e0b", lineHeight: 1 }}>
+                  {programMetrics
+                    ? programMetrics.offer_count + programMetrics.unofficial_visit_count + programMetrics.official_visit_count
+                    : (roster.length > 0 ? "0" : "—")}
+                </div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>offers + visits across roster</div>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── TRUE TRACTION BOARD (main centerpiece) ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f9fafb" }}>{boardTitle}</div>
+            <div style={{ width: 3, height: 24, background: "#60a5fa", borderRadius: 2 }} />
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>TRUE TRACTION BOARD</div>
+            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>verified personal contact and above</span>
           </div>
-          <button
-            onClick={() => setOpenSheet("roster")}
-            style={{ background: "none", border: "none", color: "#e8a020", fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0 }}
-          >
-            Full Roster →
-          </button>
+          {journeyLoading && !programMetrics && (
+            <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+          )}
         </div>
-
-        <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
-          {boardRoster.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "40px 24px" }}>
-              <div style={{ fontSize: 32, marginBottom: 10 }}>🏈</div>
-              <p style={{ fontSize: 14, color: "#9ca3af", margin: 0 }}>No athletes yet. Share your invite code to connect with players.</p>
-              <button
-                onClick={() => setOpenSheet("code")}
-                style={{ marginTop: 16, background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-              >
-                Get Invite Code →
-              </button>
+        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
+          {tractionPairs.length === 0 ? (
+            <div style={{ padding: "40px 32px", textAlign: "center" }}>
+              {journeyLoading ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "#4b5563", fontSize: 14 }}>
+                  <div style={{ width: 16, height: 16, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  Loading recruiting data…
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>🎯</div>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "#6b7280", letterSpacing: 1, marginBottom: 8 }}>No True Traction Yet</div>
+                  <p style={{ fontSize: 14, color: "#4b5563", margin: 0, lineHeight: 1.7, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
+                    No true traction is visible yet. As athletes receive verified personal outreach, visit requests, and offers, those relationships will appear here.
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <>
-              {/* Column headers */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 58px 58px 110px 64px", gap: 10, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                <span>Athlete</span>
-                <span>Class</span>
-                <span>Schools</span>
-                <span>Next Camp</span>
-                <span style={{ textAlign: "right" }}>Camps</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 110px 90px 80px", gap: 10, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                <span>Athlete</span><span>College</span><span>Traction Type</span><span>Last Date</span><span>Status</span>
               </div>
-              {boardRoster.slice(0, 10).map((r, i) => {
-                const athleteCamps = campsByAccountId[r.account_id] || [];
-                const noCamps = athleteCamps.length === 0;
-                const nextCamp = getNextCamp(r);
-                const schoolCount = uniqueSchoolCount(r);
-                const days = nextCamp ? daysUntil(nextCamp.start_date) : null;
+              {tractionPairs.slice(0, 15).map((p, i) => {
+                const statusColor = RELATIONSHIP_COLOR[p.relationship_status] || "#9ca3af";
+                const tractionLabel =
+                  p.traction_level === 4 ? "Visit / Offer Stage" :
+                  p.traction_level === 3 ? "Direct Recruiting Action" :
+                  "Verified Personal Contact";
+                const tractionColor =
+                  p.traction_level === 4 ? "#f59e0b" :
+                  p.traction_level === 3 ? "#a78bfa" : "#60a5fa";
                 return (
-                  <div
-                    key={r.id || i}
-                    style={{ display: "grid", gridTemplateColumns: "1fr 58px 58px 110px 64px", gap: 10, padding: "13px 20px", borderBottom: i < Math.min(boardRoster.length, 10) - 1 ? "1px solid #1f2937" : "none", alignItems: "center", background: noCamps ? "rgba(248,113,113,0.03)" : "transparent" }}
-                  >
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 110px 90px 80px", gap: 10, padding: "12px 20px", borderBottom: i < Math.min(tractionPairs.length, 15) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                     <div>
-                      <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{r.athlete_name || "Athlete"}</div>
-                      {noCamps && (
-                        <div style={{ fontSize: 11, color: "#f87171", marginTop: 2, fontWeight: 600 }}>No camps yet</div>
-                      )}
+                      <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{p.athlete_name || "Athlete"}</div>
+                      {p.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>'{String(p.athlete_grad_year).slice(-2)}</div>}
                     </div>
-                    <div style={{ fontSize: 13, color: "#9ca3af" }}>
-                      {r.athlete_grad_year ? `'${String(r.athlete_grad_year).slice(-2)}` : "—"}
+                    <div style={{ fontSize: 13, color: "#d1d5db", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.school_name}</div>
+                    <div style={{ fontSize: 11, color: tractionColor, fontWeight: 600 }}>{tractionLabel}</div>
+                    <div style={{ fontSize: 12, color: "#6b7280" }}>
+                      {p.last_activity_date ? new Date(p.last_activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
                     </div>
-                    <div style={{ fontSize: 13, color: schoolCount > 0 ? "#d1d5db" : "#4b5563", textAlign: "center" }}>
-                      {schoolCount > 0 ? schoolCount : "—"}
-                    </div>
-                    <div style={{ fontSize: 12 }}>
-                      {nextCamp ? (
-                        <>
-                          <div style={{ color: "#d1d5db", fontWeight: 600 }}>{new Date(nextCamp.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
-                          <div style={{ color: days !== null && days <= 7 ? "#f59e0b" : "#6b7280", fontSize: 11, marginTop: 1 }}>
-                            {days === 0 ? "Today" : days !== null && days <= 14 ? `${days}d away` : (nextCamp.school_name || nextCamp.host_org || nextCamp.ryzer_program_name || nextCamp.camp_name || "").split(" ").slice(0, 2).join(" ")}
-                          </div>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => nav("/Discover")}
-                          style={{ background: "none", border: "1px solid #374151", borderRadius: 6, padding: "3px 8px", fontSize: 11, color: "#9ca3af", cursor: "pointer", whiteSpace: "nowrap" }}
-                        >
-                          Find →
-                        </button>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: noCamps ? "#f87171" : "#e8a020", textAlign: "right" }}>
-                      {athleteCamps.length}
+                    <div>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>
+                        {RELATIONSHIP_LABEL[p.relationship_status] || p.relationship_status}
+                      </span>
                     </div>
                   </div>
                 );
               })}
-              {boardRoster.length > 10 && (
-                <div
-                  onClick={() => setOpenSheet("roster")}
-                  style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "#e8a020", fontWeight: 600, cursor: "pointer", borderTop: "1px solid #1f2937" }}
-                >
-                  View all {boardRoster.length} athletes →
+              {tractionPairs.length > 15 && (
+                <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "#4b5563", borderTop: "1px solid #1f2937" }}>
+                  +{tractionPairs.length - 15} more athlete-school pairs with traction
                 </div>
               )}
             </>
@@ -852,31 +813,31 @@ export default function CoachDashboard() {
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
 
-          {/* Colleges with True Interest — uses journey data if available, falls back to camp registrations */}
+          {/* LEFT: Colleges Showing True Interest */}
           <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
             <div
               onClick={() => setOpenSheet("schools")}
               style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", cursor: "pointer", borderBottom: "1px solid #1f2937" }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>
-                  {programMetrics?.colleges_detail?.length > 0 ? "COLLEGES SHOWING INTEREST" : "SCHOOLS ENGAGED"}
-                </span>
+                <div style={{ width: 3, height: 16, background: "#a78bfa", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>COLLEGES SHOWING TRUE INTEREST</span>
               </div>
-              <span style={{ fontSize: 12, color: "#e8a020", fontWeight: 600 }}>View All →</span>
+              <span style={{ fontSize: 12, color: "#e8a020", fontWeight: 600 }}>All →</span>
             </div>
             <div style={{ padding: "8px 0" }}>
               {programMetrics?.colleges_detail?.length > 0 ? (
-                // Show colleges from recruiting journey data
-                (programMetrics.colleges_detail).slice(0, 5).map((col, i) => {
+                programMetrics.colleges_detail.slice(0, 5).map((col, i) => {
                   const statusColor = RELATIONSHIP_COLOR[col.relationship_status] || "#9ca3af";
                   return (
                     <div key={col.school_name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", borderBottom: i < Math.min(programMetrics.colleges_detail.length, 5) - 1 ? "1px solid #1f2937" : "none" }}>
-                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: i === 0 ? "#e8a020" : "#374151", width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</div>
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: i === 0 ? "#a78bfa" : "#374151", width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 600, color: "#d1d5db", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.school_name}</div>
-                        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>{col.athlete_names.slice(0, 2).join(", ")}{col.athlete_count > 2 ? ` +${col.athlete_count - 2}` : ""}</div>
+                        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>
+                          {col.athlete_names.slice(0, 2).join(", ")}{col.athlete_count > 2 ? ` +${col.athlete_count - 2}` : ""}
+                          {col.athlete_count > 1 && <span style={{ color: "#4b5563" }}> · {col.athlete_count} athletes</span>}
+                        </div>
                       </div>
                       <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, borderRadius: 20, padding: "2px 7px", whiteSpace: "nowrap", flexShrink: 0 }}>
                         {RELATIONSHIP_LABEL[col.relationship_status] || col.relationship_status}
@@ -884,48 +845,60 @@ export default function CoachDashboard() {
                     </div>
                   );
                 })
-              ) : topSchools.length === 0 ? (
-                <p style={{ fontSize: 13, color: "#4b5563", padding: "16px 20px", margin: 0 }}>No registrations yet. Rankings appear once athletes register.</p>
+              ) : journeyLoading ? (
+                <div style={{ padding: "20px", display: "flex", alignItems: "center", gap: 10, color: "#4b5563", fontSize: 13 }}>
+                  <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  Loading…
+                </div>
+              ) : topSchools.length > 0 ? (
+                <>
+                  <div style={{ padding: "8px 20px 4px", fontSize: 11, color: "#4b5563" }}>Based on camp registrations — log recruiting activity to see true traction.</div>
+                  {topSchools.map(([school, count], i) => (
+                    <div key={school} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 20px", borderBottom: i < topSchools.length - 1 ? "1px solid #1f2937" : "none" }}>
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "#374151", width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</div>
+                      <div style={{ flex: 1, fontSize: 13, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{school}</div>
+                      <div style={{ fontSize: 11, color: "#4b5563", flexShrink: 0 }}>{count} reg{count !== 1 ? "s" : ""}</div>
+                    </div>
+                  ))}
+                </>
               ) : (
-                topSchools.map(([school, count], i) => (
-                  <div key={school} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 20px", borderBottom: i < topSchools.length - 1 ? "1px solid #1f2937" : "none" }}>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: i === 0 ? "#e8a020" : "#374151", width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</div>
-                    <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "#d1d5db", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{school}</div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#9ca3af", flexShrink: 0 }}>{count} reg{count !== 1 ? "s" : ""}</div>
-                  </div>
-                ))
+                <p style={{ fontSize: 13, color: "#4b5563", padding: "20px", margin: 0 }}>No college interest logged yet.</p>
               )}
             </div>
           </div>
 
-          {/* Upcoming Camps */}
+          {/* RIGHT: Program Recruiting Outcomes */}
           <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
-            <div
-              onClick={() => setOpenSheet("monthly")}
-              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", cursor: "pointer", borderBottom: "1px solid #1f2937" }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>UPCOMING CAMPS</span>
+            <div style={{ display: "flex", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #1f2937" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+                <div style={{ width: 3, height: 16, background: "#f59e0b", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>PROGRAM RECRUITING OUTCOMES</span>
               </div>
-              <span style={{ fontSize: 12, color: "#e8a020", fontWeight: 600 }}>View Month →</span>
             </div>
-            <div style={{ padding: "8px 0" }}>
-              {nextCamps.length === 0 ? (
-                <p style={{ fontSize: 13, color: "#4b5563", padding: "16px 20px", margin: 0 }}>No upcoming camps scheduled.</p>
+            <div style={{ padding: "12px 20px 8px" }}>
+              <p style={{ fontSize: 12, color: "#4b5563", margin: "0 0 16px", lineHeight: 1.5 }}>
+                Meaningful recruiting milestones across your roster.
+              </p>
+              {journeyLoading && !programMetrics ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#4b5563", fontSize: 13, padding: "8px 0" }}>
+                  <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  Loading outcomes…
+                </div>
               ) : (
-                nextCamps.map(({ athlete, camp, date }, i) => (
-                  <div key={i} style={{ display: "flex", gap: 12, padding: "10px 20px", borderBottom: i < nextCamps.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                    <div style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 8, textAlign: "center", flexShrink: 0, minWidth: 44 }}>
-                      <div>{date.toLocaleDateString("en-US", { month: "short" })}</div>
-                      <div style={{ fontSize: 15, lineHeight: 1 }}>{date.getDate()}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[
+                    { label: "True Traction Players",  value: programMetrics?.players_with_true_traction ?? 0,  color: "#60a5fa" },
+                    { label: "Unofficial Visits",      value: programMetrics?.unofficial_visit_count ?? 0,       color: "#34d399" },
+                    { label: "Official Visits",        value: programMetrics?.official_visit_count ?? 0,         color: "#34d399" },
+                    { label: "Offers",                 value: programMetrics?.offer_count ?? 0,                  color: "#f59e0b" },
+                    { label: "Commitments",            value: programMetrics?.commitment_count ?? 0,             color: "#e8a020" },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 13, color: "#9ca3af" }}>{label}</span>
+                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: value > 0 ? color : "#374151", lineHeight: 1 }}>{value}</span>
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#d1d5db", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{camp.school_name || camp.camp_name}</div>
-                      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>{athlete}</div>
-                    </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -950,10 +923,14 @@ export default function CoachDashboard() {
               <div style={{ padding: "28px 24px", textAlign: "center" }}>
                 <div style={{ fontSize: 28, marginBottom: 10 }}>📋</div>
                 <p style={{ fontSize: 14, color: "#6b7280", margin: 0, lineHeight: 1.65, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
-                  No recruiting activity logged yet. As athletes track school interest, DMs, camp invites, and offers, updates will appear here.
+                  {journeyLoading ? "Loading recruiting activity…" : "No recruiting activity logged yet. As athletes track school interest, DMs, camp invites, and offers, updates will appear here."}
                 </p>
               </div>
             ) : (
+              <>
+              <div style={{ padding: "8px 20px 0", fontSize: 12, color: "#4b5563", lineHeight: 1.5 }}>
+                Recent recruiting updates across the roster, including both early signals and major traction events.
+              </div>
               <div style={{ padding: "4px 0" }}>
                 {recentJourneyActivity.map((act, i) => {
                   const tractionLevel = act._traction_level ?? 0;
@@ -979,10 +956,103 @@ export default function CoachDashboard() {
                   );
                 })}
               </div>
+              </>
             )}
           </div>
         </section>
       )}
+
+      {/* ── ROSTER CAMP OVERVIEW ── */}
+      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+
+          {/* Left: Camp roster board */}
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid #1f2937" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: "#6b7280" }}>ROSTER CAMP OVERVIEW</span>
+              </div>
+              <button
+                onClick={() => setOpenSheet("roster")}
+                style={{ background: "none", border: "none", color: "#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
+              >
+                Full Roster →
+              </button>
+            </div>
+            {boardRoster.length === 0 ? (
+              <div style={{ padding: "24px", textAlign: "center" }}>
+                <p style={{ fontSize: 13, color: "#4b5563", margin: 0 }}>No athletes yet. Share your invite code to connect players.</p>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 46px 90px 50px", gap: 8, padding: "8px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  <span>Athlete</span><span>Class</span><span>Next Camp</span><span style={{ textAlign: "right" }}>Camps</span>
+                </div>
+                {boardRoster.slice(0, 8).map((r, i) => {
+                  const athleteCamps = campsByAccountId[r.account_id] || [];
+                  const noCamps = athleteCamps.length === 0;
+                  const nextCamp = getNextCamp(r);
+                  const days = nextCamp ? daysUntil(nextCamp.start_date) : null;
+                  return (
+                    <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: "1fr 46px 90px 50px", gap: 8, padding: "10px 20px", borderBottom: i < Math.min(boardRoster.length, 8) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                      <div style={{ fontWeight: 500, color: "#d1d5db", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.athlete_name || "Athlete"}</div>
+                      <div style={{ fontSize: 12, color: "#6b7280" }}>{r.athlete_grad_year ? `'${String(r.athlete_grad_year).slice(-2)}` : "—"}</div>
+                      <div style={{ fontSize: 12, color: nextCamp ? "#d1d5db" : "#4b5563" }}>
+                        {nextCamp
+                          ? <><div>{new Date(nextCamp.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                              {days !== null && days <= 7 && <div style={{ fontSize: 10, color: "#f59e0b" }}>{days === 0 ? "Today" : `${days}d`}</div>}
+                            </>
+                          : <span style={{ fontSize: 11 }}>—</span>
+                        }
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: noCamps ? "#f87171" : "#6b7280", textAlign: "right" }}>{athleteCamps.length}</div>
+                    </div>
+                  );
+                })}
+                {boardRoster.length > 8 && (
+                  <div onClick={() => setOpenSheet("roster")} style={{ padding: "10px 20px", textAlign: "center", fontSize: 12, color: "#6b7280", fontWeight: 600, cursor: "pointer", borderTop: "1px solid #1f2937" }}>
+                    View all {boardRoster.length} athletes →
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Right: Upcoming Camps */}
+          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
+            <div
+              onClick={() => setOpenSheet("monthly")}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", cursor: "pointer", borderBottom: "1px solid #1f2937" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: "#6b7280" }}>UPCOMING CAMPS</span>
+              </div>
+              <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 600 }}>View Month →</span>
+            </div>
+            <div style={{ padding: "8px 0" }}>
+              {nextCamps.length === 0 ? (
+                <p style={{ fontSize: 13, color: "#4b5563", padding: "16px 20px", margin: 0 }}>No upcoming camps scheduled.</p>
+              ) : (
+                nextCamps.map(({ athlete, camp, date }, i) => (
+                  <div key={i} style={{ display: "flex", gap: 12, padding: "10px 20px", borderBottom: i < nextCamps.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                    <div style={{ background: "rgba(75,85,99,0.2)", color: "#6b7280", fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 8, textAlign: "center", flexShrink: 0, minWidth: 44 }}>
+                      <div>{date.toLocaleDateString("en-US", { month: "short" })}</div>
+                      <div style={{ fontSize: 15, lineHeight: 1 }}>{date.getDate()}</div>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{camp.school_name || camp.host_org || camp.ryzer_program_name || camp.camp_name}</div>
+                      <div style={{ fontSize: 11, color: "#4b5563", marginTop: 1 }}>{athlete}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+        </div>
+      </section>
 
       {/* ── RECENT MESSAGES ── */}
       {messages.length > 0 && (
@@ -1025,8 +1095,8 @@ export default function CoachDashboard() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
           {[
             { icon: "💬", label: "Message Roster", sub: `${messages.length} sent`, sheet: "message" },
-            { icon: "🔗", label: "Invite Code", sub: coach.invite_code || "Share with athletes", sheet: "code" },
-            { icon: "🔍", label: "Discover Camps", sub: "Browse by school, state, date", nav: "/Discover" },
+            { icon: "🔗", label: "Invite Athletes", sub: coach.invite_code || "Share your invite code", sheet: "code" },
+            { icon: "🏕️", label: "Recommend Camps", sub: "Browse by school, state, date", nav: "/Discover" },
           ].map(({ icon, label, sub, sheet, nav: navTo }) => (
             <div
               key={label}
