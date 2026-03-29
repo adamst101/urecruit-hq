@@ -679,7 +679,7 @@ export default function CoachDashboard() {
           <div
             style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}
           >
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>True Traction</div>
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>True Traction Players</div>
             {journeyLoading && !programMetrics ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}>
                 <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
@@ -689,7 +689,7 @@ export default function CoachDashboard() {
                 <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#60a5fa", lineHeight: 1 }}>
                   {programMetrics?.players_with_true_traction ?? (roster.length > 0 ? "0" : "—")}
                 </div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>players w/ verified interest</div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>with verified personal contact+</div>
               </>
             )}
           </div>
@@ -698,7 +698,7 @@ export default function CoachDashboard() {
           <div
             style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px" }}
           >
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Colleges Interested</div>
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Colleges w/ Real Interest</div>
             {journeyLoading && !programMetrics ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}>
                 <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
@@ -708,7 +708,7 @@ export default function CoachDashboard() {
                 <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#a78bfa", lineHeight: 1 }}>
                   {programMetrics?.colleges_with_true_interest ?? (roster.length > 0 ? "0" : "—")}
                 </div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>schools showing real interest</div>
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>colleges with verified traction</div>
               </>
             )}
           </div>
@@ -758,10 +758,9 @@ export default function CoachDashboard() {
                 </div>
               ) : (
                 <>
-                  <div style={{ fontSize: 32, marginBottom: 12 }}>🎯</div>
-                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "#6b7280", letterSpacing: 1, marginBottom: 8 }}>No True Traction Yet</div>
-                  <p style={{ fontSize: 14, color: "#4b5563", margin: 0, lineHeight: 1.7, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
-                    No true traction is visible yet. As athletes receive verified personal outreach, visit requests, and offers, those relationships will appear here.
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#374151", letterSpacing: 1, marginBottom: 10 }}>NO TRUE TRACTION YET</div>
+                  <p style={{ fontSize: 13, color: "#4b5563", margin: 0, lineHeight: 1.7, maxWidth: 460, marginLeft: "auto", marginRight: "auto" }}>
+                    No colleges have logged verified personal contact, visit requests, or offers for athletes on your roster. When real, athlete-specific recruiting interest is recorded, those relationships will appear here.
                   </p>
                 </>
               )}
@@ -862,7 +861,12 @@ export default function CoachDashboard() {
                   ))}
                 </>
               ) : (
-                <p style={{ fontSize: 13, color: "#4b5563", padding: "20px", margin: 0 }}>No college interest logged yet.</p>
+                <div style={{ padding: "20px 20px 16px" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>No verified college interest yet</div>
+                  <p style={{ fontSize: 12, color: "#4b5563", margin: 0, lineHeight: 1.6 }}>
+                    When athletes receive real personal outreach, visit requests, or offers, those colleges will appear here.
+                  </p>
+                </div>
               )}
             </div>
           </div>
@@ -885,17 +889,17 @@ export default function CoachDashboard() {
                   Loading outcomes…
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                   {[
                     { label: "True Traction Players",  value: programMetrics?.players_with_true_traction ?? 0,  color: "#60a5fa" },
                     { label: "Unofficial Visits",      value: programMetrics?.unofficial_visit_count ?? 0,       color: "#34d399" },
                     { label: "Official Visits",        value: programMetrics?.official_visit_count ?? 0,         color: "#34d399" },
                     { label: "Offers",                 value: programMetrics?.offer_count ?? 0,                  color: "#f59e0b" },
                     { label: "Commitments",            value: programMetrics?.commitment_count ?? 0,             color: "#e8a020" },
-                  ].map(({ label, value, color }) => (
-                    <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 13, color: "#9ca3af" }}>{label}</span>
-                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: value > 0 ? color : "#374151", lineHeight: 1 }}>{value}</span>
+                  ].map(({ label, value, color }, idx, arr) => (
+                    <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: idx < arr.length - 1 ? "1px solid #1f2937" : "none" }}>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: value > 0 ? "#d1d5db" : "#6b7280" }}>{label}</span>
+                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: value > 0 ? color : "#374151", lineHeight: 1 }}>{value}</span>
                     </div>
                   ))}
                 </div>
@@ -931,27 +935,34 @@ export default function CoachDashboard() {
               <div style={{ padding: "8px 20px 0", fontSize: 12, color: "#4b5563", lineHeight: 1.5 }}>
                 Recent recruiting updates across the roster, including both early signals and major traction events.
               </div>
-              <div style={{ padding: "4px 0" }}>
+              <div>
                 {recentJourneyActivity.map((act, i) => {
                   const tractionLevel = act._traction_level ?? 0;
-                  const tractionColor = tractionLevel >= 4 ? "#f59e0b" : tractionLevel === 3 ? "#a78bfa" : tractionLevel === 2 ? "#60a5fa" : "#4b5563";
+                  const tractionColor = tractionLevel >= 4 ? "#f59e0b" : tractionLevel === 3 ? "#a78bfa" : tractionLevel === 2 ? "#60a5fa" : "#374151";
+                  const actDate = act.activity_date || (act.created_at || "").slice(0, 10);
+                  const schoolDisplay = act.school_name || "—";
                   return (
-                    <div key={act.id || i} style={{ display: "flex", gap: 14, padding: "11px 20px", borderBottom: i < recentJourneyActivity.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: tractionColor, flexShrink: 0, marginTop: 1 }} />
+                    <div key={act.id || i} style={{ display: "flex", gap: 14, padding: "13px 20px", borderBottom: i < recentJourneyActivity.length - 1 ? "1px solid #1f2937" : "none", alignItems: "flex-start" }}>
+                      {/* Traction signal dot */}
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: tractionColor, flexShrink: 0, marginTop: 5, border: tractionLevel >= 2 ? `1px solid ${tractionColor}` : "1px solid #4b5563", boxShadow: tractionLevel >= 2 ? `0 0 4px ${tractionColor}60` : "none" }} />
+                      {/* Main content */}
                       <div style={{ flex: 1, minWidth: 0 }}>
+                        {/* Row 1: Athlete → School */}
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: "#f9fafb" }}>{act._athlete_name}</span>
+                          <span style={{ fontSize: 12, color: "#374151" }}>·</span>
+                          <span style={{ fontSize: 13, fontWeight: 500, color: "#9ca3af" }}>{schoolDisplay}</span>
+                        </div>
+                        {/* Row 2: Activity type pill + coach name */}
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: "#d1d5db" }}>{act._athlete_name}</span>
-                          <span style={{ fontSize: 12, color: "#6b7280" }}>→</span>
-                          <span style={{ fontSize: 13, color: "#9ca3af" }}>{act.school_name || "—"}</span>
-                        </div>
-                        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
-                          {ACTIVITY_LABEL[act.activity_type] || act.activity_type}
-                          {act.coach_name && <span style={{ color: "#4b5563" }}> · {act.coach_name}</span>}
+                          <span style={{ fontSize: 11, fontWeight: 700, color: tractionLevel >= 2 ? tractionColor : "#6b7280", background: tractionLevel >= 2 ? `${tractionColor}14` : "#1f2937", border: `1px solid ${tractionLevel >= 2 ? `${tractionColor}30` : "#374151"}`, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>
+                            {ACTIVITY_LABEL[act.activity_type] || act.activity_type}
+                          </span>
+                          {act.coach_name && <span style={{ fontSize: 11, color: "#4b5563" }}>{act.coach_name}</span>}
                         </div>
                       </div>
-                      <div style={{ fontSize: 11, color: "#4b5563", flexShrink: 0 }}>
-                        {(act.activity_date || (act.created_at || "").slice(0, 10)) || ""}
-                      </div>
+                      {/* Date */}
+                      <div style={{ fontSize: 11, color: "#4b5563", flexShrink: 0, marginTop: 2, whiteSpace: "nowrap" }}>{actDate}</div>
                     </div>
                   );
                 })}
