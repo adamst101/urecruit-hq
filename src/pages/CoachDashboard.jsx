@@ -1,4 +1,4 @@
-// src/pages/CoachDashboard.jsx
+// src/pages/CoachDashboard.jsx -- v2
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { User, LogOut } from "lucide-react";
