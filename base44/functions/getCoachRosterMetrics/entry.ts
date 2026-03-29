@@ -34,23 +34,31 @@ function computeSchoolTraction(activities: any[]): Record<string, any> {
   const map: Record<string, any> = {};
 
   for (const a of activities) {
-    const school = (a.school_name || "").trim();
-    if (!school) continue;
+    const schoolId   = (a.school_id   || "").trim();
+    const schoolName = (a.school_name || "").trim();
+    const groupKey   = schoolId || schoolName;
+    if (!groupKey) continue;
     const level: number = (a as any)._traction_level ?? 0;
 
-    if (!map[school]) {
-      map[school] = {
-        school_name: school,
+    if (!map[groupKey]) {
+      map[groupKey] = {
+        school_name: schoolName,
+        school_id:   schoolId || null,
         traction_level: 0,
         relationship_status: "no_signal",
         true_traction: false,
         activity_count: 0,
-        traction_event_count: 0,   // NEW: activities at level ≥ 2 only
+        traction_event_count: 0,
         last_activity_date: "",
         top_activity_type: "",
       };
     }
-    const entry = map[school];
+    // If this activity was picker-selected (has school_id), upgrade to canonical name
+    if (schoolId && !map[groupKey].school_id) {
+      map[groupKey].school_id   = schoolId;
+      map[groupKey].school_name = schoolName;
+    }
+    const entry = map[groupKey];
     entry.activity_count++;
     if (level >= 2) entry.traction_event_count++;  // NEW
 
@@ -255,21 +263,29 @@ function computeProgramMetrics(
     offerCount            += journey.major_outcome_counts?.offer            ?? 0;
     commitmentCount       += journey.major_outcome_counts?.commitment       ?? 0;
 
-    // Aggregate per-school across roster
-    for (const [schoolName, sData] of Object.entries(journey.school_traction || {}) as [string, any][]) {
+    // Aggregate per-school across roster — key by school_id when available
+    for (const [, sData] of Object.entries(journey.school_traction || {}) as [string, any][]) {
       if (!sData.true_traction) continue;
-      if (!collegeMap[schoolName]) {
-        collegeMap[schoolName] = {
-          school_name: schoolName,
+      const collegeKey = (sData.school_id || sData.school_name || "").trim();
+      if (!collegeKey) continue;
+      if (!collegeMap[collegeKey]) {
+        collegeMap[collegeKey] = {
+          school_name: sData.school_name,
+          school_id:   sData.school_id || null,
           max_traction_level: 0,
           athlete_count: 0,
           athlete_names: [] as string[],
           relationship_status: sData.relationship_status,
-          true_traction_event_count: 0,  // NEW: total level-≥2 events across all roster athletes
+          true_traction_event_count: 0,
           last_activity_date: "",
         };
       }
-      const col = collegeMap[schoolName];
+      // Upgrade to canonical name if a picker-selected entry arrives
+      if (sData.school_id && !collegeMap[collegeKey].school_id) {
+        collegeMap[collegeKey].school_id   = sData.school_id;
+        collegeMap[collegeKey].school_name = sData.school_name;
+      }
+      const col = collegeMap[collegeKey];
       col.athlete_count++;
       if (entry.athlete_name) col.athlete_names.push(entry.athlete_name);
       col.true_traction_event_count += sData.traction_event_count || 0;

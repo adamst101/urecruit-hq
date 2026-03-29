@@ -53,13 +53,16 @@ function computeSchoolTraction(activities: any[]): Record<string, any> {
   const map: Record<string, any> = {};
 
   for (const a of activities) {
-    const school = (a.school_name || "").trim();
-    if (!school) continue;
+    const schoolId   = (a.school_id   || "").trim();
+    const schoolName = (a.school_name || "").trim();
+    const groupKey   = schoolId || schoolName;
+    if (!groupKey) continue;
     const level: number = (a as any)._traction_level ?? 0;
 
-    if (!map[school]) {
-      map[school] = {
-        school_name: school,
+    if (!map[groupKey]) {
+      map[groupKey] = {
+        school_name: schoolName,
+        school_id:   schoolId || null,
         traction_level: 0,
         relationship_status: "no_signal",
         true_traction: false,
@@ -68,7 +71,12 @@ function computeSchoolTraction(activities: any[]): Record<string, any> {
         top_activity_type: "",
       };
     }
-    const entry = map[school];
+    // If this activity was picker-selected (has school_id), upgrade to canonical name
+    if (schoolId && !map[groupKey].school_id) {
+      map[groupKey].school_id   = schoolId;
+      map[groupKey].school_name = schoolName;
+    }
+    const entry = map[groupKey];
     entry.activity_count++;
 
     if (level > entry.traction_level) {
