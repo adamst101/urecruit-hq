@@ -956,82 +956,73 @@ export default function CoachDashboard() {
         </div>
       </section>
 
-      {/* ── SECTION 3: PROGRAM PROOF & MOMENTUM ── */}
+      {/* ── SECTION 3: PROGRAM RECRUITING SUMMARY ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f9fafb" }}>PROGRAM PROOF &amp; MOMENTUM</div>
-          <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>AD-ready proof + 30-day pulse</span>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f9fafb" }}>PROGRAM RECRUITING SUMMARY</div>
           {journeyLoading && !programMetrics && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />}
         </div>
-        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "20px 24px" }}>
+        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 24px" }}>
           {journeyLoading && !programMetrics ? (
             <div style={{ fontSize: 13, color: "#4b5563" }}>Loading…</div>
-          ) : (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 32px" }}>
-                {/* Left — Program Proof */}
-                <div>
-                  <div style={{ fontSize: 11, color: "#4b5563", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Program Proof</div>
-                  {[
-                    { label: "Players w/ Any Interest", value: playersWithAnyInterest ?? 0, color: "#34d399" },
-                    { label: "Players w/ True Traction", value: programMetrics?.players_with_true_traction ?? 0, color: "#60a5fa" },
-                    { label: "Unofficial Visits", value: programMetrics?.unofficial_visit_count ?? 0, color: "#a78bfa" },
-                    { label: "Official Visits", value: programMetrics?.official_visit_count ?? 0, color: "#a78bfa" },
-                    { label: "Offers", value: programMetrics?.offer_count ?? 0, color: "#f59e0b" },
-                    { label: "Commitments", value: programMetrics?.commitment_count ?? 0, color: "#e8a020" },
-                  ].map(({ label, value, color }, idx, arr) => (
-                    <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid #1f2937" : "none" }}>
-                      <span style={{ fontSize: 13, color: value > 0 ? "#d1d5db" : "#6b7280" }}>{label}</span>
-                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: value > 0 ? color : "#374151", lineHeight: 1 }}>{value}</span>
+          ) : (() => {
+            const X = playersWithAnyInterest ?? 0;
+            const Y = roster.length;
+            const A = programMetrics?.players_with_true_traction ?? 0;
+            const B = recruitingMomentum.totalVO;
+            const C = collegesEngagingProgramCount;
+
+            // Most active athlete — most total activity_count in journeys
+            const mostActiveEntry = roster.reduce((best, r) => {
+              const j = athleteJourneys[r.account_id];
+              if (!j) return best;
+              const cnt = j.activity_count || 0;
+              return (!best || cnt > best.cnt) ? { name: r.athlete_name, cnt } : best;
+            }, null);
+            const mostActiveName = mostActiveEntry?.name || null;
+
+            // Top engaged college — first from collegesEngagingRows (already sorted by highestLevel desc)
+            const topCollege = collegesEngagingRows[0]?.college || null;
+
+            // 30-day momentum
+            const newColleges30d = recruitingMomentum.colleges30d;
+            const strongerOutcomes = recruitingMomentum.trueTraction30d - recruitingMomentum.trueTraction_prior;
+
+            return (
+              <>
+                <p style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.7, margin: "0 0 14px" }}>
+                  <span style={{ color: X > 0 ? "#f9fafb" : "#6b7280", fontWeight: 600 }}>{X}</span> of <span style={{ fontWeight: 600, color: "#f9fafb" }}>{Y}</span> athlete{Y !== 1 ? "s" : ""} are drawing college interest, with{" "}
+                  <span style={{ color: A > 0 ? "#60a5fa" : "#6b7280", fontWeight: A > 0 ? 600 : 400 }}>{A} in true traction</span>,{" "}
+                  <span style={{ color: B > 0 ? "#f59e0b" : "#6b7280", fontWeight: B > 0 ? 600 : 400 }}>{B} visit/offer outcome{B !== 1 ? "s" : ""}</span>, and{" "}
+                  <span style={{ color: C > 0 ? "#a78bfa" : "#6b7280", fontWeight: C > 0 ? 600 : 400 }}>{C} college{C !== 1 ? "s" : ""} currently engaging the roster</span>.
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {mostActiveName && (
+                    <div style={{ fontSize: 13, color: "#6b7280" }}>
+                      <span style={{ color: "#4b5563", fontWeight: 600 }}>·</span>{" "}
+                      Most active athlete: <span style={{ color: "#d1d5db", fontWeight: 600 }}>{mostActiveName}</span>
                     </div>
-                  ))}
+                  )}
+                  {topCollege && (
+                    <div style={{ fontSize: 13, color: "#6b7280" }}>
+                      <span style={{ color: "#4b5563", fontWeight: 600 }}>·</span>{" "}
+                      Top engaged college: <span style={{ color: "#d1d5db", fontWeight: 600 }}>{topCollege}</span>
+                    </div>
+                  )}
+                  {(newColleges30d > 0 || strongerOutcomes !== 0) && (
+                    <div style={{ fontSize: 13, color: "#6b7280" }}>
+                      <span style={{ color: "#4b5563", fontWeight: 600 }}>·</span>{" "}
+                      30-day momentum:{" "}
+                      {newColleges30d > 0 && <span style={{ color: "#34d399", fontWeight: 600 }}>{newColleges30d > 0 ? `+${newColleges30d}` : newColleges30d} new college{newColleges30d !== 1 ? "s" : ""}</span>}
+                      {newColleges30d > 0 && strongerOutcomes !== 0 && <span style={{ color: "#6b7280" }}> / </span>}
+                      {strongerOutcomes !== 0 && <span style={{ color: strongerOutcomes > 0 ? "#60a5fa" : "#f87171", fontWeight: 600 }}>{strongerOutcomes > 0 ? `+${strongerOutcomes}` : strongerOutcomes} stronger outcome{Math.abs(strongerOutcomes) !== 1 ? "s" : ""}</span>}
+                    </div>
+                  )}
                 </div>
-                {/* Right — Momentum */}
-                <div style={{ borderLeft: "1px solid #1f2937", paddingLeft: 28 }}>
-                  <div style={{ fontSize: 11, color: "#4b5563", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Momentum</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                    {[
-                      { label: "Players w/ Any Interest", cur: recruitingMomentum.players30d, prior: recruitingMomentum.players_prior, color: "#34d399" },
-                      { label: "True Traction Players", cur: recruitingMomentum.trueTraction30d, prior: recruitingMomentum.trueTraction_prior, color: "#60a5fa" },
-                      { label: "New Colleges Engaging", cur: recruitingMomentum.colleges30d, prior: recruitingMomentum.colleges_prior, color: "#a78bfa" },
-                      { label: "Visits / Offers", cur: recruitingMomentum.totalVO, prior: null, color: "#f59e0b" },
-                    ].map(({ label, cur, prior, color }, idx, arr) => {
-                      const delta = prior !== null ? cur - prior : null;
-                      const dir = delta === null ? null : delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
-                      const dc = delta === null ? "#4b5563" : delta > 0 ? "#34d399" : delta < 0 ? "#f87171" : "#6b7280";
-                      return (
-                        <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid #1f2937" : "none" }}>
-                          <span style={{ fontSize: 13, color: "#d1d5db" }}>{label}</span>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color, lineHeight: 1 }}>{cur}</span>
-                            {delta !== null && <span style={{ fontSize: 12, fontWeight: 700, color: dc }}>{dir}{Math.abs(delta) > 0 ? Math.abs(delta) : ""}</span>}
-                            {delta === null && <span style={{ fontSize: 11, color: "#4b5563" }}>all-time</span>}
-                            {prior !== null && <span style={{ fontSize: 11, color: "#4b5563" }}>vs {prior} prior</span>}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-              {/* Summary sentence */}
-              {(() => {
-                const anyInt = playersWithAnyInterest ?? 0;
-                const tt = programMetrics?.players_with_true_traction ?? 0;
-                const vo = recruitingMomentum.totalVO;
-                const m30 = recruitingMomentum.players30d;
-                if (anyInt === 0) return null;
-                return (
-                  <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #1f2937", fontSize: 13, color: "#6b7280", lineHeight: 1.6 }}>
-                    {anyInt} player{anyInt !== 1 ? "s" : ""} have drawn interest from colleges{tt > 0 ? `, ${tt} with verified personal contact or higher` : ""}
-                    {vo > 0 ? `, and ${vo} visit${vo !== 1 ? "s" : ""} or offer${vo !== 1 ? "s" : ""} recorded` : ""}
-                    {m30 > 0 ? ` — ${m30} active in the last 30 days` : ""}.
-                  </div>
-                );
-              })()}
-            </>
-          )}
+              </>
+            );
+          })()}
         </div>
       </section>
 
