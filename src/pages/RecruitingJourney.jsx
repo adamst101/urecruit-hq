@@ -103,6 +103,7 @@ const DIVISION_DB_VALUE = {
 const BLANK_FORM = {
   activity_type: "social_like",
   school_name: "",
+  school_id: "",
   coach_name: "",
   coach_title: "",
   coach_twitter: "",
@@ -741,6 +742,8 @@ export default function RecruitingJourney() {
                   <SchoolCombobox
                     value={addForm.school_name || ""}
                     onChange={setField("school_name")}
+                    onSchoolSelect={s => setAddForm(p => ({ ...p, school_name: s.school_name, school_id: s.id || "" }))}
+                    onFreeText={() => setAddForm(p => ({ ...p, school_id: "" }))}
                     schools={allSchools}
                     loading={allSchoolsLoading}
                     placeholder="Search schools…"
@@ -923,7 +926,7 @@ export default function RecruitingJourney() {
 }
 
 // ── School combobox ───────────────────────────────────────────────────────────
-function SchoolCombobox({ value, onChange, schools, loading, placeholder }) {
+function SchoolCombobox({ value, onChange, onSchoolSelect, onFreeText, schools, loading, placeholder }) {
   const [query, setQuery]   = useState(value || "");
   const [open, setOpen]     = useState(false);
   const containerRef        = useRef(null);
@@ -939,9 +942,10 @@ function SchoolCombobox({ value, onChange, schools, loading, placeholder }) {
       .slice(0, 12);
   })();
 
-  function select(name) {
-    setQuery(name);
-    onChange(name);
+  function select(school) {
+    setQuery(school.school_name);
+    onChange(school.school_name);
+    if (onSchoolSelect) onSchoolSelect(school); // pass full school object (includes id)
     setOpen(false);
   }
 
@@ -950,6 +954,7 @@ function SchoolCombobox({ value, onChange, schools, loading, placeholder }) {
     e.stopPropagation();
     setQuery("");
     onChange("");
+    if (onFreeText) onFreeText(); // clear any stored school_id
   }
 
   useEffect(() => {
@@ -965,7 +970,7 @@ function SchoolCombobox({ value, onChange, schools, loading, placeholder }) {
       <div style={{ position: "relative" }}>
         <input
           value={query}
-          onChange={e => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
+          onChange={e => { setQuery(e.target.value); onChange(e.target.value); if (onFreeText) onFreeText(); setOpen(true); }}
           onFocus={e => { setOpen(true); e.currentTarget.style.borderColor = "#e8a020"; }}
           onBlur={e => { e.currentTarget.style.borderColor = "#374151"; }}
           onKeyDown={e => { if (e.key === "Escape") setOpen(false); }}
@@ -1001,7 +1006,7 @@ function SchoolCombobox({ value, onChange, schools, loading, placeholder }) {
           {filtered.map((s, i) => (
             <div
               key={s.id || s.school_name}
-              onMouseDown={() => select(s.school_name)}
+              onMouseDown={() => select(s)}
               style={{
                 padding: "9px 12px", cursor: "pointer", fontSize: 13, color: "#f9fafb",
                 borderBottom: i < filtered.length - 1 ? "1px solid #111827" : "none",

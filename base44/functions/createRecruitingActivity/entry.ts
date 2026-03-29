@@ -45,6 +45,7 @@ Deno.serve(async (req) => {
     activity_type?: string;
     athlete_id?: string;
     school_name?: string;
+    school_id?: string;
     coach_name?: string;
     coach_title?: string;
     coach_twitter?: string;
@@ -80,7 +81,7 @@ Deno.serve(async (req) => {
   }
 
   const {
-    activity_type, athlete_id, school_name, coach_name, coach_title, coach_twitter,
+    activity_type, athlete_id, school_name, school_id, coach_name, coach_title, coach_twitter,
     activity_date, notes,
     source_platform, interaction_direction,
     is_athlete_specific, is_two_way_engagement, is_verified_personal,
@@ -106,6 +107,7 @@ Deno.serve(async (req) => {
       athlete_id:           athlete_id?.trim() || null,
       activity_type,
       school_name:          school_name?.trim() || null,
+      school_id:            school_id?.trim() || null,
       coach_name:           coach_name?.trim() || null,
       coach_title:          coach_title?.trim() || null,
       coach_twitter:        coach_twitter?.trim() || null,

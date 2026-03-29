@@ -44,7 +44,11 @@
     },
     "school_name": {
       "type": "string",
-      "description": "School name"
+      "description": "School name (canonical value from School entity when selected from picker)"
+    },
+    "school_id": {
+      "type": "string",
+      "description": "Reference to School entity id (populated when school is selected from the school picker; null for free-text entries)"
     },
     "coach_name": {
       "type": "string",
