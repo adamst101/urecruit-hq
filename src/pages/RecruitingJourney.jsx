@@ -7,29 +7,83 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 
 // ── Activity type config ──────────────────────────────────────────────────────
+// Legacy types (social_like, dm_received, camp_invite, camp_meeting, offer) are kept
+// for backward compatibility with existing records and display correctly.
 const ACTIVITY_TYPES = {
-  social_like:  { label: "Social Like",    icon: "🔔", color: "#60a5fa" },
-  dm_received:  { label: "DM Received",    icon: "💬", color: "#34d399" },
-  camp_invite:  { label: "Camp Invite",    icon: "📨", color: "#a78bfa" },
-  camp_meeting: { label: "Camp Meeting",   icon: "🤝", color: "#fbbf24" },
-  offer:        { label: "Offer",          icon: "🏆", color: "#e8a020" },
+  // Social
+  social_like:                 { label: "Like / Follow",                  icon: "🔔", color: "#60a5fa", group: "Social"    },
+  social_follow:               { label: "Follow",                         icon: "👤", color: "#60a5fa", group: "Social"    },
+  // Messaging
+  dm_received:                 { label: "DM Received",                    icon: "💬", color: "#34d399", group: "Messaging" },
+  dm_sent:                     { label: "DM Sent",                        icon: "📤", color: "#34d399", group: "Messaging" },
+  text_received:               { label: "Text Received",                  icon: "📱", color: "#34d399", group: "Messaging" },
+  text_sent:                   { label: "Text Sent",                      icon: "📱", color: "#34d399", group: "Messaging" },
+  phone_call:                  { label: "Phone Call",                     icon: "📞", color: "#fbbf24", group: "Messaging" },
+  generic_email:               { label: "Generic Email",                  icon: "📧", color: "#9ca3af", group: "Messaging" },
+  personal_email:              { label: "Personal Email",                 icon: "✉️",  color: "#34d399", group: "Messaging" },
+  // Camp
+  camp_invite:                 { label: "Camp Invite",                    icon: "📨", color: "#a78bfa", group: "Camp"      }, // legacy
+  generic_camp_invite:         { label: "Generic Camp Invite",            icon: "📨", color: "#9ca3af", group: "Camp"      },
+  personal_camp_invite:        { label: "Personal Camp Invite",           icon: "📨", color: "#a78bfa", group: "Camp"      },
+  camp_registered:             { label: "Camp Registered",                icon: "✅", color: "#a78bfa", group: "Camp"      },
+  camp_attended:               { label: "Camp Attended",                  icon: "🏟️", color: "#fbbf24", group: "Camp"      },
+  camp_meeting:                { label: "Camp Meeting",                   icon: "🤝", color: "#fbbf24", group: "Camp"      }, // legacy
+  post_camp_followup_sent:     { label: "Post-Camp Followup",             icon: "📤", color: "#9ca3af", group: "Camp"      },
+  post_camp_personal_response: { label: "Post-Camp Response",             icon: "🤝", color: "#34d399", group: "Camp"      },
+  // Visit
+  unofficial_visit_requested:  { label: "Unofficial Visit — Requested",   icon: "🗺️", color: "#f59e0b", group: "Visit"     },
+  unofficial_visit_completed:  { label: "Unofficial Visit — Completed",   icon: "🏫", color: "#f59e0b", group: "Visit"     },
+  official_visit_requested:    { label: "Official Visit — Requested",     icon: "🎯", color: "#e8a020", group: "Visit"     },
+  official_visit_completed:    { label: "Official Visit — Completed",     icon: "🏛️", color: "#e8a020", group: "Visit"     },
+  // Milestone
+  offer:                       { label: "Offer",                          icon: "🏆", color: "#e8a020", group: "Milestone" }, // legacy
+  offer_received:              { label: "Offer Received",                 icon: "🏆", color: "#e8a020", group: "Milestone" },
+  offer_updated:               { label: "Offer Updated",                  icon: "📝", color: "#e8a020", group: "Milestone" },
+  commitment:                  { label: "Commitment",                     icon: "🎓", color: "#10b981", group: "Milestone" },
+  signed:                      { label: "Signed",                         icon: "✍️",  color: "#10b981", group: "Milestone" },
 };
 
+const TYPE_GROUPS = ["Social", "Messaging", "Camp", "Visit", "Milestone"];
+
 const QUICK_ADDS = [
-  { type: "social_like",  label: "Add Like"         },
-  { type: "dm_received",  label: "Add DM"           },
-  { type: "camp_invite",  label: "Add Camp Invite"  },
-  { type: "camp_meeting", label: "Add Camp Meeting" },
-  { type: "offer",        label: "Add Offer"        },
+  { type: "social_like",              label: "Add Like"         },
+  { type: "dm_received",              label: "Add DM"           },
+  { type: "phone_call",               label: "Add Phone Call"   },
+  { type: "personal_camp_invite",     label: "Add Camp Invite"  },
+  { type: "camp_meeting",             label: "Add Camp Meeting" },
+  { type: "unofficial_visit_requested", label: "Add Visit"     },
+  { type: "offer_received",           label: "Add Offer"        },
 ];
 
-// Fields relevant per activity type
+// Fields shown per activity type. "signal_quality" and "offer_fields" are virtual
+// keys that trigger dedicated UI sections in the form.
 const FIELDS_FOR = {
-  social_like:  ["school_name", "activity_date", "coach_name", "coach_twitter", "notes"],
-  dm_received:  ["school_name", "activity_date", "coach_name", "coach_twitter", "notes"],
-  camp_invite:  ["school_name", "activity_date", "coach_name", "notes"],
-  camp_meeting: ["school_name", "activity_date", "coach_name", "coach_title", "notes"],
-  offer:        ["school_name", "activity_date", "coach_name", "coach_title", "notes"],
+  social_like:                 ["school_name", "activity_date", "coach_name", "coach_twitter", "notes"],
+  social_follow:               ["school_name", "activity_date", "coach_name", "coach_twitter", "notes"],
+  dm_received:                 ["school_name", "activity_date", "coach_name", "coach_twitter", "notes", "signal_quality"],
+  dm_sent:                     ["school_name", "activity_date", "coach_name", "coach_twitter", "notes", "signal_quality"],
+  text_received:               ["school_name", "activity_date", "coach_name", "notes", "signal_quality"],
+  text_sent:                   ["school_name", "activity_date", "coach_name", "notes", "signal_quality"],
+  phone_call:                  ["school_name", "activity_date", "coach_name", "coach_title", "notes", "signal_quality"],
+  generic_email:               ["school_name", "activity_date", "coach_name", "notes"],
+  personal_email:              ["school_name", "activity_date", "coach_name", "notes", "signal_quality"],
+  camp_invite:                 ["school_name", "activity_date", "coach_name", "notes"],
+  generic_camp_invite:         ["school_name", "activity_date", "coach_name", "notes"],
+  personal_camp_invite:        ["school_name", "activity_date", "coach_name", "notes", "signal_quality"],
+  camp_registered:             ["school_name", "activity_date", "notes"],
+  camp_attended:               ["school_name", "activity_date", "coach_name", "coach_title", "notes"],
+  camp_meeting:                ["school_name", "activity_date", "coach_name", "coach_title", "notes"],
+  post_camp_followup_sent:     ["school_name", "activity_date", "coach_name", "notes"],
+  post_camp_personal_response: ["school_name", "activity_date", "coach_name", "notes", "signal_quality"],
+  unofficial_visit_requested:  ["school_name", "activity_date", "coach_name", "coach_title", "notes", "signal_quality"],
+  unofficial_visit_completed:  ["school_name", "activity_date", "coach_name", "coach_title", "notes"],
+  official_visit_requested:    ["school_name", "activity_date", "coach_name", "coach_title", "notes", "signal_quality"],
+  official_visit_completed:    ["school_name", "activity_date", "coach_name", "coach_title", "notes"],
+  offer:                       ["school_name", "activity_date", "coach_name", "coach_title", "notes", "offer_fields"],
+  offer_received:              ["school_name", "activity_date", "coach_name", "coach_title", "notes", "offer_fields"],
+  offer_updated:               ["school_name", "activity_date", "coach_name", "notes", "offer_fields"],
+  commitment:                  ["school_name", "activity_date", "coach_name", "notes"],
+  signed:                      ["school_name", "activity_date", "notes"],
 };
 
 const DIVISIONS = [
@@ -54,6 +108,38 @@ const BLANK_FORM = {
   coach_twitter: "",
   activity_date: "",
   notes: "",
+  // Signal quality fields — null means "not set" (distinct from false)
+  is_athlete_specific: null,
+  is_two_way_engagement: null,
+  evidence_reference: "",
+  // Offer fields
+  offer_type: "",
+  offer_status: "",
+};
+
+// Client-side traction level — mirrors server logic for immediate badge display
+// (server-enriched records use _traction_level; new records use this fallback)
+function clientTractionLevel(act) {
+  if (act._traction_level !== undefined) return act._traction_level;
+  const t = act.activity_type || "";
+  if (["offer","offer_received","offer_updated","commitment","signed",
+       "unofficial_visit_requested","unofficial_visit_completed",
+       "official_visit_requested","official_visit_completed"].includes(t)) return 4;
+  if (["personal_camp_invite","post_camp_personal_response","phone_call"].includes(t)) return 3;
+  if (t === "camp_meeting" || t === "personal_email") return 2;
+  if ((act.is_verified_personal === true || act.is_two_way_engagement === true) &&
+      ["dm_received","dm_sent","text_received","text_sent"].includes(t)) return 2;
+  if (["social_like","social_follow","generic_email","generic_camp_invite","camp_invite",
+       "camp_registered","camp_attended","post_camp_followup_sent",
+       "dm_received","dm_sent","text_received","text_sent"].includes(t)) return 1;
+  return 0;
+}
+
+const TRACTION_BADGE = {
+  4: { label: "★ Major",         bg: "rgba(232,160,32,0.15)", color: "#e8a020" },
+  3: { label: "True Traction",   bg: "rgba(52,211,153,0.12)", color: "#34d399" },
+  2: { label: "True Traction",   bg: "rgba(52,211,153,0.12)", color: "#34d399" },
+  1: { label: "Signal",          bg: "rgba(96,165,250,0.1)",  color: "#60a5fa" },
 };
 
 const BLANK_PREFS = {
@@ -93,6 +179,13 @@ export default function RecruitingJourney() {
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [prefsError, setPrefsError]   = useState("");
   const [prefsSaved, setPrefsSaved]   = useState(false);
+
+  // Traction / metrics from server-enriched response
+  const [athleteMetrics, setAthleteMetrics]   = useState(null);
+  const [schoolTraction, setSchoolTraction]   = useState({});
+
+  // Advanced signal quality section in modal
+  const [showAdvanced, setShowAdvanced]       = useState(false);
 
   // Single school list used for both activity-logging and target-school comboboxes.
   // Division filtering is done client-side from this one fetch.
@@ -134,6 +227,8 @@ export default function RecruitingJourney() {
           setPreferences({ ...BLANK_PREFS, ...p });
           setPrefsForm({ ...BLANK_PREFS, ...p });
         }
+        if (res.data.athlete_metrics) setAthleteMetrics(res.data.athlete_metrics);
+        if (res.data.school_traction)  setSchoolTraction(res.data.school_traction || {});
       } else {
         setLoadError(res?.data?.error || "Failed to load recruiting journey");
       }
@@ -154,6 +249,7 @@ export default function RecruitingJourney() {
   function openAdd(type) {
     setAddForm({ ...BLANK_FORM, activity_type: type });
     setAddError("");
+    setShowAdvanced(false);
     setShowAdd(true);
     loadAllSchools();
   }
@@ -308,6 +404,39 @@ export default function RecruitingJourney() {
             </div>
           </section>
 
+          {/* ── Traction Snapshot ── */}
+          {athleteMetrics && (
+            <section style={{ padding: "0 24px 20px", maxWidth: 900, margin: "0 auto" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+                {[
+                  {
+                    label: "Stage",
+                    value: athleteMetrics.traction_stage_label || "No Activity",
+                    accent: athleteMetrics.highest_traction_level >= 4 ? "#e8a020"
+                           : athleteMetrics.highest_traction_level >= 2 ? "#34d399"
+                           : "#9ca3af",
+                    big: true,
+                  },
+                  { label: "Schools w/ Traction", value: athleteMetrics.true_traction_school_count, sub: "verified interest" },
+                  { label: "Activity (30d)",       value: athleteMetrics.activity_count_30d,          sub: "events logged" },
+                  { label: "Top School",           value: athleteMetrics.top_school_with_highest_traction || "—", small: true },
+                ].map(item => (
+                  <div key={item.label} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{item.label}</div>
+                    <div style={{
+                      fontFamily: item.big ? "'Bebas Neue', sans-serif" : "inherit",
+                      fontSize: item.small ? 13 : item.big ? 20 : 24,
+                      color: item.accent || "#f9fafb",
+                      fontWeight: item.small ? 600 : 700,
+                      lineHeight: 1.2,
+                    }}>{item.value}</div>
+                    {item.sub && <div style={{ fontSize: 10, color: "#4b5563", marginTop: 3 }}>{item.sub}</div>}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* ── Recent Activity ── */}
           <section style={{ padding: "0 24px 32px", maxWidth: 900, margin: "0 auto" }}>
             <div style={{
@@ -369,6 +498,16 @@ export default function RecruitingJourney() {
                               {act.school_name}
                             </span>
                           )}
+                          {(() => {
+                            const lvl = clientTractionLevel(act);
+                            const badge = TRACTION_BADGE[lvl];
+                            if (!badge) return null;
+                            return (
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, background: badge.bg, color: badge.color }}>
+                                {badge.label}
+                              </span>
+                            );
+                          })()}
                         </div>
                         {(act.coach_name || act.coach_title) && (
                           <div style={{ fontSize: 13, color: "#9ca3af", marginBottom: 2 }}>
@@ -377,6 +516,14 @@ export default function RecruitingJourney() {
                         )}
                         {act.coach_twitter && (
                           <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 2 }}>{act.coach_twitter}</div>
+                        )}
+                        {(act.offer_type || act.offer_status) && (
+                          <div style={{ fontSize: 12, color: "#e8a020", marginBottom: 2 }}>
+                            {[
+                              act.offer_type === "scholarship" ? "Scholarship" : act.offer_type === "preferred_walk_on" ? "Preferred Walk-on" : act.offer_type === "walk_on" ? "Walk-on" : null,
+                              act.offer_status ? act.offer_status.charAt(0).toUpperCase() + act.offer_status.slice(1) : null,
+                            ].filter(Boolean).join(" · ")}
+                          </div>
                         )}
                         {act.notes && (
                           <div style={{
@@ -534,35 +681,43 @@ export default function RecruitingJourney() {
               </button>
             </div>
 
-            {/* Activity type selector */}
+            {/* Activity type selector — grouped */}
             <div style={{ marginBottom: 22 }}>
               <div style={{
                 fontSize: 12, fontWeight: 600, color: "#6b7280",
-                textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8,
+                textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10,
               }}>
                 Activity Type
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-                {Object.entries(ACTIVITY_TYPES).map(([key, info]) => {
-                  const active = addForm.activity_type === key;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => setAddForm(p => ({ ...p, activity_type: key }))}
-                      style={{
-                        background: active ? "rgba(232,160,32,0.12)" : "#0a0e1a",
-                        border: active ? "1px solid #e8a020" : "1px solid #374151",
-                        borderRadius: 8, padding: "7px 12px",
-                        color: active ? "#e8a020" : "#9ca3af",
-                        fontSize: 13, fontWeight: 600, cursor: "pointer",
-                        display: "flex", alignItems: "center", gap: 5,
-                      }}
-                    >
-                      {info.icon} {info.label}
-                    </button>
-                  );
-                })}
-              </div>
+              {TYPE_GROUPS.map(grp => {
+                const groupTypes = Object.entries(ACTIVITY_TYPES).filter(([, info]) => info.group === grp);
+                return (
+                  <div key={grp} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, color: "#4b5563", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>{grp}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                      {groupTypes.map(([key, info]) => {
+                        const active = addForm.activity_type === key;
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => { setAddForm(p => ({ ...p, activity_type: key })); setShowAdvanced(false); }}
+                            style={{
+                              background: active ? "rgba(232,160,32,0.12)" : "#0a0e1a",
+                              border: active ? "1px solid #e8a020" : "1px solid #374151",
+                              borderRadius: 8, padding: "5px 10px",
+                              color: active ? "#e8a020" : "#9ca3af",
+                              fontSize: 12, fontWeight: 600, cursor: "pointer",
+                              display: "flex", alignItems: "center", gap: 4,
+                            }}
+                          >
+                            {info.icon} {info.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Dynamic fields */}
@@ -626,6 +781,107 @@ export default function RecruitingJourney() {
                 />
               )}
             </div>
+
+            {/* ── Signal Quality (optional, shown for types with is_athlete_specific relevance) ── */}
+            {currentFields.includes("signal_quality") && (
+              <div style={{ marginTop: 16, borderTop: "1px solid #1f2937", paddingTop: 14 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(p => !p)}
+                  style={{ background: "none", border: "none", color: "#e8a020", fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: showAdvanced ? 14 : 0 }}
+                >
+                  {showAdvanced ? "▲ Hide details" : "▼ Add verification details (optional)"}
+                </button>
+                {showAdvanced && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>Was this specifically directed at your athlete?</div>
+                      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                        {[{ val: true, label: "Yes — athlete-specific" }, { val: false, label: "No — generic/template" }, { val: null, label: "Not sure" }].map(opt => (
+                          <button
+                            key={String(opt.val)}
+                            type="button"
+                            onClick={() => setAddForm(p => ({ ...p, is_athlete_specific: opt.val }))}
+                            style={{
+                              padding: "5px 11px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
+                              background: addForm.is_athlete_specific === opt.val ? "rgba(232,160,32,0.12)" : "#0a0e1a",
+                              border: addForm.is_athlete_specific === opt.val ? "1px solid #e8a020" : "1px solid #374151",
+                              color: addForm.is_athlete_specific === opt.val ? "#e8a020" : "#9ca3af",
+                            }}
+                          >{opt.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>Was there a personal reply / two-way exchange?</div>
+                      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                        {[{ val: true, label: "Yes — both sides responded" }, { val: false, label: "No reply yet" }, { val: null, label: "Not sure" }].map(opt => (
+                          <button
+                            key={String(opt.val)}
+                            type="button"
+                            onClick={() => setAddForm(p => ({ ...p, is_two_way_engagement: opt.val }))}
+                            style={{
+                              padding: "5px 11px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
+                              background: addForm.is_two_way_engagement === opt.val ? "rgba(232,160,32,0.12)" : "#0a0e1a",
+                              border: addForm.is_two_way_engagement === opt.val ? "1px solid #e8a020" : "1px solid #374151",
+                              color: addForm.is_two_way_engagement === opt.val ? "#e8a020" : "#9ca3af",
+                            }}
+                          >{opt.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <FormField
+                      label="Evidence Reference (optional)"
+                      value={addForm.evidence_reference}
+                      onChange={setField("evidence_reference")}
+                      placeholder="Screenshot filename, DM link, etc."
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Offer fields ── */}
+            {currentFields.includes("offer_fields") && (
+              <div style={{ marginTop: 16, borderTop: "1px solid #1f2937", paddingTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>Offer Type</div>
+                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                    {[{ val: "scholarship", label: "Scholarship" }, { val: "preferred_walk_on", label: "Preferred Walk-on" }, { val: "walk_on", label: "Walk-on" }].map(opt => (
+                      <button
+                        key={opt.val}
+                        type="button"
+                        onClick={() => setAddForm(p => ({ ...p, offer_type: p.offer_type === opt.val ? "" : opt.val }))}
+                        style={{
+                          padding: "5px 12px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
+                          background: addForm.offer_type === opt.val ? "rgba(232,160,32,0.12)" : "#0a0e1a",
+                          border: addForm.offer_type === opt.val ? "1px solid #e8a020" : "1px solid #374151",
+                          color: addForm.offer_type === opt.val ? "#e8a020" : "#9ca3af",
+                        }}
+                      >{opt.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>Offer Status</div>
+                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                    {[{ val: "active", label: "Active" }, { val: "accepted", label: "Accepted" }, { val: "declined", label: "Declined" }, { val: "expired", label: "Expired" }, { val: "withdrawn", label: "Withdrawn" }].map(opt => (
+                      <button
+                        key={opt.val}
+                        type="button"
+                        onClick={() => setAddForm(p => ({ ...p, offer_status: p.offer_status === opt.val ? "" : opt.val }))}
+                        style={{
+                          padding: "5px 12px", fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
+                          background: addForm.offer_status === opt.val ? "rgba(232,160,32,0.12)" : "#0a0e1a",
+                          border: addForm.offer_status === opt.val ? "1px solid #e8a020" : "1px solid #374151",
+                          color: addForm.offer_status === opt.val ? "#e8a020" : "#9ca3af",
+                        }}
+                      >{opt.label}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {addError && (
               <div style={{

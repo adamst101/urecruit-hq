@@ -14,12 +14,33 @@
       "type": "string",
       "enum": [
         "social_like",
+        "social_follow",
         "dm_received",
+        "dm_sent",
+        "text_received",
+        "text_sent",
+        "phone_call",
+        "generic_email",
+        "personal_email",
         "camp_invite",
+        "generic_camp_invite",
+        "personal_camp_invite",
+        "camp_registered",
+        "camp_attended",
         "camp_meeting",
-        "offer"
+        "post_camp_followup_sent",
+        "post_camp_personal_response",
+        "unofficial_visit_requested",
+        "unofficial_visit_completed",
+        "official_visit_requested",
+        "official_visit_completed",
+        "offer",
+        "offer_received",
+        "offer_updated",
+        "commitment",
+        "signed"
       ],
-      "description": "Type of recruiting activity"
+      "description": "Type of recruiting activity. Legacy values: social_like, dm_received, camp_invite, camp_meeting, offer are kept for backward compatibility."
     },
     "school_name": {
       "type": "string",
@@ -27,30 +48,66 @@
     },
     "coach_name": {
       "type": "string",
-      "description": "Coach name"
+      "description": "College coach or staff name"
     },
     "coach_title": {
       "type": "string",
-      "description": "Coach title (for camp_meeting, offer)"
+      "description": "Coach or staff title (e.g. Offensive Coordinator)"
     },
     "coach_twitter": {
       "type": "string",
-      "description": "Coach Twitter/X handle (for social_like, dm_received)"
+      "description": "Coach Twitter/X handle (legacy field, also used for social activities)"
     },
     "activity_date": {
       "type": "string",
       "format": "date",
-      "description": "Date of the activity"
+      "description": "Date the activity occurred (YYYY-MM-DD)"
     },
     "notes": {
       "type": "string",
-      "description": "Optional notes",
+      "description": "Optional notes or conversation summary",
       "format": "long_text"
+    },
+    "source_platform": {
+      "type": "string",
+      "enum": ["x", "text", "email", "phone", "in_person", "camp", "other"],
+      "description": "Platform or channel where the interaction occurred. Auto-inferred from activity_type if not supplied."
+    },
+    "interaction_direction": {
+      "type": "string",
+      "enum": ["inbound", "outbound", "in_person"],
+      "description": "Direction of the interaction relative to the athlete"
+    },
+    "is_athlete_specific": {
+      "type": "boolean",
+      "description": "True if the interaction was specifically directed at this athlete (not a mass/template communication). Null = unknown."
+    },
+    "is_two_way_engagement": {
+      "type": "boolean",
+      "description": "True if both parties engaged — athlete replied AND coach/staff responded back. Null = unknown."
+    },
+    "is_verified_personal": {
+      "type": "boolean",
+      "description": "True if the interaction has been confirmed as personal (not template/generic). Null = unknown."
+    },
+    "offer_type": {
+      "type": "string",
+      "enum": ["scholarship", "preferred_walk_on", "walk_on"],
+      "description": "Type of offer (only relevant for offer_* activity types)"
+    },
+    "offer_status": {
+      "type": "string",
+      "enum": ["active", "expired", "withdrawn", "accepted", "declined"],
+      "description": "Current status of the offer (only relevant for offer_* activity types)"
+    },
+    "evidence_reference": {
+      "type": "string",
+      "description": "Optional reference for verification: screenshot filename, link, DM URL, etc."
     },
     "created_at": {
       "type": "string",
       "format": "date-time",
-      "description": "ISO timestamp of creation"
+      "description": "ISO timestamp of when this record was created"
     }
   },
   "required": [
