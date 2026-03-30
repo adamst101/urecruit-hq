@@ -2050,15 +2050,15 @@ export default function CoachDashboard() {
 
       {/* ── SECTION 8: RECENT RECRUITING ACTIVITY ── */}
       {(recentJourneyActivity.length > 0 || journeyLoading || Object.keys(athleteJourneys).length > 0) && (
-        <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <section style={{ padding: "40px 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #1f2937" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 3, height: 20, background: "#60a5fa", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: T.textPrimary }}>RECENT RECRUITING ACTIVITY</span>
+                <div style={{ width: 3, height: 20, background: "#4b5563", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: T.textSecondary }}>RECENT RECRUITING ACTIVITY</span>
                 <span style={{ fontSize: 11, color: "rgba(148,163,184,0.55)", fontWeight: 600 }}>cross-roster activity log</span>
               </div>
-              {journeyLoading && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
+              {journeyLoading && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#4b5563", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
             </div>
             {recentJourneyActivity.length === 0 ? (
               <div style={{ padding: "28px 24px", textAlign: "center" }}>
@@ -2130,7 +2130,7 @@ export default function CoachDashboard() {
       )}
 
       {/* ── ROSTER CAMP OVERVIEW ── */}
-      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+      <section style={{ padding: "40px 24px 24px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
 
           {/* Left: Camp roster board */}
@@ -2230,8 +2230,8 @@ export default function CoachDashboard() {
               style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", cursor: "pointer", borderBottom: "1px solid #1f2937" }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: T.textPrimary }}>RECENT MESSAGES</span>
+                <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: T.textMuted }}>RECENT MESSAGES</span>
               </div>
               <span style={{ fontSize: 12, color: "#e8a020", fontWeight: 600 }}>Compose + View →</span>
             </div>
