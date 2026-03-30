@@ -343,7 +343,7 @@ export default function Home() {
           justifyContent: "center",
           maxWidth: 1200,
           margin: "0 auto",
-          padding: "0 32px",
+          padding: "48px 32px 0",
           width: "100%",
           position: "relative",
           zIndex: 1,
