@@ -1,91 +1,35 @@
 // src/components/hooks/useDemoCampSummaries.jsx
-// Fetches DemoCamp records for a given season year and enriches them
-// with school/sport data + demo favorite/registered status.
+// Returns enriched demo camp summaries for MyCamps / Calendar in demo mode.
+// Uses the same static dataset as Discover (?demo=coach / ?demo=user) so all
+// demo pages stay consistent — no DemoCamp DB entity required.
 
 import { useQuery } from "@tanstack/react-query";
-import { base44 } from "../../api/base44Client";
+import { loadDemoCamps } from "../../lib/demoCampData";
+import { schoolMapGet } from "./useSchoolIdentity.jsx";
 import { getDemoFavorites } from "./demoFavorites.jsx";
 import { isDemoRegistered } from "./demoRegistered.jsx";
-
-function normId(x) {
-  if (!x) return null;
-  if (typeof x === "string") return x;
-  return x.id || x._id || x.uuid || null;
-}
-
-function uniq(arr) {
-  return Array.from(new Set((arr || []).filter(Boolean)));
-}
-
-function pickSchoolName(s) {
-  return s?.school_name || s?.name || s?.title || "Unknown School";
-}
-function pickSchoolDivision(s) {
-  return s?.division || s?.school_division || s?.division_code || null;
-}
-function pickSportName(sp) {
-  return sp?.sport_name || sp?.name || sp?.title || null;
-}
-
-async function fetchByIds(entity, ids) {
-  const clean = uniq(ids.map(normId).filter(Boolean).map(String));
-  if (!entity?.filter || clean.length === 0) return [];
-  const tries = [
-    { id: { $in: clean } },
-    { id: { in: clean } },
-  ];
-  for (const q of tries) {
-    try {
-      const rows = await entity.filter(q);
-      if (Array.isArray(rows) && rows.length) return rows;
-    } catch { /* next */ }
-  }
-  return [];
-}
 
 async function fetchDemoCampSummaries({ seasonYear, demoProfileId }) {
   const y = Number(seasonYear);
   if (!y) return [];
 
-  let rows = [];
+  // Load static demo camps (also warms the shared school map)
+  let all = [];
   try {
-    rows = await base44.entities.DemoCamp.filter({ demo_season_year: y }, "-start_date", 2000);
+    all = await loadDemoCamps();
   } catch {
-    try {
-      rows = await base44.entities.DemoCamp.filter({ demo_season_year: String(y) }, "-start_date", 2000);
-    } catch { return []; }
+    return [];
   }
 
-  const camps = Array.isArray(rows) ? rows : [];
-  const schoolIds = uniq(camps.map((c) => normId(c?.school_id)).filter(Boolean));
-  const sportIds = uniq(camps.map((c) => normId(c?.sport_id)).filter(Boolean));
-
-  const [schools, sports] = await Promise.all([
-    fetchByIds(base44.entities.School, schoolIds),
-    fetchByIds(base44.entities.Sport, sportIds),
-  ]);
-
-  if (schoolIds.length > 0 && (!Array.isArray(schools) || schools.length === 0)) {
-    console.warn("[useDemoCampSummaries] School fetch returned empty — check School entity read permissions in base44. IDs attempted:", schoolIds.slice(0, 5));
-  }
-
-  const schoolById = {};
-  for (const s of Array.isArray(schools) ? schools : []) {
-    const id = String(normId(s) || "");
-    if (id) schoolById[id] = s;
-  }
-  const sportById = {};
-  for (const sp of Array.isArray(sports) ? sports : []) {
-    const id = String(normId(sp) || "");
-    if (id) sportById[id] = sp;
-  }
+  // Filter to matching season year
+  const camps = all.filter((c) => Number(c?.demo_season_year) === y);
 
   const favSet = new Set(getDemoFavorites(demoProfileId, y).map(String));
 
   return camps.map((c) => {
-    const campId = String(c?.id ?? c?._id ?? "");
-    const sch = schoolById[String(normId(c?.school_id) || "")] || null;
-    const sp = sportById[String(normId(c?.sport_id) || "")] || null;
+    const campId = String(c?.id ?? "");
+    // Enrich from the shared school map (already loaded by loadDemoCamps)
+    const sch = c.school_id ? schoolMapGet(c.school_id) : null;
 
     const reg = isDemoRegistered(demoProfileId, campId);
     const fav = favSet.has(campId);
@@ -97,24 +41,24 @@ async function fetchDemoCampSummaries({ seasonYear, demoProfileId }) {
       camp_name: c?.camp_name || c?.name || "Camp",
       start_date: c?.start_date || null,
       end_date: c?.end_date || null,
-      city: c?.city || sch?.city || null,
-      state: c?.state || sch?.state || null,
+      city: c?.city || null,
+      state: c?.state || null,
       price: typeof c?.price === "number" ? c.price : null,
-      link_url: c?.link_url || c?.source_url || null,
+      link_url: c?.link_url || null,
       notes: c?.notes || null,
       position_ids: Array.isArray(c?.position_ids) ? c.position_ids : [],
-      school_id: normId(c?.school_id) || null,
-      sport_id: normId(c?.sport_id) || null,
-      school_name: pickSchoolName(sch),
-      school_division: pickSchoolDivision(sch),
-      subdivision: sch?.subdivision || null,
-      school_subdivision: sch?.subdivision || null,
+      school_id: c?.school_id || null,
+      sport_id: null,
+      school_name: sch?.school_name || sch?.name || c?.host_org || "Unknown School",
+      school_division: c?.school_division || c?.division || null,
+      subdivision: c?.subdivision || null,
+      school_subdivision: c?.subdivision || null,
       school_logo_url: sch?.athletic_logo_url || sch?.logo_url || null,
-      school_city: sch?.city || null,
-      school_state: sch?.state || null,
+      school_city: c?.city || null,
+      school_state: c?.state || null,
       school_conference: sch?.conference || null,
-      sport_name: pickSportName(sp),
-      division: pickSchoolDivision(sch),
+      sport_name: "Football",
+      division: c?.division || c?.school_division || null,
       intent_status: intent,
       active: c?.active !== false,
     };

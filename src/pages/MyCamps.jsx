@@ -20,6 +20,7 @@ import { useCampSummariesClient } from "../components/hooks/useCampSummariesClie
 import { useAllAthletesCamps } from "../components/hooks/useAllAthletesCamps.jsx";
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
+import { initDemoUserState, DEMO_SEASON_YEAR } from "../lib/demoUserData.js";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
 import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
@@ -79,11 +80,24 @@ export default function MyCamps() {
   const dm = readDemoMode();
   const isPaid = season?.mode === "paid" || season?.mode === "coach" || season?.mode === "coach_pending";
   const isDemoMode = !isPaid;
+
+  const isUserDemo = useMemo(() => {
+    try { return new URLSearchParams(window.location.search).get("demo") === "user"; }
+    catch { return false; }
+  }, []);
+
+  // Seed demo favorites/registered for direct ?demo=user entries
+  useEffect(() => {
+    if (!isUserDemo || !demoProfileId) return;
+    initDemoUserState(demoProfileId, DEMO_SEASON_YEAR);
+  }, [isUserDemo, demoProfileId]);
   const isAdmin = season?.role === "admin";
   const isCoach = season?.mode === "coach" || season?.mode === "coach_pending";
 
   const { allCamps: allAthletesCamps, athletes: allAthletes } = useAllAthletesCamps({ enabled: isPaid });
-  const seasonYear = Number(dm?.seasonYear || season?.seasonYear || season?.currentYear || new Date().getFullYear());
+  const seasonYear = isUserDemo
+    ? DEMO_SEASON_YEAR
+    : Number(dm?.seasonYear || season?.seasonYear || season?.currentYear || new Date().getFullYear());
 
   const athleteId = normId(athleteProfile);
   const sportId = normId(athleteProfile?.sport_id) || athleteProfile?.sport_id;

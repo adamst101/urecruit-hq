@@ -13,6 +13,7 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 import { trackEvent, trackEventOnce } from "../utils/trackEvent.js";
 import { geocodeCity } from "../components/hooks/useGeocode.jsx";
+import { DEMO_ATHLETE } from "../lib/demoUserData.js";
 
 const FEET_OPTIONS = [4, 5, 6, 7];
 const INCH_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
@@ -77,6 +78,7 @@ export default function Profile() {
   const nav = useNavigate();
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const athleteId = urlParams.get("id") || undefined;
+  const isUserDemo = urlParams.get("demo") === "user";
 
   const { hasAccess, mode, loading: seasonLoading, isLoading: seasonIsLoading } = useSeasonAccess();
   const isDemo = !seasonIsLoading && (mode === "demo" || !hasAccess);
@@ -161,6 +163,22 @@ export default function Profile() {
     load();
     return () => { mounted = false; };
   }, []);
+
+  // Pre-populate form with demo athlete data for user demo mode
+  useEffect(() => {
+    if (!isUserDemo) return;
+    if (identityLoading) return;
+    if (firstName || lastName) return; // already set by identity load
+    setFirstName(DEMO_ATHLETE.first_name);
+    setLastName(DEMO_ATHLETE.last_name);
+    setGradYear(DEMO_ATHLETE.grad_year);
+    setHeightFt(6);
+    setHeightIn(1);
+    setWeight(185);
+    setHomeCity(DEMO_ATHLETE.home_city);
+    setHomeState(DEMO_ATHLETE.home_state);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUserDemo, identityLoading]);
 
   const filteredPositions = useMemo(() => {
     if (!sportId) return [];
@@ -275,7 +293,7 @@ export default function Profile() {
         </div>
 
         {/* Demo banner */}
-        {isDemo && (
+        {isDemo && !isUserDemo && (
           <div className="rounded-lg border-l-4 border-ur-amber bg-ur-card border border-ur-border p-4 flex items-center justify-between gap-4 flex-wrap">
             <div>
               <div className="text-sm font-semibold text-ur-primary">🔒 Profile editing is available to Season Pass members.</div>
@@ -286,6 +304,49 @@ export default function Profile() {
             >
               Get Season Pass <ArrowRight className="w-4 h-4" />
             </button>
+          </div>
+        )}
+
+        {/* User demo athlete card */}
+        {isUserDemo && (
+          <div style={{ background: "rgba(232,160,32,0.06)", border: "1px solid rgba(232,160,32,0.2)", borderRadius: 12, padding: "16px 20px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <div style={{ background: "#e8a020", color: "#0a0e1a", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                Demo Profile
+              </div>
+              <span style={{ fontSize: 13, color: "#6b7280" }}>Pre-populated sample athlete</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+              {[
+                ["Athlete", `${DEMO_ATHLETE.first_name} ${DEMO_ATHLETE.last_name}`],
+                ["Grad Year", String(DEMO_ATHLETE.grad_year)],
+                ["Position", DEMO_ATHLETE.position],
+                ["Height / Weight", `${DEMO_ATHLETE.height} · ${DEMO_ATHLETE.weight}`],
+                ["Hometown", `${DEMO_ATHLETE.home_city}, ${DEMO_ATHLETE.home_state}`],
+                ["High School", DEMO_ATHLETE.high_school],
+                ["GPA", DEMO_ATHLETE.gpa],
+                ["Target Division", DEMO_ATHLETE.target_division],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: 14, color: "#f9fafb" }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(232,160,32,0.15)", display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                onClick={() => nav("/Subscribe?source=profile_demo")}
+                style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+              >
+                Create Your Athlete's Profile →
+              </button>
+              <button
+                onClick={() => nav("/Workspace?demo=user")}
+                style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}
+              >
+                ← Back to HQ
+              </button>
+            </div>
           </div>
         )}
 

@@ -27,8 +27,10 @@ export default function BottomNav() {
   const season = useSeasonAccess();
   const isCoach = season?.mode === "coach" || season?.mode === "coach_pending";
 
-  // Coach demo: unauthenticated user browsing via ?demo=coach
-  const isCoachDemo = new URLSearchParams(loc?.search || "").get("demo") === "coach";
+  // Demo mode detection
+  const demoParam = new URLSearchParams(loc?.search || "").get("demo");
+  const isCoachDemo = demoParam === "coach";
+  const isUserDemo  = demoParam === "user";
 
   const hqRoute      = isCoach ? ROUTES.CoachDashboard : ROUTES.Workspace;
   const profileRoute = isCoach ? ROUTES.CoachProfile   : ROUTES.Profile;
@@ -41,6 +43,15 @@ export default function BottomNav() {
         { label: "Sign Up",   to: ROUTES.CoachSignup,           Icon: UserPlus },
       ];
     }
+    if (isUserDemo) {
+      return [
+        { label: "HQ",       to: "/Workspace?demo=user",  Icon: LayoutGrid },
+        { label: "Discover", to: "/Discover?demo=user",   Icon: Search },
+        { label: "My Camps", to: "/MyCamps?demo=user",    Icon: Heart },
+        { label: "Profile",  to: "/Profile?demo=user",    Icon: User },
+        { label: "Get Pass", to: "/Subscribe?source=user_demo_nav", Icon: UserPlus },
+      ];
+    }
     return [
       { label: "HQ",       to: hqRoute,        Icon: LayoutGrid },
       { label: "Discover", to: ROUTES.Discover, Icon: Search },
@@ -48,7 +59,7 @@ export default function BottomNav() {
       { label: "My Camps", to: ROUTES.MyCamps,  Icon: Heart },
       { label: "Profile",  to: profileRoute,    Icon: User },
     ];
-  }, [isCoachDemo, hqRoute, profileRoute]);
+  }, [isCoachDemo, isUserDemo, hqRoute, profileRoute]);
 
   function handleNav(to) {
     // Don't re-navigate if already on the target route

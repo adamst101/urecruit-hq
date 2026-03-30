@@ -121,7 +121,7 @@ export default function Home() {
       demo_season: demoYear
     });
 
-    nav(`/Workspace?mode=demo&src=home_demo`);
+    nav(`/Workspace?demo=user&src=home_demo`);
   }
 
   function handleMemberLogin() {

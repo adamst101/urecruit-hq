@@ -19,6 +19,7 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
 import { DEMO_COACH_PROFILE } from "../lib/demoCoachData.js";
 import { loadDemoCamps } from "../lib/demoCampData.js";
+import { initDemoUserState, DEMO_SEASON_YEAR } from "../lib/demoUserData.js";
 import { footballDemoSeasonYear } from "../components/utils/seasonEntitlements.jsx";
 
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
@@ -335,8 +336,12 @@ export default function Discover() {
       setDemoFavoriteIds([]);
       return;
     }
+    // Seed user demo state on direct entry to Discover (e.g. /Discover?demo=user)
+    if (isUserDemo && demoProfileId) {
+      initDemoUserState(demoProfileId, DEMO_SEASON_YEAR);
+    }
     setDemoFavoriteIds(getDemoFavorites(demoProfileId, seasonYear));
-  }, [isPaid, demoProfileId, seasonYear]);
+  }, [isPaid, demoProfileId, seasonYear, isUserDemo]);
   const nf = filtersApi?.nf || null;
 
   const campKeyForRow = (r) => {

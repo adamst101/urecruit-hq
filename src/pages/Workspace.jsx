@@ -1,6 +1,6 @@
 // src/pages/Workspace.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { CalendarDays, Search, User, Shield, LogOut, Star, ArrowRight } from "lucide-react";
 
 import { base44 } from "../api/base44Client";
@@ -17,6 +17,8 @@ import { trackEventOnce } from "../utils/trackEvent.js";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import AddAthleteModal from "../components/workspace/AddAthleteModal.jsx";
 import InstallButton from "../components/pwa/InstallButton.jsx";
+import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
+import { initDemoUserState, DEMO_JOURNEY, DEMO_SEASON_YEAR } from "../lib/demoUserData.js";
 
 // ---- routes (no createPageUrl dependency) ----
 const ROUTES = {
@@ -75,10 +77,17 @@ const LOGO_URL =
 
 export default function Workspace() {
   const nav = useNavigate();
+  const loc = useLocation();
+
+  const isUserDemo = useMemo(() => {
+    try { return new URLSearchParams(loc?.search || "").get("demo") === "user"; }
+    catch { return false; }
+  }, [loc?.search]);
 
   const season = useSeasonAccess();
   const { activeAthlete: athleteProfile, isLoading: identityLoading } = useActiveAthlete();
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
+  const { demoProfileId } = useDemoProfile();
 
   const [meEmail, setMeEmail] = useState("");
   const [meName, setMeName] = useState("");
@@ -193,6 +202,12 @@ export default function Workspace() {
   useEffect(() => {
     trackEventOnce("workspace_viewed", "evt_workspace_viewed_v1", { paid: isMember });
   }, [isMember]);
+
+  // Seed demo user localStorage state on first visit
+  useEffect(() => {
+    if (!isUserDemo || !demoProfileId) return;
+    initDemoUserState(demoProfileId, DEMO_SEASON_YEAR);
+  }, [isUserDemo, demoProfileId]);
   const memberSeason = Number(season?.entitlement?.season_year) || season?.seasonYear || null;
   const currentYear = season?.currentYear || new Date().getFullYear();
   const demoYear = season?.demoYear || (currentYear - 1);
@@ -390,7 +405,7 @@ export default function Workspace() {
         </div>
 
         {/* Demo banner */}
-        {!isMember && (
+        {!isMember && !isUserDemo && (
           <div style={{ marginTop: 20, background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.25)", borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
             <div>
               <div style={{ fontSize: 17, fontWeight: 700, color: "#e8a020" }}>📋 You're viewing {demoYear} demo data</div>
@@ -399,6 +414,94 @@ export default function Workspace() {
             <button onClick={() => nav(`${ROUTES.Subscribe}?source=workspace_banner`)} style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
               Get Season Pass <ArrowRight style={{ width: 16, height: 16 }} />
             </button>
+          </div>
+        )}
+
+        {/* User demo journey panel */}
+        {isUserDemo && (
+          <div style={{ marginTop: 20 }}>
+            {/* Demo account badge */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <div style={{ background: "#e8a020", color: "#0a0e1a", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                Demo Account
+              </div>
+              <span style={{ fontSize: 13, color: "#6b7280" }}>
+                You're viewing a simulated family's recruiting workspace
+              </span>
+            </div>
+
+            {/* Athlete identity bar */}
+            <div style={{ background: "rgba(232,160,32,0.06)", border: "1px solid rgba(232,160,32,0.2)", borderRadius: 12, padding: "16px 20px", marginBottom: 14 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb" }}>
+                    {DEMO_JOURNEY.athleteName}
+                  </div>
+                  <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 2 }}>
+                    {DEMO_JOURNEY.position} · Class of {DEMO_JOURNEY.gradYear} · {DEMO_JOURNEY.school} · {DEMO_JOURNEY.city}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#e8a020", marginTop: 6, fontWeight: 600 }}>
+                    {DEMO_JOURNEY.chapter}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6, maxWidth: 520, lineHeight: 1.6 }}>
+                    {DEMO_JOURNEY.summary}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 16, flexShrink: 0 }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "#e8a020", lineHeight: 1 }}>{DEMO_JOURNEY.stats.saved}</div>
+                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>Saved</div>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "#22c55e", lineHeight: 1 }}>{DEMO_JOURNEY.stats.registered}</div>
+                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>Registered</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Journey milestones */}
+            <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 20px", marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
+                Recruiting Journey
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {DEMO_JOURNEY.milestones.map((m, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{
+                      width: 18, height: 18, borderRadius: "50%", flexShrink: 0, marginTop: 1,
+                      background: m.done ? "#22c55e" : "#1f2937",
+                      border: m.done ? "none" : "2px solid #374151",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      {m.done && <span style={{ color: "#0a0e1a", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: 13, color: m.done ? "#d1d5db" : "#6b7280", fontWeight: m.done ? 500 : 400 }}>
+                        {m.label}
+                      </span>
+                      <span style={{ fontSize: 12, color: "#4b5563", marginLeft: 8 }}>{m.detail}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* CTA */}
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <button
+                onClick={() => nav(`${ROUTES.Subscribe}?source=user_demo_workspace`)}
+                style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+              >
+                Start Your Family's Workspace <ArrowRight style={{ width: 16, height: 16 }} />
+              </button>
+              <button
+                onClick={() => nav(`${ROUTES.Discover}?demo=user`)}
+                style={{ background: "transparent", color: "#e8a020", border: "1px solid #e8a020", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+              >
+                Browse Camps →
+              </button>
+            </div>
           </div>
         )}
 
