@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { User, LogOut } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { clearSeasonAccessCache, useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
-import BottomNav from "../components/navigation/BottomNav.jsx";
 import { T } from "../lib/theme.js";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
@@ -3187,7 +3186,6 @@ export default function CoachDashboard() {
         </>
       )}
 
-      <BottomNav />
     </div>
   );
 }
