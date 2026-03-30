@@ -17,6 +17,7 @@ import SchoolGroupCard from "../components/camps/SchoolGroupCard.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
+import { DEMO_COACH_PROFILE } from "../lib/demoCoachData.js";
 
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
@@ -272,11 +273,15 @@ export default function Discover() {
   const [visibleCount, setVisibleCount]   = useState(50);
   const [coachRoster, setCoachRoster]     = useState([]);
 
-  const isCoach = seasonMode === "coach" || seasonMode === "coach_pending";
+  const isCoach = seasonMode === "coach" || seasonMode === "coach_pending" || isCoachDemo;
 
   // Load coach roster when in coach mode (skip for demo coach — no real profile exists)
   useEffect(() => {
-    if (!isCoach || isCoachDemo) return;
+    if (isCoachDemo) {
+      setCoachRoster(Array.isArray(DEMO_COACH_PROFILE.roster) ? DEMO_COACH_PROFILE.roster : []);
+      return;
+    }
+    if (!isCoach) return;
     base44.functions.invoke("getMyCoachProfile", {})
       .then((res) => {
         const roster = Array.isArray(res?.data?.roster) ? res.data.roster : [];
@@ -941,6 +946,7 @@ export default function Discover() {
             onToggle={() => setExpandedSchools((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}
             isPaid={isPaid}
             isCoach={isCoach}
+            isCoachDemo={isCoachDemo}
             coachRoster={coachRoster}
             isCampFavorite={isCampFavorite}
             isCampRegistered={isCampRegistered}
@@ -1037,7 +1043,7 @@ export default function Discover() {
           </div>
         )}
 
-        {!isPaid && <div className="mt-5 mb-2"><DemoBanner seasonYear={seasonYear} /></div>}
+        {!isPaid && !isCoachDemo && <div className="mt-5 mb-2"><DemoBanner seasonYear={seasonYear} /></div>}
 
         {/* Inline filter dropdowns */}
         <div className="mt-4">

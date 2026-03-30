@@ -62,6 +62,7 @@ export default function SchoolGroupCard({
   onToggle,
   isPaid,
   isCoach,
+  isCoachDemo,
   coachRoster,
   isCampFavorite,
   isCampRegistered,
@@ -98,6 +99,7 @@ export default function SchoolGroupCard({
   }
 
   async function sendShare(camp) {
+    if (isCoachDemo) return; // Demo: sharing is disabled
     if (!shareMsg.trim() || shareSending) return;
     setShareSending(true);
     try {
@@ -411,17 +413,18 @@ export default function SchoolGroupCard({
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        disabled={shareSending || !shareMsg.trim()}
+                        disabled={isCoachDemo || shareSending || !shareMsg.trim()}
                         className="text-xs h-7 px-4 rounded-md font-medium"
                         style={{
-                          background: shareSending ? "#374151" : "#e8a020",
-                          color: "#0a0e1a",
-                          cursor: shareSending ? "default" : "pointer",
-                          opacity: !shareMsg.trim() ? 0.5 : 1,
+                          background: isCoachDemo ? "#1f2937" : shareSending ? "#374151" : "#e8a020",
+                          color: isCoachDemo ? "#6b7280" : "#0a0e1a",
+                          cursor: isCoachDemo || shareSending ? "default" : "pointer",
+                          opacity: (!shareMsg.trim() && !isCoachDemo) ? 0.5 : 1,
                         }}
+                        title={isCoachDemo ? "Sign up to send messages to your roster" : undefined}
                         onClick={() => sendShare(camp)}
                       >
-                        {shareSending ? "Sending…" : "Send"}
+                        {isCoachDemo ? "Demo — sign up to send" : shareSending ? "Sending…" : "Send"}
                       </button>
                       <button
                         type="button"
