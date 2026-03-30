@@ -1178,78 +1178,109 @@ export default function CoachDashboard() {
       {/* ── SECTION 2: HEADLINE PROGRAM METRICS (6 cards) ── */}
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(148px, 1fr))", gap: 12 }}>
+
           {/* 1. Players w/ Any Interest */}
-          <div onClick={() => setOpenSheet("tile_any_interest")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#34d399"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players w/ Any Interest</div>
-            {journeyLoading && playersWithAnyInterest === null ? (
-              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
-            ) : (
-              <>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#34d399", lineHeight: 1 }}>{playersWithAnyInterest ?? (roster.length > 0 ? "0" : "—")}</div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>any recruiting signal</div>
-              </>
-            )}
+          <div
+            onClick={() => setOpenSheet("tile_any_interest")}
+            style={{ background: T.cardBg, border: "1px solid #1f2937", boxShadow: "inset 0 2px 0 0 #34d399", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s", display: "flex", flexDirection: "column" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#34d399"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+          >
+            <div style={{ minHeight: 30, fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>Players w/ Any Interest</div>
+            <div style={{ minHeight: 52, display: "flex", alignItems: "center" }}>
+              {journeyLoading && playersWithAnyInterest === null
+                ? <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#34d399", lineHeight: 1 }}>{playersWithAnyInterest ?? (roster.length > 0 ? "0" : "—")}</div>
+              }
+            </div>
+            <div style={{ minHeight: 18, fontSize: 11, color: T.textMuted }}>Any recruiting signal</div>
           </div>
+
           {/* 2. Players w/ True Traction */}
-          <div onClick={() => setOpenSheet("tile_true_traction")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#60a5fa"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players w/ True Traction</div>
-            {journeyLoading && !programMetrics ? (
-              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
-            ) : (
-              <>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#60a5fa", lineHeight: 1 }}>{programMetrics?.players_with_true_traction ?? (roster.length > 0 ? "0" : "—")}</div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>verified personal contact+</div>
-              </>
-            )}
+          <div
+            onClick={() => setOpenSheet("tile_true_traction")}
+            style={{ background: T.cardBg, border: "1px solid #1f2937", boxShadow: "inset 0 2px 0 0 #60a5fa", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s", display: "flex", flexDirection: "column" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#60a5fa"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+          >
+            <div style={{ minHeight: 30, fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>Players w/ True Traction</div>
+            <div style={{ minHeight: 52, display: "flex", alignItems: "center" }}>
+              {journeyLoading && !programMetrics
+                ? <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#60a5fa", lineHeight: 1 }}>{programMetrics?.players_with_true_traction ?? (roster.length > 0 ? "0" : "—")}</div>
+              }
+            </div>
+            <div style={{ minHeight: 18, fontSize: 11, color: T.textMuted }}>Verified personal contact+</div>
           </div>
+
           {/* 3. Visits / Offers */}
-          <div onClick={() => setOpenSheet("tile_visits_offers")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#f59e0b"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Visits / Offers</div>
-            {journeyLoading && !programMetrics ? (
-              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
-            ) : (
-              <>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#f59e0b", lineHeight: 1 }}>{programMetrics ? programMetrics.offer_count + programMetrics.unofficial_visit_count + programMetrics.official_visit_count : (roster.length > 0 ? "0" : "—")}</div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>unofficial + official + offers</div>
-              </>
-            )}
+          <div
+            onClick={() => setOpenSheet("tile_visits_offers")}
+            style={{ background: T.cardBg, border: "1px solid #1f2937", boxShadow: "inset 0 2px 0 0 #f59e0b", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s", display: "flex", flexDirection: "column" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#f59e0b"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+          >
+            <div style={{ minHeight: 30, fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>Visits / Offers</div>
+            <div style={{ minHeight: 52, display: "flex", alignItems: "center" }}>
+              {journeyLoading && !programMetrics
+                ? <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#f59e0b", lineHeight: 1 }}>{programMetrics ? programMetrics.offer_count + programMetrics.unofficial_visit_count + programMetrics.official_visit_count : (roster.length > 0 ? "0" : "—")}</div>
+              }
+            </div>
+            <div style={{ minHeight: 18, fontSize: 11, color: T.textMuted }}>Unofficial + official + offers</div>
           </div>
-          {/* 4. Colleges Engaging Program */}
-          <div onClick={() => setOpenSheet("tile_colleges")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#a78bfa"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Colleges Engaging Program</div>
-            {journeyLoading && !programMetrics ? (
-              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
-            ) : (
-              <>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#a78bfa", lineHeight: 1 }}>{collegesEngagingProgramCount > 0 ? collegesEngagingProgramCount : (roster.length > 0 ? "0" : "—")}</div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>unique colleges, any signal</div>
-              </>
-            )}
+
+          {/* 4. Colleges Engaging */}
+          <div
+            onClick={() => setOpenSheet("tile_colleges")}
+            style={{ background: T.cardBg, border: "1px solid #1f2937", boxShadow: "inset 0 2px 0 0 #a78bfa", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s", display: "flex", flexDirection: "column" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#a78bfa"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+          >
+            <div style={{ minHeight: 30, fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>Colleges Engaging</div>
+            <div style={{ minHeight: 52, display: "flex", alignItems: "center" }}>
+              {journeyLoading && !programMetrics
+                ? <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#a78bfa", lineHeight: 1 }}>{collegesEngagingProgramCount > 0 ? collegesEngagingProgramCount : (roster.length > 0 ? "0" : "—")}</div>
+              }
+            </div>
+            <div style={{ minHeight: 18, fontSize: 11, color: T.textMuted }}>Unique colleges, any signal</div>
           </div>
+
           {/* 5. Players Heating Up */}
-          <div onClick={() => setOpenSheet("tile_heating_up")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#fb923c"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players Heating Up</div>
-            {journeyLoading && playersHeatingUpCount === null ? (
-              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#fb923c", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
-            ) : (
-              <>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#fb923c", lineHeight: 1 }}>{playersHeatingUpCount ?? (roster.length > 0 ? "0" : "—")}</div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>active in last 30 days</div>
-              </>
-            )}
+          <div
+            onClick={() => setOpenSheet("tile_heating_up")}
+            style={{ background: T.cardBg, border: "1px solid #1f2937", boxShadow: "inset 0 2px 0 0 #fb923c", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s", display: "flex", flexDirection: "column" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#fb923c"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+          >
+            <div style={{ minHeight: 30, fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>Players Heating Up</div>
+            <div style={{ minHeight: 52, display: "flex", alignItems: "center" }}>
+              {journeyLoading && playersHeatingUpCount === null
+                ? <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#fb923c", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#fb923c", lineHeight: 1 }}>{playersHeatingUpCount ?? (roster.length > 0 ? "0" : "—")}</div>
+              }
+            </div>
+            <div style={{ minHeight: 18, fontSize: 11, color: T.textMuted }}>Active in last 30 days</div>
           </div>
+
           {/* 6. Repeat-Interest Colleges */}
-          <div onClick={() => setOpenSheet("tile_repeat_colleges")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Repeat-Interest Colleges</div>
-            {journeyLoading && !programMetrics ? (
-              <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
-            ) : (
-              <>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#e8a020", lineHeight: 1 }}>{repeatInterestCollegesCount > 0 ? repeatInterestCollegesCount : (roster.length > 0 ? "0" : "—")}</div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>engaging multiple athletes</div>
-              </>
-            )}
+          <div
+            onClick={() => setOpenSheet("tile_repeat_colleges")}
+            style={{ background: T.cardBg, border: "1px solid #1f2937", boxShadow: "inset 0 2px 0 0 #e8a020", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s", display: "flex", flexDirection: "column" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+          >
+            <div style={{ minHeight: 30, fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>Repeat-Interest Colleges</div>
+            <div style={{ minHeight: 52, display: "flex", alignItems: "center" }}>
+              {journeyLoading && !programMetrics
+                ? <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, color: "#e8a020", lineHeight: 1 }}>{repeatInterestCollegesCount > 0 ? repeatInterestCollegesCount : (roster.length > 0 ? "0" : "—")}</div>
+              }
+            </div>
+            <div style={{ minHeight: 18, fontSize: 11, color: T.textMuted }}>Engaging multiple athletes</div>
           </div>
+
         </div>
       </section>
 
