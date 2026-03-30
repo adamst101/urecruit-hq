@@ -10,6 +10,48 @@ module.exports = {
   			sm: 'calc(var(--radius) - 4px)'
   		},
   		colors: {
+  			/* ── uRecruit Premium Dark Tokens (ur.*) ────────────────────────────
+  			   Reference: src/lib/theme.js and src/index.css --ur-* variables.
+  			   Usage: bg-ur-shell, text-ur-secondary, border-ur-shell-border, etc.
+  			   ────────────────────────────────────────────────────────────────── */
+  			ur: {
+  				/* Surfaces */
+  				page:            '#0a0e1a',
+  				shell:           '#101A2B',
+  				'header-band':   '#0C1524',
+  				card:            '#111827',
+  				'row-active':    '#162338',
+  				expanded:        '#162B47',
+  				input:           '#1f2937',
+  				/* Borders & Dividers (opaque) */
+  				border:          '#1f2937',
+  				'border-input':  '#374151',
+  				/* Borders & Dividers (rgba — for arbitrary Tailwind usage) */
+  				'shell-border':  'rgba(148,163,184,0.20)',
+  				'divider-strong':'rgba(148,163,184,0.22)',
+  				divider:         'rgba(148,163,184,0.14)',
+  				'divider-subtle':'rgba(148,163,184,0.10)',
+  				/* Row states */
+  				'row-alt':       'rgba(255,255,255,0.015)',
+  				'row-hover':     'rgba(255,255,255,0.04)',
+  				/* Accent */
+  				amber:           '#e8a020',
+  				'amber-hover':   '#f3b13f',
+  				'amber-rail':    'rgba(232,160,32,0.65)',
+  				/* Text */
+  				primary:         '#f9fafb',
+  				secondary:       '#9ca3af',
+  				micro:           'rgba(148,163,184,0.82)',
+  				muted:           '#6b7280',
+  				interactive:     '#e8a020',
+  				/* Status */
+  				success:         '#10b981',
+  				'success-bg':    '#052e16',
+  				error:           '#ef4444',
+  				'error-bg':      '#7f1d1d',
+  				warning:         '#f59e0b',
+  				'warning-bg':    '#92400e',
+  			},
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

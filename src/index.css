@@ -156,3 +156,51 @@ button:focus-visible {
     @apply bg-background text-foreground;
   }
 }
+
+
+/* ── uRecruit Premium Dark Design Tokens ──────────────────────────────────
+   Namespace: --ur-*  (does not conflict with shadcn --background etc.)
+   Reference design: Coach HQ "Colleges Engaging the Program" section.
+   JS mirror: src/lib/theme.js
+   Tailwind mirror: ur.* colors in tailwind.config.js
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --ur-page:          #0a0e1a;
+  --ur-shell:         #101A2B;
+  --ur-header-band:   #0C1524;
+  --ur-card:          #111827;
+  --ur-row-active:    #162338;
+  --ur-expanded:      #162B47;
+  --ur-input:         #1f2937;
+
+  /* Borders & Dividers */
+  --ur-shell-border:      rgba(148, 163, 184, 0.20);
+  --ur-divider-strong:    rgba(148, 163, 184, 0.22);
+  --ur-divider:           rgba(148, 163, 184, 0.14);
+  --ur-divider-subtle:    rgba(148, 163, 184, 0.10);
+  --ur-border:            #1f2937;
+  --ur-border-input:      #374151;
+
+  /* Accent */
+  --ur-amber:             #e8a020;
+  --ur-amber-hover:       #f3b13f;
+  --ur-amber-rail:        rgba(232, 160, 32, 0.65);
+
+  /* Text */
+  --ur-text-primary:      #f9fafb;
+  --ur-text-secondary:    #9ca3af;
+  --ur-text-micro:        rgba(148, 163, 184, 0.82);
+  --ur-text-muted:        #6b7280;
+
+  /* Transitions */
+  --ur-transition-fast:   150ms ease;
+  --ur-transition-mid:    180ms ease;
+  --ur-transition-base:   200ms ease;
+}
+
+/* Always apply the dark page background regardless of shadcn light/dark mode */
+body {
+  background-color: var(--ur-page) !important;
+  color: var(--ur-text-primary);
+}

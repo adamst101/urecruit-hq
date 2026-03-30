@@ -47,7 +47,7 @@ export default function BottomNav() {
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0a0e1a] border-t border-[#1f2937]">
+    <div className="fixed bottom-0 left-0 right-0 z-40 bg-ur-page border-t border-ur-shell-border">
       <div className="max-w-5xl mx-auto px-4">
         <div className="h-16 flex items-center justify-around">
           {items.map(({ label, to, Icon }) => {
@@ -57,8 +57,8 @@ export default function BottomNav() {
                 key={label}
                 type="button"
                 onClick={() => handleNav(to)}
-                className={`flex flex-col items-center justify-center gap-1 text-xs px-3 py-2 rounded-lg ${
-                  active ? "text-[#e8a020]" : "text-[#9ca3af]"
+                className={`flex flex-col items-center justify-center gap-1 text-xs px-3 py-2 rounded-lg transition-colors ${
+                  active ? "text-ur-amber" : "text-ur-secondary"
                 }`}
                 aria-current={active ? "page" : undefined}
               >
