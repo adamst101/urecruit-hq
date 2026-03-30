@@ -2910,7 +2910,7 @@ export default function CoachDashboard() {
                   "",
                   "This is not something required by our program, and I am not asking every family to use it. I am simply making you aware of it because some families may find it helpful to have more structure, visibility, and clarity as they support their athlete's recruiting journey.",
                   "",
-                  "Please note that this is a paid resource, so participation is entirely your choice. There is a free demo available if you would like to evaluate it first.",
+                  "Please note that this is a paid resource, so participation is entirely your choice. There is a free demo available if you would like to evaluate it first at https://urecruithq.com/.",
                   "",
                   inviteCode
                     ? `If you choose to subscribe and are prompted for an invite code, please use: ${inviteCode}. Using that code allows me to have visibility into my players' recruiting journey inside the coach view, which can help me stay informed on college interest, better understand momentum, and support families and athletes more effectively.`
@@ -2924,8 +2924,8 @@ export default function CoachDashboard() {
                 ].join("\n");
 
                 const textTemplate = inviteCode
-                  ? `Hi parents — I wanted to share an optional resource that may be helpful for families with athletes interested in playing college football. URecruitHQ was created by parents who went through the process themselves and wanted a better way to stay organized around camps, dates, registrations, and recruiting movement. This is not required by our program — I'm simply sharing it as a resource some families may find helpful. There is a free demo available, and if you choose to subscribe, please use my invite code: ${inviteCode}. Using that code allows me to stay informed on my players' recruiting journey and better support families throughout the process.`
-                  : `Hi parents — I wanted to share an optional resource that may be helpful for families with athletes interested in playing college football. URecruitHQ was created by parents who went through the process themselves and wanted a better way to stay organized around camps, dates, registrations, and recruiting movement. This is not required by our program — I'm simply sharing it as a resource some families may find helpful. There is a free demo available at urecruithq.com.`;
+                  ? `Hi parents. I wanted to share an optional resource that may be helpful for families with athletes interested in playing college football. URecruitHQ was created by parents who went through the process themselves and wanted a better way to stay organized around camps, dates, registrations, and recruiting movement. This is not required by our program. I am simply sharing it as a resource some families may find helpful. There is a free demo available at https://urecruithq.com/, and if you choose to subscribe, please use my invite code: ${inviteCode}. Using that code allows me to stay informed on my players' recruiting journey and better support families throughout the process.`
+                  : `Hi parents. I wanted to share an optional resource that may be helpful for families with athletes interested in playing college football. URecruitHQ was created by parents who went through the process themselves and wanted a better way to stay organized around camps, dates, registrations, and recruiting movement. This is not required by our program. I am simply sharing it as a resource some families may find helpful. There is a free demo available at https://urecruithq.com/.`;
 
                 const SectionLabel = ({ children }) => (
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
