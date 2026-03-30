@@ -1335,7 +1335,7 @@ export default function CoachDashboard() {
                 : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 46, color: "#34d399", lineHeight: 1 }}>{playersWithAnyInterest ?? (roster.length > 0 ? "0" : "—")}</div>
               }
             </div>
-            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>Any signal</div>
+            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>players w/ a signal</div>
           </div>
 
           {/* 2. Players w/ True Traction */}
@@ -1352,7 +1352,7 @@ export default function CoachDashboard() {
                 : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 46, color: "#60a5fa", lineHeight: 1 }}>{programMetrics?.players_with_true_traction ?? (roster.length > 0 ? "0" : "—")}</div>
               }
             </div>
-            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>Verified contact</div>
+            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>verified coach contact</div>
           </div>
 
           {/* 3. Visits / Offers */}
@@ -1369,7 +1369,7 @@ export default function CoachDashboard() {
                 : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 46, color: "#f59e0b", lineHeight: 1 }}>{programMetrics ? programMetrics.offer_count + programMetrics.unofficial_visit_count + programMetrics.official_visit_count : (roster.length > 0 ? "0" : "—")}</div>
               }
             </div>
-            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>Visits + offers</div>
+            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>confirmed outcomes</div>
           </div>
 
           {/* 4. Colleges Engaging */}
@@ -1386,7 +1386,7 @@ export default function CoachDashboard() {
                 : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 46, color: "#a78bfa", lineHeight: 1 }}>{collegesEngagingProgramCount > 0 ? collegesEngagingProgramCount : (roster.length > 0 ? "0" : "—")}</div>
               }
             </div>
-            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>Unique colleges</div>
+            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>schools in pipeline</div>
           </div>
 
           {/* 5. Players Heating Up */}
@@ -1420,17 +1420,17 @@ export default function CoachDashboard() {
                 : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 46, color: "#e8a020", lineHeight: 1 }}>{repeatInterestCollegesCount > 0 ? repeatInterestCollegesCount : (roster.length > 0 ? "0" : "—")}</div>
               }
             </div>
-            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>Multiple athletes</div>
+            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>2+ athletes each</div>
           </div>
 
         </div>
       </section>
 
       {/* ── SECTION 3: PROGRAM RECRUITING SUMMARY ── */}
-      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+      <section style={{ padding: "0 24px 36px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: T.textPrimary }}>PROGRAM RECRUITING SUMMARY</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: T.textPrimary }}>PROGRAM RECRUITING SUMMARY</div>
           {journeyLoading && !programMetrics && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />}
         </div>
         <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 24px" }}>
@@ -1511,8 +1511,8 @@ export default function CoachDashboard() {
             const buildS2 = (qualifier = "") => {
               if (additionalColleges <= 0) {
                 const base = proofCollege
-                  ? `${proofCollege} represents the only confirmed school engagement in the pipeline at this time`
-                  : `No other schools are currently recorded as engaging the roster`;
+                  ? `${proofCollege} is the only school with engagement on record`
+                  : `No other schools are recorded as engaging the roster`;
                 return qualifier ? `${base}${qualifier}.` : `${base}.`;
               }
               const n         = additionalColleges;
@@ -1531,13 +1531,13 @@ export default function CoachDashboard() {
                         : "";
               let core;
               if (additionalAthleteCount >= 3) {
-                core = `In addition, ${schoolStr} have been active with ${additionalAthleteCount} athletes across the roster${sigSuffix}${recentSuffix}`;
+                core = `Beyond that, ${schoolStr} have been active across ${additionalAthleteCount} athletes on the roster${sigSuffix}${recentSuffix}`;
               } else if (additionalAthleteCount === 2) {
-                core = `In addition, ${schoolStr} have engaged two athletes${sigSuffix}${recentSuffix}`;
+                core = `Beyond that, ${schoolStr} have engaged two athletes on the roster${sigSuffix}${recentSuffix}`;
               } else if (additionalAthleteCount === 1 && n >= 2) {
-                core = `In addition, ${schoolStr} have been active, though most of that attention remains centered on one athlete rather than distributed across the roster${recentSuffix}`;
+                core = `Beyond that, ${schoolStr} have been active, though most attention remains centered on one athlete${recentSuffix}`;
               } else {
-                core = `In addition, ${schoolStr} have been active with the roster${sigSuffix}${recentSuffix}`;
+                core = `Beyond that, ${schoolStr} have been active with the roster${sigSuffix}${recentSuffix}`;
               }
               return qualifier ? `${core}${qualifier}.` : `${core}.`;
             };
@@ -1570,36 +1570,36 @@ export default function CoachDashboard() {
 
               if (tier === "commit") {
                 return broadDesc
-                  ? `At this stage, the program's recruiting profile reflects a signed commitment alongside ${broadDesc}.`
-                  : `At this stage, the signed commitment stands as the program's headline recruiting outcome with limited additional activity on the board.`;
+                  ? `The program's recruiting profile reflects a signed commitment alongside ${broadDesc}.`
+                  : `The signed commitment stands as the program's headline recruiting outcome, with limited additional activity logged.`;
               }
               if (tier === "offer") {
                 return broadDesc
-                  ? `The current recruiting picture reflects a confirmed scholarship offer as the headline outcome, supported by ${broadDesc}.`
-                  : `The current recruiting picture reflects a scholarship offer as the program's headline outcome, with limited broader activity logged at this stage.`;
+                  ? `The recruiting picture shows a scholarship offer as the headline outcome, with ${broadDesc}.`
+                  : `The recruiting picture shows a scholarship offer as the program's headline outcome, with limited broader activity logged.`;
               }
               if (tier === "official") {
                 return broadDesc
-                  ? `Overall, the program's recruiting activity reflects an official visit as its highest current milestone, supported by ${broadDesc}.`
-                  : `Overall, the official visit represents the program's highest current recruiting milestone, with limited additional contact on the board at this stage.`;
+                  ? `An official visit leads the program's current recruiting milestones, alongside ${broadDesc}.`
+                  : `An official visit is the program's highest recorded milestone, with limited additional contact on the board.`;
               }
               if (tier === "unofficial") {
                 return broadDesc
-                  ? `At this stage, the program's recruiting activity reflects one clear higher-end outcome supported by ${broadDesc}.`
-                  : `At this stage, the unofficial visit represents the program's highest current recruiting milestone, with no other confirmed direct contact on the board.`;
+                  ? `An unofficial visit leads the program's current recruiting activity, alongside ${broadDesc}.`
+                  : `An unofficial visit is the program's highest recorded milestone, with no other confirmed direct contact logged.`;
               }
               if (tier === "traction") {
                 return broadDesc
-                  ? `The current recruiting profile reflects direct personal contact at the higher end, with ${broadDesc} providing the broader base.`
-                  : `The current recruiting profile reflects direct personal contact as the program's highest-stage activity, with limited broader-roster engagement at this stage.`;
+                  ? `Direct coach contact leads the current recruiting profile, with ${broadDesc} across the broader roster.`
+                  : `Direct coach contact is the program's highest-stage recruiting activity, with limited broader engagement logged.`;
               }
               if (tier === "early") {
                 if (additionalColleges > 0) {
                   return distQual
-                    ? `Overall, the current recruiting picture reflects early-stage college interest ${distQual}, with no confirmed direct coach contact logged to date.`
-                    : `Overall, the current recruiting picture reflects early-stage college interest across the roster, with no confirmed direct coach contact logged to date.`;
+                    ? `The overall picture reflects early-stage college interest ${distQual}, with no direct coach contact confirmed yet.`
+                    : `The overall picture reflects early-stage college interest across the roster, with no direct coach contact confirmed yet.`;
                 }
-                return `Overall, the current recruiting picture reflects early-stage engagement with no direct coach contact on record at this stage.`;
+                return `The overall picture reflects early-stage engagement with no direct coach contact on record.`;
               }
               return "";
             };
@@ -1615,44 +1615,44 @@ export default function CoachDashboard() {
 
             if (commitCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} has committed to ${proofCollege}, representing the program's strongest confirmed recruiting outcome on the board.`
-                : `The program has a signed commitment on the board, its strongest confirmed recruiting outcome this cycle.`;
+                ? `${proofAthlete} has committed to ${proofCollege}, the program's headline recruiting outcome this cycle.`
+                : `The program has a signed commitment on the board, its headline recruiting outcome this cycle.`;
               s2 = buildS2();
               s3 = buildS3("commit");
 
             } else if (offerCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} currently holds a scholarship offer from ${proofCollege}, the program's highest confirmed recruiting outcome at this stage.`
+                ? `${proofAthlete} holds a scholarship offer from ${proofCollege}, the program's top confirmed outcome this cycle.`
                 : proofAthlete
-                  ? `${proofAthlete} holds a scholarship offer, the program's highest confirmed recruiting outcome this cycle.`
-                  : `The program has a scholarship offer on the board, its highest confirmed recruiting outcome this cycle.`;
+                  ? `${proofAthlete} holds a scholarship offer, the program's top confirmed outcome this cycle.`
+                  : `The program has a scholarship offer on the board, its top confirmed outcome this cycle.`;
               s2 = buildS2();
               s3 = buildS3("offer");
 
             } else if (officialVisitCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} currently has an official visit on record with ${proofCollege}, representing a significant milestone in the program's recruiting pipeline.`
-                : `The program has an official visit on record, representing its highest-stage recruiting contact this cycle.`;
+                ? `${proofAthlete} has an official visit on record with ${proofCollege}, a significant milestone in the program's recruiting pipeline.`
+                : `The program has an official visit on record, its highest-stage recruiting contact this cycle.`;
               s2 = buildS2();
               s3 = buildS3("official");
 
             } else if (unofficialVisitCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} currently has an unofficial visit on record with ${proofCollege}, a meaningful recruiting milestone for the program${trueTractionCount > 1 ? `, with direct coach contact confirmed at ${trueTractionCount} schools overall` : ""}.`
+                ? `${proofAthlete} has an unofficial visit on record with ${proofCollege}${trueTractionCount > 1 ? `, with direct coach contact across ${trueTractionCount} schools` : ""}, a meaningful milestone for the program.`
                 : `The program has an unofficial visit on record${trueTractionCount > 1 ? `, with direct coach contact confirmed at ${trueTractionCount} schools` : ""}, a meaningful recruiting milestone this cycle.`;
               s2 = buildS2();
               s3 = buildS3("unofficial");
 
             } else if (trueTractionCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} holds the program's highest current recruiting contact, with ${contactDesc} confirmed from ${proofCollege}.`
+                ? `${proofAthlete} leads the roster in recruiting contact, with ${contactDesc} confirmed from ${proofCollege}.`
                 : proofAthlete
                   ? `${proofAthlete} leads the roster in recruiting contact, with ${contactDesc} on record with at least one college.`
                   : `The program has ${contactDesc} on record at ${trueTractionCount} school${trueTractionCount !== 1 ? "s" : ""}.`;
               s2 = additionalColleges > 0
                 ? buildS2()
                 : proofCollege
-                  ? `${proofCollege} is the only school with direct contact on the board — no other schools have reached this level at this stage.`
+                  ? `${proofCollege} is the only school with direct contact on the board. No other schools have reached this level.`
                   : `No other schools have made direct coach contact with the roster at this stage.`;
               s3 = buildS3("traction");
 
@@ -1661,13 +1661,13 @@ export default function CoachDashboard() {
               s1 = isPersonal && proofAthlete && proofCollege
                 ? `${proofAthlete} leads the roster in direct college contact, with personal outreach on record from ${proofCollege}.`
                 : proofAthlete && proofCollege
-                  ? `${proofAthlete} is drawing the most college attention on the roster at this stage, with ${proofCollege} among the schools currently engaged.`
-                  : `The roster is drawing early college interest from ${totalColleges} school${totalColleges !== 1 ? "s" : ""}, with no direct coach contact confirmed to date.`;
+                  ? `${proofAthlete} leads the roster in college attention, with ${proofCollege} among the schools engaged.`
+                  : `The roster has early college interest from ${totalColleges} school${totalColleges !== 1 ? "s" : ""}, with no direct coach contact confirmed yet.`;
               s2 = additionalColleges > 0
                 ? buildS2("; no direct coach contact has been confirmed to date")
                 : totalColleges === 1 && proofCollege
-                  ? `${proofCollege} is the only school showing engagement at this stage, with no direct coach contact on record.`
-                  : `No direct coach contact has been confirmed across the roster at this stage.`;
+                  ? `${proofCollege} is the only school showing engagement, with no direct coach contact on record.`
+                  : `No direct coach contact has been confirmed across the roster yet.`;
               s3 = buildS3("early");
 
             } else {
@@ -1843,7 +1843,7 @@ export default function CoachDashboard() {
 
       {/* ── SECTION 6: COLLEGES ENGAGING THE PROGRAM ── */}
       {(collegesEngagingViewModel.length > 0 || journeyLoading) && (
-        <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <section style={{ padding: "0 24px 36px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <div style={{ width: 3, height: 24, background: "#a78bfa", borderRadius: 2 }} />
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: T.textPrimary }}>COLLEGES ENGAGING THE PROGRAM</div>
@@ -1996,17 +1996,59 @@ export default function CoachDashboard() {
         </section>
       )}
 
+      {/* ── SECTION: PLAYERS HEATING UP ── */}
+      {playersHeatingUpRows.length > 0 && (
+        <section style={{ padding: "0 24px 36px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+            <div style={{ width: 3, height: 24, background: "#fb923c", borderRadius: 2 }} />
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: T.textPrimary }}>PLAYERS HEATING UP</div>
+            <span style={{ fontSize: 11, color: "rgba(148,163,184,0.66)", fontWeight: 600 }}>recruiting momentum in the last 30 days</span>
+            <button
+              onClick={() => setOpenSheet("tile_heating_up")}
+              style={{ marginLeft: "auto", background: "none", border: "none", color: "#fb923c", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
+            >Full View →</button>
+          </div>
+          <div style={{ background: "#101A2B", border: "1px solid rgba(148,163,184,0.20)", borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 55px 1fr 110px", gap: 8, padding: "10px 20px", background: "#0C1524", borderBottom: "1px solid rgba(148,163,184,0.18)", fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.82)", textTransform: "uppercase", letterSpacing: "0.09em" }}>
+              <span>Athlete</span><span>Stage</span><span>Schools</span><span>Top College</span><span>Momentum</span>
+            </div>
+            {playersHeatingUpRows.slice(0, 8).map((r, i) => {
+              const _sc = { "Visit / Offer": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#a78bfa", "Watching": "#6b7280" }[r.currentStage] || "#6b7280";
+              const _mc = r.coachAttention === "High Priority" ? "#f87171" : r.coachAttention === "Heating Up" ? "#fb923c" : "#6b7280";
+              const _isLast = i === Math.min(playersHeatingUpRows.length, 8) - 1;
+              return (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 110px 55px 1fr 110px", gap: 8, padding: "12px 20px", borderBottom: !_isLast ? "1px solid rgba(148,163,184,0.1)" : "none", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "rgba(255,255,255,0.96)", fontSize: 14 }}>{r.athlete_name}</div>
+                    {r.athlete_grad_year && <div style={{ fontSize: 11, color: "rgba(148,163,184,0.55)" }}>'{String(r.athlete_grad_year).slice(-2)}</div>}
+                  </div>
+                  <div><span style={{ fontSize: 10, fontWeight: 700, color: _sc, background: `${_sc}14`, border: `1px solid ${_sc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{r.currentStage}</span></div>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: r.schoolsEngaging >= 3 ? "#e8a020" : "rgba(148,163,184,0.50)", lineHeight: 1 }}>{r.schoolsEngaging}</div>
+                  <div style={{ fontSize: 13, color: "rgba(148,163,184,0.80)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.topCollege}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: _mc }}>{r.coachAttention}</div>
+                </div>
+              );
+            })}
+            {playersHeatingUpRows.length > 8 && (
+              <div onClick={() => setOpenSheet("tile_heating_up")} style={{ padding: "10px 20px", textAlign: "center", fontSize: 12, color: "rgba(148,163,184,0.50)", borderTop: "1px solid rgba(148,163,184,0.14)", cursor: "pointer" }}>
+                +{playersHeatingUpRows.length - 8} more athletes
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* ── SECTION 8: RECENT RECRUITING ACTIVITY ── */}
       {(recentJourneyActivity.length > 0 || journeyLoading || Object.keys(athleteJourneys).length > 0) && (
         <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #1f2937" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: T.textSecondary }}>RECENT RECRUITING ACTIVITY</span>
-                <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>supporting evidence</span>
+                <div style={{ width: 3, height: 20, background: "#60a5fa", borderRadius: 2 }} />
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: T.textPrimary }}>RECENT RECRUITING ACTIVITY</span>
+                <span style={{ fontSize: 11, color: "rgba(148,163,184,0.55)", fontWeight: 600 }}>cross-roster activity log</span>
               </div>
-              {journeyLoading && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#6b7280", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
+              {journeyLoading && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
             </div>
             {recentJourneyActivity.length === 0 ? (
               <div style={{ padding: "28px 24px", textAlign: "center" }}>
@@ -2051,7 +2093,7 @@ export default function CoachDashboard() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <div style={{ width: 3, height: 24, background: "#f87171", borderRadius: 2 }} />
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: T.textPrimary }}>PLAYERS NEEDING ATTENTION</div>
-            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>stalled momentum or at-risk athletes</span>
+            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>recruiting momentum stalled or slowed</span>
           </div>
           <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 90px 110px 1fr 140px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
