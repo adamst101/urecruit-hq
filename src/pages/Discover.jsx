@@ -246,13 +246,20 @@ export default function Discover() {
   // readDemoMode() can have stale data before useSeasonAccess clears it.
   const isPaid = seasonMode === "paid" || seasonMode === "coach" || seasonMode === "coach_pending";
 
-  // Detect coach demo navigation (?demo=coach param set by CoachDashboard)
-  const isCoachDemo = new URLSearchParams(loc?.search || "").get("demo") === "coach";
+  // Parse the ?demo= URL param as the primary demo entry signal.
+  // URL param drives demo mode independently of auth state — a ?demo=coach
+  // URL always shows demo data even for authenticated/paid users.
+  const demoParam = useMemo(() => {
+    try { return new URLSearchParams(loc?.search || "").get("demo") || null; }
+    catch { return null; }
+  }, [loc?.search]);
+  const isCoachDemo = demoParam === "coach";
+  const isUserDemo  = demoParam === "user";
 
   // Read demo mode only for season year override (not for isPaid determination)
   const dm             = readDemoMode();           // null | { mode, seasonYear, setAt }
-  // isCoachDemo overrides isPaid so demo coaches always see demo-only camp data
-  const isDemoMode     = !isPaid || isCoachDemo;
+  // URL demo param takes priority: any ?demo= entry forces demo mode
+  const isDemoMode     = !isPaid || isCoachDemo || isUserDemo;
   const demoSeasonOverride = Number.isFinite(Number(dm?.seasonYear)) ? Number(dm.seasonYear) : null;
 
   const urlp = useMemo(() => getUrlParams(loc?.search || ""), [loc?.search]);
@@ -447,10 +454,11 @@ export default function Discover() {
 
   async function loadCamps() {
     // ── Demo path: curated static dataset, no DB query ───────────────────────
-    // Both demo coach (?demo=coach) and demo user (unpaid) use the same static
-    // camp records from demoCampData.js. loadDemoCamps() has its own cache so
-    // repeated calls are free after the first.
+    // Triggered by any ?demo= URL param OR by !isPaid (unauthenticated / free user).
+    // Pre-clears allRows synchronously before the async load so stale production
+    // data is never visible during the await. loadDemoCamps() is itself cached.
     if (isDemoMode) {
+      setAllRows([]);   // synchronous clear — prevent production rows from showing
       setIsLoading(true);
       setCampErr(null);
       try {
@@ -475,6 +483,7 @@ export default function Discover() {
     // ── Paid path: real Camp entity with module-level cache ──────────────────
     const now = Date.now();
     if (
+      !isDemoMode &&   // belt-and-suspenders: never serve production cache in demo mode
       _discoverCache.ts &&
       now - _discoverCache.ts < DISCOVER_CACHE_TTL &&
       _discoverCache.seasonYear === seasonYear &&
@@ -491,6 +500,14 @@ export default function Discover() {
     setCampErr(null);
 
     try {
+      // Absolute guard — if any demo signal is present, never query production camps.
+      // This catches any case where isDemoMode could be stale in a closure.
+      if (isDemoMode || isCoachDemo || isUserDemo) {
+        setAllRows([]);
+        setIsLoading(false);
+        return;
+      }
+
       const CampEntity = base44?.entities?.Camp;
       if (!CampEntity?.filter) {
         setAllRows([]);
@@ -632,7 +649,7 @@ export default function Discover() {
     if (seasonLoading) return;
     loadCamps();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seasonYear, isPaid, isCoachDemo, seasonLoading]);
+  }, [seasonYear, isPaid, isDemoMode, seasonLoading]);
 
   // Re-run loadIntents once athleteProfile becomes available.
   // loadCamps() fires as soon as seasonLoading resolves, but athleteProfile
