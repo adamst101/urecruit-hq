@@ -1052,7 +1052,111 @@ export default function CoachDashboard() {
         return { athlete: a.athlete, event: eventText, college: collegeText };
       });
 
-    // ── Narrative: specific, leadership-ready recruiting update ──────────
+    // ── Athlete narrative blocks: per-athlete period recruiting summary ─────
+    // One narrative block per athlete with activity in the period.
+    // Ordered strongest signal first. All meaningful contacts included.
+    const _SOCIAL_TYPES  = new Set(["social_like","social_follow"]);
+    const _INVITE_TYPES  = new Set(["camp_invite","generic_camp_invite","personal_camp_invite"]);
+    const _joinN = (arr) =>
+      arr.length === 1 ? arr[0]
+      : arr.length === 2 ? `${arr[0]} and ${arr[1]}`
+      : arr.slice(0,-1).join(", ") + ", and " + arr[arr.length - 1];
+
+    // Builds a readable phrase for one contact event
+    const _buildPhrase = (rank, evLabel, actType, school, coachName, coachTitle) => {
+      const cs = coachName
+        ? (coachTitle ? `${coachName}, ${coachTitle}` : coachName)
+        : null;
+      if (rank === 1) return school ? `committed to ${school}` : "committed to a program";
+      if (rank === 2) return cs && school ? `a scholarship offer from ${school}, extended by ${cs}`
+        : school ? `a scholarship offer from ${school}` : "a scholarship offer";
+      if (rank === 3) {
+        const v = evLabel === "official visit completed" ? "an official visit completion" : "an official visit request";
+        return school ? `${v} from ${school}` : v;
+      }
+      if (rank === 4) {
+        const v = evLabel === "unofficial visit completed" ? "an unofficial visit completion" : "an unofficial visit request";
+        return cs && school ? `${v} from ${school}, extended by ${cs}` : school ? `${v} from ${school}` : v;
+      }
+      if (rank === 5) return cs && school ? `direct contact from ${cs} at ${school}`
+        : school ? `direct personal contact from ${school}` : "direct personal contact";
+      if (rank === 6) {
+        const v = evLabel === "camp attendance" ? "camp attendance at" : "a camp registration at";
+        return school ? `${v} ${school}` : evLabel;
+      }
+      if (rank === 7) {
+        const m = evLabel === "phone call" ? "a phone call"
+          : evLabel === "personal email" ? "a personal email"
+          : evLabel === "direct message" ? "a direct message"
+          : evLabel === "text" ? "a text message"
+          : evLabel === "post-camp follow-up" ? "post-camp follow-up"
+          : "direct outreach";
+        return cs && school ? `${m} from ${cs} at ${school}` : school ? `${m} from ${school}` : m;
+      }
+      // Rank 99 semi-meaningful: camp invites, emails
+      if (_INVITE_TYPES.has(actType)) return school ? `a camp invite from ${school}` : "a camp invite";
+      if (["generic_email","personal_email"].includes(actType)) return school ? `an email from ${school}` : "an email from a program";
+      return null;
+    };
+
+    const _athleteBlockMap = {};
+    for (const rEntry of roster) {
+      const athleteActs = filtered.filter(a => a._account_id === rEntry.account_id);
+      if (athleteActs.length === 0) continue;
+      const seen = new Set();
+      const contacts = [];
+      const lightSchoolSet = new Set();
+
+      for (const act of [...athleteActs].sort((a, b) => PRIORITY_RANK(a) - PRIORITY_RANK(b))) {
+        const school  = (act.school_name || "").trim() || null;
+        const rank    = PRIORITY_RANK(act);
+        const evLabel = EVENT_LABEL(act);
+        const actType = act.activity_type || "";
+        const key     = `${school}|${rank <= 7 ? evLabel : actType}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (_SOCIAL_TYPES.has(actType)) { if (school) lightSchoolSet.add(school); continue; }
+        const phrase = _buildPhrase(rank, evLabel, actType, school,
+          (act.coach_name || "").trim() || null, (act.coach_title || "").trim() || null);
+        if (phrase !== null) contacts.push({ rank, phrase });
+      }
+
+      const lightSchools = [...lightSchoolSet];
+      if (contacts.length === 0 && lightSchools.length === 0) continue;
+
+      const sentences = [];
+      if (contacts.length > 0) {
+        const first = contacts[0];
+        sentences.push(first.rank === 1
+          ? `${first.phrase.charAt(0).toUpperCase() + first.phrase.slice(1)}.`
+          : `Received ${first.phrase}.`);
+        if (contacts.length === 2) {
+          sentences.push(`Also received ${contacts[1].phrase}.`);
+        } else if (contacts.length >= 3) {
+          sentences.push(`Additional contact included ${_joinN(contacts.slice(1).map(c => c.phrase))}.`);
+        }
+      }
+      if (lightSchools.length > 0) {
+        const sp = lightSchools.length === 1 ? lightSchools[0]
+          : lightSchools.length <= 2 ? _joinN(lightSchools)
+          : `${lightSchools.length} programs`;
+        sentences.push(contacts.length === 0
+          ? `Social engagement (likes, follows) was recorded from ${sp} during this period.`
+          : `Social engagement was also recorded from ${sp}.`);
+      }
+      if (sentences.length === 0) continue;
+
+      _athleteBlockMap[rEntry.account_id] = {
+        athleteName: rEntry.athlete_name || "Athlete",
+        narrative: sentences.join(" "),
+        topRank: contacts.length > 0 ? contacts[0].rank : 99,
+      };
+    }
+
+    const athleteNarrativeBlocks = Object.values(_athleteBlockMap)
+      .sort((a, b) => a.topRank - b.topRank || a.athleteName.localeCompare(b.athleteName));
+
+    // ── Period label + simple intro narrative ────────────────────────────
     const periodLabel =
       cuPeriod === "last_visit" ? "since your last visit" :
       cuPeriod === "60d" ? "over the last 60 days" :
@@ -1060,156 +1164,16 @@ export default function CoachDashboard() {
       "over the last 30 days";
     const capLabel = periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1);
 
-    // Broader signal types — used as fallback when intelligence rows are thin
-    const sigTypes = [];
-    if (filtered.some(a => ["dm_received","dm_sent"].includes(a.activity_type)))                                     sigTypes.push("direct messages");
-    if (filtered.some(a => ["text_received","text_sent"].includes(a.activity_type)))                                 sigTypes.push("texts");
-    if (filtered.some(a => ["generic_email","personal_email"].includes(a.activity_type)))                            sigTypes.push("emails");
-    if (filtered.some(a => ["social_follow"].includes(a.activity_type)))                                             sigTypes.push("follows");
-    if (filtered.some(a => ["social_like"].includes(a.activity_type)))                                               sigTypes.push("likes");
-    if (filtered.some(a => ["camp_invite","generic_camp_invite","personal_camp_invite"].includes(a.activity_type))) sigTypes.push("camp invites");
-    if (filtered.some(a => ["post_camp_followup_sent","post_camp_personal_response"].includes(a.activity_type)))    sigTypes.push("post-camp follow-up");
-    if (campRegCount > 0 && (majorCount > 0 || tractionAthletes > 0)) sigTypes.unshift(campNarrativePhrase(campRegCount));
-    const sigList = sigTypes.length === 0 ? "" :
-      sigTypes.length === 1 ? sigTypes[0] :
-      sigTypes.slice(0, -1).join(", ") + ", and " + sigTypes[sigTypes.length - 1];
-
     let narrative = "";
     if (filtered.length === 0 || !topRaw) {
       narrative = cuPeriod === "last_visit"
         ? "No new recruiting activity since your last visit."
         : "No new recruiting activity in this period.";
     } else {
-      const topRank       = PRIORITY_RANK(topRaw);
-      const topAthlete    = topRaw._athlete_name;
-      const topCollege    = (topRaw.school_name  || "").trim() || null;
-      const topCoach      = (topRaw.coach_name   || "").trim() || null;
-      const topCoachTitle = (topRaw.coach_title  || "").trim() || null;
-      // Natural contact string: "Coach Name, Title" or "Coach Name" or null
-      const topContact = topCoach
-        ? (topCoachTitle ? `${topCoach}, ${topCoachTitle}` : topCoach)
-        : null;
-
-      // ── S1: lead with the strongest event + available specificity ─────
-      let s1 = "";
-      if (topRank === 1) {
-        s1 = topCollege
-          ? `${capLabel}, ${topAthlete} committed to ${topCollege}.`
-          : `${capLabel}, ${topAthlete} has a commitment on the board.`;
-
-      } else if (topRank === 2) {
-        s1 = topCollege && topContact
-          ? `${capLabel}, ${topAthlete} received a scholarship offer from ${topCollege}, extended by ${topContact}.`
-          : topCollege
-            ? `${capLabel}, ${topAthlete} received a scholarship offer from ${topCollege}.`
-            : `${capLabel}, ${topAthlete} received a scholarship offer.`;
-
-      } else if (topRank === 3) {
-        const visitVerb = topRaw.activity_type === "official_visit_completed"
-          ? "completed an official visit" : "has an official visit on record";
-        s1 = topCollege
-          ? `${capLabel}, ${topAthlete} ${visitVerb} with ${topCollege}.`
-          : `${capLabel}, ${topAthlete} ${visitVerb}.`;
-
-      } else if (topRank === 4) {
-        const visitVerb = topRaw.activity_type === "unofficial_visit_completed"
-          ? `completed an unofficial visit to ${topCollege || "a college campus"}`
-          : `received an unofficial visit request from ${topCollege || "a college program"}`;
-        s1 = topContact && topCollege
-          ? `${capLabel}, ${topAthlete} ${visitVerb}, with the invitation extended by ${topContact}.`
-          : `${capLabel}, ${topAthlete} ${visitVerb}.`;
-
-      } else if (topRank === 5) {
-        // Direct personal contact — most useful place to name the coach
-        if (topContact && topCollege) {
-          s1 = `${capLabel}, ${topContact} at ${topCollege} made direct contact with ${topAthlete}.`;
-        } else if (topContact) {
-          s1 = `${capLabel}, ${topAthlete} received direct personal contact from ${topContact}.`;
-        } else {
-          s1 = topCollege
-            ? `${capLabel}, ${topAthlete} received direct personal contact from ${topCollege}.`
-            : `${capLabel}, ${topAthlete} drew direct personal contact from a college program.`;
-        }
-
-      } else if (topRank === 6) {
-        const regVerb = topRaw.activity_type === "camp_attended" ? "attended a camp" : "registered for a camp";
-        s1 = topCollege
-          ? `${capLabel}, ${topAthlete} ${regVerb} at ${topCollege}.`
-          : `${capLabel}, ${topAthlete} ${regVerb}.`;
-
-      } else {
-        // Personal outreach — DM, text, phone, post-camp; name the method and coach if known
-        const methodLabel =
-          topRaw.activity_type === "phone_call"           ? "a phone call"
-          : topRaw.activity_type === "personal_email"     ? "a personal email"
-          : ["post_camp_followup_sent","post_camp_personal_response"].includes(topRaw.activity_type)
-                                                          ? "post-camp follow-up"
-          : ["dm_received","dm_sent"].includes(topRaw.activity_type) ? "a direct message"
-          : ["text_received","text_sent"].includes(topRaw.activity_type) ? "a text message"
-          : "direct outreach";
-        if (topContact && topCollege) {
-          s1 = `${capLabel}, ${topAthlete} received ${methodLabel} from ${topContact} at ${topCollege}.`;
-        } else if (topCollege) {
-          s1 = `${capLabel}, ${topAthlete} received ${methodLabel} from ${topCollege}.`;
-        } else {
-          s1 = `${capLabel}, ${topAthlete} received ${methodLabel} from a college program.`;
-        }
-      }
-
-      // ── S2: secondary engagement — named schools + methods + coach when available ─
-      const secRows    = intelligenceRows.slice(1);
-      const secSchools = [...new Set(secRows.map(r => r.school).filter(Boolean))];
-      const namedSec   = secRows.find(r => r.coachName && r.school);
-      const secMethods = [...new Set(secRows.map(r => r.eventLabel))];
-      const secMethodStr = secMethods.length === 0 ? ""
-        : secMethods.length === 1 ? secMethods[0]
-        : secMethods.slice(0, -1).join(", ") + ", and " + secMethods[secMethods.length - 1];
-
-      let s2 = "";
-      if (namedSec) {
-        const coachStr = namedSec.coachTitle
-          ? `${namedSec.coachName}, ${namedSec.coachTitle}, at ${namedSec.school}`
-          : `${namedSec.coachName} at ${namedSec.school}`;
-        const otherSec = secSchools.filter(s => s !== namedSec.school);
-        if (otherSec.length === 1) {
-          s2 = `Additional contact included direct outreach from ${coachStr}, along with broader activity from ${otherSec[0]}.`;
-        } else if (otherSec.length > 1) {
-          s2 = `Additional contact included direct outreach from ${coachStr}, along with activity from ${otherSec.length} other programs.`;
-        } else {
-          s2 = `Additional contact included direct outreach from ${coachStr}.`;
-        }
-      } else if (secSchools.length >= 2) {
-        const schoolList = secSchools.length === 2
-          ? `${secSchools[0]} and ${secSchools[1]}`
-          : `${secSchools.slice(0, 2).join(", ")}, and ${secSchools.length - 2} other program${secSchools.length > 3 ? "s" : ""}`;
-        s2 = secMethodStr
-          ? `Additional engagement came from ${schoolList} through ${secMethodStr}.`
-          : `Additional engagement came from ${schoolList}.`;
-      } else if (secSchools.length === 1) {
-        s2 = secMethodStr
-          ? `Additional engagement came from ${secSchools[0]} through ${secMethodStr}.`
-          : `Additional engagement was also logged from ${secSchools[0]}.`;
-      } else if (sigList) {
-        s2 = `Additional broader engagement included ${sigList} from other programs across the roster.`;
-      }
-
-      // ── S3: distribution note — how concentrated vs spread is the activity ─
-      let s3 = "";
-      const _narrativeAthletes = new Set(intelligenceRows.map(r => r.athlete)).size;
-      if (intelligenceRows.length > 1) {
-        if (_narrativeAthletes === 1) {
-          s3 = `The strongest traction in this period remains centered on the same athlete rather than spread across the roster.`;
-        } else if (_narrativeAthletes === 2) {
-          s3 = `Recruiting attention in this period was split between two athletes.`;
-        } else if (_narrativeAthletes >= 3) {
-          s3 = `Activity during this period was distributed across ${_narrativeAthletes} athletes on the roster.`;
-        }
-      }
-
-      narrative = [s1, s2, s3].filter(Boolean).join(" ");
+      narrative = `${capLabel}, the following recruiting activity was recorded across the roster.`;
     }
 
-    return { cutoff, athleteCount, tractionAthletes, tractionSchools, majorCount, visitCount, offerCount, commitCount, campRegCount, campRegAthletes, campRowLabel, topColleges, narrative, detailLines, intelligenceRows, totalFiltered: filtered.length };
+    return { cutoff, athleteCount, tractionAthletes, tractionSchools, majorCount, visitCount, offerCount, commitCount, campRegCount, campRegAthletes, campRowLabel, topColleges, narrative, detailLines, intelligenceRows, athleteNarrativeBlocks, totalFiltered: filtered.length };
   })();
 
   // ── Players Needing Attention ─────────────────────────────────────────────
@@ -1722,49 +1686,21 @@ export default function CoachDashboard() {
             <div style={{ fontSize: 13, color: "#4b5563" }}>Loading…</div>
           ) : (
             <>
-              {/* Layer 1: Short narrative */}
+              {/* Intro line */}
               <p style={{ margin: "0 0 14px", fontSize: 14, color: coachUpdateData.totalFiltered > 0 ? "#d1d5db" : "#6b7280", lineHeight: 1.7 }}>
                 {coachUpdateData.narrative}
               </p>
 
-              {/* Layer 2: Intelligence rows — actionable per-school recruiting interactions */}
-              {coachUpdateData.intelligenceRows.length > 0 && (
-                <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 6 }}>
-                  {coachUpdateData.intelligenceRows.map((row, i) => (
+              {/* Per-athlete narrative blocks */}
+              {coachUpdateData.athleteNarrativeBlocks.length > 0 && (
+                <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {coachUpdateData.athleteNarrativeBlocks.map((block, i) => (
                     <div key={i} style={{ background: "rgba(148,163,184,0.05)", border: "1px solid rgba(148,163,184,0.12)", borderRadius: 9, padding: "10px 14px" }}>
-                      {/* Top line: school · athlete — signal badge + date */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden" }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: T.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {row.school || "—"}
-                          </span>
-                          <span style={{ fontSize: 11, color: T.textMuted, flexShrink: 0 }}>·</span>
-                          <span style={{ fontSize: 12, color: T.textSecondary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {row.athlete}
-                          </span>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, background: row.signalColor + "22", color: row.signalColor, borderRadius: 5, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                            {row.signalStrength}
-                          </span>
-                          <span style={{ fontSize: 11, color: T.textMuted }}>{row.date}</span>
-                        </div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.textPrimary, marginBottom: 4 }}>
+                        {block.athleteName}
                       </div>
-                      {/* Bottom line: event type · coach name — takeaway */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 12, color: "#d1d5db" }}>{row.eventLabel}</span>
-                          {row.coachName && (
-                            <span style={{ fontSize: 11, color: T.textMuted }}>
-                              · {row.coachName}{row.coachTitle ? `, ${row.coachTitle}` : ""}
-                            </span>
-                          )}
-                        </div>
-                        {row.takeaway && (
-                          <span style={{ fontSize: 10, fontWeight: 600, color: "#e8a020", flexShrink: 0, whiteSpace: "nowrap" }}>
-                            {row.takeaway} →
-                          </span>
-                        )}
+                      <div style={{ fontSize: 13, color: "#d1d5db", lineHeight: 1.6 }}>
+                        {block.narrative}
                       </div>
                     </div>
                   ))}
