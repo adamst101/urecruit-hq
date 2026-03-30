@@ -430,16 +430,35 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Coach / trainer link */}
-              <p style={{ fontSize: 13, color: "#4b5563", margin: "0 0 24px" }}>
-                Are you a coach or trainer?{" "}
-                <button
-                  onClick={() => nav("/CoachSignup")}
-                  style={{ background: "none", border: "none", color: "#6b7280", fontSize: 13, cursor: "pointer", textDecoration: "underline", padding: 0 }}
-                >
-                  Create a free coach account →
-                </button>
-              </p>
+              {/* Coach / trainer entry — two-path: demo first, signup second */}
+              <div style={{ borderTop: "1px solid #1a2535", paddingTop: 14, marginBottom: 24 }}>
+                <p style={{ fontSize: 11, color: "#4b5563", margin: "0 0 9px", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>
+                  Are you a coach or trainer?
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => nav("/CoachDashboard?demo=coach")}
+                    style={{
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.16)",
+                      color: "#cbd5e1",
+                      borderRadius: 8,
+                      padding: "7px 14px",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    View Coach Demo →
+                  </button>
+                  <button
+                    onClick={() => nav("/CoachSignup")}
+                    style={{ background: "none", border: "none", color: "#6b7280", fontSize: 13, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, padding: 0 }}
+                  >
+                    Create a free account
+                  </button>
+                </div>
+              </div>
 
               {/* Checkmark bullets */}
               {[
