@@ -971,6 +971,60 @@ export default function CoachDashboard() {
     const ranked = [...filtered].sort((a, b) => PRIORITY_RANK(a) - PRIORITY_RANK(b));
     const topRaw  = ranked.find(a => PRIORITY_RANK(a) < 99) || null;
 
+    // ── Signal strength label + color ─────────────────────────────────────
+    const SIGNAL_STRENGTH = (rank) => {
+      if (rank <= 4) return { label: "Outcome",  color: "#f59e0b" };
+      if (rank === 5) return { label: "Traction", color: "#60a5fa" };
+      if (rank <= 7)  return { label: "Personal", color: "#a78bfa" };
+      return              { label: "Light",    color: "#6b7280"  };
+    };
+
+    // ── Rule-based coach takeaway ─────────────────────────────────────────
+    // Only surfaces when data is strong enough to warrant a specific suggestion.
+    const TAKEAWAY = (act) => {
+      const t = act.activity_type || "";
+      if (COMMIT_TYPES.has(t)) return null; // done — no action needed
+      if (OFFER_TYPES.has(t))  return "Ask athlete about interest level";
+      if (t === "official_visit_completed" || t === "official_visit_requested")   return "Confirm athlete's plan with family";
+      if (t === "unofficial_visit_completed") return "Discuss visit experience with athlete";
+      if (t === "unofficial_visit_requested") return "Discuss visit request with athlete";
+      if (t === "post_camp_followup_sent" || t === "post_camp_personal_response") return "Encourage athlete to respond";
+      if (t === "camp_attended")              return "Encourage follow-up with coaching staff";
+      if ((act._traction_level ?? 0) >= 2)   return "Check in — ask what the coach said";
+      if (t === "phone_call")                 return "Ask athlete what was discussed";
+      if (t === "personal_email")             return "Confirm athlete replied";
+      if (["dm_received","dm_sent"].includes(t)) return "Confirm athlete replied";
+      return null;
+    };
+
+    // ── Intelligence rows: deduplicated per school–athlete–event type ─────
+    // Sorted by priority rank; capped at 6. Skips generic light signals (rank 99).
+    const _seenIntelKeys = new Set();
+    const intelligenceRows = [];
+    for (const act of ranked) {
+      const rank = PRIORITY_RANK(act);
+      if (rank === 99) continue;
+      if (intelligenceRows.length >= 6) break;
+      const school  = (act.school_name || "").trim();
+      const evLabel = EVENT_LABEL(act);
+      const key     = `${act._account_id}|${school}|${evLabel}`;
+      if (_seenIntelKeys.has(key)) continue;
+      _seenIntelKeys.add(key);
+      const dateStr = (act.activity_date || act.created_at || "").slice(0, 10);
+      const { label: sigLabel, color: sigColor } = SIGNAL_STRENGTH(rank);
+      intelligenceRows.push({
+        athlete:        act._athlete_name,
+        school:         school || null,
+        eventLabel:     evLabel,
+        signalStrength: sigLabel,
+        signalColor:    sigColor,
+        coachName:      (act.coach_name  || "").trim() || null,
+        coachTitle:     (act.coach_title || "").trim() || null,
+        date:           dateStr,
+        takeaway:       TAKEAWAY(act),
+      });
+    }
+
     // ── Detail lines: one line per athlete, events combined ───────────────
     const byAthlete = {};
     for (const act of ranked) {
@@ -1069,7 +1123,7 @@ export default function CoachDashboard() {
       narrative = s2 ? `${s1} ${s2}` : s1;
     }
 
-    return { cutoff, athleteCount, tractionAthletes, tractionSchools, majorCount, visitCount, offerCount, commitCount, campRegCount, campRegAthletes, campRowLabel, topColleges, narrative, detailLines, totalFiltered: filtered.length };
+    return { cutoff, athleteCount, tractionAthletes, tractionSchools, majorCount, visitCount, offerCount, commitCount, campRegCount, campRegAthletes, campRowLabel, topColleges, narrative, detailLines, intelligenceRows, totalFiltered: filtered.length };
   })();
 
   // ── Players Needing Attention ─────────────────────────────────────────────
@@ -1515,26 +1569,54 @@ export default function CoachDashboard() {
             <div style={{ fontSize: 13, color: "#4b5563" }}>Loading…</div>
           ) : (
             <>
-              {/* Narrative */}
-              <div style={{ marginBottom: 16 }}>
-                <p style={{ margin: 0, fontSize: 14, color: coachUpdateData.totalFiltered > 0 ? "#d1d5db" : "#6b7280", lineHeight: 1.7 }}>
-                  {coachUpdateData.narrative}
-                </p>
+              {/* Layer 1: Short narrative */}
+              <p style={{ margin: "0 0 14px", fontSize: 14, color: coachUpdateData.totalFiltered > 0 ? "#d1d5db" : "#6b7280", lineHeight: 1.7 }}>
+                {coachUpdateData.narrative}
+              </p>
 
-                {/* Detail lines */}
-                {coachUpdateData.detailLines.length > 0 && (
-                  <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-                    {coachUpdateData.detailLines.map((line, i) => (
-                      <div key={i} style={{ fontSize: 13, color: T.textSecondary }}>
-                        <span style={{ color: T.textPrimary, fontWeight: 600 }}>{line.athlete}</span>
-                        {" — "}
-                        <span style={{ color: "#d1d5db" }}>{line.event}</span>
-                        {line.college && <>{" — "}<span style={{ color: T.textSecondary }}>{line.college}</span></>}
+              {/* Layer 2: Intelligence rows — actionable per-school recruiting interactions */}
+              {coachUpdateData.intelligenceRows.length > 0 && (
+                <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 6 }}>
+                  {coachUpdateData.intelligenceRows.map((row, i) => (
+                    <div key={i} style={{ background: "rgba(148,163,184,0.05)", border: "1px solid rgba(148,163,184,0.12)", borderRadius: 9, padding: "10px 14px" }}>
+                      {/* Top line: school · athlete — signal badge + date */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden" }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: T.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {row.school || "—"}
+                          </span>
+                          <span style={{ fontSize: 11, color: T.textMuted, flexShrink: 0 }}>·</span>
+                          <span style={{ fontSize: 12, color: T.textSecondary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {row.athlete}
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, background: row.signalColor + "22", color: row.signalColor, borderRadius: 5, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                            {row.signalStrength}
+                          </span>
+                          <span style={{ fontSize: 11, color: T.textMuted }}>{row.date}</span>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      {/* Bottom line: event type · coach name — takeaway */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12, color: "#d1d5db" }}>{row.eventLabel}</span>
+                          {row.coachName && (
+                            <span style={{ fontSize: 11, color: T.textMuted }}>
+                              · {row.coachName}{row.coachTitle ? `, ${row.coachTitle}` : ""}
+                            </span>
+                          )}
+                        </div>
+                        {row.takeaway && (
+                          <span style={{ fontSize: 10, fontWeight: 600, color: "#e8a020", flexShrink: 0, whiteSpace: "nowrap" }}>
+                            {row.takeaway} →
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* 5 summary rows */}
               <div style={{ display: "flex", flexDirection: "column", gap: 0, borderTop: "1px solid #1f2937", paddingTop: 14 }}>
