@@ -77,24 +77,29 @@ export default function SchoolGroupCard({
 
   // Coach share-with-roster state
   const [sharePanelCampId, setSharePanelCampId] = useState(null);
+  const [sharePanelMode, setSharePanelMode] = useState("message"); // "message" | "recommend"
   const [shareRecipient, setShareRecipient] = useState("all");
   const [shareMsg, setShareMsg] = useState("");
   const [shareSending, setShareSending] = useState(false);
   const [shareSentFor, setShareSentFor] = useState(null); // campId that was just sent
 
-  function openSharePanel(camp) {
+  function openSharePanel(camp, mode = "message") {
     const campId = String(camp?.id ?? "");
-    if (sharePanelCampId === campId) {
+    if (sharePanelCampId === campId && sharePanelMode === mode) {
       setSharePanelCampId(null);
       return;
     }
     const startLabel = safeShortDate(camp.start_date) || "TBD";
     const city = [camp.city, camp.state].filter(Boolean).join(", ");
     const priceLabel = typeof camp.price === "number" && camp.price > 0 ? ` · $${camp.price}` : "";
-    const defaultMsg = `Check out this camp: ${camp.camp_name || "Camp"} at ${school_name}\n📅 ${startLabel}${city ? ` · 📍 ${city}` : ""}${priceLabel}\n\nRegister: ${camp.link_url || camp.source_url || "(see website)"}`;
+    const link = camp.link_url || camp.source_url || "(see website)";
+    const defaultMsg = mode === "recommend"
+      ? `I recommend checking out this camp: ${camp.camp_name || "Camp"} at ${school_name}\n📅 ${startLabel}${city ? ` · 📍 ${city}` : ""}${priceLabel}\n\nRegister here: ${link}`
+      : `Check out this camp: ${camp.camp_name || "Camp"} at ${school_name}\n📅 ${startLabel}${city ? ` · 📍 ${city}` : ""}${priceLabel}\n\nRegister: ${link}`;
     setShareRecipient("all");
     setShareMsg(defaultMsg);
     setSharePanelCampId(campId);
+    setSharePanelMode(mode);
     setShareSentFor(null);
   }
 
@@ -263,8 +268,9 @@ export default function SchoolGroupCard({
             const priceLabel = typeof camp.price === "number" && camp.price > 0 ? `$${camp.price}` : null;
             const campWarnings = getWarningsForCamp ? getWarningsForCamp(campId) : [];
 
-            const rowBg = isReg ? "#052e16" : (idx % 2 === 1 ? "rgba(15,23,42,0.4)" : "transparent");
-            const rowBorder = isReg ? "#10b981" : isFav ? "#e8a020" : "transparent";
+            // Coaches don't have personal registration/favorite states — suppress those row styles
+            const rowBg = (!isCoach && isReg) ? "#052e16" : (idx % 2 === 1 ? "rgba(15,23,42,0.4)" : "transparent");
+            const rowBorder = (!isCoach && isReg) ? "#10b981" : (!isCoach && isFav) ? "#e8a020" : "transparent";
             const shareOpen = sharePanelCampId === campId;
             const justSent = shareSentFor === campId;
 
@@ -290,22 +296,24 @@ export default function SchoolGroupCard({
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {/* Star — available for all users including coaches */}
-                    <button
-                      type="button"
-                      title={isFav ? "Remove from favorites" : "Add to favorites"}
-                      className={"h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937] " + (isFav ? "text-[#e8a020]" : "text-[#6b7280] hover:text-[#e8a020]")}
-                      style={{ background: "none", border: "none", cursor: "pointer", transition: "color 0.15s" }}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onFavoriteToggle?.(campId);
-                      }}
-                    >
-                      <span className="text-lg leading-none">
-                        {isFav ? "★" : "☆"}
-                      </span>
-                    </button>
+                    {/* Star — hidden for coach demo; shown for regular users */}
+                    {!isCoachDemo && (
+                      <button
+                        type="button"
+                        title={isFav ? "Remove from favorites" : "Add to favorites"}
+                        className={"h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937] " + (isFav ? "text-[#e8a020]" : "text-[#6b7280] hover:text-[#e8a020]")}
+                        style={{ background: "none", border: "none", cursor: "pointer", transition: "color 0.15s" }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onFavoriteToggle?.(campId);
+                        }}
+                      >
+                        <span className="text-lg leading-none">
+                          {isFav ? "★" : "☆"}
+                        </span>
+                      </button>
+                    )}
                     {/* Checkmark — hidden for coaches */}
                     {!isCoach && onRegisteredToggle && (
                       <button
@@ -334,38 +342,59 @@ export default function SchoolGroupCard({
                         ✓
                       </button>
                     )}
-                    {/* Register → opens Ryzer URL — shown for all users including coaches */}
-                    <button
-                      type="button"
-                      className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
-                      style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onRegisterClick?.(camp);
-                      }}
-                    >
-                      Register →
-                    </button>
-                    {/* Share with Roster — coaches only */}
-                    {isCoach && (
+                    {/* Register → opens Ryzer URL — shown for non-coach users */}
+                    {!isCoach && (
                       <button
                         type="button"
-                        className="text-xs h-7 px-3 rounded-md font-medium border"
-                        style={{
-                          background: shareOpen ? "#1e3a5f" : "none",
-                          borderColor: shareOpen ? "#3b82f6" : "#374151",
-                          color: shareOpen ? "#93c5fd" : "#9ca3af",
-                          cursor: "pointer",
-                        }}
+                        className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
+                        style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          openSharePanel(camp);
+                          onRegisterClick?.(camp);
                         }}
                       >
-                        {justSent ? "✓ Sent" : "Share with Roster"}
+                        Register →
                       </button>
+                    )}
+                    {/* Coach actions: Message Roster + Recommend Camp */}
+                    {isCoach && (
+                      <>
+                        <button
+                          type="button"
+                          className="text-xs h-7 px-3 rounded-md font-medium border"
+                          style={{
+                            background: (shareOpen && sharePanelMode === "recommend") ? "#1a2e1a" : "none",
+                            borderColor: (shareOpen && sharePanelMode === "recommend") ? "#4ade80" : "#374151",
+                            color: (shareOpen && sharePanelMode === "recommend") ? "#86efac" : "#9ca3af",
+                            cursor: "pointer",
+                          }}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openSharePanel(camp, "recommend");
+                          }}
+                        >
+                          Recommend
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs h-7 px-3 rounded-md font-medium border"
+                          style={{
+                            background: (shareOpen && sharePanelMode === "message") ? "#1e3a5f" : "none",
+                            borderColor: (shareOpen && sharePanelMode === "message") ? "#3b82f6" : "#374151",
+                            color: (shareOpen && sharePanelMode === "message") ? "#93c5fd" : "#9ca3af",
+                            cursor: "pointer",
+                          }}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openSharePanel(camp, "message");
+                          }}
+                        >
+                          {justSent ? "✓ Sent" : "Message Roster"}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -374,10 +403,12 @@ export default function SchoolGroupCard({
                 {isCoach && shareOpen && (
                   <div
                     className="px-5 py-4 border-t"
-                    style={{ background: "#0d1526", borderColor: "#1e3a5f" }}
+                    style={{ background: sharePanelMode === "recommend" ? "#0d1a0d" : "#0d1526", borderColor: sharePanelMode === "recommend" ? "#1a3a1a" : "#1e3a5f" }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="text-xs font-semibold text-[#93c5fd] mb-3">Share with Roster</div>
+                    <div className="text-xs font-semibold mb-3" style={{ color: sharePanelMode === "recommend" ? "#86efac" : "#93c5fd" }}>
+                      {sharePanelMode === "recommend" ? "Recommend to Roster" : "Message Roster"}
+                    </div>
 
                     {/* Recipient selector */}
                     <div className="mb-3">

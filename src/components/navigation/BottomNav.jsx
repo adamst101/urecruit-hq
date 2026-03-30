@@ -1,7 +1,7 @@
 // src/components/navigation/BottomNav.jsx
 import React, { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Search, CalendarDays, User, LayoutGrid, Heart } from "lucide-react";
+import { Search, CalendarDays, User, LayoutGrid, Heart, UserPlus } from "lucide-react";
 import { useSeasonAccess } from "../hooks/useSeasonAccess.jsx";
 
 const ROUTES = {
@@ -12,6 +12,7 @@ const ROUTES = {
   MyCamps: "/MyCamps",
   Profile: "/Profile",
   CoachProfile: "/CoachProfile",
+  CoachSignup: "/CoachSignup",
 };
 
 function isActivePath(pathname, target) {
@@ -26,19 +27,28 @@ export default function BottomNav() {
   const season = useSeasonAccess();
   const isCoach = season?.mode === "coach" || season?.mode === "coach_pending";
 
+  // Coach demo: unauthenticated user browsing via ?demo=coach
+  const isCoachDemo = new URLSearchParams(loc?.search || "").get("demo") === "coach";
+
   const hqRoute      = isCoach ? ROUTES.CoachDashboard : ROUTES.Workspace;
   const profileRoute = isCoach ? ROUTES.CoachProfile   : ROUTES.Profile;
 
-  const items = useMemo(
-    () => [
-      { label: "HQ",       to: hqRoute,      Icon: LayoutGrid },
+  const items = useMemo(() => {
+    if (isCoachDemo) {
+      return [
+        { label: "Coach HQ",  to: "/CoachDashboard?demo=coach", Icon: LayoutGrid },
+        { label: "Discover",  to: "/Discover?demo=coach",       Icon: Search },
+        { label: "Sign Up",   to: ROUTES.CoachSignup,           Icon: UserPlus },
+      ];
+    }
+    return [
+      { label: "HQ",       to: hqRoute,        Icon: LayoutGrid },
       { label: "Discover", to: ROUTES.Discover, Icon: Search },
       { label: "Calendar", to: ROUTES.Calendar, Icon: CalendarDays },
       { label: "My Camps", to: ROUTES.MyCamps,  Icon: Heart },
-      { label: "Profile",  to: profileRoute,  Icon: User },
-    ],
-    [hqRoute, profileRoute]
-  );
+      { label: "Profile",  to: profileRoute,    Icon: User },
+    ];
+  }, [isCoachDemo, hqRoute, profileRoute]);
 
   function handleNav(to) {
     // Don't re-navigate if already on the target route
