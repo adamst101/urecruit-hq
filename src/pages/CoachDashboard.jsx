@@ -1540,14 +1540,16 @@ export default function CoachDashboard() {
               </div>
             ) : (
               <>
-                {/* Column headers */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "10px 20px", borderBottom: "1px solid rgba(148,163,184,0.14)", fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.78)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                {/* Column header band — distinct surface */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "10px 20px", background: "#0C1524", borderBottom: "1px solid rgba(148,163,184,0.18)", fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.82)", textTransform: "uppercase", letterSpacing: "0.09em" }}>
                   <span>College</span><span>Athletes</span><span>Highest Stage</span><span>Last Activity</span><span>Repeat Interest</span><span></span>
                 </div>
 
                 {collegesEngagingViewModel.slice(0, 20).map((col, i) => {
                   const isExpanded = expandedCollege === col.college;
                   const isLast = i === Math.min(collegesEngagingViewModel.length, 20) - 1;
+                  const isEven = i % 2 === 1; // subtle alternating rhythm
+                  const rowBase = isExpanded ? "#162338" : isEven ? "rgba(255,255,255,0.015)" : "transparent";
                   const stageColors = { "Visit / Offer": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#a78bfa", "Watching": "#6b7280" };
                   const sc = stageColors[col.highestStage] || "#6b7280";
                   const athleteCount = col.athletesEngaged;
@@ -1559,9 +1561,9 @@ export default function CoachDashboard() {
                       {/* ── Collapsed summary row ── */}
                       <div
                         onClick={() => setExpandedCollege(isExpanded ? null : col.college)}
-                        style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "12px 20px", alignItems: "center", cursor: "pointer", background: isExpanded ? "#162338" : "transparent", transition: "background-color 180ms ease" }}
-                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = isExpanded ? "#162338" : "rgba(255,255,255,0.03)"; }}
-                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = isExpanded ? "#162338" : "transparent"; }}
+                        style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "12px 20px", alignItems: "center", cursor: "pointer", background: rowBase, transition: "background-color 180ms ease" }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = isExpanded ? "#162338" : "rgba(255,255,255,0.04)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBase; }}
                       >
                         {/* College name + secondary */}
                         <div style={{ minWidth: 0 }}>
@@ -1585,12 +1587,13 @@ export default function CoachDashboard() {
 
                       {/* ── Expanded detail band ── */}
                       <div style={{ maxHeight: isExpanded ? "900px" : "0px", overflow: "hidden", transition: "max-height 0.3s cubic-bezier(0.4,0,0.2,1)" }}>
-                        <div style={{ background: "#13243D", borderTop: "1px solid rgba(148,163,184,0.22)", borderBottom: "1px solid rgba(148,163,184,0.16)", borderLeft: "2px solid rgba(232,160,32,0.65)", padding: "0 20px 18px" }}>
-                          <div style={{ display: "flex", gap: 40, flexWrap: "wrap" }}>
+                        <div style={{ background: "#162B47", borderTop: "1px solid rgba(148,163,184,0.22)", borderBottom: "1px solid rgba(148,163,184,0.18)", borderLeft: "2px solid rgba(232,160,32,0.65)", padding: "0 20px 20px" }}>
+                          {/* Two-column layout — vertical divider between columns on desktop, stacks on mobile */}
+                          <div style={{ display: "flex", gap: 0, flexWrap: "wrap" }}>
 
                             {/* BLOCK 1 — COACHES */}
-                            <div style={{ flex: "1 1 220px", minWidth: 200 }}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.78)", textTransform: "uppercase", letterSpacing: "0.12em", padding: "14px 0 8px", borderBottom: "1px solid rgba(148,163,184,0.16)" }}>Coaches</div>
+                            <div style={{ flex: "1 1 220px", minWidth: 200, paddingRight: 28, borderRight: "1px solid rgba(148,163,184,0.12)" }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.82)", textTransform: "uppercase", letterSpacing: "0.13em", padding: "14px 0 8px", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>Coaches</div>
                               {col.coaches.length === 0 ? (
                                 <div style={{ fontSize: 12, color: "rgba(148,163,184,0.44)", fontStyle: "italic", padding: "10px 0" }}>No coach details logged yet</div>
                               ) : col.coaches.map((coach, ci) => (
@@ -1609,7 +1612,7 @@ export default function CoachDashboard() {
                                     });
                                     setOpenSheet("coach_contact");
                                   }}
-                                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ci < col.coaches.length - 1 ? "1px solid rgba(148,163,184,0.16)" : "none", cursor: "pointer", transition: "opacity 180ms ease" }}
+                                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ci < col.coaches.length - 1 ? "1px solid rgba(148,163,184,0.14)" : "none", cursor: "pointer", transition: "opacity 180ms ease" }}
                                   onMouseEnter={e => { e.currentTarget.style.opacity = "0.70"; }}
                                   onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
                                 >
@@ -1636,12 +1639,12 @@ export default function CoachDashboard() {
                             </div>
 
                             {/* BLOCK 2 — ATHLETES */}
-                            <div style={{ flex: "1 1 220px", minWidth: 200 }}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.78)", textTransform: "uppercase", letterSpacing: "0.12em", padding: "14px 0 8px", borderBottom: "1px solid rgba(148,163,184,0.16)" }}>Athletes</div>
+                            <div style={{ flex: "1 1 220px", minWidth: 200, paddingLeft: 28 }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.82)", textTransform: "uppercase", letterSpacing: "0.13em", padding: "14px 0 8px", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>Athletes</div>
                               {col.athletes.length === 0 ? (
                                 <div style={{ fontSize: 12, color: "rgba(148,163,184,0.44)", fontStyle: "italic", padding: "10px 0" }}>No athlete detail available</div>
                               ) : col.athletes.map((ath, ai) => (
-                                <div key={ai} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ai < col.athletes.length - 1 ? "1px solid rgba(148,163,184,0.16)" : "none" }}>
+                                <div key={ai} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ai < col.athletes.length - 1 ? "1px solid rgba(148,163,184,0.14)" : "none" }}>
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontWeight: 600, color: "rgba(255,255,255,0.96)", fontSize: 13 }}>
                                       {ath.name}
