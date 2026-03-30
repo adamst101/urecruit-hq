@@ -279,7 +279,7 @@ export default function CoachDashboard() {
   // ── Send message ────────────────────────────────────────────────────────────
   async function handleSendMessage(e) {
     e.preventDefault();
-    if (isDemoCoach) { setSendSuccess(true); setSubject(""); setMsgBody(""); setTimeout(() => setSendSuccess(false), 2500); return; }
+    if (isDemoCoach) return; // Demo: send button is disabled in UI; this is a safety guard only
     if (!msgBody.trim()) return;
     setSending(true);
     setSendError(null);
@@ -2559,7 +2559,7 @@ export default function CoachDashboard() {
                                 ))}
                               </div>
                               <button
-                                onClick={() => nav("/Discover")}
+                                onClick={() => nav(isDemoCoach ? "/Discover?demo=coach" : "/Discover")}
                                 style={{ marginTop: 10, fontSize: 12, fontWeight: 700, color: "#e8a020", background: "none", border: "1px solid #374151", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}
                               >
                                 Find Similar Camps →
@@ -2621,6 +2621,15 @@ export default function CoachDashboard() {
                   {/* Compose form */}
                   <div>
                     <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, marginBottom: 14, color: T.textSecondary }}>COMPOSE</div>
+                    {isDemoCoach && (
+                      <div style={{ background: "#111827", border: "1px solid #374151", borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: "#9ca3af", lineHeight: 1.55 }}>
+                        <span style={{ fontWeight: 700, color: "#e8a020" }}>Demo mode</span> — email sending is disabled.{" "}
+                        <button onClick={() => nav("/CoachSignup")} style={{ background: "none", border: "none", color: "#60a5fa", fontSize: 12, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+                          Create a free coach account
+                        </button>{" "}
+                        to message your roster.
+                      </div>
+                    )}
                     <form onSubmit={handleSendMessage} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                       <div>
                         <label style={{ display: "block", fontSize: 12, color: T.textSecondary, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>To</label>
@@ -2656,13 +2665,23 @@ export default function CoachDashboard() {
                       </div>
                       {sendError && <p style={{ fontSize: 13, color: "#fca5a5", margin: 0 }}>{sendError}</p>}
                       {sendSuccess && <p style={{ fontSize: 13, color: "#86efac", margin: 0 }}>✓ Message sent successfully</p>}
-                      <button
-                        type="submit"
-                        disabled={sending || !msgBody.trim()}
-                        style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "12px 20px", fontSize: 15, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer", opacity: sending || !msgBody.trim() ? 0.6 : 1 }}
-                      >
-                        {sending ? "Sending…" : recipient === "all" ? `Send to All ${roster.length} Athletes →` : `Send to ${roster.find(r => r.id === recipient)?.athlete_name || "Athlete"} →`}
-                      </button>
+                      {isDemoCoach ? (
+                        <button
+                          type="button"
+                          onClick={() => nav("/CoachSignup")}
+                          style={{ background: "#1f2937", color: "#9ca3af", border: "1px solid #374151", borderRadius: 8, padding: "12px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+                        >
+                          Sign up to send messages →
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          disabled={sending || !msgBody.trim()}
+                          style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "12px 20px", fontSize: 15, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer", opacity: sending || !msgBody.trim() ? 0.6 : 1 }}
+                        >
+                          {sending ? "Sending…" : recipient === "all" ? `Send to All ${roster.length} Athletes →` : `Send to ${roster.find(r => r.id === recipient)?.athlete_name || "Athlete"} →`}
+                        </button>
+                      )}
                     </form>
                   </div>
 
@@ -3030,6 +3049,17 @@ export default function CoachDashboard() {
                 return (
                   <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
 
+                    {/* ── Demo notice ── */}
+                    {isDemoCoach && (
+                      <div style={{ background: "#111827", border: "1px solid #374151", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "#9ca3af", lineHeight: 1.55 }}>
+                        <span style={{ fontWeight: 700, color: "#e8a020" }}>Demo mode</span> — the invite code and templates below are samples.{" "}
+                        <button onClick={() => nav("/CoachSignup")} style={{ background: "none", border: "none", color: "#60a5fa", fontSize: 12, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+                          Create a free coach account
+                        </button>{" "}
+                        to use your real invite code with families.
+                      </div>
+                    )}
+
                     {/* ── Invite Code ── */}
                     <div style={{ marginBottom: 24 }}>
                       <SectionLabel>Your Invite Code</SectionLabel>
@@ -3123,7 +3153,7 @@ export default function CoachDashboard() {
                       icon: "🏕️",
                       label: "Recommend Camps",
                       sub: "Browse by school, state, and date",
-                      action: () => { setOpenSheet(null); nav("/Discover"); },
+                      action: () => { setOpenSheet(null); nav(isDemoCoach ? "/Discover?demo=coach" : "/Discover"); },
                     },
                     {
                       icon: "👤",

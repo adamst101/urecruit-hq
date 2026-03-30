@@ -243,9 +243,13 @@ export default function Discover() {
   // readDemoMode() can have stale data before useSeasonAccess clears it.
   const isPaid = seasonMode === "paid" || seasonMode === "coach" || seasonMode === "coach_pending";
 
+  // Detect coach demo navigation (?demo=coach param set by CoachDashboard)
+  const isCoachDemo = new URLSearchParams(loc?.search || "").get("demo") === "coach";
+
   // Read demo mode only for season year override (not for isPaid determination)
   const dm             = readDemoMode();           // null | { mode, seasonYear, setAt }
-  const isDemoMode     = !isPaid;
+  // isCoachDemo overrides isPaid so demo coaches always see demo-only camp data
+  const isDemoMode     = !isPaid || isCoachDemo;
   const demoSeasonOverride = Number.isFinite(Number(dm?.seasonYear)) ? Number(dm.seasonYear) : null;
 
   const urlp = useMemo(() => getUrlParams(loc?.search || ""), [loc?.search]);
@@ -270,16 +274,16 @@ export default function Discover() {
 
   const isCoach = seasonMode === "coach" || seasonMode === "coach_pending";
 
-  // Load coach roster when in coach mode
+  // Load coach roster when in coach mode (skip for demo coach — no real profile exists)
   useEffect(() => {
-    if (!isCoach) return;
+    if (!isCoach || isCoachDemo) return;
     base44.functions.invoke("getMyCoachProfile", {})
       .then((res) => {
         const roster = Array.isArray(res?.data?.roster) ? res.data.roster : [];
         setCoachRoster(roster);
       })
       .catch(() => {});
-  }, [isCoach]);
+  }, [isCoach, isCoachDemo]);
 
   // Modal states
   const [conflictModal, setConflictModal] = useState({ open: false, warnings: [], campId: null, action: null });
