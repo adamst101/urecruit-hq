@@ -1583,85 +1583,77 @@ export default function CoachDashboard() {
                       </div>
 
                       {/* ── Expanded detail area ── */}
-                      <div style={{ maxHeight: isExpanded ? "900px" : "0px", overflow: "hidden", transition: "max-height 0.28s ease" }}>
-                        <div style={{ padding: "4px 20px 20px", borderTop: "1px solid #1a2535" }}>
-                          <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+                      <div style={{ maxHeight: isExpanded ? "900px" : "0px", overflow: "hidden", transition: "max-height 0.3s cubic-bezier(0.4,0,0.2,1)", background: "rgba(0,0,0,0.18)" }}>
+                        <div style={{ padding: "0 20px 18px", borderTop: "1px solid #161d2b" }}>
+                          <div style={{ display: "flex", gap: 40, flexWrap: "wrap" }}>
 
                             {/* BLOCK 1 — COACHES */}
                             <div style={{ flex: "1 1 220px", minWidth: 200 }}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10, marginTop: 14 }}>Coaches</div>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em", padding: "14px 0 8px", borderBottom: "1px solid #161d2b" }}>Coaches</div>
                               {col.coaches.length === 0 ? (
-                                <div style={{ fontSize: 12, color: "#374151", fontStyle: "italic" }}>No coach details logged yet</div>
-                              ) : (
-                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                  {col.coaches.map((coach, ci) => (
-                                    <div
-                                      key={ci}
-                                      onClick={e => {
-                                        e.stopPropagation();
-                                        setSelectedCoachContact({
-                                          name: coach.name,
-                                          title: coach.title,
-                                          twitter: coach.twitter,
-                                          collegeName: col.college,
-                                          athleteNames: coach.athleteIds.map(id => roster.find(r => r.account_id === id)?.athlete_name || "Athlete").filter(Boolean),
-                                          lastDate: coach.lastDate,
-                                          lastActivityType: coach.lastActivityType,
-                                        });
-                                        setOpenSheet("coach_contact");
-                                      }}
-                                      style={{ background: "#0d1421", border: "1px solid #1f2937", borderRadius: 10, padding: "10px 14px", cursor: "pointer", transition: "border-color 0.15s" }}
-                                      onMouseEnter={e => { e.currentTarget.style.borderColor = "#a78bfa"; }}
-                                      onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
-                                    >
-                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                                        <div style={{ minWidth: 0 }}>
-                                          <div style={{ fontWeight: 700, color: "#f9fafb", fontSize: 13 }}>{coach.name}</div>
-                                          {coach.title && <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{coach.title}</div>}
-                                          {coach.twitter && (
-                                            <a
-                                              href={`https://twitter.com/${coach.twitter}`}
-                                              onClick={e => e.stopPropagation()}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              style={{ fontSize: 11, color: "#60a5fa", textDecoration: "none", display: "inline-block", marginTop: 3 }}
-                                            >
-                                              @{coach.twitter}
-                                            </a>
-                                          )}
-                                        </div>
-                                        <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, whiteSpace: "nowrap", marginTop: 2 }}>Details →</div>
-                                      </div>
+                                <div style={{ fontSize: 12, color: "#374151", fontStyle: "italic", padding: "10px 0" }}>No coach details logged yet</div>
+                              ) : col.coaches.map((coach, ci) => (
+                                <div
+                                  key={ci}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    setSelectedCoachContact({
+                                      name: coach.name,
+                                      title: coach.title,
+                                      twitter: coach.twitter,
+                                      collegeName: col.college,
+                                      athleteNames: coach.athleteIds.map(id => roster.find(r => r.account_id === id)?.athlete_name || "Athlete").filter(Boolean),
+                                      lastDate: coach.lastDate,
+                                      lastActivityType: coach.lastActivityType,
+                                    });
+                                    setOpenSheet("coach_contact");
+                                  }}
+                                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ci < col.coaches.length - 1 ? "1px solid #161d2b" : "none", cursor: "pointer" }}
+                                  onMouseEnter={e => { e.currentTarget.style.opacity = "0.8"; }}
+                                  onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
+                                >
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontWeight: 600, color: "#e5e7eb", fontSize: 13 }}>{coach.name}</div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2, flexWrap: "wrap" }}>
+                                      {coach.title && <span style={{ fontSize: 11, color: "#6b7280" }}>{coach.title}</span>}
+                                      {coach.twitter && (
+                                        <a
+                                          href={`https://twitter.com/${coach.twitter}`}
+                                          onClick={e => e.stopPropagation()}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          style={{ fontSize: 11, color: "#60a5fa", textDecoration: "none" }}
+                                        >
+                                          @{coach.twitter}
+                                        </a>
+                                      )}
                                     </div>
-                                  ))}
+                                  </div>
+                                  <div style={{ fontSize: 11, color: "#6b7280", flexShrink: 0 }}>Details →</div>
                                 </div>
-                              )}
+                              ))}
                             </div>
 
                             {/* BLOCK 2 — ATHLETES */}
                             <div style={{ flex: "1 1 220px", minWidth: 200 }}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10, marginTop: 14 }}>Athletes</div>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em", padding: "14px 0 8px", borderBottom: "1px solid #161d2b" }}>Athletes</div>
                               {col.athletes.length === 0 ? (
-                                <div style={{ fontSize: 12, color: "#374151", fontStyle: "italic" }}>No athlete detail available</div>
-                              ) : (
-                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                  {col.athletes.map((ath, ai) => (
-                                    <div key={ai} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#0d1421", border: "1px solid #1a2535", borderRadius: 10 }}>
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 13 }}>
-                                          {ath.name}
-                                          {ath.gradYear && <span style={{ fontSize: 10, color: "#6b7280", marginLeft: 6 }}>'{String(ath.gradYear).slice(-2)}</span>}
-                                        </div>
-                                        {ath.topCoachName && <div style={{ fontSize: 11, color: "#4b5563", marginTop: 2 }}>via {ath.topCoachName}</div>}
-                                      </div>
-                                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
-                                        <span style={{ fontSize: 10, fontWeight: 700, color: ath.stageColor, background: `${ath.stageColor}14`, border: `1px solid ${ath.stageColor}30`, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{ath.stage}</span>
-                                        {ath.lastDate && <div style={{ fontSize: 10, color: "#4b5563" }}>{new Date(ath.lastDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>}
-                                      </div>
+                                <div style={{ fontSize: 12, color: "#374151", fontStyle: "italic", padding: "10px 0" }}>No athlete detail available</div>
+                              ) : col.athletes.map((ath, ai) => (
+                                <div key={ai} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ai < col.athletes.length - 1 ? "1px solid #161d2b" : "none" }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 600, color: "#e5e7eb", fontSize: 13 }}>
+                                      {ath.name}
+                                      {ath.gradYear && <span style={{ fontSize: 10, color: "#4b5563", marginLeft: 6 }}>'{String(ath.gradYear).slice(-2)}</span>}
                                     </div>
-                                  ))}
+                                    {ath.topCoachName && <div style={{ fontSize: 11, color: "#4b5563", marginTop: 2 }}>via {ath.topCoachName}</div>}
+                                  </div>
+                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: ath.stageColor, background: `${ath.stageColor}14`, border: `1px solid ${ath.stageColor}30`, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{ath.stage}</span>
+                                    {ath.lastDate && <div style={{ fontSize: 10, color: "#4b5563" }}>{new Date(ath.lastDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>}
+                                  </div>
                                 </div>
-                              )}
+                              ))}
                             </div>
 
                           </div>
