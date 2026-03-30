@@ -1707,17 +1707,19 @@ export default function CoachDashboard() {
                 </div>
               )}
 
-              {/* 5 summary rows */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 0, borderTop: "1px solid #1f2937", paddingTop: 14 }}>
+              {/* Period recap scoreboard */}
+              <div style={{ borderTop: "1px solid #1f2937", paddingTop: 16, display: "flex", flexDirection: "column", gap: 0 }}>
+
+                {/* Metric rows */}
                 {[
                   {
-                    label: "New athlete activity",
+                    label: "Athletes with new activity",
                     value: coachUpdateData.athleteCount,
                     sub: null,
                     color: coachUpdateData.athleteCount > 0 ? "#34d399" : "#374151",
                   },
                   {
-                    label: "New true traction",
+                    label: "Athletes with new traction",
                     value: coachUpdateData.tractionAthletes,
                     sub: coachUpdateData.tractionAthletes > 0 && coachUpdateData.tractionSchools > 1
                       ? `${coachUpdateData.tractionSchools} schools`
@@ -1742,27 +1744,36 @@ export default function CoachDashboard() {
                     sub: coachUpdateData.campRegAthletes > 1 ? `${coachUpdateData.campRegAthletes} athletes` : null,
                     color: coachUpdateData.campRegCount > 0 ? "#a78bfa" : "#374151",
                   },
-                ].map(({ label, value, sub, color }, idx) => (
-                  <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1f2937", gap: 8 }}>
-                    <span style={{ fontSize: 13, color: T.textMuted }}>{label}</span>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexShrink: 0 }}>
-                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color, lineHeight: 1 }}>{value}</span>
-                      {sub && <span style={{ fontSize: 11, color: "#4b5563" }}>{sub}</span>}
+                ].map(({ label, value, sub, color }) => (
+                  <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid #1a2535", gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: "#6b7280", letterSpacing: "0.01em" }}>{label}</span>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexShrink: 0 }}>
+                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color, lineHeight: 1 }}>{value}</span>
+                      {sub && <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 500 }}>{sub}</span>}
                     </div>
                   </div>
                 ))}
-                {/* Most active colleges — stacked list */}
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "8px 0", gap: 8 }}>
-                  <span style={{ fontSize: 13, color: T.textMuted, paddingTop: 2 }}>Most active colleges</span>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
-                    {coachUpdateData.topColleges.length > 0
-                      ? coachUpdateData.topColleges.map((col, i) => (
-                          <span key={i} style={{ fontSize: 13, fontWeight: 600, color: i === 0 ? "#e8a020" : "#9ca3af", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col}</span>
-                        ))
-                      : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#374151", lineHeight: 1 }}>0</span>
-                    }
+
+                {/* Most active programs — ranked sub-component */}
+                <div style={{ paddingTop: 14, marginTop: 2 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+                    Most active programs
                   </div>
+                  {coachUpdateData.topColleges.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {coachUpdateData.topColleges.map((col, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, color: i === 0 ? "#e8a020" : "#374151", lineHeight: 1, minWidth: 14, textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
+                          <div style={{ flex: 1, height: 1, background: i === 0 ? "rgba(232,160,32,0.15)" : "rgba(255,255,255,0.05)", flexShrink: 0 }} />
+                          <span style={{ fontSize: 13, fontWeight: 600, color: i === 0 ? "#e8a020" : i === 1 ? "#9ca3af" : "#6b7280", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 12, color: "#374151", fontStyle: "italic" }}>No program activity this period</span>
+                  )}
                 </div>
+
               </div>
             </>
           )}
