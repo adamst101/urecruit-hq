@@ -5,6 +5,7 @@ import { User, LogOut } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { clearSeasonAccessCache, useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { T } from "../lib/theme.js";
+import { DEMO_COACH_PROFILE, DEMO_JOURNEY_DATA } from "../lib/demoCoachData.js";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 const LOGO_URL = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -80,6 +81,7 @@ function CoachTile({ icon, title, desc, badge, onClick, active }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function CoachDashboard() {
   const nav = useNavigate();
+  const isDemoCoach = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "coach";
 
   const [coach, setCoach] = useState(null);
   const [roster, setRoster] = useState([]);
@@ -130,6 +132,11 @@ export default function CoachDashboard() {
 
   // ── Load recruiting journey data (non-blocking, called after loadCoach) ─────
   async function loadJourneyData() {
+    if (isDemoCoach) {
+      setAthleteJourneys(DEMO_JOURNEY_DATA.athleteJourneys);
+      setProgramMetrics(DEMO_JOURNEY_DATA.programMetrics);
+      return;
+    }
     if (_journeyCache) {
       setAthleteJourneys(_journeyCache.athleteJourneys);
       setProgramMetrics(_journeyCache.programMetrics);
@@ -160,6 +167,14 @@ export default function CoachDashboard() {
 
   // ── Load coach profile ──────────────────────────────────────────────────────
   async function loadCoach() {
+    if (isDemoCoach) {
+      const { coach: dCoach, roster: dRoster, messages: dMsgs, campsByAccountId: dCamps } = DEMO_COACH_PROFILE;
+      setCoach(dCoach);
+      setRoster(dRoster);
+      setCampsByAccountId(dCamps);
+      setMessages(dMsgs);
+      return dCoach;
+    }
     // If we have a cached profile from earlier in this session, use it immediately
     // so the UI shows correctly even when the auth token has expired mid-session.
     if (_coachCache) {
@@ -227,6 +242,7 @@ export default function CoachDashboard() {
 
   // ── Refresh roster (clears module cache so fresh data is fetched) ───────────
   async function handleRefresh() {
+    if (isDemoCoach) return; // Demo data is static
     _coachCache = null;
     _journeyCache = null;
     setLoading(true);
@@ -237,6 +253,7 @@ export default function CoachDashboard() {
 
   // ── Logout ──────────────────────────────────────────────────────────────────
   async function handleLogout() {
+    if (isDemoCoach) { window.location.assign("/Home"); return; }
     if (loggingOut) return;
     setLoggingOut(true);
     _coachCache = null;
@@ -258,6 +275,7 @@ export default function CoachDashboard() {
   // ── Send message ────────────────────────────────────────────────────────────
   async function handleSendMessage(e) {
     e.preventDefault();
+    if (isDemoCoach) { setSendSuccess(true); setSubject(""); setMsgBody(""); setTimeout(() => setSendSuccess(false), 2500); return; }
     if (!msgBody.trim()) return;
     setSending(true);
     setSendError(null);
@@ -1236,6 +1254,18 @@ export default function CoachDashboard() {
     <div style={{ background: T.pageBg, color: T.textPrimary, minHeight: "100vh", paddingBottom: 100, fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
       <style>{FONTS}</style>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      {/* ── DEMO BANNER ── */}
+      {isDemoCoach && (
+        <div style={{ background: "#1a2535", borderBottom: "2px solid #e8a020", padding: "9px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#e8a020", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            Demo Mode — Synthetic data only. No real coaches or athletes.
+          </span>
+          <a href="/CoachSignup" style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af", textDecoration: "underline", flexShrink: 0 }}>
+            Create a real account
+          </a>
+        </div>
+      )}
 
       {/* ── HEADER ── */}
       <section style={{ padding: "48px 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
