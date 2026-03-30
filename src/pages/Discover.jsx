@@ -18,6 +18,7 @@ import SchoolGroupCard from "../components/camps/SchoolGroupCard.jsx";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
 import { DEMO_COACH_PROFILE } from "../lib/demoCoachData.js";
+import { footballDemoSeasonYear } from "../components/utils/seasonEntitlements.jsx";
 
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
@@ -257,9 +258,12 @@ export default function Discover() {
   const seasonYear = useMemo(() => {
     if (urlp?.requestedSeason) return urlp.requestedSeason;
     if (isDemoMode && demoSeasonOverride) return demoSeasonOverride;
+    // Coach demo is unauthenticated — no accessSeasonYear. Use previous season
+    // to match the DemoCamp data that GenerateDemoCamps populates.
+    if (isCoachDemo) return footballDemoSeasonYear();
     if (accessSeasonYear) return accessSeasonYear;
     return footballSeasonYearForDate(new Date());
-  }, [urlp?.requestedSeason, isDemoMode, demoSeasonOverride, accessSeasonYear]);
+  }, [urlp?.requestedSeason, isDemoMode, demoSeasonOverride, isCoachDemo, accessSeasonYear]);
 
   const [isLoading, setIsLoading]         = useState(false);
   const [campErr, setCampErr]             = useState(null);
@@ -605,7 +609,7 @@ export default function Discover() {
     if (seasonLoading) return;
     loadCamps();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seasonYear, isPaid, seasonLoading]);
+  }, [seasonYear, isPaid, isCoachDemo, seasonLoading]);
 
   // Re-run loadIntents once athleteProfile becomes available.
   // loadCamps() fires as soon as seasonLoading resolves, but athleteProfile
