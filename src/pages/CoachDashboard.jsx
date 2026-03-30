@@ -1278,10 +1278,10 @@ export default function CoachDashboard() {
               + Invite Parents
             </button>
             <button
-              onClick={() => setOpenSheet("my_account")}
+              onClick={() => setOpenSheet("coach_tools")}
               style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", color: T.textSecondary, fontSize: 13, fontWeight: 600 }}
             >
-              My Account
+              ☰ Tools
             </button>
           </div>
         </div>
@@ -2171,35 +2171,6 @@ export default function CoachDashboard() {
         </section>
       )}
 
-      {/* ── UTILITY ACTIONS ── */}
-      <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-          <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: T.textMuted }}>QUICK ACTIONS</div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
-          {[
-            { icon: "💬", label: "Message Roster", sub: `${messages.length} sent`, sheet: "message" },
-            { icon: "🔗", label: "Invite Athletes", sub: coach.invite_code || "Share your invite code", sheet: "code" },
-            { icon: "🏕️", label: "Recommend Camps", sub: "Browse by school, state, date", nav: "/Discover" },
-          ].map(({ icon, label, sub, sheet, nav: navTo }) => (
-            <div
-              key={label}
-              onClick={() => navTo ? nav(navTo) : setOpenSheet(sheet)}
-              style={{ background: "#0d1421", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", transition: "border-color 0.15s" }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = "#374151"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
-            >
-              <span style={{ fontSize: 22, flexShrink: 0 }}>{icon}</span>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#d1d5db" }}>{label}</div>
-                <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2 }}>{sub}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* ── SHEET OVERLAY ── */}
       {openSheet && (
         <>
@@ -2237,6 +2208,7 @@ export default function CoachDashboard() {
                 {openSheet === "coach_contact"        && (selectedCoachContact ? `COACH — ${selectedCoachContact.name.toUpperCase()}` : "COACH CONTACT")}
                 {openSheet === "invite_parents"       && "INVITE PARENTS"}
                 {openSheet === "my_account"           && "MY ACCOUNT"}
+                {openSheet === "coach_tools"          && "TOOLS"}
               </div>
               <button
                 onClick={() => setOpenSheet(null)}
@@ -3001,6 +2973,57 @@ If you have any questions, feel free to reach out.
                   </>
                 );
               })()}
+
+              {/* ── Coach Tools sheet ── */}
+              {openSheet === "coach_tools" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {[
+                    {
+                      icon: "💬",
+                      label: "Message Roster",
+                      sub: `${messages.length} message${messages.length !== 1 ? "s" : ""} sent`,
+                      action: () => setOpenSheet("message"),
+                    },
+                    {
+                      icon: "🏕️",
+                      label: "Recommend Camps",
+                      sub: "Browse by school, state, and date",
+                      action: () => { setOpenSheet(null); nav("/Discover"); },
+                    },
+                    {
+                      icon: "👤",
+                      label: "My Account",
+                      sub: "Profile, linked athletes, email preferences",
+                      action: () => setOpenSheet("my_account"),
+                    },
+                  ].map(({ icon, label, sub, action }) => (
+                    <div
+                      key={label}
+                      onClick={action}
+                      style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid #1a2535", borderRadius: 11, cursor: "pointer", transition: "border-color 0.15s" }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = "#374151"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = "#1a2535"; }}
+                    >
+                      <span style={{ fontSize: 20, flexShrink: 0, lineHeight: 1 }}>{icon}</span>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "#d1d5db" }}>{label}</div>
+                        <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2 }}>{sub}</div>
+                      </div>
+                    </div>
+                  ))}
+
+                  <div style={{ borderTop: "1px solid #1f2937", marginTop: 8, paddingTop: 12 }}>
+                    <button
+                      onClick={handleLogout}
+                      disabled={loggingOut}
+                      style={{ background: "transparent", border: "1px solid #374151", borderRadius: 9, padding: "10px 18px", fontSize: 13, fontWeight: 600, color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                    >
+                      <LogOut style={{ width: 14, height: 14 }} />
+                      {loggingOut ? "Logging out…" : "Log out"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* ── My Account sheet ── */}
               {openSheet === "my_account" && (() => {
