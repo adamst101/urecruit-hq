@@ -1419,41 +1419,101 @@ export default function CoachDashboard() {
             const hasLightOnly   = _otherActTypes.size > 0 && [..._otherActTypes].every(t => _lightSig.has(t));
             const allEarlyStage  = _additionalRows.length > 0 && _additionalRows.every(r => r.highestLevel <= 1);
 
-            // ── Interpretive S2 builder ────────────────────────────────────
-            // Combines athlete distribution + signal quality into one readable sentence.
-            // Optional qualifier (e.g. "; no direct contact logged") appended before period.
+            // ── S2: broader engagement summary (executive phrasing) ──────
             const buildS2 = (qualifier = "") => {
               if (additionalColleges <= 0) {
                 const base = proofCollege
-                  ? `${proofCollege} is the only school in the pipeline right now`
-                  : `No other schools are engaging the roster right now`;
+                  ? `${proofCollege} represents the only confirmed school engagement in the pipeline at this time`
+                  : `No other schools are currently recorded as engaging the roster`;
                 return qualifier ? `${base}${qualifier}.` : `${base}.`;
               }
-              const schoolStr    = `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""}`;
-              const recentSuffix = hasRecent ? ` — ${recentCount} active in the last 30 days` : "";
+              const n         = additionalColleges;
+              const schoolStr = n === 1 ? "one additional school" : `${n} other schools`;
+              const recentSuffix = hasRecent ? `, with ${recentCount} active in the last 30 days` : "";
               const sigSuffix    = hasStrongOther
-                ? ", with some stronger contact signals in the mix"
+                ? ", including some stronger direct contact signals"
                 : hasMediumOther
-                  ? `, driven largely by ${earlyTypeDesc}`
+                  ? `, primarily through ${earlyTypeDesc}`
                   : hasLightOnly
-                    ? ", mostly early-stage awareness signals"
+                    ? ", largely through early-stage awareness signals"
                     : _otherActTypes.size > 0
                       ? ` through ${earlyTypeDesc}`
                       : allEarlyStage
-                        ? ", all still in early-stage engagement"
+                        ? ", all at an early-stage engagement level"
                         : "";
               let core;
               if (additionalAthleteCount >= 3) {
-                core = `Beyond that, ${schoolStr} are engaging ${additionalAthleteCount} athletes across the roster${sigSuffix}${recentSuffix}`;
+                core = `In addition, ${schoolStr} have been active with ${additionalAthleteCount} athletes across the roster${sigSuffix}${recentSuffix}`;
               } else if (additionalAthleteCount === 2) {
-                core = `Beyond that, ${schoolStr} are engaging 2 athletes${sigSuffix}${recentSuffix}`;
-              } else if (additionalAthleteCount === 1 && additionalColleges >= 2) {
-                core = `Beyond that, ${schoolStr} are active, though most of that attention is concentrated on one athlete rather than spread across the program${recentSuffix}`;
+                core = `In addition, ${schoolStr} have engaged two athletes${sigSuffix}${recentSuffix}`;
+              } else if (additionalAthleteCount === 1 && n >= 2) {
+                core = `In addition, ${schoolStr} have been active, though most of that attention remains centered on one athlete rather than distributed across the roster${recentSuffix}`;
               } else {
-                // Single additional college, or athlete data unavailable
-                core = `Beyond that, ${schoolStr} are engaging the roster${sigSuffix}${recentSuffix}`;
+                core = `In addition, ${schoolStr} have been active with the roster${sigSuffix}${recentSuffix}`;
               }
               return qualifier ? `${core}${qualifier}.` : `${core}.`;
+            };
+
+            // ── S3: neutral analytical conclusion (AD-ready executive tone) ─
+            // Reads like a short assessment of the program's overall recruiting profile.
+            // No action language — analytical interpretation only.
+            const buildS3 = (tier) => {
+              const distQual = additionalColleges > 0
+                ? additionalAthleteCount >= 3
+                  ? "distributed across multiple athletes"
+                  : additionalAthleteCount === 2
+                    ? "split across two athletes"
+                    : (additionalAthleteCount === 1 && additionalColleges >= 2)
+                      ? "still centered on one athlete rather than distributed across the roster"
+                      : null
+                : null;
+              const sigQual = hasStrongOther
+                ? "mixed broader engagement including stronger contact signals"
+                : hasMediumOther
+                  ? "a mix of personal outreach and lighter contact signals"
+                  : hasLightOnly
+                    ? "primarily early-stage awareness activity"
+                    : allEarlyStage
+                      ? "early-stage engagement"
+                      : "broader recruiting activity";
+              const broadDesc = distQual
+                ? `${sigQual} ${distQual}`
+                : additionalColleges > 0 ? `${sigQual} across the roster` : null;
+
+              if (tier === "commit") {
+                return broadDesc
+                  ? `At this stage, the program's recruiting profile reflects a signed commitment alongside ${broadDesc}.`
+                  : `At this stage, the signed commitment stands as the program's headline recruiting outcome with limited additional activity on the board.`;
+              }
+              if (tier === "offer") {
+                return broadDesc
+                  ? `The current recruiting picture reflects a confirmed scholarship offer as the headline outcome, supported by ${broadDesc}.`
+                  : `The current recruiting picture reflects a scholarship offer as the program's headline outcome, with limited broader activity logged at this stage.`;
+              }
+              if (tier === "official") {
+                return broadDesc
+                  ? `Overall, the program's recruiting activity reflects an official visit as its highest current milestone, supported by ${broadDesc}.`
+                  : `Overall, the official visit represents the program's highest current recruiting milestone, with limited additional contact on the board at this stage.`;
+              }
+              if (tier === "unofficial") {
+                return broadDesc
+                  ? `At this stage, the program's recruiting activity reflects one clear higher-end outcome supported by ${broadDesc}.`
+                  : `At this stage, the unofficial visit represents the program's highest current recruiting milestone, with no other confirmed direct contact on the board.`;
+              }
+              if (tier === "traction") {
+                return broadDesc
+                  ? `The current recruiting profile reflects direct personal contact at the higher end, with ${broadDesc} providing the broader base.`
+                  : `The current recruiting profile reflects direct personal contact as the program's highest-stage activity, with limited broader-roster engagement at this stage.`;
+              }
+              if (tier === "early") {
+                if (additionalColleges > 0) {
+                  return distQual
+                    ? `Overall, the current recruiting picture reflects early-stage college interest ${distQual}, with no confirmed direct coach contact logged to date.`
+                    : `Overall, the current recruiting picture reflects early-stage college interest across the roster, with no confirmed direct coach contact logged to date.`;
+                }
+                return `Overall, the current recruiting picture reflects early-stage engagement with no direct coach contact on record at this stage.`;
+              }
+              return "";
             };
 
             // ── Contact description for true-traction tier (no visit/offer) ─
@@ -1462,59 +1522,65 @@ export default function CoachDashboard() {
               ? "a personal camp invite"
               : "direct coach contact";
 
-            // ── Build sentence 1 and sentence 2 ───────────────────────────
-            let s1 = "", s2 = "";
+            // ── Build sentences 1, 2, 3 ───────────────────────────────────
+            let s1 = "", s2 = "", s3 = "";
 
             if (commitCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} has committed to ${proofCollege}, giving the program a signed commitment on the board.`
-                : `The program has a signed commitment on the board.`;
+                ? `${proofAthlete} has committed to ${proofCollege}, representing the program's strongest confirmed recruiting outcome on the board.`
+                : `The program has a signed commitment on the board, its strongest confirmed recruiting outcome this cycle.`;
               s2 = buildS2();
+              s3 = buildS3("commit");
 
             } else if (offerCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} currently has an offer from ${proofCollege}, the highest confirmed recruiting proof on the board.`
+                ? `${proofAthlete} currently holds a scholarship offer from ${proofCollege}, the program's highest confirmed recruiting outcome at this stage.`
                 : proofAthlete
-                  ? `${proofAthlete} has a scholarship offer on the board, the highest confirmed recruiting proof for the program this cycle.`
-                  : `The program has a scholarship offer on the board, the highest confirmed recruiting proof this cycle.`;
+                  ? `${proofAthlete} holds a scholarship offer, the program's highest confirmed recruiting outcome this cycle.`
+                  : `The program has a scholarship offer on the board, its highest confirmed recruiting outcome this cycle.`;
               s2 = buildS2();
+              s3 = buildS3("offer");
 
             } else if (officialVisitCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} currently has an official visit on record with ${proofCollege}, the program's highest-stage recruiting contact.`
-                : `The program has an official visit on record, the highest-stage recruiting contact logged this cycle.`;
+                ? `${proofAthlete} currently has an official visit on record with ${proofCollege}, representing a significant milestone in the program's recruiting pipeline.`
+                : `The program has an official visit on record, representing its highest-stage recruiting contact this cycle.`;
               s2 = buildS2();
+              s3 = buildS3("official");
 
             } else if (unofficialVisitCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} currently has an unofficial visit on record with ${proofCollege}${trueTractionCount > 1 ? `, and the program has direct coach contact confirmed at ${trueTractionCount} schools` : ""}.`
-                : `The program has an unofficial visit on record${trueTractionCount > 1 ? `, with direct coach contact confirmed at ${trueTractionCount} schools` : ""}.`;
+                ? `${proofAthlete} currently has an unofficial visit on record with ${proofCollege}, a meaningful recruiting milestone for the program${trueTractionCount > 1 ? `, with direct coach contact confirmed at ${trueTractionCount} schools overall` : ""}.`
+                : `The program has an unofficial visit on record${trueTractionCount > 1 ? `, with direct coach contact confirmed at ${trueTractionCount} schools` : ""}, a meaningful recruiting milestone this cycle.`;
               s2 = buildS2();
+              s3 = buildS3("unofficial");
 
             } else if (trueTractionCount > 0) {
               s1 = proofAthlete && proofCollege
-                ? `${proofAthlete} currently has the strongest recruiting contact in the program, with ${contactDesc} on record from ${proofCollege}.`
+                ? `${proofAthlete} holds the program's highest current recruiting contact, with ${contactDesc} confirmed from ${proofCollege}.`
                 : proofAthlete
-                  ? `${proofAthlete} has ${contactDesc} on record with at least one college, the strongest direct recruiting contact logged for the roster.`
+                  ? `${proofAthlete} leads the roster in recruiting contact, with ${contactDesc} on record with at least one college.`
                   : `The program has ${contactDesc} on record at ${trueTractionCount} school${trueTractionCount !== 1 ? "s" : ""}.`;
               s2 = additionalColleges > 0
                 ? buildS2()
                 : proofCollege
-                  ? `${proofCollege} is the only school with direct contact on the board — no other schools have made direct coach contact yet.`
-                  : `No other schools have made direct coach contact yet.`;
+                  ? `${proofCollege} is the only school with direct contact on the board — no other schools have reached this level at this stage.`
+                  : `No other schools have made direct coach contact with the roster at this stage.`;
+              s3 = buildS3("traction");
 
             } else if (anyInterest > 0) {
               const isPersonal = playersHeatingUpRows[0]?.currentStage === "Personal Signal";
               s1 = isPersonal && proofAthlete && proofCollege
-                ? `${proofAthlete} is drawing the most direct college contact on the roster, with personal outreach on record from ${proofCollege}.`
+                ? `${proofAthlete} leads the roster in direct college contact, with personal outreach on record from ${proofCollege}.`
                 : proofAthlete && proofCollege
-                  ? `${proofAthlete} is drawing the most early college interest on the roster, with ${proofCollege} engaging through ${earlyTypeDesc}.`
-                  : `The roster has early college interest from ${totalColleges} school${totalColleges !== 1 ? "s" : ""}, with no direct coach contact logged yet.`;
+                  ? `${proofAthlete} is drawing the most college attention on the roster at this stage, with ${proofCollege} among the schools currently engaged.`
+                  : `The roster is drawing early college interest from ${totalColleges} school${totalColleges !== 1 ? "s" : ""}, with no direct coach contact confirmed to date.`;
               s2 = additionalColleges > 0
-                ? buildS2("; no direct coach contact has been logged yet")
+                ? buildS2("; no direct coach contact has been confirmed to date")
                 : totalColleges === 1 && proofCollege
-                  ? `${proofCollege} is the only school showing interest so far, and no direct coach contact has been logged yet.`
-                  : `No direct coach contact has been logged yet across the roster.`;
+                  ? `${proofCollege} is the only school showing engagement at this stage, with no direct coach contact on record.`
+                  : `No direct coach contact has been confirmed across the roster at this stage.`;
+              s3 = buildS3("early");
 
             } else {
               s1 = `No college recruiting activity has been logged for the program yet.`;
@@ -1523,8 +1589,9 @@ export default function CoachDashboard() {
 
             return (
               <div style={{ fontSize: 14, color: T.textSecondary, lineHeight: 1.75 }}>
-                <p style={{ margin: "0 0 10px", color: "#d1d5db" }}>{s1}</p>
-                <p style={{ margin: 0 }}>{s2}</p>
+                <p style={{ margin: "0 0 8px", color: "#d1d5db" }}>{s1}</p>
+                {s2 && <p style={{ margin: s3 ? "0 0 8px" : "0" }}>{s2}</p>}
+                {s3 && <p style={{ margin: 0 }}>{s3}</p>}
               </div>
             );
           })()}
