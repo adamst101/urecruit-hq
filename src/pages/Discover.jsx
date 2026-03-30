@@ -196,7 +196,7 @@ function LogoAvatar({ schoolName, logoUrl }) {
   const showImg = !!logoUrl && !imgErr;
 
   return (
-    <div className="w-10 h-10 rounded-lg bg-[#0f172a] border border-[#1f2937] overflow-hidden flex items-center justify-center flex-shrink-0">
+    <div className="w-10 h-10 rounded-lg bg-ur-page border border-ur-border overflow-hidden flex items-center justify-center flex-shrink-0">
       {showImg ? (
         <img
           src={logoUrl}
@@ -206,7 +206,7 @@ function LogoAvatar({ schoolName, logoUrl }) {
           onError={() => setImgErr(true)}
         />
       ) : (
-        <div className="text-xs font-semibold text-[#9ca3af]">{initialBadge(schoolName)}</div>
+        <div className="text-xs font-semibold text-ur-secondary">{initialBadge(schoolName)}</div>
       )}
     </div>
   );
@@ -870,12 +870,12 @@ export default function Discover() {
   const CampList = () => {
     if (campErr) {
       return (
-        <Card className="p-5 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">Camps not available</div>
-          <div className="mt-1 text-sm text-[#9ca3af]">{campErr}</div>
+        <Card className="p-5 border-ur-border bg-ur-card">
+          <div className="text-lg font-semibold text-ur-primary">Camps not available</div>
+          <div className="mt-1 text-sm text-ur-secondary">{campErr}</div>
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={() => loadCamps()}>Retry</Button>
-            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={() => nav("/AdminOps")}>Open Admin Ops</Button>
+            <Button variant="outline" className="border-ur-border-input bg-transparent text-ur-primary hover:bg-ur-border" onClick={() => loadCamps()}>Retry</Button>
+            <Button variant="outline" className="border-ur-border-input bg-transparent text-ur-primary hover:bg-ur-border" onClick={() => nav("/AdminOps")}>Open Admin Ops</Button>
           </div>
         </Card>
       );
@@ -885,18 +885,18 @@ export default function Discover() {
       return (
         <div className="space-y-3">
           {[1, 2, 3, 4].map((n) => (
-            <Card key={n} className="p-4 border-[#1f2937] bg-[#111827]">
+            <Card key={n} className="p-4 border-ur-border bg-ur-card">
               <div className="animate-pulse">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-[#0f172a] border border-[#1f2937] flex-shrink-0" />
+                    <div className="w-10 h-10 rounded-lg bg-ur-page border border-ur-border flex-shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <div className="h-3 w-28 bg-[#1f2937] rounded" />
-                      <div className="mt-2 h-5 w-56 bg-[#1f2937] rounded" />
-                      <div className="mt-2 h-4 w-40 bg-[#1f2937] rounded" />
+                      <div className="h-3 w-28 bg-ur-border rounded" />
+                      <div className="mt-2 h-5 w-56 bg-ur-border rounded" />
+                      <div className="mt-2 h-4 w-40 bg-ur-border rounded" />
                     </div>
                   </div>
-                  <div className="h-9 w-9 bg-[#1f2937] rounded flex-shrink-0" />
+                  <div className="h-9 w-9 bg-ur-border rounded flex-shrink-0" />
                 </div>
               </div>
             </Card>
@@ -907,14 +907,14 @@ export default function Discover() {
 
     if (!schoolGroups.length) {
       return (
-        <Card className="p-5 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">No camps found</div>
-          <div className="mt-1 text-sm text-[#9ca3af]">
+        <Card className="p-5 border-ur-border bg-ur-card">
+          <div className="text-lg font-semibold text-ur-primary">No camps found</div>
+          <div className="mt-1 text-sm text-ur-secondary">
             No camps found for season {seasonYear} (or filters excluded them).
           </div>
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={clearFilters}>Clear filters</Button>
-            <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={() => setIsFiltersOpen(true)}>Edit filters</Button>
+            <Button variant="outline" className="border-ur-border-input bg-transparent text-ur-primary hover:bg-ur-border" onClick={clearFilters}>Clear filters</Button>
+            <Button className="bg-ur-amber text-ur-page hover:bg-ur-amber-hover" onClick={() => setIsFiltersOpen(true)}>Edit filters</Button>
           </div>
         </Card>
       );
@@ -966,7 +966,7 @@ export default function Discover() {
           <button
             type="button"
             onClick={() => setVisibleCount((c) => c + 50)}
-            className="w-full py-3 text-sm font-semibold text-[#e8a020] bg-[#111827] border border-[#1f2937] rounded-lg hover:bg-[#1f2937] transition-colors"
+            className="w-full py-3 text-sm font-semibold text-ur-amber bg-ur-card border border-ur-border rounded-lg hover:bg-ur-border transition-colors"
           >
             Load more ({filteredGroups.length - visibleCount} remaining)
           </button>
@@ -978,13 +978,13 @@ export default function Discover() {
   /* ─── render ──────────────────────────────────────────────────────────── */
 
   return (
-    <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
+    <div className="min-h-screen bg-ur-page text-ur-primary pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
         {/* ← HQ navigation */}
         <button
           type="button"
           onClick={() => nav(isCoach ? "/CoachDashboard" : "/Workspace")}
-          className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
+          className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
         >
           ← {isCoach ? "Coach HQ" : "HQ"}
         </button>
@@ -992,8 +992,8 @@ export default function Discover() {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-baseline gap-2">
-              <div className="text-2xl font-bold text-[#f9fafb]">Discover</div>
-              <span className="text-sm text-[#9ca3af]">{resultsCountLabel}</span>
+              <div className="text-2xl font-bold text-ur-primary">Discover</div>
+              <span className="text-sm text-ur-secondary">{resultsCountLabel}</span>
             </div>
           </div>
 
@@ -1006,7 +1006,7 @@ export default function Discover() {
               <button
                 key={k}
                 type="button"
-                className="text-xs px-2 py-1 rounded-full border border-[#374151] bg-[#111827] text-[#f9fafb] hover:bg-[#1f2937]"
+                className="text-xs px-2 py-1 rounded-full border border-ur-border-input bg-ur-card text-ur-primary hover:bg-ur-border transition-colors"
                 onClick={() => setIsFiltersOpen(true)}
               >
                 {chipsLabel(k)}
@@ -1014,7 +1014,7 @@ export default function Discover() {
             ))}
             <button
               type="button"
-              className="text-xs px-2 py-1 rounded-full border border-[#374151] bg-[#111827] hover:bg-[#1f2937] text-[#9ca3af]"
+              className="text-xs px-2 py-1 rounded-full border border-ur-border-input bg-ur-card hover:bg-ur-border text-ur-secondary transition-colors"
               onClick={clearFilters}
             >
               Clear
@@ -1064,13 +1064,13 @@ export default function Discover() {
             placeholder="Search schools…"
             value={schoolSearch}
             onChange={(e) => { setSchoolSearch(e.target.value); setVisibleCount(50); }}
-            className="w-full rounded-lg px-4 py-2 text-sm bg-[#1e293b] border border-[#2d4060] text-[#f9fafb] placeholder-[#6b7280] focus:outline-none focus:border-[#e8a020]"
+            className="w-full rounded-lg px-4 py-2 text-sm bg-ur-input border border-ur-border-input text-ur-primary placeholder-ur-muted focus:outline-none focus:border-ur-amber"
           />
           {schoolSearch && (
             <button
               type="button"
               onClick={() => setSchoolSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6b7280] hover:text-[#f9fafb] text-lg leading-none"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-ur-muted hover:text-ur-primary text-lg leading-none transition-colors"
             >
               ×
             </button>

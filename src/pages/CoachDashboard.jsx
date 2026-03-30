@@ -5,6 +5,7 @@ import { User, LogOut } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { clearSeasonAccessCache, useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import BottomNav from "../components/navigation/BottomNav.jsx";
+import { T } from "../lib/theme.js";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 const LOGO_URL = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -32,7 +33,7 @@ const SHEET_STYLES = `
       max-height: 80vh;
       border-radius: 16px;
       border-top: none;
-      border: 1px solid #374151;
+      border: 1px solid rgba(148,163,184,0.20);
       box-shadow: 0 24px 64px rgba(0,0,0,0.6);
     }
   }
@@ -64,8 +65,8 @@ function CoachTile({ icon, title, desc, badge, onClick, active }) {
     >
       <div>
         <div style={{ fontSize: 28, marginBottom: 12 }}>{icon}</div>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#f9fafb", letterSpacing: 1 }}>{title}</div>
-        <p style={{ fontSize: 15, color: "#9ca3af", marginTop: 8, lineHeight: 1.5, margin: "8px 0 0" }}>{desc}</p>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: T.textPrimary, letterSpacing: 1 }}>{title}</div>
+        <p style={{ fontSize: 15, color: T.textSecondary, marginTop: 8, lineHeight: 1.5, margin: "8px 0 0" }}>{desc}</p>
       </div>
       <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ color: "#e8a020", fontSize: 15, fontWeight: 700 }}>Open →</span>
@@ -296,7 +297,7 @@ export default function CoachDashboard() {
   // ── Loading spinner ─────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#0a0e1a", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", background: T.pageBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <style>{FONTS}</style>
         <div style={{ width: 32, height: 32, border: "2px solid #e8a020", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -309,7 +310,7 @@ export default function CoachDashboard() {
     const stillSetting = setupPolling && pollAttempts < 5;
     const isCoachRole = seasonMode === "coach" || seasonMode === "coach_pending" || seasonRole === "coach" || seasonRole === "coach_pending";
     return (
-      <div style={{ minHeight: "100vh", background: "#0a0e1a", color: "#f9fafb", fontFamily: "'DM Sans', system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ minHeight: "100vh", background: T.pageBg, color: T.textPrimary, fontFamily: "'DM Sans', system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <style>{FONTS}</style>
         <div style={{ maxWidth: 520, width: "100%", textAlign: "center" }}>
           <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 16, padding: "40px 32px" }}>
@@ -317,14 +318,14 @@ export default function CoachDashboard() {
               <>
                 <div style={{ width: 32, height: 32, border: "2px solid #e8a020", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 20px" }} />
                 <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-                <div style={{ fontSize: 17, fontWeight: 700, color: "#f9fafb", marginBottom: 8 }}>Finishing setup…</div>
-                <p style={{ fontSize: 14, color: "#9ca3af" }}>Your coach account is being created. This only takes a moment.</p>
+                <div style={{ fontSize: 17, fontWeight: 700, color: T.textPrimary, marginBottom: 8 }}>Finishing setup…</div>
+                <p style={{ fontSize: 14, color: T.textSecondary }}>Your coach account is being created. This only takes a moment.</p>
               </>
             ) : isCoachRole ? (
               <>
                 <div style={{ fontSize: 40, marginBottom: 16 }}>🎽</div>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "#f9fafb", marginBottom: 12, letterSpacing: 1 }}>Application Received</div>
-                <p style={{ fontSize: 15, color: "#9ca3af", lineHeight: 1.7, maxWidth: 380, margin: "0 auto 24px" }}>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: T.textPrimary, marginBottom: 12, letterSpacing: 1 }}>Application Received</div>
+                <p style={{ fontSize: 15, color: T.textSecondary, lineHeight: 1.7, maxWidth: 380, margin: "0 auto 24px" }}>
                   We verify all coaches before granting access — usually within 1 business day. You'll receive an email once approved.
                 </p>
                 <div style={{ textAlign: "left", maxWidth: 340, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -338,8 +339,8 @@ export default function CoachDashboard() {
             ) : (
               <>
                 <div style={{ fontSize: 40, marginBottom: 16 }}>🚫</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb", marginBottom: 12 }}>No Coach Account Found</div>
-                <p style={{ fontSize: 15, color: "#9ca3af", lineHeight: 1.6 }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: T.textPrimary, marginBottom: 12 }}>No Coach Account Found</div>
+                <p style={{ fontSize: 15, color: T.textSecondary, lineHeight: 1.6 }}>
                   Contact us at <a href="mailto:support@urecruithq.com" style={{ color: "#e8a020" }}>support@urecruithq.com</a>
                 </p>
               </>
@@ -355,12 +356,12 @@ export default function CoachDashboard() {
 
   if (isRejected) {
     return (
-      <div style={{ minHeight: "100vh", background: "#0a0e1a", color: "#f9fafb", fontFamily: "'DM Sans', system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ minHeight: "100vh", background: T.pageBg, color: T.textPrimary, fontFamily: "'DM Sans', system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <style>{FONTS}</style>
         <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 16, padding: "40px 32px", textAlign: "center", maxWidth: 420 }}>
           <div style={{ fontSize: 40, marginBottom: 16 }}>🚫</div>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Application Not Approved</div>
-          <p style={{ fontSize: 15, color: "#9ca3af", lineHeight: 1.6 }}>
+          <p style={{ fontSize: 15, color: T.textSecondary, lineHeight: 1.6 }}>
             Contact us at <a href="mailto:support@urecruithq.com" style={{ color: "#e8a020" }}>support@urecruithq.com</a> if you believe this is an error.
           </p>
         </div>
@@ -370,19 +371,19 @@ export default function CoachDashboard() {
 
   if (isPending) {
     return (
-      <div style={{ minHeight: "100vh", background: "#0a0e1a", color: "#f9fafb", fontFamily: "'DM Sans', system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ minHeight: "100vh", background: T.pageBg, color: T.textPrimary, fontFamily: "'DM Sans', system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <style>{FONTS}</style>
         <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 16, padding: "40px 32px", textAlign: "center", maxWidth: 420 }}>
           <div style={{ fontSize: 40, marginBottom: 16 }}>🕐</div>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, marginBottom: 8, letterSpacing: 1 }}>Pending Approval</div>
-          <p style={{ fontSize: 15, color: "#9ca3af", lineHeight: 1.6, marginBottom: 20 }}>
+          <p style={{ fontSize: 15, color: T.textSecondary, lineHeight: 1.6, marginBottom: 20 }}>
             Your application is under review. You'll receive an email once approved — usually within 1 business day.
           </p>
-          <div style={{ background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "14px 20px", display: "inline-block" }}>
-            <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Submitted as</div>
+          <div style={{ background: T.pageBg, border: "1px solid #374151", borderRadius: 8, padding: "14px 20px", display: "inline-block" }}>
+            <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 4 }}>Submitted as</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>{coach.first_name} {coach.last_name}</div>
             {coach.title && <div style={{ fontSize: 13, color: "#e8a020" }}>{coach.title}</div>}
-            <div style={{ fontSize: 13, color: "#9ca3af" }}>{coach.school_or_org} · {coach.sport}</div>
+            <div style={{ fontSize: 13, color: T.textSecondary }}>{coach.school_or_org} · {coach.sport}</div>
           </div>
         </div>
       </div>
@@ -1124,7 +1125,7 @@ export default function CoachDashboard() {
 
   // ── Full approved dashboard ─────────────────────────────────────────────────
   return (
-    <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", paddingBottom: 100, fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
+    <div style={{ background: T.pageBg, color: T.textPrimary, minHeight: "100vh", paddingBottom: 100, fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
       <style>{FONTS}</style>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
@@ -1136,13 +1137,13 @@ export default function CoachDashboard() {
             <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(32px, 5vw, 52px)", lineHeight: 1, margin: 0, letterSpacing: 1 }}>
               {dashTitle}
             </h1>
-            <p style={{ color: "#9ca3af", fontSize: 15, margin: "6px 0 0" }}>
+            <p style={{ color: T.textSecondary, fontSize: 15, margin: "6px 0 0" }}>
               {isTrainer
                 ? `Welcome back, Trainer ${coach.last_name}${coach.title ? ` · ${coach.title}` : ""}`
                 : "Program recruiting performance, player momentum, and college engagement across your roster"
               }
             </p>
-            <p style={{ color: "#6b7280", fontSize: 13, marginTop: 2 }}>
+            <p style={{ color: T.textMuted, fontSize: 13, marginTop: 2 }}>
               {coach.school_or_org}{coach.sport ? ` · ${coach.sport}` : ""}
               {(coach.phone || coach.website) && (
                 <>
@@ -1158,14 +1159,14 @@ export default function CoachDashboard() {
             <button
               onClick={handleRefresh}
               disabled={loading}
-              style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", color: "#9ca3af", fontSize: 13, fontWeight: 600 }}
+              style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", color: T.textSecondary, fontSize: 13, fontWeight: 600 }}
             >
               ↻ Refresh
             </button>
             <button
               onClick={handleLogout}
               disabled={loggingOut}
-              style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", color: "#9ca3af", fontSize: 13, fontWeight: 600 }}
+              style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", color: T.textSecondary, fontSize: 13, fontWeight: 600 }}
             >
               <LogOut style={{ width: 14, height: 14 }} />
               {loggingOut ? "Logging out…" : "Log out"}
@@ -1179,7 +1180,7 @@ export default function CoachDashboard() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(148px, 1fr))", gap: 12 }}>
           {/* 1. Players w/ Any Interest */}
           <div onClick={() => setOpenSheet("tile_any_interest")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#34d399"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players w/ Any Interest</div>
+            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players w/ Any Interest</div>
             {journeyLoading && playersWithAnyInterest === null ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
             ) : (
@@ -1191,7 +1192,7 @@ export default function CoachDashboard() {
           </div>
           {/* 2. Players w/ True Traction */}
           <div onClick={() => setOpenSheet("tile_true_traction")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#60a5fa"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players w/ True Traction</div>
+            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players w/ True Traction</div>
             {journeyLoading && !programMetrics ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#60a5fa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
             ) : (
@@ -1203,7 +1204,7 @@ export default function CoachDashboard() {
           </div>
           {/* 3. Visits / Offers */}
           <div onClick={() => setOpenSheet("tile_visits_offers")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#f59e0b"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Visits / Offers</div>
+            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Visits / Offers</div>
             {journeyLoading && !programMetrics ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
             ) : (
@@ -1215,7 +1216,7 @@ export default function CoachDashboard() {
           </div>
           {/* 4. Colleges Engaging Program */}
           <div onClick={() => setOpenSheet("tile_colleges")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#a78bfa"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Colleges Engaging Program</div>
+            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Colleges Engaging Program</div>
             {journeyLoading && !programMetrics ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
             ) : (
@@ -1227,7 +1228,7 @@ export default function CoachDashboard() {
           </div>
           {/* 5. Players Heating Up */}
           <div onClick={() => setOpenSheet("tile_heating_up")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#fb923c"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players Heating Up</div>
+            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Players Heating Up</div>
             {journeyLoading && playersHeatingUpCount === null ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#fb923c", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
             ) : (
@@ -1239,7 +1240,7 @@ export default function CoachDashboard() {
           </div>
           {/* 6. Repeat-Interest Colleges */}
           <div onClick={() => setOpenSheet("tile_repeat_colleges")} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 18px", cursor: "pointer", transition: "border-color 0.15s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}>
-            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Repeat-Interest Colleges</div>
+            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Repeat-Interest Colleges</div>
             {journeyLoading && !programMetrics ? (
               <div style={{ height: 40, display: "flex", alignItems: "center" }}><div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>
             ) : (
@@ -1256,7 +1257,7 @@ export default function CoachDashboard() {
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f9fafb" }}>PROGRAM RECRUITING SUMMARY</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: T.textPrimary }}>PROGRAM RECRUITING SUMMARY</div>
           {journeyLoading && !programMetrics && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />}
         </div>
         <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 24px" }}>
@@ -1392,7 +1393,7 @@ export default function CoachDashboard() {
             }
 
             return (
-              <div style={{ fontSize: 14, color: "#9ca3af", lineHeight: 1.75 }}>
+              <div style={{ fontSize: 14, color: T.textSecondary, lineHeight: 1.75 }}>
                 <p style={{ margin: "0 0 10px", color: "#d1d5db" }}>{s1}</p>
                 <p style={{ margin: 0 }}>{s2}</p>
               </div>
@@ -1405,7 +1406,7 @@ export default function CoachDashboard() {
       <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ width: 3, height: 20, background: "#34d399", borderRadius: 2 }} />
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f9fafb" }}>COACH UPDATE</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: T.textPrimary }}>COACH UPDATE</div>
           <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>recent recruiting changes in the selected period</span>
           {journeyLoading && Object.keys(athleteJourneys).length === 0 && (
             <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />
@@ -1449,11 +1450,11 @@ export default function CoachDashboard() {
                 {coachUpdateData.detailLines.length > 0 && (
                   <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
                     {coachUpdateData.detailLines.map((line, i) => (
-                      <div key={i} style={{ fontSize: 13, color: "#9ca3af" }}>
-                        <span style={{ color: "#f9fafb", fontWeight: 600 }}>{line.athlete}</span>
+                      <div key={i} style={{ fontSize: 13, color: T.textSecondary }}>
+                        <span style={{ color: T.textPrimary, fontWeight: 600 }}>{line.athlete}</span>
                         {" — "}
                         <span style={{ color: "#d1d5db" }}>{line.event}</span>
-                        {line.college && <>{" — "}<span style={{ color: "#9ca3af" }}>{line.college}</span></>}
+                        {line.college && <>{" — "}<span style={{ color: T.textSecondary }}>{line.college}</span></>}
                       </div>
                     ))}
                   </div>
@@ -1497,7 +1498,7 @@ export default function CoachDashboard() {
                   },
                 ].map(({ label, value, sub, color }, idx) => (
                   <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1f2937", gap: 8 }}>
-                    <span style={{ fontSize: 13, color: "#6b7280" }}>{label}</span>
+                    <span style={{ fontSize: 13, color: T.textMuted }}>{label}</span>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexShrink: 0 }}>
                       <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color, lineHeight: 1 }}>{value}</span>
                       {sub && <span style={{ fontSize: 11, color: "#4b5563" }}>{sub}</span>}
@@ -1506,7 +1507,7 @@ export default function CoachDashboard() {
                 ))}
                 {/* Most active colleges — stacked list */}
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "8px 0", gap: 8 }}>
-                  <span style={{ fontSize: 13, color: "#6b7280", paddingTop: 2 }}>Most active colleges</span>
+                  <span style={{ fontSize: 13, color: T.textMuted, paddingTop: 2 }}>Most active colleges</span>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
                     {coachUpdateData.topColleges.length > 0
                       ? coachUpdateData.topColleges.map((col, i) => (
@@ -1528,7 +1529,7 @@ export default function CoachDashboard() {
         <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <div style={{ width: 3, height: 24, background: "#a78bfa", borderRadius: 2 }} />
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>COLLEGES ENGAGING THE PROGRAM</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: T.textPrimary }}>COLLEGES ENGAGING THE PROGRAM</div>
             <span style={{ fontSize: 11, color: "rgba(148,163,184,0.66)", fontWeight: 600 }}>all signal levels · cross-roster · click to expand</span>
           </div>
           {/* Section shell */}
@@ -1685,14 +1686,14 @@ export default function CoachDashboard() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #1f2937" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#9ca3af" }}>RECENT RECRUITING ACTIVITY</span>
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: T.textSecondary }}>RECENT RECRUITING ACTIVITY</span>
                 <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>supporting evidence</span>
               </div>
               {journeyLoading && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#6b7280", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
             </div>
             {recentJourneyActivity.length === 0 ? (
               <div style={{ padding: "28px 24px", textAlign: "center" }}>
-                <p style={{ fontSize: 14, color: "#6b7280", margin: 0, lineHeight: 1.65 }}>{journeyLoading ? "Loading recruiting activity…" : "No recruiting activity logged yet."}</p>
+                <p style={{ fontSize: 14, color: T.textMuted, margin: 0, lineHeight: 1.65 }}>{journeyLoading ? "Loading recruiting activity…" : "No recruiting activity logged yet."}</p>
               </div>
             ) : (
               <>
@@ -1706,9 +1707,9 @@ export default function CoachDashboard() {
                   const tc = tierColors[tierLabel] || "#4b5563";
                   return (
                     <div key={act.id || i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px 100px 80px", gap: 8, padding: "10px 20px", borderBottom: i < arr.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#f9fafb" }}>{act._athlete_name}</div>
-                      <div style={{ fontSize: 13, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.school_name || "—"}</div>
-                      <div style={{ fontSize: 11, color: "#9ca3af" }}>{ACTIVITY_LABEL[act.activity_type] || act.activity_type}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.textPrimary }}>{act._athlete_name}</div>
+                      <div style={{ fontSize: 13, color: T.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.school_name || "—"}</div>
+                      <div style={{ fontSize: 11, color: T.textSecondary }}>{ACTIVITY_LABEL[act.activity_type] || act.activity_type}</div>
                       <div><span style={{ fontSize: 10, fontWeight: 700, color: tc, background: `${tc}14`, border: `1px solid ${tc}30`, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{tierLabel}</span></div>
                       <div style={{ fontSize: 11, color: "#4b5563" }}>{act.activity_date || (act.created_at || "").slice(0, 10) || "—"}</div>
                     </div>
@@ -1716,7 +1717,7 @@ export default function CoachDashboard() {
                 })}
                 {recentJourneyActivity.length > 5 && (
                   <div style={{ padding: "12px 20px", borderTop: "1px solid #1f2937", textAlign: "center" }}>
-                    <button onClick={() => setActivityExpanded(e => !e)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: "0.08em", textTransform: "uppercase", padding: "4px 12px" }}>
+                    <button onClick={() => setActivityExpanded(e => !e)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", padding: "4px 12px" }}>
                       {activityExpanded ? "SHOW LESS" : `VIEW ALL ACTIVITY (${recentJourneyActivity.length})`}
                     </button>
                   </div>
@@ -1732,7 +1733,7 @@ export default function CoachDashboard() {
         <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <div style={{ width: 3, height: 24, background: "#f87171", borderRadius: 2 }} />
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>PLAYERS NEEDING ATTENTION</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: T.textPrimary }}>PLAYERS NEEDING ATTENTION</div>
             <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>stalled momentum or at-risk athletes</span>
           </div>
           <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
@@ -1745,12 +1746,12 @@ export default function CoachDashboard() {
               return (
                 <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 90px 110px 1fr 140px", gap: 8, padding: "12px 20px", borderBottom: i < playersNeedingAttentionRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                   <div>
-                    <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{row.athlete_name || "Athlete"}</div>
-                    {row.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>'{String(row.athlete_grad_year).slice(-2)}</div>}
+                    <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{row.athlete_name || "Athlete"}</div>
+                    {row.athlete_grad_year && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>'{String(row.athlete_grad_year).slice(-2)}</div>}
                   </div>
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>{row.lastActivity ? new Date(row.lastActivity + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
-                  <div><span style={{ fontSize: 10, fontWeight: 600, color: "#9ca3af", background: "#1f2937", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.stage}</span></div>
-                  <div style={{ fontSize: 12, color: "#9ca3af" }}>{row.reason}</div>
+                  <div style={{ fontSize: 12, color: T.textMuted }}>{row.lastActivity ? new Date(row.lastActivity + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                  <div><span style={{ fontSize: 10, fontWeight: 600, color: T.textSecondary, background: "#1f2937", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.stage}</span></div>
+                  <div style={{ fontSize: 12, color: T.textSecondary }}>{row.reason}</div>
                   <div><span style={{ fontSize: 10, fontWeight: 700, color: ac, background: `${ac}14`, border: `1px solid ${ac}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.suggestedAction}</span></div>
                 </div>
               );
@@ -1768,11 +1769,11 @@ export default function CoachDashboard() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid #1f2937" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: "#6b7280" }}>ROSTER CAMP OVERVIEW</span>
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: T.textMuted }}>ROSTER CAMP OVERVIEW</span>
               </div>
               <button
                 onClick={() => setOpenSheet("roster")}
-                style={{ background: "none", border: "none", color: "#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
+                style={{ background: "none", border: "none", color: T.textMuted, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
               >
                 Full Roster →
               </button>
@@ -1794,7 +1795,7 @@ export default function CoachDashboard() {
                   return (
                     <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: "1fr 46px 90px 50px", gap: 8, padding: "10px 20px", borderBottom: i < Math.min(boardRoster.length, 8) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                       <div style={{ fontWeight: 500, color: "#d1d5db", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.athlete_name || "Athlete"}</div>
-                      <div style={{ fontSize: 12, color: "#6b7280" }}>{r.athlete_grad_year ? `'${String(r.athlete_grad_year).slice(-2)}` : "—"}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>{r.athlete_grad_year ? `'${String(r.athlete_grad_year).slice(-2)}` : "—"}</div>
                       <div style={{ fontSize: 12, color: nextCamp ? "#d1d5db" : "#4b5563" }}>
                         {nextCamp
                           ? <><div>{new Date(nextCamp.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
@@ -1808,7 +1809,7 @@ export default function CoachDashboard() {
                   );
                 })}
                 {boardRoster.length > 8 && (
-                  <div onClick={() => setOpenSheet("roster")} style={{ padding: "10px 20px", textAlign: "center", fontSize: 12, color: "#6b7280", fontWeight: 600, cursor: "pointer", borderTop: "1px solid #1f2937" }}>
+                  <div onClick={() => setOpenSheet("roster")} style={{ padding: "10px 20px", textAlign: "center", fontSize: 12, color: T.textMuted, fontWeight: 600, cursor: "pointer", borderTop: "1px solid #1f2937" }}>
                     View all {boardRoster.length} athletes →
                   </div>
                 )}
@@ -1824,9 +1825,9 @@ export default function CoachDashboard() {
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: "#6b7280" }}>UPCOMING CAMPS</span>
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: T.textMuted }}>UPCOMING CAMPS</span>
               </div>
-              <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 600 }}>View Month →</span>
+              <span style={{ fontSize: 12, color: T.textMuted, fontWeight: 600 }}>View Month →</span>
             </div>
             <div style={{ padding: "8px 0" }}>
               {nextCamps.length === 0 ? (
@@ -1834,12 +1835,12 @@ export default function CoachDashboard() {
               ) : (
                 nextCamps.map(({ athlete, camp, date }, i) => (
                   <div key={i} style={{ display: "flex", gap: 12, padding: "10px 20px", borderBottom: i < nextCamps.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                    <div style={{ background: "rgba(75,85,99,0.2)", color: "#6b7280", fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 8, textAlign: "center", flexShrink: 0, minWidth: 44 }}>
+                    <div style={{ background: "rgba(75,85,99,0.2)", color: T.textMuted, fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 8, textAlign: "center", flexShrink: 0, minWidth: 44 }}>
                       <div>{date.toLocaleDateString("en-US", { month: "short" })}</div>
                       <div style={{ fontSize: 15, lineHeight: 1 }}>{date.getDate()}</div>
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{camp.school_name || camp.host_org || camp.ryzer_program_name || camp.camp_name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: T.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{camp.school_name || camp.host_org || camp.ryzer_program_name || camp.camp_name}</div>
                       <div style={{ fontSize: 11, color: "#4b5563", marginTop: 1 }}>{athlete}</div>
                     </div>
                   </div>
@@ -1861,7 +1862,7 @@ export default function CoachDashboard() {
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: "#f9fafb" }}>RECENT MESSAGES</span>
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: T.textPrimary }}>RECENT MESSAGES</span>
               </div>
               <span style={{ fontSize: 12, color: "#e8a020", fontWeight: 600 }}>Compose + View →</span>
             </div>
@@ -1869,13 +1870,13 @@ export default function CoachDashboard() {
               {messages.slice(0, 3).map((m, i) => (
                 <div key={m.id || i} style={{ padding: "12px 20px", borderBottom: i < Math.min(messages.length, 3) - 1 ? "1px solid #1f2937" : "none" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 2 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                       → {m.recipient_name || "All Athletes"}
                     </span>
                     <span style={{ fontSize: 11, color: "#4b5563", flexShrink: 0 }}>{m.sent_at ? new Date(m.sent_at).toLocaleDateString() : ""}</span>
                   </div>
                   {m.subject && <div style={{ fontSize: 13, fontWeight: 600, color: "#d1d5db", marginBottom: 2 }}>{m.subject}</div>}
-                  <div style={{ fontSize: 13, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.message}</div>
+                  <div style={{ fontSize: 13, color: T.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.message}</div>
                 </div>
               ))}
             </div>
@@ -1887,7 +1888,7 @@ export default function CoachDashboard() {
       <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
           <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: "#6b7280" }}>QUICK ACTIONS</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: T.textMuted }}>QUICK ACTIONS</div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
           {[
@@ -1933,7 +1934,7 @@ export default function CoachDashboard() {
 
             {/* Sheet header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 0", position: "sticky", top: 0, background: "#111827", zIndex: 1 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f9fafb" }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: T.textPrimary }}>
                 {openSheet === "roster"               && `ATHLETE ROSTER — ${filteredRoster.length} OF ${roster.length}`}
                 {openSheet === "monthly"              && (monthlyView === "upcoming" ? "UPCOMING CAMPS" : `CAMP ACTIVITY — ${_monthName.toUpperCase()}`)}
                 {openSheet === "schools"              && `SCHOOLS ENGAGED — ${schoolRows.length}`}
@@ -1950,7 +1951,7 @@ export default function CoachDashboard() {
               </div>
               <button
                 onClick={() => setOpenSheet(null)}
-                style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 22, padding: "0 4px", lineHeight: 1, flexShrink: 0 }}
+                style={{ background: "none", border: "none", color: T.textSecondary, cursor: "pointer", fontSize: 22, padding: "0 4px", lineHeight: 1, flexShrink: 0 }}
                 aria-label="Close"
               >✕</button>
             </div>
@@ -1961,7 +1962,7 @@ export default function CoachDashboard() {
               {/* ── ROSTER SHEET ── */}
               {openSheet === "roster" && (
                 <>
-                  <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>
+                  <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>
                     Full roster view — track camp activity and follow up with athletes who need support.
                   </p>
                   {/* Filter chips */}
@@ -1989,14 +1990,14 @@ export default function CoachDashboard() {
                     <div style={{ textAlign: "center", padding: "32px 0" }}>
                       <div style={{ fontSize: 32, marginBottom: 10 }}>🏈</div>
                       {roster.length === 0
-                        ? <p style={{ fontSize: 14, color: "#9ca3af" }}>No athletes connected yet. Once athletes connect to your roster, you'll be able to track camps, activity, and who may need support.</p>
-                        : <p style={{ fontSize: 14, color: "#9ca3af" }}>No athletes match this filter.</p>
+                        ? <p style={{ fontSize: 14, color: T.textSecondary }}>No athletes connected yet. Once athletes connect to your roster, you'll be able to track camps, activity, and who may need support.</p>
+                        : <p style={{ fontSize: 14, color: T.textSecondary }}>No athletes match this filter.</p>
                       }
                     </div>
                   ) : (
                     <>
                       {/* Column headers */}
-                      <div style={{ display: "grid", gridTemplateColumns: "2fr 52px 80px 60px 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "2fr 52px 80px 60px 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                         <span>Athlete</span><span>Camps</span><span>Next Camp</span><span>Schools</span><span>Action</span>
                       </div>
                       {filteredRoster.map((r, i) => {
@@ -2013,9 +2014,9 @@ export default function CoachDashboard() {
                             <div>
                               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                 {noCamps && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#f87171", display: "inline-block", flexShrink: 0 }} title="Needs attention" />}
-                                <span style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{r.athlete_name || "Athlete"}</span>
+                                <span style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{r.athlete_name || "Athlete"}</span>
                               </div>
-                              {r.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>Class of {r.athlete_grad_year}</div>}
+                              {r.athlete_grad_year && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>Class of {r.athlete_grad_year}</div>}
                             </div>
                             <div style={{ fontSize: 14, fontWeight: 700, color: noCamps ? "#f87171" : "#e8a020", textAlign: "center" }}>
                               {athleteCamps.length}
@@ -2062,7 +2063,7 @@ export default function CoachDashboard() {
 
                 return (
                   <>
-                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>
                       {upcomingOnly ? "All upcoming camp activity across the roster." : `Camp activity across the roster for ${_monthName}.`}
                     </p>
                     {/* View toggle */}
@@ -2089,11 +2090,11 @@ export default function CoachDashboard() {
                       campGroups.length === 0 ? (
                         <div style={{ textAlign: "center", padding: "32px 0" }}>
                           <div style={{ fontSize: 32, marginBottom: 10 }}>📅</div>
-                          <p style={{ fontSize: 14, color: "#9ca3af" }}>No camp activity {upcomingOnly ? "upcoming" : "for this month"} yet. As athletes register for camps, this view will help you track who is going where and what needs follow-up.</p>
+                          <p style={{ fontSize: 14, color: T.textSecondary }}>No camp activity {upcomingOnly ? "upcoming" : "for this month"} yet. As athletes register for camps, this view will help you track who is going where and what needs follow-up.</p>
                         </div>
                       ) : (
                         <>
-                          <div style={{ display: "grid", gridTemplateColumns: "2fr 70px 100px 1fr", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "2fr 70px 100px 1fr", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                             <span>Camp</span><span>Date</span><span>Location</span><span>Athletes</span>
                           </div>
                           {campGroups.map(({ camp, athletes }, i) => {
@@ -2102,7 +2103,7 @@ export default function CoachDashboard() {
                             return (
                               <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 70px 100px 1fr", gap: 8, padding: "12px 0", borderBottom: i < campGroups.length - 1 ? "1px solid #1f2937" : "none", alignItems: "start" }}>
                                 <div>
-                                  <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 13, lineHeight: 1.3 }}>{camp.school_name || camp.camp_name}</div>
+                                  <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 13, lineHeight: 1.3 }}>{camp.school_name || camp.camp_name}</div>
                                   {days !== null && days >= 0 && days <= 14 && (
                                     <div style={{ fontSize: 10, color: days <= 7 ? "#f59e0b" : "#6b7280", marginTop: 2 }}>{days === 0 ? "Today" : `${days}d away`}</div>
                                   )}
@@ -2110,7 +2111,7 @@ export default function CoachDashboard() {
                                 <div style={{ fontSize: 12, color: "#d1d5db" }}>
                                   {d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                                 </div>
-                                <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                                <div style={{ fontSize: 12, color: T.textSecondary }}>
                                   {[camp.city, camp.state].filter(Boolean).join(", ") || "—"}
                                 </div>
                                 <div>
@@ -2127,7 +2128,7 @@ export default function CoachDashboard() {
                       byAthleteList.length === 0 ? (
                         <div style={{ textAlign: "center", padding: "32px 0" }}>
                           <div style={{ fontSize: 32, marginBottom: 10 }}>📅</div>
-                          <p style={{ fontSize: 14, color: "#9ca3af" }}>No camp activity {upcomingOnly ? "upcoming" : "this month"} yet.</p>
+                          <p style={{ fontSize: 14, color: T.textSecondary }}>No camp activity {upcomingOnly ? "upcoming" : "this month"} yet.</p>
                         </div>
                       ) : (
                         byAthleteList.map((r, i) => {
@@ -2138,9 +2139,9 @@ export default function CoachDashboard() {
                           }).sort((a, b) => new Date(a.start_date + "T00:00:00") - new Date(b.start_date + "T00:00:00"));
                           return (
                             <div key={r.id || i} style={{ padding: "12px 0", borderBottom: i < byAthleteList.length - 1 ? "1px solid #1f2937" : "none" }}>
-                              <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14, marginBottom: 6 }}>
+                              <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14, marginBottom: 6 }}>
                                 {r.athlete_name || "Athlete"}
-                                {r.athlete_grad_year && <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>Class of {r.athlete_grad_year}</span>}
+                                {r.athlete_grad_year && <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 8 }}>Class of {r.athlete_grad_year}</span>}
                               </div>
                               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                                 {camps.map((c, ci) => {
@@ -2172,14 +2173,14 @@ export default function CoachDashboard() {
                 schoolRows.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "32px 0" }}>
                     <div style={{ fontSize: 32, marginBottom: 10 }}>🏫</div>
-                    <p style={{ fontSize: 14, color: "#9ca3af" }}>No school activity tracked yet. As athletes save camps, register, and log activity, this view will show which programs are most connected to your roster.</p>
+                    <p style={{ fontSize: 14, color: T.textSecondary }}>No school activity tracked yet. As athletes save camps, register, and log activity, this view will show which programs are most connected to your roster.</p>
                   </div>
                 ) : (
                   <>
-                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>
                       Programs ranked by athlete engagement across the roster. Tap a school to see which athletes are connected.
                     </p>
-                    <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 60px 70px 50px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 60px 70px 50px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                       <span>#</span><span>School</span><span>Division</span><span>Regs</span><span>Athletes</span>
                     </div>
                     {schoolRows.map((s, i) => {
@@ -2193,18 +2194,18 @@ export default function CoachDashboard() {
                           >
                             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: i === 0 ? "#e8a020" : "#4b5563", textAlign: "center" }}>{i + 1}</div>
                             <div>
-                              <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{s.name}</div>
-                              <div style={{ fontSize: 10, color: "#6b7280", marginTop: 1 }}>{isExpanded ? "▲ collapse" : "▼ show athletes"}</div>
+                              <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{s.name}</div>
+                              <div style={{ fontSize: 10, color: T.textMuted, marginTop: 1 }}>{isExpanded ? "▲ collapse" : "▼ show athletes"}</div>
                             </div>
-                            <div style={{ fontSize: 11, color: "#6b7280" }}>{s.division || "—"}</div>
+                            <div style={{ fontSize: 11, color: T.textMuted }}>{s.division || "—"}</div>
                             <div style={{ textAlign: "center" }}>
                               <span style={{ background: "rgba(232,160,32,0.12)", color: "#e8a020", fontSize: 12, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>{s.count}</span>
                             </div>
-                            <div style={{ fontSize: 13, color: "#9ca3af", textAlign: "center" }}>{s.athletes.size}</div>
+                            <div style={{ fontSize: 13, color: T.textSecondary, textAlign: "center" }}>{s.athletes.size}</div>
                           </div>
                           {isExpanded && (
                             <div style={{ background: "#0d1421", borderRadius: 8, padding: "10px 14px", marginBottom: 8, borderBottom: i < schoolRows.length - 1 ? "1px solid #1f2937" : "none" }}>
-                              <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Athletes</div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Athletes</div>
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                                 {athleteList.map(name => (
                                   <span key={name} style={{ background: "#1f2937", color: "#d1d5db", fontSize: 12, padding: "4px 10px", borderRadius: 20 }}>{name}</span>
@@ -2230,28 +2231,28 @@ export default function CoachDashboard() {
                 attentionItems.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "32px 0" }}>
                     <div style={{ fontSize: 32, marginBottom: 10 }}>✅</div>
-                    <p style={{ fontSize: 14, color: "#9ca3af" }}>Nothing needs attention right now. This view will surface athletes and camp situations that may need follow-up.</p>
+                    <p style={{ fontSize: 14, color: T.textSecondary }}>Nothing needs attention right now. This view will surface athletes and camp situations that may need follow-up.</p>
                   </div>
                 ) : (
                   <>
-                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>
                       Athletes that may benefit from a check-in or follow-up, sorted by priority.
                     </p>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                       <span>Athlete</span><span>Issue</span><span>Action</span>
                     </div>
                     {attentionItems.map((item, i) => (
                       <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px", gap: 8, padding: "12px 0", borderBottom: i < attentionItems.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                         <div>
-                          <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{item.athlete.athlete_name || "Athlete"}</div>
-                          {item.athlete.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>Class of {item.athlete.athlete_grad_year}</div>}
+                          <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{item.athlete.athlete_name || "Athlete"}</div>
+                          {item.athlete.athlete_grad_year && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>Class of {item.athlete.athlete_grad_year}</div>}
                         </div>
                         <div>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
                             <span style={{ width: 7, height: 7, borderRadius: "50%", background: item.color, display: "inline-block", flexShrink: 0 }} />
                             <span style={{ fontSize: 13, fontWeight: 600, color: item.color }}>{item.issue}</span>
                           </div>
-                          <div style={{ fontSize: 12, color: "#6b7280" }}>{item.detail}</div>
+                          <div style={{ fontSize: 12, color: T.textMuted }}>{item.detail}</div>
                         </div>
                         <div>
                           <button
@@ -2272,14 +2273,14 @@ export default function CoachDashboard() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                   {/* Compose form */}
                   <div>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, marginBottom: 14, color: "#9ca3af" }}>COMPOSE</div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, marginBottom: 14, color: T.textSecondary }}>COMPOSE</div>
                     <form onSubmit={handleSendMessage} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                       <div>
-                        <label style={{ display: "block", fontSize: 12, color: "#9ca3af", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>To</label>
+                        <label style={{ display: "block", fontSize: 12, color: T.textSecondary, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>To</label>
                         <select
                           value={recipient}
                           onChange={e => setRecipient(e.target.value)}
-                          style={{ width: "100%", background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box" }}
+                          style={{ width: "100%", background: T.pageBg, border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: T.textPrimary, outline: "none", boxSizing: "border-box" }}
                         >
                           <option value="all">All Athletes ({roster.length})</option>
                           {roster.map(r => (
@@ -2288,22 +2289,22 @@ export default function CoachDashboard() {
                         </select>
                       </div>
                       <div>
-                        <label style={{ display: "block", fontSize: 12, color: "#9ca3af", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Subject (optional)</label>
+                        <label style={{ display: "block", fontSize: 12, color: T.textSecondary, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Subject (optional)</label>
                         <input
                           value={subject}
                           onChange={e => setSubject(e.target.value)}
                           placeholder="Subject…"
-                          style={{ width: "100%", background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box" }}
+                          style={{ width: "100%", background: T.pageBg, border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: T.textPrimary, outline: "none", boxSizing: "border-box" }}
                         />
                       </div>
                       <div>
-                        <label style={{ display: "block", fontSize: 12, color: "#9ca3af", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Message</label>
+                        <label style={{ display: "block", fontSize: 12, color: T.textSecondary, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Message</label>
                         <textarea
                           value={msgBody}
                           onChange={e => setMsgBody(e.target.value)}
                           placeholder="Write your message…"
                           required
-                          style={{ width: "100%", background: "#0a0e1a", border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: "#f9fafb", outline: "none", boxSizing: "border-box", resize: "vertical", minHeight: 100, fontFamily: "'DM Sans', system-ui" }}
+                          style={{ width: "100%", background: T.pageBg, border: "1px solid #374151", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: T.textPrimary, outline: "none", boxSizing: "border-box", resize: "vertical", minHeight: 100, fontFamily: "'DM Sans', system-ui" }}
                         />
                       </div>
                       {sendError && <p style={{ fontSize: 13, color: "#fca5a5", margin: 0 }}>{sendError}</p>}
@@ -2321,7 +2322,7 @@ export default function CoachDashboard() {
                   {/* Sent history */}
                   {messages.length > 0 && (
                     <div>
-                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, marginBottom: 14, color: "#9ca3af" }}>SENT ({messages.length})</div>
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, marginBottom: 14, color: T.textSecondary }}>SENT ({messages.length})</div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                         {messages.map((m, i) => (
                           <div key={m.id || i} style={{ padding: "12px 0", borderBottom: i < messages.length - 1 ? "1px solid #1f2937" : "none" }}>
@@ -2329,11 +2330,11 @@ export default function CoachDashboard() {
                               <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>→ {m.recipient_name}</div>
                             )}
                             {!m.recipient_name && !m.recipient_athlete_id && (
-                              <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>→ All Athletes</div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>→ All Athletes</div>
                             )}
-                            {m.subject && <div style={{ fontSize: 14, fontWeight: 600, color: "#f9fafb", marginBottom: 4 }}>{m.subject}</div>}
-                            <div style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.message}</div>
-                            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{m.sent_at ? new Date(m.sent_at).toLocaleString() : ""}</div>
+                            {m.subject && <div style={{ fontSize: 14, fontWeight: 600, color: T.textPrimary, marginBottom: 4 }}>{m.subject}</div>}
+                            <div style={{ fontSize: 13, color: T.textSecondary, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.message}</div>
+                            <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>{m.sent_at ? new Date(m.sent_at).toLocaleString() : ""}</div>
                           </div>
                         ))}
                       </div>
@@ -2365,23 +2366,23 @@ export default function CoachDashboard() {
                   return (so[a.stage] ?? 3) - (so[b.stage] ?? 3) || (b.lastDate || "").localeCompare(a.lastDate || "");
                 });
                 return rows.length === 0 ? (
-                  <p style={{ fontSize: 14, color: "#6b7280" }}>No athletes with recruiting interest logged yet.</p>
+                  <p style={{ fontSize: 14, color: T.textMuted }}>No athletes with recruiting interest logged yet.</p>
                 ) : (
                   <>
-                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>All athletes with at least one recruiting signal from any college.</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "2fr 110px 50px 1fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>All athletes with at least one recruiting signal from any college.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 110px 50px 1fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                       <span>Athlete</span><span>Stage</span><span>Schools</span><span>Top College</span><span>Last Activity</span>
                     </div>
                     {rows.map((r, i) => (
                       <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 110px 50px 1fr 80px", gap: 8, padding: "11px 0", borderBottom: i < rows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                         <div>
-                          <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{r.athlete_name}</div>
-                          {r.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280" }}>Class of {r.athlete_grad_year}</div>}
+                          <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{r.athlete_name}</div>
+                          {r.athlete_grad_year && <div style={{ fontSize: 11, color: T.textMuted }}>Class of {r.athlete_grad_year}</div>}
                         </div>
                         <div style={{ fontSize: 12, fontWeight: 700, color: r.stageColor }}>{r.stage}</div>
                         <div style={{ fontSize: 13, color: "#d1d5db", textAlign: "center" }}>{r.schoolsEngaging}</div>
-                        <div style={{ fontSize: 13, color: "#9ca3af" }}>{r.topCollege}</div>
-                        <div style={{ fontSize: 12, color: "#6b7280" }}>{r.lastDate ? new Date(r.lastDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                        <div style={{ fontSize: 13, color: T.textSecondary }}>{r.topCollege}</div>
+                        <div style={{ fontSize: 12, color: T.textMuted }}>{r.lastDate ? new Date(r.lastDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
                       </div>
                     ))}
                   </>
@@ -2391,11 +2392,11 @@ export default function CoachDashboard() {
               {/* ── TILE 2: Players w/ True Traction ── */}
               {openSheet === "tile_true_traction" && (() => {
                 return tractionPairs.length === 0 ? (
-                  <p style={{ fontSize: 14, color: "#6b7280" }}>No athletes with verified personal contact or higher logged yet.</p>
+                  <p style={{ fontSize: 14, color: T.textMuted }}>No athletes with verified personal contact or higher logged yet.</p>
                 ) : (
                   <>
-                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>All athlete-school pairs with verified personal contact (level 2+). Sorted by traction level, then recency.</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 100px 80px 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>All athlete-school pairs with verified personal contact (level 2+). Sorted by traction level, then recency.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 100px 80px 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                       <span>Athlete</span><span>School</span><span>Status</span><span>Level</span><span>Last Activity</span>
                     </div>
                     {tractionPairs.map((p, i) => {
@@ -2404,13 +2405,13 @@ export default function CoachDashboard() {
                       return (
                         <div key={i} style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 100px 80px 80px", gap: 8, padding: "11px 0", borderBottom: i < tractionPairs.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                           <div>
-                            <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{p.athlete_name}</div>
-                            {p.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280" }}>Class of {p.athlete_grad_year}</div>}
+                            <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{p.athlete_name}</div>
+                            {p.athlete_grad_year && <div style={{ fontSize: 11, color: T.textMuted }}>Class of {p.athlete_grad_year}</div>}
                           </div>
                           <div style={{ fontSize: 13, color: "#d1d5db" }}>{p.school_name}</div>
                           <div style={{ fontSize: 12, fontWeight: 700, color: statusColor }}>{RELATIONSHIP_LABEL[p.relationship_status] || p.relationship_status}</div>
-                          <div style={{ fontSize: 11, color: "#9ca3af" }}>{levelLabel}</div>
-                          <div style={{ fontSize: 12, color: "#6b7280" }}>{p.last_activity_date ? new Date(p.last_activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                          <div style={{ fontSize: 11, color: T.textSecondary }}>{levelLabel}</div>
+                          <div style={{ fontSize: 12, color: T.textMuted }}>{p.last_activity_date ? new Date(p.last_activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
                         </div>
                       );
                     })}
@@ -2434,22 +2435,22 @@ export default function CoachDashboard() {
                   return "#9ca3af";
                 };
                 return voRows.length === 0 ? (
-                  <p style={{ fontSize: 14, color: "#6b7280" }}>No visits or offers logged yet.</p>
+                  <p style={{ fontSize: 14, color: T.textMuted }}>No visits or offers logged yet.</p>
                 ) : (
                   <>
-                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>All athletes with a visit request, completed visit, offer, or commitment on record.</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 100px 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>All athletes with a visit request, completed visit, offer, or commitment on record.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 100px 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                       <span>Athlete</span><span>School</span><span>Outcome</span><span>Last Activity</span>
                     </div>
                     {voRows.map((p, i) => (
                       <div key={i} style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 100px 80px", gap: 8, padding: "11px 0", borderBottom: i < voRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                         <div>
-                          <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{p.athlete_name}</div>
-                          {p.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280" }}>Class of {p.athlete_grad_year}</div>}
+                          <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{p.athlete_name}</div>
+                          {p.athlete_grad_year && <div style={{ fontSize: 11, color: T.textMuted }}>Class of {p.athlete_grad_year}</div>}
                         </div>
                         <div style={{ fontSize: 13, color: "#d1d5db" }}>{p.school_name}</div>
                         <div style={{ fontSize: 12, fontWeight: 700, color: outcomeColor(p.relationship_status) }}>{outcomeLabel(p.relationship_status)}</div>
-                        <div style={{ fontSize: 12, color: "#6b7280" }}>{p.last_activity_date ? new Date(p.last_activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                        <div style={{ fontSize: 12, color: T.textMuted }}>{p.last_activity_date ? new Date(p.last_activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
                       </div>
                     ))}
                   </>
@@ -2459,22 +2460,22 @@ export default function CoachDashboard() {
               {/* ── TILE 4: Colleges Engaging Program ── */}
               {openSheet === "tile_colleges" && (() => {
                 return collegesEngagingRows.length === 0 ? (
-                  <p style={{ fontSize: 14, color: "#6b7280" }}>No colleges with recruiting activity logged yet.</p>
+                  <p style={{ fontSize: 14, color: T.textMuted }}>No colleges with recruiting activity logged yet.</p>
                 ) : (
                   <>
-                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>All colleges with at least one recruiting signal logged across the program. Sorted by highest traction level.</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>All colleges with at least one recruiting signal logged across the program. Sorted by highest traction level.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                       <span>College</span><span>Athletes</span><span>Stage</span><span>Athletes</span><span>Last Activity</span>
                     </div>
                     {collegesEngagingRows.map((c, i) => {
                       const stageColor = c.highestLevel >= 4 ? "#f59e0b" : c.highestLevel >= 2 ? "#60a5fa" : "#9ca3af";
                       return (
                         <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "11px 0", borderBottom: i < collegesEngagingRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                          <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{c.college}</div>
+                          <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{c.college}</div>
                           <div style={{ fontSize: 13, color: "#d1d5db", textAlign: "center" }}>{c.athletesEngaged}</div>
                           <div style={{ fontSize: 12, fontWeight: 700, color: stageColor }}>{c.highestStage}</div>
-                          <div style={{ fontSize: 12, color: "#9ca3af" }}>{c.athleteNames.slice(0, 3).join(", ")}{c.athleteNames.length > 3 ? ` +${c.athleteNames.length - 3}` : ""}</div>
-                          <div style={{ fontSize: 12, color: "#6b7280" }}>{c.lastActivityDate ? new Date(c.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                          <div style={{ fontSize: 12, color: T.textSecondary }}>{c.athleteNames.slice(0, 3).join(", ")}{c.athleteNames.length > 3 ? ` +${c.athleteNames.length - 3}` : ""}</div>
+                          <div style={{ fontSize: 12, color: T.textMuted }}>{c.lastActivityDate ? new Date(c.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
                         </div>
                       );
                     })}
@@ -2485,11 +2486,11 @@ export default function CoachDashboard() {
               {/* ── TILE 5: Players Heating Up ── */}
               {openSheet === "tile_heating_up" && (() => {
                 return playersHeatingUpRows.length === 0 ? (
-                  <p style={{ fontSize: 14, color: "#6b7280" }}>No athletes with activity in the last 30 days.</p>
+                  <p style={{ fontSize: 14, color: T.textMuted }}>No athletes with activity in the last 30 days.</p>
                 ) : (
                   <>
-                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>Athletes with recruiting activity in the last 30 days, ranked by stage and momentum.</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 100px 50px 1fr 90px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>Athletes with recruiting activity in the last 30 days, ranked by stage and momentum.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 100px 50px 1fr 90px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                       <span>Athlete</span><span>Stage</span><span>Schools</span><span>Top College</span><span>Coach Action</span>
                     </div>
                     {playersHeatingUpRows.map((r, i) => {
@@ -2498,12 +2499,12 @@ export default function CoachDashboard() {
                       return (
                         <div key={i} style={{ display: "grid", gridTemplateColumns: "1.5fr 100px 50px 1fr 90px", gap: 8, padding: "11px 0", borderBottom: i < playersHeatingUpRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                           <div>
-                            <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{r.athlete_name}</div>
-                            {r.athlete_grad_year && <div style={{ fontSize: 11, color: "#6b7280" }}>Class of {r.athlete_grad_year}</div>}
+                            <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{r.athlete_name}</div>
+                            {r.athlete_grad_year && <div style={{ fontSize: 11, color: T.textMuted }}>Class of {r.athlete_grad_year}</div>}
                           </div>
                           <div style={{ fontSize: 12, fontWeight: 700, color: stageColor }}>{r.currentStage}</div>
                           <div style={{ fontSize: 13, color: "#d1d5db", textAlign: "center" }}>{r.schoolsEngaging}</div>
-                          <div style={{ fontSize: 13, color: "#9ca3af" }}>{r.topCollege}</div>
+                          <div style={{ fontSize: 13, color: T.textSecondary }}>{r.topCollege}</div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: actionColor }}>{r.coachAttention}</div>
                         </div>
                       );
@@ -2516,11 +2517,11 @@ export default function CoachDashboard() {
               {openSheet === "tile_repeat_colleges" && (() => {
                 const repeatRows = collegesEngagingRows.filter(r => r.repeatInterest);
                 return repeatRows.length === 0 ? (
-                  <p style={{ fontSize: 14, color: "#6b7280" }}>No colleges engaging multiple athletes yet.</p>
+                  <p style={{ fontSize: 14, color: T.textMuted }}>No colleges engaging multiple athletes yet.</p>
                 ) : (
                   <>
-                    <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 14px" }}>Colleges showing interest in 2 or more athletes on the roster, or with repeated contact. Sorted by highest traction level.</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>Colleges showing interest in 2 or more athletes on the roster, or with repeated contact. Sorted by highest traction level.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                       <span>College</span><span>Athletes</span><span>Stage</span><span>Athletes</span><span>Last Activity</span>
                     </div>
                     {repeatRows.map((c, i) => {
@@ -2528,13 +2529,13 @@ export default function CoachDashboard() {
                       return (
                         <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "11px 0", borderBottom: i < repeatRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
                           <div>
-                            <div style={{ fontWeight: 600, color: "#f9fafb", fontSize: 14 }}>{c.college}</div>
+                            <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{c.college}</div>
                             {c.repeatLabel && <div style={{ fontSize: 11, color: "#e8a020" }}>{c.repeatLabel}</div>}
                           </div>
                           <div style={{ fontSize: 13, color: "#d1d5db", textAlign: "center" }}>{c.athletesEngaged}</div>
                           <div style={{ fontSize: 12, fontWeight: 700, color: stageColor }}>{c.highestStage}</div>
-                          <div style={{ fontSize: 12, color: "#9ca3af" }}>{c.athleteNames.slice(0, 3).join(", ")}{c.athleteNames.length > 3 ? ` +${c.athleteNames.length - 3}` : ""}</div>
-                          <div style={{ fontSize: 12, color: "#6b7280" }}>{c.lastActivityDate ? new Date(c.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                          <div style={{ fontSize: 12, color: T.textSecondary }}>{c.athleteNames.slice(0, 3).join(", ")}{c.athleteNames.length > 3 ? ` +${c.athleteNames.length - 3}` : ""}</div>
+                          <div style={{ fontSize: 12, color: T.textMuted }}>{c.lastActivityDate ? new Date(c.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
                         </div>
                       );
                     })}
@@ -2552,8 +2553,8 @@ export default function CoachDashboard() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                     {/* Identity */}
                     <div style={{ marginBottom: 20 }}>
-                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#f9fafb", letterSpacing: 1, lineHeight: 1 }}>{c.name}</div>
-                      {c.title && <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 4 }}>{c.title}</div>}
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: T.textPrimary, letterSpacing: 1, lineHeight: 1 }}>{c.name}</div>
+                      {c.title && <div style={{ fontSize: 14, color: T.textSecondary, marginTop: 4 }}>{c.title}</div>}
                       <div style={{ fontSize: 13, color: "#a78bfa", marginTop: 4, fontWeight: 600 }}>{c.collegeName}</div>
                     </div>
 
@@ -2582,7 +2583,7 @@ export default function CoachDashboard() {
                     {/* Associated athletes */}
                     {c.athleteNames.length > 0 && (
                       <div style={{ marginBottom: 20 }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Athletes</div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Athletes</div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                           {c.athleteNames.map((name, ni) => (
                             <span key={ni} style={{ background: "#1f2937", color: "#d1d5db", fontSize: 13, fontWeight: 600, padding: "5px 12px", borderRadius: 20 }}>{name}</span>
@@ -2594,10 +2595,10 @@ export default function CoachDashboard() {
                     {/* Last interaction */}
                     {(lastDateFmt || lastActLabel) && (
                       <div style={{ borderTop: "1px solid #1f2937", paddingTop: 16 }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Most Recent Interaction</div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Most Recent Interaction</div>
                         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                          {lastActLabel && <span style={{ fontSize: 12, fontWeight: 700, color: "#9ca3af", background: "#1f2937", borderRadius: 20, padding: "3px 10px" }}>{lastActLabel}</span>}
-                          {lastDateFmt && <span style={{ fontSize: 12, color: "#6b7280" }}>{lastDateFmt}</span>}
+                          {lastActLabel && <span style={{ fontSize: 12, fontWeight: 700, color: T.textSecondary, background: "#1f2937", borderRadius: 20, padding: "3px 10px" }}>{lastActLabel}</span>}
+                          {lastDateFmt && <span style={{ fontSize: 12, color: T.textMuted }}>{lastDateFmt}</span>}
                         </div>
                       </div>
                     )}
@@ -2608,11 +2609,11 @@ export default function CoachDashboard() {
               {/* ── Invite code sheet ── */}
               {openSheet === "code" && (
                 <>
-                  <p style={{ fontSize: 14, color: "#6b7280", marginTop: 0, marginBottom: 24 }}>
-                    Share this code with athletes and parents. They enter it during signup at <span style={{ color: "#9ca3af" }}>urecruithq.com</span> to connect with you automatically.
+                  <p style={{ fontSize: 14, color: T.textMuted, marginTop: 0, marginBottom: 24 }}>
+                    Share this code with athletes and parents. They enter it during signup at <span style={{ color: T.textSecondary }}>urecruithq.com</span> to connect with you automatically.
                   </p>
                   <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-                    <div style={{ fontFamily: "monospace", fontSize: 32, fontWeight: 700, color: "#e8a020", letterSpacing: 3, background: "#0a0e1a", border: "1px solid #374151", borderRadius: 10, padding: "16px 24px" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 32, fontWeight: 700, color: "#e8a020", letterSpacing: 3, background: T.pageBg, border: "1px solid #374151", borderRadius: 10, padding: "16px 24px" }}>
                       {coach.invite_code}
                     </div>
                     <button

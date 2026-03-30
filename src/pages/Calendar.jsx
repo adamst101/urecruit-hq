@@ -657,17 +657,17 @@ export default function Calendar() {
   /* ── 9. Render: list view body ────── */
 
   const renderListBody = () => {
-    if (loading) return <div className="py-10 text-center text-[#9ca3af]">Loading…</div>;
+    if (loading) return <div className="py-10 text-center text-ur-secondary">Loading…</div>;
 
     if (isPaid && !isCoach && !athleteId) {
       return (
-        <Card className="p-5 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">Complete your athlete profile</div>
-          <div className="mt-1 text-sm text-[#9ca3af]">
+        <Card className="p-5 border-ur-border bg-ur-card">
+          <div className="text-lg font-semibold text-ur-primary">Complete your athlete profile</div>
+          <div className="mt-1 text-sm text-ur-secondary">
             Your paid workspace needs an athlete profile to personalize camps, targets, and intent.
           </div>
           <div className="mt-4">
-            <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
+            <Button className="bg-ur-amber text-ur-page hover:bg-ur-amber-hover" onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
           </div>
         </Card>
       );
@@ -675,13 +675,13 @@ export default function Calendar() {
 
     if (paidMissingSport) {
       return (
-        <Card className="p-5 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">Complete your profile</div>
-          <div className="mt-1 text-sm text-[#9ca3af]">
+        <Card className="p-5 border-ur-border bg-ur-card">
+          <div className="text-lg font-semibold text-ur-primary">Complete your profile</div>
+          <div className="mt-1 text-sm text-ur-secondary">
             Add your sport so Calendar can lock results to the right camps.
           </div>
           <div className="mt-4">
-            <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
+            <Button className="bg-ur-amber text-ur-page hover:bg-ur-amber-hover" onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
           </div>
         </Card>
       );
@@ -689,16 +689,16 @@ export default function Calendar() {
 
     if (!listRows.length) {
       return (
-        <Card className="p-5 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">No camps found</div>
-          <div className="mt-1 text-sm text-[#9ca3af]">
+        <Card className="p-5 border-ur-border bg-ur-card">
+          <div className="text-lg font-semibold text-ur-primary">No camps found</div>
+          <div className="mt-1 text-sm text-ur-secondary">
             Try clearing filters or widening your date range.
           </div>
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" className="border-[#374151] bg-transparent text-[#f9fafb] hover:bg-[#1f2937]" onClick={clearFilters}>
+            <Button variant="outline" className="border-ur-border-input bg-transparent text-ur-primary hover:bg-ur-border" onClick={clearFilters}>
               <XCircle className="w-4 h-4 mr-2" /> Clear filters
             </Button>
-            <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={openFiltersOrProfile}>
+            <Button className="bg-ur-amber text-ur-page hover:bg-ur-amber-hover" onClick={openFiltersOrProfile}>
               <SlidersHorizontal className="w-4 h-4 mr-2" />
               {paidMissingSport ? "Complete Profile" : "Edit filters"}
             </Button>
@@ -760,15 +760,15 @@ export default function Calendar() {
   /* ── 10. Render: month view body ──── */
 
   const renderMonthBody = () => {
-    if (loading) return <div className="py-10 text-center text-[#9ca3af]">Loading…</div>;
+    if (loading) return <div className="py-10 text-center text-ur-secondary">Loading…</div>;
 
     if (isPaid && !isCoach && !athleteId) {
       return (
-        <Card className="p-5 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">Complete your athlete profile</div>
-          <div className="mt-1 text-sm text-[#9ca3af]">Set up your profile to see camps.</div>
+        <Card className="p-5 border-ur-border bg-ur-card">
+          <div className="text-lg font-semibold text-ur-primary">Complete your athlete profile</div>
+          <div className="mt-1 text-sm text-ur-secondary">Set up your profile to see camps.</div>
           <div className="mt-4">
-            <Button className="bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]" onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
+            <Button className="bg-ur-amber text-ur-page hover:bg-ur-amber-hover" onClick={() => nav(ROUTES.Profile)}>Go to Profile</Button>
           </div>
         </Card>
       );
@@ -851,20 +851,20 @@ export default function Calendar() {
   /* ── 12. Return JSX ───────────────── */
 
   return (
-    <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb]">
+    <div className="min-h-screen bg-ur-page text-ur-primary">
       <div className="max-w-5xl mx-auto px-4 pt-5 pb-24">
 
         <button
           type="button"
           onClick={() => nav(isCoach ? "/CoachDashboard" : "/Workspace")}
-          className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
+          className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
         >
           ← HQ
         </button>
 
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
-          <div className="text-xl font-bold text-[#f9fafb]">Calendar</div>
+          <div className="text-xl font-bold text-ur-primary">Calendar</div>
           <CalendarViewToggle calView={calView} setCalView={setCalView} />
         </div>
 
@@ -887,7 +887,7 @@ export default function Calendar() {
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+              className="h-9 px-3 text-xs rounded-lg bg-ur-input border border-ur-border-input text-ur-primary focus:border-ur-amber focus:outline-none"
             >
               {MONTH_OPTIONS.map((m) => (
                 <option key={m.value} value={m.value}>{m.label}</option>
@@ -896,7 +896,7 @@ export default function Calendar() {
             <select
               value={inlineState}
               onChange={(e) => setInlineState(e.target.value)}
-              className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+              className="h-9 px-3 text-xs rounded-lg bg-ur-input border border-ur-border-input text-ur-primary focus:border-ur-amber focus:outline-none"
             >
               <option value="all">All States</option>
               {(() => {
@@ -908,7 +908,7 @@ export default function Calendar() {
             <select
               value={inlineDivision}
               onChange={(e) => setInlineDivision(e.target.value)}
-              className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+              className="h-9 px-3 text-xs rounded-lg bg-ur-input border border-ur-border-input text-ur-primary focus:border-ur-amber focus:outline-none"
             >
               {DIVISION_FILTER_OPTIONS.map((d) => (
                 <option key={d.value} value={d.value}>{d.label}</option>

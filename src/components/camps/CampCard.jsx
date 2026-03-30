@@ -31,7 +31,7 @@ function LogoAvatar({ schoolName, logoUrl }) {
   const letter = (String(schoolName || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 1) || "?").toUpperCase();
 
   return (
-    <div className="w-11 h-11 rounded-lg bg-[#0f172a] border border-[#1f2937] overflow-hidden flex items-center justify-center flex-shrink-0">
+    <div className="w-11 h-11 rounded-lg bg-ur-page border border-ur-border overflow-hidden flex items-center justify-center flex-shrink-0">
       {showImg ? (
         <img
           src={resolvedUrl}
@@ -42,7 +42,7 @@ function LogoAvatar({ schoolName, logoUrl }) {
           onError={() => setImgErr(true)}
         />
       ) : (
-        <div className="text-sm font-semibold text-[#9ca3af]">{letter}</div>
+        <div className="text-sm font-semibold text-ur-secondary">{letter}</div>
       )}
     </div>
   );
@@ -80,8 +80,8 @@ export default function CampCard({
 
   return (
     <div
-      className="rounded-xl border transition-colors overflow-hidden"
-      style={{ borderColor: "#1f2937", background: cardBg }}
+      className="rounded-xl border border-ur-border transition-colors overflow-hidden"
+      style={{ background: cardBg }}
     >
       <div className="flex items-center gap-3 p-4">
         {/* Status accent bar */}
@@ -92,39 +92,39 @@ export default function CampCard({
         <div className="min-w-0 flex-1">
           {/* Row 1: School name + badges */}
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-base font-bold text-[#f9fafb] sm:truncate">{schoolName}</span>
+            <span className="text-base font-bold text-ur-primary sm:truncate">{schoolName}</span>
             {warningBadge}
             {division && (
-              <Badge className="bg-[#0f172a] text-[#f9fafb] border border-[#374151] text-[10px] px-1.5 py-0">{division}</Badge>
+              <Badge className="bg-ur-page text-ur-primary border border-ur-border-input text-[10px] px-1.5 py-0">{division}</Badge>
             )}
             {sportName && (
-              <span className="text-[10px] text-[#9ca3af] font-medium">{sportName}</span>
+              <span className="text-[10px] text-ur-secondary font-medium">{sportName}</span>
             )}
             {isDemo && (
-              <Badge variant="outline" className="text-[10px] border-[#374151] text-[#9ca3af] px-1.5 py-0">Demo</Badge>
+              <Badge variant="outline" className="text-[10px] border-ur-border-input text-ur-secondary px-1.5 py-0">Demo</Badge>
             )}
           </div>
 
           {/* Row 2: Camp name */}
-          <div className="text-sm text-[#9ca3af] sm:truncate mt-0.5">
+          <div className="text-sm text-ur-secondary sm:truncate mt-0.5">
             {camp?.camp_name || "Camp"}
           </div>
 
           {/* Row 3: Date · City · Price */}
-          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#9ca3af]">
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ur-secondary">
             <span className="flex items-center gap-1">
-              <span className="text-[#6b7280]">📅</span>
+              <span className="text-ur-muted">📅</span>
               {startLabel}{endLabel ? ` — ${endLabel}` : ""}
             </span>
             {city && (
               <span className="flex items-center gap-1">
-                <span className="text-[#6b7280]">📍</span>
+                <span className="text-ur-muted">📍</span>
                 {city}
               </span>
             )}
             {priceLabel && (
               <span className="flex items-center gap-1">
-                <span className="text-[#6b7280]">💰</span>
+                <span className="text-ur-muted">💰</span>
                 {priceLabel}
               </span>
             )}
@@ -138,7 +138,7 @@ export default function CampCard({
             type="button"
             title={isFavorite ? "Remove from favorites" : "Add to favorites"}
             disabled={!!disabledFavorite}
-            className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937]"
+            className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-ur-border transition-colors"
             style={{ background: "none", border: "none", cursor: disabledFavorite ? "default" : "pointer" }}
             onClick={(e) => {
               e.preventDefault();
@@ -151,7 +151,7 @@ export default function CampCard({
             <Star
               className={cn(
                 "w-5 h-5 transition-colors",
-                isFavorite ? "fill-[#e8a020] text-[#e8a020]" : "text-[#6b7280] hover:text-[#e8a020]"
+                isFavorite ? "fill-ur-amber text-ur-amber" : "text-ur-muted hover:text-ur-amber"
               )}
             />
           </button>
@@ -161,7 +161,7 @@ export default function CampCard({
             <button
               type="button"
               title={isRegistered ? "Remove registered status" : "Mark as registered"}
-              className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-[#1f2937]"
+              className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-ur-border transition-colors"
               style={{
                 background: "none", border: "none", cursor: "pointer",
                 fontSize: 18, lineHeight: 1,
@@ -190,7 +190,7 @@ export default function CampCard({
           {onRegisterClick && (
             <button
               type="button"
-              className="text-xs h-7 px-3 rounded-md font-medium bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f]"
+              className="text-xs h-7 px-3 rounded-md font-medium bg-ur-amber text-ur-page hover:bg-ur-amber-hover transition-colors"
               style={{ pointerEvents: "auto", cursor: "pointer", position: "relative", zIndex: 10 }}
               onClick={(e) => {
                 e.preventDefault();

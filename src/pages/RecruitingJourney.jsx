@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
+import { T } from "../lib/theme.js";
 
 // ── Activity type config ──────────────────────────────────────────────────────
 // Legacy types (social_like, dm_received, camp_invite, camp_meeting, offer) are kept
@@ -434,8 +435,8 @@ export default function RecruitingJourney() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{
-      background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh",
-      fontFamily: "'DM Sans', Inter, system-ui, sans-serif",
+      background: T.pageBg, color: T.textPrimary, minHeight: "100vh",
+      fontFamily: T.fontBody,
     }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
@@ -444,7 +445,7 @@ export default function RecruitingJourney() {
         <button
           onClick={() => nav("/Workspace")}
           style={{
-            background: "none", border: "none", color: "#9ca3af", cursor: "pointer",
+            background: "none", border: "none", color: T.textSecondary, cursor: "pointer",
             display: "flex", alignItems: "center", gap: 6,
             fontSize: 14, padding: 0, marginBottom: 20,
           }}
@@ -502,13 +503,13 @@ export default function RecruitingJourney() {
                   key={qa.type}
                   onClick={() => openAdd(qa.type)}
                   style={{
-                    background: "#111827", border: "1px solid #1f2937", borderRadius: 10,
-                    padding: "10px 18px", color: "#f9fafb", fontSize: 14, fontWeight: 600,
+                    background: T.shellBg, border: T.shellBorderFull, borderRadius: 10,
+                    padding: "10px 18px", color: T.textPrimary, fontSize: 14, fontWeight: 600,
                     cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
-                    transition: "border-color 0.15s",
+                    transition: `border-color ${T.transitionBase}`,
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "#e8a020"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = T.amber; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = T.shellBorder; }}
                 >
                   <span style={{ fontSize: 16 }}>{ACTIVITY_TYPES[qa.type].icon}</span>
                   {qa.label}
@@ -534,16 +535,16 @@ export default function RecruitingJourney() {
                   { label: "Activity (30d)",       value: athleteMetrics.activity_count_30d,          sub: "events logged" },
                   { label: "Top School",           value: athleteMetrics.top_school_with_highest_traction || "—", small: true },
                 ].map(item => (
-                  <div key={item.label} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, padding: "12px 14px" }}>
-                    <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{item.label}</div>
+                  <div key={item.label} style={{ ...T.cardStyle, borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ ...T.microLabel, marginBottom: 4 }}>{item.label}</div>
                     <div style={{
-                      fontFamily: item.big ? "'Bebas Neue', sans-serif" : "inherit",
+                      fontFamily: item.big ? T.fontDisplay : "inherit",
                       fontSize: item.small ? 13 : item.big ? 20 : 24,
-                      color: item.accent || "#f9fafb",
+                      color: item.accent || T.textPrimary,
                       fontWeight: item.small ? 600 : 700,
                       lineHeight: 1.2,
                     }}>{item.value}</div>
-                    {item.sub && <div style={{ fontSize: 10, color: "#4b5563", marginTop: 3 }}>{item.sub}</div>}
+                    {item.sub && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3 }}>{item.sub}</div>}
                   </div>
                 ))}
               </div>
@@ -552,14 +553,8 @@ export default function RecruitingJourney() {
 
           {/* ── Recent Activity ── */}
           <section style={{ padding: "0 24px 32px", maxWidth: 900, margin: "0 auto" }}>
-            <div style={{
-              background: "#111827", border: "1px solid #1f2937", borderRadius: 14,
-              padding: "24px 20px",
-            }}>
-              <div style={{
-                fontSize: 13, fontWeight: 700, color: "#9ca3af",
-                letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 16,
-              }}>
+            <div style={{ ...T.shellStyle, padding: "24px 20px" }}>
+              <div style={{ ...T.microLabel, fontSize: 13, marginBottom: 16 }}>
                 Recent Activity
               </div>
 
@@ -583,7 +578,7 @@ export default function RecruitingJourney() {
                   return (
                     <div
                       key={act.id || i}
-                      style={{ borderBottom: i < sortedActivities.length - 1 ? "1px solid #1f2937" : "none" }}
+                      style={{ borderBottom: i < sortedActivities.length - 1 ? T.dividerFull : "none" }}
                     >
                     <div style={{ padding: "16px 0", display: "flex", gap: 14, alignItems: "flex-start" }}>
                       <div style={{
@@ -689,31 +684,25 @@ export default function RecruitingJourney() {
 
           {/* ── Target Schools ── */}
           <section style={{ padding: "0 24px 80px", maxWidth: 900, margin: "0 auto" }}>
-            <div style={{
-              background: "#111827", border: "1px solid #1f2937", borderRadius: 14,
-              padding: "24px 20px",
-            }}>
+            <div style={{ ...T.shellStyle, padding: "24px 20px" }}>
               <div style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 marginBottom: 16, flexWrap: "wrap", gap: 8,
               }}>
-                <div style={{
-                  fontSize: 13, fontWeight: 700, color: "#9ca3af",
-                  letterSpacing: "0.08em", textTransform: "uppercase",
-                }}>
+                <div style={{ ...T.microLabel, fontSize: 13 }}>
                   Target Schools
                 </div>
                 <button
                   onClick={submitPrefs}
                   disabled={savingPrefs || !prefsDirty}
                   style={{
-                    background: prefsDirty ? "#e8a020" : "transparent",
-                    border: prefsDirty ? "none" : "1px solid #374151",
-                    borderRadius: 8, padding: "6px 16px", color: prefsDirty ? "#0a0e1a" : "#6b7280",
+                    background: prefsDirty ? T.amber : "transparent",
+                    border: prefsDirty ? "none" : `1px solid ${T.borderInput}`,
+                    borderRadius: 8, padding: "6px 16px", color: prefsDirty ? T.pageBg : T.textMuted,
                     fontSize: 13, fontWeight: 700,
                     cursor: (savingPrefs || !prefsDirty) ? "not-allowed" : "pointer",
                     opacity: savingPrefs ? 0.7 : 1,
-                    transition: "all 0.15s",
+                    transition: `all ${T.transitionBase}`,
                   }}
                 >
                   {savingPrefs ? "Saving…" : "Save"}

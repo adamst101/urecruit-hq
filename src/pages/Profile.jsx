@@ -68,10 +68,10 @@ function getSportName(r) {
   return String(r?.sport_name || r?.name || r?.sportName || "").trim();
 }
 
-const inputClass = "mt-1 w-full rounded px-3 py-2 text-sm bg-[#1f2937] border border-[#374151] text-[#f9fafb] placeholder-[#6b7280] focus:outline-none focus:border-[#e8a020] disabled:opacity-50 disabled:cursor-not-allowed";
+const inputClass = "mt-1 w-full rounded px-3 py-2 text-sm bg-ur-input border border-ur-border-input text-ur-primary placeholder-ur-muted focus:outline-none focus:border-ur-amber disabled:opacity-50 disabled:cursor-not-allowed";
 const selectClass = inputClass;
-const labelTextClass = "text-[#9ca3af] text-sm";
-const helperTextClass = "text-[#6b7280] text-xs mt-1";
+const labelTextClass = "text-ur-secondary text-sm";
+const helperTextClass = "text-ur-muted text-xs mt-1";
 
 export default function Profile() {
   const nav = useNavigate();
@@ -250,39 +250,39 @@ export default function Profile() {
 
   if (seasonIsLoading) {
     return (
-      <div style={{ background: "#0a0e1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 16 }}>
+      <div className="min-h-screen bg-ur-page flex items-center justify-center text-ur-secondary text-base">
         Loading your profile...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
+    <div className="min-h-screen bg-ur-page text-ur-primary pb-20">
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <button
           type="button"
           onClick={() => nav("/Workspace")}
-          className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
+          className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
         >
           ← HQ
         </button>
         {/* Header */}
         <div className="flex items-center gap-2">
-          <User className="w-6 h-6 text-[#e8a020]" />
-          <h1 className="text-2xl font-bold text-[#f9fafb]">
+          <User className="w-6 h-6 text-ur-amber" />
+          <h1 className="text-2xl font-bold text-ur-primary">
             {firstName || lastName ? `${firstName} ${lastName}`.trim() : "Profile"}
           </h1>
         </div>
 
         {/* Demo banner */}
         {isDemo && (
-          <div className="rounded-lg border-l-4 border-[#e8a020] bg-[#111827] border border-[#1f2937] p-4 flex items-center justify-between gap-4 flex-wrap">
+          <div className="rounded-lg border-l-4 border-ur-amber bg-ur-card border border-ur-border p-4 flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <div className="text-sm font-semibold text-[#f9fafb]">🔒 Profile editing is available to Season Pass members.</div>
+              <div className="text-sm font-semibold text-ur-primary">🔒 Profile editing is available to Season Pass members.</div>
             </div>
             <button
               onClick={() => nav("/Subscribe")}
-              className="text-sm font-bold text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1 whitespace-nowrap"
+              className="text-sm font-bold text-ur-amber hover:text-ur-amber-hover flex items-center gap-1 whitespace-nowrap"
             >
               Get Season Pass <ArrowRight className="w-4 h-4" />
             </button>
@@ -291,19 +291,19 @@ export default function Profile() {
 
         {/* Save status banners */}
         {saveStatus === "success" && (
-          <div className="rounded-lg bg-[#064e3b] border border-[#059669] p-3">
-            <div className="text-sm text-[#a7f3d0] font-medium">✓ Profile saved successfully.</div>
+          <div className="rounded-lg bg-ur-success-bg border border-ur-success p-3">
+            <div className="text-sm text-green-300 font-medium">✓ Profile saved successfully.</div>
           </div>
         )}
         {saveStatus === "error" && (
-          <div className="rounded-lg bg-[#7f1d1d] border border-[#dc2626] p-3">
-            <div className="text-sm text-[#fca5a5] font-medium">Something went wrong. Please try again.</div>
+          <div className="rounded-lg bg-ur-error-bg border border-ur-error p-3">
+            <div className="text-sm text-red-300 font-medium">Something went wrong. Please try again.</div>
           </div>
         )}
 
         {/* ── SECTION: Athlete Info ── */}
-        <Card className="p-4 space-y-4 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">Athlete Info</div>
+        <Card className="p-4 space-y-4 border-ur-border bg-ur-card">
+          <div className="text-lg font-semibold text-ur-primary">Athlete Info</div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <label className="text-sm">
@@ -372,9 +372,9 @@ export default function Profile() {
         </Card>
 
         {/* ── SECTION: Location ── */}
-        <Card className="p-4 space-y-3 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">Location</div>
-          <div className="text-xs text-[#6b7280]">Used to estimate travel distance to camps</div>
+        <Card className="p-4 space-y-3 border-ur-border bg-ur-card">
+          <div className="text-lg font-semibold text-ur-primary">Location</div>
+          <div className="text-xs text-ur-muted">Used to estimate travel distance to camps</div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <label className="text-sm">
               <div className={labelTextClass}>City</div>
@@ -391,8 +391,8 @@ export default function Profile() {
         </Card>
 
         {/* ── SECTION: Contact & Social ── */}
-        <Card className="p-4 space-y-3 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">Contact & Social</div>
+        <Card className="p-4 space-y-3 border-ur-border bg-ur-card">
+          <div className="text-lg font-semibold text-ur-primary">Contact & Social</div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <label className="text-sm">
               <div className={labelTextClass}>Player Email</div>
@@ -408,8 +408,8 @@ export default function Profile() {
         </Card>
 
         {/* ── SECTION: Parent / Guardian Info ── */}
-        <Card className="p-4 space-y-3 border-[#1f2937] bg-[#111827]">
-          <div className="text-lg font-semibold text-[#f9fafb]">Parent / Guardian Info</div>
+        <Card className="p-4 space-y-3 border-ur-border bg-ur-card">
+          <div className="text-lg font-semibold text-ur-primary">Parent / Guardian Info</div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <label className="text-sm">
               <div className={labelTextClass}>Parent First Name</div>
@@ -438,10 +438,10 @@ export default function Profile() {
             <Button
               className={
                 saveStatus === "success"
-                  ? "bg-[#059669] text-white hover:bg-[#059669] w-full md:w-auto"
+                  ? "bg-ur-success text-white hover:bg-ur-success w-full md:w-auto"
                   : saveStatus === "error"
-                  ? "bg-[#dc2626] text-white hover:bg-[#dc2626] w-full md:w-auto"
-                  : "bg-[#e8a020] text-[#0a0e1a] hover:bg-[#f3b13f] w-full md:w-auto"
+                  ? "bg-ur-error text-white hover:bg-ur-error w-full md:w-auto"
+                  : "bg-ur-amber text-ur-page hover:bg-ur-amber-hover w-full md:w-auto"
               }
               onClick={handleSave}
               disabled={saveStatus === "saving" || saveStatus === "success" || seasonLoading || identityLoading}

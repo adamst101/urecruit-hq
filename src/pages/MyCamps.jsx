@@ -424,17 +424,17 @@ export default function MyCamps() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
+    <div className="min-h-screen bg-ur-page text-ur-primary pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
         <button
           type="button"
           onClick={() => nav(isCoach ? "/CoachDashboard" : "/Workspace")}
-          className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
+          className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
         >
           ← HQ
         </button>
         <div className="mb-4">
-          <div className="text-2xl font-bold text-[#f9fafb]">My Camps</div>
+          <div className="text-2xl font-bold text-ur-primary">My Camps</div>
         </div>
 
         {/* Athlete switcher — only shows when account has 2+ athletes */}
@@ -472,7 +472,7 @@ export default function MyCamps() {
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+            className="h-9 px-3 text-xs rounded-lg bg-ur-input border border-ur-border-input text-ur-primary focus:border-ur-amber focus:outline-none"
           >
             {MONTH_OPTIONS.map((m) => (
               <option key={m.value} value={m.value}>{m.label}</option>
@@ -481,7 +481,7 @@ export default function MyCamps() {
           <select
             value={inlineState}
             onChange={(e) => setInlineState(e.target.value)}
-            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+            className="h-9 px-3 text-xs rounded-lg bg-ur-input border border-ur-border-input text-ur-primary focus:border-ur-amber focus:outline-none"
           >
             <option value="all">All States</option>
             {stateOptions.map((st) => (
@@ -491,7 +491,7 @@ export default function MyCamps() {
           <select
             value={inlineDivision}
             onChange={(e) => setInlineDivision(e.target.value)}
-            className="h-9 px-3 text-xs rounded-lg bg-[#1f2937] border border-[#374151] text-[#f9fafb] focus:border-[#e8a020] focus:outline-none"
+            className="h-9 px-3 text-xs rounded-lg bg-ur-input border border-ur-border-input text-ur-primary focus:border-ur-amber focus:outline-none"
           >
             {DIVISION_FILTER_OPTIONS.map((d) => (
               <option key={d.value} value={d.value}>{d.label}</option>
@@ -500,23 +500,23 @@ export default function MyCamps() {
         </div>
 
         {loading ? (
-          <div className="py-10 text-center text-[#9ca3af]">Loading...</div>
+          <div className="py-10 text-center text-ur-secondary">Loading...</div>
         ) : showEmpty ? (
           <MyCampsEmptyState
             tab={activeTab}
             onSwitchToFavorites={() => setActiveTab("favorites")}
           />
         ) : displayRows.length === 0 ? (
-          <Card className="p-5 border-[#1f2937] bg-[#111827]">
-            <div className="text-lg font-semibold text-[#f9fafb]">No camps match filters</div>
-            <div className="mt-1 text-sm text-[#9ca3af]">
+          <Card className="p-5 border-ur-border bg-ur-card">
+            <div className="text-lg font-semibold text-ur-primary">No camps match filters</div>
+            <div className="mt-1 text-sm text-ur-secondary">
               Try clearing filters or switching tabs.
             </div>
           </Card>
         ) : (
           <div className="space-y-3">
             {(selectedMonth !== "all" || inlineState !== "all" || inlineDivision !== "all") && (
-              <div className="text-xs text-[#9ca3af]">
+              <div className="text-xs text-ur-secondary">
                 Showing {displayRows.length} camps
               </div>
             )}

@@ -223,18 +223,22 @@ export default function FilterSheet({
     <Sheet open={!!isOpen} onOpenChange={(open) => (!open ? onClose?.() : null)}>
       <SheetContent side="bottom" className="h-[88vh] overflow-y-auto p-0">
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
+        <div className="sticky top-0 z-10 bg-ur-header-band border-b border-ur-shell-border">
           <SheetHeader className="px-5 pt-5 pb-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <SheetTitle className="text-left">Filters</SheetTitle>
-                <div className="text-xs text-slate-500 mt-1">
+                <SheetTitle className="text-left text-ur-primary">Filters</SheetTitle>
+                <div className="text-xs text-ur-muted mt-1">
                   Narrow camps by division, state, position, and dates.
                 </div>
               </div>
 
               {hasActive ? (
-                <Button variant="outline" onClick={onClear} className="shrink-0">
+                <Button
+                  variant="outline"
+                  onClick={onClear}
+                  className="shrink-0 border-ur-border-input bg-transparent text-ur-secondary hover:bg-ur-border hover:text-ur-primary"
+                >
                   Clear
                 </Button>
               ) : null}
@@ -243,16 +247,16 @@ export default function FilterSheet({
         </div>
 
         {/* Body */}
-        <div className="px-5 py-5 space-y-6">
+        <div className="px-5 py-5 space-y-6 bg-ur-card">
           {/* Sport (demo only) */}
           {!isSportLocked && sportsList.length > 0 && (
             <div className="space-y-2">
-              <Label className="text-sm font-semibold">Sport</Label>
+              <Label className="text-sm font-semibold text-ur-secondary">Sport</Label>
               <Select value={selectedSportId || "all"} onValueChange={onSportChange}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-ur-input border-ur-border-input text-ur-primary">
                   <SelectValue placeholder="All Sports" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-ur-card border-ur-shell-border text-ur-primary">
                   <SelectItem value="all">All Sports</SelectItem>
                   {sportsList.map((s) => (
                     <SelectItem key={s.id} value={String(s.id)}>
@@ -261,16 +265,16 @@ export default function FilterSheet({
                   ))}
                 </SelectContent>
               </Select>
-              <div className="text-xs text-slate-500">Pick a sport to unlock positions.</div>
+              <div className="text-xs text-ur-muted">Pick a sport to unlock positions.</div>
             </div>
           )}
 
           {/* Locked sport info row (paid mode) */}
           {isSportLocked ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-              <span className="font-semibold">Sport:</span>{" "}
+            <div className="rounded-xl border border-ur-shell-border bg-ur-shell p-3 text-sm text-ur-secondary">
+              <span className="font-semibold text-ur-primary">Sport:</span>{" "}
               <span>{selectedSportName || "—"}</span>
-              <div className="text-xs text-slate-500 mt-1">
+              <div className="text-xs text-ur-muted mt-1">
                 Paid workspace uses your athlete profile sport.
               </div>
             </div>
@@ -278,12 +282,12 @@ export default function FilterSheet({
 
           {/* State */}
           <div className="space-y-2">
-            <Label className="text-sm font-semibold">State</Label>
+            <Label className="text-sm font-semibold text-ur-secondary">State</Label>
             <Select value={selectedState} onValueChange={onStateChange}>
-              <SelectTrigger>
+              <SelectTrigger className="bg-ur-input border-ur-border-input text-ur-primary">
                 <SelectValue placeholder="All States" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-ur-card border-ur-shell-border text-ur-primary">
                 <SelectItem value="all">All States</SelectItem>
                 {STATES.map((st) => (
                   <SelectItem key={st} value={st}>
@@ -296,54 +300,54 @@ export default function FilterSheet({
 
           {/* Division */}
           <div className="space-y-2">
-            <Label className="text-sm font-semibold">Division</Label>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <Label className="text-sm font-semibold text-ur-secondary">Division</Label>
+            <div className="rounded-xl border border-ur-shell-border bg-ur-shell p-3">
               <div className="grid grid-cols-2 gap-2">
                 {DIVISIONS.map((div) => (
                   <label
                     key={div}
-                    className="flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2"
+                    className="flex items-center gap-2 rounded-lg bg-ur-input border border-ur-border-input px-3 py-2 cursor-pointer hover:border-ur-amber transition-colors"
                   >
                     <Checkbox
                       checked={selectedDivisions.includes(div)}
                       onCheckedChange={() => toggleDivision(div)}
                     />
-                    <span className="text-sm text-slate-800">{div}</span>
+                    <span className="text-sm text-ur-primary">{div}</span>
                   </label>
                 ))}
               </div>
             </div>
-            <div className="text-xs text-slate-500">Tip: Select one or more divisions.</div>
+            <div className="text-xs text-ur-muted">Tip: Select one or more divisions.</div>
           </div>
 
           {/* Positions: hidden until sport picked */}
           {selectedSportId ? (
             <div className="space-y-2">
-              <Label className="text-sm font-semibold">Position</Label>
+              <Label className="text-sm font-semibold text-ur-secondary">Position</Label>
 
               {positionsList.length === 0 ? (
-                <div className="text-sm text-slate-500 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-sm text-ur-muted rounded-xl border border-ur-shell-border bg-ur-shell p-3">
                   No positions found for this sport.
                 </div>
               ) : (
                 <>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-xl border border-ur-shell-border bg-ur-shell p-3">
                     <div className="grid grid-cols-2 gap-2">
                       {positionsList.map((pos) => (
                         <label
                           key={pos.id}
-                          className="flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2"
+                          className="flex items-center gap-2 rounded-lg bg-ur-input border border-ur-border-input px-3 py-2 cursor-pointer hover:border-ur-amber transition-colors"
                         >
                           <Checkbox
                             checked={selectedPositions.includes(String(pos.id))}
                             onCheckedChange={() => togglePosition(pos.id)}
                           />
-                          <span className="text-sm text-slate-800">{pos.position_code}</span>
+                          <span className="text-sm text-ur-primary">{pos.position_code}</span>
                         </label>
                       ))}
                     </div>
                   </div>
-                  <div className="text-xs text-slate-500">Tip: Choose multiple if needed.</div>
+                  <div className="text-xs text-ur-muted">Tip: Choose multiple if needed.</div>
                 </>
               )}
             </div>
@@ -351,42 +355,51 @@ export default function FilterSheet({
 
           {/* Date Range */}
           <div className="space-y-3">
-            <Label className="text-sm font-semibold">Date Range</Label>
+            <Label className="text-sm font-semibold text-ur-secondary">Date Range</Label>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs text-slate-500">Start</Label>
+                <Label className="text-xs text-ur-muted">Start</Label>
                 <Input
                   type="date"
                   value={startDate}
                   onChange={(e) => onStartDateChange(e.target.value)}
+                  className="bg-ur-input border-ur-border-input text-ur-primary"
                 />
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs text-slate-500">End</Label>
+                <Label className="text-xs text-ur-muted">End</Label>
                 <Input
                   type="date"
                   value={endDate}
                   min={startDate || undefined}
                   onChange={(e) => onEndDateChange(e.target.value)}
+                  className="bg-ur-input border-ur-border-input text-ur-primary"
                 />
               </div>
             </div>
 
             {startDate && endDate && endDate < startDate && (
-              <div className="text-xs text-rose-600">End date can’t be earlier than start date.</div>
+              <div className="text-xs text-ur-error">End date can’t be earlier than start date.</div>
             )}
           </div>
         </div>
 
         {/* Footer */}
-        <SheetFooter className="sticky bottom-0 z-10 border-t border-slate-200 bg-white px-5 py-4 gap-2">
-          <Button variant="outline" onClick={onClose} className="flex-1">
+        <SheetFooter className="sticky bottom-0 z-10 border-t border-ur-shell-border bg-ur-header-band px-5 py-4 gap-2">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            className="flex-1 border-ur-border-input bg-transparent text-ur-secondary hover:bg-ur-border hover:text-ur-primary"
+          >
             Cancel
           </Button>
 
-          <Button onClick={onApply} className="flex-1">
+          <Button
+            onClick={onApply}
+            className="flex-1 bg-ur-amber text-ur-page hover:bg-ur-amber-hover"
+          >
             Apply Filters
           </Button>
         </SheetFooter>
