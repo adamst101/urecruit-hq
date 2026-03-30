@@ -315,7 +315,7 @@ export default function Home() {
           position: "relative",
           display: "flex",
           flexDirection: "column",
-          minHeight: "88vh",
+          minHeight: "82vh",
           overflow: "hidden",
         }}
       >
@@ -525,19 +525,6 @@ export default function Home() {
           </div>{/* end two-column row */}
         </div>{/* end main content */}
 
-        {/* Bottom strip — social proof */}
-        {/* ── SOCIAL PROOF STRIP — above scroll nudge ── */}
-        <div className="hero-proof-strip-wrap" style={{
-          position: "absolute", bottom: 80, left: 0, right: 0,
-          textAlign: "center", padding: "12px 24px",
-          borderTop: "1px solid rgba(255,255,255,0.07)",
-          zIndex: 2, pointerEvents: "none",
-        }}>
-          <p className="hero-proof-strip" style={{ fontSize: 15, color: "#9ca3af", margin: 0 }}>
-            100%&nbsp;<em style={{ fontStyle: "italic", color: "#d1d5db" }}>College</em>&nbsp;Coaching Staffs &nbsp;·&nbsp; Zero Club Camps &nbsp;·&nbsp; All Divisions
-          </p>
-        </div>
-
         {/* ── SCROLL NUDGE ── */}
         <div className="hero-scroll-nudge" style={{
           position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)",
@@ -555,6 +542,18 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* ── SOCIAL PROOF STRIP — hidden on mobile via hero-proof-strip-wrap class ── */}
+      <div className="hero-proof-strip-wrap" style={{
+        textAlign: "center",
+        padding: "14px 24px",
+        background: "#0a0e1a",
+        borderTop: "1px solid #111827",
+      }}>
+        <p className="hero-proof-strip" style={{ fontSize: 15, color: "#9ca3af", margin: 0 }}>
+          100%&nbsp;<em style={{ fontStyle: "italic", color: "#d1d5db" }}>College</em>&nbsp;Coaching Staffs &nbsp;·&nbsp; Zero Club Camps &nbsp;·&nbsp; All Divisions
+        </p>
+      </div>
 
       {/* ── STATIC STATS BAR — hidden on mobile ── */}
       <div className="stats-bar-desktop" style={{
