@@ -1529,19 +1529,19 @@ export default function CoachDashboard() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <div style={{ width: 3, height: 24, background: "#a78bfa", borderRadius: 2 }} />
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "#f9fafb" }}>COLLEGES ENGAGING THE PROGRAM</div>
-            <span style={{ fontSize: 11, color: "rgba(148,163,184,0.50)", fontWeight: 600 }}>all signal levels · cross-roster · click to expand</span>
+            <span style={{ fontSize: 11, color: "rgba(148,163,184,0.66)", fontWeight: 600 }}>all signal levels · cross-roster · click to expand</span>
           </div>
-          {/* Section shell — lifted panel against black page */}
-          <div style={{ background: "#0B1220", border: "1px solid rgba(148,163,184,0.16)", borderRadius: 14, overflow: "hidden" }}>
+          {/* Section shell */}
+          <div style={{ background: "#101A2B", border: "1px solid rgba(148,163,184,0.20)", borderRadius: 14, overflow: "hidden", boxShadow: "0 0 0 1px rgba(255,255,255,0.02) inset" }}>
             {collegesEngagingViewModel.length === 0 ? (
-              <div style={{ padding: "28px 24px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(148,163,184,0.50)", fontSize: 14 }}>
-                <div style={{ width: 16, height: 16, border: "2px solid rgba(148,163,184,0.12)", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+              <div style={{ padding: "28px 24px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(148,163,184,0.66)", fontSize: 14 }}>
+                <div style={{ width: 16, height: 16, border: "2px solid rgba(148,163,184,0.14)", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
                 Loading…
               </div>
             ) : (
               <>
                 {/* Column headers */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "10px 20px", borderBottom: "1px solid rgba(148,163,184,0.10)", fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.72)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "10px 20px", borderBottom: "1px solid rgba(148,163,184,0.14)", fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.78)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                   <span>College</span><span>Athletes</span><span>Highest Stage</span><span>Last Activity</span><span>Repeat Interest</span><span></span>
                 </div>
 
@@ -1554,19 +1554,19 @@ export default function CoachDashboard() {
                   const coachCount = col.coaches.length;
 
                   return (
-                    <div key={col.college} style={{ borderBottom: (!isLast || isExpanded) ? "1px solid rgba(148,163,184,0.10)" : "none" }}>
+                    <div key={col.college} style={{ borderBottom: (!isLast || isExpanded) ? "1px solid rgba(148,163,184,0.14)" : "none" }}>
 
                       {/* ── Collapsed summary row ── */}
                       <div
                         onClick={() => setExpandedCollege(isExpanded ? null : col.college)}
-                        style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "12px 20px", alignItems: "center", cursor: "pointer", background: isExpanded ? "#101A2E" : "transparent", transition: "background 0.18s ease" }}
-                        onMouseEnter={e => { e.currentTarget.style.background = "#0E1628"; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = isExpanded ? "#101A2E" : "transparent"; }}
+                        style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "12px 20px", alignItems: "center", cursor: "pointer", background: isExpanded ? "#162338" : "transparent", transition: "background-color 180ms ease" }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = isExpanded ? "#162338" : "rgba(255,255,255,0.03)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = isExpanded ? "#162338" : "transparent"; }}
                       >
                         {/* College name + secondary */}
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 600, color: "rgba(255,255,255,0.96)", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.college}</div>
-                          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.58)", marginTop: 2 }}>
+                          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.66)", marginTop: 2 }}>
                             {athleteCount} athlete{athleteCount !== 1 ? "s" : ""}
                             {coachCount > 0 ? ` · ${coachCount} coach${coachCount !== 1 ? "es" : ""}` : ""}
                           </div>
@@ -1576,23 +1576,23 @@ export default function CoachDashboard() {
                         {/* Stage badge — unchanged semantics */}
                         <div><span style={{ fontSize: 10, fontWeight: 700, color: sc, background: `${sc}14`, border: `1px solid ${sc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.highestStage}</span></div>
                         {/* Last activity */}
-                        <div style={{ fontSize: 12, color: "rgba(148,163,184,0.58)" }}>{col.lastActivityDate ? new Date(col.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                        <div style={{ fontSize: 12, color: "rgba(148,163,184,0.66)" }}>{col.lastActivityDate ? new Date(col.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
                         {/* Repeat label — unchanged semantics */}
-                        <div>{col.repeatLabel ? <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", background: "#e8a02014", border: "1px solid #e8a02030", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.repeatLabel}</span> : <span style={{ fontSize: 11, color: "rgba(148,163,184,0.28)" }}>—</span>}</div>
+                        <div>{col.repeatLabel ? <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", background: "#e8a02014", border: "1px solid #e8a02030", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.repeatLabel}</span> : <span style={{ fontSize: 11, color: "rgba(148,163,184,0.30)" }}>—</span>}</div>
                         {/* Chevron */}
-                        <div style={{ fontSize: 13, color: "rgba(148,163,184,0.50)", textAlign: "center", transition: "transform 0.2s", transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)" }}>⌄</div>
+                        <div style={{ fontSize: 14, color: isExpanded ? "rgba(232,160,32,0.75)" : "rgba(148,163,184,0.50)", textAlign: "center", transition: "transform 0.2s, color 180ms ease", transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)" }}>⌄</div>
                       </div>
 
-                      {/* ── Expanded detail band — clearly distinct surface ── */}
+                      {/* ── Expanded detail band ── */}
                       <div style={{ maxHeight: isExpanded ? "900px" : "0px", overflow: "hidden", transition: "max-height 0.3s cubic-bezier(0.4,0,0.2,1)" }}>
-                        <div style={{ background: "#0F1B31", borderTop: "1px solid rgba(148,163,184,0.18)", padding: "0 20px 18px" }}>
+                        <div style={{ background: "#13243D", borderTop: "1px solid rgba(148,163,184,0.22)", borderBottom: "1px solid rgba(148,163,184,0.16)", borderLeft: "2px solid rgba(232,160,32,0.65)", padding: "0 20px 18px" }}>
                           <div style={{ display: "flex", gap: 40, flexWrap: "wrap" }}>
 
                             {/* BLOCK 1 — COACHES */}
                             <div style={{ flex: "1 1 220px", minWidth: 200 }}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.72)", textTransform: "uppercase", letterSpacing: "0.12em", padding: "14px 0 8px", borderBottom: "1px solid rgba(148,163,184,0.12)" }}>Coaches</div>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.78)", textTransform: "uppercase", letterSpacing: "0.12em", padding: "14px 0 8px", borderBottom: "1px solid rgba(148,163,184,0.16)" }}>Coaches</div>
                               {col.coaches.length === 0 ? (
-                                <div style={{ fontSize: 12, color: "rgba(148,163,184,0.40)", fontStyle: "italic", padding: "10px 0" }}>No coach details logged yet</div>
+                                <div style={{ fontSize: 12, color: "rgba(148,163,184,0.44)", fontStyle: "italic", padding: "10px 0" }}>No coach details logged yet</div>
                               ) : col.coaches.map((coach, ci) => (
                                 <div
                                   key={ci}
@@ -1609,14 +1609,14 @@ export default function CoachDashboard() {
                                     });
                                     setOpenSheet("coach_contact");
                                   }}
-                                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ci < col.coaches.length - 1 ? "1px solid rgba(148,163,184,0.12)" : "none", cursor: "pointer", transition: "opacity 0.15s ease" }}
-                                  onMouseEnter={e => { e.currentTarget.style.opacity = "0.72"; }}
+                                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ci < col.coaches.length - 1 ? "1px solid rgba(148,163,184,0.16)" : "none", cursor: "pointer", transition: "opacity 180ms ease" }}
+                                  onMouseEnter={e => { e.currentTarget.style.opacity = "0.70"; }}
                                   onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
                                 >
                                   <div style={{ minWidth: 0 }}>
                                     <div style={{ fontWeight: 600, color: "rgba(255,255,255,0.96)", fontSize: 13 }}>{coach.name}</div>
                                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2, flexWrap: "wrap" }}>
-                                      {coach.title && <span style={{ fontSize: 11, color: "rgba(148,163,184,0.78)" }}>{coach.title}</span>}
+                                      {coach.title && <span style={{ fontSize: 11, color: "rgba(148,163,184,0.84)" }}>{coach.title}</span>}
                                       {coach.twitter && (
                                         <a
                                           href={`https://twitter.com/${coach.twitter}`}
@@ -1637,22 +1637,22 @@ export default function CoachDashboard() {
 
                             {/* BLOCK 2 — ATHLETES */}
                             <div style={{ flex: "1 1 220px", minWidth: 200 }}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.72)", textTransform: "uppercase", letterSpacing: "0.12em", padding: "14px 0 8px", borderBottom: "1px solid rgba(148,163,184,0.12)" }}>Athletes</div>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.78)", textTransform: "uppercase", letterSpacing: "0.12em", padding: "14px 0 8px", borderBottom: "1px solid rgba(148,163,184,0.16)" }}>Athletes</div>
                               {col.athletes.length === 0 ? (
-                                <div style={{ fontSize: 12, color: "rgba(148,163,184,0.40)", fontStyle: "italic", padding: "10px 0" }}>No athlete detail available</div>
+                                <div style={{ fontSize: 12, color: "rgba(148,163,184,0.44)", fontStyle: "italic", padding: "10px 0" }}>No athlete detail available</div>
                               ) : col.athletes.map((ath, ai) => (
-                                <div key={ai} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ai < col.athletes.length - 1 ? "1px solid rgba(148,163,184,0.12)" : "none" }}>
+                                <div key={ai} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ai < col.athletes.length - 1 ? "1px solid rgba(148,163,184,0.16)" : "none" }}>
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontWeight: 600, color: "rgba(255,255,255,0.96)", fontSize: 13 }}>
                                       {ath.name}
-                                      {ath.gradYear && <span style={{ fontSize: 10, color: "rgba(148,163,184,0.50)", marginLeft: 6 }}>'{String(ath.gradYear).slice(-2)}</span>}
+                                      {ath.gradYear && <span style={{ fontSize: 10, color: "rgba(148,163,184,0.55)", marginLeft: 6 }}>'{String(ath.gradYear).slice(-2)}</span>}
                                     </div>
-                                    {ath.topCoachName && <div style={{ fontSize: 11, color: "rgba(148,163,184,0.58)", marginTop: 2 }}>via {ath.topCoachName}</div>}
+                                    {ath.topCoachName && <div style={{ fontSize: 11, color: "rgba(148,163,184,0.66)", marginTop: 2 }}>via {ath.topCoachName}</div>}
                                   </div>
                                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
                                     {/* Stage badge — semantics unchanged */}
                                     <span style={{ fontSize: 10, fontWeight: 700, color: ath.stageColor, background: `${ath.stageColor}14`, border: `1px solid ${ath.stageColor}30`, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{ath.stage}</span>
-                                    {ath.lastDate && <div style={{ fontSize: 10, color: "rgba(148,163,184,0.50)" }}>{new Date(ath.lastDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>}
+                                    {ath.lastDate && <div style={{ fontSize: 10, color: "rgba(148,163,184,0.55)" }}>{new Date(ath.lastDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>}
                                   </div>
                                 </div>
                               ))}
@@ -1667,7 +1667,7 @@ export default function CoachDashboard() {
                 })}
 
                 {collegesEngagingViewModel.length > 20 && (
-                  <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "rgba(148,163,184,0.50)", borderTop: "1px solid rgba(148,163,184,0.10)" }}>+{collegesEngagingViewModel.length - 20} more colleges</div>
+                  <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "rgba(148,163,184,0.55)", borderTop: "1px solid rgba(148,163,184,0.14)" }}>+{collegesEngagingViewModel.length - 20} more colleges</div>
                 )}
               </>
             )}
