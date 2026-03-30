@@ -1052,7 +1052,7 @@ export default function CoachDashboard() {
         return { athlete: a.athlete, event: eventText, college: collegeText };
       });
 
-    // ── Narrative: lead with strongest event, then broader signals ────────
+    // ── Narrative: specific, leadership-ready recruiting update ──────────
     const periodLabel =
       cuPeriod === "last_visit" ? "since your last visit" :
       cuPeriod === "60d" ? "over the last 60 days" :
@@ -1060,7 +1060,7 @@ export default function CoachDashboard() {
       "over the last 30 days";
     const capLabel = periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1);
 
-    // Broader signal types (excluding camp reg — handled in s1 when no stronger events)
+    // Broader signal types — used as fallback when intelligence rows are thin
     const sigTypes = [];
     if (filtered.some(a => ["dm_received","dm_sent"].includes(a.activity_type)))                                     sigTypes.push("direct messages");
     if (filtered.some(a => ["text_received","text_sent"].includes(a.activity_type)))                                 sigTypes.push("texts");
@@ -1070,7 +1070,6 @@ export default function CoachDashboard() {
     if (filtered.some(a => ["camp_invite","generic_camp_invite","personal_camp_invite"].includes(a.activity_type))) sigTypes.push("camp invites");
     if (filtered.some(a => ["post_camp_followup_sent","post_camp_personal_response"].includes(a.activity_type)))    sigTypes.push("post-camp follow-up");
     if (campRegCount > 0 && (majorCount > 0 || tractionAthletes > 0)) sigTypes.unshift(campNarrativePhrase(campRegCount));
-
     const sigList = sigTypes.length === 0 ? "" :
       sigTypes.length === 1 ? sigTypes[0] :
       sigTypes.slice(0, -1).join(", ") + ", and " + sigTypes[sigTypes.length - 1];
@@ -1081,46 +1080,133 @@ export default function CoachDashboard() {
         ? "No new recruiting activity since your last visit."
         : "No new recruiting activity in this period.";
     } else {
-      const topRank    = PRIORITY_RANK(topRaw);
-      const topAthlete = topRaw._athlete_name;
-      const topCollege = (topRaw.school_name || "").trim() || null;
+      const topRank       = PRIORITY_RANK(topRaw);
+      const topAthlete    = topRaw._athlete_name;
+      const topCollege    = (topRaw.school_name  || "").trim() || null;
+      const topCoach      = (topRaw.coach_name   || "").trim() || null;
+      const topCoachTitle = (topRaw.coach_title  || "").trim() || null;
+      // Natural contact string: "Coach Name, Title" or "Coach Name" or null
+      const topContact = topCoach
+        ? (topCoachTitle ? `${topCoach}, ${topCoachTitle}` : topCoach)
+        : null;
 
+      // ── S1: lead with the strongest event + available specificity ─────
       let s1 = "";
       if (topRank === 1) {
         s1 = topCollege
           ? `${capLabel}, ${topAthlete} committed to ${topCollege}.`
           : `${capLabel}, ${topAthlete} has a commitment on the board.`;
+
       } else if (topRank === 2) {
-        s1 = topCollege
-          ? `${capLabel}, ${topAthlete} received an offer from ${topCollege}.`
-          : `${capLabel}, ${topAthlete} received a scholarship offer.`;
+        s1 = topCollege && topContact
+          ? `${capLabel}, ${topAthlete} received a scholarship offer from ${topCollege}, extended by ${topContact}.`
+          : topCollege
+            ? `${capLabel}, ${topAthlete} received a scholarship offer from ${topCollege}.`
+            : `${capLabel}, ${topAthlete} received a scholarship offer.`;
+
       } else if (topRank === 3) {
+        const visitVerb = topRaw.activity_type === "official_visit_completed"
+          ? "completed an official visit" : "has an official visit on record";
         s1 = topCollege
-          ? `${capLabel}, ${topAthlete} has an official visit on record with ${topCollege}.`
-          : `${capLabel}, ${topAthlete} has an official visit on record.`;
+          ? `${capLabel}, ${topAthlete} ${visitVerb} with ${topCollege}.`
+          : `${capLabel}, ${topAthlete} ${visitVerb}.`;
+
       } else if (topRank === 4) {
-        s1 = topCollege
-          ? `${capLabel}, ${topAthlete} recorded an unofficial visit request from ${topCollege}.`
-          : `${capLabel}, ${topAthlete} has an unofficial visit request on record.`;
+        const visitVerb = topRaw.activity_type === "unofficial_visit_completed"
+          ? `completed an unofficial visit to ${topCollege || "a college campus"}`
+          : `received an unofficial visit request from ${topCollege || "a college program"}`;
+        s1 = topContact && topCollege
+          ? `${capLabel}, ${topAthlete} ${visitVerb}, with the invitation extended by ${topContact}.`
+          : `${capLabel}, ${topAthlete} ${visitVerb}.`;
+
       } else if (topRank === 5) {
-        s1 = topCollege
-          ? `${capLabel}, ${topAthlete} drew direct personal contact from ${topCollege}.`
-          : `${capLabel}, ${topAthlete} drew direct personal contact from a college program.`;
+        // Direct personal contact — most useful place to name the coach
+        if (topContact && topCollege) {
+          s1 = `${capLabel}, ${topContact} at ${topCollege} made direct contact with ${topAthlete}.`;
+        } else if (topContact) {
+          s1 = `${capLabel}, ${topAthlete} received direct personal contact from ${topContact}.`;
+        } else {
+          s1 = topCollege
+            ? `${capLabel}, ${topAthlete} received direct personal contact from ${topCollege}.`
+            : `${capLabel}, ${topAthlete} drew direct personal contact from a college program.`;
+        }
+
       } else if (topRank === 6) {
         const regVerb = topRaw.activity_type === "camp_attended" ? "attended a camp" : "registered for a camp";
         s1 = topCollege
           ? `${capLabel}, ${topAthlete} ${regVerb} at ${topCollege}.`
           : `${capLabel}, ${topAthlete} ${regVerb}.`;
+
       } else {
-        s1 = topCollege
-          ? `${capLabel}, ${topAthlete} received direct outreach from ${topCollege}.`
-          : `${capLabel}, ${topAthlete} received direct outreach from a college.`;
+        // Personal outreach — DM, text, phone, post-camp; name the method and coach if known
+        const methodLabel =
+          topRaw.activity_type === "phone_call"           ? "a phone call"
+          : topRaw.activity_type === "personal_email"     ? "a personal email"
+          : ["post_camp_followup_sent","post_camp_personal_response"].includes(topRaw.activity_type)
+                                                          ? "post-camp follow-up"
+          : ["dm_received","dm_sent"].includes(topRaw.activity_type) ? "a direct message"
+          : ["text_received","text_sent"].includes(topRaw.activity_type) ? "a text message"
+          : "direct outreach";
+        if (topContact && topCollege) {
+          s1 = `${capLabel}, ${topAthlete} received ${methodLabel} from ${topContact} at ${topCollege}.`;
+        } else if (topCollege) {
+          s1 = `${capLabel}, ${topAthlete} received ${methodLabel} from ${topCollege}.`;
+        } else {
+          s1 = `${capLabel}, ${topAthlete} received ${methodLabel} from a college program.`;
+        }
       }
 
-      const s2 = sigList
-        ? `Beyond that, other colleges engaged through ${sigList} across the roster.`
-        : "";
-      narrative = s2 ? `${s1} ${s2}` : s1;
+      // ── S2: secondary engagement — named schools + methods + coach when available ─
+      const secRows    = intelligenceRows.slice(1);
+      const secSchools = [...new Set(secRows.map(r => r.school).filter(Boolean))];
+      const namedSec   = secRows.find(r => r.coachName && r.school);
+      const secMethods = [...new Set(secRows.map(r => r.eventLabel))];
+      const secMethodStr = secMethods.length === 0 ? ""
+        : secMethods.length === 1 ? secMethods[0]
+        : secMethods.slice(0, -1).join(", ") + ", and " + secMethods[secMethods.length - 1];
+
+      let s2 = "";
+      if (namedSec) {
+        const coachStr = namedSec.coachTitle
+          ? `${namedSec.coachName}, ${namedSec.coachTitle}, at ${namedSec.school}`
+          : `${namedSec.coachName} at ${namedSec.school}`;
+        const otherSec = secSchools.filter(s => s !== namedSec.school);
+        if (otherSec.length === 1) {
+          s2 = `Additional contact included direct outreach from ${coachStr}, along with broader activity from ${otherSec[0]}.`;
+        } else if (otherSec.length > 1) {
+          s2 = `Additional contact included direct outreach from ${coachStr}, along with activity from ${otherSec.length} other programs.`;
+        } else {
+          s2 = `Additional contact included direct outreach from ${coachStr}.`;
+        }
+      } else if (secSchools.length >= 2) {
+        const schoolList = secSchools.length === 2
+          ? `${secSchools[0]} and ${secSchools[1]}`
+          : `${secSchools.slice(0, 2).join(", ")}, and ${secSchools.length - 2} other program${secSchools.length > 3 ? "s" : ""}`;
+        s2 = secMethodStr
+          ? `Additional engagement came from ${schoolList} through ${secMethodStr}.`
+          : `Additional engagement came from ${schoolList}.`;
+      } else if (secSchools.length === 1) {
+        s2 = secMethodStr
+          ? `Additional engagement came from ${secSchools[0]} through ${secMethodStr}.`
+          : `Additional engagement was also logged from ${secSchools[0]}.`;
+      } else if (sigList) {
+        s2 = `Additional broader engagement included ${sigList} from other programs across the roster.`;
+      }
+
+      // ── S3: distribution note — how concentrated vs spread is the activity ─
+      let s3 = "";
+      const _narrativeAthletes = new Set(intelligenceRows.map(r => r.athlete)).size;
+      if (intelligenceRows.length > 1) {
+        if (_narrativeAthletes === 1) {
+          s3 = `The strongest traction in this period remains centered on the same athlete rather than spread across the roster.`;
+        } else if (_narrativeAthletes === 2) {
+          s3 = `Recruiting attention in this period was split between two athletes.`;
+        } else if (_narrativeAthletes >= 3) {
+          s3 = `Activity during this period was distributed across ${_narrativeAthletes} athletes on the roster.`;
+        }
+      }
+
+      narrative = [s1, s2, s3].filter(Boolean).join(" ");
     }
 
     return { cutoff, athleteCount, tractionAthletes, tractionSchools, majorCount, visitCount, offerCount, commitCount, campRegCount, campRegAthletes, campRowLabel, topColleges, narrative, detailLines, intelligenceRows, totalFiltered: filtered.length };
