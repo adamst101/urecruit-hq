@@ -1687,7 +1687,7 @@ export default function CoachDashboard() {
       </section>
 
       {/* ── SECTION 4: COACH UPDATE ── */}
-      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+      <section style={{ padding: `0 24px ${coachUpdateData.totalFiltered > 0 ? "28px" : "16px"}`, maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ width: 3, height: 20, background: "#34d399", borderRadius: 2 }} />
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: T.textPrimary }}>COACH UPDATE</div>
@@ -1719,13 +1719,17 @@ export default function CoachDashboard() {
           </div>
         </div>
 
-        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 24px" }}>
+        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: coachUpdateData.totalFiltered > 0 ? "18px 24px" : "11px 20px" }}>
           {journeyLoading && Object.keys(athleteJourneys).length === 0 ? (
             <div style={{ fontSize: 13, color: "#4b5563" }}>Loading…</div>
+          ) : coachUpdateData.totalFiltered === 0 ? (
+            <p style={{ margin: 0, fontSize: 13, color: "#4b5563", lineHeight: 1.6 }}>
+              {coachUpdateData.narrative}
+            </p>
           ) : (
             <>
               {/* Intro line */}
-              <p style={{ margin: "0 0 14px", fontSize: 14, color: coachUpdateData.totalFiltered > 0 ? "#d1d5db" : "#6b7280", lineHeight: 1.7 }}>
+              <p style={{ margin: "0 0 14px", fontSize: 14, color: "#d1d5db", lineHeight: 1.7 }}>
                 {coachUpdateData.narrative}
               </p>
 
