@@ -99,8 +99,12 @@ export default function CoachDashboard() {
   const [programMetrics, setProgramMetrics] = useState(null);
   const [journeyLoading, setJourneyLoading] = useState(false);
 
-  // Open sheet: null | "roster" | "monthly" | "schools" | "noCamps" | "message" | "code"
+  // Open sheet: null | "roster" | "monthly" | "schools" | "noCamps" | "message" | "code" | "invite_parents" | "my_account"
   const [openSheet, setOpenSheet] = useState(null);
+  const [copiedTemplate, setCopiedTemplate] = useState(false);
+  const [emailPrefs, setEmailPrefs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("urecruit_email_prefs") || "null") || { weekly: true, monthly: true }; } catch { return { weekly: true, monthly: true }; }
+  });
   const [rosterFilter, setRosterFilter] = useState("all"); // "all" | "hasCamps" | "noCamps" | "thisMonth"
   const [monthlyView, setMonthlyView] = useState("byCamp"); // "byCamp" | "byAthlete"
   const [expandedSchool, setExpandedSchool] = useState(null); // school name string (used in schools sheet)
@@ -1259,7 +1263,7 @@ export default function CoachDashboard() {
               )}
             </p>
           </div>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
             <button
               onClick={handleRefresh}
               disabled={loading}
@@ -1268,12 +1272,16 @@ export default function CoachDashboard() {
               ↻ Refresh
             </button>
             <button
-              onClick={handleLogout}
-              disabled={loggingOut}
+              onClick={() => setOpenSheet("invite_parents")}
+              style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", color: "#34d399", fontSize: 13, fontWeight: 600 }}
+            >
+              + Invite Parents
+            </button>
+            <button
+              onClick={() => setOpenSheet("my_account")}
               style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", color: T.textSecondary, fontSize: 13, fontWeight: 600 }}
             >
-              <LogOut style={{ width: 14, height: 14 }} />
-              {loggingOut ? "Logging out…" : "Log out"}
+              My Account
             </button>
           </div>
         </div>
@@ -2205,6 +2213,8 @@ export default function CoachDashboard() {
                 {openSheet === "tile_heating_up"      && `PLAYERS HEATING UP — ${playersHeatingUpRows.length}`}
                 {openSheet === "tile_repeat_colleges" && `REPEAT-INTEREST COLLEGES — ${collegesEngagingRows.filter(r => r.repeatInterest).length}`}
                 {openSheet === "coach_contact"        && (selectedCoachContact ? `COACH — ${selectedCoachContact.name.toUpperCase()}` : "COACH CONTACT")}
+                {openSheet === "invite_parents"       && "INVITE PARENTS"}
+                {openSheet === "my_account"           && "MY ACCOUNT"}
               </div>
               <button
                 onClick={() => setOpenSheet(null)}
@@ -2882,6 +2892,200 @@ export default function CoachDashboard() {
                   </div>
                 </>
               )}
+
+              {/* ── Invite Parents sheet ── */}
+              {openSheet === "invite_parents" && (() => {
+                const coachName = [coach.first_name, coach.last_name].filter(Boolean).join(" ") || "Your coach";
+                const orgLine = [coach.school_or_org, coach.sport].filter(Boolean).join(" · ") || "the program";
+                const inviteCode = coach.invite_code || "—";
+                const emailTemplate = `Hi,
+
+${coachName} from ${orgLine} wanted to share a resource that can help your family stay on top of the college recruiting process.
+
+uRecruitHQ is a free recruiting management platform that helps athletes and families track college interest, camp opportunities, and recruiting timelines — all in one place.
+
+To get started, visit urecruithq.com and create a free account. When prompted for an invite code, enter:
+
+  ${inviteCode}
+
+This will automatically connect your athlete to ${coachName}'s program so you can stay in sync on recruiting activity.
+
+If you have any questions, feel free to reach out.
+
+— ${coachName}`;
+
+                function copyEmailTemplate() {
+                  navigator.clipboard.writeText(emailTemplate).then(() => {
+                    setCopiedTemplate(true);
+                    setTimeout(() => setCopiedTemplate(false), 2500);
+                  });
+                }
+
+                function copyFullMessage() {
+                  const full = `Subject: A Recruiting Resource from ${coachName}\n\n${emailTemplate}`;
+                  navigator.clipboard.writeText(full).then(() => {
+                    setCopiedTemplate(true);
+                    setTimeout(() => setCopiedTemplate(false), 2500);
+                  });
+                }
+
+                return (
+                  <>
+                    {/* Invite Code block */}
+                    <div style={{ marginBottom: 28 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Your Invite Code</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                        <div style={{ fontFamily: "monospace", fontSize: 30, fontWeight: 700, color: "#e8a020", letterSpacing: 4, background: T.pageBg, border: "1px solid #374151", borderRadius: 10, padding: "14px 22px" }}>
+                          {inviteCode}
+                        </div>
+                        <button
+                          onClick={copyCode}
+                          style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "12px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                        >
+                          {copied ? "✓ Copied!" : "Copy Code"}
+                        </button>
+                      </div>
+                      <p style={{ fontSize: 12, color: "#4b5563", marginTop: 10, marginBottom: 0 }}>
+                        Athletes and parents enter this code during signup at urecruithq.com to link directly to your program.
+                      </p>
+                    </div>
+
+                    {/* Divider */}
+                    <div style={{ borderTop: "1px solid #1f2937", marginBottom: 24 }} />
+
+                    {/* Email template */}
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em" }}>Parent Email Template</div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            onClick={copyEmailTemplate}
+                            style={{ background: "#111827", border: "1px solid #374151", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 600, color: copiedTemplate ? "#34d399" : T.textSecondary, cursor: "pointer" }}
+                          >
+                            {copiedTemplate ? "✓ Copied!" : "Copy Template"}
+                          </button>
+                          <button
+                            onClick={copyFullMessage}
+                            style={{ background: "#111827", border: "1px solid #374151", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 600, color: T.textSecondary, cursor: "pointer" }}
+                          >
+                            Copy w/ Subject
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ background: T.pageBg, border: "1px solid #1f2937", borderRadius: 10, padding: "16px 18px", fontSize: 13, color: "#9ca3af", lineHeight: 1.7, whiteSpace: "pre-wrap", fontFamily: "inherit" }}>
+                        {emailTemplate}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+
+              {/* ── My Account sheet ── */}
+              {openSheet === "my_account" && (() => {
+                function saveEmailPrefs(next) {
+                  setEmailPrefs(next);
+                  try { localStorage.setItem("urecruit_email_prefs", JSON.stringify(next)); } catch {}
+                }
+
+                const SectionLabel = ({ children }) => (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
+                    {children}
+                  </div>
+                );
+
+                const InfoRow = ({ label, value }) => value ? (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px solid #1a2535", gap: 12 }}>
+                    <span style={{ fontSize: 12, color: "#6b7280", flexShrink: 0 }}>{label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "#d1d5db", textAlign: "right" }}>{value}</span>
+                  </div>
+                ) : null;
+
+                const ToggleRow = ({ label, sub, checked, onChange }) => (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #1a2535", gap: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: "#d1d5db" }}>{label}</div>
+                      {sub && <div style={{ fontSize: 11, color: "#4b5563", marginTop: 2 }}>{sub}</div>}
+                    </div>
+                    <button
+                      onClick={() => onChange(!checked)}
+                      style={{ width: 42, height: 24, borderRadius: 12, border: "none", cursor: "pointer", background: checked ? "#34d399" : "#374151", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
+                      aria-pressed={checked}
+                    >
+                      <span style={{ position: "absolute", top: 3, left: checked ? 21 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s", display: "block" }} />
+                    </button>
+                  </div>
+                );
+
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+
+                    {/* Section A — Account Information */}
+                    <div>
+                      <SectionLabel>Account Information</SectionLabel>
+                      <InfoRow label="Name"         value={[coach.first_name, coach.last_name].filter(Boolean).join(" ") || null} />
+                      <InfoRow label="Email"        value={coach.email || null} />
+                      <InfoRow label="School / Org" value={coach.school_or_org || null} />
+                      <InfoRow label="Sport"        value={coach.sport || null} />
+                      <InfoRow label="Title"        value={coach.title || null} />
+                      <InfoRow label="Role"         value={coach.account_type || coach.role || null} />
+                      <InfoRow label="Invite Code"  value={coach.invite_code || null} />
+                    </div>
+
+                    {/* Section B — Linked Athletes */}
+                    <div>
+                      <SectionLabel>Linked Athletes ({roster.length})</SectionLabel>
+                      {roster.length === 0 ? (
+                        <p style={{ fontSize: 13, color: "#4b5563", fontStyle: "italic", margin: 0 }}>No athletes linked yet.</p>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                          {roster.map((r, i) => (
+                            <div key={r.account_id || i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid #1a2535", gap: 8 }}>
+                              <span style={{ fontSize: 13, fontWeight: 500, color: "#d1d5db" }}>{r.athlete_name || "Athlete"}</span>
+                              {r.athlete_grad_year && (
+                                <span style={{ fontSize: 11, color: "#6b7280", flexShrink: 0 }}>Class of {r.athlete_grad_year}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Section C — Email Preferences */}
+                    <div>
+                      <SectionLabel>Email Preferences</SectionLabel>
+                      <ToggleRow
+                        label="Weekly recruiting digest"
+                        sub="Summary of new activity across your roster each week"
+                        checked={emailPrefs.weekly}
+                        onChange={v => saveEmailPrefs({ ...emailPrefs, weekly: v })}
+                      />
+                      <ToggleRow
+                        label="Monthly program report"
+                        sub="High-level recruiting performance snapshot each month"
+                        checked={emailPrefs.monthly}
+                        onChange={v => saveEmailPrefs({ ...emailPrefs, monthly: v })}
+                      />
+                      <p style={{ fontSize: 11, color: "#374151", marginTop: 10, marginBottom: 0 }}>
+                        Email delivery is managed by the uRecruitHQ team. Preference changes take effect with the next send cycle.
+                      </p>
+                    </div>
+
+                    {/* Section D — Log Out */}
+                    <div style={{ paddingTop: 4 }}>
+                      <SectionLabel>Account Actions</SectionLabel>
+                      <button
+                        onClick={handleLogout}
+                        disabled={loggingOut}
+                        style={{ background: "transparent", border: "1px solid #374151", borderRadius: 9, padding: "10px 18px", fontSize: 13, fontWeight: 600, color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                      >
+                        <LogOut style={{ width: 14, height: 14 }} />
+                        {loggingOut ? "Logging out…" : "Log out"}
+                      </button>
+                    </div>
+
+                  </div>
+                );
+              })()}
 
             </div>
           </div>
