@@ -114,6 +114,25 @@ export function schoolMapGet(id) {
   return id ? _schoolMap.get(String(id)) || null : null;
 }
 
+/**
+ * Find a school record by name (case-insensitive).
+ * Tries exact match first, then partial contains.
+ * Must be called after ensureSchoolMap() has resolved.
+ */
+export function schoolMapFind(nameQuery) {
+  if (!nameQuery) return null;
+  const needle = nameQuery.toLowerCase().trim();
+  // Pass 1: exact match
+  for (const school of _schoolMap.values()) {
+    if ((school.school_name || school.name || "").toLowerCase() === needle) return school;
+  }
+  // Pass 2: name contains needle
+  for (const school of _schoolMap.values()) {
+    if ((school.school_name || school.name || "").toLowerCase().includes(needle)) return school;
+  }
+  return null;
+}
+
 export async function ensureSchoolMap(School) {
   if (_schoolMapLoaded) return;
   if (_schoolMapLoading) return _schoolMapLoading;

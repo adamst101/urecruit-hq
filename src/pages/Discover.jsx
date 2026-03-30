@@ -18,6 +18,7 @@ import SchoolGroupCard from "../components/camps/SchoolGroupCard.jsx";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
 import { DEMO_COACH_PROFILE } from "../lib/demoCoachData.js";
+import { loadDemoCamps } from "../lib/demoCampData.js";
 import { footballDemoSeasonYear } from "../components/utils/seasonEntitlements.jsx";
 
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
@@ -445,8 +446,33 @@ export default function Discover() {
   const { resolveIdentity, schoolById } = useSchoolIdentity(allRows);
 
   async function loadCamps() {
-    // Use module-level cache to avoid re-fetching all camps on every navigation.
-    // Intents are always reloaded so favorite/registered status stays current.
+    // ── Demo path: curated static dataset, no DB query ───────────────────────
+    // Both demo coach (?demo=coach) and demo user (unpaid) use the same static
+    // camp records from demoCampData.js. loadDemoCamps() has its own cache so
+    // repeated calls are free after the first.
+    if (isDemoMode) {
+      setIsLoading(true);
+      setCampErr(null);
+      try {
+        const rows = await loadDemoCamps();
+        const active = asArray(rows).filter(readActiveFlag);
+        setAllRows(active);
+        setIntentByKey({});
+        trackEvent("discover_loaded", {
+          source: "discover", season_year: seasonYear, paid: false,
+          raw_camps: rows.length, shown_camps: active.length,
+        });
+      } catch (e) {
+        setCampErr(String(e?.message || e || "Failed to load camps"));
+        setAllRows([]);
+        setRawRows([]);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // ── Paid path: real Camp entity with module-level cache ──────────────────
     const now = Date.now();
     if (
       _discoverCache.ts &&
@@ -465,8 +491,7 @@ export default function Discover() {
     setCampErr(null);
 
     try {
-      const useDemoEntity = isDemoMode;
-      const CampEntity = useDemoEntity ? base44?.entities?.DemoCamp : base44?.entities?.Camp;
+      const CampEntity = base44?.entities?.Camp;
       if (!CampEntity?.filter) {
         setAllRows([]);
         setRawRows([]);
@@ -475,13 +500,11 @@ export default function Discover() {
       }
 
       let rows = [];
-      const filterField = useDemoEntity ? "demo_season_year" : "season_year";
-
       try {
-        rows = await safeFilter(CampEntity, { [filterField]: seasonYear }, "-start_date", 2000);
+        rows = await safeFilter(CampEntity, { season_year: seasonYear }, "-start_date", 2000);
       } catch (e1) {
         try {
-          rows = await safeFilter(CampEntity, { [filterField]: String(seasonYear) }, "-start_date", 2000);
+          rows = await safeFilter(CampEntity, { season_year: String(seasonYear) }, "-start_date", 2000);
         } catch (e2) {
           throw e2 || e1;
         }
