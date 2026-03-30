@@ -1350,6 +1350,58 @@ export default function CoachDashboard() {
                 ? _typeArr[0]
                 : _typeArr.slice(0, -1).join(", ") + ", and " + _typeArr[_typeArr.length - 1];
 
+            // ── Athlete distribution across additional colleges ─────────────
+            const _additionalRows   = collegesEngagingRows.filter(r => r.college !== proofCollege);
+            const _addAthSet        = new Set();
+            for (const r of _additionalRows) { for (const n of r.athleteNames) _addAthSet.add(n); }
+            const additionalAthleteCount = _addAthSet.size;
+
+            // ── Signal quality classification ──────────────────────────────
+            const _lightSig    = new Set(["likes", "follows"]);
+            const _mediumSig   = new Set(["direct messages", "texts", "emails", "camp invites", "camp registrations"]);
+            const _strongSig   = new Set(["phone calls", "post-camp follow-up", "camp attendance"]);
+            const hasStrongOther = [..._otherActTypes].some(t => _strongSig.has(t));
+            const hasMediumOther = [..._otherActTypes].some(t => _mediumSig.has(t));
+            const hasLightOnly   = _otherActTypes.size > 0 && [..._otherActTypes].every(t => _lightSig.has(t));
+            const allEarlyStage  = _additionalRows.length > 0 && _additionalRows.every(r => r.highestLevel <= 1);
+
+            // ── Interpretive S2 builder ────────────────────────────────────
+            // Combines athlete distribution + signal quality into one readable sentence.
+            // Optional qualifier (e.g. "; no direct contact logged") appended before period.
+            const buildS2 = (qualifier = "") => {
+              if (additionalColleges <= 0) {
+                const base = proofCollege
+                  ? `${proofCollege} is the only school in the pipeline right now`
+                  : `No other schools are engaging the roster right now`;
+                return qualifier ? `${base}${qualifier}.` : `${base}.`;
+              }
+              const schoolStr    = `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""}`;
+              const recentSuffix = hasRecent ? ` — ${recentCount} active in the last 30 days` : "";
+              const sigSuffix    = hasStrongOther
+                ? ", with some stronger contact signals in the mix"
+                : hasMediumOther
+                  ? `, driven largely by ${earlyTypeDesc}`
+                  : hasLightOnly
+                    ? ", mostly early-stage awareness signals"
+                    : _otherActTypes.size > 0
+                      ? ` through ${earlyTypeDesc}`
+                      : allEarlyStage
+                        ? ", all still in early-stage engagement"
+                        : "";
+              let core;
+              if (additionalAthleteCount >= 3) {
+                core = `Beyond that, ${schoolStr} are engaging ${additionalAthleteCount} athletes across the roster${sigSuffix}${recentSuffix}`;
+              } else if (additionalAthleteCount === 2) {
+                core = `Beyond that, ${schoolStr} are engaging 2 athletes${sigSuffix}${recentSuffix}`;
+              } else if (additionalAthleteCount === 1 && additionalColleges >= 2) {
+                core = `Beyond that, ${schoolStr} are active, though most of that attention is concentrated on one athlete rather than spread across the program${recentSuffix}`;
+              } else {
+                // Single additional college, or athlete data unavailable
+                core = `Beyond that, ${schoolStr} are engaging the roster${sigSuffix}${recentSuffix}`;
+              }
+              return qualifier ? `${core}${qualifier}.` : `${core}.`;
+            };
+
             // ── Contact description for true-traction tier (no visit/offer) ─
             const topStatus     = topPair?.relationship_status || "";
             const contactDesc   = topStatus === "invite"
@@ -1363,9 +1415,7 @@ export default function CoachDashboard() {
               s1 = proofAthlete && proofCollege
                 ? `${proofAthlete} has committed to ${proofCollege}, giving the program a signed commitment on the board.`
                 : `The program has a signed commitment on the board.`;
-              s2 = additionalColleges > 0
-                ? `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are also engaging the roster through ${earlyTypeDesc}${hasRecent ? `, including ${recentCount} with activity in the last 30 days` : ""}.`
-                : `${proofCollege || "That program"} is the only school with contact on the board right now.`;
+              s2 = buildS2();
 
             } else if (offerCount > 0) {
               s1 = proofAthlete && proofCollege
@@ -1373,25 +1423,19 @@ export default function CoachDashboard() {
                 : proofAthlete
                   ? `${proofAthlete} has a scholarship offer on the board, the highest confirmed recruiting proof for the program this cycle.`
                   : `The program has a scholarship offer on the board, the highest confirmed recruiting proof this cycle.`;
-              s2 = additionalColleges > 0
-                ? `Beyond that, ${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are engaging the roster through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
-                : `${proofCollege || "That program"} is the only school in the pipeline right now.`;
+              s2 = buildS2();
 
             } else if (officialVisitCount > 0) {
               s1 = proofAthlete && proofCollege
                 ? `${proofAthlete} currently has an official visit on record with ${proofCollege}, the program's highest-stage recruiting contact.`
                 : `The program has an official visit on record, the highest-stage recruiting contact logged this cycle.`;
-              s2 = additionalColleges > 0
-                ? `Beyond that, ${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are engaging the roster through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
-                : `${proofCollege || "That program"} is the only school with contact on the board right now.`;
+              s2 = buildS2();
 
             } else if (unofficialVisitCount > 0) {
               s1 = proofAthlete && proofCollege
                 ? `${proofAthlete} currently has an unofficial visit on record with ${proofCollege}${trueTractionCount > 1 ? `, and the program has direct coach contact confirmed at ${trueTractionCount} schools` : ""}.`
                 : `The program has an unofficial visit on record${trueTractionCount > 1 ? `, with direct coach contact confirmed at ${trueTractionCount} schools` : ""}.`;
-              s2 = additionalColleges > 0
-                ? `Beyond that, ${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are engaging the roster through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
-                : `${proofCollege || "That program"} is the only school with direct recruiting contact on the board right now.`;
+              s2 = buildS2();
 
             } else if (trueTractionCount > 0) {
               s1 = proofAthlete && proofCollege
@@ -1400,7 +1444,7 @@ export default function CoachDashboard() {
                   ? `${proofAthlete} has ${contactDesc} on record with at least one college, the strongest direct recruiting contact logged for the roster.`
                   : `The program has ${contactDesc} on record at ${trueTractionCount} school${trueTractionCount !== 1 ? "s" : ""}.`;
               s2 = additionalColleges > 0
-                ? `Beyond that, ${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are engaging the roster through ${earlyTypeDesc}${hasRecent ? `, with ${recentCount} active in the last 30 days` : ""}.`
+                ? buildS2()
                 : proofCollege
                   ? `${proofCollege} is the only school with direct contact on the board — no other schools have made direct coach contact yet.`
                   : `No other schools have made direct coach contact yet.`;
@@ -1413,7 +1457,7 @@ export default function CoachDashboard() {
                   ? `${proofAthlete} is drawing the most early college interest on the roster, with ${proofCollege} engaging through ${earlyTypeDesc}.`
                   : `The roster has early college interest from ${totalColleges} school${totalColleges !== 1 ? "s" : ""}, with no direct coach contact logged yet.`;
               s2 = additionalColleges > 0
-                ? `${additionalColleges} other school${additionalColleges !== 1 ? "s" : ""} are also engaging through ${earlyTypeDesc}${hasRecent ? ` — ${recentCount} with activity in the last 30 days` : ""}; no direct coach contact has been logged yet.`
+                ? buildS2("; no direct coach contact has been logged yet")
                 : totalColleges === 1 && proofCollege
                   ? `${proofCollege} is the only school showing interest so far, and no direct coach contact has been logged yet.`
                   : `No direct coach contact has been logged yet across the roster.`;
