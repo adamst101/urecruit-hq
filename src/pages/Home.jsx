@@ -317,6 +317,7 @@ export default function Home() {
           flexDirection: "column",
           minHeight: "82vh",
           overflow: "hidden",
+          paddingBottom: 52,
         }}
       >
         {/* Background: deep navy with blue bloom on right, gold at bottom-right */}
@@ -525,6 +526,18 @@ export default function Home() {
           </div>{/* end two-column row */}
         </div>{/* end main content */}
 
+        {/* Proof strip — normal-flow at bottom of hero, visually anchored above stats bar */}
+        <div className="hero-proof-strip-wrap" style={{
+          textAlign: "center",
+          padding: "14px 24px",
+          position: "relative",
+          zIndex: 2,
+        }}>
+          <p className="hero-proof-strip" style={{ fontSize: 15, color: "#9ca3af", margin: 0 }}>
+            100%&nbsp;<em style={{ fontStyle: "italic", color: "#d1d5db" }}>College</em>&nbsp;Coaching Staffs &nbsp;·&nbsp; Zero Club Camps &nbsp;·&nbsp; All Divisions
+          </p>
+        </div>
+
         {/* ── SCROLL NUDGE ── */}
         <div className="hero-scroll-nudge" style={{
           position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)",
@@ -543,25 +556,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── SOCIAL PROOF STRIP — hidden on mobile via hero-proof-strip-wrap class ── */}
-      <div className="hero-proof-strip-wrap" style={{
-        textAlign: "center",
-        padding: "14px 24px",
-        background: "#0a0e1a",
-        borderTop: "1px solid #111827",
-      }}>
-        <p className="hero-proof-strip" style={{ fontSize: 15, color: "#9ca3af", margin: 0 }}>
-          100%&nbsp;<em style={{ fontStyle: "italic", color: "#d1d5db" }}>College</em>&nbsp;Coaching Staffs &nbsp;·&nbsp; Zero Club Camps &nbsp;·&nbsp; All Divisions
-        </p>
-      </div>
-
       {/* ── STATIC STATS BAR — hidden on mobile ── */}
       <div className="stats-bar-desktop" style={{
         background: "#e8a020",
         padding: "14px 24px",
         textAlign: "center",
-        position: "relative",
-        zIndex: 2,
         overflow: "hidden",
         whiteSpace: "nowrap",
         textOverflow: "ellipsis",
