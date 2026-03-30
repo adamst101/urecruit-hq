@@ -102,6 +102,7 @@ export default function CoachDashboard() {
   // Open sheet: null | "roster" | "monthly" | "schools" | "noCamps" | "message" | "code" | "invite_parents" | "my_account"
   const [openSheet, setOpenSheet] = useState(null);
   const [copiedTemplate, setCopiedTemplate] = useState(false);
+  const [copiedText, setCopiedText] = useState(false);
   const [emailPrefs, setEmailPrefs] = useState(() => {
     try { return JSON.parse(localStorage.getItem("urecruit_email_prefs") || "null") || { weekly: true, monthly: true }; } catch { return { weekly: true, monthly: true }; }
   });
@@ -2889,48 +2890,67 @@ export default function CoachDashboard() {
 
               {/* ── Invite Parents sheet ── */}
               {openSheet === "invite_parents" && (() => {
-                const coachName = [coach.first_name, coach.last_name].filter(Boolean).join(" ") || "Your coach";
-                const orgLine = [coach.school_or_org, coach.sport].filter(Boolean).join(" · ") || "the program";
-                const inviteCode = coach.invite_code || "—";
-                const emailTemplate = `Hi,
+                const coachName   = [coach.first_name, coach.last_name].filter(Boolean).join(" ") || null;
+                const schoolName  = coach.school_or_org || null;
+                const inviteCode  = coach.invite_code || null;
+                const codeDisplay = inviteCode || "—";
 
-${coachName} from ${orgLine} wanted to share a resource that can help your family stay on top of the college recruiting process.
+                // Signature lines — only include lines that have values
+                const sigLines = [coachName, schoolName].filter(Boolean);
+                const signature = sigLines.length > 0 ? sigLines.join("\n") : null;
 
-uRecruitHQ is a free recruiting management platform that helps athletes and families track college interest, camp opportunities, and recruiting timelines — all in one place.
+                const emailSubject = "Optional Resource for Families Interested in College Football Recruiting";
 
-To get started, visit urecruithq.com and create a free account. When prompted for an invite code, enter:
+                const emailBody = [
+                  "Dear Parents,",
+                  "",
+                  "I want to share an optional resource that may be valuable for families with athletes who are interested in playing at the next level.",
+                  "",
+                  "Many families begin this journey knowing their athlete has the dream to play college football, but not yet knowing how to navigate the process. As things begin to move, it can quickly become a mix of camp choices, registrations, dates, travel plans, costs, communication, and uncertainty about what matters most. URecruitHQ was created by parents who went through that process themselves and wanted a better way to stay organized and make smarter decisions along the way.",
+                  "",
+                  "This is not something required by our program, and I am not asking every family to use it. I am simply making you aware of it because some families may find it helpful to have more structure, visibility, and clarity as they support their athlete's recruiting journey.",
+                  "",
+                  "Please note that this is a paid resource, so participation is entirely your choice. There is a free demo available if you would like to evaluate it first.",
+                  "",
+                  inviteCode
+                    ? `If you choose to subscribe and are prompted for an invite code, please use: ${inviteCode}. Using that code allows me to have visibility into my players' recruiting journey inside the coach view, which can help me stay informed on college interest, better understand momentum, and support families and athletes more effectively.`
+                    : "If you choose to subscribe, using my invite code allows me to have visibility into my players' recruiting journey inside the coach view, which can help me stay informed on college interest, better understand momentum, and support families and athletes more effectively.",
+                  "",
+                  "I am sharing it as a resource only, with the hope that it may help some families feel better prepared and less overwhelmed as the process develops.",
+                  "",
+                  "Thank you,",
+                  "",
+                  ...(signature ? [signature] : []),
+                ].join("\n");
 
-  ${inviteCode}
+                const textTemplate = inviteCode
+                  ? `Hi parents — I wanted to share an optional resource that may be helpful for families with athletes interested in playing college football. URecruitHQ was created by parents who went through the process themselves and wanted a better way to stay organized around camps, dates, registrations, and recruiting movement. This is not required by our program — I'm simply sharing it as a resource some families may find helpful. There is a free demo available, and if you choose to subscribe, please use my invite code: ${inviteCode}. Using that code allows me to stay informed on my players' recruiting journey and better support families throughout the process.`
+                  : `Hi parents — I wanted to share an optional resource that may be helpful for families with athletes interested in playing college football. URecruitHQ was created by parents who went through the process themselves and wanted a better way to stay organized around camps, dates, registrations, and recruiting movement. This is not required by our program — I'm simply sharing it as a resource some families may find helpful. There is a free demo available at urecruithq.com.`;
 
-This will automatically connect your athlete to ${coachName}'s program so you can stay in sync on recruiting activity.
+                const SectionLabel = ({ children }) => (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+                    {children}
+                  </div>
+                );
 
-If you have any questions, feel free to reach out.
-
-— ${coachName}`;
-
-                function copyEmailTemplate() {
-                  navigator.clipboard.writeText(emailTemplate).then(() => {
-                    setCopiedTemplate(true);
-                    setTimeout(() => setCopiedTemplate(false), 2500);
-                  });
-                }
-
-                function copyFullMessage() {
-                  const full = `Subject: A Recruiting Resource from ${coachName}\n\n${emailTemplate}`;
-                  navigator.clipboard.writeText(full).then(() => {
-                    setCopiedTemplate(true);
-                    setTimeout(() => setCopiedTemplate(false), 2500);
-                  });
-                }
+                const CopyBtn = ({ onClick, active, children }) => (
+                  <button
+                    onClick={onClick}
+                    style={{ background: "#111827", border: "1px solid #374151", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 600, color: active ? "#34d399" : T.textSecondary, cursor: "pointer", flexShrink: 0 }}
+                  >
+                    {children}
+                  </button>
+                );
 
                 return (
-                  <>
-                    {/* Invite Code block */}
-                    <div style={{ marginBottom: 28 }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Your Invite Code</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+
+                    {/* ── Invite Code ── */}
+                    <div style={{ marginBottom: 24 }}>
+                      <SectionLabel>Your Invite Code</SectionLabel>
                       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                         <div style={{ fontFamily: "monospace", fontSize: 30, fontWeight: 700, color: "#e8a020", letterSpacing: 4, background: T.pageBg, border: "1px solid #374151", borderRadius: 10, padding: "14px 22px" }}>
-                          {inviteCode}
+                          {codeDisplay}
                         </div>
                         <button
                           onClick={copyCode}
@@ -2940,37 +2960,67 @@ If you have any questions, feel free to reach out.
                         </button>
                       </div>
                       <p style={{ fontSize: 12, color: "#4b5563", marginTop: 10, marginBottom: 0 }}>
-                        Athletes and parents enter this code during signup at urecruithq.com to link directly to your program.
+                        Parents enter this code during signup at urecruithq.com to connect to your program.
                       </p>
                     </div>
 
-                    {/* Divider */}
                     <div style={{ borderTop: "1px solid #1f2937", marginBottom: 24 }} />
 
-                    {/* Email template */}
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em" }}>Parent Email Template</div>
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <button
-                            onClick={copyEmailTemplate}
-                            style={{ background: "#111827", border: "1px solid #374151", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 600, color: copiedTemplate ? "#34d399" : T.textSecondary, cursor: "pointer" }}
-                          >
-                            {copiedTemplate ? "✓ Copied!" : "Copy Template"}
-                          </button>
-                          <button
-                            onClick={copyFullMessage}
-                            style={{ background: "#111827", border: "1px solid #374151", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 600, color: T.textSecondary, cursor: "pointer" }}
-                          >
-                            Copy w/ Subject
-                          </button>
-                        </div>
+                    {/* ── Email Template ── */}
+                    <div style={{ marginBottom: 24 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
+                        <SectionLabel>Parent Email Template</SectionLabel>
+                        <CopyBtn
+                          onClick={() => {
+                            const full = `Subject: ${emailSubject}\n\n${emailBody}`;
+                            navigator.clipboard.writeText(full).then(() => {
+                              setCopiedTemplate(true);
+                              setTimeout(() => setCopiedTemplate(false), 2500);
+                            });
+                          }}
+                          active={copiedTemplate}
+                        >
+                          {copiedTemplate ? "✓ Copied!" : "Copy Email"}
+                        </CopyBtn>
                       </div>
-                      <div style={{ background: T.pageBg, border: "1px solid #1f2937", borderRadius: 10, padding: "16px 18px", fontSize: 13, color: "#9ca3af", lineHeight: 1.7, whiteSpace: "pre-wrap", fontFamily: "inherit" }}>
-                        {emailTemplate}
+                      {/* Subject line display */}
+                      <div style={{ background: "#0a0e1a", border: "1px solid #1f2937", borderBottom: "none", borderRadius: "10px 10px 0 0", padding: "10px 16px" }}>
+                        <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600, marginRight: 8 }}>SUBJECT</span>
+                        <span style={{ fontSize: 12, color: "#9ca3af" }}>{emailSubject}</span>
+                      </div>
+                      {/* Body */}
+                      <div style={{ background: T.pageBg, border: "1px solid #1f2937", borderRadius: "0 0 10px 10px", padding: "14px 16px", fontSize: 13, color: "#9ca3af", lineHeight: 1.75, whiteSpace: "pre-wrap", fontFamily: "inherit", maxHeight: 320, overflowY: "auto" }}>
+                        {emailBody}
                       </div>
                     </div>
-                  </>
+
+                    <div style={{ borderTop: "1px solid #1f2937", marginBottom: 24 }} />
+
+                    {/* ── Text Template ── */}
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+                        <SectionLabel>Parent Text / Message Template</SectionLabel>
+                        <CopyBtn
+                          onClick={() => {
+                            navigator.clipboard.writeText(textTemplate).then(() => {
+                              setCopiedText(true);
+                              setTimeout(() => setCopiedText(false), 2500);
+                            });
+                          }}
+                          active={copiedText}
+                        >
+                          {copiedText ? "✓ Copied!" : "Copy Text"}
+                        </CopyBtn>
+                      </div>
+                      <div style={{ background: T.pageBg, border: "1px solid #1f2937", borderRadius: 10, padding: "14px 16px", fontSize: 13, color: "#9ca3af", lineHeight: 1.75 }}>
+                        {textTemplate}
+                      </div>
+                      <p style={{ fontSize: 11, color: "#374151", marginTop: 8, marginBottom: 0 }}>
+                        Suitable for team apps, group texts, or direct message platforms.
+                      </p>
+                    </div>
+
+                  </div>
                 );
               })()}
 
