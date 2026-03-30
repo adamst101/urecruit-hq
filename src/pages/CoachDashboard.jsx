@@ -1433,7 +1433,7 @@ export default function CoachDashboard() {
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: T.textPrimary }}>PROGRAM RECRUITING SUMMARY</div>
           {journeyLoading && !programMetrics && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#e8a020", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginLeft: "auto" }} />}
         </div>
-        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 24px" }}>
+        <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "20px 24px" }}>
           {journeyLoading && !programMetrics ? (
             <div style={{ fontSize: 13, color: "#4b5563" }}>Loading…</div>
           ) : (() => {
@@ -1676,10 +1676,16 @@ export default function CoachDashboard() {
             }
 
             return (
-              <div style={{ fontSize: 14, color: T.textSecondary, lineHeight: 1.75 }}>
-                <p style={{ margin: "0 0 8px", color: "#d1d5db" }}>{s1}</p>
-                {s2 && <p style={{ margin: s3 ? "0 0 8px" : "0" }}>{s2}</p>}
-                {s3 && <p style={{ margin: 0 }}>{s3}</p>}
+              <div>
+                {/* Lead takeaway — elevated treatment */}
+                <p style={{ margin: (s2 || s3) ? "0 0 14px" : "0", fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.90)", lineHeight: 1.55 }}>{s1}</p>
+                {/* Supporting context — separated tier */}
+                {(s2 || s3) && (
+                  <div style={{ borderTop: "1px solid #1e293b", paddingTop: 12, fontSize: 13, color: T.textSecondary, lineHeight: 1.72 }}>
+                    {s2 && <p style={{ margin: s3 ? "0 0 9px" : "0" }}>{s2}</p>}
+                    {s3 && <p style={{ margin: 0 }}>{s3}</p>}
+                  </div>
+                )}
               </div>
             );
           })()}
