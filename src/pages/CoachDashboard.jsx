@@ -1715,72 +1715,94 @@ export default function CoachDashboard() {
                 </div>
               )}
 
-              {/* Period recap scoreboard */}
-              <div style={{ borderTop: "1px solid #1f2937", paddingTop: 16, display: "flex", flexDirection: "column", gap: 0 }}>
+              {/* Period recap */}
+              <div style={{ borderTop: "1px solid #1f2937", paddingTop: 16 }}>
 
-                {/* Metric rows */}
-                {[
-                  {
-                    label: "Athletes with new activity",
-                    value: coachUpdateData.athleteCount,
-                    sub: null,
-                    color: coachUpdateData.athleteCount > 0 ? "#34d399" : "#374151",
-                  },
-                  {
-                    label: "Athletes with new traction",
-                    value: coachUpdateData.tractionAthletes,
-                    sub: coachUpdateData.tractionAthletes > 0 && coachUpdateData.tractionSchools > 1
-                      ? `${coachUpdateData.tractionSchools} schools`
-                      : null,
-                    color: coachUpdateData.tractionAthletes > 0 ? "#60a5fa" : "#374151",
-                  },
-                  {
-                    label: "New major outcomes",
-                    value: coachUpdateData.majorCount,
-                    sub: coachUpdateData.majorCount > 0
-                      ? [
-                          coachUpdateData.commitCount > 0 && `${coachUpdateData.commitCount} commit`,
-                          coachUpdateData.offerCount  > 0 && `${coachUpdateData.offerCount} offer`,
-                          coachUpdateData.visitCount  > 0 && `${coachUpdateData.visitCount} visit`,
-                        ].filter(Boolean).join(" · ")
-                      : null,
-                    color: coachUpdateData.majorCount > 0 ? "#f59e0b" : "#374151",
-                  },
-                  {
-                    label: coachUpdateData.campRowLabel,
-                    value: coachUpdateData.campRegCount,
-                    sub: coachUpdateData.campRegAthletes > 1 ? `${coachUpdateData.campRegAthletes} athletes` : null,
-                    color: coachUpdateData.campRegCount > 0 ? "#a78bfa" : "#374151",
-                  },
-                ].map(({ label, value, sub, color }) => (
-                  <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid #1a2535", gap: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 500, color: "#6b7280", letterSpacing: "0.01em" }}>{label}</span>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexShrink: 0 }}>
-                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color, lineHeight: 1 }}>{value}</span>
-                      {sub && <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 500 }}>{sub}</span>}
+                {/* Compact stat chips — 2×2 grid */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                  {[
+                    {
+                      value: coachUpdateData.athleteCount,
+                      label: "Athletes active",
+                      qualifier: null,
+                      accent: "#34d399",
+                      active: coachUpdateData.athleteCount > 0,
+                    },
+                    {
+                      value: coachUpdateData.tractionAthletes,
+                      label: "With new traction",
+                      qualifier: coachUpdateData.tractionAthletes > 0 && coachUpdateData.tractionSchools > 1
+                        ? `${coachUpdateData.tractionSchools} schools` : null,
+                      accent: "#60a5fa",
+                      active: coachUpdateData.tractionAthletes > 0,
+                    },
+                    {
+                      value: coachUpdateData.majorCount,
+                      label: "Major outcomes",
+                      qualifier: coachUpdateData.majorCount > 0
+                        ? [
+                            coachUpdateData.commitCount > 0 && `${coachUpdateData.commitCount} commit`,
+                            coachUpdateData.offerCount  > 0 && `${coachUpdateData.offerCount} offer`,
+                            coachUpdateData.visitCount  > 0 && `${coachUpdateData.visitCount} visit`,
+                          ].filter(Boolean).join(" · ")
+                        : null,
+                      accent: "#f59e0b",
+                      active: coachUpdateData.majorCount > 0,
+                    },
+                    {
+                      value: coachUpdateData.campRegCount,
+                      label: coachUpdateData.campRowLabel,
+                      qualifier: coachUpdateData.campRegAthletes > 1
+                        ? `${coachUpdateData.campRegAthletes} athletes` : null,
+                      accent: "#a78bfa",
+                      active: coachUpdateData.campRegCount > 0,
+                    },
+                  ].map(({ value, label, qualifier, accent, active }) => (
+                    <div key={label} style={{
+                      background: active ? `${accent}0d` : "rgba(255,255,255,0.02)",
+                      border: `1px solid ${active ? accent + "28" : "#1a2535"}`,
+                      borderRadius: 10,
+                      padding: "12px 13px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 1,
+                    }}>
+                      <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: active ? accent : "#2d3748", lineHeight: 1 }}>{value}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: active ? "#6b7280" : "#2d3748", lineHeight: 1.3, letterSpacing: "0.01em" }}>{label}</span>
+                      {qualifier && <span style={{ fontSize: 10, color: "#4b5563", marginTop: 3 }}>{qualifier}</span>}
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
 
-                {/* Most active programs — ranked sub-component */}
-                <div style={{ paddingTop: 14, marginTop: 2 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
-                    Most active programs
-                  </div>
-                  {coachUpdateData.topColleges.length > 0 ? (
+                {/* Most active programs — ranked panel */}
+                {coachUpdateData.topColleges.length > 0 && (
+                  <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #1a2535", borderRadius: 10, padding: "11px 13px" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 9 }}>
+                      Most active programs
+                    </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {coachUpdateData.topColleges.map((col, i) => (
-                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, color: i === 0 ? "#e8a020" : "#374151", lineHeight: 1, minWidth: 14, textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
-                          <div style={{ flex: 1, height: 1, background: i === 0 ? "rgba(232,160,32,0.15)" : "rgba(255,255,255,0.05)", flexShrink: 0 }} />
-                          <span style={{ fontSize: 13, fontWeight: 600, color: i === 0 ? "#e8a020" : i === 1 ? "#9ca3af" : "#6b7280", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col}</span>
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                          <span style={{
+                            fontFamily: "'Bebas Neue', sans-serif", fontSize: 12, lineHeight: 1,
+                            color: i === 0 ? "#e8a020" : "#374151",
+                            minWidth: 11, flexShrink: 0, textAlign: "right",
+                          }}>{i + 1}</span>
+                          <div style={{
+                            height: 2, borderRadius: 1, flexShrink: 0,
+                            width: i === 0 ? 20 : i === 1 ? 12 : 6,
+                            background: i === 0 ? "rgba(232,160,32,0.40)" : i === 1 ? "rgba(148,163,184,0.18)" : "rgba(255,255,255,0.05)",
+                          }} />
+                          <span style={{
+                            fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            color: i === 0 ? "#e8a020" : i === 1 ? "#9ca3af" : "#6b7280",
+                          }}>{col}</span>
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <span style={{ fontSize: 12, color: "#374151", fontStyle: "italic" }}>No program activity this period</span>
-                  )}
-                </div>
+                  </div>
+                )}
 
               </div>
             </>
