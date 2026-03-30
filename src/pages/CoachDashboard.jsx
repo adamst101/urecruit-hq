@@ -5,7 +5,7 @@ import { User, LogOut } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { clearSeasonAccessCache, useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { T } from "../lib/theme.js";
-import { DEMO_COACH_PROFILE, DEMO_JOURNEY_DATA } from "../lib/demoCoachData.js";
+import { DEMO_COACH_PROFILE, DEMO_JOURNEY_DATA, DEMO_LAST_VISIT_DATE } from "../lib/demoCoachData.js";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 const LOGO_URL = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -115,10 +115,14 @@ export default function CoachDashboard() {
   const [activityExpanded, setActivityExpanded] = useState(false);
 
   // COACH UPDATE — period filter + last-visit tracking via localStorage
+  // Demo mode: always use a fixed anchor date so "Since Last Visit" is
+  // guaranteed to include meaningful seeded activity regardless of localStorage.
   const [lastVisitDate] = useState(() => {
+    if (isDemoCoach) return DEMO_LAST_VISIT_DATE;
     try { return localStorage.getItem("urecruit_coach_last_visit") || null; } catch { return null; }
   });
   const [cuPeriod, setCuPeriod] = useState(() => {
+    if (isDemoCoach) return "last_visit";
     try { return localStorage.getItem("urecruit_coach_last_visit") ? "last_visit" : "30d"; } catch { return "30d"; }
   });
 

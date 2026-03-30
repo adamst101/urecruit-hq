@@ -296,6 +296,20 @@ const JOURNEY_010 = {
   recent_activities: [],
 };
 
+// ── Demo last-visit anchor ────────────────────────────────────────────────────
+// Used by CoachDashboard to guarantee "Since Last Visit" always resolves to a
+// window containing recent demo activity. Set 21 days back so the following
+// activities all fall inside the window:
+//   d(7)  Jaylen Carter — commitment to Florida (level 4)
+//   d(8)  DeShawn Williams — DM from Penn State (level 2)
+//   d(10) Isaiah Williams  — social follow South Alabama (level 1)
+//   d(12) Malik Thompson   — post-camp response Ole Miss (level 3)
+//   d(14) Xavier Bennett   — generic email Louisiana Tech (level 1)
+//   d(16) Caleb Harrison   — phone call Texas A&M (level 2)
+//   d(18) Marcus Okafor    — offer from Penn State (level 4)
+//   d(20) Trevon Davis     — text from Arkansas (level 2)
+export const DEMO_LAST_VISIT_DATE = d(21);
+
 // ── Exports ──────────────────────────────────────────────────────────────────
 
 export const DEMO_COACH_PROFILE = {
