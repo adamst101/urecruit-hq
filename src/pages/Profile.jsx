@@ -279,7 +279,7 @@ export default function Profile() {
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <button
           type="button"
-          onClick={() => nav("/Workspace")}
+          onClick={() => nav(isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
           className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
         >
           ← HQ
@@ -341,7 +341,7 @@ export default function Profile() {
                 Create Your Athlete's Profile →
               </button>
               <button
-                onClick={() => nav("/Workspace?demo=user")}
+                onClick={() => nav("/Workspace?demo=user&src=home_demo")}
                 style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}
               >
                 ← Back to HQ

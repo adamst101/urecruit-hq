@@ -1101,7 +1101,7 @@ export default function KnowledgeBase() {
               padding: "12px 16px",
             }}>
               <button
-                onClick={() => nav("/Workspace")}
+                onClick={() => nav(isDemoMode ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
                 style={{
                   background: "none", border: "none",
                   color: "#cbd5e1", fontSize: 13, fontWeight: 600,

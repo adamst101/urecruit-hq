@@ -1,6 +1,6 @@
 // src/pages/RecruitingJourney.jsx
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
@@ -178,6 +178,8 @@ function normId(x) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function RecruitingJourney() {
   const nav = useNavigate();
+  const loc = useLocation();
+  const isUserDemo = new URLSearchParams(loc.search).get("demo") === "user";
   const { accountId, isLoading: seasonLoading } = useSeasonAccess();
   const { activeAthlete: athleteProfile } = useActiveAthlete();
   const athleteId = normId(athleteProfile);
@@ -449,7 +451,7 @@ export default function RecruitingJourney() {
       {/* ── Header ── */}
       <section style={{ padding: "24px 24px 0", maxWidth: 900, margin: "0 auto" }}>
         <button
-          onClick={() => nav("/Workspace")}
+          onClick={() => nav(isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
           style={{
             background: "none", border: "none", color: T.textSecondary, cursor: "pointer",
             display: "flex", alignItems: "center", gap: 6,

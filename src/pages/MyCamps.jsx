@@ -442,7 +442,7 @@ export default function MyCamps() {
       <div className="max-w-5xl mx-auto px-4 pt-6">
         <button
           type="button"
-          onClick={() => nav(isCoach ? "/CoachDashboard" : "/Workspace")}
+          onClick={() => nav(isCoach ? "/CoachDashboard" : isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
           className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
         >
           ← HQ

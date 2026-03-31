@@ -185,6 +185,9 @@ export default function Calendar() {
   }, [forceDemo, url.seasonYear, season?.seasonYear]);
 
   const isAdmin = season?.role === "admin";
+  const isUserDemo = useMemo(() => {
+    try { return new URLSearchParams(loc.search).get("demo") === "user"; } catch { return false; }
+  }, [loc.search]);
 
   const athleteId = useMemo(() => {
     if (!isPaid) return null;
@@ -856,7 +859,7 @@ export default function Calendar() {
 
         <button
           type="button"
-          onClick={() => nav(isCoach ? "/CoachDashboard" : "/Workspace")}
+          onClick={() => nav(isCoach ? "/CoachDashboard" : isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
           className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
         >
           ← HQ
