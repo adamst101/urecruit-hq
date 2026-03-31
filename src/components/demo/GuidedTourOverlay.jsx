@@ -32,7 +32,7 @@ const TOUR_STEPS = [
     title: "The Playbook",
     message:
       "Before diving into camps, Marcus's parents spent time here. The Playbook broke down how recruiting actually works — what happens when, and what families can control.",
-    hint: "Read any guide that catches your eye. These are the same articles Marcus's family used to build their strategy.",
+    hint: "Take a minute to read the Recruiting Timeline and Building Your Camp Strategy.",
     nextKey: "discover",
     nextLabel: "Discover Camps",
     nextPath: "/Discover",
