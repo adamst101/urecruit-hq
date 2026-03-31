@@ -179,6 +179,9 @@ export default function Profile() {
     setWeight(185);
     setHomeCity(DEMO_ATHLETE.home_city);
     setHomeState(DEMO_ATHLETE.home_state);
+    setPlayerEmail("marcus.johnson@gmail.com");
+    setXHandle("MarcusJohnsonWR");
+    setParentEmail("david.johnson@gmail.com");
     // Parent info from demo data ("David Johnson")
     const parentParts = (DEMO_ATHLETE.parent_name || "").split(" ");
     setParentFirstName(parentParts[0] || "David");
@@ -186,6 +189,24 @@ export default function Profile() {
     setParentPhone("(678) 555-0142");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUserDemo, identityLoading]);
+
+  // Set demo sport (Football) once the sports list loads
+  useEffect(() => {
+    if (!isUserDemo || !sports.length) return;
+    const football = sports.find((s) => getSportName(s).toLowerCase() === "football");
+    if (football) setSportId(String(normId(football) || ""));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUserDemo, sports]);
+
+  // Set demo position (Wide Receiver) once positions and sportId are ready
+  useEffect(() => {
+    if (!isUserDemo || !positions.length || !sportId) return;
+    const wr = positions.find((p) =>
+      String(p?.position_name || p?.name || "").toLowerCase() === "wide receiver"
+    );
+    if (wr) setPrimaryPositionId(String(normId(wr) || ""));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUserDemo, positions, sportId]);
 
   const filteredPositions = useMemo(() => {
     if (!sportId) return [];
