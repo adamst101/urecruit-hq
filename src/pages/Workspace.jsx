@@ -422,28 +422,76 @@ export default function Workspace() {
 
         {/* User demo journey panel */}
         {isUserDemo && (
-          <div style={{ marginTop: 20 }}>
+          <div style={{ marginTop: 24 }}>
 
-            {/* ── 1. ORIENTATION ── */}
-            <div style={{ marginBottom: 22 }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <div style={{ background: "#e8a020", color: "#0a0e1a", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            {/* ══ ZONE A: WELCOME CARD ══════════════════════════════════════
+                What this page is + what's inside the demo.
+                Contained in its own card so it reads as one clear unit.     */}
+            <div style={{
+              background: "#0b1221",
+              border: "1px solid #1e2d45",
+              borderRadius: 14,
+              padding: "22px 24px",
+              marginBottom: 14,
+            }}>
+              {/* Badge + status line */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                <div style={{ background: "#e8a020", color: "#0a0e1a", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>
                   Sample Demo
                 </div>
-                <span style={{ fontSize: 13, color: "#6b7280" }}>Not your account — this is pre-populated example data</span>
+                <span style={{ fontSize: 13, color: "#6b7280" }}>
+                  A simulated family workspace — not your real account
+                </span>
               </div>
-              <p style={{ fontSize: 15, color: "#d1d5db", lineHeight: 1.7, margin: "0 0 6px", maxWidth: 620 }}>
-                This workspace shows how a real family uses URecruit HQ to organize college football camps, track coach interest, and stay on top of the recruiting process — from early research through camp season.
+
+              {/* Core orientation */}
+              <p style={{ fontSize: 16, fontWeight: 600, color: "#f9fafb", margin: "0 0 6px", lineHeight: 1.45 }}>
+                See how families organize the college football recruiting process.
               </p>
-              <p style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6, margin: 0 }}>
-                Everything below is pre-populated with a sample athlete's journey so you can explore the tools without signing up first.
+              <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 18px", lineHeight: 1.65, maxWidth: 580 }}>
+                This demo is pre-populated with a sample athlete's journey — profile built, camps saved, and first registrations locked in. Explore any section to see how the tools work together.
               </p>
+
+              {/* What's in this demo */}
+              <div style={{ borderTop: "1px solid #1a2d40", paddingTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#4b6a8a", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
+                  What's in this demo
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "10px 20px" }}>
+                  {[
+                    ["🔍", "Browse camps", "30+ simulated college football camps across all divisions"],
+                    ["⭐", "Saved list", "9 target camps already saved, 3 registrations confirmed"],
+                    ["📅", "Camp calendar", "Dates mapped out with a planning view"],
+                    ["🏈", "Recruiting tracker", "Log coach contacts, DMs, camp invites, and more"],
+                  ].map(([icon, label, detail]) => (
+                    <div key={label} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.3 }}>{icon}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#d1d5db" }}>{label}</div>
+                        <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.45, marginTop: 1 }}>{detail}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            {/* ── 2. FIRST-STEP CTAs ── */}
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
-                Start Here — Pick Something to Explore
+            {/* ══ ZONE B: START HERE ═══════════════════════════════════════
+                The most prominent action point in this section.
+                Visually distinct via gradient + amber left border.          */}
+            <div style={{
+              background: "linear-gradient(135deg, #0f1d35 0%, #0d1524 100%)",
+              border: "1px solid #1f2f45",
+              borderLeft: "4px solid #e8a020",
+              borderRadius: 12,
+              padding: "20px 22px",
+              marginBottom: 28,
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: 4 }}>
+                Start Here
+              </div>
+              <div style={{ fontSize: 14, color: "#9ca3af", marginBottom: 16, lineHeight: 1.5 }}>
+                Pick any section to explore — each one is fully interactive in the demo.
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button
@@ -456,55 +504,57 @@ export default function Workspace() {
                   onClick={() => nav(`${ROUTES.MyCamps}?demo=user`)}
                   style={{ background: "#111827", color: "#f9fafb", border: "1px solid #374151", borderRadius: 8, padding: "11px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
                 >
-                  View Saved & Registered Camps →
+                  Saved &amp; Registered Camps →
                 </button>
                 <button
                   onClick={() => nav(`${ROUTES.RecruitingJourney}?demo=user`)}
-                  style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 8, padding: "11px 20px", fontSize: 14, cursor: "pointer" }}
+                  style={{ background: "transparent", color: "#9ca3af", border: "1px solid #2d3748", borderRadius: 8, padding: "11px 20px", fontSize: 14, cursor: "pointer" }}
                 >
-                  See Recruiting Tracker →
+                  Recruiting Tracker →
                 </button>
               </div>
             </div>
 
-            <div style={{ borderTop: "1px solid #1a2535", marginBottom: 20 }} />
+            {/* ══ ZONE C: SAMPLE JOURNEY ═══════════════════════════════════
+                Supporting context — shows the simulated family's progress.
+                Intentionally lower visual weight than A and B.              */}
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>
+              Sample Family Journey
+            </div>
 
-            {/* ── 3. SAMPLE ATHLETE CARD ── */}
-            <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "18px 20px", marginBottom: 14 }}>
+            {/* Athlete card */}
+            <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "18px 20px", marginBottom: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
                 Sample Athlete
               </div>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb" }}>{DEMO_JOURNEY.athleteName}</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: "#f9fafb" }}>{DEMO_JOURNEY.athleteName}</div>
                   <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>
                     {DEMO_JOURNEY.position} · Class of {DEMO_JOURNEY.gradYear} · {DEMO_JOURNEY.school} · {DEMO_JOURNEY.city}
                   </div>
-                  <div style={{ fontSize: 13, color: "#e8a020", marginTop: 6, fontWeight: 600 }}>
+                  <div style={{ fontSize: 13, color: "#e8a020", marginTop: 5, fontWeight: 600 }}>
                     {DEMO_JOURNEY.chapter}
-                  </div>
-                  <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4, lineHeight: 1.6, maxWidth: 480 }}>
-                    This simulated athlete's workspace shows what things look like after a few months of active camp planning — profile set, target list built, and first registrations confirmed.
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 20, flexShrink: 0 }}>
                   <div style={{ textAlign: "center" }}>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#e8a020", lineHeight: 1 }}>{DEMO_JOURNEY.stats.saved}</div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 34, color: "#e8a020", lineHeight: 1 }}>{DEMO_JOURNEY.stats.saved}</div>
                     <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 3 }}>Camps Saved</div>
                   </div>
                   <div style={{ textAlign: "center" }}>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#22c55e", lineHeight: 1 }}>{DEMO_JOURNEY.stats.registered}</div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 34, color: "#22c55e", lineHeight: 1 }}>{DEMO_JOURNEY.stats.registered}</div>
                     <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 3 }}>Registered</div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* ── 4. SAMPLE JOURNEY TIMELINE ── */}
-            <div style={{ background: "#0d1424", border: "1px solid #1a2535", borderRadius: 12, padding: "16px 20px", marginBottom: 20 }}>
+            {/* Journey timeline */}
+            <div style={{ background: "#0d1424", border: "1px solid #1a2535", borderRadius: 12, padding: "16px 20px", marginBottom: 22 }}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                  Sample Journey Timeline
+                  Journey Timeline
                 </div>
                 <div style={{ fontSize: 12, color: "#4b5563" }}>Where this family stands today</div>
               </div>
@@ -530,29 +580,7 @@ export default function Workspace() {
               </div>
             </div>
 
-            {/* ── 5. WHAT YOU CAN DO ── */}
-            <div style={{ borderLeft: "3px solid #e8a020", paddingLeft: 16, marginBottom: 22 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#e8a020", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                What you can do from here
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "5px 24px" }}>
-                {[
-                  "Search and filter college football camps by division, state, and date",
-                  "Save target camps and build a personalized list",
-                  "Mark registrations and track what you've signed up for",
-                  "Log coach contacts, DMs, invites, and recruiting signals",
-                  "View a camp calendar to spot conflicts and plan ahead",
-                  "Build a full athlete profile with measurables and position info",
-                ].map((item) => (
-                  <div key={item} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                    <span style={{ color: "#e8a020", flexShrink: 0, marginTop: 2, fontSize: 12 }}>·</span>
-                    <span style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.5 }}>{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* ── 6. UPGRADE CTA ── */}
+            {/* Upgrade CTA */}
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
               <button
                 onClick={() => nav(`${ROUTES.Subscribe}?source=user_demo_workspace`)}
