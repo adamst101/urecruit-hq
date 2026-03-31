@@ -216,9 +216,10 @@ export default function Calendar() {
   const [registerModal, setRegisterModal] = useState({ open: false, camp: null });
   const [unregisterModal, setUnregisterModal] = useState({ open: false, camp: null });
 
-  // View state
-  const [calView, setCalView] = useState("list");
-  const [monthSubView, setMonthSubView] = useState("agenda");
+  // View state — demo story tour opens directly in month/grid view
+  const isDemoStory = new URLSearchParams(loc.search).get("src") === "demo_story";
+  const [calView, setCalView] = useState(isDemoStory ? "month" : "list");
+  const [monthSubView, setMonthSubView] = useState(isDemoStory ? "grid" : "agenda");
   const [currentWeek, setCurrentWeek] = useState(() => {
     const today = new Date();
     const sunday = new Date(today);
