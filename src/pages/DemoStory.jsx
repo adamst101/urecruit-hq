@@ -1,6 +1,6 @@
 // src/pages/DemoStory.jsx
-// Guided 6-step narrative demo entry for ?demo=user family experience.
-// Tells the Marcus Johnson story before handing off to the demo workspace.
+// Guided 4-step demo entry flow for the ?demo=user family experience.
+// Problem → Solution → Demo orientation → Enter workspace.
 // Production flows are not affected — only reached from Home.jsx demo CTA.
 
 import React, { useState } from "react";
@@ -8,295 +8,250 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { DEMO_JOURNEY } from "../lib/demoUserData.js";
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 4;
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
 
 // ── Shared tokens ──────────────────────────────────────────────────────────────
-const headline = {
-  fontSize: "clamp(22px, 4vw, 30px)",
-  fontWeight: 700,
-  color: "#f9fafb",
-  lineHeight: 1.35,
-  margin: "0 0 14px",
-};
-const body = {
-  fontSize: 15,
-  color: "#9ca3af",
-  lineHeight: 1.75,
-  margin: "0 0 14px",
-};
-const card = {
-  background: "#0b1221",
-  border: "1px solid #1e2d45",
-  borderRadius: 12,
-  padding: "16px 18px",
+const T = {
+  headline: {
+    fontSize: "clamp(21px, 3.5vw, 28px)",
+    fontWeight: 700,
+    color: "#f9fafb",
+    lineHeight: 1.35,
+    margin: "0 0 16px",
+  },
+  body: {
+    fontSize: 15,
+    color: "#9ca3af",
+    lineHeight: 1.72,
+    margin: "0 0 14px",
+  },
+  card: {
+    background: "#0b1221",
+    border: "1px solid #1e2d45",
+    borderRadius: 12,
+  },
+  label: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: "#4b5563",
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+  },
 };
 
-// ── Step 1 ─────────────────────────────────────────────────────────────────────
+// ── Step 1 — The Parent Problem ────────────────────────────────────────────────
 function Step1() {
+  const challenges = [
+    "Figuring out how recruiting actually works",
+    "Knowing which opportunities are real and which are not",
+    "Choosing the right camps and schools to target",
+    "Managing cost, logistics, and timing",
+    "Supporting the athlete without wasting time or money",
+  ];
+
   return (
     <div>
-      <div style={{ fontSize: 52, marginBottom: 22, lineHeight: 1 }}>🏈</div>
-      <h1 style={headline}>
-        Marcus Johnson told his parents in 8th grade that he wanted to play football in college.
+      <h1 style={T.headline}>
+        When an athlete says they want to play in college, most parents suddenly face a process they were not prepared for.
       </h1>
-      <p style={body}>
-        Like many families, they wanted to support that dream. They just didn't know what the path was supposed to look like, when to start, or what really mattered most.
-      </p>
-      <div style={{
-        background: "rgba(232,160,32,0.06)", border: "1px solid rgba(232,160,32,0.15)",
-        borderRadius: 8, padding: "11px 15px",
-      }}>
-        <span style={{ fontSize: 13, color: "#6b7280" }}>
-          This is a sample family journey showing how the recruiting process can unfold over time.
-        </span>
-      </div>
-    </div>
-  );
-}
 
-// ── Step 2 ─────────────────────────────────────────────────────────────────────
-function Step2() {
-  return (
-    <div>
-      <h1 style={headline}>
-        Everyone had advice. None of it gave them a clear plan.
-      </h1>
-      <p style={body}>
-        Some said to post clips and tag college coaches on X. Some said to hit exposure camps. Some said it was too early to worry about any of it.
-      </p>
-      <p style={{ ...body, marginBottom: 18 }}>
-        Families already in the process weren't much clearer:
+      <p style={T.body}>
+        The challenge becomes figuring out how recruiting works and how to support their athlete without wasting time, money, or effort.
       </p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
-        {[
-          "We post on X, go to camps, and hope the right coaches see him.",
-          "We're spending time and money, but we're not sure what is actually moving things forward.",
-          "We want to help — we just don't know what to do next.",
-        ].map((q, i) => (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+        {challenges.map((c) => (
           <div
-            key={i}
+            key={c}
             style={{
-              borderLeft: "3px solid #1e2d45",
-              paddingLeft: 14,
-              paddingTop: 10,
-              paddingBottom: 10,
-              paddingRight: 12,
-              background: "rgba(255,255,255,0.02)",
-              borderRadius: "0 8px 8px 0",
-            }}
-          >
-            <p style={{ fontSize: 14, color: "#d1d5db", fontStyle: "italic", margin: 0, lineHeight: 1.65 }}>
-              "{q}"
-            </p>
-          </div>
-        ))}
-      </div>
-
-      <p style={{ fontSize: 13, color: "#4b5563" }}>
-        Most families don't know what they don't know.
-      </p>
-    </div>
-  );
-}
-
-// ── Step 3 ─────────────────────────────────────────────────────────────────────
-function Step3() {
-  return (
-    <div>
-      <h1 style={headline}>
-        What starts as a dream gets complicated fast.
-      </h1>
-      <p style={body}>
-        The goal is simple. The process isn't. College football recruiting becomes a mix of camp decisions, registrations, timelines, travel, costs, and uncertainty about what actually matters.
-      </p>
-
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-        gap: 8,
-        marginBottom: 18,
-      }}>
-        {[
-          ["📋", "Which camps?"],
-          ["📅", "When to register?"],
-          ["🎬", "How to get film?"],
-          ["💬", "When to contact coaches?"],
-          ["💰", "What does this cost?"],
-          ["📈", "What actually moves the needle?"],
-        ].map(([icon, label]) => (
-          <div
-            key={label}
-            style={{
-              ...card,
-              padding: "10px 12px",
+              ...T.card,
+              padding: "10px 14px",
               display: "flex",
               alignItems: "center",
-              gap: 8,
+              gap: 10,
             }}
           >
-            <span style={{ fontSize: 16 }}>{icon}</span>
-            <span style={{ fontSize: 12, color: "#9ca3af" }}>{label}</span>
+            <span style={{ color: "#374151", fontSize: 16, flexShrink: 0 }}>—</span>
+            <span style={{ fontSize: 14, color: "#d1d5db" }}>{c}</span>
           </div>
         ))}
       </div>
 
-      <p style={body}>
-        Without a system, families fall back on spreadsheets, screenshots, and scattered notes. Working hard — but without a structure.
-      </p>
-      <p style={{ fontSize: 13, color: "#4b5563" }}>
-        That's where many families start to feel behind.
+      <p style={{ ...T.body, color: "#6b7280", fontSize: 14 }}>
+        What starts as a dream quickly becomes a complicated, multi-year process that requires strategy, organization, and informed decision-making.
       </p>
     </div>
   );
 }
 
-// ── Step 4 ─────────────────────────────────────────────────────────────────────
-function Step4() {
+// ── Step 2 — How URecruitHQ Helps ─────────────────────────────────────────────
+function Step2() {
+  const pillars = [
+    {
+      num: "1",
+      icon: "📖",
+      title: "A clear recruiting playbook",
+      desc: "So parents can understand how the process works, what matters at each stage, and what to do next — without having to piece it together on their own.",
+    },
+    {
+      num: "2",
+      icon: "📋",
+      title: "A way to track recruiting activity",
+      desc: "So families can tell the difference between real momentum and noise — and see which programs are actually showing interest over time.",
+    },
+    {
+      num: "3",
+      icon: "🔍",
+      title: "One place to explore college camps",
+      desc: "So parents can find the right camps, compare options, and plan the camp season with more confidence and less guesswork.",
+    },
+  ];
+
   return (
     <div>
-      <h1 style={headline}>
-        Then Marcus's parents found a better way to manage the process.
+      <h1 style={T.headline}>
+        URecruitHQ helps parents in three key ways.
       </h1>
-      <p style={body}>
-        URecruitHQ was built by parents who went through this themselves. One place to plan camps, track recruiting progress, and understand the process earlier — so families can support the dream with more clarity and confidence.
-      </p>
-      <p style={{ ...body, marginBottom: 20 }}>
-        They realized that for most athletes, the path to opportunity isn't passive. It takes focused effort, better timing, and a clear plan.
+
+      <p style={{ ...T.body, marginBottom: 22 }}>
+        It gives families a better system for understanding the process, staying organized, and making smarter decisions over time.
       </p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {[
-          "One place for planning and recruiting timelines",
-          "One place for camp dates and registrations",
-          "One place to track recruiting movement and coach contacts",
-          "One place to stay organized from junior year to signing day",
-        ].map((line) => (
-          <div key={line} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-            <span style={{ color: "#e8a020", fontWeight: 700, flexShrink: 0, marginTop: 1, fontSize: 15 }}>✓</span>
-            <span style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.5 }}>{line}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Step 5 — Tool Preview Cards ────────────────────────────────────────────────
-function PlaybookCard() {
-  return (
-    <div style={{ ...card, flex: "1 1 200px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span style={{ fontSize: 22 }}>📖</span>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-            The Playbook
-          </div>
-          <div style={{ fontSize: 11, color: "#4b5563" }}>Recruiting guides for parents</div>
-        </div>
-      </div>
-      <p style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.55, marginBottom: 12 }}>
-        8 guides covering the full recruiting process — from timelines and camp strategy to film and offers.
-      </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        {["Recruiting Timeline", "Camp Strategy", "Film That Coaches Watch", "Understanding Offers"].map((t) => (
-          <div key={t} style={{
-            background: "#111d30", borderRadius: 6, padding: "5px 10px",
-            fontSize: 12, color: "#9ca3af",
-          }}>
-            {t}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TrackerCard() {
-  const entries = [
-    { icon: "👤", type: "Social Follow", school: "Tennessee", badge: "Signal", green: false },
-    { icon: "📨", type: "Personal Invite", school: "WKU", badge: "True Traction", green: true },
-    { icon: "📞", type: "Phone Call", school: "WKU", badge: "True Traction", green: true },
-  ];
-  return (
-    <div style={{ ...card, flex: "1 1 200px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span style={{ fontSize: 22 }}>📋</span>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-            Recruiting Tracker
-          </div>
-          <div style={{ fontSize: 11, color: "#4b5563" }}>Log every coach interaction</div>
-        </div>
-      </div>
-      <p style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.55, marginBottom: 12 }}>
-        Track DMs, texts, camp invites, phone calls, visits, and offers — so you can see which programs are actually interested.
-      </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        {entries.map((e, i) => (
-          <div key={i} style={{
-            background: "#111d30", borderRadius: 6, padding: "6px 10px",
-            display: "flex", alignItems: "center", gap: 8,
-          }}>
-            <span style={{ fontSize: 13, flexShrink: 0 }}>{e.icon}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: "#d1d5db" }}>{e.type}</span>
-              <span style={{ fontSize: 11, color: "#4b5563" }}> · {e.school}</span>
-            </div>
-            <span style={{
-              fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 20, flexShrink: 0,
-              background: e.green ? "rgba(52,211,153,0.1)" : "rgba(96,165,250,0.1)",
-              color: e.green ? "#34d399" : "#60a5fa",
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 22 }}>
+        {pillars.map((p) => (
+          <div key={p.num} style={{ ...T.card, padding: "18px 20px", display: "flex", gap: 16 }}>
+            <div style={{
+              width: 34, height: 34, borderRadius: 8, flexShrink: 0,
+              background: "rgba(232,160,32,0.1)", border: "1px solid rgba(232,160,32,0.2)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 18,
             }}>
-              {e.badge}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DiscoverCard() {
-  const camps = [
-    { school: "Western Kentucky", date: "May 10", status: "Registered ✓", green: true },
-    { school: "Tennessee",        date: "May 17", status: "Registered ✓", green: true },
-    { school: "Auburn",           date: "Jun 7",  status: "Saved ⭐",    green: false },
-    { school: "Georgia",          date: "Jun 14", status: "Saved ⭐",    green: false },
-  ];
-  return (
-    <div style={{ ...card, flex: "1 1 200px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span style={{ fontSize: 22 }}>🔍</span>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-            Discover Camps
-          </div>
-          <div style={{ fontSize: 11, color: "#4b5563" }}>Find, save & register</div>
-        </div>
-      </div>
-      <p style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.55, marginBottom: 12 }}>
-        Browse college football camps, compare options, save targets, and track registrations in one place.
-      </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        {camps.map((c) => (
-          <div key={c.school} style={{
-            background: "#111d30", borderRadius: 6, padding: "6px 10px",
-            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-          }}>
+              {p.icon}
+            </div>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "#d1d5db" }}>{c.school}</div>
-              <div style={{ fontSize: 10, color: "#4b5563" }}>{c.date}, 2025</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#f9fafb", marginBottom: 5 }}>
+                {p.title}
+              </div>
+              <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6 }}>
+                {p.desc}
+              </div>
             </div>
-            <span style={{
-              fontSize: 10, fontWeight: 700, color: c.green ? "#22c55e" : "#e8a020",
-              whiteSpace: "nowrap",
-            }}>
-              {c.status}
-            </span>
+          </div>
+        ))}
+      </div>
+
+      <p style={{ fontSize: 13, color: "#4b5563", lineHeight: 1.6 }}>
+        Instead of piecing everything together on their own, URecruitHQ helps families learn the process, stay organized, and make smarter decisions throughout the journey.
+      </p>
+    </div>
+  );
+}
+
+// ── Step 3 — Meet Marcus and the Demo ─────────────────────────────────────────
+function Step3() {
+  const pages = [
+    {
+      icon: "👤",
+      name: "Athlete Profile",
+      desc: "Where Marcus's family keeps his core athlete information organized.",
+    },
+    {
+      icon: "📖",
+      name: "The Playbook",
+      desc: "Where they learn how recruiting works, what matters, and what to do next.",
+    },
+    {
+      icon: "🔍",
+      name: "Discover Camps",
+      desc: "Where they explore college camp options and compare opportunities.",
+    },
+    {
+      icon: "⭐",
+      name: "My Camps",
+      desc: "Where they track saved and registered camps in one place.",
+    },
+    {
+      icon: "📅",
+      name: "My Calendar",
+      desc: "Where they view dates, timing, and scheduling across the camp season.",
+    },
+    {
+      icon: "📋",
+      name: "Recruiting Tracker",
+      desc: "Where they follow activity over time — from early signals to more meaningful recruiting movement.",
+    },
+  ];
+
+  return (
+    <div>
+      <h1 style={T.headline}>
+        Next, you will step into a sample family journey already in progress.
+      </h1>
+
+      <p style={T.body}>
+        You are about to view the demo workspace for Marcus Johnson — a sample athlete whose family has been using URecruitHQ to navigate the recruiting process over time.
+      </p>
+
+      {/* Marcus context card */}
+      <div style={{
+        ...T.card,
+        padding: "14px 18px",
+        marginBottom: 22,
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        flexWrap: "wrap",
+      }}>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb", marginBottom: 2 }}>
+            {DEMO_JOURNEY.athleteName}
+          </div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            {DEMO_JOURNEY.position} · Class of {DEMO_JOURNEY.gradYear} · {DEMO_JOURNEY.school}
+          </div>
+          <div style={{ fontSize: 12, color: "#e8a020", fontWeight: 600, marginTop: 4 }}>
+            {DEMO_JOURNEY.chapter}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 18, flexShrink: 0 }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#e8a020", lineHeight: 1 }}>
+              {DEMO_JOURNEY.stats.saved}
+            </div>
+            <div style={{ ...T.label, marginTop: 2 }}>Saved</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#22c55e", lineHeight: 1 }}>
+              {DEMO_JOURNEY.stats.registered}
+            </div>
+            <div style={{ ...T.label, marginTop: 2 }}>Registered</div>
+          </div>
+        </div>
+      </div>
+
+      {/* What you will see */}
+      <div style={{ ...T.label, marginBottom: 12 }}>What you will find in the demo</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
+        {pages.map((p) => (
+          <div key={p.name} style={{
+            ...T.card,
+            padding: "11px 14px",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+          }}>
+            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{p.icon}</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#e8a020", marginBottom: 3 }}>
+                {p.name}
+              </div>
+              <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
+                {p.desc}
+              </div>
+            </div>
           </div>
         ))}
       </div>
@@ -304,30 +259,12 @@ function DiscoverCard() {
   );
 }
 
-function Step5() {
-  return (
-    <div>
-      <h1 style={headline}>
-        Here's how they used URecruitHQ.
-      </h1>
-      <p style={{ ...body, marginBottom: 20 }}>
-        Marcus's family used three main areas to get organized, understand the process, and stay ahead.
-      </p>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-        <PlaybookCard />
-        <TrackerCard />
-        <DiscoverCard />
-      </div>
-    </div>
-  );
-}
-
-// ── Step 6 ─────────────────────────────────────────────────────────────────────
-function Step6({ onDiscover }) {
+// ── Step 4 — Enter the Demo ────────────────────────────────────────────────────
+function Step4({ onDiscover }) {
   return (
     <div>
       <div style={{
-        display: "inline-flex", alignItems: "center", gap: 7,
+        display: "inline-flex", alignItems: "center",
         background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.2)",
         borderRadius: 6, padding: "4px 12px", marginBottom: 20,
       }}>
@@ -336,19 +273,21 @@ function Step6({ onDiscover }) {
         </span>
       </div>
 
-      <h1 style={headline}>
-        Now step into Marcus Johnson's sample family workspace.
+      <h1 style={T.headline}>
+        Step into Marcus Johnson's demo workspace.
       </h1>
-      <p style={{ ...body, marginBottom: 20 }}>
-        Explore Marcus's saved camps, recruiting tracker, and profile to see how URecruitHQ can help families stay organized and prepared throughout the process.
+
+      <p style={T.body}>
+        This sample workspace shows how a family can use URecruitHQ to stay organized, plan camps, and follow recruiting progress over time.
       </p>
 
-      {/* Mini athlete card */}
-      <div style={{ ...card, marginBottom: 8 }}>
-        <div style={{
-          display: "flex", alignItems: "flex-start",
-          justifyContent: "space-between", flexWrap: "wrap", gap: 12,
-        }}>
+      <p style={{ ...T.body, marginBottom: 28 }}>
+        Explore the tools, see how Marcus's family is using them, and get a clearer picture of how the platform can help your own family navigate the process with more confidence.
+      </p>
+
+      {/* Athlete card */}
+      <div style={{ ...T.card, padding: "14px 18px", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb", marginBottom: 3 }}>
               {DEMO_JOURNEY.athleteName}
@@ -362,36 +301,31 @@ function Step6({ onDiscover }) {
           </div>
           <div style={{ display: "flex", gap: 18, flexShrink: 0 }}>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#e8a020", lineHeight: 1 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#e8a020", lineHeight: 1 }}>
                 {DEMO_JOURNEY.stats.saved}
               </div>
-              <div style={{ fontSize: 10, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>
-                Saved
-              </div>
+              <div style={{ ...T.label, marginTop: 2 }}>Saved</div>
             </div>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#22c55e", lineHeight: 1 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#22c55e", lineHeight: 1 }}>
                 {DEMO_JOURNEY.stats.registered}
               </div>
-              <div style={{ fontSize: 10, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>
-                Registered
-              </div>
+              <div style={{ ...T.label, marginTop: 2 }}>Registered</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Secondary CTA */}
       <button
         onClick={onDiscover}
         style={{
           background: "none", border: "none", color: "#93c5fd",
           fontSize: 13, cursor: "pointer", padding: 0,
           textDecoration: "underline", textDecorationColor: "rgba(147,197,253,0.3)",
-          marginTop: 4,
+          marginTop: 6,
         }}
       >
-        Or start with Demo Camps →
+        Or start with Discover Camps →
       </button>
     </div>
   );
@@ -405,7 +339,7 @@ function ProgressDots({ step }) {
         <div
           key={i}
           style={{
-            width: i === step ? 20 : 7,
+            width: i === step ? 22 : 7,
             height: 7,
             borderRadius: 4,
             background: i === step ? "#e8a020" : i < step ? "#374151" : "#1a2535",
@@ -419,6 +353,14 @@ function ProgressDots({ step }) {
     </div>
   );
 }
+
+// ── Next button labels ─────────────────────────────────────────────────────────
+const NEXT_LABELS = [
+  "How URecruitHQ Helps",
+  "Meet Marcus",
+  "Enter the Demo",
+  null, // step 4 handled separately
+];
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function DemoStory() {
@@ -444,8 +386,8 @@ export default function DemoStory() {
     nav("/Workspace?demo=user&src=demo_story_skip");
   }
 
-  const STEPS = [Step1, Step2, Step3, Step4, Step5];
-  const StepComponent = STEPS[step];
+  const STEP_COMPONENTS = [Step1, Step2, Step3];
+  const StepComponent = STEP_COMPONENTS[step];
 
   return (
     <div style={{
@@ -458,7 +400,7 @@ export default function DemoStory() {
     }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
-      {/* ── Fixed top bar ── */}
+      {/* ── Top bar ── */}
       <div style={{
         position: "sticky", top: 0, zIndex: 10,
         background: "rgba(7,12,24,0.92)",
@@ -467,65 +409,50 @@ export default function DemoStory() {
         borderBottom: "1px solid #0f1a2b",
       }}>
         <div style={{
-          maxWidth: 740,
-          margin: "0 auto",
-          padding: "12px 20px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
+          maxWidth: 740, margin: "0 auto",
+          padding: "11px 20px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
-          {/* Logo */}
-          <img
-            src={LOGO_URL}
-            alt="URecruit HQ"
-            style={{ height: 32, width: "auto", objectFit: "contain" }}
-          />
-
-          {/* Skip */}
+          <img src={LOGO_URL} alt="URecruit HQ" style={{ height: 30, width: "auto", objectFit: "contain" }} />
           <button
             onClick={skip}
             style={{
-              background: "none", border: "none",
-              color: "#4b5563", fontSize: 13, cursor: "pointer",
+              background: "none", border: "none", color: "#4b5563",
+              fontSize: 13, cursor: "pointer", fontFamily: "inherit",
               display: "flex", alignItems: "center", gap: 4,
-              fontFamily: "inherit",
             }}
           >
             Skip to workspace
-            <ArrowRight style={{ width: 13, height: 13 }} />
+            <ArrowRight style={{ width: 12, height: 12 }} />
           </button>
         </div>
       </div>
 
       {/* ── Content ── */}
       <div style={{
-        flex: 1,
-        maxWidth: 680,
-        width: "100%",
-        margin: "0 auto",
-        padding: "36px 24px 24px",
+        flex: 1, maxWidth: 680, width: "100%",
+        margin: "0 auto", padding: "32px 24px 24px",
         boxSizing: "border-box",
       }}>
 
         {/* Progress */}
-        <div style={{ marginBottom: 32 }}>
+        <div style={{ marginBottom: 28 }}>
           <ProgressDots step={step} />
         </div>
 
         {/* Step content */}
-        <div key={step} style={{ marginBottom: 40 }}>
+        <div key={step} style={{ marginBottom: 36 }}>
           {step < TOTAL_STEPS - 1
             ? <StepComponent />
-            : <Step6 onDiscover={enterDiscover} />
+            : <Step4 onDiscover={enterDiscover} />
           }
         </div>
 
         {/* ── Navigation ── */}
         <div style={{
-          display: "flex",
-          alignItems: "center",
+          display: "flex", alignItems: "center",
           justifyContent: "space-between",
-          paddingTop: 24,
+          paddingTop: 20,
           borderTop: "1px solid #0f1a2b",
           gap: 12,
         }}>
@@ -565,23 +492,22 @@ export default function DemoStory() {
             <button
               onClick={() => goTo(step + 1)}
               style={{
-                background: step === 0 ? "#e8a020" : "#111d30",
+                background: step === 0 ? "#e8a020" : "#0d1828",
                 color: step === 0 ? "#0a0e1a" : "#f9fafb",
                 border: step === 0 ? "none" : "1px solid #1e2d45",
-                borderRadius: 9, padding: "12px 24px",
+                borderRadius: 9, padding: "11px 22px",
                 fontSize: 14, fontWeight: step === 0 ? 700 : 600,
                 cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
                 fontFamily: "inherit",
               }}
             >
-              Next
+              {NEXT_LABELS[step]}
               <ArrowRight style={{ width: 14, height: 14 }} />
             </button>
           )}
         </div>
       </div>
 
-      {/* Bottom padding for mobile safe area */}
       <div style={{ height: 32 }} />
     </div>
   );
