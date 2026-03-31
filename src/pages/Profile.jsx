@@ -368,7 +368,8 @@ export default function Profile() {
           </div>
         )}
 
-        {/* ── SECTION: Athlete Info ── */}
+        {/* ── SECTION: Form cards — hidden during tour (demo card provides context instead) ── */}
+        {!(isTourMode && isUserDemo) && <>
         <Card className="p-4 space-y-4 border-ur-border bg-ur-card">
           <div className="text-lg font-semibold text-ur-primary">Athlete Info</div>
 
@@ -523,6 +524,7 @@ export default function Profile() {
             </Button>
           </div>
         )}
+        </>}
       </div>
 
       <GuidedTourOverlay tourKey="profile" />

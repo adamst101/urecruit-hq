@@ -18,6 +18,7 @@ import { trackEventOnce } from "../utils/trackEvent.js";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
 import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
+import { initDemoUserState, DEMO_SEASON_YEAR } from "../lib/demoUserData.js";
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
@@ -181,9 +182,11 @@ export default function Calendar() {
   const isCoach = effectiveMode === "coach" || effectiveMode === "coach_pending";
 
   const seasonYear = useMemo(() => {
+    // User demo always uses the fixed demo season year regardless of auth state
+    if (new URLSearchParams(loc.search).get("demo") === "user") return DEMO_SEASON_YEAR;
     if (forceDemo && url.seasonYear) return url.seasonYear;
     return season?.seasonYear;
-  }, [forceDemo, url.seasonYear, season?.seasonYear]);
+  }, [forceDemo, url.seasonYear, season?.seasonYear, loc.search]);
 
   const isAdmin = season?.role === "admin";
   const isUserDemo = useMemo(() => {
@@ -246,6 +249,14 @@ export default function Calendar() {
       nav({ search: sp.toString() }, { replace: true });
     }
   }, [season?.mode, url.mode]);
+
+  // Seed demo user state for ?demo=user entries, then invalidate cached demo query
+  // so the re-fetch reads seeded favorites/registered from localStorage.
+  useEffect(() => {
+    if (!isUserDemo || !demoProfileId) return;
+    initDemoUserState(demoProfileId, DEMO_SEASON_YEAR);
+    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+  }, [isUserDemo, demoProfileId]);
 
   // Auto-set sport filter for paid users
   useEffect(() => {
@@ -505,6 +516,7 @@ export default function Calendar() {
 
   // Opens the same RegisterConfirmModal that Discover uses
   function handleRegisterClick(camp) {
+    if (isTourMode || isUserDemo) return;
     const cid = String(camp?.camp_id || camp?.id || "");
     if (isCampRegistered(cid)) {
       setUnregisterModal({ open: true, camp });

@@ -88,10 +88,12 @@ export default function MyCamps() {
   }, []);
   const isTourMode = new URLSearchParams(window.location.search).get("tour") !== null;
 
-  // Seed demo favorites/registered for direct ?demo=user entries
+  // Seed demo favorites/registered for direct ?demo=user entries, then
+  // invalidate the demoCampSummaries cache so the re-fetch reads the seeded state.
   useEffect(() => {
     if (!isUserDemo || !demoProfileId) return;
     initDemoUserState(demoProfileId, DEMO_SEASON_YEAR);
+    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
   }, [isUserDemo, demoProfileId]);
   const isAdmin = season?.role === "admin";
   const isCoach = season?.mode === "coach" || season?.mode === "coach_pending";
@@ -231,6 +233,7 @@ export default function MyCamps() {
   }
 
   function handleRegisterClick(camp) {
+    if (isUserDemo) return;
     const cid = String(camp?.camp_id || camp?.id || "");
     if (isCampRegisteredCheck(cid)) {
       setUnregisterModal({ open: true, camp });
@@ -305,6 +308,7 @@ export default function MyCamps() {
   }
 
   function handleRegisteredToggle(campId) {
+    if (isUserDemo) return;
     const cid = String(campId ?? "");
     if (!cid) return;
     const isReg = isCampRegisteredCheck(cid);
@@ -466,7 +470,23 @@ export default function MyCamps() {
           </div>
         )}
 
-        {isDemoMode && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
+        {isDemoMode && !isTourMode && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
+
+        {/* Tour context note — shown instead of DemoBanner in guided tour */}
+        {isTourMode && isUserDemo && (
+          <div style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            background: "rgba(232,160,32,0.05)",
+            border: "1px solid rgba(232,160,32,0.15)",
+            borderRadius: 8,
+            fontSize: 12.5,
+            color: "#6b7280",
+            lineHeight: 1.6,
+          }}>
+            Showing Marcus's saved and registered camps from his sample season.
+          </div>
+        )}
 
         {/* Summary pills */}
         <MyCampsSummaryPills

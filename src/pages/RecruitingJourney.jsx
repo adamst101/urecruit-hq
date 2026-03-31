@@ -301,6 +301,7 @@ export default function RecruitingJourney() {
 
   // ── Add activity ─────────────────────────────────────────────────────────
   function openAdd(type) {
+    if (isTourMode) return;
     if (isUserDemo) { setShowDemoUpgrade(true); return; }
     setAddForm({ ...BLANK_FORM, activity_type: type });
     setEditingId(null);
@@ -577,8 +578,8 @@ export default function RecruitingJourney() {
 
       {!loading && (!!accountId || isUserDemo) && (
         <>
-          {/* ── Quick Add ── */}
-          <section style={{ padding: "0 24px 32px", maxWidth: 900, margin: "0 auto" }}>
+          {/* ── Quick Add — hidden in tour mode ── */}
+          {!isTourMode && <section style={{ padding: "0 24px 32px", maxWidth: 900, margin: "0 auto" }}>
             <div style={{
               fontSize: 13, fontWeight: 700, color: "#9ca3af",
               letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12,
@@ -637,7 +638,7 @@ export default function RecruitingJourney() {
                 >×</button>
               </div>
             )}
-          </section>
+          </section>}
 
           {/* ── Traction Snapshot ── */}
           {athleteMetrics && (

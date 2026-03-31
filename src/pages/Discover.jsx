@@ -869,6 +869,7 @@ export default function Discover() {
   }
 
   function handleRegisteredToggle(campId) {
+    if (isUserDemo) return;
     const id = String(campId ?? "");
     if (!id) return;
     const isReg = isCampRegistered(id);
@@ -890,6 +891,7 @@ export default function Discover() {
   }
 
   async function handleRegisterClick(camp) {
+    if (isTourMode || isUserDemo) return;
     const campId = String(camp?.id ?? "");
 
     // Demo users: skip writeGate entirely, allow local-only register
@@ -1004,6 +1006,7 @@ export default function Discover() {
             onFavoriteToggle={handleFavoriteToggle}
             onRegisteredToggle={isCoach ? null : handleRegisteredToggle}
             onRegisterClick={(camp) => {
+              if (isUserDemo) return;
               const url = camp?.link_url || camp?.source_url;
               if (url) window.open(String(url), "_blank", "noopener,noreferrer");
             }}

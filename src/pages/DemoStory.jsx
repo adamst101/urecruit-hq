@@ -46,54 +46,22 @@ function ProblemMap() {
   const cx = 290, cy = 205, cr = 56, R = 145;
 
   // angle: degrees clockwise from top (0 = top, 90 = right)
-  // lines: label text split across up to 2 lines
-  // anchor: SVG text-anchor ("middle" / "start" / "end")
-  // tx, ty: label anchor offset from spoke endpoint
+  // label: single short concept (1–3 words)
+  // anchor: SVG text-anchor
+  // tx, ty: label offset from spoke endpoint
   const nodes = [
-    {
-      angle: 0,
-      lines: ["Navigating the", "recruiting process"],
-      anchor: "middle",
-      tx: 0,
-      ty: -18,
-    },
-    {
-      angle: 72,
-      lines: ["Identifying real", "opportunities"],
-      anchor: "start",
-      tx: 16,
-      ty: 0,
-    },
-    {
-      angle: 144,
-      lines: ["Choosing the right", "camps and schools"],
-      anchor: "start",
-      tx: 16,
-      ty: 0,
-    },
-    {
-      angle: 216,
-      lines: ["Managing cost,", "timing and logistics"],
-      anchor: "end",
-      tx: -16,
-      ty: 0,
-    },
-    {
-      angle: 288,
-      lines: ["Supporting without", "wasting time or money"],
-      anchor: "end",
-      tx: -16,
-      ty: 0,
-    },
+    { angle: 0,   label: "Recruiting",         anchor: "middle", tx: 0,   ty: -20 },
+    { angle: 72,  label: "Real Opportunities",  anchor: "start",  tx: 16,  ty: 0 },
+    { angle: 144, label: "Camps & Schools",     anchor: "start",  tx: 16,  ty: 0 },
+    { angle: 216, label: "Cost & Travel",       anchor: "end",    tx: -16, ty: 0 },
+    { angle: 288, label: "Athlete Support",     anchor: "end",    tx: -16, ty: 0 },
   ];
-
-  const LH = 16; // line height for labels
 
   return (
     <svg
       viewBox="0 0 580 410"
       style={{ width: "100%", display: "block" }}
-      aria-label="Diagram showing five challenges that expand from the central goal of college athletics"
+      aria-label="Diagram showing five challenges that expand when an athlete wants to play in college"
     >
       <defs>
         <radialGradient id="hubGlow" cx="50%" cy="50%" r="50%">
@@ -108,18 +76,12 @@ function ProblemMap() {
       {nodes.map((n, i) => {
         const sinA = Math.sin((n.angle * Math.PI) / 180);
         const cosA = Math.cos((n.angle * Math.PI) / 180);
-        // Spoke endpoint
         const ex = cx + R * sinA;
         const ey = cy - R * cosA;
-        // Line: center-circle edge to just before endpoint dot
         const lx1 = cx + cr * sinA;
         const ly1 = cy - cr * cosA;
         const lx2 = ex - 11 * sinA;
         const ly2 = ey + 11 * cosA;
-        // Label position
-        const labelX = ex + n.tx;
-        const labelY = ey + n.ty;
-        const totalH = n.lines.length * LH;
 
         return (
           <g key={i}>
@@ -135,21 +97,18 @@ function ProblemMap() {
               stroke="#2e4268"
               strokeWidth="1.5"
             />
-            {n.lines.map((line, li) => (
-              <text
-                key={li}
-                x={labelX}
-                y={labelY - totalH / 2 + LH * li + LH * 0.45}
-                textAnchor={n.anchor}
-                dominantBaseline="middle"
-                fill="#aab4c8"
-                fontSize="11"
-                fontFamily="DM Sans, Inter, system-ui, sans-serif"
-                fontWeight="500"
-              >
-                {line}
-              </text>
-            ))}
+            <text
+              x={ex + n.tx}
+              y={ey + n.ty}
+              textAnchor={n.anchor}
+              dominantBaseline="middle"
+              fill="#aab4c8"
+              fontSize="11.5"
+              fontFamily="DM Sans, Inter, system-ui, sans-serif"
+              fontWeight="600"
+            >
+              {n.label}
+            </text>
           </g>
         );
       })}
@@ -194,22 +153,16 @@ function Step1() {
   return (
     <div>
       <h1 style={T.headline}>
-        When an athlete says they want to play in college, most parents suddenly
-        face a process they were not prepared for.
+        When a player says "I want to play in college," most parents aren't prepared for what comes next.
       </h1>
 
-      <p style={T.body}>
-        The challenge expands quickly, in multiple directions at once.
+      <p style={{ ...T.body, marginBottom: 0 }}>
+        The challenge expands in several directions at once.
       </p>
 
-      <div style={{ margin: "8px 0 22px", maxWidth: 520 }}>
+      <div style={{ margin: "12px 0 0", maxWidth: 520 }}>
         <ProblemMap />
       </div>
-
-      <p style={{ ...T.body, fontSize: 15, color: "#8896a8", margin: 0 }}>
-        What starts as a dream becomes a complicated, multi-year process that
-        requires strategy, organization, and informed decision-making.
-      </p>
     </div>
   );
 }

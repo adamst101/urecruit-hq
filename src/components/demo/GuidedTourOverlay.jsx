@@ -16,7 +16,8 @@ const TOUR_STEPS = [
     stepNum: 1,
     title: "Athlete Profile",
     message:
-      "This was Marcus's family's first step. Before exploring camps or tracking outreach, they built a foundation here — position, grad year, and the basics the rest of the journey would build on.",
+      "Marcus's family started here. Before anything else, they locked in the basics — position, grad year, size, hometown. Everything that follows builds on this foundation.",
+    hint: "Browse the pre-filled profile. In your account, this is where you'd enter your athlete's real information.",
     nextKey: "playbook",
     nextLabel: "The Playbook",
     nextPath: "/KnowledgeBase",
@@ -26,7 +27,8 @@ const TOUR_STEPS = [
     stepNum: 2,
     title: "The Playbook",
     message:
-      "With a profile in place, his family came here to understand how recruiting actually works. The Playbook helped them figure out what to do, when to do it, and why it matters.",
+      "Before diving into camps, Marcus's parents spent time here. The Playbook broke down how recruiting actually works — what happens when, and what families can control.",
+    hint: "Read any guide that catches your eye. These are the same articles Marcus's family used to build their strategy.",
     nextKey: "discover",
     nextLabel: "Discover Camps",
     nextPath: "/Discover",
@@ -36,7 +38,8 @@ const TOUR_STEPS = [
     stepNum: 3,
     title: "Discover Camps",
     message:
-      "Once they understood the process, they used this page to find and compare camp options. This is where the camp plan started to take shape — which schools, which dates, which divisions.",
+      "Armed with a plan, they came here to find camps. Filter by division, state, or sport — then save the ones worth a closer look.",
+    hint: "You can browse and favorite camps. Registration is available to Season Pass members.",
     nextKey: "mycamps",
     nextLabel: "My Camps",
     nextPath: "/MyCamps",
@@ -46,7 +49,8 @@ const TOUR_STEPS = [
     stepNum: 4,
     title: "My Camps",
     message:
-      "As they saved and registered for camps, this became their running list. Everything in one place — what was locked in, what was still under consideration, and what had already happened.",
+      "The camps Marcus's family saved and registered for all landed here. One running list — what's locked in, what's under consideration, what's already happened.",
+    hint: "This page shows Marcus's saved and registered camps. Yours will reflect your athlete's real camp activity.",
     nextKey: "calendar",
     nextLabel: "My Calendar",
     nextPath: "/Calendar",
@@ -56,7 +60,8 @@ const TOUR_STEPS = [
     stepNum: 5,
     title: "My Calendar",
     message:
-      "A clearer picture of timing. They checked this page to see how the camp season was laid out, review specific dates, and make sure nothing overlapped.",
+      "With multiple camps on the list, the calendar became essential. They used this to check timing, avoid conflicts, and see the season at a glance.",
+    hint: "Tap any date to see what's scheduled. Color coding shows camp status at a glance.",
     nextKey: "tracker",
     nextLabel: "Recruiting Tracker",
     nextPath: "/RecruitingJourney",
@@ -66,7 +71,8 @@ const TOUR_STEPS = [
     stepNum: 6,
     title: "Recruiting Tracker",
     message:
-      "As recruiting activity started to happen, this is where they tracked what it meant. From early follows and DMs to phone calls and personal invites — everything logged and visible over time.",
+      "When coaches started to notice Marcus, his family logged it here. Follows, DMs, phone calls, camp invites — all captured so nothing slipped through the cracks.",
+    hint: "Scroll through Marcus's logged activity. Your tracker starts empty and grows as real recruiting contact begins.",
     nextKey: null,
     nextLabel: "Explore Freely",
     nextPath: "/Workspace",
@@ -273,10 +279,37 @@ export default function GuidedTourOverlay({ tourKey }) {
               fontSize: 13.5,
               color: "#8faabe",
               lineHeight: 1.7,
-              marginBottom: 18,
+              marginBottom: step.hint ? 12 : 18,
             }}
           >
             {step.message}
+          </div>
+
+          {step.hint && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "#4e6685",
+                lineHeight: 1.6,
+                marginBottom: 16,
+                paddingLeft: 10,
+                borderLeft: "2px solid rgba(232,160,32,0.3)",
+              }}
+            >
+              {step.hint}
+            </div>
+          )}
+
+          {/* ── Nav lock note ── */}
+          <div
+            style={{
+              fontSize: 11,
+              color: "#3a5060",
+              marginBottom: 14,
+              fontStyle: "italic",
+            }}
+          >
+            Navigation unlocks after the tour.
           </div>
 
           {/* ── Actions ── */}
