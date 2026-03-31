@@ -179,6 +179,11 @@ export default function Profile() {
     setWeight(185);
     setHomeCity(DEMO_ATHLETE.home_city);
     setHomeState(DEMO_ATHLETE.home_state);
+    // Parent info from demo data ("David Johnson")
+    const parentParts = (DEMO_ATHLETE.parent_name || "").split(" ");
+    setParentFirstName(parentParts[0] || "David");
+    setParentLastName(parentParts.slice(1).join(" ") || "Johnson");
+    setParentPhone("(678) 555-0142");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUserDemo, identityLoading]);
 
@@ -368,8 +373,8 @@ export default function Profile() {
           </div>
         )}
 
-        {/* ── SECTION: Form cards — hidden during tour (demo card provides context instead) ── */}
-        {!(isTourMode && isUserDemo) && <>
+        {/* ── SECTION: Form cards — always shown; inputs disabled in demo/tour mode ── */}
+        <>
         <Card className="p-4 space-y-4 border-ur-border bg-ur-card">
           <div className="text-lg font-semibold text-ur-primary">Athlete Info</div>
 
@@ -524,7 +529,7 @@ export default function Profile() {
             </Button>
           </div>
         )}
-        </>}
+        </>
       </div>
 
       <GuidedTourOverlay tourKey="profile" />
