@@ -125,3 +125,179 @@ export function clearDemoUserSeed(demoProfileId) {
   if (!demoProfileId) return;
   try { localStorage.removeItem(`${SEEDED_FLAG_PREFIX}${demoProfileId}`); } catch {}
 }
+
+// ── Demo Recruiting Journey ────────────────────────────────────────────────────
+// Synthetic activity log for Marcus Johnson (WR, Class of 2026).
+// Used exclusively in ?demo=user mode — never touches production data.
+// No `id` field → edit/delete buttons are naturally hidden in the tracker UI.
+
+export const DEMO_JOURNEY_ACTIVITIES = [
+  {
+    activity_type: "post_camp_personal_response",
+    school_name: "Western Kentucky",
+    coach_name: "Coach Hicks",
+    coach_title: "Recruiting Coordinator",
+    activity_date: "2025-05-12",
+    notes: "Coach Hicks reached out the day after camp — said Marcus had one of the best route trees they'd seen all spring. Asked about visit availability for June.",
+    _traction_level: 3,
+  },
+  {
+    activity_type: "camp_attended",
+    school_name: "Western Kentucky",
+    coach_name: "Coach Hicks",
+    coach_title: "Recruiting Coordinator",
+    activity_date: "2025-05-10",
+    notes: "Strong performance in 1-on-1s and route running drills. Had a 10-minute conversation with the WR coach after the session.",
+    _traction_level: 1,
+  },
+  {
+    activity_type: "phone_call",
+    school_name: "Louisiana Tech",
+    coach_name: "Coach Simmons",
+    coach_title: "Wide Receivers Coach",
+    activity_date: "2025-04-18",
+    notes: "15-minute call. Coach Simmons said he'd been following Marcus's 7v7 film and wanted to connect before their June camp. Mentioned his release and separation as standouts.",
+    _traction_level: 3,
+  },
+  {
+    activity_type: "personal_camp_invite",
+    school_name: "Auburn",
+    coach_name: "Coach Taylor",
+    coach_title: "Wide Receivers Coach",
+    activity_date: "2025-04-15",
+    notes: "Personal email from Coach Taylor referencing Marcus's spring 7v7 highlights specifically. Not a mass invite — mentioned his 6'1\" frame and route running.",
+    _traction_level: 3,
+  },
+  {
+    activity_type: "camp_registered",
+    school_name: "Tennessee",
+    activity_date: "2025-04-08",
+    notes: "Registered for May 17 camp. $75 fee paid. Confirmation email received.",
+    _traction_level: 1,
+  },
+  {
+    activity_type: "camp_registered",
+    school_name: "Western Kentucky",
+    activity_date: "2025-04-05",
+    notes: "Registered for May 10 camp. $65 fee paid. First camp of the season.",
+    _traction_level: 1,
+  },
+  {
+    activity_type: "phone_call",
+    school_name: "Western Kentucky",
+    coach_name: "Coach Hicks",
+    coach_title: "Recruiting Coordinator",
+    activity_date: "2025-03-28",
+    notes: "20-minute call. Coach Hicks asked about Marcus's 40 time, vertical, and route tree. Said they're targeting 2–3 WRs in the 2026 class and Marcus is on their board.",
+    _traction_level: 3,
+  },
+  {
+    activity_type: "text_received",
+    school_name: "Louisiana Tech",
+    coach_name: "Coach Simmons",
+    activity_date: "2025-03-20",
+    notes: "Text after seeing Marcus's spring 7v7 highlights posted on Twitter. Back-and-forth exchange — athlete-specific.",
+    is_two_way_engagement: true,
+    is_athlete_specific: true,
+    _traction_level: 2,
+  },
+  {
+    activity_type: "personal_camp_invite",
+    school_name: "Tennessee",
+    coach_name: "Coach Williams",
+    coach_title: "Wide Receivers Coach",
+    activity_date: "2025-03-15",
+    notes: "Email from Coach Williams with a direct reference to Marcus's film from the Rivals tournament. Not a form letter.",
+    _traction_level: 3,
+  },
+  {
+    activity_type: "personal_camp_invite",
+    school_name: "Western Kentucky",
+    coach_name: "Coach Hicks",
+    coach_title: "Recruiting Coordinator",
+    activity_date: "2025-03-10",
+    notes: "First personal invite from WKU. Coach Hicks mentioned Marcus's 7v7 tape specifically and noted his frame at 6'1\".",
+    _traction_level: 3,
+  },
+  {
+    activity_type: "dm_received",
+    school_name: "Western Kentucky",
+    coach_name: "Coach Hicks",
+    activity_date: "2025-03-05",
+    notes: "First DM from WKU coaching staff. Two-way exchange — athlete-specific.",
+    is_two_way_engagement: true,
+    is_athlete_specific: true,
+    _traction_level: 2,
+  },
+  {
+    activity_type: "dm_received",
+    school_name: "Auburn",
+    activity_date: "2025-03-01",
+    notes: "Generic DM from Auburn recruiting staff. No personal reference — appears to be mass outreach to area WRs.",
+    is_two_way_engagement: false,
+    is_athlete_specific: false,
+    _traction_level: 1,
+  },
+  {
+    activity_type: "social_follow",
+    school_name: "South Alabama",
+    activity_date: "2025-02-28",
+    notes: "South Alabama WR coach followed Marcus on Twitter after he posted his spring 7v7 highlights reel.",
+    _traction_level: 1,
+  },
+  {
+    activity_type: "social_follow",
+    school_name: "Tennessee",
+    activity_date: "2025-02-24",
+    notes: "Tennessee WR coach followed Marcus's account after the Rivals tournament highlight post.",
+    _traction_level: 1,
+  },
+  {
+    activity_type: "generic_camp_invite",
+    school_name: "Florida",
+    activity_date: "2025-02-20",
+    notes: "Mass camp invite email from Florida's camp office. Not athlete-specific.",
+    _traction_level: 1,
+  },
+  {
+    activity_type: "generic_camp_invite",
+    school_name: "Alabama",
+    activity_date: "2025-02-18",
+    notes: "Generic camp invite from Alabama football. Standard mass outreach.",
+    _traction_level: 1,
+  },
+  {
+    activity_type: "social_like",
+    school_name: "Georgia",
+    coach_name: "Coach Carter",
+    coach_title: "Wide Receivers Coach",
+    activity_date: "2025-02-15",
+    notes: "Georgia WR coach liked Marcus's highlight clip tweet. First contact from a Power 4 program.",
+    _traction_level: 1,
+  },
+];
+
+// Traction snapshot metrics for the demo athlete
+export const DEMO_JOURNEY_METRICS = {
+  traction_stage_label: "Building Momentum",
+  highest_traction_level: 3,
+  true_traction_school_count: 3,
+  activity_count_30d: 6,
+  top_school_with_highest_traction: "Western Kentucky",
+};
+
+// Target school preferences for the demo athlete
+export const DEMO_JOURNEY_PREFS = {
+  fbs_1: "Georgia",
+  fbs_2: "Tennessee",
+  fbs_3: "Western Kentucky",
+  fcs_1: "",
+  fcs_2: "",
+  fcs_3: "",
+  d2_1: "Valdosta State",
+  d2_2: "",
+  d2_3: "",
+  d3_1: "",
+  d3_2: "",
+  d3_3: "",
+};

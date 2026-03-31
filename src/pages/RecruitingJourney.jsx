@@ -6,6 +6,11 @@ import { base44 } from "../api/base44Client";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import { T } from "../lib/theme.js";
+import {
+  DEMO_JOURNEY_ACTIVITIES,
+  DEMO_JOURNEY_METRICS,
+  DEMO_JOURNEY_PREFS,
+} from "../lib/demoUserData.js";
 
 // ── Activity type config ──────────────────────────────────────────────────────
 // Legacy types (social_like, dm_received, camp_invite, camp_meeting, offer) are kept
@@ -209,6 +214,9 @@ export default function RecruitingJourney() {
   // Advanced signal quality section in modal
   const [showAdvanced, setShowAdvanced]       = useState(false);
 
+  // Demo upgrade prompt
+  const [showDemoUpgrade, setShowDemoUpgrade] = useState(false);
+
   // Edit state
   const [editingId, setEditingId] = useState(null);
 
@@ -274,14 +282,24 @@ export default function RecruitingJourney() {
     loadAllSchools();
   }, [loadJourney, seasonLoading, accountId]);
 
-  // Demo / unauthenticated: clear loading once season check is done
+  // Demo / unauthenticated: clear loading once season check is done.
+  // For demo users, seed synthetic journey data before revealing the tracker.
   useEffect(() => {
     if (seasonLoading) return;
-    if (!accountId) setLoading(false);
-  }, [seasonLoading, accountId]);
+    if (!accountId) {
+      if (isUserDemo) {
+        setActivities(DEMO_JOURNEY_ACTIVITIES);
+        setAthleteMetrics(DEMO_JOURNEY_METRICS);
+        setPreferences(DEMO_JOURNEY_PREFS);
+        setPrefsForm(DEMO_JOURNEY_PREFS);
+      }
+      setLoading(false);
+    }
+  }, [seasonLoading, accountId, isUserDemo]);
 
   // ── Add activity ─────────────────────────────────────────────────────────
   function openAdd(type) {
+    if (isUserDemo) { setShowDemoUpgrade(true); return; }
     setAddForm({ ...BLANK_FORM, activity_type: type });
     setEditingId(null);
     setAddError("");
@@ -471,6 +489,17 @@ export default function RecruitingJourney() {
           }}>
             RECRUITING JOURNEY
           </h1>
+          {isUserDemo && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, letterSpacing: "0.1em",
+              color: "#e8a020", background: "rgba(232,160,32,0.1)",
+              border: "1px solid rgba(232,160,32,0.25)",
+              borderRadius: 5, padding: "3px 8px",
+              textTransform: "uppercase", alignSelf: "center",
+            }}>
+              Demo
+            </span>
+          )}
         </div>
         <p style={{ color: "#9ca3af", fontSize: 15, margin: "0 0 32px 13px", lineHeight: 1.5 }}>
           Track college interest, DMs, camp conversations, and offers
@@ -495,8 +524,8 @@ export default function RecruitingJourney() {
         </section>
       )}
 
-      {/* Demo / no-auth gate */}
-      {!loading && !accountId && (
+      {/* No-auth gate — real unauthenticated users only; demo bypasses this */}
+      {!loading && !accountId && !isUserDemo && (
         <section style={{ padding: "0 24px 40px", maxWidth: 900, margin: "0 auto" }}>
           <div style={{
             background: "rgba(232,160,32,0.06)", border: "1px solid rgba(232,160,32,0.2)",
@@ -542,7 +571,7 @@ export default function RecruitingJourney() {
         </section>
       )}
 
-      {!loading && !!accountId && (
+      {!loading && (!!accountId || isUserDemo) && (
         <>
           {/* ── Quick Add ── */}
           <section style={{ padding: "0 24px 32px", maxWidth: 900, margin: "0 auto" }}>
@@ -559,9 +588,11 @@ export default function RecruitingJourney() {
                   onClick={() => openAdd(qa.type)}
                   style={{
                     background: T.shellBg, border: T.shellBorderFull, borderRadius: 10,
-                    padding: "10px 18px", color: T.textPrimary, fontSize: 14, fontWeight: 600,
+                    padding: "10px 18px", color: isUserDemo ? T.textMuted : T.textPrimary,
+                    fontSize: 14, fontWeight: 600,
                     cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
                     transition: `border-color ${T.transitionBase}`,
+                    opacity: isUserDemo ? 0.6 : 1,
                   }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = T.amber; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = T.shellBorder; }}
@@ -571,6 +602,37 @@ export default function RecruitingJourney() {
                 </button>
               ))}
             </div>
+            {isUserDemo && showDemoUpgrade && (
+              <div style={{
+                marginTop: 14,
+                background: "rgba(232,160,32,0.07)", border: "1px solid rgba(232,160,32,0.2)",
+                borderRadius: 10, padding: "14px 18px",
+                display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
+              }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#f9fafb", marginBottom: 4 }}>
+                    Log your athlete's real recruiting activity
+                  </div>
+                  <div style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.5 }}>
+                    This is a demo. A Season Pass gives your family a private tracker tied to your real athlete.
+                  </div>
+                </div>
+                <button
+                  onClick={() => nav("/Subscribe?source=tracker_demo_quickadd")}
+                  style={{
+                    background: "#e8a020", color: "#0a0e1a", border: "none",
+                    borderRadius: 8, padding: "9px 18px",
+                    fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+                  }}
+                >
+                  Get Season Pass →
+                </button>
+                <button
+                  onClick={() => setShowDemoUpgrade(false)}
+                  style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "0 4px" }}
+                >×</button>
+              </div>
+            )}
           </section>
 
           {/* ── Traction Snapshot ── */}
@@ -742,27 +804,45 @@ export default function RecruitingJourney() {
             <div style={{ ...T.shellStyle, padding: "24px 20px" }}>
               <div style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
-                marginBottom: 16, flexWrap: "wrap", gap: 8,
+                marginBottom: isUserDemo ? 10 : 16, flexWrap: "wrap", gap: 8,
               }}>
                 <div style={{ ...T.microLabel, fontSize: 13 }}>
                   Target Schools
                 </div>
-                <button
-                  onClick={submitPrefs}
-                  disabled={savingPrefs || !prefsDirty}
-                  style={{
-                    background: prefsDirty ? T.amber : "transparent",
-                    border: prefsDirty ? "none" : `1px solid ${T.borderInput}`,
-                    borderRadius: 8, padding: "6px 16px", color: prefsDirty ? T.pageBg : T.textMuted,
-                    fontSize: 13, fontWeight: 700,
-                    cursor: (savingPrefs || !prefsDirty) ? "not-allowed" : "pointer",
-                    opacity: savingPrefs ? 0.7 : 1,
-                    transition: `all ${T.transitionBase}`,
-                  }}
-                >
-                  {savingPrefs ? "Saving…" : "Save"}
-                </button>
+                {isUserDemo ? (
+                  <button
+                    onClick={() => nav("/Subscribe?source=tracker_demo_prefs")}
+                    style={{
+                      background: "#e8a020", border: "none", borderRadius: 8,
+                      padding: "6px 14px", color: "#0a0e1a",
+                      fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    }}
+                  >
+                    Set your schools →
+                  </button>
+                ) : (
+                  <button
+                    onClick={submitPrefs}
+                    disabled={savingPrefs || !prefsDirty}
+                    style={{
+                      background: prefsDirty ? T.amber : "transparent",
+                      border: prefsDirty ? "none" : `1px solid ${T.borderInput}`,
+                      borderRadius: 8, padding: "6px 16px", color: prefsDirty ? T.pageBg : T.textMuted,
+                      fontSize: 13, fontWeight: 700,
+                      cursor: (savingPrefs || !prefsDirty) ? "not-allowed" : "pointer",
+                      opacity: savingPrefs ? 0.7 : 1,
+                      transition: `all ${T.transitionBase}`,
+                    }}
+                  >
+                    {savingPrefs ? "Saving…" : "Save"}
+                  </button>
+                )}
               </div>
+              {isUserDemo && (
+                <div style={{ fontSize: 12, color: "#4b5563", marginBottom: 14, lineHeight: 1.5 }}>
+                  Sample target schools for Marcus Johnson. With a Season Pass, you set your own.
+                </div>
+              )}
 
               {prefsSaved && (
                 <div style={{
@@ -787,6 +867,8 @@ export default function RecruitingJourney() {
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
                 gap: 20,
+                pointerEvents: isUserDemo ? "none" : undefined,
+                opacity: isUserDemo ? 0.75 : 1,
               }}>
                 {DIVISIONS.map(div => (
                   <div key={div.key}>
