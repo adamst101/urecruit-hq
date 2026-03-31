@@ -379,12 +379,11 @@ export default function Workspace() {
                 Welcome back, {displayName}
               </p>
             )}
-            <p style={{ color: "#6b7280", fontSize: 14, margin: "4px 0 0" }}>
-              {isUserDemo
-                ? "A simulated recruiting workspace — explore how a real family organizes camps, tracks progress, and manages the process."
-                : "Support your athlete's goal of playing college football with a clearer plan, better organization, and smarter next steps."
-              }
-            </p>
+            {!isUserDemo && (
+              <p style={{ color: "#6b7280", fontSize: 14, margin: "4px 0 0" }}>
+                Support your athlete's goal of playing college football with a clearer plan, better organization, and smarter next steps.
+              </p>
+            )}
             {isMember && (
               <p style={{ color: "#4b5563", fontSize: 12, margin: "4px 0 0", letterSpacing: "0.04em" }}>
                 Season {memberSeason} · Active
@@ -433,164 +432,154 @@ export default function Workspace() {
 
         {/* User demo journey panel */}
         {isUserDemo && (
-          <div style={{ marginTop: 24 }}>
+          <div style={{ marginTop: 20 }}>
 
-            {/* ══ ZONE A: WELCOME CARD ══════════════════════════════════════
-                What this page is + what's inside the demo.
-                Contained in its own card so it reads as one clear unit.     */}
+            {/* ══ HERO CARD ════════════════════════════════════════════════
+                One headline. One sentence. One clear first action.
+                Secondary paths as understated text links below.           */}
             <div style={{
               background: "#0b1221",
               border: "1px solid #1e2d45",
               borderRadius: 14,
-              padding: "22px 24px",
-              marginBottom: 14,
+              padding: "22px 24px 20px",
+              marginBottom: 10,
             }}>
-              {/* Badge + status line */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                <div style={{ background: "#e8a020", color: "#0a0e1a", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>
+              {/* Badge + status */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <span style={{ background: "#e8a020", color: "#0a0e1a", borderRadius: 5, padding: "2px 9px", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>
                   Sample Demo
-                </div>
-                <span style={{ fontSize: 13, color: "#6b7280" }}>
-                  A simulated family workspace — not your real account
                 </span>
+                <span style={{ fontSize: 12, color: "#4b5563" }}>Not your real account</span>
               </div>
 
-              {/* Core orientation */}
-              <p style={{ fontSize: 16, fontWeight: 600, color: "#f9fafb", margin: "0 0 6px", lineHeight: 1.45 }}>
-                See how families organize the college football recruiting process.
-              </p>
-              <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 18px", lineHeight: 1.65, maxWidth: 580 }}>
-                This demo is pre-populated with a sample athlete's journey — profile built, camps saved, and first registrations locked in. Explore any section to see how the tools work together.
-              </p>
+              {/* Headline */}
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb", lineHeight: 1.35, marginBottom: 6 }}>
+                See how a family manages the college football recruiting process.
+              </div>
 
-              {/* What's in this demo */}
-              <div style={{ borderTop: "1px solid #1a2d40", paddingTop: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#4b6a8a", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
-                  What's in this demo
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "10px 20px" }}>
-                  {[
-                    ["🔍", "Browse camps", "30+ simulated college football camps across all divisions"],
-                    ["⭐", "Saved list", "9 target camps already saved, 3 registrations confirmed"],
-                    ["📅", "Camp calendar", "Dates mapped out with a planning view"],
-                    ["🏈", "Recruiting tracker", "Log coach contacts, DMs, camp invites, and more"],
-                  ].map(([icon, label, detail]) => (
-                    <div key={label} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                      <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.3 }}>{icon}</span>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "#d1d5db" }}>{label}</div>
-                        <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.45, marginTop: 1 }}>{detail}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              {/* One-liner */}
+              <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.55, marginBottom: 20 }}>
+                Pre-loaded with a sample athlete, saved camps, and recruiting activity — fully interactive.
               </div>
-            </div>
 
-            {/* ══ ZONE B: START HERE ═══════════════════════════════════════
-                The most prominent action point in this section.
-                Visually distinct via gradient + amber left border.          */}
-            <div style={{
-              background: "linear-gradient(135deg, #0f1d35 0%, #0d1524 100%)",
-              border: "1px solid #1f2f45",
-              borderLeft: "4px solid #e8a020",
-              borderRadius: 12,
-              padding: "20px 22px",
-              marginBottom: 28,
-            }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: 4 }}>
-                Start Here
-              </div>
-              <div style={{ fontSize: 14, color: "#9ca3af", marginBottom: 16, lineHeight: 1.5 }}>
-                Pick any section to explore — each one is fully interactive in the demo.
-              </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button
-                  onClick={() => nav(`${ROUTES.Discover}?demo=user`)}
-                  style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "11px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-                >
-                  Browse Demo Camps →
-                </button>
+              {/* Primary CTA */}
+              <button
+                onClick={() => nav(`${ROUTES.Discover}?demo=user`)}
+                style={{
+                  background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 9,
+                  padding: "12px 28px", fontSize: 15, fontWeight: 700, cursor: "pointer",
+                  display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 14,
+                }}
+              >
+                Browse Demo Camps →
+              </button>
+
+              {/* Secondary ghost links */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, color: "#4b5563" }}>or jump to:</span>
                 <button
                   onClick={() => nav(`${ROUTES.MyCamps}?demo=user`)}
-                  style={{ background: "#111827", color: "#f9fafb", border: "1px solid #374151", borderRadius: 8, padding: "11px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+                  style={{ background: "none", border: "none", color: "#93c5fd", fontSize: 13, cursor: "pointer", padding: 0, fontWeight: 500, textDecoration: "underline", textDecorationColor: "rgba(147,197,253,0.35)" }}
                 >
-                  Saved &amp; Registered Camps →
+                  Saved &amp; Registered Camps
                 </button>
+                <span style={{ color: "#374151", fontSize: 12 }}>·</span>
                 <button
                   onClick={() => nav(`${ROUTES.RecruitingJourney}?demo=user`)}
-                  style={{ background: "transparent", color: "#9ca3af", border: "1px solid #2d3748", borderRadius: 8, padding: "11px 20px", fontSize: 14, cursor: "pointer" }}
+                  style={{ background: "none", border: "none", color: "#93c5fd", fontSize: 13, cursor: "pointer", padding: 0, fontWeight: 500, textDecoration: "underline", textDecorationColor: "rgba(147,197,253,0.35)" }}
                 >
-                  Recruiting Tracker →
+                  Recruiting Tracker
                 </button>
               </div>
             </div>
 
-            {/* ══ ZONE C: SAMPLE JOURNEY ═══════════════════════════════════
-                Supporting context — shows the simulated family's progress.
-                Intentionally lower visual weight than A and B.              */}
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>
-              Sample Family Journey
+            {/* ══ CAPABILITY STRIP ════════════════════════════════════════
+                What the platform does — icons + short labels only.
+                Compact, scannable in under 3 seconds.                    */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-around",
+              flexWrap: "wrap", gap: 4,
+              background: "#070c18",
+              border: "1px solid #111d2e",
+              borderRadius: 10,
+              padding: "11px 12px",
+              marginBottom: 28,
+            }}>
+              {[
+                ["🔍", "Browse camps"],
+                ["⭐", "Save schools"],
+                ["📅", "Track registrations"],
+                ["📋", "Log recruiting activity"],
+              ].map(([icon, label]) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 8px" }}>
+                  <span style={{ fontSize: 13 }}>{icon}</span>
+                  <span style={{ fontSize: 12, color: "#4b5563", fontWeight: 500, whiteSpace: "nowrap" }}>{label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* ══ SAMPLE FAMILY CONTEXT ════════════════════════════════════
+                Supporting proof layer — lower visual weight.
+                Section label creates clear separation from the hero above. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <div style={{ height: 1, flex: 1, background: "#141f30" }} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#2d3f55", textTransform: "uppercase", letterSpacing: "0.14em", whiteSpace: "nowrap" }}>
+                Sample Family
+              </span>
+              <div style={{ height: 1, flex: 1, background: "#141f30" }} />
             </div>
 
             {/* Athlete card */}
-            <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "18px 20px", marginBottom: 10 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
-                Sample Athlete
-              </div>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+            <div style={{ background: "#0d1424", border: "1px solid #1a2535", borderRadius: 12, padding: "16px 20px", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 14 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 17, fontWeight: 700, color: "#f9fafb" }}>{DEMO_JOURNEY.athleteName}</div>
-                  <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb" }}>{DEMO_JOURNEY.athleteName}</div>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
                     {DEMO_JOURNEY.position} · Class of {DEMO_JOURNEY.gradYear} · {DEMO_JOURNEY.school} · {DEMO_JOURNEY.city}
                   </div>
-                  <div style={{ fontSize: 13, color: "#e8a020", marginTop: 5, fontWeight: 600 }}>
+                  <div style={{ fontSize: 12, color: "#e8a020", marginTop: 5, fontWeight: 600 }}>
                     {DEMO_JOURNEY.chapter}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 20, flexShrink: 0 }}>
+                <div style={{ display: "flex", gap: 18, flexShrink: 0 }}>
                   <div style={{ textAlign: "center" }}>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 34, color: "#e8a020", lineHeight: 1 }}>{DEMO_JOURNEY.stats.saved}</div>
-                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 3 }}>Camps Saved</div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#e8a020", lineHeight: 1 }}>{DEMO_JOURNEY.stats.saved}</div>
+                    <div style={{ fontSize: 10, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>Saved</div>
                   </div>
                   <div style={{ textAlign: "center" }}>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 34, color: "#22c55e", lineHeight: 1 }}>{DEMO_JOURNEY.stats.registered}</div>
-                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 3 }}>Registered</div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#22c55e", lineHeight: 1 }}>{DEMO_JOURNEY.stats.registered}</div>
+                    <div style={{ fontSize: 10, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>Registered</div>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Journey timeline */}
-            <div style={{ background: "#0d1424", border: "1px solid #1a2535", borderRadius: 12, padding: "16px 20px", marginBottom: 22 }}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                  Journey Timeline
-                </div>
-                <div style={{ fontSize: 12, color: "#4b5563" }}>Where this family stands today</div>
+            <div style={{ background: "#0a0f1c", border: "1px solid #141f30", borderRadius: 12, padding: "14px 20px", marginBottom: 22 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#2d3f55", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+                Where this family stands
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {DEMO_JOURNEY.milestones.map((m, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                     <div style={{
-                      width: 18, height: 18, borderRadius: "50%", flexShrink: 0, marginTop: 1,
+                      width: 16, height: 16, borderRadius: "50%", flexShrink: 0, marginTop: 1,
                       background: m.done ? "#22c55e" : "#1f2937",
                       border: m.done ? "none" : "2px solid #374151",
                       display: "flex", alignItems: "center", justifyContent: "center",
                     }}>
-                      {m.done && <span style={{ color: "#0a0e1a", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                      {m.done && <span style={{ color: "#0a0e1a", fontSize: 10, fontWeight: 700 }}>✓</span>}
                     </div>
                     <div style={{ flex: 1 }}>
-                      <span style={{ fontSize: 13, color: m.done ? "#d1d5db" : "#6b7280", fontWeight: m.done ? 500 : 400 }}>
+                      <span style={{ fontSize: 12, color: m.done ? "#d1d5db" : "#4b5563", fontWeight: m.done ? 500 : 400 }}>
                         {m.label}
                       </span>
-                      <span style={{ fontSize: 12, color: "#4b5563", marginLeft: 8 }}>{m.detail}</span>
+                      <span style={{ fontSize: 11, color: "#374151", marginLeft: 8 }}>{m.detail}</span>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-
 
           </div>
         )}
