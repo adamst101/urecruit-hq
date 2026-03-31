@@ -964,6 +964,7 @@ export default function Calendar() {
           status={panelStatus}
           isConflict={panelIsConflict}
           conflictWith={panelConflictWith}
+          isUserDemo={isUserDemo}
           onClose={closeCampDetail}
           onRegisterClick={() => {
             const url = panelCamp?.link_url || panelCamp?.source_url;

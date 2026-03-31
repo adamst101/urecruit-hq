@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { format } from "date-fns";
+import { useDemoHint, DemoHintPopup } from "../demo/DemoHintPopup.jsx";
 // icons removed — using plain text ✓ for checkmark
 
 function safeFormat(d, fmt) {
@@ -23,8 +24,9 @@ function useIsMobile(breakpoint = 768) {
   return mobile;
 }
 
-export default function CampDetailPanel({ camp, school, status, isConflict, conflictWith, onClose, onFavorite, onRegisterClick, onUnregister, onUnfavorite, onRegisteredToggle }) {
+export default function CampDetailPanel({ camp, school, status, isConflict, conflictWith, onClose, onFavorite, onRegisterClick, onUnregister, onUnfavorite, onRegisteredToggle, isUserDemo }) {
   const isMobile = useIsMobile();
+  const { demoHint, showDemoHint, clearDemoHint } = useDemoHint();
 
   if (!camp) return null;
 
@@ -45,6 +47,7 @@ export default function CampDetailPanel({ camp, school, status, isConflict, conf
 
   return (
     <>
+      <DemoHintPopup demoHint={demoHint} onDismiss={clearDemoHint} />
       {/* Overlay */}
       <div
         onClick={onClose}
@@ -120,7 +123,11 @@ export default function CampDetailPanel({ camp, school, status, isConflict, conf
           {/* Star */}
           <button
             title={isFav ? "Remove from favorites" : "Add to favorites"}
-            onClick={() => { isFav ? onUnfavorite?.() : onFavorite?.(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isUserDemo) { showDemoHint(e, "favorite"); return; }
+              isFav ? onUnfavorite?.() : onFavorite?.();
+            }}
             style={{
               background: "none", border: "none", cursor: "pointer", padding: 4,
               color: isFav ? "#e8a020" : "#6b7280", fontSize: 20, lineHeight: 1,
@@ -133,7 +140,11 @@ export default function CampDetailPanel({ camp, school, status, isConflict, conf
           {onRegisteredToggle && (
             <button
               title={isReg ? "Remove registered status" : "Mark as registered"}
-              onClick={() => onRegisteredToggle()}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isUserDemo) { showDemoHint(e, "registered"); return; }
+                onRegisteredToggle();
+              }}
               style={{
                 background: "none", border: "none", cursor: "pointer", padding: 4,
                 fontSize: 20, lineHeight: 1,
@@ -198,7 +209,11 @@ export default function CampDetailPanel({ camp, school, status, isConflict, conf
           {/* Register → opens Ryzer URL */}
           {onRegisterClick && (camp?.link_url || camp?.source_url) && (
             <button
-              onClick={() => onRegisterClick()}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isUserDemo) { showDemoHint(e, "register"); return; }
+                onRegisterClick();
+              }}
               style={{
                 background: "#e8a020", color: "#0a0e1a",
                 border: "none", borderRadius: 10,
