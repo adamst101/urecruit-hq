@@ -372,15 +372,18 @@ export default function Workspace() {
           <div style={{ width: 3, height: 40, background: "#e8a020", borderRadius: 2, flexShrink: 0, marginTop: 4 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(36px, 5vw, 56px)", lineHeight: 1, margin: 0, letterSpacing: 1 }}>
-              YOUR RECRUITING HQ
+              {isUserDemo ? "DEMO FAMILY WORKSPACE" : "YOUR RECRUITING HQ"}
             </h1>
-            {season?.accountId && (
+            {season?.accountId && !isUserDemo && (
               <p style={{ color: "#9ca3af", fontSize: 16, margin: "8px 0 0" }}>
                 Welcome back, {displayName}
               </p>
             )}
             <p style={{ color: "#6b7280", fontSize: 14, margin: "4px 0 0" }}>
-              Support your athlete's goal of playing college football with a clearer plan, better organization, and smarter next steps.
+              {isUserDemo
+                ? "A simulated recruiting workspace — explore how a real family organizes camps, tracks progress, and manages the process."
+                : "Support your athlete's goal of playing college football with a clearer plan, better organization, and smarter next steps."
+              }
             </p>
             {isMember && (
               <p style={{ color: "#4b5563", fontSize: 12, margin: "4px 0 0", letterSpacing: "0.04em" }}>
@@ -420,50 +423,90 @@ export default function Workspace() {
         {/* User demo journey panel */}
         {isUserDemo && (
           <div style={{ marginTop: 20 }}>
-            {/* Demo account badge */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-              <div style={{ background: "#e8a020", color: "#0a0e1a", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                Demo Account
+
+            {/* ── 1. ORIENTATION ── */}
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <div style={{ background: "#e8a020", color: "#0a0e1a", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                  Sample Demo
+                </div>
+                <span style={{ fontSize: 13, color: "#6b7280" }}>Not your account — this is pre-populated example data</span>
               </div>
-              <span style={{ fontSize: 13, color: "#6b7280" }}>
-                You're viewing a simulated family's recruiting workspace
-              </span>
+              <p style={{ fontSize: 15, color: "#d1d5db", lineHeight: 1.7, margin: "0 0 6px", maxWidth: 620 }}>
+                This workspace shows how a real family uses URecruit HQ to organize college football camps, track coach interest, and stay on top of the recruiting process — from early research through camp season.
+              </p>
+              <p style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6, margin: 0 }}>
+                Everything below is pre-populated with a sample athlete's journey so you can explore the tools without signing up first.
+              </p>
             </div>
 
-            {/* Athlete identity bar */}
-            <div style={{ background: "rgba(232,160,32,0.06)", border: "1px solid rgba(232,160,32,0.2)", borderRadius: 12, padding: "16px 20px", marginBottom: 14 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb" }}>
-                    {DEMO_JOURNEY.athleteName}
-                  </div>
-                  <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 2 }}>
+            {/* ── 2. FIRST-STEP CTAs ── */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
+                Start Here — Pick Something to Explore
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => nav(`${ROUTES.Discover}?demo=user`)}
+                  style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "11px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+                >
+                  Browse Demo Camps →
+                </button>
+                <button
+                  onClick={() => nav(`${ROUTES.MyCamps}?demo=user`)}
+                  style={{ background: "#111827", color: "#f9fafb", border: "1px solid #374151", borderRadius: 8, padding: "11px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+                >
+                  View Saved & Registered Camps →
+                </button>
+                <button
+                  onClick={() => nav(`${ROUTES.RecruitingJourney}?demo=user`)}
+                  style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 8, padding: "11px 20px", fontSize: 14, cursor: "pointer" }}
+                >
+                  See Recruiting Tracker →
+                </button>
+              </div>
+            </div>
+
+            <div style={{ borderTop: "1px solid #1a2535", marginBottom: 20 }} />
+
+            {/* ── 3. SAMPLE ATHLETE CARD ── */}
+            <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "18px 20px", marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+                Sample Athlete
+              </div>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb" }}>{DEMO_JOURNEY.athleteName}</div>
+                  <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>
                     {DEMO_JOURNEY.position} · Class of {DEMO_JOURNEY.gradYear} · {DEMO_JOURNEY.school} · {DEMO_JOURNEY.city}
                   </div>
                   <div style={{ fontSize: 13, color: "#e8a020", marginTop: 6, fontWeight: 600 }}>
                     {DEMO_JOURNEY.chapter}
                   </div>
-                  <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6, maxWidth: 520, lineHeight: 1.6 }}>
-                    {DEMO_JOURNEY.summary}
+                  <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4, lineHeight: 1.6, maxWidth: 480 }}>
+                    This simulated athlete's workspace shows what things look like after a few months of active camp planning — profile set, target list built, and first registrations confirmed.
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 16, flexShrink: 0 }}>
+                <div style={{ display: "flex", gap: 20, flexShrink: 0 }}>
                   <div style={{ textAlign: "center" }}>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "#e8a020", lineHeight: 1 }}>{DEMO_JOURNEY.stats.saved}</div>
-                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>Saved</div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#e8a020", lineHeight: 1 }}>{DEMO_JOURNEY.stats.saved}</div>
+                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 3 }}>Camps Saved</div>
                   </div>
                   <div style={{ textAlign: "center" }}>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "#22c55e", lineHeight: 1 }}>{DEMO_JOURNEY.stats.registered}</div>
-                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>Registered</div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#22c55e", lineHeight: 1 }}>{DEMO_JOURNEY.stats.registered}</div>
+                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 3 }}>Registered</div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Journey milestones */}
-            <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, padding: "16px 20px", marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
-                Recruiting Journey
+            {/* ── 4. SAMPLE JOURNEY TIMELINE ── */}
+            <div style={{ background: "#0d1424", border: "1px solid #1a2535", borderRadius: 12, padding: "16px 20px", marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                  Sample Journey Timeline
+                </div>
+                <div style={{ fontSize: 12, color: "#4b5563" }}>Where this family stands today</div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {DEMO_JOURNEY.milestones.map((m, i) => (
@@ -487,21 +530,39 @@ export default function Workspace() {
               </div>
             </div>
 
-            {/* CTA */}
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {/* ── 5. WHAT YOU CAN DO ── */}
+            <div style={{ borderLeft: "3px solid #e8a020", paddingLeft: 16, marginBottom: 22 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#e8a020", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                What you can do from here
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "5px 24px" }}>
+                {[
+                  "Search and filter college football camps by division, state, and date",
+                  "Save target camps and build a personalized list",
+                  "Mark registrations and track what you've signed up for",
+                  "Log coach contacts, DMs, invites, and recruiting signals",
+                  "View a camp calendar to spot conflicts and plan ahead",
+                  "Build a full athlete profile with measurables and position info",
+                ].map((item) => (
+                  <div key={item} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                    <span style={{ color: "#e8a020", flexShrink: 0, marginTop: 2, fontSize: 12 }}>·</span>
+                    <span style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.5 }}>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── 6. UPGRADE CTA ── */}
+            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
               <button
                 onClick={() => nav(`${ROUTES.Subscribe}?source=user_demo_workspace`)}
-                style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+                style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "11px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
               >
                 Start Your Family's Workspace <ArrowRight style={{ width: 16, height: 16 }} />
               </button>
-              <button
-                onClick={() => nav(`${ROUTES.Discover}?demo=user`)}
-                style={{ background: "transparent", color: "#e8a020", border: "1px solid #e8a020", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-              >
-                Browse Camps →
-              </button>
+              <span style={{ fontSize: 13, color: "#4b5563" }}>$49 · one season · no auto-renew</span>
             </div>
+
           </div>
         )}
 
@@ -645,17 +706,27 @@ export default function Workspace() {
       <section style={{ padding: "0 24px 32px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
           <div style={{ width: 3, height: 18, background: "#e8a020", borderRadius: 2 }} />
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#6b7280" }}>YOUR TOOLS</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#6b7280" }}>
+            {isUserDemo ? "EXPLORE THE TOOLS" : "YOUR TOOLS"}
+          </div>
         </div>
+        {isUserDemo && (
+          <p style={{ fontSize: 13, color: "#4b5563", margin: "-8px 0 16px", lineHeight: 1.5 }}>
+            Each tool below is live in the demo — click in to see how it works.
+          </p>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
           {/* 1 — Athlete Profile */}
           <WorkspaceTile
             icon="👤"
             title="ATHLETE PROFILE"
             desc="Build the foundation with your athlete's info, measurables, and profile details."
-            btnLabel={profileComplete ? "View Profile →" : "Complete Profile →"}
-            onClick={() => nav(athleteId ? `${ROUTES.Profile}?id=${athleteId}` : ROUTES.Profile)}
-            highlight={!profileComplete}
+            btnLabel={isUserDemo ? "View Sample Profile →" : profileComplete ? "View Profile →" : "Complete Profile →"}
+            onClick={() => isUserDemo
+              ? nav(`${ROUTES.Profile}?demo=user`)
+              : nav(athleteId ? `${ROUTES.Profile}?id=${athleteId}` : ROUTES.Profile)
+            }
+            highlight={!isUserDemo && !profileComplete}
           />
           {/* 2 — The Playbook */}
           <WorkspaceTile
@@ -671,7 +742,7 @@ export default function Workspace() {
             title="DISCOVER CAMPS"
             desc="Find the right college football camps by division, state, and date."
             btnLabel="Find Camps →"
-            onClick={() => nav(ROUTES.Discover)}
+            onClick={() => nav(isUserDemo ? `${ROUTES.Discover}?demo=user` : ROUTES.Discover)}
           />
           {/* 4 — My Camps */}
           <WorkspaceTile
@@ -679,7 +750,7 @@ export default function Workspace() {
             title="MY CAMPS"
             desc="Keep track of saved camps, registrations, and your target list."
             btnLabel="View Camps →"
-            onClick={() => nav(ROUTES.MyCamps)}
+            onClick={() => nav(isUserDemo ? `${ROUTES.MyCamps}?demo=user` : ROUTES.MyCamps)}
           />
           {/* 5 — My Calendar */}
           <WorkspaceTile
@@ -695,7 +766,7 @@ export default function Workspace() {
             title="RECRUITING TRACKER"
             desc="Track progress as interest builds — from early activity to camp invites, conversations, and offers."
             btnLabel="View Tracker →"
-            onClick={() => nav(ROUTES.RecruitingJourney)}
+            onClick={() => nav(isUserDemo ? `${ROUTES.RecruitingJourney}?demo=user` : ROUTES.RecruitingJourney)}
           />
         </div>
       </section>
