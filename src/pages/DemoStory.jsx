@@ -131,77 +131,72 @@ function Step1() {
 // ── Step 2 — How URecruitHQ Helps ─────────────────────────────────────────────
 const PILLARS = [
   {
-    num: "1",
     icon: "📖",
-    title: "Learn the process",
-    desc: "A clear recruiting playbook so parents always know what matters at each stage and what to do next.",
+    lead: "Understand the recruiting process",
+    detail: "Giving parents a playbook so they can better understand the recruiting process, key stages, and what to focus on.",
   },
   {
-    num: "2",
     icon: "📋",
-    title: "Track real momentum",
-    desc: "A way to tell the difference between real interest and noise, and see which programs are genuinely engaging.",
+    lead: "Track real momentum, not just noise",
+    detail: "Helping families track activity so they can see whether there is real momentum, not just noise.",
   },
   {
-    num: "3",
     icon: "🔍",
-    title: "Plan camps with confidence",
-    desc: "One place to find, compare, and organize college camp options so the camp season has a real strategy behind it.",
+    lead: "Plan the camp season with clarity",
+    detail: "Providing a single view of college camps so parents can plan their camp season more efficiently and avoid confusion and conflicts.",
   },
 ];
 
 function PillarFramework() {
   return (
-    <div className="ds-pillars">
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "28px 0 0" }}>
       {PILLARS.map((p, i) => (
-        <React.Fragment key={p.num}>
-          {i > 0 && (
-            <div className="ds-pillar-arrow" aria-hidden="true">
-              &rsaquo;
+        <div
+          key={i}
+          style={{
+            display: "flex",
+            gap: 14,
+            alignItems: "flex-start",
+            background: "rgba(14, 22, 40, 0.65)",
+            border: "1px solid #1a2740",
+            borderRadius: 12,
+            padding: "16px 18px",
+          }}
+        >
+          <div style={{
+            width: 40,
+            height: 40,
+            borderRadius: "50%",
+            background: "rgba(232,160,32,0.08)",
+            border: "1px solid rgba(232,160,32,0.2)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 18,
+            flexShrink: 0,
+            marginTop: 1,
+          }}>
+            {p.icon}
+          </div>
+          <div>
+            <div style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "#e8edf3",
+              lineHeight: 1.35,
+              marginBottom: 4,
+            }}>
+              {p.lead}
             </div>
-          )}
-          <div className="ds-pillar">
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 22,
-                height: 22,
-                borderRadius: "50%",
-                background: "rgba(232,160,32,0.12)",
-                border: "1px solid rgba(232,160,32,0.25)",
-                fontSize: 10,
-                fontWeight: 700,
-                color: "#e8a020",
-                marginBottom: 10,
-              }}
-            >
-              {p.num}
-            </div>
-            <div style={{ fontSize: 24, marginBottom: 9 }}>{p.icon}</div>
-            <div
-              style={{
-                fontSize: 14,
-                fontWeight: 700,
-                color: "#f1f5f9",
-                marginBottom: 8,
-                lineHeight: 1.3,
-              }}
-            >
-              {p.title}
-            </div>
-            <div
-              style={{
-                fontSize: 13,
-                color: "#9caab8",
-                lineHeight: 1.65,
-              }}
-            >
-              {p.desc}
+            <div style={{
+              fontSize: 12.5,
+              color: "#5d6f84",
+              lineHeight: 1.55,
+            }}>
+              {p.detail}
             </div>
           </div>
-        </React.Fragment>
+        </div>
       ))}
     </div>
   );
@@ -210,19 +205,11 @@ function PillarFramework() {
 function Step2() {
   return (
     <div>
-      <h1 style={T.headline}>URecruitHQ helps parents in three key ways.</h1>
-
-      <p style={{ ...T.body, marginBottom: 20 }}>
-        It gives families a better system for understanding the process, staying
-        organized, and making smarter decisions over time.
-      </p>
+      <h1 style={T.headline}>
+        Built by parents who have been through the recruiting journey, URecruitHQ exists to simplify a process that is often confusing, fragmented, and overwhelming.
+      </h1>
 
       <PillarFramework />
-
-      <p style={{ fontSize: 14, color: "#6b7a8d", lineHeight: 1.65 }}>
-        Instead of piecing everything together on their own, families get a
-        single platform for all three.
-      </p>
     </div>
   );
 }
@@ -287,39 +274,6 @@ export default function DemoStory() {
     >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
-
-        /* ── Step 2: three-pillar framework ── */
-        .ds-pillars {
-          display: grid;
-          grid-template-columns: 1fr 28px 1fr 28px 1fr;
-          border: 1px solid #1e2d45;
-          border-radius: 12px;
-          overflow: hidden;
-          margin-bottom: 20px;
-        }
-        .ds-pillar {
-          padding: 22px 16px 20px;
-          text-align: center;
-        }
-        .ds-pillar:not(:last-child) {
-          border-right: 1px solid #1e2d45;
-        }
-        .ds-pillar-arrow {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #253654;
-          font-size: 20px;
-          user-select: none;
-        }
-        @media (max-width: 520px) {
-          .ds-pillars { grid-template-columns: 1fr; }
-          .ds-pillar-arrow { display: none; }
-          .ds-pillar:not(:last-child) {
-            border-right: none;
-            border-bottom: 1px solid #1e2d45;
-          }
-        }
       `}</style>
 
       {/* ── Top bar ── */}
