@@ -799,6 +799,10 @@ export default function Discover() {
   }
 
   async function handleFavoriteToggle(campId) {
+    if (isUserDemo) {
+      toast({ description: "You can favorite camps for planning purposes." });
+      return;
+    }
     // Demo users: skip writeGate entirely, allow local-only favorite
     if (!isPaid) {
       if (isCampFavorite(campId)) {
@@ -869,7 +873,10 @@ export default function Discover() {
   }
 
   function handleRegisteredToggle(campId) {
-    if (isUserDemo) return;
+    if (isUserDemo) {
+      toast({ description: "By selecting this you can keep track of your registered camps." });
+      return;
+    }
     const id = String(campId ?? "");
     if (!id) return;
     const isReg = isCampRegistered(id);
@@ -1006,7 +1013,10 @@ export default function Discover() {
             onFavoriteToggle={handleFavoriteToggle}
             onRegisteredToggle={isCoach ? null : handleRegisteredToggle}
             onRegisterClick={(camp) => {
-              if (isUserDemo) return;
+              if (isUserDemo) {
+                toast({ description: "After registration, this link will send you to the actual camp registration page." });
+                return;
+              }
               const url = camp?.link_url || camp?.source_url;
               if (url) window.open(String(url), "_blank", "noopener,noreferrer");
             }}
