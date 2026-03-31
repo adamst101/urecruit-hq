@@ -41,42 +41,73 @@ const T = {
   },
 };
 
-// ── Horizontal 5-card parent voice row ────────────────────────────────────────
-const CHALLENGES = [
-  { icon: "🗺️", statement: "We don't really understand how recruiting works." },
-  { icon: "🔍", statement: "We're not sure which opportunities are real." },
-  { icon: "🏫", statement: "We don't know which camps or schools make sense." },
-  { icon: "✈️", statement: "We're trying to manage the cost, travel, and timing." },
-  { icon: "🤝", statement: "We want to help without wasting time or money." },
+// ── 3 stacked icon rows — parent problem points ────────────────────────────────
+const POINTS = [
+  {
+    icon: "🗺️",
+    lead: "How little you know about the process",
+    detail: "camp strategy, exposure, communication, timelines, and expectations",
+  },
+  {
+    icon: "🧩",
+    lead: "How fragmented the information is",
+    detail: "forcing parents to piece everything together on their own",
+  },
+  {
+    icon: "🔀",
+    lead: "How unclear the path is",
+    detail: "since not every athlete follows the same recruiting route",
+  },
 ];
 
-function ChallengesRow() {
+function ProblemPoints() {
   return (
-    <div className="ds-challenges">
-      {CHALLENGES.map((c, i) => (
-        <div key={i} className="ds-challenge-item">
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "24px 0 0" }}>
+      {POINTS.map((p, i) => (
+        <div
+          key={i}
+          style={{
+            display: "flex",
+            gap: 14,
+            alignItems: "flex-start",
+            background: "rgba(14, 22, 40, 0.65)",
+            border: "1px solid #1a2740",
+            borderRadius: 12,
+            padding: "16px 18px",
+          }}
+        >
           <div style={{
-            width: 36,
-            height: 36,
+            width: 40,
+            height: 40,
             borderRadius: "50%",
-            background: "rgba(232,160,32,0.06)",
-            border: "1px solid rgba(232,160,32,0.16)",
+            background: "rgba(232,160,32,0.08)",
+            border: "1px solid rgba(232,160,32,0.2)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 16,
-            margin: "0 auto 10px",
+            fontSize: 18,
             flexShrink: 0,
+            marginTop: 1,
           }}>
-            {c.icon}
+            {p.icon}
           </div>
-          <div style={{
-            fontSize: 12,
-            fontWeight: 500,
-            color: "#b8c7d6",
-            lineHeight: 1.6,
-          }}>
-            {c.statement}
+          <div>
+            <div style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "#e8edf3",
+              lineHeight: 1.35,
+              marginBottom: 4,
+            }}>
+              {p.lead}
+            </div>
+            <div style={{
+              fontSize: 12.5,
+              color: "#5d6f84",
+              lineHeight: 1.55,
+            }}>
+              {p.detail}
+            </div>
           </div>
         </div>
       ))}
@@ -89,14 +120,10 @@ function Step1() {
   return (
     <div>
       <h1 style={T.headline}>
-        When a player says "I want to play in college," most parents aren't prepared for what comes next.
+        When a player says "I want to play in college," most parents have no idea what comes next.
       </h1>
 
-      <p style={{ ...T.body, marginBottom: 0 }}>
-        The confusion usually shows up in the same familiar places.
-      </p>
-
-      <ChallengesRow />
+      <ProblemPoints />
     </div>
   );
 }
@@ -260,33 +287,6 @@ export default function DemoStory() {
     >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
-
-        /* ── Step 1: challenge icon row ── */
-        .ds-challenges {
-          display: flex;
-          gap: 8px;
-          margin: 20px 0 0;
-        }
-        .ds-challenge-item {
-          flex: 1;
-          min-width: 0;
-          text-align: center;
-          padding: 16px 8px 14px;
-          background: rgba(14, 22, 40, 0.7);
-          border: 1px solid #1a2740;
-          border-radius: 12px;
-        }
-        @media (max-width: 520px) {
-          .ds-challenges {
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 8px;
-          }
-          .ds-challenge-item {
-            flex: 0 0 calc(33.33% - 6px);
-            padding: 14px 6px 12px;
-          }
-        }
 
         /* ── Step 2: three-pillar framework ── */
         .ds-pillars {
