@@ -14,6 +14,7 @@ import { useAthleteIdentity } from "../components/useAthleteIdentity.jsx";
 import { trackEvent, trackEventOnce } from "../utils/trackEvent.js";
 import { geocodeCity } from "../components/hooks/useGeocode.jsx";
 import { DEMO_ATHLETE } from "../lib/demoUserData.js";
+import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
 
 const FEET_OPTIONS = [4, 5, 6, 7];
 const INCH_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
@@ -519,6 +520,7 @@ export default function Profile() {
         )}
       </div>
 
+      <GuidedTourOverlay tourKey="profile" />
       <BottomNav />
     </div>
   );

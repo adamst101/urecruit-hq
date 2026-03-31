@@ -35,6 +35,7 @@ import { getCityCoords } from "../components/hooks/useCityCoords.jsx";
 
 import InlineFilterBar from "../components/filters/InlineFilterBar.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
+import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
 import ConflictWarningModal from "../components/camps/ConflictWarningModal.jsx";
 import RegisterConfirmModal from "../components/camps/RegisterConfirmModal.jsx";
 import UnregisterConfirmModal from "../components/camps/UnregisterConfirmModal.jsx";
@@ -1210,6 +1211,7 @@ export default function Discover() {
         }}
       />
 
+      <GuidedTourOverlay tourKey="discover" />
       <BottomNav />
     </div>
   );

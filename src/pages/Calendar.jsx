@@ -11,6 +11,7 @@ import { Card } from "../components/ui/card";
 import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
+import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { trackEventOnce } from "../utils/trackEvent.js";
@@ -988,6 +989,7 @@ export default function Calendar() {
         campName={unregisterModal.camp?.camp_name || unregisterModal.camp?.school_name || "this camp"}
         onRemove={() => doUnregister(unregisterModal.camp)}
       />
+      <GuidedTourOverlay tourKey="calendar" />
     </div>
   );
 }

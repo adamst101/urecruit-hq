@@ -1,6 +1,7 @@
 // src/pages/RecruitingJourney.jsx
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
@@ -1208,6 +1209,7 @@ export default function RecruitingJourney() {
           </div>
         </div>
       )}
+      <GuidedTourOverlay tourKey="tracker" />
     </div>
   );
 }

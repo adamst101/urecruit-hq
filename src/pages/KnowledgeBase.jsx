@@ -24,6 +24,7 @@ import {
   KB_TOPICS_FLAT,
   DEMO_UNLOCKED_ARTICLE_IDS,
 } from "../components/guides/KbSidebar.jsx";
+import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
 
 // ─── Responsive CSS ────────────────────────────────────────────────────────────
 const GLOBAL_CSS = `
@@ -1324,6 +1325,7 @@ export default function KnowledgeBase() {
           demoUnlockedIds={isDemoMode ? DEMO_UNLOCKED_ARTICLE_IDS : null}
         />
       )}
+      <GuidedTourOverlay tourKey="playbook" />
     </div>
   );
 }

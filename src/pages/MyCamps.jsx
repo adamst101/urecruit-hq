@@ -29,6 +29,7 @@ import UnregisterConfirmModal from "../components/camps/UnregisterConfirmModal.j
 import WarningBadge from "../components/camps/WarningBadge.jsx";
 import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
+import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
 import {
   matchesMonth,
   matchesStateSimple,
@@ -570,6 +571,7 @@ export default function MyCamps() {
         campName={unregisterModal.camp?.camp_name || unregisterModal.camp?.school_name || "this camp"}
         onRemove={() => doUnregister(unregisterModal.camp)}
       />
+      <GuidedTourOverlay tourKey="mycamps" />
     </div>
   );
 }
