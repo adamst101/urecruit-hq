@@ -1,5 +1,6 @@
 // src/pages/Workspace.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
 import { CalendarDays, Search, User, Shield, LogOut, Star, ArrowRight } from "lucide-react";
 
@@ -18,16 +19,14 @@ import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import AddAthleteModal from "../components/workspace/AddAthleteModal.jsx";
 import InstallButton from "../components/pwa/InstallButton.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
+import { useDemoCampSummaries } from "../components/hooks/useDemoCampSummaries.jsx";
 import {
   initDemoUserState,
   resetDemoSession,
-  DEMO_JOURNEY,
   DEMO_SEASON_YEAR,
   DEMO_ATHLETE,
-  DEMO_FAVORITE_CAMP_IDS,
-  DEMO_REGISTERED_CAMP_IDS,
-  DEMO_JOURNEY_ACTIVITIES,
   DEMO_JOURNEY_METRICS,
+  DEMO_JOURNEY_ACTIVITIES,
 } from "../lib/demoUserData.js";
 
 // ---- routes (no createPageUrl dependency) ----
@@ -98,13 +97,21 @@ export default function Workspace() {
   const { activeAthlete: athleteProfile, isLoading: identityLoading } = useActiveAthlete();
   const athleteId = useMemo(() => normId(athleteProfile), [athleteProfile]);
   const { demoProfileId } = useDemoProfile();
+  const queryClient = useQueryClient();
 
-  // ── Demo dashboard snapshot — derived from Marcus's synthetic story data ──
+  // ── Demo camp summaries — session-backed live counts ──────────────────────
+  const { data: demoCampData = [] } = useDemoCampSummaries({
+    seasonYear: DEMO_SEASON_YEAR,
+    demoProfileId,
+    enabled: isUserDemo,
+  });
+
+  // ── Demo dashboard snapshot — derived from live session-backed camp data ──
   const demoSnapshotStats = useMemo(() => ({
-    campsSaved: DEMO_FAVORITE_CAMP_IDS.length,
-    upcomingCamps: DEMO_REGISTERED_CAMP_IDS.length,
+    campsSaved: demoCampData.filter(c => c.intent_status === "favorite" || c.intent_status === "registered").length,
+    upcomingCamps: demoCampData.filter(c => c.intent_status === "registered").length,
     activityCount: DEMO_JOURNEY_ACTIVITIES.length,
-  }), []);
+  }), [demoCampData]);
 
   const demoNextStep = useMemo(() => ({
     eyebrow: "MARCUS'S NEXT STEP",
@@ -231,11 +238,12 @@ export default function Workspace() {
     trackEventOnce("workspace_viewed", "evt_workspace_viewed_v1", { paid: isMember });
   }, [isMember]);
 
-  // Seed demo user localStorage state on first visit
+  // Seed demo user sessionStorage state on first visit, then refresh camp summaries
   useEffect(() => {
     if (!isUserDemo || !demoProfileId) return;
     initDemoUserState(demoProfileId, DEMO_SEASON_YEAR);
-  }, [isUserDemo, demoProfileId]);
+    queryClient.invalidateQueries({ queryKey: ["demoCampSummaries"] });
+  }, [isUserDemo, demoProfileId, queryClient]);
   const memberSeason = Number(season?.entitlement?.season_year) || season?.seasonYear || null;
   const currentYear = season?.currentYear || new Date().getFullYear();
   const demoYear = season?.demoYear || (currentYear - 1);
