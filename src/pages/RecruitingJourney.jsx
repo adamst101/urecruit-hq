@@ -272,6 +272,12 @@ export default function RecruitingJourney() {
     loadAllSchools();
   }, [loadJourney, seasonLoading, accountId]);
 
+  // Demo / unauthenticated: clear loading once season check is done
+  useEffect(() => {
+    if (seasonLoading) return;
+    if (!accountId) setLoading(false);
+  }, [seasonLoading, accountId]);
+
   // ── Add activity ─────────────────────────────────────────────────────────
   function openAdd(type) {
     setAddForm({ ...BLANK_FORM, activity_type: type });
@@ -487,7 +493,54 @@ export default function RecruitingJourney() {
         </section>
       )}
 
-      {!loading && (
+      {/* Demo / no-auth gate */}
+      {!loading && !accountId && (
+        <section style={{ padding: "0 24px 40px", maxWidth: 900, margin: "0 auto" }}>
+          <div style={{
+            background: "rgba(232,160,32,0.06)", border: "1px solid rgba(232,160,32,0.2)",
+            borderRadius: 14, padding: "28px 32px",
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 10 }}>
+              Season Pass Required
+            </div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#f9fafb", letterSpacing: 1, marginBottom: 10 }}>
+              Track Every Signal. Build the Full Picture.
+            </div>
+            <p style={{ fontSize: 14, color: "#9ca3af", lineHeight: 1.7, margin: "0 0 20px", maxWidth: 560 }}>
+              The Recruiting Tracker lets you log every coach interaction — DMs, texts, camp conversations, visit requests, and offers — so you can see which programs are actually interested and measure momentum over time.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24, maxWidth: 440 }}>
+              {[
+                "Log DMs, texts, phone calls, and emails from coaches",
+                "Track camp invites, meetings, and post-camp follow-ups",
+                "Record unofficial visits, official visits, and offers",
+                "See which schools are generating real traction",
+              ].map((line) => (
+                <div key={line} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <span style={{ color: "#e8a020", marginTop: 1, flexShrink: 0 }}>✓</span>
+                  <span style={{ fontSize: 14, color: "#d1d5db" }}>{line}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <button
+                onClick={() => nav("/Subscribe?source=tracker_demo")}
+                style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+              >
+                Get Season Pass →
+              </button>
+              <button
+                onClick={() => nav(-1)}
+                style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 8, padding: "10px 16px", fontSize: 14, cursor: "pointer" }}
+              >
+                Go Back
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {!loading && !!accountId && (
         <>
           {/* ── Quick Add ── */}
           <section style={{ padding: "0 24px 32px", maxWidth: 900, margin: "0 auto" }}>
