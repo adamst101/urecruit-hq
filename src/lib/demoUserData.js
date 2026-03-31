@@ -4,7 +4,7 @@
 // Shows one athlete's journey: Marcus Johnson, 11th grade WR, class of 2026.
 // Family from Suwanee, GA (competitive Atlanta suburb market).
 //
-// Favorites: 9 camps the family has tracked (SEC dreams + realistic D1/D2 targets)
+// Favorites: 10 camps the family has tracked (SEC dreams + realistic D1/D2 targets)
 // Registered: 3 camps already paid for (early-season dates, mix of reach + value)
 //
 // Camp IDs reference DEMO_CAMP_TEMPLATES in demoCampData.js — must stay in sync.
@@ -14,6 +14,17 @@ export const DEMO_SEASON_YEAR = 2025;
 export function userDemoSeasonYear() {
   return DEMO_SEASON_YEAR;
 }
+
+// Shared home-location params for demo conflict detection.
+// Spread into detectConflicts / useConflictDetection calls when isUserDemo=true
+// so all pages produce identical conflict signals from the same camp data.
+// (isPaid intentionally omitted — callers decide that based on their own logic.)
+export const DEMO_CONFLICT_HOME = {
+  homeCity: "Suwanee",
+  homeState: "GA",
+  homeLat: null,
+  homeLng: null,
+};
 
 // Synthetic athlete snapshot — used to render the demo profile card
 export const DEMO_ATHLETE = {
@@ -34,7 +45,7 @@ export const DEMO_ATHLETE = {
   parent_name: "David Johnson",
 };
 
-// 9 camps the family has saved (favorited) — realistic WR recruiting target list
+// 10 camps the family has saved (favorited) — realistic WR recruiting target list
 // Ordered roughly by priority / realism
 export const DEMO_FAVORITE_CAMP_IDS = [
   "dc-georgia-001",       // Georgia — home state, premier dream school
@@ -46,6 +57,7 @@ export const DEMO_FAVORITE_CAMP_IDS = [
   "dc-latech-001",        // Louisiana Tech — realistic D1 target, air raid offense
   "dc-southalabama-001",  // South Alabama — solid D1, within drive distance
   "dc-valdosta-001",      // Valdosta State — Georgia D2 program, safety net
+  "dc-michigan-001",      // Michigan — dream school reach; May 25 (day after South Alabama → ✈️ travel conflict)
 ];
 
 // 3 camps already registered (paid, confirmed) — earlier season dates
@@ -64,14 +76,14 @@ export const DEMO_JOURNEY = {
   city: "Suwanee, GA",
   chapter: "11th Grade — Building Camp Momentum",
   summary:
-    "Marcus finished 10th grade with solid film from 7-on-7 tournaments across North Georgia. This spring, your family found uRecruit HQ, built a camp plan from scratch, and already has registrations locked in. Three camps confirmed. Six more schools on the radar. Senior season starts in August.",
+    "Marcus finished 10th grade with solid film from 7-on-7 tournaments across North Georgia. This spring, your family found uRecruit HQ, built a camp plan from scratch, and already has registrations locked in. Three camps confirmed. Seven more schools on the radar. Senior season starts in August.",
   stats: {
     saved: DEMO_FAVORITE_CAMP_IDS.length,
     registered: DEMO_REGISTERED_CAMP_IDS.length,
   },
   milestones: [
     { label: "Profile built", detail: "Feb 2025", done: true },
-    { label: "9 target camps saved", detail: "Mar 2025", done: true },
+    { label: "10 target camps saved", detail: "Mar 2025", done: true },
     { label: "Registered: WKU, Tennessee, Auburn", detail: "Mar–Apr 2025", done: true },
     { label: "Attend camps, collect coach feedback", detail: "May–Jun 2025", done: false },
     { label: "Update film reel after summer camps", detail: "Jul 2025", done: false },

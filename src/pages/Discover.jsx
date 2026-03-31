@@ -19,7 +19,7 @@ import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
 import { DEMO_COACH_PROFILE } from "../lib/demoCoachData.js";
 import { loadDemoCamps } from "../lib/demoCampData.js";
-import { initDemoUserState, DEMO_SEASON_YEAR } from "../lib/demoUserData.js";
+import { initDemoUserState, DEMO_SEASON_YEAR, DEMO_ATHLETE } from "../lib/demoUserData.js";
 import { footballDemoSeasonYear } from "../components/utils/seasonEntitlements.jsx";
 
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
@@ -1019,11 +1019,11 @@ export default function Discover() {
               if (!existing.some((r) => String(r?.id) === String(campId))) return [];
               return detectConflicts({
                 camps: existing,
-                homeCity: athleteProfile?.home_city || null,
-                homeState: athleteProfile?.home_state || null,
+                homeCity: (isUserDemo ? DEMO_ATHLETE.home_city : null) || athleteProfile?.home_city || null,
+                homeState: (isUserDemo ? DEMO_ATHLETE.home_state : null) || athleteProfile?.home_state || null,
                 homeLat: athleteProfile?.home_lat ?? null,
                 homeLng: athleteProfile?.home_lng ?? null,
-                isPaid,
+                isPaid: isPaid || isUserDemo,
               }).filter((w) => w.campIds?.includes(String(campId)));
             }}
           />
