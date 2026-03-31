@@ -640,8 +640,8 @@ export default function RecruitingJourney() {
             )}
           </section>}
 
-          {/* ── Traction Snapshot ── */}
-          {athleteMetrics && (
+          {/* ── Traction Snapshot — hidden in tour mode so activities appear at top ── */}
+          {!isTourMode && athleteMetrics && (
             <section style={{ padding: "0 24px 20px", maxWidth: 900, margin: "0 auto" }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
                 {[
@@ -764,7 +764,7 @@ export default function RecruitingJourney() {
                           <div style={{ fontSize: 12, color: "#4b5563", marginTop: 6 }}>{dateStr}</div>
                         )}
                       </div>
-                      {act.id && deleteConfirmId !== act.id && (
+                      {!isTourMode && act.id && deleteConfirmId !== act.id && (
                         <div style={{ display: "flex", gap: 1, flexShrink: 0, marginTop: 1 }}>
                           <button
                             onClick={() => openEdit(act)}
@@ -779,7 +779,7 @@ export default function RecruitingJourney() {
                         </div>
                       )}
                     </div>
-                    {deleteConfirmId === act.id && (
+                    {!isTourMode && deleteConfirmId === act.id && (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0 12px" }}>
                         <span style={{ fontSize: 12, color: "#6b7280", flex: 1 }}>Remove this entry?</span>
                         <button
