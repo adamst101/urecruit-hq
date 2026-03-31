@@ -41,110 +41,54 @@ const T = {
   },
 };
 
-// ── Hub-and-spoke problem map ──────────────────────────────────────────────────
-function ProblemMap() {
-  const cx = 290, cy = 205, cr = 56, R = 145;
+// ── Horizontal 5-icon challenge row ───────────────────────────────────────────
+const CHALLENGES = [
+  { icon: "🗺️", label: "Recruiting",        desc: "Learn how the process works" },
+  { icon: "🎯", label: "Real Opportunities", desc: "Know what interest is real" },
+  { icon: "🏫", label: "Camps & Schools",    desc: "Choose better options" },
+  { icon: "✈️", label: "Cost & Travel",      desc: "Manage time and logistics" },
+  { icon: "💪", label: "Athlete Support",    desc: "Help without wasted effort" },
+];
 
-  // angle: degrees clockwise from top (0 = top, 90 = right)
-  // label: single short concept (1–3 words)
-  // anchor: SVG text-anchor
-  // tx, ty: label offset from spoke endpoint
-  const nodes = [
-    { angle: 0,   label: "Recruiting",         anchor: "middle", tx: 0,   ty: -20 },
-    { angle: 72,  label: "Real Opportunities",  anchor: "start",  tx: 16,  ty: 0 },
-    { angle: 144, label: "Camps & Schools",     anchor: "start",  tx: 16,  ty: 0 },
-    { angle: 216, label: "Cost & Travel",       anchor: "end",    tx: -16, ty: 0 },
-    { angle: 288, label: "Athlete Support",     anchor: "end",    tx: -16, ty: 0 },
-  ];
-
+function ChallengesRow() {
   return (
-    <svg
-      viewBox="0 0 580 410"
-      style={{ width: "100%", display: "block" }}
-      aria-label="Diagram showing five challenges that expand when an athlete wants to play in college"
-    >
-      <defs>
-        <radialGradient id="hubGlow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="rgba(232,160,32,0.1)" />
-          <stop offset="100%" stopColor="rgba(232,160,32,0)" />
-        </radialGradient>
-      </defs>
-
-      {/* Soft glow behind center hub */}
-      <circle cx={cx} cy={cy} r={115} fill="url(#hubGlow)" />
-
-      {nodes.map((n, i) => {
-        const sinA = Math.sin((n.angle * Math.PI) / 180);
-        const cosA = Math.cos((n.angle * Math.PI) / 180);
-        const ex = cx + R * sinA;
-        const ey = cy - R * cosA;
-        const lx1 = cx + cr * sinA;
-        const ly1 = cy - cr * cosA;
-        const lx2 = ex - 11 * sinA;
-        const ly2 = ey + 11 * cosA;
-
-        return (
-          <g key={i}>
-            <line
-              x1={lx1} y1={ly1} x2={lx2} y2={ly2}
-              stroke="#253654"
-              strokeWidth="1.5"
-              strokeDasharray="5 5"
-            />
-            <circle
-              cx={ex} cy={ey} r="8"
-              fill="#111827"
-              stroke="#2e4268"
-              strokeWidth="1.5"
-            />
-            <text
-              x={ex + n.tx}
-              y={ey + n.ty}
-              textAnchor={n.anchor}
-              dominantBaseline="middle"
-              fill="#aab4c8"
-              fontSize="11.5"
-              fontFamily="DM Sans, Inter, system-ui, sans-serif"
-              fontWeight="600"
-            >
-              {n.label}
-            </text>
-          </g>
-        );
-      })}
-
-      {/* Center hub */}
-      <circle
-        cx={cx} cy={cy} r={cr}
-        fill="rgba(232,160,32,0.08)"
-        stroke="rgba(232,160,32,0.35)"
-        strokeWidth="1.5"
-      />
-      <text
-        x={cx} y={cy - 8}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fill="#f1f5f9"
-        fontSize="10.5"
-        fontWeight="700"
-        letterSpacing="0.06em"
-        fontFamily="DM Sans, Inter, system-ui, sans-serif"
-      >
-        MY ATHLETE WANTS
-      </text>
-      <text
-        x={cx} y={cy + 8}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fill="#f1f5f9"
-        fontSize="10.5"
-        fontWeight="700"
-        letterSpacing="0.06em"
-        fontFamily="DM Sans, Inter, system-ui, sans-serif"
-      >
-        TO PLAY IN COLLEGE
-      </text>
-    </svg>
+    <div className="ds-challenges">
+      {CHALLENGES.map((c) => (
+        <div key={c.label} className="ds-challenge-item">
+          <div style={{
+            width: 44,
+            height: 44,
+            borderRadius: "50%",
+            background: "rgba(232,160,32,0.08)",
+            border: "1px solid rgba(232,160,32,0.22)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 20,
+            margin: "0 auto 10px",
+            flexShrink: 0,
+          }}>
+            {c.icon}
+          </div>
+          <div style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: "#e2e8f0",
+            marginBottom: 5,
+            lineHeight: 1.3,
+          }}>
+            {c.label}
+          </div>
+          <div style={{
+            fontSize: 11,
+            color: "#5d6f84",
+            lineHeight: 1.5,
+          }}>
+            {c.desc}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -160,9 +104,7 @@ function Step1() {
         The challenge expands in several directions at once.
       </p>
 
-      <div style={{ margin: "12px 0 0", maxWidth: 520 }}>
-        <ProblemMap />
-      </div>
+      <ChallengesRow />
     </div>
   );
 }
@@ -327,6 +269,34 @@ export default function DemoStory() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
 
+        /* ── Step 1: challenge icon row ── */
+        .ds-challenges {
+          display: flex;
+          gap: 8px;
+          margin: 20px 0 0;
+        }
+        .ds-challenge-item {
+          flex: 1;
+          min-width: 0;
+          text-align: center;
+          padding: 16px 8px 14px;
+          background: rgba(14, 22, 40, 0.7);
+          border: 1px solid #1a2740;
+          border-radius: 12px;
+        }
+        @media (max-width: 520px) {
+          .ds-challenges {
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+          }
+          .ds-challenge-item {
+            flex: 0 0 calc(33.33% - 6px);
+            padding: 14px 6px 12px;
+          }
+        }
+
+        /* ── Step 2: three-pillar framework ── */
         .ds-pillars {
           display: grid;
           grid-template-columns: 1fr 28px 1fr 28px 1fr;
