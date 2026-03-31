@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
+import BottomNav from "../components/navigation/BottomNav.jsx";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
@@ -465,7 +466,7 @@ export default function RecruitingJourney() {
   return (
     <div style={{
       background: T.pageBg, color: T.textPrimary, minHeight: "100vh",
-      fontFamily: T.fontBody,
+      fontFamily: T.fontBody, paddingBottom: 80,
     }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
@@ -1214,6 +1215,7 @@ export default function RecruitingJourney() {
         </div>
       )}
       <GuidedTourOverlay tourKey="tracker" />
+      <BottomNav />
     </div>
   );
 }

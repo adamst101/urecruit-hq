@@ -18,6 +18,7 @@ import { trackEventOnce } from "../utils/trackEvent.js";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import AddAthleteModal from "../components/workspace/AddAthleteModal.jsx";
 import InstallButton from "../components/pwa/InstallButton.jsx";
+import BottomNav from "../components/navigation/BottomNav.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { useDemoCampSummaries } from "../components/hooks/useDemoCampSummaries.jsx";
 import {
@@ -823,6 +824,8 @@ export default function Workspace() {
           </div>
         </section>
       )}
+
+      <BottomNav />
     </div>
   );
 }
