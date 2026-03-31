@@ -408,6 +408,7 @@ export default function MyCamps() {
             </div>
           )}
         <CampCard
+          isUserDemo={isUserDemo}
           warningBadge={campWarnings.length > 0 ? <WarningBadge warnings={campWarnings} /> : null}
           camp={{
             id: campId,

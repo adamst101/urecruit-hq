@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import { cn } from "../../lib/utils";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { useDemoHint, DemoHintPopup } from "../demo/DemoHintPopup.jsx";
 
 function safeFormatDate(d) {
   try {
@@ -62,12 +63,15 @@ export default function CampCard({
   disabledFavorite,
   warningBadge,
   onRegisterClick,
+  isUserDemo,
 }) {
   const division = school?.division || school?.school_division || null;
   const schoolName = school?.school_name || school?.name || "Unknown School";
   const logoUrl = school?.logo_url || school?.athletic_logo_url || null;
   const sportName = sport?.sport_name || sport?.name || null;
   const isDemo = mode === "demo";
+
+  const { demoHint, showDemoHint, clearDemoHint } = useDemoHint();
 
   const startLabel = safeFormatDate(camp?.start_date);
   const endLabel = camp?.end_date && camp?.end_date !== camp?.start_date ? safeFormatDate(camp?.end_date) : null;
@@ -79,6 +83,8 @@ export default function CampCard({
   const cardBg = isRegistered ? "#052e16" : "#111827";
 
   return (
+    <>
+    <DemoHintPopup demoHint={demoHint} onDismiss={clearDemoHint} />
     <div
       className="rounded-xl border border-ur-border transition-colors overflow-hidden"
       style={{ background: cardBg }}
@@ -143,6 +149,7 @@ export default function CampCard({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              if (isUserDemo) { showDemoHint(e, "favorite"); return; }
               console.log("[CampCard] onFavoriteToggle fired, prop:", typeof onFavoriteToggle, "disabled:", !!disabledFavorite);
               if (disabledFavorite) return;
               onFavoriteToggle?.();
@@ -173,6 +180,7 @@ export default function CampCard({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                if (isUserDemo) { showDemoHint(e, "registered"); return; }
                 console.log("[CampCard] onRegisteredToggle fired, prop:", typeof onRegisteredToggle);
                 onRegisteredToggle();
               }}
@@ -195,6 +203,7 @@ export default function CampCard({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                if (isUserDemo) { showDemoHint(e, "register"); return; }
                 onRegisterClick();
               }}
             >
@@ -204,5 +213,6 @@ export default function CampCard({
         </div>
       </div>
     </div>
+    </>
   );
 }

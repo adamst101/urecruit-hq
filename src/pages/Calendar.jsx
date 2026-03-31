@@ -754,6 +754,7 @@ export default function Calendar() {
           return (
             <div key={campId} className="relative">
               <CampCard
+                isUserDemo={isUserDemo}
                 camp={camp} school={school} sport={sport} positions={posObjs}
                 isFavorite={isFav}
                 isRegistered={isReg}
