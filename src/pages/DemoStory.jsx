@@ -41,30 +41,30 @@ const T = {
   },
 };
 
-// ── Horizontal 5-icon challenge row ───────────────────────────────────────────
+// ── Horizontal 5-card parent voice row ────────────────────────────────────────
 const CHALLENGES = [
-  { icon: "🗺️", label: "Recruiting",        desc: "Learn how the process works" },
-  { icon: "🎯", label: "Real Opportunities", desc: "Know what interest is real" },
-  { icon: "🏫", label: "Camps & Schools",    desc: "Choose better options" },
-  { icon: "✈️", label: "Cost & Travel",      desc: "Manage time and logistics" },
-  { icon: "💪", label: "Athlete Support",    desc: "Help without wasted effort" },
+  { icon: "🗺️", statement: "We don't really understand how recruiting works." },
+  { icon: "🔍", statement: "We're not sure which opportunities are real." },
+  { icon: "🏫", statement: "We don't know which camps or schools make sense." },
+  { icon: "✈️", statement: "We're trying to manage the cost, travel, and timing." },
+  { icon: "🤝", statement: "We want to help without wasting time or money." },
 ];
 
 function ChallengesRow() {
   return (
     <div className="ds-challenges">
-      {CHALLENGES.map((c) => (
-        <div key={c.label} className="ds-challenge-item">
+      {CHALLENGES.map((c, i) => (
+        <div key={i} className="ds-challenge-item">
           <div style={{
-            width: 44,
-            height: 44,
+            width: 36,
+            height: 36,
             borderRadius: "50%",
-            background: "rgba(232,160,32,0.08)",
-            border: "1px solid rgba(232,160,32,0.22)",
+            background: "rgba(232,160,32,0.06)",
+            border: "1px solid rgba(232,160,32,0.16)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 20,
+            fontSize: 16,
             margin: "0 auto 10px",
             flexShrink: 0,
           }}>
@@ -72,19 +72,11 @@ function ChallengesRow() {
           </div>
           <div style={{
             fontSize: 12,
-            fontWeight: 700,
-            color: "#e2e8f0",
-            marginBottom: 5,
-            lineHeight: 1.3,
+            fontWeight: 500,
+            color: "#b8c7d6",
+            lineHeight: 1.6,
           }}>
-            {c.label}
-          </div>
-          <div style={{
-            fontSize: 11,
-            color: "#5d6f84",
-            lineHeight: 1.5,
-          }}>
-            {c.desc}
+            {c.statement}
           </div>
         </div>
       ))}
@@ -101,7 +93,7 @@ function Step1() {
       </h1>
 
       <p style={{ ...T.body, marginBottom: 0 }}>
-        The challenge expands in several directions at once.
+        The confusion usually shows up in the same familiar places.
       </p>
 
       <ChallengesRow />
