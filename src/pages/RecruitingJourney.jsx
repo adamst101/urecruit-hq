@@ -186,6 +186,7 @@ export default function RecruitingJourney() {
   const nav = useNavigate();
   const loc = useLocation();
   const isUserDemo = new URLSearchParams(loc.search).get("demo") === "user";
+  const isTourMode = new URLSearchParams(loc.search).get("tour") !== null;
   const { accountId, isLoading: seasonLoading } = useSeasonAccess();
   const { activeAthlete: athleteProfile } = useActiveAthlete();
   const athleteId = normId(athleteProfile);
@@ -469,17 +470,19 @@ export default function RecruitingJourney() {
 
       {/* ── Header ── */}
       <section style={{ padding: "24px 24px 0", maxWidth: 900, margin: "0 auto" }}>
-        <button
-          onClick={() => nav(isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
-          style={{
-            background: "none", border: "none", color: T.textSecondary, cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 6,
-            fontSize: 14, padding: 0, marginBottom: 20,
-          }}
-        >
-          <ArrowLeft style={{ width: 16, height: 16 }} />
-          Back to HQ
-        </button>
+        {!isTourMode && (
+          <button
+            onClick={() => nav(isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
+            style={{
+              background: "none", border: "none", color: T.textSecondary, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6,
+              fontSize: 14, padding: 0, marginBottom: 20,
+            }}
+          >
+            <ArrowLeft style={{ width: 16, height: 16 }} />
+            Back to HQ
+          </button>
+        )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <div style={{ width: 3, height: 36, background: "#e8a020", borderRadius: 2 }} />

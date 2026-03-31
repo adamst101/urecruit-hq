@@ -80,6 +80,7 @@ export default function Profile() {
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const athleteId = urlParams.get("id") || undefined;
   const isUserDemo = urlParams.get("demo") === "user";
+  const isTourMode = urlParams.get("tour") !== null;
 
   const { hasAccess, mode, loading: seasonLoading, isLoading: seasonIsLoading } = useSeasonAccess();
   const isDemo = !seasonIsLoading && (mode === "demo" || !hasAccess);
@@ -278,13 +279,15 @@ export default function Profile() {
   return (
     <div className="min-h-screen bg-ur-page text-ur-primary pb-20">
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-        <button
-          type="button"
-          onClick={() => nav(isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
-          className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
-        >
-          ← HQ
-        </button>
+        {!isTourMode && (
+          <button
+            type="button"
+            onClick={() => nav(isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
+            className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
+          >
+            ← HQ
+          </button>
+        )}
         {/* Header */}
         <div className="flex items-center gap-2">
           <User className="w-6 h-6 text-ur-amber" />
@@ -334,20 +337,22 @@ export default function Profile() {
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(232,160,32,0.15)", display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button
-                onClick={() => nav("/Subscribe?source=profile_demo")}
-                style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
-              >
-                Create Your Athlete's Profile →
-              </button>
-              <button
-                onClick={() => nav("/Workspace?demo=user&src=home_demo")}
-                style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}
-              >
-                ← Back to HQ
-              </button>
-            </div>
+            {!isTourMode && (
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(232,160,32,0.15)", display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => nav("/Subscribe?source=profile_demo")}
+                  style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                >
+                  Create Your Athlete's Profile →
+                </button>
+                <button
+                  onClick={() => nav("/Workspace?demo=user&src=home_demo")}
+                  style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}
+                >
+                  ← Back to HQ
+                </button>
+              </div>
+            )}
           </div>
         )}
 

@@ -189,6 +189,7 @@ export default function Calendar() {
   const isUserDemo = useMemo(() => {
     try { return new URLSearchParams(loc.search).get("demo") === "user"; } catch { return false; }
   }, [loc.search]);
+  const isTourMode = new URLSearchParams(loc.search).get("tour") !== null;
 
   const athleteId = useMemo(() => {
     if (!isPaid) return null;
@@ -858,13 +859,15 @@ export default function Calendar() {
     <div className="min-h-screen bg-ur-page text-ur-primary">
       <div className="max-w-5xl mx-auto px-4 pt-5 pb-24">
 
-        <button
-          type="button"
-          onClick={() => nav(isCoach ? "/CoachDashboard" : isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
-          className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
-        >
-          ← HQ
-        </button>
+        {!isTourMode && (
+          <button
+            type="button"
+            onClick={() => nav(isCoach ? "/CoachDashboard" : isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
+            className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
+          >
+            ← HQ
+          </button>
+        )}
 
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">

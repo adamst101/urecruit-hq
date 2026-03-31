@@ -257,6 +257,7 @@ export default function Discover() {
   }, [loc?.search]);
   const isCoachDemo = demoParam === "coach";
   const isUserDemo  = demoParam === "user";
+  const isTourMode  = new URLSearchParams(loc?.search || "").get("tour") !== null;
 
   // Read demo mode only for season year override (not for isPaid determination)
   const dm             = readDemoMode();           // null | { mode, seasonYear, setAt }
@@ -1040,14 +1041,16 @@ export default function Discover() {
   return (
     <div className="min-h-screen bg-ur-page text-ur-primary pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
-        {/* ← HQ navigation */}
-        <button
-          type="button"
-          onClick={() => nav(isCoach ? "/CoachDashboard" : isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
-          className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
-        >
-          ← {isCoach ? "Coach HQ" : "HQ"}
-        </button>
+        {/* ← HQ navigation — hidden during guided tour */}
+        {!isTourMode && (
+          <button
+            type="button"
+            onClick={() => nav(isCoach ? "/CoachDashboard" : isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
+            className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
+          >
+            ← {isCoach ? "Coach HQ" : "HQ"}
+          </button>
+        )}
 
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

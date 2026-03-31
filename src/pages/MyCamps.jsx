@@ -86,6 +86,7 @@ export default function MyCamps() {
     try { return new URLSearchParams(window.location.search).get("demo") === "user"; }
     catch { return false; }
   }, []);
+  const isTourMode = new URLSearchParams(window.location.search).get("tour") !== null;
 
   // Seed demo favorites/registered for direct ?demo=user entries
   useEffect(() => {
@@ -441,13 +442,15 @@ export default function MyCamps() {
   return (
     <div className="min-h-screen bg-ur-page text-ur-primary pb-20">
       <div className="max-w-5xl mx-auto px-4 pt-6">
-        <button
-          type="button"
-          onClick={() => nav(isCoach ? "/CoachDashboard" : isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
-          className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
-        >
-          ← HQ
-        </button>
+        {!isTourMode && (
+          <button
+            type="button"
+            onClick={() => nav(isCoach ? "/CoachDashboard" : isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
+            className="mb-3 text-sm font-medium text-ur-amber hover:text-ur-amber-hover flex items-center gap-1"
+          >
+            ← HQ
+          </button>
+        )}
         <div className="mb-4">
           <div className="text-2xl font-bold text-ur-primary">My Camps</div>
         </div>

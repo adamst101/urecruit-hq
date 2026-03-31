@@ -1,9 +1,9 @@
 // src/components/demo/GuidedTourOverlay.jsx
-// Lightweight guided tour overlay rendered on demo pages when ?tour=<key> is present.
+// Guided tour overlay rendered on Marcus demo pages when ?tour=<key> is present.
 //
-// Desktop: fixed top-right beneath the app header, clear of the Support button.
-// Mobile:  full-width bottom sheet (bottom: 0).
-// z-index: 50000 — guaranteed above Support button (z-9999) and BottomNav.
+// Desktop: fixed top-right (top: 68px) beneath the app header.
+// Mobile:  full-width bottom sheet.
+// z-index: 50000 — sits above Support button (z-9999) and BottomNav (z-40).
 
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -16,7 +16,7 @@ const TOUR_STEPS = [
     stepNum: 1,
     title: "Athlete Profile",
     message:
-      "This was Marcus's family's first step. Before exploring camps or tracking outreach, they built a foundation here — position, grad year, and the basics that everything else would build on.",
+      "This was Marcus's family's first step. Before exploring camps or tracking outreach, they built a foundation here — position, grad year, and the basics the rest of the journey would build on.",
     nextKey: "playbook",
     nextLabel: "The Playbook",
     nextPath: "/KnowledgeBase",
@@ -26,7 +26,7 @@ const TOUR_STEPS = [
     stepNum: 2,
     title: "The Playbook",
     message:
-      "Once Marcus's profile was set, his family came here to understand how recruiting actually works. The Playbook helped them figure out what to do, when to do it, and why it matters.",
+      "With a profile in place, his family came here to understand how recruiting actually works. The Playbook helped them figure out what to do, when to do it, and why it matters.",
     nextKey: "discover",
     nextLabel: "Discover Camps",
     nextPath: "/Discover",
@@ -36,7 +36,7 @@ const TOUR_STEPS = [
     stepNum: 3,
     title: "Discover Camps",
     message:
-      "With a better sense of the process, they used this page to find and compare camp options. This is where the camp plan started to take shape — which schools, which dates, which divisions.",
+      "Once they understood the process, they used this page to find and compare camp options. This is where the camp plan started to take shape — which schools, which dates, which divisions.",
     nextKey: "mycamps",
     nextLabel: "My Camps",
     nextPath: "/MyCamps",
@@ -46,7 +46,7 @@ const TOUR_STEPS = [
     stepNum: 4,
     title: "My Camps",
     message:
-      "As they saved and registered for camps, this became their running list. Everything in one place — what was locked in, what was still being considered, and what had already happened.",
+      "As they saved and registered for camps, this became their running list. Everything in one place — what was locked in, what was still under consideration, and what had already happened.",
     nextKey: "calendar",
     nextLabel: "My Calendar",
     nextPath: "/Calendar",
@@ -56,7 +56,7 @@ const TOUR_STEPS = [
     stepNum: 5,
     title: "My Calendar",
     message:
-      "A clearer picture of timing. They checked this page to see how the camp season was stacking up, review specific dates, and make sure nothing conflicted.",
+      "A clearer picture of timing. They checked this page to see how the camp season was laid out, review specific dates, and make sure nothing overlapped.",
     nextKey: "tracker",
     nextLabel: "Recruiting Tracker",
     nextPath: "/RecruitingJourney",
@@ -75,7 +75,7 @@ const TOUR_STEPS = [
 
 const TOTAL = TOUR_STEPS.length;
 
-// Layout header is ~60px tall; top offset clears it with a small gap.
+// Clears the app header (~60px) with a comfortable visual gap.
 const TOP_OFFSET = 68;
 
 export default function GuidedTourOverlay({ tourKey }) {
@@ -101,7 +101,7 @@ export default function GuidedTourOverlay({ tourKey }) {
     nav("/Workspace?demo=user&src=demo_story_skip");
   }
 
-  // ── Dismissed: small amber pill in the same top-right position ───────────────
+  // ── Dismissed: small amber pill in same top-right position ───────────────────
   if (dismissed) {
     return (
       <>
@@ -127,19 +127,19 @@ export default function GuidedTourOverlay({ tourKey }) {
             border: "none",
             borderRadius: 24,
             padding: "8px 15px 8px 13px",
-            fontSize: 12,
+            fontSize: 12.5,
             fontWeight: 700,
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
             gap: 6,
-            boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+            boxShadow: "0 4px 24px rgba(232,160,32,0.35), 0 2px 10px rgba(0,0,0,0.4)",
             fontFamily: "'DM Sans', Inter, system-ui, sans-serif",
             whiteSpace: "nowrap",
           }}
         >
           Resume Tour: {step.stepNum} of {TOTAL}
-          <ArrowRight style={{ width: 12, height: 12 }} />
+          <ArrowRight style={{ width: 13, height: 13 }} />
         </button>
       </>
     );
@@ -157,7 +157,7 @@ export default function GuidedTourOverlay({ tourKey }) {
             left: 0 !important;
             width: 100% !important;
             max-width: 100% !important;
-            border-radius: 18px 18px 0 0 !important;
+            border-radius: 20px 20px 0 0 !important;
           }
         }
       `}</style>
@@ -168,26 +168,38 @@ export default function GuidedTourOverlay({ tourKey }) {
           top: TOP_OFFSET,
           right: 20,
           zIndex: 50000,
-          width: 340,
+          width: 348,
           maxWidth: "calc(100vw - 40px)",
-          background: "#0c1729",
-          border: "1px solid rgba(232,160,32,0.32)",
+          // Noticeably lighter than dark page backgrounds (#070c18, #0f172a)
+          background: "#0f2035",
+          border: "1px solid rgba(232,160,32,0.5)",
           borderRadius: 16,
-          boxShadow:
-            "0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(232,160,32,0.07)",
+          boxShadow: [
+            "0 16px 48px rgba(0,0,0,0.7)",
+            "0 0 0 1px rgba(232,160,32,0.12)",
+            "0 0 40px rgba(232,160,32,0.1)",
+          ].join(", "),
           fontFamily: "'DM Sans', Inter, system-ui, sans-serif",
           overflow: "hidden",
         }}
       >
+        {/* ── Top amber accent strip ── */}
+        <div
+          style={{
+            height: 4,
+            background: "linear-gradient(90deg, #e8a020 0%, #f5b830 100%)",
+          }}
+        />
+
         {/* ── Header ── */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "12px 16px 11px",
-            borderBottom: "1px solid #1a2d47",
-            background: "rgba(232,160,32,0.04)",
+            padding: "11px 16px 10px",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(232,160,32,0.05)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -197,38 +209,32 @@ export default function GuidedTourOverlay({ tourKey }) {
                 fontWeight: 700,
                 color: "#e8a020",
                 textTransform: "uppercase",
-                letterSpacing: "0.1em",
+                letterSpacing: "0.12em",
               }}
             >
               Marcus's Journey
             </span>
-            {/* Step progress pip strip */}
+            {/* Step pip strip */}
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               {TOUR_STEPS.map((s) => (
                 <div
                   key={s.key}
                   style={{
-                    width: s.key === tourKey ? 16 : 6,
+                    width: s.key === tourKey ? 18 : 6,
                     height: 6,
                     borderRadius: 3,
                     background:
                       s.key === tourKey
                         ? "#e8a020"
                         : s.stepNum < step.stepNum
-                        ? "#2e3f55"
-                        : "#151f30",
+                        ? "#2e4060"
+                        : "#16243a",
                     transition: "all 0.2s ease",
                   }}
                 />
               ))}
             </div>
-            <span
-              style={{
-                fontSize: 10,
-                color: "#4b6080",
-                fontWeight: 500,
-              }}
-            >
+            <span style={{ fontSize: 10, color: "#4e6685", fontWeight: 500 }}>
               {step.stepNum} of {TOTAL}
             </span>
           </div>
@@ -237,9 +243,9 @@ export default function GuidedTourOverlay({ tourKey }) {
             style={{
               background: "none",
               border: "none",
-              color: "#4b6080",
+              color: "#4e6685",
               cursor: "pointer",
-              padding: "2px 0 2px 6px",
+              padding: "2px 0 2px 8px",
               display: "flex",
               alignItems: "center",
             }}
@@ -250,14 +256,14 @@ export default function GuidedTourOverlay({ tourKey }) {
         </div>
 
         {/* ── Body ── */}
-        <div style={{ padding: "15px 18px 17px" }}>
+        <div style={{ padding: "16px 18px 18px" }}>
           <div
             style={{
-              fontSize: 15,
+              fontSize: 16,
               fontWeight: 700,
-              color: "#f1f5f9",
-              marginBottom: 8,
-              lineHeight: 1.3,
+              color: "#ffffff",
+              marginBottom: 9,
+              lineHeight: 1.28,
             }}
           >
             {step.title}
@@ -265,9 +271,9 @@ export default function GuidedTourOverlay({ tourKey }) {
           <div
             style={{
               fontSize: 13.5,
-              color: "#8fa3be",
-              lineHeight: 1.68,
-              marginBottom: 16,
+              color: "#8faabe",
+              lineHeight: 1.7,
+              marginBottom: 18,
             }}
           >
             {step.message}
@@ -280,7 +286,7 @@ export default function GuidedTourOverlay({ tourKey }) {
               style={{
                 background: "none",
                 border: "none",
-                color: "#4b6080",
+                color: "#3e5470",
                 fontSize: 12,
                 cursor: "pointer",
                 padding: 0,
@@ -298,8 +304,8 @@ export default function GuidedTourOverlay({ tourKey }) {
                 color: "#0a0e1a",
                 border: "none",
                 borderRadius: 9,
-                padding: "9px 16px",
-                fontSize: 13,
+                padding: "10px 18px",
+                fontSize: 13.5,
                 fontWeight: 700,
                 cursor: "pointer",
                 display: "flex",
@@ -307,16 +313,17 @@ export default function GuidedTourOverlay({ tourKey }) {
                 gap: 6,
                 fontFamily: "inherit",
                 whiteSpace: "nowrap",
+                boxShadow: "0 2px 12px rgba(232,160,32,0.4)",
               }}
             >
               {step.nextKey ? `Next: ${step.nextLabel}` : "Explore Freely"}
-              <ArrowRight style={{ width: 13, height: 13 }} />
+              <ArrowRight style={{ width: 14, height: 14 }} />
             </button>
           </div>
         </div>
 
         {/* ── Bottom progress bar ── */}
-        <div style={{ height: 3, background: "#070c18" }}>
+        <div style={{ height: 3, background: "#081018" }}>
           <div
             style={{
               height: "100%",
