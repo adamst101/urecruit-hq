@@ -3,6 +3,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
 import BottomNav from "../components/navigation/BottomNav.jsx";
+import { useDemoHint, DemoHintPopup } from "../components/demo/DemoHintPopup.jsx";
 import { ArrowLeft } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
@@ -62,6 +63,38 @@ const QUICK_ADDS = [
   { type: "unofficial_visit_requested", label: "Add Visit"     },
   { type: "offer_received",           label: "Add Offer"        },
 ];
+
+// ── Demo Quick Add hints — one tailored explanation per action ────────────────
+const QUICK_ADD_DEMO_HINTS = {
+  social_like: {
+    title: "Quick Add",
+    message: "Use this to log direct contact from a college coach so families can track who reached out, when it happened, and how recruiting momentum is building.",
+  },
+  dm_received: {
+    title: "Quick Add",
+    message: "Use this to log direct contact from a college coach so families can track who reached out, when it happened, and how recruiting momentum is building.",
+  },
+  phone_call: {
+    title: "Quick Add",
+    message: "Use this to log direct contact from a college coach so families can track who reached out, when it happened, and how recruiting momentum is building.",
+  },
+  personal_camp_invite: {
+    title: "Quick Add",
+    message: "Use this to log a camp registration so the family can keep the timeline current and connect camp activity to the broader recruiting journey.",
+  },
+  camp_meeting: {
+    title: "Quick Add",
+    message: "Use this to quickly record an important recruiting update so the timeline stays organized and the family can see progress over time.",
+  },
+  unofficial_visit_requested: {
+    title: "Quick Add",
+    message: "Use this to record an unofficial or official visit so families can track meaningful steps that signal deeper recruiting interest.",
+  },
+  offer_received: {
+    title: "Quick Add",
+    message: "Use this to log an offer so the journey reflects one of the most important milestones in the recruiting process.",
+  },
+};
 
 // Fields shown per activity type. "signal_quality" and "offer_fields" are virtual
 // keys that trigger dedicated UI sections in the form.
@@ -217,8 +250,8 @@ export default function RecruitingJourney() {
   // Advanced signal quality section in modal
   const [showAdvanced, setShowAdvanced]       = useState(false);
 
-  // Demo upgrade prompt
-  const [showDemoUpgrade, setShowDemoUpgrade] = useState(false);
+  // Demo Quick Add hint popup
+  const { demoHint, showDemoHintCustom, clearDemoHint } = useDemoHint();
 
   // Edit state
   const [editingId, setEditingId] = useState(null);
@@ -303,7 +336,6 @@ export default function RecruitingJourney() {
   // ── Add activity ─────────────────────────────────────────────────────────
   function openAdd(type) {
     if (isTourMode) return;
-    if (isUserDemo) { setShowDemoUpgrade(true); return; }
     setAddForm({ ...BLANK_FORM, activity_type: type });
     setEditingId(null);
     setAddError("");
@@ -468,6 +500,7 @@ export default function RecruitingJourney() {
       background: T.pageBg, color: T.textPrimary, minHeight: "100vh",
       fontFamily: T.fontBody, paddingBottom: 80,
     }}>
+      <DemoHintPopup demoHint={demoHint} onDismiss={clearDemoHint} />
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
       {/* ── Header ── */}
@@ -591,14 +624,20 @@ export default function RecruitingJourney() {
               {QUICK_ADDS.map(qa => (
                 <button
                   key={qa.type}
-                  onClick={() => openAdd(qa.type)}
+                  onClick={(e) => {
+                    if (isUserDemo) {
+                      const hint = QUICK_ADD_DEMO_HINTS[qa.type];
+                      if (hint) showDemoHintCustom(e, hint);
+                      return;
+                    }
+                    openAdd(qa.type);
+                  }}
                   style={{
                     background: T.shellBg, border: T.shellBorderFull, borderRadius: 10,
-                    padding: "10px 18px", color: isUserDemo ? T.textMuted : T.textPrimary,
+                    padding: "10px 18px", color: T.textPrimary,
                     fontSize: 14, fontWeight: 600,
                     cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
                     transition: `border-color ${T.transitionBase}`,
-                    opacity: isUserDemo ? 0.6 : 1,
                   }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = T.amber; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = T.shellBorder; }}
@@ -608,37 +647,6 @@ export default function RecruitingJourney() {
                 </button>
               ))}
             </div>
-            {isUserDemo && showDemoUpgrade && (
-              <div style={{
-                marginTop: 14,
-                background: "rgba(232,160,32,0.07)", border: "1px solid rgba(232,160,32,0.2)",
-                borderRadius: 10, padding: "14px 18px",
-                display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
-              }}>
-                <div style={{ flex: 1, minWidth: 200 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#f9fafb", marginBottom: 4 }}>
-                    Log your athlete's real recruiting activity
-                  </div>
-                  <div style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.5 }}>
-                    This is a demo. A Season Pass gives your family a private tracker tied to your real athlete.
-                  </div>
-                </div>
-                <button
-                  onClick={() => nav("/Subscribe?source=tracker_demo_quickadd")}
-                  style={{
-                    background: "#e8a020", color: "#0a0e1a", border: "none",
-                    borderRadius: 8, padding: "9px 18px",
-                    fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
-                  }}
-                >
-                  Get Season Pass →
-                </button>
-                <button
-                  onClick={() => setShowDemoUpgrade(false)}
-                  style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "0 4px" }}
-                >×</button>
-              </div>
-            )}
           </section>}
 
           {/* ── Traction Snapshot — hidden in tour mode so activities appear at top ── */}
