@@ -20,6 +20,7 @@ import InstallButton from "../components/pwa/InstallButton.jsx";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import {
   initDemoUserState,
+  resetDemoSession,
   DEMO_JOURNEY,
   DEMO_SEASON_YEAR,
   DEMO_ATHLETE,
@@ -470,9 +471,20 @@ export default function Workspace() {
 
         {/* Demo context note — replaces marketing hero in favour of the real dashboard flow below */}
         {isUserDemo && (
-          <p style={{ marginTop: 14, marginBottom: 0, fontSize: 13, color: "#4b5563", lineHeight: 1.6 }}>
-            This account is pre-loaded with Marcus Johnson's recruiting story — real platform, synthetic data.
-          </p>
+          <div style={{ marginTop: 14, marginBottom: 0, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <p style={{ margin: 0, fontSize: 13, color: "#4b5563", lineHeight: 1.6 }}>
+              This account is pre-loaded with Marcus Johnson's recruiting story — real platform, synthetic data.
+            </p>
+            <button
+              onClick={() => {
+                resetDemoSession(demoProfileId, DEMO_SEASON_YEAR);
+                window.location.reload();
+              }}
+              style={{ background: "none", border: "none", color: "#374151", fontSize: 12, cursor: "pointer", padding: 0, textDecoration: "underline", textDecorationColor: "#374151", flexShrink: 0, fontFamily: "inherit" }}
+            >
+              Reset to Marcus's story
+            </button>
+          </div>
         )}
 
         {/* Diagnostic panel */}

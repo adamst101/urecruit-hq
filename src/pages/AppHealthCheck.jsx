@@ -23,14 +23,14 @@ function getEnvLabel() {
 // ── Demo localStorage helpers (mirrors demoRegistered.jsx) ──────────────────
 const _demoKey = (profileId) => `rm_demo_registered_${profileId || "default"}`;
 const _isDemoReg = (profileId, campId) => {
-  try { return !!JSON.parse(localStorage.getItem(_demoKey(profileId)) || "{}")[String(campId)]; }
+  try { return !!JSON.parse(sessionStorage.getItem(_demoKey(profileId)) || "{}")[String(campId)]; }
   catch { return false; }
 };
 const _setDemoReg = (profileId, campId, val) => {
   try {
-    const obj = JSON.parse(localStorage.getItem(_demoKey(profileId)) || "{}");
+    const obj = JSON.parse(sessionStorage.getItem(_demoKey(profileId)) || "{}");
     if (val) obj[String(campId)] = 1; else delete obj[String(campId)];
-    localStorage.setItem(_demoKey(profileId), JSON.stringify(obj));
+    sessionStorage.setItem(_demoKey(profileId), JSON.stringify(obj));
   } catch {}
 };
 

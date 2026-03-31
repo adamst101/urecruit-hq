@@ -94,8 +94,16 @@ export const DEMO_JOURNEY = {
 const SEEDED_FLAG_PREFIX = "demo:user:seeded:";
 
 /**
- * Seeds the demo user's localStorage state on first entry.
- * Idempotent — safe to call multiple times; skips if already seeded for this demoProfileId.
+ * Seeds the demo user's sessionStorage state on first entry for this tab.
+ *
+ * Using sessionStorage (not localStorage) ensures:
+ *   - Each browser tab is an isolated sandbox — no state leaks between visitors.
+ *   - The canonical Marcus story is the starting point for every new tab/session.
+ *   - Visitor interactions during a session are visible within that tab,
+ *     but disappear when the tab closes or a new session begins.
+ *
+ * Idempotent within a session — safe to call multiple times; skips if already
+ * seeded for this tab.
  */
 export function initDemoUserState(demoProfileId, seasonYear) {
   if (!demoProfileId) return;
@@ -103,39 +111,57 @@ export function initDemoUserState(demoProfileId, seasonYear) {
   const seededKey = `${SEEDED_FLAG_PREFIX}${demoProfileId}`;
 
   try {
-    if (localStorage.getItem(seededKey)) return; // already seeded for this profile
+    if (sessionStorage.getItem(seededKey)) return; // already seeded this session
 
-    // Seed favorites — only if empty (don't overwrite user interactions)
+    // Seed favorites from canonical Marcus baseline
     const favKey = `demo:favorites:${demoProfileId}:${year}`;
     let existingFavs = [];
-    try { existingFavs = JSON.parse(localStorage.getItem(favKey) || "[]"); } catch {}
+    try { existingFavs = JSON.parse(sessionStorage.getItem(favKey) || "[]"); } catch {}
     if (!Array.isArray(existingFavs) || existingFavs.length === 0) {
-      localStorage.setItem(favKey, JSON.stringify(DEMO_FAVORITE_CAMP_IDS));
+      sessionStorage.setItem(favKey, JSON.stringify(DEMO_FAVORITE_CAMP_IDS));
     }
 
-    // Seed registered — only if empty
+    // Seed registered from canonical Marcus baseline
     const regKey = `rm_demo_registered_${demoProfileId}`;
     let existingReg = {};
-    try { existingReg = JSON.parse(localStorage.getItem(regKey) || "{}"); } catch {}
+    try { existingReg = JSON.parse(sessionStorage.getItem(regKey) || "{}"); } catch {}
     if (typeof existingReg !== "object" || Object.keys(existingReg).length === 0) {
       const regObj = {};
       for (const id of DEMO_REGISTERED_CAMP_IDS) regObj[id] = 1;
-      localStorage.setItem(regKey, JSON.stringify(regObj));
+      sessionStorage.setItem(regKey, JSON.stringify(regObj));
     }
 
-    localStorage.setItem(seededKey, "1");
+    sessionStorage.setItem(seededKey, "1");
   } catch (e) {
     console.warn("[demoUserData] initDemoUserState failed:", e?.message);
   }
 }
 
 /**
- * Clears the seed flag for a demoProfileId — forces re-seed on next entry.
+ * Clears the session seed flag — forces re-seed from the canonical Marcus
+ * baseline on the next initDemoUserState call within this tab.
+ * Also clears in-session favorites and registered state.
+ * Useful for a "Reset to Marcus's story" action or dev/testing.
+ */
+export function resetDemoSession(demoProfileId, seasonYear) {
+  if (!demoProfileId) return;
+  const year = Number(seasonYear) || DEMO_SEASON_YEAR;
+  try {
+    sessionStorage.removeItem(`${SEEDED_FLAG_PREFIX}${demoProfileId}`);
+    sessionStorage.removeItem(`demo:favorites:${demoProfileId}:${year}`);
+    sessionStorage.removeItem(`rm_demo_registered_${demoProfileId}`);
+  } catch {}
+  // Re-seed immediately so the next read gets the Marcus baseline
+  initDemoUserState(demoProfileId, year);
+}
+
+/**
+ * Clears the session seed flag for a demoProfileId — forces re-seed on next entry.
  * Useful for development/testing.
  */
 export function clearDemoUserSeed(demoProfileId) {
   if (!demoProfileId) return;
-  try { localStorage.removeItem(`${SEEDED_FLAG_PREFIX}${demoProfileId}`); } catch {}
+  try { sessionStorage.removeItem(`${SEEDED_FLAG_PREFIX}${demoProfileId}`); } catch {}
 }
 
 // ── Demo Recruiting Journey ────────────────────────────────────────────────────

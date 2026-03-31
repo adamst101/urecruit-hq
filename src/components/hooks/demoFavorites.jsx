@@ -1,4 +1,8 @@
 // src/components/hooks/demoFavorites.js
+//
+// Demo camp favorites — stored in sessionStorage so each browser tab
+// is an isolated sandbox. State resets to the canonical Marcus baseline
+// whenever a new tab/session starts; it never leaks across visitors.
 function normId(x) {
   if (x == null) return null;
   return String(x);
@@ -12,7 +16,7 @@ function keyFor(demoProfileId, seasonYear) {
 
 export function getDemoFavorites(demoProfileId, seasonYear) {
   try {
-    const raw = localStorage.getItem(keyFor(demoProfileId, seasonYear));
+    const raw = sessionStorage.getItem(keyFor(demoProfileId, seasonYear));
     const arr = raw ? JSON.parse(raw) : [];
     return Array.isArray(arr) ? arr.map(normId).filter(Boolean) : [];
   } catch {
@@ -30,7 +34,7 @@ export function toggleDemoFavorite(demoProfileId, campId, seasonYear) {
     : [...existing, id];
 
   try {
-    localStorage.setItem(keyFor(demoProfileId, seasonYear), JSON.stringify(next));
+    sessionStorage.setItem(keyFor(demoProfileId, seasonYear), JSON.stringify(next));
   } catch {}
 
   return next;
@@ -40,4 +44,11 @@ export function isDemoFavorite(demoProfileId, campId, seasonYear) {
   const id = normId(campId);
   if (!id) return false;
   return getDemoFavorites(demoProfileId, seasonYear).includes(id);
+}
+
+/** Clear favorites for this session — used by resetDemoSession. */
+export function clearDemoFavorites(demoProfileId, seasonYear) {
+  try {
+    sessionStorage.removeItem(keyFor(demoProfileId, seasonYear));
+  } catch {}
 }
