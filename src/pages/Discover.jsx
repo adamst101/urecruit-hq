@@ -799,10 +799,7 @@ export default function Discover() {
   }
 
   async function handleFavoriteToggle(campId) {
-    if (isUserDemo) {
-      toast({ description: "You can favorite camps for planning purposes." });
-      return;
-    }
+    if (isUserDemo) return; // interception handled in SchoolGroupCard (demo hint popup)
     // Demo users: skip writeGate entirely, allow local-only favorite
     if (!isPaid) {
       if (isCampFavorite(campId)) {
@@ -873,10 +870,7 @@ export default function Discover() {
   }
 
   function handleRegisteredToggle(campId) {
-    if (isUserDemo) {
-      toast({ description: "By selecting this you can keep track of your registered camps." });
-      return;
-    }
+    if (isUserDemo) return; // interception handled in SchoolGroupCard (demo hint popup)
     const id = String(campId ?? "");
     if (!id) return;
     const isReg = isCampRegistered(id);
@@ -1007,16 +1001,14 @@ export default function Discover() {
             isPaid={isPaid}
             isCoach={isCoach}
             isCoachDemo={isCoachDemo}
+            isUserDemo={isUserDemo}
             coachRoster={coachRoster}
             isCampFavorite={isCampFavorite}
             isCampRegistered={isCampRegistered}
             onFavoriteToggle={handleFavoriteToggle}
             onRegisteredToggle={isCoach ? null : handleRegisteredToggle}
             onRegisterClick={(camp) => {
-              if (isUserDemo) {
-                toast({ description: "After registration, this link will send you to the actual camp registration page." });
-                return;
-              }
+              if (isUserDemo) return; // interception handled in SchoolGroupCard (demo hint popup)
               const url = camp?.link_url || camp?.source_url;
               if (url) window.open(String(url), "_blank", "noopener,noreferrer");
             }}
