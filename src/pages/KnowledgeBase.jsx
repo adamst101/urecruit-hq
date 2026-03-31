@@ -22,6 +22,7 @@ import {
   KbSidebarDesktop,
   KbMobileDrawer,
   KB_TOPICS_FLAT,
+  DEMO_UNLOCKED_ARTICLE_IDS,
 } from "../components/guides/KbSidebar.jsx";
 
 // ─── Responsive CSS ────────────────────────────────────────────────────────────
@@ -1048,7 +1049,12 @@ export default function KnowledgeBase() {
   }
 
   if (isLoading) return null;
-  if (!hasAccess || mode === "demo") {
+
+  const isDemoMode = mode === "demo";
+  const isDemoUnlocked = isDemoMode && DEMO_UNLOCKED_ARTICLE_IDS.includes(activeTopicId);
+
+  // Non-demo users without access: full paywall
+  if (!hasAccess && !isDemoMode) {
     return <GuidePaywall isAuthenticated={isAuthenticated} />;
   }
 
@@ -1066,7 +1072,11 @@ export default function KnowledgeBase() {
 
         {/* Desktop sidebar — table of contents */}
         {!isMobile && (
-          <KbSidebarDesktop activeId={activeTopicId} onSelect={selectTopic} />
+          <KbSidebarDesktop
+            activeId={activeTopicId}
+            onSelect={selectTopic}
+            demoUnlockedIds={isDemoMode ? DEMO_UNLOCKED_ARTICLE_IDS : null}
+          />
         )}
 
         {/* Main reading column */}
@@ -1167,6 +1177,24 @@ export default function KnowledgeBase() {
                 overflow: "hidden",
               }}>
 
+                {/* Demo sample guide banner */}
+                {isDemoUnlocked && (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "9px 20px",
+                    background: "rgba(234,179,8,0.08)",
+                    borderBottom: "1px solid rgba(234,179,8,0.18)",
+                  }}>
+                    <span style={{ fontSize: 12 }}>👁️</span>
+                    <span style={{ fontSize: 12, color: "#ca8a04", fontWeight: 600 }}>
+                      SAMPLE GUIDE
+                    </span>
+                    <span style={{ fontSize: 12, color: "#92400e" }}>
+                      · This article is unlocked in the demo. Full access requires a Season Pass.
+                    </span>
+                  </div>
+                )}
+
                 {/* Hero section */}
                 <div style={{
                   padding: isMobile ? "24px 20px 22px" : "36px 36px 28px",
@@ -1182,7 +1210,32 @@ export default function KnowledgeBase() {
                     padding: isMobile ? "24px 20px 32px" : "32px 36px 40px",
                   }}
                 >
-                  <TopicContent />
+                  {isDemoMode && !isDemoUnlocked ? (
+                    <div style={{ textAlign: "center", padding: "40px 20px" }}>
+                      <div style={{ fontSize: 32, marginBottom: 12 }}>🔒</div>
+                      <div style={{ fontSize: 17, fontWeight: 700, color: C.articleText, marginBottom: 8 }}>
+                        This guide requires a Season Pass
+                      </div>
+                      <div style={{ fontSize: 14, color: C.articleSoft, marginBottom: 24, lineHeight: 1.6 }}>
+                        Two sample guides are available in the demo.<br />
+                        Unlock all 8 guides with a Season Pass.
+                      </div>
+                      <a
+                        href="/Subscribe?source=playbook_demo_lock"
+                        style={{
+                          display: "inline-block",
+                          background: "#2563eb", color: "#ffffff",
+                          borderRadius: 10, padding: "11px 24px",
+                          fontSize: 14, fontWeight: 700,
+                          textDecoration: "none",
+                        }}
+                      >
+                        Get Season Pass →
+                      </a>
+                    </div>
+                  ) : (
+                    <TopicContent />
+                  )}
 
                   {/* Previous / next navigation */}
                   <div style={{
@@ -1268,6 +1321,7 @@ export default function KnowledgeBase() {
           onSelect={(id) => { selectTopic(id); setDrawerOpen(false); }}
           isOpen={drawerOpen}
           onClose={() => setDrawerOpen(false)}
+          demoUnlockedIds={isDemoMode ? DEMO_UNLOCKED_ARTICLE_IDS : null}
         />
       )}
     </div>

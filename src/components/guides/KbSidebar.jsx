@@ -1,6 +1,6 @@
 // src/components/guides/KbSidebar.jsx
 import React, { useEffect, useState } from "react";
-import { Search, ChevronDown, ChevronRight, X, CheckCircle2 } from "lucide-react";
+import { Search, ChevronDown, ChevronRight, X, CheckCircle2, Lock } from "lucide-react";
 
 export const KB_CATEGORIES = [
   {
@@ -29,7 +29,10 @@ export const KB_TOPICS_FLAT = KB_CATEGORIES.flatMap((c) =>
   c.topics.map((t) => ({ ...t, categoryId: c.id, categoryLabel: c.label }))
 );
 
-function SidebarContent({ activeId, onSelect, searchQuery, setSearchQuery }) {
+// Articles unlocked in demo mode — all others show the paywall
+export const DEMO_UNLOCKED_ARTICLE_IDS = ["timeline", "strategy"];
+
+function SidebarContent({ activeId, onSelect, searchQuery, setSearchQuery, demoUnlockedIds }) {
   const [collapsed, setCollapsed] = useState({});
 
   const filteredCategories = KB_CATEGORIES.map((cat) => ({
@@ -103,6 +106,7 @@ function SidebarContent({ activeId, onSelect, searchQuery, setSearchQuery }) {
 
               {!isCollapsed && cat.topics.map((topic) => {
                 const isActive = activeId === topic.id;
+                const isLocked = demoUnlockedIds != null && !demoUnlockedIds.includes(topic.id);
                 return (
                   <button
                     key={topic.id}
@@ -113,15 +117,18 @@ function SidebarContent({ activeId, onSelect, searchQuery, setSearchQuery }) {
                       display: "flex", alignItems: "center", gap: 10,
                       padding: "8px 16px 8px 24px",
                       fontSize: 13, fontWeight: isActive ? 600 : 400,
-                      color: isActive ? "#f1f5f9" : "#94a3b8",
+                      color: isLocked ? "#4b5563" : isActive ? "#f1f5f9" : "#94a3b8",
                       borderLeft: isActive ? "2px solid #3b82f6" : "2px solid transparent",
                       background: isActive ? "rgba(59,130,246,0.09)" : "transparent",
                       transition: "all 0.12s",
                       fontFamily: "inherit",
                     }}
                   >
-                    <span style={{ fontSize: 14 }}>{topic.icon}</span>
-                    <span style={{ lineHeight: 1.35 }}>{topic.label}</span>
+                    <span style={{ fontSize: 14, opacity: isLocked ? 0.4 : 1 }}>{topic.icon}</span>
+                    <span style={{ lineHeight: 1.35, flex: 1 }}>{topic.label}</span>
+                    {isLocked && (
+                      <Lock style={{ width: 11, height: 11, color: "#4b5563", flexShrink: 0, marginRight: 4 }} />
+                    )}
                   </button>
                 );
               })}
@@ -133,7 +140,7 @@ function SidebarContent({ activeId, onSelect, searchQuery, setSearchQuery }) {
   );
 }
 
-export function KbSidebarDesktop({ activeId, onSelect }) {
+export function KbSidebarDesktop({ activeId, onSelect, demoUnlockedIds }) {
   const [searchQuery, setSearchQuery] = useState("");
   return (
     <div style={{
@@ -159,13 +166,14 @@ export function KbSidebarDesktop({ activeId, onSelect }) {
         onSelect={onSelect}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
+        demoUnlockedIds={demoUnlockedIds}
       />
     </div>
   );
 }
 
 // ── Mobile bottom-sheet drawer ────────────────────────────────────────────────
-export function KbMobileDrawer({ activeId, onSelect, isOpen, onClose }) {
+export function KbMobileDrawer({ activeId, onSelect, isOpen, onClose, demoUnlockedIds }) {
   // Prevent body scroll while drawer is open
   useEffect(() => {
     if (isOpen) {
@@ -247,6 +255,7 @@ export function KbMobileDrawer({ activeId, onSelect, isOpen, onClose }) {
 
               {cat.topics.map((topic) => {
                 const isActive = activeId === topic.id;
+                const isLocked = demoUnlockedIds != null && !demoUnlockedIds.includes(topic.id);
                 return (
                   <button
                     key={topic.id}
@@ -262,19 +271,21 @@ export function KbMobileDrawer({ activeId, onSelect, isOpen, onClose }) {
                       transition: "background 0.1s",
                     }}
                   >
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>{topic.icon}</span>
+                    <span style={{ fontSize: 20, flexShrink: 0, opacity: isLocked ? 0.35 : 1 }}>{topic.icon}</span>
                     <span style={{
                       flex: 1,
                       fontSize: 15,
                       fontWeight: isActive ? 600 : 400,
-                      color: isActive ? "#1e3a8a" : "#374151",
+                      color: isLocked ? "#9ca3af" : isActive ? "#1e3a8a" : "#374151",
                       lineHeight: 1.3,
                     }}>
                       {topic.label}
                     </span>
-                    {isActive && (
+                    {isLocked ? (
+                      <Lock style={{ width: 14, height: 14, color: "#9ca3af", flexShrink: 0 }} />
+                    ) : isActive ? (
                       <CheckCircle2 style={{ width: 16, height: 16, color: "#2563eb", flexShrink: 0 }} />
-                    )}
+                    ) : null}
                   </button>
                 );
               })}

@@ -391,7 +391,7 @@ export default function Workspace() {
               </p>
             )}
           </div>
-          {season?.accountId && (
+          {season?.accountId && !isUserDemo && (
             <button
               onClick={() => nav(ROUTES.Account)}
               style={{
@@ -404,6 +404,17 @@ export default function Workspace() {
               <User style={{ width: 16, height: 16, color: "#e8a020" }} />
               <span style={{ fontSize: 13, fontWeight: 600 }}>My Account</span>
             </button>
+          )}
+          {isUserDemo && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
+              <button
+                onClick={() => nav(`${ROUTES.Subscribe}?source=user_demo_workspace`)}
+                style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
+              >
+                Start Your Family's Workspace <ArrowRight style={{ width: 15, height: 15 }} />
+              </button>
+              <span style={{ fontSize: 11, color: "#4b5563" }}>$49 · one season · no auto-renew</span>
+            </div>
           )}
         </div>
 
@@ -580,16 +591,6 @@ export default function Workspace() {
               </div>
             </div>
 
-            {/* Upgrade CTA */}
-            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-              <button
-                onClick={() => nav(`${ROUTES.Subscribe}?source=user_demo_workspace`)}
-                style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "11px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
-              >
-                Start Your Family's Workspace <ArrowRight style={{ width: 16, height: 16 }} />
-              </button>
-              <span style={{ fontSize: 13, color: "#4b5563" }}>$49 · one season · no auto-renew</span>
-            </div>
 
           </div>
         )}
