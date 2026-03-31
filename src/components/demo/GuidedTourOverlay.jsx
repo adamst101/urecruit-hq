@@ -1,6 +1,10 @@
 // src/components/demo/GuidedTourOverlay.jsx
 // Guided tour overlay rendered on Marcus demo pages when ?tour=<key> is present.
 //
+// Visual style: matches the Home page WhyPanel (light card on dark pages).
+//   Background: #f1f5f9  |  Border: 1.5px #e2e8f0  |  Shadow: deep neutral
+//   Typography: #0f172a title / #475569 body / #94a3b8 labels
+//
 // Desktop: fixed top-right (top: 68px) beneath the app header.
 // Mobile:  full-width bottom sheet.
 // z-index: 50000 — sits above Support button (z-9999) and BottomNav (z-40).
@@ -84,6 +88,26 @@ const TOTAL = TOUR_STEPS.length;
 // Clears the app header (~60px) with a comfortable visual gap.
 const TOP_OFFSET = 68;
 
+// ── WhyPanel-matched design tokens ────────────────────────────────────────────
+const C = {
+  bg:           "#f1f5f9",
+  border:       "#e2e8f0",
+  shadow:       "0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15)",
+  headerBg:     "rgba(0,0,0,0.03)",
+  headerBorder: "#e2e8f0",
+  label:        "#94a3b8",   // muted uppercase label
+  title:        "#0f172a",   // strong headline
+  body:         "#475569",   // readable body
+  hint:         "#64748b",   // hint text
+  navLock:      "#94a3b8",   // de-emphasised italic note
+  skip:         "#94a3b8",   // ghost skip link
+  pipActive:    "#e8a020",
+  pipDone:      "#cbd5e1",
+  pipFuture:    "#e2e8f0",
+  progressTrack:"#e2e8f0",
+  progressFill: "#e8a020",
+};
+
 export default function GuidedTourOverlay({ tourKey }) {
   const nav = useNavigate();
   const loc = useLocation();
@@ -107,7 +131,7 @@ export default function GuidedTourOverlay({ tourKey }) {
     nav("/Workspace?demo=user&src=demo_story_skip");
   }
 
-  // ── Dismissed: small amber pill in same top-right position ───────────────────
+  // ── Dismissed: amber pill in same top-right position ─────────────────────────
   if (dismissed) {
     return (
       <>
@@ -176,27 +200,14 @@ export default function GuidedTourOverlay({ tourKey }) {
           zIndex: 50000,
           width: 348,
           maxWidth: "calc(100vw - 40px)",
-          // Noticeably lighter than dark page backgrounds (#070c18, #0f172a)
-          background: "#0f2035",
-          border: "1px solid rgba(232,160,32,0.5)",
+          background: C.bg,
+          border: `1.5px solid ${C.border}`,
           borderRadius: 16,
-          boxShadow: [
-            "0 16px 48px rgba(0,0,0,0.7)",
-            "0 0 0 1px rgba(232,160,32,0.12)",
-            "0 0 40px rgba(232,160,32,0.1)",
-          ].join(", "),
+          boxShadow: C.shadow,
           fontFamily: "'DM Sans', Inter, system-ui, sans-serif",
           overflow: "hidden",
         }}
       >
-        {/* ── Top amber accent strip ── */}
-        <div
-          style={{
-            height: 4,
-            background: "linear-gradient(90deg, #e8a020 0%, #f5b830 100%)",
-          }}
-        />
-
         {/* ── Header ── */}
         <div
           style={{
@@ -204,8 +215,8 @@ export default function GuidedTourOverlay({ tourKey }) {
             alignItems: "center",
             justifyContent: "space-between",
             padding: "11px 16px 10px",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
-            background: "rgba(232,160,32,0.05)",
+            borderBottom: `1px solid ${C.headerBorder}`,
+            background: C.headerBg,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -213,9 +224,9 @@ export default function GuidedTourOverlay({ tourKey }) {
               style={{
                 fontSize: 10,
                 fontWeight: 700,
-                color: "#e8a020",
+                color: C.label,
                 textTransform: "uppercase",
-                letterSpacing: "0.12em",
+                letterSpacing: "0.1em",
               }}
             >
               Marcus's Journey
@@ -231,16 +242,16 @@ export default function GuidedTourOverlay({ tourKey }) {
                     borderRadius: 3,
                     background:
                       s.key === tourKey
-                        ? "#e8a020"
+                        ? C.pipActive
                         : s.stepNum < step.stepNum
-                        ? "#2e4060"
-                        : "#16243a",
+                        ? C.pipDone
+                        : C.pipFuture,
                     transition: "all 0.2s ease",
                   }}
                 />
               ))}
             </div>
-            <span style={{ fontSize: 10, color: "#4e6685", fontWeight: 500 }}>
+            <span style={{ fontSize: 10, color: C.label, fontWeight: 500 }}>
               {step.stepNum} of {TOTAL}
             </span>
           </div>
@@ -249,7 +260,7 @@ export default function GuidedTourOverlay({ tourKey }) {
             style={{
               background: "none",
               border: "none",
-              color: "#4e6685",
+              color: C.label,
               cursor: "pointer",
               padding: "2px 0 2px 8px",
               display: "flex",
@@ -263,48 +274,52 @@ export default function GuidedTourOverlay({ tourKey }) {
 
         {/* ── Body ── */}
         <div style={{ padding: "16px 18px 18px" }}>
+          {/* Step title */}
           <div
             style={{
               fontSize: 16,
               fontWeight: 700,
-              color: "#ffffff",
+              color: C.title,
               marginBottom: 9,
               lineHeight: 1.28,
             }}
           >
             {step.title}
           </div>
+
+          {/* Narrative message */}
           <div
             style={{
-              fontSize: 13.5,
-              color: "#8faabe",
-              lineHeight: 1.7,
+              fontSize: 13,
+              color: C.body,
+              lineHeight: 1.6,
               marginBottom: step.hint ? 12 : 18,
             }}
           >
             {step.message}
           </div>
 
+          {/* Hint */}
           {step.hint && (
             <div
               style={{
                 fontSize: 12,
-                color: "#4e6685",
+                color: C.hint,
                 lineHeight: 1.6,
-                marginBottom: 16,
+                marginBottom: 14,
                 paddingLeft: 10,
-                borderLeft: "2px solid rgba(232,160,32,0.3)",
+                borderLeft: "2px solid rgba(232,160,32,0.45)",
               }}
             >
               {step.hint}
             </div>
           )}
 
-          {/* ── Nav lock note ── */}
+          {/* Nav lock note */}
           <div
             style={{
               fontSize: 11,
-              color: "#3a5060",
+              color: C.navLock,
               marginBottom: 14,
               fontStyle: "italic",
             }}
@@ -312,14 +327,14 @@ export default function GuidedTourOverlay({ tourKey }) {
             Navigation unlocks after the tour.
           </div>
 
-          {/* ── Actions ── */}
+          {/* Actions */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
               onClick={skipTour}
               style={{
                 background: "none",
                 border: "none",
-                color: "#3e5470",
+                color: C.skip,
                 fontSize: 12,
                 cursor: "pointer",
                 padding: 0,
@@ -336,8 +351,8 @@ export default function GuidedTourOverlay({ tourKey }) {
                 background: "#e8a020",
                 color: "#0a0e1a",
                 border: "none",
-                borderRadius: 9,
-                padding: "10px 18px",
+                borderRadius: 8,
+                padding: "9px 18px",
                 fontSize: 13.5,
                 fontWeight: 700,
                 cursor: "pointer",
@@ -346,7 +361,7 @@ export default function GuidedTourOverlay({ tourKey }) {
                 gap: 6,
                 fontFamily: "inherit",
                 whiteSpace: "nowrap",
-                boxShadow: "0 2px 12px rgba(232,160,32,0.4)",
+                boxShadow: "0 2px 10px rgba(232,160,32,0.35)",
               }}
             >
               {step.nextKey ? `Next: ${step.nextLabel}` : "Explore Freely"}
@@ -356,12 +371,12 @@ export default function GuidedTourOverlay({ tourKey }) {
         </div>
 
         {/* ── Bottom progress bar ── */}
-        <div style={{ height: 3, background: "#081018" }}>
+        <div style={{ height: 3, background: C.progressTrack }}>
           <div
             style={{
               height: "100%",
               width: `${(step.stepNum / TOTAL) * 100}%`,
-              background: "#e8a020",
+              background: C.progressFill,
               transition: "width 0.3s ease",
             }}
           />
