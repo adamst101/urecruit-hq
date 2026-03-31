@@ -313,22 +313,24 @@ export default function RecruitingJourney() {
   }, [accountId]);
 
   useEffect(() => {
-    if (seasonLoading || !accountId) return;
+    if (seasonLoading || !accountId || isUserDemo) return;
     loadJourney();
     loadAllSchools();
-  }, [loadJourney, seasonLoading, accountId]);
+  }, [loadJourney, seasonLoading, accountId, isUserDemo]);
 
-  // Demo / unauthenticated: clear loading once season check is done.
-  // For demo users, seed synthetic journey data before revealing the tracker.
+  // Demo mode: always seed synthetic journey data regardless of auth state.
+  // Unauthenticated non-demo: clear loading once season check is done.
   useEffect(() => {
     if (seasonLoading) return;
+    if (isUserDemo) {
+      setActivities(DEMO_JOURNEY_ACTIVITIES);
+      setAthleteMetrics(DEMO_JOURNEY_METRICS);
+      setPreferences(DEMO_JOURNEY_PREFS);
+      setPrefsForm(DEMO_JOURNEY_PREFS);
+      setLoading(false);
+      return;
+    }
     if (!accountId) {
-      if (isUserDemo) {
-        setActivities(DEMO_JOURNEY_ACTIVITIES);
-        setAthleteMetrics(DEMO_JOURNEY_METRICS);
-        setPreferences(DEMO_JOURNEY_PREFS);
-        setPrefsForm(DEMO_JOURNEY_PREFS);
-      }
       setLoading(false);
     }
   }, [seasonLoading, accountId, isUserDemo]);
