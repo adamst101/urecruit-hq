@@ -14,12 +14,30 @@ const LOGO_URL =
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
 const T = {
+  // Eyebrow — matches WhyPanel label treatment
+  eyebrow: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: "#94a3b8",
+    textTransform: "uppercase",
+    letterSpacing: "0.12em",
+    margin: "0 0 10px",
+  },
+  // Short display headline — visually dominant, not sentence-length
   headline: {
-    fontSize: "clamp(22px, 3.8vw, 30px)",
+    fontSize: "clamp(24px, 4vw, 32px)",
     fontWeight: 700,
     color: "#f1f5f9",
-    lineHeight: 1.3,
-    margin: "0 0 16px",
+    lineHeight: 1.2,
+    margin: "0 0 12px",
+  },
+  // Supporting sentence — muted, constrained width
+  support: {
+    fontSize: 14,
+    color: "#94a3b8",
+    lineHeight: 1.6,
+    margin: "0 0 0",
+    maxWidth: 480,
   },
   body: {
     fontSize: 16,
@@ -119,10 +137,11 @@ function ProblemPoints() {
 function Step1() {
   return (
     <div>
-      <h1 style={T.headline}>
-        When a player says "I want to play in college," most parents have no idea what comes next.
-      </h1>
-
+      <p style={T.eyebrow}>The Challenge</p>
+      <h1 style={T.headline}>Most Parents Aren't Ready</h1>
+      <p style={{ ...T.support, marginBottom: 28 }}>
+        When a player says, "I want to play in college," families are often unprepared for what comes next.
+      </p>
       <ProblemPoints />
     </div>
   );
@@ -205,10 +224,11 @@ function PillarFramework() {
 function Step2() {
   return (
     <div>
-      <h1 style={T.headline}>
-        Built by parents who have been through the recruiting journey, URecruitHQ exists to simplify a process that is often confusing, fragmented, and overwhelming.
-      </h1>
-
+      <p style={T.eyebrow}>The Solution</p>
+      <h1 style={T.headline}>How URecruitHQ Helps</h1>
+      <p style={{ ...T.support, marginBottom: 28 }}>
+        We give families a clearer playbook, better visibility into recruiting activity, and one place to plan camp season.
+      </p>
       <PillarFramework />
     </div>
   );
