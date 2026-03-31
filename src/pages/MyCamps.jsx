@@ -20,13 +20,14 @@ import { useCampSummariesClient } from "../components/hooks/useCampSummariesClie
 import { useAllAthletesCamps } from "../components/hooks/useAllAthletesCamps.jsx";
 import { useDemoCampSummaries } from "@/components/hooks/useDemoCampSummaries.jsx";
 import { readDemoMode } from "../components/hooks/demoMode.jsx";
-import { initDemoUserState, DEMO_SEASON_YEAR } from "../lib/demoUserData.js";
+import { initDemoUserState, DEMO_SEASON_YEAR, DEMO_ATHLETE } from "../lib/demoUserData.js";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
 import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
 import RegisterConfirmModal from "../components/camps/RegisterConfirmModal.jsx";
 import UnregisterConfirmModal from "../components/camps/UnregisterConfirmModal.jsx";
 import WarningBadge from "../components/camps/WarningBadge.jsx";
+import WarningBanner from "../components/camps/WarningBanner.jsx";
 import { useConflictDetection } from "../components/hooks/useConflictDetection.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
 import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
@@ -183,11 +184,11 @@ export default function MyCamps() {
       athleteName: activeAthleteName,
     })),
     additionalCamps: otherAthletesCamps,
-    homeCity: athleteProfile?.home_city || null,
-    homeState: athleteProfile?.home_state || null,
+    homeCity: (isUserDemo ? DEMO_ATHLETE.home_city : null) || athleteProfile?.home_city || null,
+    homeState: (isUserDemo ? DEMO_ATHLETE.home_state : null) || athleteProfile?.home_state || null,
     homeLat: athleteProfile?.home_lat ?? null,
     homeLng: athleteProfile?.home_lng ?? null,
-    isPaid: !isDemoMode,
+    isPaid: !isDemoMode || isUserDemo,
   });
 
   // Count conflicts: camps that share a date with another camp
@@ -536,6 +537,8 @@ export default function MyCamps() {
             ))}
           </select>
         </div>
+
+        <WarningBanner warnings={allWarnings} />
 
         {loading ? (
           <div className="py-10 text-center text-ur-secondary">Loading...</div>

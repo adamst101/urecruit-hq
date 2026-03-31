@@ -18,7 +18,7 @@ import { trackEventOnce } from "../utils/trackEvent.js";
 import { useDemoProfile } from "../components/hooks/useDemoProfile.jsx";
 import { getDemoFavorites, toggleDemoFavorite } from "../components/hooks/demoFavorites.jsx";
 import { isDemoRegistered, toggleDemoRegistered } from "../components/hooks/demoRegistered.jsx";
-import { initDemoUserState, DEMO_SEASON_YEAR } from "../lib/demoUserData.js";
+import { initDemoUserState, DEMO_SEASON_YEAR, DEMO_ATHLETE } from "../lib/demoUserData.js";
 import { useActiveAthlete } from "../components/hooks/useActiveAthlete.jsx";
 import AthleteSwitcher from "../components/workspace/AthleteSwitcher.jsx";
 import { useCampSummariesClient } from "../components/hooks/useCampSummariesClient.jsx";
@@ -474,11 +474,11 @@ export default function Calendar() {
       athleteName: activeAthleteName,
     })),
     additionalCamps: otherAthletesCamps,
-    homeCity: athleteProfile?.home_city || null,
-    homeState: athleteProfile?.home_state || null,
+    homeCity: (isUserDemo ? DEMO_ATHLETE.home_city : null) || athleteProfile?.home_city || null,
+    homeState: (isUserDemo ? DEMO_ATHLETE.home_state : null) || athleteProfile?.home_state || null,
     homeLat: athleteProfile?.home_lat ?? null,
     homeLng: athleteProfile?.home_lng ?? null,
-    isPaid,
+    isPaid: isPaid || isUserDemo,
   });
 
   // Warnings filtered to only those involving the current athlete's camps.
@@ -937,7 +937,7 @@ export default function Calendar() {
           </div>
         )}
 
-        {calView === "list" && <WarningBanner warnings={currentAthleteWarnings} />}
+        {(calView === "list" || isUserDemo) && <WarningBanner warnings={currentAthleteWarnings} />}
 
         {calView === "list" ? renderListBody() : renderMonthBody()}
 
