@@ -694,6 +694,25 @@ function _ftSeasonYear() {
 export async function grantTestEntitlement(base44, accountId) {
   const seasonYear = _ftSeasonYear();
 
+  // Prefer the server-side function — it uses asServiceRole so the Entitlement
+  // is created with the caller's verified auth context, avoiding any client-side
+  // entity-ID vs auth-ID mismatch.
+  try {
+    const res = await base44.functions.invoke("grantFtEntitlement", { accountId });
+    if (res?.data?.ok !== undefined) {
+      const d = res.data;
+      return {
+        granted:    d.granted === true,
+        reason:     d.granted === true ? undefined : (d.reason || d.error || "server_skipped"),
+        seasonYear: d.seasonYear ?? seasonYear,
+      };
+    }
+  } catch (fnErr) {
+    // Server function not yet deployed or not reachable — fall through to direct entity write
+    console.warn("[grantTestEntitlement] server function failed, falling back to direct write:", fnErr?.message);
+  }
+
+  // Fallback: direct entity write (requires Entitlement entity to be accessible).
   if (!base44.entities?.Entitlement) {
     return { granted: false, reason: "entity_not_found", seasonYear };
   }
