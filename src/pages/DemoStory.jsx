@@ -326,19 +326,22 @@ export default function DemoStory() {
           <button
             onClick={skip}
             style={{
-              background: "none",
-              border: "none",
-              color: "#4b5563",
-              fontSize: 13,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid #1e2d45",
+              borderRadius: 8,
+              padding: "7px 14px",
+              color: "#94a3b8",
+              fontSize: 12,
+              fontWeight: 600,
               cursor: "pointer",
               fontFamily: "inherit",
               display: "flex",
               alignItems: "center",
-              gap: 4,
+              gap: 5,
             }}
           >
-            Skip to workspace
-            <ArrowRight style={{ width: 12, height: 12 }} />
+            Skip to Athlete HQ
+            <ArrowRight style={{ width: 11, height: 11 }} />
           </button>
         </div>
       </div>
