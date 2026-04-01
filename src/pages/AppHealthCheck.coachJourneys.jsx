@@ -1,13 +1,16 @@
 // src/pages/AppHealthCheck.coachJourneys.jsx
 // Coach Feature health check journeys — extracted to keep AppHealthCheck.jsx within platform size limits.
-import { base44 } from "../api/base44Client";
+import { prodBase44 as base44 } from "../api/healthCheckClient";
+import { FAIL } from "../api/healthCheckFail";
 
 export const COACH_JOURNEY_GROUP =
   {
     label: "Coach Feature",
+    section: "Coach journey checks",
     journeys: [
       {
         id: "coach_role_bypass",
+        kind: "read",
         name: "Coach role — useSeasonAccess bypass",
         icon: "🏈",
         description: "Accounts with role=coach are not gated by entitlement check. " +
@@ -17,7 +20,7 @@ export const COACH_JOURNEY_GROUP =
             name: "useSeasonAccess hook is importable",
             run: async () => {
               const me = await base44.auth.me();
-              if (!me) throw new Error("auth.me() returned null — cannot verify role field");
+              if (!me) FAIL.runtime("auth.me() returned null — cannot verify role field; session may not be established");
               return `auth.me() ok — role field: ${me.role ?? "(not set, defaults to parent behavior)"}`;
             },
           },
@@ -25,10 +28,10 @@ export const COACH_JOURNEY_GROUP =
             name: "Admin account has role=admin on auth object",
             run: async () => {
               const me = await base44.auth.me();
-              if (!me) throw new Error("auth.me() returned null");
-              if (me.role !== "admin") throw new Error(
+              if (!me) FAIL.runtime("auth.me() returned null");
+              if (me.role !== "admin") FAIL.config(
                 `Expected role=admin for admin account, got: ${me.role ?? "(undefined)"} ` +
-                "— role field may not be set on auth user object yet"
+                "— role field may not be set on auth user object yet; coach bypass will not work"
               );
               return `role=admin confirmed on admin account ✓`;
             },
@@ -41,7 +44,7 @@ export const COACH_JOURNEY_GROUP =
                 return "Cannot introspect pages at runtime — verify CoachRoute.jsx exists at src/components/auth/CoachRoute.jsx";
               }
               if (!allRoutes.includes("CoachDashboard")) {
-                throw new Error("CoachDashboard not found in pages config — add to pages.config.js when Phase 2 deploys");
+                FAIL.config("CoachDashboard not found in pages config — add to pages.config.js when Phase 2 deploys");
               }
               return `CoachDashboard route registered ✓`;
             },
@@ -51,6 +54,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "coach_invite_code_flow",
+        kind: "read",
         name: "Coach invite code — localStorage persistence",
         icon: "🔗",
         description: "Coach invite code survives being stored in localStorage and is " +
@@ -63,10 +67,10 @@ export const COACH_JOURNEY_GROUP =
                 localStorage.setItem("__hc_test__", "1");
                 const val = localStorage.getItem("__hc_test__");
                 localStorage.removeItem("__hc_test__");
-                if (val !== "1") throw new Error("localStorage write/read mismatch");
+                if (val !== "1") FAIL.runtime("localStorage write/read mismatch");
                 return "localStorage available ✓";
               } catch (err) {
-                throw new Error(`localStorage not available: ${err.message} — coach invite code flow will fail`);
+                FAIL.runtime(`localStorage not available: ${err.message} — coach invite code flow will fail`);
               }
             },
           },
@@ -78,7 +82,7 @@ export const COACH_JOURNEY_GROUP =
               const retrieved = localStorage.getItem("coachInviteCode");
               localStorage.removeItem("coachInviteCode");
               if (retrieved !== testCode) {
-                throw new Error(`Stored "${testCode}" but retrieved "${retrieved}" — localStorage key mismatch`);
+                FAIL.runtime(`Stored "${testCode}" but retrieved "${retrieved}" — localStorage key mismatch`);
               }
               ctx.codeFlowOk = true;
               return `Invite code stored and retrieved correctly ✓`;
@@ -91,13 +95,13 @@ export const COACH_JOURNEY_GROUP =
               try {
                 result = await base44.entities.Coach.filter({ invite_code: "__INVALID_HC_CODE__" });
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `Coach.filter() threw on unknown invite_code: ${err.message} — ` +
                   "CoachInviteLanding will crash if code is not found"
                 );
               }
-              if (!Array.isArray(result)) throw new Error("Coach.filter() returned non-array");
-              if (result.length > 0) throw new Error("Bogus invite code returned a match — data integrity issue");
+              if (!Array.isArray(result)) FAIL.runtime("Coach.filter() returned non-array");
+              if (result.length > 0) FAIL.data("Bogus invite code returned a match — data integrity issue");
               return `Unknown invite_code correctly returns empty array ✓`;
             },
           },
@@ -106,6 +110,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "coach_signup_functions",
+        kind: "read",
         name: "Coach signup — account creation path",
         icon: "✍️",
         description: "Auth register and role assignment are functional for coach account type.",
@@ -114,7 +119,7 @@ export const COACH_JOURNEY_GROUP =
             name: "auth.register is callable (same as parent signup)",
             run: async () => {
               if (typeof base44.auth?.register !== "function") {
-                throw new Error("base44.auth.register not available — coach signup page will fail");
+                FAIL.runtime("base44.auth.register not available — coach signup page will fail");
               }
               return "base44.auth.register available ✓";
             },
@@ -137,15 +142,15 @@ export const COACH_JOURNEY_GROUP =
               } catch (err) {
                 const msg = String(err?.message || err);
                 if (msg.includes("first_name") || msg.includes("last_name")) {
-                  throw new Error(
+                  FAIL.config(
                     "Coach entity schema still uses 'name' field — update the Coach entity in base44 admin: " +
                     "rename 'name' → 'first_name', add 'last_name' (both string, required), add 'status' (string). " +
                     "Until this is done, ALL real coach signups via registerCoach will fail with the same error."
                   );
                 }
-                throw new Error("Coach.create() failed: " + msg);
+                FAIL.runtime("Coach.create() failed: " + msg);
               }
-              if (!testCoach?.id) throw new Error("Coach.create() returned no id — entity may be read-only");
+              if (!testCoach?.id) FAIL.runtime("Coach.create() returned no id — entity may be read-only or schema is missing required fields");
               ctx.testCoachId = testCoach.id;
               ctx.testInviteCode = testCoach.invite_code;
               return `Coach record created — id=${testCoach.id} code=${testCoach.invite_code} (first_name/last_name/status fields accepted) ✓`;
@@ -156,7 +161,7 @@ export const COACH_JOURNEY_GROUP =
             run: async (ctx) => {
               const found = await base44.entities.Coach.filter({ invite_code: ctx.testInviteCode });
               if (!Array.isArray(found) || found.length === 0) {
-                throw new Error(`Coach not found by invite_code="${ctx.testInviteCode}" — filter index may be missing`);
+                FAIL.runtime(`Coach not found by invite_code="${ctx.testInviteCode}" — filter index may be missing or entity is not queryable`);
               }
               return `Coach found by invite_code ✓`;
             },
@@ -166,15 +171,24 @@ export const COACH_JOURNEY_GROUP =
             run: async (ctx) => {
               if (ctx.testCoachId) {
                 await base44.entities.Coach.delete(ctx.testCoachId);
+                ctx.testCoachId = null;
               }
               return "Test Coach record deleted ✓";
             },
           },
         ],
+        // Safety net: if the inline cleanup step was skipped due to failure,
+        // cleanup() removes the orphan. Identify orphans by filtering Coach for first_name='__healthcheck__'.
+        cleanup: async (ctx) => {
+          if (ctx.testCoachId) {
+            try { await base44.entities.Coach.delete(ctx.testCoachId); } catch {}
+          }
+        },
       },
 
       {
         id: "coach_entity_schema",
+        kind: "read",
         name: "Coach entity — schema and read access",
         icon: "📋",
         description: "Coach entity exists, is queryable, and has required fields. " +
@@ -187,12 +201,12 @@ export const COACH_JOURNEY_GROUP =
               try {
                 coaches = await base44.entities.Coach.filter({});
               } catch (err) {
-                throw new Error(
+                FAIL.config(
                   `Coach entity not readable: ${err?.message || err} — ` +
                   "create the Coach entity in base44 admin before deploying Phase 2"
                 );
               }
-              if (!Array.isArray(coaches)) throw new Error("Coach.filter() returned non-array");
+              if (!Array.isArray(coaches)) FAIL.runtime("Coach.filter() returned non-array — entity may be misconfigured");
               ctx.coaches = coaches;
               return `Coach entity reachable — ${coaches.length} records`;
             },
@@ -201,17 +215,17 @@ export const COACH_JOURNEY_GROUP =
             name: "Coach entity has required fields (first_name, last_name, status, invite_code, account_id)",
             run: async (ctx) => {
               if (ctx.coaches.length === 0) {
-                return "No Coach records yet — field check skipped (expected before first signup)";
+                return "⚠ No Coach records yet — field check skipped (expected before first coach signup)";
               }
               const required = ["first_name", "last_name", "status", "invite_code", "account_id"];
               const sample = ctx.coaches[0];
               const missing = required.filter(f => !(f in sample));
               if (missing.length > 0) {
-                throw new Error(`Coach record missing fields: ${missing.join(", ")} — schema was updated from 'name' to first_name/last_name; old records may need migration and entity schema must be updated in base44 admin`);
+                FAIL.config(`Coach record missing fields: ${missing.join(", ")} — schema was updated from 'name' to first_name/last_name; old records may need migration and entity schema must be updated in base44 admin`);
               }
               const badName = ctx.coaches.filter(c => "name" in c && !("first_name" in c));
               if (badName.length > 0) {
-                throw new Error(`${badName.length} Coach records have old 'name' field but no 'first_name' — schema migration incomplete; CoachDashboard and approveCoach will show wrong names`);
+                FAIL.data(`${badName.length} Coach records have old 'name' field but no 'first_name' — schema migration incomplete; CoachDashboard and approveCoach will show wrong names`);
               }
               return `All required fields present on Coach entity (first_name/last_name split) ✓`;
             },
@@ -223,7 +237,7 @@ export const COACH_JOURNEY_GROUP =
               const codes = ctx.coaches.map(c => c.invite_code).filter(Boolean);
               const unique = new Set(codes);
               if (unique.size !== codes.length) {
-                throw new Error(
+                FAIL.data(
                   `Duplicate invite_codes detected (${codes.length} codes, ${unique.size} unique) — ` +
                   "invite_code must be unique across all Coach records"
                 );
@@ -237,7 +251,7 @@ export const COACH_JOURNEY_GROUP =
               if (ctx.coaches.length === 0) return "No coaches — check skipped";
               const noStatus = ctx.coaches.filter(c => !c.status);
               if (noStatus.length > 0) {
-                throw new Error(
+                FAIL.data(
                   `${noStatus.length} Coach records have no status field — ` +
                   "CoachInviteLanding filter for status='approved' will exclude them; " +
                   "set status='approved' on legacy records or add status to entity schema"
@@ -258,6 +272,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "coach_backend_functions",
+        kind: "read",
         name: "Coach backend functions — registerCoach, approveCoach, sendCoachMessage",
         icon: "⚙️",
         description: "All three coach backend functions are reachable and enforce their guards correctly. " +
@@ -288,7 +303,7 @@ export const COACH_JOURNEY_GROUP =
                   ctx.registerReachable = true;
                   return `registerCoach reachable — HTTP ${msg.includes("401") ? "401 (auth required)" : "400 (validation enforced)"} ✓`;
                 }
-                throw new Error("registerCoach unreachable: " + msg);
+                FAIL.ext("registerCoach unreachable: " + msg);
               }
             },
           },
@@ -302,23 +317,23 @@ export const COACH_JOURNEY_GROUP =
                 const res = await base44.functions.invoke("approveCoach", {});
                 const data = res?.data;
                 if (data?.error === "Admin access required") {
-                  throw new Error("approveCoach rejected this admin account — user.role may not be 'admin' or function deploy is stale");
+                  FAIL.config("approveCoach rejected this admin account — user.role may not be 'admin' or function deploy is stale");
                 }
                 ctx.approveReachable = true;
                 return `approveCoach reachable — admin access confirmed: "${data?.error || "ok"}" ✓`;
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("Admin access required")) {
-                  throw new Error("approveCoach admin guard rejected this admin session — role may be wrong");
+                  FAIL.config("approveCoach admin guard rejected this admin session — role may be wrong");
                 }
                 if (msg.includes("400")) {
                   ctx.approveReachable = true;
                   return `approveCoach reachable — 400 (coachId/action required, admin passed) ✓`;
                 }
                 if (msg.includes("403")) {
-                  throw new Error("approveCoach returned 403 for admin account — admin guard misconfigured");
+                  FAIL.config("approveCoach returned 403 for admin account — admin guard misconfigured");
                 }
-                throw new Error("approveCoach unreachable: " + msg);
+                FAIL.ext("approveCoach unreachable: " + msg);
               }
             },
           },
@@ -336,7 +351,7 @@ export const COACH_JOURNEY_GROUP =
                   ctx.sendMsgReachable = true;
                   return `sendCoachMessage reachable — returned expected error for invalid call ✓`;
                 }
-                throw new Error("sendCoachMessage unreachable: " + msg);
+                FAIL.ext("sendCoachMessage unreachable: " + msg);
               }
             },
           },
@@ -345,6 +360,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "coach_roster_message_entities",
+        kind: "transaction",
         name: "CoachRoster and CoachMessage entities — schema and queryability",
         icon: "📋",
         description: "CoachRoster and CoachMessage entities are queryable and can hold records. " +
@@ -357,12 +373,12 @@ export const COACH_JOURNEY_GROUP =
               try {
                 rows = await base44.entities.CoachRoster.filter({});
               } catch (err) {
-                throw new Error(
+                FAIL.config(
                   `CoachRoster entity not readable: ${err?.message || err} — ` +
                   "create entity in base44 admin with fields: coach_id, account_id, athlete_id, athlete_name, invite_code, joined_at"
                 );
               }
-              if (!Array.isArray(rows)) throw new Error("CoachRoster.filter() returned non-array");
+              if (!Array.isArray(rows)) FAIL.runtime("CoachRoster.filter() returned non-array");
               ctx.rosterRows = rows;
               return `CoachRoster entity reachable — ${rows.length} records`;
             },
@@ -378,7 +394,7 @@ export const COACH_JOURNEY_GROUP =
                 invite_code: `HC-${Date.now()}`,
                 joined_at: new Date().toISOString(),
               });
-              if (!testRow?.id) throw new Error("CoachRoster.create() returned no id — stripeWebhook roster linking will silently fail");
+              if (!testRow?.id) FAIL.runtime("CoachRoster.create() returned no id — stripeWebhook roster linking will silently fail");
               ctx.testRosterId = testRow.id;
               await base44.entities.CoachRoster.delete(testRow.id).catch(() => {});
               ctx.testRosterId = null;
@@ -392,12 +408,12 @@ export const COACH_JOURNEY_GROUP =
               try {
                 rows = await base44.entities.CoachMessage.filter({});
               } catch (err) {
-                throw new Error(
+                FAIL.config(
                   `CoachMessage entity not readable: ${err?.message || err} — ` +
                   "create entity in base44 admin with fields: coach_id, subject, message, sent_at"
                 );
               }
-              if (!Array.isArray(rows)) throw new Error("CoachMessage.filter() returned non-array");
+              if (!Array.isArray(rows)) FAIL.runtime("CoachMessage.filter() returned non-array");
               ctx.msgRows = rows;
               return `CoachMessage entity reachable — ${rows.length} records`;
             },
@@ -411,7 +427,7 @@ export const COACH_JOURNEY_GROUP =
                 message: "Health check probe message.",
                 sent_at: new Date().toISOString(),
               });
-              if (!testMsg?.id) throw new Error("CoachMessage.create() returned no id — sendCoachMessage function will fail");
+              if (!testMsg?.id) FAIL.runtime("CoachMessage.create() returned no id — sendCoachMessage function will fail");
               await base44.entities.CoachMessage.delete(testMsg.id).catch(() => {});
               return `CoachMessage create/delete cycle ok — all required fields accepted ✓`;
             },
@@ -423,9 +439,9 @@ export const COACH_JOURNEY_GROUP =
               try {
                 rows = await base44.entities.CoachRoster.filter({ coach_id: "__hc_nonexistent__" });
               } catch (err) {
-                throw new Error(`CoachRoster.filter({ coach_id }) threw: ${err?.message} — CoachDashboard roster fetch will crash`);
+                FAIL.runtime(`CoachRoster.filter({ coach_id }) threw: ${err?.message} — CoachDashboard roster fetch will crash`);
               }
-              if (!Array.isArray(rows)) throw new Error("CoachRoster.filter({ coach_id }) returned non-array");
+              if (!Array.isArray(rows)) FAIL.runtime("CoachRoster.filter({ coach_id }) returned non-array");
               return `CoachRoster filter by coach_id ok — returns empty array for unknown id ✓`;
             },
           },
@@ -436,9 +452,9 @@ export const COACH_JOURNEY_GROUP =
               try {
                 rows = await base44.entities.CoachMessage.filter({ coach_id: "__hc_nonexistent__" });
               } catch (err) {
-                throw new Error(`CoachMessage.filter({ coach_id }) threw: ${err?.message} — CoachDashboard message history will crash`);
+                FAIL.runtime(`CoachMessage.filter({ coach_id }) threw: ${err?.message} — CoachDashboard message history will crash`);
               }
-              if (!Array.isArray(rows)) throw new Error("CoachMessage.filter({ coach_id }) returned non-array");
+              if (!Array.isArray(rows)) FAIL.runtime("CoachMessage.filter({ coach_id }) returned non-array");
               return `CoachMessage filter by coach_id ok — returns empty array for unknown id ✓`;
             },
           },
@@ -452,6 +468,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "coach_stripe_passthrough",
+        kind: "transaction",
         name: "Coach invite code — Stripe passthrough and webhook isolation",
         icon: "💳",
         description: "createStripeCheckout accepts coachInviteCode in body (does not throw). " +
@@ -482,9 +499,9 @@ export const COACH_JOURNEY_GROUP =
                   return `createStripeCheckout reachable — accepted coachInviteCode, rejected missing priceId ✓`;
                 }
                 if (msg.includes("coachInviteCode") || msg.includes("unexpected")) {
-                  throw new Error("createStripeCheckout rejected coachInviteCode field — Stripe metadata will not include coach code; CoachRoster will never be linked on payment");
+                  FAIL.runtime("createStripeCheckout rejected coachInviteCode field — Stripe metadata will not include coach code; CoachRoster will never be linked on payment");
                 }
-                throw new Error("createStripeCheckout unreachable: " + msg);
+                FAIL.ext("createStripeCheckout unreachable: " + msg);
               }
             },
           },
@@ -500,8 +517,8 @@ export const COACH_JOURNEY_GROUP =
                 athlete_name: "__hc_stripe_name__",
                 invite_code: `HC-STRIPE-${Date.now()}`,
                 joined_at: new Date().toISOString(),
-              }).catch(err => { throw new Error(`CoachRoster write failed — stripeWebhook roster linking will fail: ${err?.message}`); });
-              if (!testRow?.id) throw new Error("CoachRoster.create() returned no id — webhook linking will silently produce no roster entry");
+              }).catch(err => { FAIL.runtime(`CoachRoster write failed — stripeWebhook roster linking will fail: ${err?.message}`); });
+              if (!testRow?.id) FAIL.runtime("CoachRoster.create() returned no id — webhook linking will silently produce no roster entry");
               ctx.stripeTestRosterId = testRow.id;
               return `CoachRoster writable from entity API (mirrors stripeWebhook service role path) ✓`;
             },
@@ -513,8 +530,8 @@ export const COACH_JOURNEY_GROUP =
               const existing = await base44.entities.CoachRoster.filter({
                 coach_id: "__hc_stripe_probe__",
                 account_id: "__hc_stripe_account__",
-              }).catch(err => { throw new Error(`CoachRoster compound filter failed: ${err?.message} — idempotency check in stripeWebhook will not work`); });
-              if (!Array.isArray(existing)) throw new Error("CoachRoster.filter(coach_id + account_id) returned non-array");
+              }).catch(err => { FAIL.runtime(`CoachRoster compound filter failed: ${err?.message} — idempotency check in stripeWebhook will not work`); });
+              if (!Array.isArray(existing)) FAIL.runtime("CoachRoster.filter(coach_id + account_id) returned non-array");
               const found = existing.find(r => r.id === ctx.stripeTestRosterId);
               if (!found) return `Filter returned ${existing.length} rows — test row not found by filter (may be search limitation), idempotency risk`;
               return `CoachRoster compound filter (coach_id + account_id) works — idempotency check will find duplicates ✓`;
@@ -540,6 +557,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "coach_pages_registered",
+        kind: "read",
         name: "Coach pages — all four routes registered in pages.config.js",
         icon: "🗺️",
         description: "CoachDashboard, CoachNetworkAdmin, CoachSignup, and CoachInviteLanding must all be registered. " +
@@ -550,7 +568,7 @@ export const COACH_JOURNEY_GROUP =
             run: async (ctx) => {
               const mod = await import("../pages.config.js");
               const pages = mod.PAGES || mod.pagesConfig?.Pages;
-              if (!pages) throw new Error("Could not import PAGES from pages.config.js");
+              if (!pages) FAIL.config("Could not import PAGES from pages.config.js");
               ctx.pages = pages;
               return `PAGES imported — ${Object.keys(pages).length} routes registered`;
             },
@@ -558,28 +576,28 @@ export const COACH_JOURNEY_GROUP =
           {
             name: "CoachDashboard registered",
             run: async (ctx) => {
-              if (!ctx.pages["CoachDashboard"]) throw new Error("'CoachDashboard' not in PAGES — /CoachDashboard will 404; coaches cannot access their dashboard");
+              if (!ctx.pages["CoachDashboard"]) FAIL.config("'CoachDashboard' not in PAGES — /CoachDashboard will 404; coaches cannot access their dashboard");
               return "CoachDashboard registered ✓";
             },
           },
           {
             name: "CoachSignup registered",
             run: async (ctx) => {
-              if (!ctx.pages["CoachSignup"]) throw new Error("'CoachSignup' not in PAGES — /CoachSignup will 404; new coaches cannot register");
+              if (!ctx.pages["CoachSignup"]) FAIL.config("'CoachSignup' not in PAGES — /CoachSignup will 404; new coaches cannot register");
               return "CoachSignup registered ✓";
             },
           },
           {
             name: "CoachInviteLanding registered",
             run: async (ctx) => {
-              if (!ctx.pages["CoachInviteLanding"]) throw new Error("'CoachInviteLanding' not in PAGES — /CoachInviteLanding will 404; athletes cannot join rosters via invite link");
+              if (!ctx.pages["CoachInviteLanding"]) FAIL.config("'CoachInviteLanding' not in PAGES — /CoachInviteLanding will 404; athletes cannot join rosters via invite link");
               return "CoachInviteLanding registered ✓";
             },
           },
           {
             name: "CoachNetworkAdmin registered",
             run: async (ctx) => {
-              if (!ctx.pages["CoachNetworkAdmin"]) throw new Error("'CoachNetworkAdmin' not in PAGES — /CoachNetworkAdmin will 404; admin cannot approve/reject coaches");
+              if (!ctx.pages["CoachNetworkAdmin"]) FAIL.config("'CoachNetworkAdmin' not in PAGES — /CoachNetworkAdmin will 404; admin cannot approve/reject coaches");
               return "CoachNetworkAdmin registered ✓";
             },
           },
@@ -588,6 +606,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "coach_pending_session_storage",
+        kind: "read",
         name: "Coach pending registration — sessionStorage key read/write",
         icon: "💾",
         description: "The pendingCoachRegistration sessionStorage key must be writable and readable. " +
@@ -607,11 +626,11 @@ export const COACH_JOURNEY_GROUP =
               sessionStorage.setItem(KEY, testVal);
               const retrieved = sessionStorage.getItem(KEY);
               sessionStorage.removeItem(KEY);
-              if (retrieved !== testVal) throw new Error(`pendingCoachRegistration write/read mismatch — AuthRedirect will not receive coach data; registerCoach will never be called`);
+              if (retrieved !== testVal) FAIL.runtime(`pendingCoachRegistration write/read mismatch — AuthRedirect will not receive coach data; registerCoach will never be called`);
               const parsed = JSON.parse(retrieved);
               const required = ["first_name", "last_name", "school_or_org", "sport", "email"];
               const missing = required.filter(f => !parsed[f]);
-              if (missing.length > 0) throw new Error(`pendingCoachRegistration parsed value missing: ${missing.join(", ")}`);
+              if (missing.length > 0) FAIL.runtime(`pendingCoachRegistration parsed value missing: ${missing.join(", ")}`);
               return `pendingCoachRegistration key read/write ok — all required fields serializable ✓`;
             },
           },
@@ -624,7 +643,7 @@ export const COACH_JOURNEY_GROUP =
               sessionStorage.setItem(KEY, "probe");
               const val = sessionStorage.getItem(KEY);
               sessionStorage.removeItem(KEY);
-              if (val !== "probe") throw new Error("Key name mismatch — CoachSignup and AuthRedirect use different keys");
+              if (val !== "probe") FAIL.runtime("Key name mismatch — CoachSignup and AuthRedirect use different keys");
               return `Key 'pendingCoachRegistration' consistent between CoachSignup and AuthRedirect ✓`;
             },
           },
@@ -635,10 +654,10 @@ export const COACH_JOURNEY_GROUP =
               // Verify the role strings used in registerCoach/approveCoach match what AuthRedirect checks
               const COACH_ROLES = ["coach", "coach_pending"];
               const ROUTES_TO_DASHBOARD = (role) => COACH_ROLES.includes(role);
-              if (!ROUTES_TO_DASHBOARD("coach")) throw new Error("'coach' role would not route to CoachDashboard — AuthRedirect logic broken");
-              if (!ROUTES_TO_DASHBOARD("coach_pending")) throw new Error("'coach_pending' role would not route to CoachDashboard — pending coaches will be routed to Subscribe instead");
-              if (ROUTES_TO_DASHBOARD("")) throw new Error("Empty string role routes to CoachDashboard — rejected coaches would incorrectly land there");
-              if (ROUTES_TO_DASHBOARD("subscriber")) throw new Error("'subscriber' role routes to CoachDashboard — subscriber routing broken");
+              if (!ROUTES_TO_DASHBOARD("coach")) FAIL.runtime("'coach' role would not route to CoachDashboard — AuthRedirect logic broken");
+              if (!ROUTES_TO_DASHBOARD("coach_pending")) FAIL.runtime("'coach_pending' role would not route to CoachDashboard — pending coaches will be routed to Subscribe instead");
+              if (ROUTES_TO_DASHBOARD("")) FAIL.runtime("Empty string role routes to CoachDashboard — rejected coaches would incorrectly land there");
+              if (ROUTES_TO_DASHBOARD("subscriber")) FAIL.runtime("'subscriber' role routes to CoachDashboard — subscriber routing broken");
               return `Role routing logic correct: coach/coach_pending → CoachDashboard; empty/subscriber → normal flow ✓`;
             },
           },
@@ -647,6 +666,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "coach_verification_lifecycle",
+        kind: "transaction",
         name: "Coach verification — full pending/approve/reject lifecycle",
         icon: "✅",
         description: "Creates a test Coach record, verifies pending status, simulates approve and reject state transitions. " +
@@ -671,14 +691,14 @@ export const COACH_JOURNEY_GROUP =
               } catch (err) {
                 const msg = String(err?.message || err);
                 if (msg.includes("first_name") || msg.includes("last_name")) {
-                  throw new Error(
+                  FAIL.config(
                     "Coach entity schema missing first_name/last_name fields — update schema in base44 admin before running this journey. " +
                     "See 'Coach signup — account creation path' journey for details."
                   );
                 }
-                throw new Error("Coach.create() failed: " + msg);
+                FAIL.runtime("Coach.create() failed: " + msg);
               }
-              if (!coach?.id) throw new Error("Coach.create() returned no id");
+              if (!coach?.id) FAIL.runtime("Coach.create() returned no id");
               ctx.verifyCoachId = coach.id;
               ctx.verifyInviteCode = coach.invite_code;
               return `Test coach created — id=${coach.id} status=${coach.status}`;
@@ -692,9 +712,9 @@ export const COACH_JOURNEY_GROUP =
                 active: true,
                 status: "approved",
               });
-              if (!Array.isArray(found)) throw new Error("Coach.filter() returned non-array");
+              if (!Array.isArray(found)) FAIL.runtime("Coach.filter() returned non-array");
               const matched = found.find(c => c.id === ctx.verifyCoachId);
-              if (matched) throw new Error("Pending coach matched status=approved filter — CoachInviteLanding would allow athletes to join an unverified coach's roster");
+              if (matched) FAIL.runtime("Pending coach matched status=approved filter — CoachInviteLanding would allow athletes to join an unverified coach's roster");
               return `Pending coach correctly excluded from status=approved filter ✓`;
             },
           },
@@ -702,7 +722,7 @@ export const COACH_JOURNEY_GROUP =
             name: "Approve — update status to approved",
             run: async (ctx) => {
               const updated = await base44.entities.Coach.update(ctx.verifyCoachId, { status: "approved" });
-              if (!updated) throw new Error("Coach.update(status=approved) returned null — approveCoach function will fail");
+              if (!updated) FAIL.runtime("Coach.update(status=approved) returned null — approveCoach function will fail");
               ctx.approvedOk = true;
               return `Coach status updated to approved ✓`;
             },
@@ -715,9 +735,9 @@ export const COACH_JOURNEY_GROUP =
                 active: true,
                 status: "approved",
               });
-              if (!Array.isArray(found)) throw new Error("Coach.filter() returned non-array");
+              if (!Array.isArray(found)) FAIL.runtime("Coach.filter() returned non-array");
               const matched = found.find(c => c.id === ctx.verifyCoachId);
-              if (!matched) throw new Error("Approved coach not found by status=approved filter — CoachInviteLanding will incorrectly block athletes");
+              if (!matched) FAIL.runtime("Approved coach not found by status=approved filter — CoachInviteLanding will incorrectly block athletes");
               return `Approved coach correctly found via invite link filter ✓`;
             },
           },
@@ -725,7 +745,7 @@ export const COACH_JOURNEY_GROUP =
             name: "Reject — update status to rejected, active to false",
             run: async (ctx) => {
               const updated = await base44.entities.Coach.update(ctx.verifyCoachId, { status: "rejected", active: false });
-              if (!updated) throw new Error("Coach.update(status=rejected) returned null — approveCoach reject path will fail");
+              if (!updated) FAIL.runtime("Coach.update(status=rejected) returned null — approveCoach reject path will fail");
               ctx.rejectedOk = true;
               return `Coach status updated to rejected, active=false ✓`;
             },
@@ -738,9 +758,9 @@ export const COACH_JOURNEY_GROUP =
                 active: true,
                 status: "approved",
               });
-              if (!Array.isArray(found)) throw new Error("Coach.filter() returned non-array");
+              if (!Array.isArray(found)) FAIL.runtime("Coach.filter() returned non-array");
               const matched = found.find(c => c.id === ctx.verifyCoachId);
-              if (matched) throw new Error("Rejected coach leaked through active+approved filter — rejected coaches could still appear on invite landing");
+              if (matched) FAIL.runtime("Rejected coach leaked through active+approved filter — rejected coaches could still appear on invite landing");
               return `Rejected coach correctly excluded from active+approved filter ✓`;
             },
           },
@@ -764,6 +784,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "getMyCoachProfile_function",
+        kind: "read",
         name: "getMyCoachProfile — function reachability and response shape",
         icon: "📂",
         description: "getMyCoachProfile function is reachable, returns the correct { ok, coach, roster, messages } shape, and gracefully handles callers with no coach profile.",
@@ -777,12 +798,12 @@ export const COACH_JOURNEY_GROUP =
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("401") || msg.includes("403")) {
-                  throw new Error("getMyCoachProfile blocked this authenticated session — auth guard may be misconfigured");
+                  FAIL.config("getMyCoachProfile blocked this authenticated session — auth guard may be misconfigured");
                 }
-                throw new Error("getMyCoachProfile unreachable: " + msg);
+                FAIL.ext("getMyCoachProfile unreachable: " + msg);
               }
               const data = res?.data;
-              if (!data) throw new Error("getMyCoachProfile returned empty response — function may not be deployed");
+              if (!data) FAIL.runtime("getMyCoachProfile returned empty response — function may not be deployed");
               ctx.profileData = data;
               return `Function responded — ok=${data.ok}`;
             },
@@ -791,7 +812,7 @@ export const COACH_JOURNEY_GROUP =
             name: "Response has ok:true",
             run: async (ctx) => {
               if (ctx.profileData.ok !== true) {
-                throw new Error(`getMyCoachProfile returned ok:false — error: "${ctx.profileData.error || "unknown"}"`);
+                FAIL.runtime(`getMyCoachProfile returned ok:false — error: "${ctx.profileData.error || "unknown"}"`);
               }
               return "ok:true ✓";
             },
@@ -800,11 +821,11 @@ export const COACH_JOURNEY_GROUP =
             name: "Response shape: coach field present (null or object)",
             run: async (ctx) => {
               if (!("coach" in ctx.profileData)) {
-                throw new Error("Response missing 'coach' field — CoachDashboard will crash reading coach.invite_code");
+                FAIL.runtime("Response missing 'coach' field — CoachDashboard will crash reading coach.invite_code");
               }
               const coachVal = ctx.profileData.coach;
               if (coachVal !== null && typeof coachVal !== "object") {
-                throw new Error(`coach field is ${typeof coachVal}, expected object or null`);
+                FAIL.runtime(`coach field is ${typeof coachVal}, expected object or null`);
               }
               return `coach field present — ${coachVal ? `id=${coachVal.id}` : "null (caller is not a coach — expected for admin)"}`;
             },
@@ -813,7 +834,7 @@ export const COACH_JOURNEY_GROUP =
             name: "Response shape: roster field is an array",
             run: async (ctx) => {
               if (!Array.isArray(ctx.profileData.roster)) {
-                throw new Error("Response 'roster' field is not an array — CoachDashboard roster display will crash");
+                FAIL.runtime("Response 'roster' field is not an array — CoachDashboard roster display will crash");
               }
               return `roster is an array — ${ctx.profileData.roster.length} entries`;
             },
@@ -822,7 +843,7 @@ export const COACH_JOURNEY_GROUP =
             name: "Response shape: messages field is an array",
             run: async (ctx) => {
               if (!Array.isArray(ctx.profileData.messages)) {
-                throw new Error("Response 'messages' field is not an array — CoachDashboard message history will crash");
+                FAIL.runtime("Response 'messages' field is not an array — CoachDashboard message history will crash");
               }
               return `messages is an array — ${ctx.profileData.messages.length} entries`;
             },
@@ -832,6 +853,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "coach_discover_experience",
+        kind: "read",
         name: "Coach Discover — isPaid logic and Camp entity access",
         icon: "🔍",
         description: "Verifies the coach-specific Discover experience: seasonMode=coach yields isPaid=true (no demo banner), Coach can query live Camp entity, and the back-button destination logic is correct.",
@@ -841,10 +863,10 @@ export const COACH_JOURNEY_GROUP =
             run: async () => {
               // Mirror Discover.jsx line: const isPaid = seasonMode === "paid" || seasonMode === "coach";
               const isPaidForMode = (mode) => mode === "paid" || mode === "coach";
-              if (!isPaidForMode("coach")) throw new Error("isPaid is false for seasonMode=coach — coach would see demo banner and demo data");
-              if (!isPaidForMode("paid")) throw new Error("isPaid is false for paid mode — regression");
-              if (isPaidForMode("demo")) throw new Error("isPaid is true for demo mode — demo users would get paid access");
-              if (isPaidForMode("loading")) throw new Error("isPaid is true for loading state — premature access grant");
+              if (!isPaidForMode("coach")) FAIL.runtime("isPaid is false for seasonMode=coach — coach would see demo banner and demo data");
+              if (!isPaidForMode("paid")) FAIL.runtime("isPaid is false for paid mode — regression");
+              if (isPaidForMode("demo")) FAIL.runtime("isPaid is true for demo mode — demo users would get paid access");
+              if (isPaidForMode("loading")) FAIL.runtime("isPaid is true for loading state — premature access grant");
               return "isPaid correctly true for coach and paid, false for demo/loading ✓";
             },
           },
@@ -852,7 +874,7 @@ export const COACH_JOURNEY_GROUP =
             name: "Camp entity accessible (coaches query real camps, not DemoCamp)",
             run: async (ctx) => {
               const camps = await base44.entities.Camp.filter({ active: true });
-              if (!Array.isArray(camps)) throw new Error("Camp.filter() returned non-array — coaches cannot browse real camps");
+              if (!Array.isArray(camps)) FAIL.runtime("Camp.filter() returned non-array — coaches cannot browse real camps");
               ctx.campCount = camps.length;
               return `Camp entity accessible — ${camps.length} active camps`;
             },
@@ -865,8 +887,8 @@ export const COACH_JOURNEY_GROUP =
               const sample = (camps || []).slice(0, 10);
               const missingName = sample.filter(c => !c.camp_name).length;
               const missingDate = sample.filter(c => !c.start_date).length;
-              if (missingName > 3) throw new Error(`${missingName}/10 camps missing camp_name — SchoolGroupCard will show blank names`);
-              if (missingDate > 3) throw new Error(`${missingDate}/10 camps missing start_date — coach cannot see dates`);
+              if (missingName > 3) FAIL.data(`${missingName}/10 camps missing camp_name — SchoolGroupCard will show blank names`);
+              if (missingDate > 3) FAIL.data(`${missingDate}/10 camps missing start_date — coach cannot see dates`);
               return `First 10 camps: ${10 - missingName}/10 have camp_name, ${10 - missingDate}/10 have start_date ✓`;
             },
           },
@@ -875,8 +897,8 @@ export const COACH_JOURNEY_GROUP =
             run: async () => {
               // Mirror Discover.jsx: nav(isCoach ? "/CoachDashboard" : "/Workspace")
               const backDest = (isCoach) => isCoach ? "/CoachDashboard" : "/Workspace";
-              if (backDest(true) !== "/CoachDashboard") throw new Error("Coach back button does not route to /CoachDashboard");
-              if (backDest(false) !== "/Workspace") throw new Error("Non-coach back button does not route to /Workspace — regression");
+              if (backDest(true) !== "/CoachDashboard") FAIL.runtime("Coach back button does not route to /CoachDashboard");
+              if (backDest(false) !== "/Workspace") FAIL.runtime("Non-coach back button does not route to /Workspace — regression");
               return "Back button routes to /CoachDashboard for coaches, /Workspace for parents ✓";
             },
           },
@@ -885,10 +907,10 @@ export const COACH_JOURNEY_GROUP =
             run: async () => {
               // Mirror Discover.jsx: const isCoach = seasonMode === "coach"
               const isCoachForMode = (mode) => mode === "coach";
-              if (!isCoachForMode("coach")) throw new Error("isCoach is false for coach mode");
-              if (isCoachForMode("paid")) throw new Error("isCoach is true for paid mode — parents would get coach experience");
-              if (isCoachForMode("demo")) throw new Error("isCoach is true for demo mode — unauthenticated users would get coach experience");
-              if (isCoachForMode("admin")) throw new Error("isCoach is true for admin mode");
+              if (!isCoachForMode("coach")) FAIL.runtime("isCoach is false for coach mode");
+              if (isCoachForMode("paid")) FAIL.runtime("isCoach is true for paid mode — parents would get coach experience");
+              if (isCoachForMode("demo")) FAIL.runtime("isCoach is true for demo mode — unauthenticated users would get coach experience");
+              if (isCoachForMode("admin")) FAIL.runtime("isCoach is true for admin mode");
               return "isCoach correctly derived from seasonMode === 'coach' ✓";
             },
           },
@@ -897,6 +919,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "coach_message_recipient_fields",
+        kind: "transaction",
         name: "CoachMessage — recipient_athlete_id and recipient_name fields",
         icon: "💬",
         description: "CoachMessage entity accepts the new recipient_athlete_id and recipient_name fields used by the Share with Roster feature in Discover.",
@@ -915,12 +938,12 @@ export const COACH_JOURNEY_GROUP =
                   recipient_name: "__hc_athlete_name__",
                 });
               } catch (err) {
-                throw new Error(
+                FAIL.config(
                   `CoachMessage rejected recipient_athlete_id or recipient_name: ${err?.message} — ` +
                   "Share with Roster in Discover will fail. Add these fields to the CoachMessage entity schema in base44 admin."
                 );
               }
-              if (!testMsg?.id) throw new Error("CoachMessage.create() returned no id");
+              if (!testMsg?.id) FAIL.runtime("CoachMessage.create() returned no id");
               ctx.testMsgId = testMsg.id;
               return `CoachMessage created with recipient fields — id=${testMsg.id} ✓`;
             },
@@ -928,15 +951,15 @@ export const COACH_JOURNEY_GROUP =
           {
             name: "recipient_athlete_id persisted correctly",
             run: async (ctx) => {
-              if (!ctx.testMsgId) throw new Error("Previous step did not create a test record");
+              if (!ctx.testMsgId) FAIL.runtime("Previous step did not create a test record");
               const msgs = await base44.entities.CoachMessage.filter({ coach_id: "__hc_coach_recipient_test__" });
               const found = (msgs || []).find(m => m.id === ctx.testMsgId);
               if (!found) return "Test message not found via filter (may be permissions) — field accepted on create ✓";
               if (found.recipient_athlete_id !== "__hc_athlete_id__") {
-                throw new Error(`recipient_athlete_id not persisted — stored: "${found.recipient_athlete_id}" expected: "__hc_athlete_id__"`);
+                FAIL.runtime(`recipient_athlete_id not persisted — stored: "${found.recipient_athlete_id}" expected: "__hc_athlete_id__"`);
               }
               if (found.recipient_name !== "__hc_athlete_name__") {
-                throw new Error(`recipient_name not persisted — stored: "${found.recipient_name}" expected: "__hc_athlete_name__"`);
+                FAIL.runtime(`recipient_name not persisted — stored: "${found.recipient_name}" expected: "__hc_athlete_name__"`);
               }
               return `recipient_athlete_id="${found.recipient_athlete_id}"  recipient_name="${found.recipient_name}" persisted ✓`;
             },
@@ -960,6 +983,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "sendCoachMessage_recipient_fields",
+        kind: "read",
         name: "sendCoachMessage — accepts recipientAthleteId and recipientName",
         icon: "📨",
         description: "sendCoachMessage function accepts the new optional recipientAthleteId and recipientName fields without error. Used by Share with Roster in Discover.",
@@ -991,9 +1015,9 @@ export const COACH_JOURNEY_GROUP =
                 }
                 // 500 might mean the new fields caused a crash
                 if (msg.includes("500")) {
-                  throw new Error("sendCoachMessage returned 500 with recipient fields — may have crashed processing new fields");
+                  FAIL.runtime("sendCoachMessage returned 500 with recipient fields — may have crashed processing new fields");
                 }
-                throw new Error("sendCoachMessage unreachable with recipient fields: " + msg);
+                FAIL.ext("sendCoachMessage unreachable with recipient fields: " + msg);
               }
             },
           },
@@ -1012,7 +1036,7 @@ export const COACH_JOURNEY_GROUP =
                 recipientName: "John Smith",
               };
               const missing = schemaKeys.filter(k => !(k in payload));
-              if (missing.length > 0) throw new Error(`Payload missing keys: ${missing.join(", ")} — SchoolGroupCard.jsx uses wrong field names`);
+              if (missing.length > 0) FAIL.runtime(`Payload missing keys: ${missing.join(", ")} — SchoolGroupCard.jsx uses wrong field names`);
               return `Payload field names match function schema: ${schemaKeys.join(", ")} ✓`;
             },
           },
@@ -1021,6 +1045,7 @@ export const COACH_JOURNEY_GROUP =
 
       {
         id: "removeCoach_admin_guard",
+        kind: "read",
         name: "removeCoach — admin guard and function reachability",
         icon: "🗑️",
         description: "removeCoach function is reachable and does NOT reject the admin session. A 403 here means the admin guard is misconfigured.",
@@ -1032,24 +1057,24 @@ export const COACH_JOURNEY_GROUP =
                 const res = await base44.functions.invoke("removeCoach", {});
                 const data = res?.data;
                 if (data?.error === "Admin access required") {
-                  throw new Error("removeCoach rejected this admin account — user.role may not be 'admin' or email not in ADMIN_EMAILS list");
+                  FAIL.config("removeCoach rejected this admin account — user.role may not be 'admin' or email not in ADMIN_EMAILS list");
                 }
                 ctx.removeReachable = true;
                 return `removeCoach reachable — admin access confirmed: "${data?.error || "ok"}" ✓`;
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("Admin access required")) {
-                  throw new Error("removeCoach admin guard rejected this admin session — role may be wrong or function deploy is stale");
+                  FAIL.config("removeCoach admin guard rejected this admin session — role may be wrong or function deploy is stale");
                 }
                 if (msg.includes("403")) {
-                  throw new Error("removeCoach returned 403 for admin account — admin guard misconfigured");
+                  FAIL.config("removeCoach returned 403 for admin account — admin guard misconfigured");
                 }
                 // 400 (coachId required) means guard passed
                 if (msg.includes("400")) {
                   ctx.removeReachable = true;
                   return "removeCoach reachable — 400 (coachId required, admin passed guard) ✓";
                 }
-                throw new Error("removeCoach unreachable: " + msg);
+                FAIL.ext("removeCoach unreachable: " + msg);
               }
             },
           },

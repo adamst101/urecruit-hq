@@ -4,7 +4,8 @@
 // coach HQ functions, recruiting activity, report feature, and registration chain.
 // Exported as NEW_JOURNEY_GROUPS — imported and spread into JOURNEY_GROUPS in AppHealthCheck.jsx.
 
-import { base44 } from "../api/base44Client";
+import { prodBase44 as base44 } from "../api/healthCheckClient";
+import { FAIL } from "../api/healthCheckFail";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function today() { return new Date().toISOString().slice(0, 10); }
@@ -20,9 +21,11 @@ export const NEW_JOURNEY_GROUPS = [
   // ══════════════════════════════════════════════════════════════════════════
   {
     label: "Route & Page Registration",
+    section: "Critical platform/config",
     journeys: [
       {
         id: "pages_config_critical_routes",
+        kind: "read",
         name: "Critical Routes — pages.config.js",
         icon: "🗺️",
         description: "All primary journey entry points are registered in pages.config.js. A missing registration causes a 404 and silently breaks the journey.",
@@ -33,7 +36,7 @@ export const NEW_JOURNEY_GROUPS = [
               const mod = await import("../pages.config.js");
               const pages = mod.PAGES || mod.default?.Pages || mod.pagesConfig?.Pages;
               if (!pages || typeof pages !== "object") {
-                throw new Error(
+                FAIL.config(
                   "Could not read PAGES from pages.config.js — the config export shape may have changed"
                 );
               }
@@ -47,7 +50,7 @@ export const NEW_JOURNEY_GROUPS = [
               const required = ["Home", "DemoStory", "CoachDemoStory", "Signup", "CoachSignup"];
               const missing = required.filter(p => !ctx.pages[p]);
               if (missing.length > 0) {
-                throw new Error(
+                FAIL.config(
                   `Missing public pages: ${missing.join(", ")} — ` +
                   "these are primary entry points; missing ones will 404 for all users"
                 );
@@ -64,7 +67,7 @@ export const NEW_JOURNEY_GROUPS = [
               ];
               const missing = required.filter(p => !ctx.pages[p]);
               if (missing.length > 0) {
-                throw new Error(
+                FAIL.config(
                   `Missing user pages: ${missing.join(", ")} — ` +
                   "authenticated users will hit blank pages or 404s"
                 );
@@ -78,7 +81,7 @@ export const NEW_JOURNEY_GROUPS = [
               const required = ["CoachDashboard", "CoachProfile", "AuthRedirect"];
               const missing = required.filter(p => !ctx.pages[p]);
               if (missing.length > 0) {
-                throw new Error(
+                FAIL.config(
                   `Missing coach pages: ${missing.join(", ")} — ` +
                   "coach signup redirect chain or dashboard will fail"
                 );
@@ -95,7 +98,7 @@ export const NEW_JOURNEY_GROUPS = [
               ];
               const missing = required.filter(p => !ctx.pages[p]);
               if (missing.length > 0) {
-                throw new Error(`Missing utility pages: ${missing.join(", ")}`);
+                FAIL.config(`Missing utility pages: ${missing.join(", ")}`);
               }
               return `Utility pages registered ✓`;
             },
@@ -112,9 +115,11 @@ export const NEW_JOURNEY_GROUPS = [
   // ══════════════════════════════════════════════════════════════════════════
   {
     label: "Demo Journey Integrity",
+    section: "User journey checks",
     journeys: [
       {
         id: "user_demo_story_structure",
+        kind: "read",
         name: "User Demo (DemoStory) — Structure & Skip Route",
         icon: "🧭",
         description: "DemoStory module exports the expected structure. Step count matches TOTAL_STEPS. Skip function routes to Workspace?demo=user.",
@@ -126,12 +131,12 @@ export const NEW_JOURNEY_GROUPS = [
               try {
                 mod = await import("./DemoStory.jsx");
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `DemoStory.jsx failed to import: ${err.message} — ` +
                   "this is a compile/syntax error; the demo journey is completely broken"
                 );
               }
-              if (!mod.default) throw new Error("DemoStory.jsx has no default export — page will be blank");
+              if (!mod.default) FAIL.runtime("DemoStory.jsx has no default export — page will be blank");
               ctx.demoStoryMod = mod;
               return "DemoStory.jsx importable — default export present ✓";
             },
@@ -148,7 +153,7 @@ export const NEW_JOURNEY_GROUPS = [
               const mod = await import("../pages.config.js");
               const pages = mod.PAGES || mod.default?.Pages || mod.pagesConfig?.Pages || {};
               if (!pages["Workspace"]) {
-                throw new Error(
+                FAIL.config(
                   "Workspace not in pages.config.js — DemoStory skip will 404. " +
                   `Expected destination: ${expectedBase}?${expectedParam}`
                 );
@@ -208,6 +213,7 @@ export const NEW_JOURNEY_GROUPS = [
 
       {
         id: "coach_demo_story_structure",
+        kind: "read",
         name: "Coach Demo (CoachDemoStory) — Structure & Skip Route",
         icon: "🏈",
         description: "CoachDemoStory module is importable, coach demo data loads, TOTAL_STEPS is consistent, skip routes to CoachDashboard?demo=coach.",
@@ -363,6 +369,7 @@ export const NEW_JOURNEY_GROUPS = [
 
       {
         id: "demo_mode_isolation",
+        kind: "read",
         name: "Demo Mode Isolation — No Cross-Contamination",
         icon: "🔒",
         description: "Demo URL params do not bleed across sessions. localStorage demo keys are scoped correctly and can be cleared. Validates the demo isolation contract.",
@@ -432,9 +439,11 @@ export const NEW_JOURNEY_GROUPS = [
   // ══════════════════════════════════════════════════════════════════════════
   {
     label: "Demo Data Freshness",
+    section: "Core data integrity",
     journeys: [
       {
         id: "demo_camp_freshness",
+        kind: "read",
         name: "DemoCamp Entity — Date Freshness",
         icon: "📅",
         description: "DemoCamp entity has records, they have sufficient count, and their dates fall in the current or upcoming year — stale 2024 dates make the demo look broken.",
@@ -530,9 +539,11 @@ export const NEW_JOURNEY_GROUPS = [
   // ══════════════════════════════════════════════════════════════════════════
   {
     label: "Coach HQ Functions",
+    section: "Coach journey checks",
     journeys: [
       {
         id: "coach_hq_data_functions",
+        kind: "read",
         name: "Coach HQ — getMyCoachProfile & getCoachRosterMetrics",
         icon: "📊",
         description: "Both primary CoachDashboard data functions are reachable and return valid response shapes. CoachDashboard loads nothing if either is broken.",
@@ -626,6 +637,7 @@ export const NEW_JOURNEY_GROUPS = [
 
       {
         id: "coach_report_feature",
+        kind: "read",
         name: "Coach Report Feature — Module Import Validation",
         icon: "📄",
         description: "The reporting modules (reportBuilder, reportNarrative, reportExporter, ReportModal) are importable and export the expected functions. A broken import silently disables the Reports button.",
@@ -802,9 +814,11 @@ export const NEW_JOURNEY_GROUPS = [
   // ══════════════════════════════════════════════════════════════════════════
   {
     label: "Recruiting Activity",
+    section: "Controlled transaction checks",
     journeys: [
       {
         id: "recruiting_activity_entity",
+        kind: "transaction",
         name: "RecruitingActivity Entity — Schema & CRUD",
         icon: "📈",
         description: "RecruitingActivity entity is queryable, has required schema fields, and supports create/delete. Drives the entire RecruitingJourney page.",
@@ -933,9 +947,11 @@ export const NEW_JOURNEY_GROUPS = [
   // ══════════════════════════════════════════════════════════════════════════
   {
     label: "Registration Chain",
+    section: "User journey checks",
     journeys: [
       {
         id: "auth_redirect_chain",
+        kind: "read",
         name: "AuthRedirect Chain — Post-Signup Routing",
         icon: "🔀",
         description: "Validates the full post-signup routing chain: Signup → AuthRedirect → Workspace. Each sessionStorage key that drives the chain must be writable and readable in the correct sequence.",
@@ -1059,6 +1075,7 @@ export const NEW_JOURNEY_GROUPS = [
 
       {
         id: "post_registration_state",
+        kind: "transaction",
         name: "Post-Registration First-Run State",
         icon: "🎯",
         description: "After registration, a new user lands in Workspace in demo/free mode (no entitlement), can create an athlete profile, and has a clear path to subscribe.",
@@ -1127,9 +1144,11 @@ export const NEW_JOURNEY_GROUPS = [
   // ══════════════════════════════════════════════════════════════════════════
   {
     label: "Environment Sanity",
+    section: "Critical platform/config",
     journeys: [
       {
         id: "env_sanity",
+        kind: "read",
         name: "Environment Config & SDK Shape",
         icon: "⚙️",
         description: "Validates app-params, base44 SDK shape, browser storage access, and detects obvious prod/test environment confusion.",
@@ -1261,6 +1280,7 @@ export const NEW_JOURNEY_GROUPS = [
 
       {
         id: "useSeasonAccess_hook",
+        kind: "read",
         name: "useSeasonAccess — Module & Cache Integrity",
         icon: "🔑",
         description: "Validates the primary access gate hook is importable, exports the required API, and the cache-clear function is present. A broken hook locks all users out silently.",

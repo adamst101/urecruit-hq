@@ -1,25 +1,12 @@
 // src/pages/AppHealthCheck.jsx
 import { useState, useCallback, useRef } from "react";
 import AdminRoute from "../components/auth/AdminRoute";
-import { base44 } from "../api/base44Client";
-import { appParams } from "../lib/app-params";
+import { prodBase44 as base44, PROD_APP_ID, PROD_SERVER_URL } from "../api/healthCheckClient";
+import { FAIL } from "../api/healthCheckFail";
 import { toast } from "../components/ui/use-toast";
 import { ADMIN_EMAILS } from "../components/auth/adminEmails.jsx";
 import { COACH_JOURNEY_GROUP } from "./AppHealthCheck.coachJourneys.jsx";
 import { NEW_JOURNEY_GROUPS } from "./AppHealthCheck.newJourneys.jsx";
-
-// ── Environment detection ────────────────────────────────────────────────────
-// base44 stores the active app_id in localStorage (base44_app_id).
-// The production app has a different ID from the test/dev app.
-// We surface this so you can tell at a glance which env the health check targets.
-function getEnvLabel() {
-  const appId = appParams.appId || localStorage.getItem("base44_app_id") || "";
-  const serverUrl = appParams.serverUrl || localStorage.getItem("base44_server_url") || "";
-  // Heuristic: base44 test/dev URLs typically contain "dev", "test", or "staging"
-  const lowerUrl = serverUrl.toLowerCase();
-  const isDevUrl = lowerUrl.includes("dev") || lowerUrl.includes("test") || lowerUrl.includes("staging");
-  return { appId, serverUrl, isDevUrl };
-}
 
 // ── Demo localStorage helpers (mirrors demoRegistered.jsx) ──────────────────
 const _demoKey = (profileId) => `rm_demo_registered_${profileId || "default"}`;
@@ -44,9 +31,11 @@ const JOURNEY_GROUPS = [
 
   {
     label: "Infrastructure",
+    section: "Critical platform/config",
     journeys: [
       {
         id: "auth",
+        kind: "read",
         name: "Auth & Session",
         icon: "🔐",
         description: "Current session returns a valid authenticated user with email and ID.",
@@ -55,7 +44,7 @@ const JOURNEY_GROUPS = [
             name: "Fetch current user",
             run: async (ctx) => {
               const me = await base44.auth.me();
-              if (!me?.email) throw new Error("auth.me() returned no user");
+              if (!me?.email) FAIL.runtime("auth.me() returned no user — session is not established or the auth endpoint is down");
               ctx.user = me;
               return `Signed in as ${me.email}`;
             },
@@ -63,7 +52,7 @@ const JOURNEY_GROUPS = [
           {
             name: "User has an ID",
             run: async (ctx) => {
-              if (!ctx.user?.id) throw new Error("User object missing id");
+              if (!ctx.user?.id) FAIL.runtime("User object missing id — auth.me() returned a user without an id field");
               return `id = ${ctx.user.id}`;
             },
           },
@@ -72,15 +61,19 @@ const JOURNEY_GROUPS = [
 
       {
         id: "camp_data",
+        kind: "read",
         name: "Camp Data Integrity",
         icon: "⛺",
-        description: "Active camps are accessible and carry required fields.",
+        description: "Active camps are accessible and carry required fields. Requires ≥5 active camps to guard against false greens on an empty or partially-seeded DB.",
         steps: [
           {
             name: "Fetch active camps",
             run: async (ctx) => {
               const camps = await base44.entities.Camp.filter({ active: true });
-              if (!Array.isArray(camps) || camps.length === 0) throw new Error("No active camps found");
+              if (!Array.isArray(camps) || camps.length === 0)
+                FAIL.data("No active camps found — Camp entity is empty or all camps are inactive");
+              if (camps.length < 5)
+                FAIL.data(`Only ${camps.length} active camp(s) — production should have many more; DB may be partially wiped or ingest has never run`);
               ctx.camps = camps;
               return `${camps.length} active camps`;
             },
@@ -89,7 +82,7 @@ const JOURNEY_GROUPS = [
             name: "Camps have camp_name and start_date",
             run: async (ctx) => {
               const bad = ctx.camps.slice(0, 20).filter(c => !c.camp_name || !c.start_date);
-              if (bad.length > 0) throw new Error(`${bad.length}/20 camps missing camp_name or start_date`);
+              if (bad.length > 0) FAIL.data(`${bad.length}/20 camps missing camp_name or start_date — ingest pipeline may be writing incomplete records`);
               return "First 20 camps have camp_name and start_date";
             },
           },
@@ -97,7 +90,7 @@ const JOURNEY_GROUPS = [
             name: "Camps have source_key",
             run: async (ctx) => {
               const missing = ctx.camps.slice(0, 20).filter(c => !c.source_key).length;
-              if (missing > 5) throw new Error(`${missing}/20 camps missing source_key`);
+              if (missing > 5) FAIL.data(`${missing}/20 camps missing source_key — deduplication and ingest tracking will be unreliable`);
               return `${20 - missing}/20 camps have source_key`;
             },
           },
@@ -106,15 +99,19 @@ const JOURNEY_GROUPS = [
 
       {
         id: "schools",
+        kind: "read",
         name: "School Data",
         icon: "🏫",
-        description: "School records accessible with division data intact.",
+        description: "School records accessible with division data intact. Requires ≥10 schools to guard against false greens on a sparse DB.",
         steps: [
           {
             name: "Fetch schools",
             run: async (ctx) => {
               const schools = await base44.entities.School.filter({});
-              if (!Array.isArray(schools) || schools.length === 0) throw new Error("No schools found");
+              if (!Array.isArray(schools) || schools.length === 0)
+                FAIL.data("No schools found — School entity is empty; school-matching and travel alerts will be non-functional");
+              if (schools.length < 10)
+                FAIL.data(`Only ${schools.length} school record(s) — production should have thousands; DB may be partially wiped`);
               ctx.schools = schools;
               return `${schools.length} schools`;
             },
@@ -124,7 +121,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const withDiv = ctx.schools.filter(s => s.division).length;
               const pct = Math.round((withDiv / ctx.schools.length) * 100);
-              if (pct < 50) throw new Error(`Only ${pct}% have a division — data may be corrupted`);
+              if (pct < 50) FAIL.data(`Only ${pct}% of schools have a division — school data may be corrupted or Athletics Cleanup has not run`);
               return `${withDiv}/${ctx.schools.length} (${pct}%) have division`;
             },
           },
@@ -133,9 +130,10 @@ const JOURNEY_GROUPS = [
 
       {
         id: "entity_write",
+        kind: "transaction",
         name: "Entity Read / Write",
         icon: "✍️",
-        description: "Can create, read back, and delete a record (RoadmapItem used as test target).",
+        description: "Can create, read back, and delete a record (RoadmapItem used as test target). Orphan search: filter RoadmapItem for title='__healthcheck_test__'.",
         steps: [
           {
             name: "Create test record",
@@ -147,7 +145,7 @@ const JOURNEY_GROUPS = [
                 created_date: new Date().toISOString().slice(0, 10),
                 updated_date: new Date().toISOString().slice(0, 10),
               });
-              if (!rec?.id) throw new Error("Create returned no id");
+              if (!rec?.id) FAIL.runtime("RoadmapItem.create returned no id — entity write path is broken");
               ctx.testId = rec.id;
               return `Created id = ${rec.id}`;
             },
@@ -157,7 +155,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const recs = await base44.entities.RoadmapItem.filter({ title: "__healthcheck_test__" });
               const found = Array.isArray(recs) && recs.find(r => r.id === ctx.testId);
-              if (!found) throw new Error(`Record id=${ctx.testId} not found after create`);
+              if (!found) FAIL.runtime(`RoadmapItem id=${ctx.testId} not found after create — entity read-after-write may be broken`);
               return "Record confirmed in store";
             },
           },
@@ -165,19 +163,30 @@ const JOURNEY_GROUPS = [
             name: "Delete test record",
             run: async (ctx) => {
               await base44.entities.RoadmapItem.delete(ctx.testId);
-              return `Deleted id = ${ctx.testId}`;
+              ctx.testId = null;
+              return `Deleted id = ${ctx.testId === null ? "(confirmed null)" : ctx.testId}`;
             },
           },
         ],
+        // Safety net: if the delete step was skipped due to an earlier failure,
+        // cleanup() ensures the test record is removed. Identify orphans by
+        // filtering RoadmapItem for title = "__healthcheck_test__".
+        cleanup: async (ctx) => {
+          if (ctx.testId) {
+            try { await base44.entities.RoadmapItem.delete(ctx.testId); } catch {}
+          }
+        },
       },
     ],
   },
 
   {
     label: "User Registration",
+    section: "Controlled transaction checks",
     journeys: [
       {
         id: "signup_flow",
+        kind: "read",
         name: "Custom Signup Flow",
         icon: "✍️",
         description: "base44.auth.register() and loginViaEmailPassword() are reachable — the custom /Signup page can create and sign in accounts.",
@@ -186,7 +195,7 @@ const JOURNEY_GROUPS = [
             name: "auth.register is callable",
             run: async () => {
               if (typeof base44.auth?.register !== "function") {
-                throw new Error("base44.auth.register is not a function — custom signup page will fail");
+                FAIL.runtime("base44.auth.register is not a function — custom signup page will fail");
               }
               return "base44.auth.register exists ✓";
             },
@@ -195,7 +204,7 @@ const JOURNEY_GROUPS = [
             name: "auth.loginViaEmailPassword is callable",
             run: async () => {
               if (typeof base44.auth?.loginViaEmailPassword !== "function") {
-                throw new Error("base44.auth.loginViaEmailPassword is not a function — post-signup sign-in will fail");
+                FAIL.runtime("base44.auth.loginViaEmailPassword is not a function — post-signup sign-in will fail");
               }
               return "base44.auth.loginViaEmailPassword exists ✓";
             },
@@ -206,10 +215,10 @@ const JOURNEY_GROUPS = [
             name: "register endpoint reachable — duplicate email rejected correctly",
             run: async (ctx) => {
               const me = await base44.auth.me();
-              if (!me?.email) throw new Error("Could not resolve current user email for probe");
+              if (!me?.email) FAIL.runtime("Could not resolve current user email for probe — auth.me() returned no email");
               try {
                 await base44.auth.register({ email: me.email, password: "healthcheck_probe_xzq9!" });
-                throw new Error("register() accepted an already-existing email — duplicate prevention may be broken");
+                FAIL.runtime("register() accepted an already-existing email — duplicate prevention may be broken");
               } catch (err) {
                 const msg = String(err?.message || err).toLowerCase();
                 if (
@@ -222,7 +231,7 @@ const JOURNEY_GROUPS = [
                   return `register endpoint reachable — duplicate email correctly rejected ✓`;
                 }
                 // Unexpected error — endpoint may be down
-                throw new Error(`register endpoint returned unexpected error: ${err?.message || err}`);
+                FAIL.ext(`register endpoint returned unexpected error: ${err?.message || err}`);
               }
             },
           },
@@ -236,7 +245,7 @@ const JOURNEY_GROUPS = [
                   "__healthcheck_probe__@urecruithq.invalid",
                   "healthcheck_probe_xzq9!"
                 );
-                throw new Error("loginViaEmailPassword() accepted invalid credentials — auth is broken");
+                FAIL.runtime("loginViaEmailPassword() accepted invalid credentials — auth is broken");
               } catch (err) {
                 const msg = String(err?.message || err).toLowerCase();
                 if (
@@ -251,7 +260,7 @@ const JOURNEY_GROUPS = [
                 ) {
                   return `loginViaEmailPassword endpoint reachable — invalid credentials correctly rejected ✓`;
                 }
-                throw new Error(`loginViaEmailPassword returned unexpected error: ${err?.message || err}`);
+                FAIL.ext(`loginViaEmailPassword returned unexpected error: ${err?.message || err}`);
               }
             },
           },
@@ -259,7 +268,7 @@ const JOURNEY_GROUPS = [
             name: "auth.verifyOtp is callable",
             run: async () => {
               if (typeof base44.auth?.verifyOtp !== "function") {
-                throw new Error("base44.auth.verifyOtp is not a function — OTP verification step will fail");
+                FAIL.runtime("base44.auth.verifyOtp is not a function — OTP verification step will fail");
               }
               return "base44.auth.verifyOtp exists ✓";
             },
@@ -274,7 +283,7 @@ const JOURNEY_GROUPS = [
                   email: "__healthcheck_probe__@urecruithq.invalid",
                   otpCode: "000000",
                 });
-                throw new Error("verifyOtp() accepted a clearly invalid code — OTP validation may be broken");
+                FAIL.runtime("verifyOtp() accepted a clearly invalid code — OTP validation may be broken");
               } catch (err) {
                 const msg = String(err?.message || err).toLowerCase();
                 if (
@@ -289,7 +298,7 @@ const JOURNEY_GROUPS = [
                 ) {
                   return `verifyOtp endpoint reachable — invalid code correctly rejected ✓`;
                 }
-                throw new Error(`verifyOtp returned unexpected error: ${err?.message || err}`);
+                FAIL.ext(`verifyOtp returned unexpected error: ${err?.message || err}`);
               }
             },
           },
@@ -297,7 +306,7 @@ const JOURNEY_GROUPS = [
             name: "auth.resendOtp is callable",
             run: async () => {
               if (typeof base44.auth?.resendOtp !== "function") {
-                throw new Error("base44.auth.resendOtp is not a function — resend code button will fail");
+                FAIL.runtime("base44.auth.resendOtp is not a function — resend code button will fail");
               }
               return "base44.auth.resendOtp exists ✓";
             },
@@ -307,15 +316,16 @@ const JOURNEY_GROUPS = [
 
       {
         id: "registration_flow",
+        kind: "transaction",
         name: "New User Registration State",
         icon: "📝",
-        description: "Auth is reachable, AthleteProfile can be created and deleted, default state is demo (no entitlement).",
+        description: "Auth is reachable, AthleteProfile can be created and deleted, default state is demo (no entitlement). Orphan search: filter AthleteProfile for grad_year=2099 and first_name='__test__'.",
         steps: [
           {
             name: "Auth endpoint reachable",
             run: async (ctx) => {
               const me = await base44.auth.me();
-              if (!me) throw new Error("auth.me() returned null");
+              if (!me) FAIL.runtime("auth.me() returned null — session is not established");
               ctx.myId = me.id;
               return `Auth ok — account id ${me.id}`;
             },
@@ -329,9 +339,10 @@ const JOURNEY_GROUPS = [
                 account_id: ctx.myId, active: true,
                 sport_id: "test", grad_year: 2099,
               });
-              if (!profile?.id) throw new Error("AthleteProfile create returned no id");
+              if (!profile?.id) FAIL.runtime("AthleteProfile create returned no id — new user registration step will fail");
               ctx.testProfileId = profile.id;
               await base44.entities.AthleteProfile.delete(profile.id);
+              ctx.testProfileId = null;
               return `AthleteProfile created (id=${profile.id}) and cleaned up`;
             },
           },
@@ -340,20 +351,29 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               // Verify the entitlement system is queryable (not that the admin has none)
               const ents = await base44.entities.Entitlement.filter({ status: "active" });
-              if (!Array.isArray(ents)) throw new Error("Entitlement.filter() did not return an array");
+              if (!Array.isArray(ents)) FAIL.runtime("Entitlement.filter() did not return an array — entitlement system may be broken");
               return `Entitlement system reachable — ${ents.length} active subscriptions in system`;
             },
           },
         ],
+        // Safety net: if the inline delete in step 2 fails, cleanup() removes the orphan.
+        // Identify orphans by filtering AthleteProfile for grad_year=2099 and first_name='__test__'.
+        cleanup: async (ctx) => {
+          if (ctx.testProfileId) {
+            try { await base44.entities.AthleteProfile.delete(ctx.testProfileId); } catch {}
+          }
+        },
       },
     ],
   },
 
   {
     label: "Demo User Flows",
+    section: "User journey checks",
     journeys: [
       {
         id: "demo_discovery",
+        kind: "read",
         name: "Demo — Camp Discovery",
         icon: "🔍",
         description: "DemoCamp entity is accessible and contains fields needed to browse camps.",
@@ -362,7 +382,8 @@ const JOURNEY_GROUPS = [
             name: "Fetch demo camps",
             run: async (ctx) => {
               const camps = await base44.entities.DemoCamp.filter({});
-              if (!Array.isArray(camps) || camps.length === 0) throw new Error("No demo camps found — GenerateDemoCamps may need to be run");
+              if (!Array.isArray(camps) || camps.length === 0)
+                FAIL.data("No demo camps found — run /GenerateDemoCamps (admin page) to seed the DemoCamp entity");
               ctx.demoCamps = camps;
               ctx.demoTestCamp = camps[0];
               return `${camps.length} demo camps available`;
@@ -372,7 +393,7 @@ const JOURNEY_GROUPS = [
             name: "Demo camps have browse fields (camp_name, start_date)",
             run: async (ctx) => {
               const bad = ctx.demoCamps.slice(0, 10).filter(c => !c.camp_name || !c.start_date);
-              if (bad.length > 0) throw new Error(`${bad.length}/10 demo camps missing camp_name or start_date`);
+              if (bad.length > 0) FAIL.data(`${bad.length}/10 demo camps missing camp_name or start_date — re-run GenerateDemoCamps`);
               return "First 10 demo camps have camp_name and start_date";
             },
           },
@@ -380,7 +401,7 @@ const JOURNEY_GROUPS = [
             name: "Demo camps have Calendar display fields (start_date for date placement)",
             run: async (ctx) => {
               const bad = ctx.demoCamps.slice(0, 10).filter(c => !c.start_date);
-              if (bad.length > 0) throw new Error(`${bad.length}/10 demo camps missing start_date — Calendar cannot place them`);
+              if (bad.length > 0) FAIL.data(`${bad.length}/10 demo camps missing start_date — Calendar cannot place them; re-run GenerateDemoCamps`);
               const sample = ctx.demoCamps[0];
               return `Sample: "${sample.camp_name}" on ${sample.start_date}`;
             },
@@ -390,7 +411,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const sample = ctx.demoCamps[0];
               const missing = ["camp_name", "start_date"].filter(f => !sample[f]);
-              if (missing.length > 0) throw new Error(`Sample demo camp missing: ${missing.join(", ")}`);
+              if (missing.length > 0) FAIL.data(`Sample demo camp missing: ${missing.join(", ")} — re-run GenerateDemoCamps`);
               const loc = [sample.city, sample.state].filter(Boolean).join(", ");
               return `Sample has camp_name, start_date${loc ? `, location: ${loc}` : " (no location)"}`;
             },
@@ -400,6 +421,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "demo_favorite",
+        kind: "read",
         name: "Demo — Favorite a Camp",
         icon: "⭐",
         description: "Demo favorite writes to localStorage, is readable in Discover/Calendar/My Agenda, and can be cleared.",
@@ -408,7 +430,7 @@ const JOURNEY_GROUPS = [
             name: "Fetch a demo camp to use as test target",
             run: async (ctx) => {
               const camps = await base44.entities.DemoCamp.filter({});
-              if (!Array.isArray(camps) || camps.length === 0) throw new Error("No demo camps — cannot test favorite");
+              if (!Array.isArray(camps) || camps.length === 0) FAIL.data("No demo camps — cannot test favorite; run /GenerateDemoCamps");
               ctx.demoProfileId = "healthcheck_test_profile";
               ctx.demoCampId = camps[0].id || camps[0].camp_id || "test_camp";
               ctx.demoCampName = camps[0].camp_name || "unknown";
@@ -421,7 +443,7 @@ const JOURNEY_GROUPS = [
               // Clear any leftover state
               _setDemoReg(ctx.demoProfileId, ctx.demoCampId, false);
               const before = _isDemoReg(ctx.demoProfileId, ctx.demoCampId);
-              if (before) throw new Error("Camp already in demo storage before test — localStorage may be polluted");
+              if (before) FAIL.runtime("Camp already in demo storage before test — localStorage may be polluted from a previous failed run");
               return "localStorage clear for this camp";
             },
           },
@@ -436,7 +458,7 @@ const JOURNEY_GROUPS = [
             name: "Verify favorite visible (Discover / Calendar / My Agenda read)",
             run: async (ctx) => {
               const visible = _isDemoReg(ctx.demoProfileId, ctx.demoCampId);
-              if (!visible) throw new Error("isDemoRegistered returned false after write — localStorage read failed");
+              if (!visible) FAIL.runtime("isDemoRegistered returned false after write — localStorage read/write cycle failed");
               return "isDemoRegistered() → true — camp appears as favorited in Discover, Calendar, My Agenda";
             },
           },
@@ -445,7 +467,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               _setDemoReg(ctx.demoProfileId, ctx.demoCampId, false);
               const after = _isDemoReg(ctx.demoProfileId, ctx.demoCampId);
-              if (after) throw new Error("Camp still shows as favorited after clearing");
+              if (after) FAIL.runtime("Camp still shows as favorited after clearing — localStorage removeItem not working");
               return "localStorage cleared — camp no longer favorited";
             },
           },
@@ -454,6 +476,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "demo_register",
+        kind: "read",
         name: "Demo — Mark as Registered",
         icon: "✅",
         description: "Demo registration writes to localStorage, is readable across all views, and can be cleared.",
@@ -462,7 +485,7 @@ const JOURNEY_GROUPS = [
             name: "Fetch a demo camp",
             run: async (ctx) => {
               const camps = await base44.entities.DemoCamp.filter({});
-              if (!Array.isArray(camps) || camps.length === 0) throw new Error("No demo camps");
+              if (!Array.isArray(camps) || camps.length === 0) FAIL.data("No demo camps — run /GenerateDemoCamps to seed the DemoCamp entity");
               ctx.demoProfileId = "healthcheck_test_profile";
               // Use second camp if available (different from favorite test)
               const camp = camps[1] || camps[0];
@@ -475,7 +498,7 @@ const JOURNEY_GROUPS = [
             name: "Pre-condition: not registered",
             run: async (ctx) => {
               _setDemoReg(ctx.demoProfileId, ctx.demoCampId, false);
-              if (_isDemoReg(ctx.demoProfileId, ctx.demoCampId)) throw new Error("Camp already in storage before test");
+              if (_isDemoReg(ctx.demoProfileId, ctx.demoCampId)) FAIL.runtime("Camp already in demo storage before test — localStorage may be polluted from a previous failed run");
               return "localStorage clear";
             },
           },
@@ -490,7 +513,7 @@ const JOURNEY_GROUPS = [
             name: "Verify registration visible in Discover / Calendar / My Agenda",
             run: async (ctx) => {
               const visible = _isDemoReg(ctx.demoProfileId, ctx.demoCampId);
-              if (!visible) throw new Error("isDemoRegistered returned false after write");
+              if (!visible) FAIL.runtime("isDemoRegistered returned false after write — localStorage read/write cycle failed");
               return "isDemoRegistered() → true — shows as registered in all views";
             },
           },
@@ -499,9 +522,9 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const camps = await base44.entities.DemoCamp.filter({});
               const camp = (camps || []).find(c => String(c.id || c.camp_id) === String(ctx.demoCampId)) || camps?.[0];
-              if (!camp) throw new Error("Could not refetch demo camp for field check");
+              if (!camp) FAIL.data("Could not refetch demo camp for field check — DemoCamp entity may have been cleared");
               const missing = ["camp_name", "start_date"].filter(f => !camp[f]);
-              if (missing.length) throw new Error(`My Agenda needs: ${missing.join(", ")} — missing from demo camp`);
+              if (missing.length) FAIL.data(`My Agenda needs: ${missing.join(", ")} — missing from demo camp`);
               return `camp_name ✓  start_date ✓  city: ${camp.city || "—"}  state: ${camp.state || "—"}`;
             },
           },
@@ -509,7 +532,7 @@ const JOURNEY_GROUPS = [
             name: "Clear registration (cleanup)",
             run: async (ctx) => {
               _setDemoReg(ctx.demoProfileId, ctx.demoCampId, false);
-              if (_isDemoReg(ctx.demoProfileId, ctx.demoCampId)) throw new Error("Still registered after clearing");
+              if (_isDemoReg(ctx.demoProfileId, ctx.demoCampId)) FAIL.runtime("Camp still shows as registered after clearing — localStorage removeItem not working");
               return "localStorage cleared";
             },
           },
@@ -520,21 +543,23 @@ const JOURNEY_GROUPS = [
 
   {
     label: "Subscriber Flows",
+    section: "User journey checks",
     journeys: [
       {
         id: "subscriber_entitlement",
+        kind: "read",
         name: "Subscriber — Entitlement Check",
         icon: "🎫",
-        description: "Active entitlements exist and are linked to accounts.",
+        description: "Active entitlements exist and are linked to accounts. NOTE: zero entitlements is treated as a warn (pre-launch acceptable), not a fail.",
         steps: [
           {
             name: "Fetch active entitlements",
             run: async (ctx) => {
               const ents = await base44.entities.Entitlement.filter({ status: "active" });
-              if (!Array.isArray(ents)) throw new Error("Entitlement.filter() returned non-array");
+              if (!Array.isArray(ents)) FAIL.runtime("Entitlement.filter() returned non-array — entity may be broken or missing");
               if (ents.length === 0) {
                 ctx.entitlements = [];
-                return "No active entitlements — 0 subscribers (expected post-purge or pre-launch)";
+                return "⚠ No active entitlements — 0 subscribers (acceptable pre-launch; investigate if post-launch)";
               }
               ctx.entitlements = ents;
               return `${ents.length} active entitlement${ents.length !== 1 ? "s" : ""}`;
@@ -543,16 +568,18 @@ const JOURNEY_GROUPS = [
           {
             name: "Entitlements are linked to accounts",
             run: async (ctx) => {
+              if (ctx.entitlements.length === 0) return "Skipped — no entitlements to check";
               const unlinked = ctx.entitlements.filter(e => !e.account_id).length;
-              if (unlinked > 0) throw new Error(`${unlinked} entitlements missing account_id`);
+              if (unlinked > 0) FAIL.data(`${unlinked} entitlements missing account_id — subscribers cannot be resolved to accounts`);
               return `All ${ctx.entitlements.length} entitlements have account_id`;
             },
           },
           {
             name: "Entitlements have status field",
             run: async (ctx) => {
+              if (ctx.entitlements.length === 0) return "Skipped — no entitlements to check";
               const bad = ctx.entitlements.filter(e => !e.status).length;
-              if (bad > 0) throw new Error(`${bad} entitlements missing status field`);
+              if (bad > 0) FAIL.data(`${bad} entitlements missing status field — access gate cannot evaluate them`);
               return "All entitlements have status";
             },
           },
@@ -561,15 +588,16 @@ const JOURNEY_GROUPS = [
 
       {
         id: "subscriber_intent_lifecycle",
+        kind: "transaction",
         name: "Subscriber — Favorite → Registered Lifecycle",
         icon: "🔄",
-        description: "Create a CampIntent (favorite), verify it's visible in Discover/Calendar/My Agenda queries, update to registered, verify, then clean up.",
+        description: "Create a CampIntent (favorite), verify it's visible in Discover/Calendar/My Agenda queries, update to registered, verify, then clean up. Orphan search: filter AthleteProfile for first_name='__hc_intent__' (grad_year=2099), then filter CampIntent for that athlete_id.",
         steps: [
           {
             name: "Create test athlete (owned by admin account)",
             run: async (ctx) => {
               const me = await base44.auth.me();
-              if (!me?.id) throw new Error("auth.me() returned no id");
+              if (!me?.id) FAIL.runtime("auth.me() returned no id — cannot create test athlete");
               ctx.myId = me.id;
               const profile = await base44.entities.AthleteProfile.create({
                 account_id: ctx.myId,
@@ -577,7 +605,7 @@ const JOURNEY_GROUPS = [
                 athlete_name: "__hc_intent__ __test__",
                 active: true, sport_id: "test", grad_year: 2099,
               });
-              if (!profile?.id) throw new Error("AthleteProfile.create returned no id");
+              if (!profile?.id) FAIL.runtime("AthleteProfile.create returned no id — subscriber profile creation is broken");
               ctx.athlete = profile;
               return `Test athlete created (id=${profile.id})`;
             },
@@ -586,7 +614,7 @@ const JOURNEY_GROUPS = [
             name: "Find a test camp",
             run: async (ctx) => {
               const camps = await base44.entities.Camp.filter({ active: true });
-              if (!Array.isArray(camps) || camps.length === 0) throw new Error("No active camps");
+              if (!Array.isArray(camps) || camps.length === 0) FAIL.data("No active camps — Camp entity empty; subscriber intent lifecycle cannot proceed");
               ctx.testCamp = camps[0];
               return `Using camp: "${ctx.testCamp.camp_name}" on ${ctx.testCamp.start_date}`;
             },
@@ -600,7 +628,7 @@ const JOURNEY_GROUPS = [
                 account_id: ctx.myId,
                 status: "favorite",
               });
-              if (!intent?.id) throw new Error("CampIntent create returned no id");
+              if (!intent?.id) FAIL.runtime("CampIntent create returned no id — write permission may be missing");
               ctx.intentId = intent.id;
               return `CampIntent created (id=${intent.id}, status=favorite)`;
             },
@@ -609,18 +637,18 @@ const JOURNEY_GROUPS = [
             name: "Verify intent visible via athlete_id filter — Discover / Calendar / My Agenda query",
             run: async (ctx) => {
               const intents = await base44.entities.CampIntent.filter({ athlete_id: ctx.athlete.id });
-              if (!Array.isArray(intents)) throw new Error("CampIntent.filter() returned non-array");
+              if (!Array.isArray(intents)) FAIL.runtime("CampIntent.filter() returned non-array — entity query is broken");
               const found = intents.find(i => i.id === ctx.intentId);
-              if (!found) throw new Error(`Intent id=${ctx.intentId} not found via athlete_id filter`);
-              if (found.status !== "favorite") throw new Error(`Expected status=favorite, got ${found.status}`);
+              if (!found) FAIL.runtime(`Intent id=${ctx.intentId} not found via athlete_id filter — read-after-write may be broken`);
+              if (found.status !== "favorite") FAIL.data(`Expected status=favorite, got ${found.status} — CampIntent status not persisting correctly`);
               return `Intent visible via athlete_id filter — status: ${found.status} ✓`;
             },
           },
           {
             name: "Verify linked camp has Calendar display fields",
             run: async (ctx) => {
-              if (!ctx.testCamp.start_date) throw new Error("Camp missing start_date — Calendar cannot place it on grid");
-              if (!ctx.testCamp.camp_name) throw new Error("Camp missing camp_name — Calendar card would be blank");
+              if (!ctx.testCamp.start_date) FAIL.data("Camp missing start_date — Calendar cannot place it on grid");
+              if (!ctx.testCamp.camp_name) FAIL.data("Camp missing camp_name — Calendar card would be blank");
               return `start_date: ${ctx.testCamp.start_date}  camp_name: "${ctx.testCamp.camp_name}"`;
             },
           },
@@ -629,7 +657,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const required = ["camp_name", "start_date"];
               const missing = required.filter(f => !ctx.testCamp[f]);
-              if (missing.length) throw new Error(`My Agenda needs: ${missing.join(", ")}`);
+              if (missing.length) FAIL.data(`My Agenda needs: ${missing.join(", ")} — fields missing from camp record`);
               const loc = [ctx.testCamp.city, ctx.testCamp.state].filter(Boolean).join(", ");
               return `Required fields present — location: ${loc || "(none)"}  price: ${ctx.testCamp.price ?? "—"}`;
             },
@@ -638,7 +666,7 @@ const JOURNEY_GROUPS = [
             name: "Update intent to registered — mirrors Discover / My Agenda register action",
             run: async (ctx) => {
               const updated = await base44.entities.CampIntent.update(ctx.intentId, { status: "registered" });
-              if (!updated) throw new Error("Update returned null");
+              if (!updated) FAIL.runtime("CampIntent.update() returned null — update path is broken");
               return `CampIntent updated to status=registered`;
             },
           },
@@ -647,8 +675,8 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const intents = await base44.entities.CampIntent.filter({ athlete_id: ctx.athlete.id });
               const found = (intents || []).find(i => i.id === ctx.intentId);
-              if (!found) throw new Error("Intent not found after status update");
-              if (found.status !== "registered") throw new Error(`Expected registered, got ${found.status}`);
+              if (!found) FAIL.runtime("Intent not found after status update — read-after-write may be broken");
+              if (found.status !== "registered") FAIL.data(`Expected registered, got ${found.status} — CampIntent update not persisting`);
               return `Intent shows status=registered in Calendar / My Agenda query ✓`;
             },
           },
@@ -673,9 +701,10 @@ const JOURNEY_GROUPS = [
 
       {
         id: "campintent_permissions",
+        kind: "transaction",
         name: "CampIntent Entity Permissions",
         icon: "🔒",
-        description: "Verifies CampIntent is readable and writable by all authenticated users — not just admins. Catches broken entity permission rules that admin-bypass would otherwise mask. After any base44 entity restriction change, this journey must also be verified manually with a subscriber (non-admin) account.",
+        description: "Verifies CampIntent is readable and writable by all authenticated users — not just admins. Catches broken entity permission rules that admin-bypass would otherwise mask. After any base44 entity restriction change, this journey must also be verified manually with a subscriber (non-admin) account. Orphan search: filter AthleteProfile for first_name='__hc_perm_probe__' (grad_year=2099), then filter CampIntent for that athlete_id.",
         steps: [
           {
             name: "CampIntent.filter({}) readable — no permission error",
@@ -684,9 +713,9 @@ const JOURNEY_GROUPS = [
               try {
                 rows = await base44.entities.CampIntent.filter({});
               } catch (err) {
-                throw new Error(`CampIntent read blocked: ${err?.message || err} — check entity Read permission in base44 admin`);
+                FAIL.config(`CampIntent read blocked: ${err?.message || err} — check entity Read permission in base44 admin`);
               }
-              if (!Array.isArray(rows)) throw new Error("CampIntent.filter() returned non-array — entity may be misconfigured");
+              if (!Array.isArray(rows)) FAIL.runtime("CampIntent.filter() returned non-array — entity may be misconfigured");
               ctx.existingCount = rows.length;
               return `Read OK — ${rows.length} existing records visible`;
             },
@@ -695,7 +724,7 @@ const JOURNEY_GROUPS = [
             name: "Resolve admin account_id for write probe",
             run: async (ctx) => {
               const me = await base44.auth.me();
-              if (!me?.id) throw new Error("auth.me() returned no id");
+              if (!me?.id) FAIL.runtime("auth.me() returned no id — session may not be established");
               ctx.probeAccountId = me.id;
               return `account_id = ${me.id}`;
             },
@@ -704,7 +733,7 @@ const JOURNEY_GROUPS = [
             name: "Find a camp for probe",
             run: async (ctx) => {
               const camps = await base44.entities.Camp.filter({ active: true });
-              if (!Array.isArray(camps) || camps.length === 0) throw new Error("No active camps to use for probe");
+              if (!Array.isArray(camps) || camps.length === 0) FAIL.data("No active camps to use for probe — Camp entity empty");
               ctx.probeCamp = camps[0];
               return `Using camp: "${camps[0].camp_name}"`;
             },
@@ -718,7 +747,7 @@ const JOURNEY_GROUPS = [
                 athlete_name: "__hc_perm_probe__ __test__",
                 active: true, sport_id: "test", grad_year: 2099,
               });
-              if (!profile?.id) throw new Error("AthleteProfile.create returned no id");
+              if (!profile?.id) FAIL.runtime("AthleteProfile.create returned no id — entity write path broken");
               ctx.probeAthleteId = profile.id;
               return `Probe athlete id = ${profile.id}`;
             },
@@ -735,9 +764,9 @@ const JOURNEY_GROUPS = [
                   status: "favorite",
                 });
               } catch (err) {
-                throw new Error(`CampIntent create blocked: ${err?.message || err} — check entity Create permission in base44 admin`);
+                FAIL.config(`CampIntent create blocked: ${err?.message || err} — check entity Create permission in base44 admin`);
               }
-              if (!intent?.id) throw new Error("Create returned no id");
+              if (!intent?.id) FAIL.runtime("CampIntent.create() returned no id — entity write path broken");
               ctx.probeIntentId = intent.id;
               return `Created id = ${intent.id}`;
             },
@@ -749,10 +778,10 @@ const JOURNEY_GROUPS = [
               try {
                 rows = await base44.entities.CampIntent.filter({ athlete_id: ctx.probeAthleteId });
               } catch (err) {
-                throw new Error(`CampIntent read by athlete_id blocked: ${err?.message || err} — check entity Read permission in base44 admin`);
+                FAIL.config(`CampIntent read by athlete_id blocked: ${err?.message || err} — check entity Read permission in base44 admin`);
               }
               const found = (rows || []).find(r => r.id === ctx.probeIntentId);
-              if (!found) throw new Error("Probe record not found via athlete_id filter — Read permission may be filtering it out");
+              if (!found) FAIL.config("Probe record not found via athlete_id filter — Read permission may be filtering it out");
               return `Record visible via athlete_id filter ✓`;
             },
           },
@@ -763,9 +792,9 @@ const JOURNEY_GROUPS = [
               try {
                 updated = await base44.entities.CampIntent.update(ctx.probeIntentId, { status: "registered" });
               } catch (err) {
-                throw new Error(`CampIntent update blocked: ${err?.message || err} — check entity Update permission in base44 admin`);
+                FAIL.config(`CampIntent update blocked: ${err?.message || err} — check entity Update permission in base44 admin`);
               }
-              if (!updated) throw new Error("Update returned null");
+              if (!updated) FAIL.runtime("CampIntent.update() returned null — update path is broken");
               return `Update OK — status set to registered`;
             },
           },
@@ -792,15 +821,20 @@ const JOURNEY_GROUPS = [
 
       {
         id: "subscriber_data_integrity",
+        kind: "read",
         name: "Subscriber — Data Integrity Check",
         icon: "🔗",
-        description: "Athlete profiles, intents, and camps are correctly linked with no orphaned records.",
+        description: "Athlete profiles, intents, and camps are correctly linked with no orphaned records. NOTE: zero athletes returns warn (pre-launch), not a fail.",
         steps: [
           {
             name: "Fetch active athletes",
             run: async (ctx) => {
               const athletes = await base44.entities.AthleteProfile.filter({ active: true });
-              if (!Array.isArray(athletes)) throw new Error("AthleteProfile.filter() returned non-array");
+              if (!Array.isArray(athletes)) FAIL.runtime("AthleteProfile.filter() returned non-array — entity query is broken");
+              if (athletes.length === 0) {
+                ctx.athletes = [];
+                return "⚠ No active athlete profiles — zero subscribers registered (acceptable pre-launch; investigate if post-launch)";
+              }
               ctx.athletes = athletes;
               return `${athletes.length} active athletes`;
             },
@@ -808,8 +842,9 @@ const JOURNEY_GROUPS = [
           {
             name: "Athletes have account_id links",
             run: async (ctx) => {
+              if (ctx.athletes.length === 0) return "Skipped — no athletes to check";
               const unlinked = ctx.athletes.filter(a => !a.account_id).length;
-              if (unlinked > 0) throw new Error(`${unlinked} athletes missing account_id`);
+              if (unlinked > 0) FAIL.data(`${unlinked} athletes missing account_id — subscriber account linking is broken`);
               return `All ${ctx.athletes.length} athletes linked to accounts`;
             },
           },
@@ -817,12 +852,12 @@ const JOURNEY_GROUPS = [
             name: "Fetch registered intents and verify camp links",
             run: async (ctx) => {
               const intents = await base44.entities.CampIntent.filter({});
-              if (!Array.isArray(intents)) throw new Error("CampIntent.filter() returned non-array");
+              if (!Array.isArray(intents)) FAIL.runtime("CampIntent.filter() returned non-array — entity query is broken");
               const active = intents.filter(i => ["registered", "favorite", "completed"].includes(i.status));
               ctx.activeIntents = active;
               // Spot-check first 10 intents have camp_id
               const missing = active.slice(0, 10).filter(i => !i.camp_id).length;
-              if (missing > 0) throw new Error(`${missing}/10 active intents missing camp_id`);
+              if (missing > 0) FAIL.data(`${missing}/10 active intents missing camp_id — calendar/agenda queries will produce incomplete results`);
               const reg = active.filter(i => i.status === "registered").length;
               const fav = active.filter(i => i.status === "favorite").length;
               return `${active.length} active intents — ${reg} registered, ${fav} favorited`;
@@ -837,7 +872,7 @@ const JOURNEY_GROUPS = [
                 return "No athletes and no intents — clean state";
               }
               const missing = ctx.activeIntents.slice(0, 20).filter(i => !i.athlete_id).length;
-              if (missing > 0) throw new Error(`${missing}/20 intents missing athlete_id — useAllAthletesCamps filter would skip them`);
+              if (missing > 0) FAIL.data(`${missing}/20 intents missing athlete_id — useAllAthletesCamps filter would skip them`);
               return `${Math.min(20, ctx.activeIntents.length)}/${Math.min(20, ctx.activeIntents.length)} intents have athlete_id`;
             },
           },
@@ -846,6 +881,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "cross_athlete_warning_isolation",
+        kind: "read",
         name: "Cross-Athlete Warning Isolation",
         icon: "🔀",
         description: "Travel notices for camps belonging only to another athlete are excluded from the current athlete's WarningBanner. Cross-athlete same-day conflicts still surface correctly.",
@@ -854,7 +890,7 @@ const JOURNEY_GROUPS = [
             name: "Import detectConflicts",
             run: async (ctx) => {
               const mod = await import("../components/hooks/useConflictDetection.jsx");
-              if (typeof mod.detectConflicts !== "function") throw new Error("detectConflicts not exported");
+              if (typeof mod.detectConflicts !== "function") FAIL.runtime("detectConflicts not exported from useConflictDetection.jsx");
               ctx.detectConflicts = mod.detectConflicts;
               return "detectConflicts imported ✓";
             },
@@ -877,7 +913,7 @@ const JOURNEY_GROUPS = [
               const otherOnlyWarnings = allWarnings.filter(w => (w.campIds || []).every(id => !currentCampIds.has(id)));
               if (otherOnlyWarnings.length === 0) return "No other-only warnings generated in this scenario — distance thresholds not met (ok)";
               const leaked = currentWarnings.filter(w => (w.campIds || []).every(id => !currentCampIds.has(id)));
-              if (leaked.length > 0) throw new Error(`${leaked.length} other-athlete-only warning(s) leaked into currentAthleteWarnings — Calendar WarningBanner will show wrong athlete's notices`);
+              if (leaked.length > 0) FAIL.runtime(`${leaked.length} other-athlete-only warning(s) leaked into currentAthleteWarnings — Calendar WarningBanner will show wrong athlete's notices`);
               return `${otherOnlyWarnings.length} other-athlete notice(s) correctly excluded from currentAthleteWarnings ✓`;
             },
           },
@@ -891,7 +927,7 @@ const JOURNEY_GROUPS = [
               const currentCampIds = new Set(["curr-a"]);
               const currentWarnings = allWarnings.filter(w => (w.campIds || []).some(id => currentCampIds.has(id)));
               const sameDayWarn = currentWarnings.find(w => w.type === "same_day");
-              if (!sameDayWarn) throw new Error("Same-day conflict absent from currentAthleteWarnings — cross-athlete conflict detection broken");
+              if (!sameDayWarn) FAIL.runtime("Same-day conflict absent from currentAthleteWarnings — cross-athlete conflict detection broken");
               return "Same-day conflict correctly survives the currentAthleteWarnings filter ✓";
             },
           },
@@ -915,15 +951,16 @@ const JOURNEY_GROUPS = [
 
       {
         id: "discover_to_calendar_flow",
+        kind: "transaction",
         name: "Discover → Calendar / My Camps Flow",
         icon: "🗓️",
-        description: "End-to-end: creates a favorite intent as Discover would, then walks every step the Calendar and My Camps hooks use to surface it. Fails at the exact step that breaks the pipeline.",
+        description: "End-to-end: creates a favorite intent as Discover would, then walks every step the Calendar and My Camps hooks use to surface it. Fails at the exact step that breaks the pipeline. Orphan search: filter AthleteProfile for first_name='__hc_cal__' (grad_year=2099), then filter CampIntent for that athlete_id. localStorage key 'intentUpdatedAt' is also cleaned up.",
         steps: [
           {
             name: "Create test athlete profile (mirrors subscriber account setup)",
             run: async (ctx) => {
               const me = await base44.auth.me();
-              if (!me?.id) throw new Error("auth.me() returned no id");
+              if (!me?.id) FAIL.runtime("auth.me() returned no id — session not established");
               ctx.myId = me.id;
               const profile = await base44.entities.AthleteProfile.create({
                 account_id: ctx.myId,
@@ -931,7 +968,7 @@ const JOURNEY_GROUPS = [
                 athlete_name: "__hc_cal__ __test__",
                 active: true, sport_id: "test", grad_year: 2099,
               });
-              if (!profile?.id) throw new Error("AthleteProfile.create returned no id — subscriber accounts cannot create athlete profiles");
+              if (!profile?.id) FAIL.runtime("AthleteProfile.create returned no id — subscriber accounts cannot create athlete profiles");
               ctx.athlete = profile;
               ctx.athleteId = String(profile.id);
               ctx.createdAthlete = true;
@@ -942,10 +979,10 @@ const JOURNEY_GROUPS = [
             name: "Find a camp to use as test target",
             run: async (ctx) => {
               const camps = await base44.entities.Camp.filter({ active: true }).catch(() => []);
-              if (!Array.isArray(camps) || camps.length === 0) throw new Error("No active camps found — Camp entity may be empty or unreadable");
+              if (!Array.isArray(camps) || camps.length === 0) FAIL.data("No active camps found — Camp entity may be empty or unreadable");
               ctx.testCamp = camps[0];
               ctx.campId = String(ctx.testCamp.id || ctx.testCamp._id || "");
-              if (!ctx.campId) throw new Error("Camp record has no id");
+              if (!ctx.campId) FAIL.data("Camp record has no id — entity data may be malformed");
               return `Using camp: "${ctx.testCamp.camp_name}" (id=${ctx.campId})`;
             },
           },
@@ -958,7 +995,7 @@ const JOURNEY_GROUPS = [
                 account_id: ctx.myId,
                 status: "favorite",
               });
-              if (!intent?.id) throw new Error("CampIntent.create returned no id — write permission may be missing");
+              if (!intent?.id) FAIL.runtime("CampIntent.create returned no id — write permission may be missing");
               ctx.intentId = intent.id;
               return `CampIntent created (id=${ctx.intentId}, athlete_id=${ctx.athleteId}, status=favorite)`;
             },
@@ -970,10 +1007,10 @@ const JOURNEY_GROUPS = [
               try {
                 localStorage.setItem("intentUpdatedAt", String(ctx.intentUpdatedAt));
               } catch {
-                throw new Error("localStorage.setItem failed — cache invalidation signal cannot be written; Calendar/MyCamps won't know to refetch");
+                FAIL.runtime("localStorage.setItem failed — cache invalidation signal cannot be written; Calendar/MyCamps won't know to refetch");
               }
               const readBack = localStorage.getItem("intentUpdatedAt");
-              if (readBack !== String(ctx.intentUpdatedAt)) throw new Error("localStorage round-trip failed — value not persisted");
+              if (readBack !== String(ctx.intentUpdatedAt)) FAIL.runtime("localStorage round-trip failed — intentUpdatedAt value not persisted");
               return `intentUpdatedAt=${ctx.intentUpdatedAt} written and verified ✓`;
             },
           },
@@ -981,11 +1018,11 @@ const JOURNEY_GROUPS = [
             name: "Query intents by athlete_id — step 1 of useCampSummariesClient",
             run: async (ctx) => {
               const intents = await base44.entities.CampIntent.filter({ athlete_id: ctx.athleteId }).catch((e) => {
-                throw new Error(`CampIntent.filter({ athlete_id }) threw: ${e?.message || e}`);
+                FAIL.runtime(`CampIntent.filter({ athlete_id }) threw: ${e?.message || e}`);
               });
-              if (!Array.isArray(intents)) throw new Error("CampIntent.filter() returned non-array — query broken");
+              if (!Array.isArray(intents)) FAIL.runtime("CampIntent.filter() returned non-array — query broken");
               const found = intents.find(i => i.id === ctx.intentId);
-              if (!found) throw new Error(`Intent id=${ctx.intentId} not found by athlete_id filter — useCampSummariesClient would return [] and Calendar/MyCamps would be empty`);
+              if (!found) FAIL.runtime(`Intent id=${ctx.intentId} not found by athlete_id filter — useCampSummariesClient would return [] and Calendar/MyCamps would be empty`);
               ctx.foundIntent = found;
               return `Found ${intents.length} intent(s) for athlete — target intent present ✓`;
             },
@@ -995,7 +1032,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const st = String(ctx.foundIntent?.status || "").toLowerCase();
               const ACTIVE = new Set(["favorite", "registered", "completed"]);
-              if (!ACTIVE.has(st)) throw new Error(`Intent status="${st}" is not in {favorite, registered, completed} — would be excluded from interestedKeys and useCampSummariesClient returns []`);
+              if (!ACTIVE.has(st)) FAIL.data(`Intent status="${st}" is not in {favorite, registered, completed} — would be excluded from interestedKeys and useCampSummariesClient returns []`);
               return `status="${st}" passes active filter ✓`;
             },
           },
@@ -1003,8 +1040,8 @@ const JOURNEY_GROUPS = [
             name: "Verify intent has camp_id — needed to build interestedKeys",
             run: async (ctx) => {
               const key = String(ctx.foundIntent?.camp_id || "");
-              if (!key) throw new Error("Intent is missing camp_id — cannot look up camp record; useCampSummariesClient skips it");
-              if (key !== ctx.campId) throw new Error(`Intent camp_id="${key}" does not match expected campId="${ctx.campId}"`);
+              if (!key) FAIL.data("Intent is missing camp_id — cannot look up camp record; useCampSummariesClient skips it");
+              if (key !== ctx.campId) FAIL.data(`Intent camp_id="${key}" does not match expected campId="${ctx.campId}" — key mismatch would cause null join result`);
               return `camp_id=${key} present and matches ✓`;
             },
           },
@@ -1015,11 +1052,11 @@ const JOURNEY_GROUPS = [
               try {
                 camp = await base44.entities.Camp.get(ctx.campId);
               } catch (e) {
-                throw new Error(`Camp.get(${ctx.campId}) threw: ${e?.message || e} — batchFetchByIds fallback would fail`);
+                FAIL.runtime(`Camp.get(${ctx.campId}) threw: ${e?.message || e} — batchFetchByIds fallback would fail`);
               }
-              if (!camp) throw new Error(`Camp.get(${ctx.campId}) returned null — camp record missing or unreadable`);
-              if (!camp.camp_name) throw new Error("Camp record has no camp_name — Calendar card would be blank");
-              if (!camp.start_date) throw new Error("Camp record has no start_date — Calendar cannot place it on grid");
+              if (!camp) FAIL.data(`Camp.get(${ctx.campId}) returned null — camp record missing or unreadable`);
+              if (!camp.camp_name) FAIL.data("Camp record has no camp_name — Calendar card would be blank");
+              if (!camp.start_date) FAIL.data("Camp record has no start_date — Calendar cannot place it on grid");
               ctx.campRecord = camp;
               return `Camp fetched: "${camp.camp_name}" on ${camp.start_date} ✓`;
             },
@@ -1030,9 +1067,9 @@ const JOURNEY_GROUPS = [
               // Simulate the join: intentByKey.get(campId) in useCampSummariesClient
               const intentCampId = String(ctx.foundIntent.camp_id || "");
               const campRecordId = String(ctx.campRecord.id || ctx.campRecord._id || "");
-              if (intentCampId !== campRecordId) throw new Error(`Key mismatch: intent.camp_id="${intentCampId}" vs Camp.id="${campRecordId}" — intentByKey.get(campId) returns null, intent_status would be null`);
+              if (intentCampId !== campRecordId) FAIL.data(`Key mismatch: intent.camp_id="${intentCampId}" vs Camp.id="${campRecordId}" — intentByKey.get(campId) returns null, intent_status would be null`);
               const intentStatus = ctx.foundIntent.status || null;
-              if (!intentStatus) throw new Error("Join produced null intent_status — camp would not pass favorite/registered filter in Calendar/MyCamps");
+              if (!intentStatus) FAIL.data("Join produced null intent_status — camp would not pass favorite/registered filter in Calendar/MyCamps");
               return `Join OK — intent_status="${intentStatus}" would appear on the calendar row ✓`;
             },
           },
@@ -1052,6 +1089,9 @@ const JOURNEY_GROUPS = [
           if (ctx.createdAthlete && ctx.athleteId) {
             try { await base44.entities.AthleteProfile.delete(ctx.athleteId); } catch {}
           }
+          // Clean up the intentUpdatedAt localStorage key written in step 4.
+          // This is the safety-net path; the inline cleanup step removes it normally.
+          try { localStorage.removeItem("intentUpdatedAt"); } catch {}
         },
       },
     ],
@@ -1059,9 +1099,11 @@ const JOURNEY_GROUPS = [
 
   {
     label: "Conflict & Travel Warnings",
+    section: "Core data integrity",
     journeys: [
       {
         id: "travel_warning_engine",
+        kind: "read",
         name: "Travel Warning Logic",
         icon: "✈️",
         description: "Unit-tests detectConflicts() — far-from-home threshold, flight vs hotel language, stored coordinate preference, and state center fallback.",
@@ -1071,10 +1113,10 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const mod = await import("../components/hooks/useConflictDetection.jsx");
               const coords = await import("../components/hooks/useCityCoords.jsx");
-              if (typeof mod.detectConflicts !== "function") throw new Error("detectConflicts is not exported");
-              if (typeof coords.getCityCoords !== "function") throw new Error("getCityCoords is not exported");
-              if (typeof coords.getStateCenter !== "function") throw new Error("getStateCenter is not exported — state-center fallback for home coords will silently fail");
-              if (typeof coords.haversine !== "function") throw new Error("haversine is not exported");
+              if (typeof mod.detectConflicts !== "function") FAIL.runtime("detectConflicts is not exported from useConflictDetection.jsx");
+              if (typeof coords.getCityCoords !== "function") FAIL.runtime("getCityCoords is not exported from useCityCoords.jsx");
+              if (typeof coords.getStateCenter !== "function") FAIL.runtime("getStateCenter is not exported — state-center fallback for home coords will silently fail");
+              if (typeof coords.haversine !== "function") FAIL.runtime("haversine is not exported from useCityCoords.jsx");
               ctx.detectConflicts = mod.detectConflicts;
               ctx.getCityCoords = coords.getCityCoords;
               ctx.getStateCenter = coords.getStateCenter;
@@ -1092,7 +1134,7 @@ const JOURNEY_GROUPS = [
                 { city: "Magnolia", state: "TX", label: "Magnolia TX (home city)" },
               ];
               const failed = tests.filter(t => !ctx.getCityCoords(t.city, t.state));
-              if (failed.length > 0) throw new Error(`getCityCoords returned null for: ${failed.map(t => t.label).join(", ")}`);
+              if (failed.length > 0) FAIL.runtime(`getCityCoords returned null for: ${failed.map(t => t.label).join(", ")} — travel distance alerts will be inaccurate for these cities`);
               return `All ${tests.length} test cities resolved ✓`;
             },
           },
@@ -1101,7 +1143,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const states = ["TX", "IL", "NC", "IN", "CA", "FL", "OH"];
               const failed = states.filter(s => !ctx.getStateCenter(s));
-              if (failed.length > 0) throw new Error(`getStateCenter returned null for: ${failed.join(", ")}`);
+              if (failed.length > 0) FAIL.runtime(`getStateCenter returned null for: ${failed.join(", ")} — state-center fallback will fail for these states`);
               return `State center fallback works for ${states.length} tested states ✓`;
             },
           },
@@ -1120,7 +1162,7 @@ const JOURNEY_GROUPS = [
                 isPaid: true,
               });
               const farWarn = warnings.find(w => w.type === "far_from_home");
-              if (!farWarn) throw new Error("No far_from_home warning fired for Chicago (~1,050 mi from Magnolia TX)");
+              if (!farWarn) FAIL.runtime("No far_from_home warning fired for Chicago (~1,050 mi from Magnolia TX) — distance threshold logic may be broken");
               ctx.farWarnDist = farWarn.distance;
               return `far_from_home warning fired — distance ${farWarn.distance} mi ✓`;
             },
@@ -1128,7 +1170,7 @@ const JOURNEY_GROUPS = [
           {
             name: "Far-from-home warning uses flight language when >400 miles",
             run: async (ctx) => {
-              if (!ctx.farWarnDist) throw new Error("Previous step did not capture distance");
+              if (!ctx.farWarnDist) FAIL.runtime("Previous step did not capture far_from_home distance — cannot verify flight language");
               const warnings = ctx.detectConflicts({
                 camps: [{
                   id: "test-chi2", camp_name: "Chicago State Camp",
@@ -1140,7 +1182,7 @@ const JOURNEY_GROUPS = [
                 isPaid: true,
               });
               const w = warnings.find(w => w.type === "far_from_home");
-              if (!w?.message?.includes("✈️")) throw new Error(`Expected ✈️ flight language for ${ctx.farWarnDist} mi camp — got: "${w?.message}"`);
+              if (!w?.message?.includes("✈️")) FAIL.runtime(`Expected ✈️ flight language for ${ctx.farWarnDist} mi camp — got: "${w?.message}" — warning message template may have changed`);
               return `Flight language (✈️) present for ${ctx.farWarnDist} mi camp ✓`;
             },
           },
@@ -1159,7 +1201,7 @@ const JOURNEY_GROUPS = [
                 isPaid: true,
               });
               const farWarn = warnings.find(w => w.type === "far_from_home");
-              if (farWarn) throw new Error(`far_from_home incorrectly fired for Dallas TX (${farWarn.distance} mi from Magnolia TX)`);
+              if (farWarn) FAIL.runtime(`far_from_home incorrectly fired for Dallas TX (${farWarn.distance} mi from Magnolia TX) — distance threshold is too low`);
               return "No false far_from_home warning for nearby Dallas TX ✓";
             },
           },
@@ -1177,7 +1219,7 @@ const JOURNEY_GROUPS = [
                 isPaid: false,
               });
               const farWarn = warnings.find(w => w.type === "far_from_home");
-              if (farWarn) throw new Error("far_from_home warning fired for non-paid user — should be paid-only");
+              if (farWarn) FAIL.runtime("far_from_home warning fired for non-paid user — this warning should be paid-only; isPaid gate in detectConflicts may be broken");
               return "Far-from-home correctly suppressed for non-paid user ✓";
             },
           },
@@ -1196,7 +1238,7 @@ const JOURNEY_GROUPS = [
                 isPaid: true,
               });
               const farWarn = warnings.find(w => w.type === "far_from_home");
-              if (!farWarn) throw new Error("State center fallback did not produce a far_from_home warning — home location resolution may be broken for cities not in the lookup table");
+              if (!farWarn) FAIL.runtime("State center fallback did not produce a far_from_home warning — home location resolution may be broken for cities not in the lookup table");
               return `State center fallback working — warning fired at ~${farWarn.distance} mi ✓`;
             },
           },
@@ -1217,7 +1259,7 @@ const JOURNEY_GROUPS = [
                 isPaid: true,
               });
               const farWarn = warnings.find(w => w.type === "far_from_home");
-              if (!farWarn) throw new Error("campCoords ignored _school_lat/_school_lng — stored geocoded coords are not being used for conflict detection");
+              if (!farWarn) FAIL.runtime("campCoords ignored _school_lat/_school_lng — stored geocoded coords are not being used for conflict detection");
               return `Stored _school_lat/_school_lng used correctly — warning fired at ~${farWarn.distance} mi ✓`;
             },
           },
@@ -1232,7 +1274,7 @@ const JOURNEY_GROUPS = [
                 isPaid: true,
               });
               const travelWarn = warnings.find(w => w.type === "back_to_back_travel");
-              if (!travelWarn) throw new Error("No back_to_back_travel warning for camps 1 day apart and ~300 miles");
+              if (!travelWarn) FAIL.runtime("No back_to_back_travel warning for camps 1 day apart and ~300 miles — back-to-back travel detection may be broken");
               return `back_to_back_travel fired — ${travelWarn.distance} mi, ${travelWarn.message.includes("✈️") ? "flight" : "drive"} ✓`;
             },
           },
@@ -1247,8 +1289,8 @@ const JOURNEY_GROUPS = [
                 isPaid: false,
               });
               const conflict = warnings.find(w => w.type === "same_day");
-              if (!conflict) throw new Error("No same_day conflict detected for two camps on the same date");
-              if (conflict.severity !== "error") throw new Error(`Expected severity=error, got ${conflict.severity}`);
+              if (!conflict) FAIL.runtime("No same_day conflict detected for two camps on the same date — same-day conflict detection is broken");
+              if (conflict.severity !== "error") FAIL.runtime(`Expected severity=error for same-day conflict, got ${conflict.severity} — severity classification may have changed`);
               return "Same-day conflict detected with error severity ✓";
             },
           },
@@ -1259,9 +1301,11 @@ const JOURNEY_GROUPS = [
 
   {
     label: "Data Quality",
+    section: "Core data integrity",
     journeys: [
       {
         id: "school_data_quality",
+        kind: "read",
         name: "School Data Completeness",
         icon: "🏫",
         description: "Schools have division, coordinates (required for travel alerts), and logos — monitors output of Geocode Schools, Seed Logos, and Athletics Cleanup tools.",
@@ -1271,7 +1315,9 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const schools = await base44.entities.School.filter({});
               if (!Array.isArray(schools) || schools.length === 0)
-                throw new Error("No schools found — school data may have been wiped");
+                FAIL.data("No schools found — school data may have been wiped");
+              if (schools.length < 10)
+                FAIL.data(`Only ${schools.length} school record(s) found — production should have thousands; DB may be partially wiped or this is a non-production environment`);
               ctx.schools = schools;
               return `${schools.length} schools`;
             },
@@ -1282,7 +1328,7 @@ const JOURNEY_GROUPS = [
               const withDiv = ctx.schools.filter(s => s.division).length;
               const pct = Math.round((withDiv / ctx.schools.length) * 100);
               if (pct < 50)
-                throw new Error(`Only ${pct}% have a division — run School Athletics Cleanup to fix`);
+                FAIL.data(`Only ${pct}% have a division — run School Athletics Cleanup to fix`);
               return `${withDiv}/${ctx.schools.length} (${pct}%) have division ✓`;
             },
           },
@@ -1295,7 +1341,7 @@ const JOURNEY_GROUPS = [
               const pct = Math.round((withCoords / ctx.schools.length) * 100);
               const missing = ctx.schools.length - withCoords;
               if (pct < 60)
-                throw new Error(`Only ${pct}% have coordinates — ${missing} schools missing lat/lng. Travel distance alerts will be inaccurate. Run Geocode Schools.`);
+                FAIL.data(`Only ${pct}% have coordinates — ${missing} schools missing lat/lng. Travel distance alerts will be inaccurate. Run Geocode Schools.`);
               if (pct < 80)
                 return `${withCoords}/${ctx.schools.length} (${pct}%) have coordinates — ${missing} still missing (run Geocode Schools to improve)`;
               return `${withCoords}/${ctx.schools.length} (${pct}%) have coordinates ✓`;
@@ -1317,6 +1363,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "camp_school_matching",
+        kind: "read",
         name: "Camp → School Matching Quality",
         icon: "🔗",
         description: "Camps are linked to schools and Host Org Mappings are verified — monitors output of Host Org Mapping Manager and ingest pipeline.",
@@ -1326,7 +1373,9 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const camps = await base44.entities.Camp.filter({ active: true });
               if (!Array.isArray(camps) || camps.length === 0)
-                throw new Error("No active camps");
+                FAIL.data("No active camps — Camp entity is empty or all camps are inactive");
+              if (camps.length < 5)
+                FAIL.data(`Only ${camps.length} active camp(s) — production should have many more; school match rate below this count is not meaningful`);
               ctx.camps = camps;
               return `${camps.length} active camps`;
             },
@@ -1338,7 +1387,7 @@ const JOURNEY_GROUPS = [
               const pct = Math.round((matched / ctx.camps.length) * 100);
               const unmatched = ctx.camps.length - matched;
               if (pct < 50)
-                throw new Error(`Only ${pct}% of camps matched to a school (${unmatched} unmatched) — run Host Org Mapping Manager to improve`);
+                FAIL.data(`Only ${pct}% of camps matched to a school (${unmatched} unmatched) — run Host Org Mapping Manager to improve`);
               if (pct < 70)
                 return `${matched}/${ctx.camps.length} (${pct}%) matched — ${unmatched} still unmatched (run Host Org Mapping Manager to improve)`;
               return `${matched}/${ctx.camps.length} (${pct}%) matched to a school ✓`;
@@ -1349,7 +1398,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const mappings = await base44.entities.HostOrgMapping.filter({});
               if (!Array.isArray(mappings))
-                throw new Error("HostOrgMapping.filter() returned non-array");
+                FAIL.runtime("HostOrgMapping.filter() returned non-array — entity query is broken");
               if (mappings.length === 0)
                 return "⚠ No HostOrgMapping records — run backfill from Host Org Mapping Manager to improve school matching";
               const verified = mappings.filter(m => m.verified).length;
@@ -1372,6 +1421,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "camp_enrichment_quality",
+        kind: "read",
         name: "Camp Enrichment Completeness",
         icon: "📋",
         description: "Ryzer camps have program names and venues, and missing coordinates are tracked — monitors output of Backfill Ryzer Program Name and Geocode Schools.",
@@ -1381,7 +1431,9 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const camps = await base44.entities.Camp.filter({ active: true });
               if (!Array.isArray(camps) || camps.length === 0)
-                throw new Error("No active camps");
+                FAIL.data("No active camps — Camp entity is empty or all camps are inactive");
+              if (camps.length < 5)
+                FAIL.data(`Only ${camps.length} active camp(s) — enrichment quality metrics below this count are not meaningful`);
               ctx.camps = camps;
               return `${camps.length} active camps`;
             },
@@ -1409,7 +1461,7 @@ const JOURNEY_GROUPS = [
               const missing = sample.filter(c => !c.start_date).length;
               const pct = Math.round(((sample.length - missing) / sample.length) * 100);
               if (missing > 5)
-                throw new Error(`${missing}/50 sampled camps missing start_date — Calendar cannot place them and conflict detection is broken`);
+                FAIL.data(`${missing}/50 sampled camps missing start_date — Calendar cannot place them and conflict detection is broken`);
               return `${sample.length - missing}/50 sampled camps have start_date (${pct}%) ✓`;
             },
           },
@@ -1430,9 +1482,12 @@ const JOURNEY_GROUPS = [
 
   {
     label: "Ingest Pipeline",
+    section: "Critical platform/config",
     journeys: [
       {
         id: "ingest_config",
+        kind: "read",
+        remediation: "Go to /SportIngestConfigManager in production and seed/repair configs.",
         name: "Ingest — Sport Configs Active",
         icon: "⚙️",
         description: "SportIngestConfig has active records — the weekly job has sports to process.",
@@ -1441,10 +1496,10 @@ const JOURNEY_GROUPS = [
             name: "Fetch SportIngestConfig records",
             run: async (ctx) => {
               const configs = await base44.entities.SportIngestConfig.filter({});
-              if (!Array.isArray(configs) || configs.length === 0)
-                throw new Error("No SportIngestConfig records — weeklyIngestAllSports has nothing to run");
-              ctx.configs = configs;
-              return `${configs.length} SportIngestConfig record${configs.length !== 1 ? "s" : ""}`;
+              ctx.configs = Array.isArray(configs) ? configs : [];
+              if (ctx.configs.length === 0)
+                FAIL.config("No SportIngestConfig records — weeklyIngestAllSports has no sports to process. Visit /SportIngestConfigManager and seed defaults.");
+              return `${ctx.configs.length} SportIngestConfig record${ctx.configs.length !== 1 ? "s" : ""}`;
             },
           },
           {
@@ -1452,7 +1507,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const active = ctx.configs.filter(c => c.active);
               if (active.length === 0)
-                throw new Error("No active SportIngestConfig — weekly ingest will skip all sports");
+                FAIL.config(`All ${ctx.configs.length} SportIngestConfig records are inactive — weekly ingest will skip every sport. Activate at least one in /SportIngestConfigManager.`);
               return `${active.length}/${ctx.configs.length} configs active: ${active.map(c => c.sport_key).join(", ")}`;
             },
           },
@@ -1461,7 +1516,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const bad = ctx.configs.filter(c => c.active && !c.sport_key);
               if (bad.length > 0)
-                throw new Error(`${bad.length} active configs missing sport_key — ingestCampsUSA would fail for them`);
+                FAIL.config(`${bad.length} active configs missing sport_key — ingestCampsUSA would fail for them. Fix in /SportIngestConfigManager.`);
               return "All active configs have sport_key ✓";
             },
           },
@@ -1470,6 +1525,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "ingest_freshness",
+        kind: "read",
         name: "Ingest — Camp Data Freshness",
         icon: "🕐",
         description: "Active camps have been ingested recently, confirming the weekly job ran within the expected window.",
@@ -1479,7 +1535,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const camps = await base44.entities.Camp.filter({ active: true });
               if (!Array.isArray(camps) || camps.length === 0)
-                throw new Error("No active camps — ingest may never have run or all camps were deactivated");
+                FAIL.data("No active camps — ingest may never have run or all camps were deactivated");
               ctx.camps = camps;
               return `${camps.length} active camps`;
             },
@@ -1491,7 +1547,7 @@ const JOURNEY_GROUPS = [
               const withTs = sample.filter(c => c.last_ingested_at).length;
               const pct = Math.round((withTs / sample.length) * 100);
               if (pct < 50)
-                throw new Error(`Only ${pct}% of sampled camps have last_ingested_at — ingest may not be writing timestamps`);
+                FAIL.data(`Only ${pct}% of sampled camps have last_ingested_at — ingest may not be writing timestamps`);
               ctx.campsWithTs = ctx.camps.filter(c => c.last_ingested_at);
               return `${withTs}/${sample.length} sampled camps have last_ingested_at (${pct}%)`;
             },
@@ -1505,7 +1561,7 @@ const JOURNEY_GROUPS = [
                 const mostRecent = ctx.campsWithTs
                   .map(c => new Date(c.last_ingested_at))
                   .sort((a, b) => b - a)[0];
-                throw new Error(
+                FAIL.data(
                   `No camps ingested in the last 14 days — most recent: ${mostRecent ? mostRecent.toLocaleDateString() : "unknown"}. Weekly job may be failing.`
                 );
               }
@@ -1522,7 +1578,7 @@ const JOURNEY_GROUPS = [
               const errored = sample.filter(c => c.ingestion_status === "error").length;
               const pct = Math.round((errored / sample.length) * 100);
               if (pct >= 20)
-                throw new Error(`${pct}% of sampled camps have ingestion_status=error — ingest pipeline may be broken`);
+                FAIL.data(`${pct}% of sampled camps have ingestion_status=error — ingest pipeline may be broken`);
               const active = sample.filter(c => c.ingestion_status === "active").length;
               return `Error rate: ${pct}% (${errored}/${sample.length})  active: ${active} ✓`;
             },
@@ -1532,6 +1588,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "ingest_function",
+        kind: "read",
         name: "Ingest — Pipeline Function Health",
         icon: "🔄",
         description: "campHealthCheck function is reachable and reports a healthy camp store.",
@@ -1541,7 +1598,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const res = await base44.functions.invoke("campHealthCheck", {});
               const data = res?.data;
-              if (!data) throw new Error("campHealthCheck returned empty response");
+              if (!data) FAIL.runtime("campHealthCheck returned empty response — function may be down or returning non-standard format");
               ctx.campHealth = data;
               const total = data.totalCamps ?? data.total_camps ?? null;
               return `campHealthCheck responded — totalCamps=${total ?? "(field not found)"}`;
@@ -1552,7 +1609,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const total = ctx.campHealth?.totalCamps ?? ctx.campHealth?.total_camps ?? null;
               if (total === null) return "totalCamps field not in response — check campHealthCheck output format";
-              if (total === 0) throw new Error("campHealthCheck reports 0 camps — data may have been wiped");
+              if (total === 0) FAIL.data("campHealthCheck reports 0 camps — data may have been wiped");
               return `${total.toLocaleString()} total camps in store ✓`;
             },
           },
@@ -1564,7 +1621,7 @@ const JOURNEY_GROUPS = [
               if (total == null || unmatched == null) return "School match data not in campHealthCheck response — skipped";
               const matchedPct = Math.round(((total - unmatched) / total) * 100);
               if (matchedPct < 40)
-                throw new Error(`Only ${matchedPct}% of camps matched to a school — school matching may be broken`);
+                FAIL.data(`Only ${matchedPct}% of camps matched to a school — school matching may be broken`);
               return `${matchedPct}% of camps have school_id (${total - unmatched}/${total}) ✓`;
             },
           },
@@ -1575,9 +1632,12 @@ const JOURNEY_GROUPS = [
 
   {
     label: "Communications",
+    section: "Critical platform/config",
     journeys: [
       {
         id: "email_config",
+        kind: "read",
+        remediation: "Check Base44 email provider settings in production admin.",
         name: "Email System Config",
         icon: "📧",
         description: "Resend API key is set and sendMonthlyAgenda function responds.",
@@ -1587,7 +1647,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const res = await base44.functions.invoke("sendMonthlyAgenda", { mode: "check_config" });
               const data = res?.data;
-              if (!data?.ok) throw new Error(data?.error || "Function returned ok:false");
+              if (!data?.ok) FAIL.config(data?.error || "sendMonthlyAgenda check_config returned ok:false — function may be missing or misconfigured");
               ctx.config = data;
               return "Function responded ok:true";
             },
@@ -1596,7 +1656,7 @@ const JOURNEY_GROUPS = [
             name: "RESEND_API_KEY is set",
             run: async (ctx) => {
               const val = ctx.config?.RESEND_API_KEY || "";
-              if (val === "NOT SET" || !val) throw new Error("RESEND_API_KEY is NOT SET — emails will fail");
+              if (val === "NOT SET" || !val) FAIL.config("RESEND_API_KEY is NOT SET in production environment — all emails will fail");
               return val;
             },
           },
@@ -1604,7 +1664,7 @@ const JOURNEY_GROUPS = [
             name: "FROM_EMAIL is configured",
             run: async (ctx) => {
               const val = ctx.config?.RESEND_FROM_EMAIL || "";
-              if (!val) throw new Error("RESEND_FROM_EMAIL is not set");
+              if (!val) FAIL.config("RESEND_FROM_EMAIL is not set in production environment — sendMonthlyAgenda cannot send");
               return val;
             },
           },
@@ -1613,6 +1673,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "camp_week_alert",
+        kind: "read",
         name: "Camp Week Alert Function",
         icon: "🔔",
         description: "sendCampWeekAlert function is reachable and performs a dry run.",
@@ -1625,7 +1686,7 @@ const JOURNEY_GROUPS = [
                 targetDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
               });
               const data = res?.data;
-              if (!data?.ok) throw new Error(data?.error || "Function returned ok:false");
+              if (!data?.ok) FAIL.runtime(data?.error || "sendCampWeekAlert dry_run returned ok:false — function may be missing or broken");
               return `ok:true — ${data.summary?.dry_run ?? 0} accounts would be alerted`;
             },
           },
@@ -1634,6 +1695,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "email_prefs",
+        kind: "read",
         name: "Email Preferences",
         icon: "⚙️",
         description: "EmailPreferences entity is reachable (opt-out system functional).",
@@ -1642,7 +1704,7 @@ const JOURNEY_GROUPS = [
             name: "Fetch email preferences",
             run: async () => {
               const prefs = await base44.entities.EmailPreferences.filter({});
-              if (!Array.isArray(prefs)) throw new Error("EmailPreferences.filter() returned non-array");
+              if (!Array.isArray(prefs)) FAIL.runtime("EmailPreferences.filter() returned non-array — opt-out entity is broken");
               const optedOut = prefs.filter(p => p.monthly_agenda_opt_out || p.camp_week_alert_opt_out).length;
               return `${prefs.length} records — ${optedOut} with at least one opt-out`;
             },
@@ -1653,9 +1715,12 @@ const JOURNEY_GROUPS = [
   },
   {
     label: "Checkout & Access",
+    section: "Critical platform/config",
     journeys: [
       {
         id: "season_config",
+        kind: "read",
+        remediation: "Go to /SeasonConfig in production and ensure at least one season is configured.",
         name: "Season Config & Access Gate",
         icon: "📅",
         description: "getActiveSeason function responds with a valid season, Subscribe and Checkout can load pricing.",
@@ -1665,7 +1730,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const res = await base44.functions.invoke("getActiveSeason", {});
               const data = res?.data;
-              if (!data?.ok) throw new Error(data?.error || "getActiveSeason returned ok:false");
+              if (!data?.ok) FAIL.config(data?.error || "getActiveSeason returned ok:false — no active season is configured");
               ctx.season = data.season;
               return `ok:true — season_year=${data.season?.season_year ?? "—"}`;
             },
@@ -1673,8 +1738,8 @@ const JOURNEY_GROUPS = [
           {
             name: "Season has season_year and active flag",
             run: async (ctx) => {
-              if (!ctx.season?.season_year) throw new Error("season.season_year missing — Subscribe page cannot display pricing");
-              if (ctx.season.active === undefined) throw new Error("season.active missing");
+              if (!ctx.season?.season_year) FAIL.config("season.season_year missing — Subscribe page cannot display pricing; configure in /SeasonConfig");
+              if (ctx.season.active === undefined) FAIL.config("season.active field missing — access gate cannot evaluate season state");
               return `season_year=${ctx.season.season_year}  active=${ctx.season.active}`;
             },
           },
@@ -1682,8 +1747,8 @@ const JOURNEY_GROUPS = [
             name: "SeasonConfig entity queryable",
             run: async (ctx) => {
               const configs = await base44.entities.SeasonConfig.filter({});
-              if (!Array.isArray(configs)) throw new Error("SeasonConfig.filter() returned non-array");
-              if (configs.length === 0) throw new Error("No SeasonConfig records — getActiveSeason has nothing to return");
+              if (!Array.isArray(configs)) FAIL.runtime("SeasonConfig.filter() returned non-array — entity may be broken");
+              if (configs.length === 0) FAIL.config("No SeasonConfig records — getActiveSeason has nothing to return; seed via /SeasonConfig");
               ctx.seasonConfigs = configs;
               return `${configs.length} SeasonConfig record${configs.length !== 1 ? "s" : ""}`;
             },
@@ -1692,8 +1757,8 @@ const JOURNEY_GROUPS = [
             name: "At least one season marked active",
             run: async (ctx) => {
               const active = ctx.seasonConfigs.filter(s => s.active);
-              if (active.length === 0) throw new Error("No active SeasonConfig — platform is in limbo (no subscribable season)");
-              if (active.length > 1) throw new Error(`${active.length} seasons marked active simultaneously — should be exactly 1`);
+              if (active.length === 0) FAIL.config("No active SeasonConfig — platform is in limbo (no subscribable season); activate one in /SeasonConfig");
+              if (active.length > 1) FAIL.config(`${active.length} seasons marked active simultaneously — should be exactly 1; deactivate extras in /SeasonConfig`);
               return `Exactly 1 active season: ${active[0].season_year}`;
             },
           },
@@ -1702,6 +1767,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "promo_validation",
+        kind: "read",
         name: "Promo Code Validation",
         icon: "🎟️",
         description: "validatePromo function handles invalid codes gracefully without crashing.",
@@ -1712,7 +1778,7 @@ const JOURNEY_GROUPS = [
               const res = await base44.functions.invoke("validatePromo", { promoCode: "__HEALTHCHECK_INVALID__" });
               const data = res?.data;
               // Any response (ok:true or ok:false) proves the function is reachable
-              if (data === undefined || data === null) throw new Error("validatePromo returned empty response");
+              if (data === undefined || data === null) FAIL.runtime("validatePromo returned empty response — function may be down or not deployed");
               ctx.promoRes = data;
               return `Function responded — ok=${data.ok}`;
             },
@@ -1720,8 +1786,8 @@ const JOURNEY_GROUPS = [
           {
             name: "Invalid code returns ok:false with an error message",
             run: async (ctx) => {
-              if (ctx.promoRes.ok === true) throw new Error("Unknown test code was accepted — promo validation may not be working");
-              if (!ctx.promoRes.error && !ctx.promoRes.message) throw new Error("ok:false but no error message returned — Checkout page cannot display reason");
+              if (ctx.promoRes.ok === true) FAIL.runtime("Unknown test code was accepted — promo validation may not be working; Checkout page could accept any string as a promo code");
+              if (!ctx.promoRes.error && !ctx.promoRes.message) FAIL.runtime("validatePromo returned ok:false but no error message — Checkout page cannot display reason for rejection");
               return `ok:false  error: "${ctx.promoRes.error || ctx.promoRes.message}"`;
             },
           },
@@ -1730,7 +1796,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const res = await base44.functions.invoke("validatePromo", { promoCode: "" });
               const data = res?.data;
-              if (data?.ok === true) throw new Error("Empty promo code was accepted — validation logic may be broken");
+              if (data?.ok === true) FAIL.runtime("Empty promo code was accepted — validation logic may be broken");
               return `Empty code correctly rejected`;
             },
           },
@@ -1739,6 +1805,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "post_payment_routing",
+        kind: "read",
         name: "Post-Payment Account Creation Routing",
         icon: "🔀",
         description: "CheckoutSuccess saves the correct sessionStorage keys so AuthRedirect can pick up postPaymentSignup and stripeSessionId after account creation on /Signup.",
@@ -1746,7 +1813,7 @@ const JOURNEY_GROUPS = [
           {
             name: "sessionStorage is available",
             run: async () => {
-              if (typeof sessionStorage === "undefined") throw new Error("sessionStorage not available — post-payment routing will fail");
+              if (typeof sessionStorage === "undefined") FAIL.runtime("sessionStorage not available — post-payment routing will fail");
               return "sessionStorage available ✓";
             },
           },
@@ -1756,7 +1823,7 @@ const JOURNEY_GROUPS = [
               const KEY = "postPaymentSignup";
               sessionStorage.setItem(KEY, "true");
               const val = sessionStorage.getItem(KEY);
-              if (val !== "true") throw new Error(`sessionStorage write/read failed for key '${KEY}' — AuthRedirect Priority 1 will not trigger`);
+              if (val !== "true") FAIL.runtime(`sessionStorage write/read failed for key '${KEY}' — AuthRedirect Priority 1 will not trigger`);
               sessionStorage.removeItem(KEY);
               return `Key '${KEY}' read/write ok ✓`;
             },
@@ -1768,7 +1835,7 @@ const JOURNEY_GROUPS = [
               const testVal = "cs_test_healthcheck_probe";
               sessionStorage.setItem(KEY, testVal);
               const val = sessionStorage.getItem(KEY);
-              if (val !== testVal) throw new Error(`sessionStorage write/read failed for key '${KEY}' — linkStripePayment fallback will not receive session id`);
+              if (val !== testVal) FAIL.runtime(`sessionStorage write/read failed for key '${KEY}' — linkStripePayment fallback will not receive session id`);
               sessionStorage.removeItem(KEY);
               return `Key '${KEY}' read/write ok ✓`;
             },
@@ -1779,7 +1846,7 @@ const JOURNEY_GROUPS = [
               const KEY = "paidSeasonYear";
               sessionStorage.setItem(KEY, "2026");
               const val = sessionStorage.getItem(KEY);
-              if (val !== "2026") throw new Error(`sessionStorage write/read failed for key '${KEY}'`);
+              if (val !== "2026") FAIL.runtime(`sessionStorage write/read failed for key '${KEY}' — paidSeasonYear cannot be passed through post-payment routing`);
               sessionStorage.removeItem(KEY);
               return `Key '${KEY}' read/write ok ✓`;
             },
@@ -1790,10 +1857,10 @@ const JOURNEY_GROUPS = [
               // Import the pages config to verify Signup is registered
               const mod = await import("../pages.config.js");
               const pages = mod.PAGES || mod.pagesConfig?.Pages;
-              if (!pages) throw new Error("Could not import PAGES from pages.config.js");
-              if (!pages["Signup"]) throw new Error("'Signup' not registered in PAGES — /Signup route will 404 and post-payment account creation will fail");
-              if (!pages["TermsOfService"]) throw new Error("'TermsOfService' not registered in PAGES — /TermsOfService will show a blank page");
-              if (!pages["PrivacyPolicy"]) throw new Error("'PrivacyPolicy' not registered in PAGES — /PrivacyPolicy will show a blank page");
+              if (!pages) FAIL.config("Could not import PAGES from pages.config.js — route registration config is broken");
+              if (!pages["Signup"]) FAIL.config("'Signup' not registered in PAGES — /Signup route will 404 and post-payment account creation will fail");
+              if (!pages["TermsOfService"]) FAIL.config("'TermsOfService' not registered in PAGES — /TermsOfService will show a blank page");
+              if (!pages["PrivacyPolicy"]) FAIL.config("'PrivacyPolicy' not registered in PAGES — /PrivacyPolicy will show a blank page");
               return "Signup, TermsOfService, PrivacyPolicy all registered in PAGES ✓";
             },
           },
@@ -1802,6 +1869,8 @@ const JOURNEY_GROUPS = [
 
       {
         id: "stripe_functions",
+        kind: "read",
+        remediation: "Verify Stripe API keys are configured in production environment variables.",
         name: "Stripe Backend Functions",
         icon: "💳",
         description: "verifyStripeSession and linkStripePayment functions are reachable. Both must handle paid and $0 sessions (100% off coupons via no_payment_required).",
@@ -1811,7 +1880,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const res = await base44.functions.invoke("verifyStripeSession", { sessionId: "__healthcheck_probe__" });
               const data = res?.data;
-              if (data === undefined || data === null) throw new Error("verifyStripeSession returned empty response — function may be down");
+              if (data === undefined || data === null) FAIL.ext("verifyStripeSession returned empty response — function may be down or Stripe API key is missing");
               ctx.verifyRes = data;
               return `Function responded — ok=${data.ok}`;
             },
@@ -1820,7 +1889,7 @@ const JOURNEY_GROUPS = [
             name: "verifyStripeSession rejects invalid session (not a silent pass)",
             run: async (ctx) => {
               if (ctx.verifyRes.ok === true && ctx.verifyRes.paid === true) {
-                throw new Error("Probe session returned paid:true — Stripe session validation is not working (any string accepted)");
+                FAIL.runtime("Probe session returned paid:true — Stripe session validation is not working (any string accepted as valid session)");
               }
               return `Invalid session correctly not accepted — function alive and validating ✓`;
             },
@@ -1834,7 +1903,7 @@ const JOURNEY_GROUPS = [
               try {
                 const res = await base44.functions.invoke("linkStripePayment", { sessionId: "" });
                 const data = res?.data;
-                if (data === undefined || data === null) throw new Error("linkStripePayment returned empty response — function may be down");
+                if (data === undefined || data === null) FAIL.ext("linkStripePayment returned empty response — function may be down");
                 ctx.linkRes = data;
                 ctx.linkValidated = true;
                 return `Function responded — ok=${data.ok}`;
@@ -1845,15 +1914,15 @@ const JOURNEY_GROUPS = [
                   ctx.linkValidated = true;
                   return `Function alive — validation enforced (${msg.includes("401") ? "auth required" : "sessionId required"}) ✓`;
                 }
-                throw new Error("linkStripePayment unreachable: " + msg);
+                FAIL.ext("linkStripePayment unreachable: " + msg);
               }
             },
           },
           {
             name: "linkStripePayment rejects missing sessionId",
             run: async (ctx) => {
-              if (!ctx.linkValidated) throw new Error("Previous step did not confirm function is alive");
-              if (ctx.linkRes?.ok === true) throw new Error("linkStripePayment accepted an empty sessionId — payment linking could be triggered without a valid Stripe session");
+              if (!ctx.linkValidated) FAIL.runtime("Previous step did not confirm linkStripePayment is alive");
+              if (ctx.linkRes?.ok === true) FAIL.runtime("linkStripePayment accepted an empty sessionId — payment linking could be triggered without a valid Stripe session");
               const errMsg = ctx.linkRes?.error || "(no error field)";
               return `Empty sessionId correctly rejected — error: "${errMsg}" ✓`;
             },
@@ -1863,6 +1932,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "sport_position",
+        kind: "read",
         name: "Sport & Position Lists",
         icon: "🏈",
         description: "Sport and Position entities are accessible — required for Profile setup and camp filtering.",
@@ -1871,7 +1941,7 @@ const JOURNEY_GROUPS = [
             name: "Fetch active sports",
             run: async (ctx) => {
               const sports = await base44.entities.Sport.filter({});
-              if (!Array.isArray(sports) || sports.length === 0) throw new Error("No sports found — Profile position dropdown will be empty");
+              if (!Array.isArray(sports) || sports.length === 0) FAIL.data("No sports found — Sport entity is empty; Profile position dropdown will be empty");
               ctx.sports = sports;
               const active = sports.filter(s => s.active !== false);
               return `${sports.length} sports (${active.length} active)`;
@@ -1881,7 +1951,7 @@ const JOURNEY_GROUPS = [
             name: "Sports have name field",
             run: async (ctx) => {
               const bad = ctx.sports.filter(s => !s.sport_name && !s.name);
-              if (bad.length > 0) throw new Error(`${bad.length} sports missing name — Profile dropdowns will show blank entries`);
+              if (bad.length > 0) FAIL.data(`${bad.length} sports missing name — Profile dropdowns will show blank entries`);
               return `All ${ctx.sports.length} sports have a name`;
             },
           },
@@ -1889,8 +1959,8 @@ const JOURNEY_GROUPS = [
             name: "Fetch positions",
             run: async (ctx) => {
               const positions = await base44.entities.Position.filter({});
-              if (!Array.isArray(positions)) throw new Error("Position.filter() returned non-array");
-              if (positions.length === 0) throw new Error("No positions found — Profile cannot assign a position");
+              if (!Array.isArray(positions)) FAIL.runtime("Position.filter() returned non-array — entity may be broken");
+              if (positions.length === 0) FAIL.data("No positions found — Position entity is empty; Profile cannot assign a position");
               ctx.positions = positions;
               return `${positions.length} positions`;
             },
@@ -1899,7 +1969,7 @@ const JOURNEY_GROUPS = [
             name: "Positions link to a sport_id",
             run: async (ctx) => {
               const unlinked = ctx.positions.filter(p => !p.sport_id && !p.sportId).length;
-              if (unlinked > ctx.positions.length / 2) throw new Error(`${unlinked}/${ctx.positions.length} positions missing sport_id — Profile dropdown will be broken`);
+              if (unlinked > ctx.positions.length / 2) FAIL.data(`${unlinked}/${ctx.positions.length} positions missing sport_id — Profile dropdown will be broken`);
               return `${ctx.positions.length - unlinked}/${ctx.positions.length} positions have sport_id`;
             },
           },
@@ -1910,9 +1980,11 @@ const JOURNEY_GROUPS = [
 
   {
     label: "Support Tickets",
+    section: "Controlled transaction checks",
     journeys: [
       {
         id: "support_ticket_lifecycle",
+        kind: "transaction",
         name: "Support Ticket Lifecycle",
         icon: "🎫",
         description: "submitSupportTicket creates a ticket, it is queryable, admin can update status, replyToTicket function is reachable, and ticket is closed for cleanup.",
@@ -1934,11 +2006,11 @@ const JOURNEY_GROUPS = [
               } catch (err) {
                 // Extract the actual server error message from the response body if available
                 const serverMsg = err?.response?.data?.error || err?.response?.data?.message || null;
-                throw new Error(serverMsg
+                FAIL.runtime(serverMsg
                   ? `submitSupportTicket 500 — server says: ${serverMsg}`
                   : `submitSupportTicket unreachable (${err.message})`);
               }
-              if (!data?.ok) throw new Error(data?.error || "submitSupportTicket returned ok:false");
+              if (!data?.ok) FAIL.runtime(data?.error || "submitSupportTicket returned ok:false — function may be missing or misconfigured");
               ctx.ticketNumber = data.ticketNumber;
               return `Ticket created — #${data.ticketNumber}`;
             },
@@ -1947,7 +2019,7 @@ const JOURNEY_GROUPS = [
             name: "Ticket queryable via SupportTicket entity",
             run: async (ctx) => {
               const tickets = await base44.entities.SupportTicket.filter({});
-              if (!Array.isArray(tickets)) throw new Error("SupportTicket.filter() returned non-array");
+              if (!Array.isArray(tickets)) FAIL.runtime("SupportTicket.filter() returned non-array — entity query is broken");
               const found = tickets.find(t =>
                 t.ticket_number === ctx.ticketNumber ||
                 t.subject === "[HEALTHCHECK] Test Ticket — safe to ignore"
@@ -1968,7 +2040,7 @@ const JOURNEY_GROUPS = [
                 status: "closed",
                 admin_notes: `[HEALTHCHECK] Auto-closed by health check on ${new Date().toISOString().slice(0,10)}`,
               });
-              if (!updated) throw new Error("SupportTicket.update() returned null");
+              if (!updated) FAIL.runtime("SupportTicket.update() returned null — entity update path is broken");
               return `Ticket id=${id} updated to closed`;
             },
           },
@@ -1988,7 +2060,7 @@ const JOURNEY_GROUPS = [
                 if (status === 403) return "replyToTicket reachable — admin guard enforced ✓";
                 if (status === 404) return "replyToTicket reachable — returned 404 ✓";
                 // 502 / 500 / network error = real failure
-                throw new Error(`replyToTicket unavailable (HTTP ${status ?? "unknown"}): ${err.message}`);
+                FAIL.runtime(`replyToTicket unavailable (HTTP ${status ?? "unknown"}): ${err.message}`);
               }
             },
           },
@@ -2007,18 +2079,20 @@ const JOURNEY_GROUPS = [
 
   {
     label: "Advanced Subscriber Flows",
+    section: "Controlled transaction checks",
     journeys: [
       {
         id: "multi_athlete_isolation",
+        kind: "transaction",
         name: "Multi-Athlete Data Isolation",
         icon: "👥",
-        description: "CampIntent queries filter strictly by athlete_id — one athlete's camps do not appear in another athlete's view.",
+        description: "CampIntent queries filter strictly by athlete_id — one athlete's camps do not appear in another athlete's view. Orphan search: filter AthleteProfile for first_name='__hc_a1__' or '__hc_a2__' (grad_year=2099), then filter CampIntent for those athlete_ids.",
         steps: [
           {
             name: "Create two test athlete profiles",
             run: async (ctx) => {
               const me = await base44.auth.me();
-              if (!me?.id) throw new Error("Cannot get account id — auth.me() returned no id");
+              if (!me?.id) FAIL.runtime("Cannot get account id — auth.me() returned no id");
               ctx.myId = me.id;
 
               const a1 = await base44.entities.AthleteProfile.create({
@@ -2031,7 +2105,7 @@ const JOURNEY_GROUPS = [
                 athlete_name: "__hc_a2__ __test__",
                 account_id: ctx.myId, active: true, sport_id: "test", grad_year: 2099,
               });
-              if (!a1?.id || !a2?.id) throw new Error("Failed to create one or both test athletes");
+              if (!a1?.id || !a2?.id) FAIL.runtime("Failed to create one or both test athletes — AthleteProfile write path may be broken");
               ctx.athlete1Id = a1.id;
               ctx.athlete2Id = a2.id;
               return `Athlete 1 id=${a1.id}  Athlete 2 id=${a2.id}`;
@@ -2041,7 +2115,7 @@ const JOURNEY_GROUPS = [
             name: "Fetch a camp to use as test target",
             run: async (ctx) => {
               const camps = await base44.entities.Camp.filter({ active: true });
-              if (!Array.isArray(camps) || camps.length === 0) throw new Error("No active camps for intent test");
+              if (!Array.isArray(camps) || camps.length === 0) FAIL.data("No active camps for intent isolation test — Camp entity may be empty");
               ctx.campA = camps[0];
               ctx.campB = camps[1] || camps[0];
               return `Using camp "${ctx.campA.camp_name}" for A, "${ctx.campB.camp_name}" for B`;
@@ -2053,7 +2127,7 @@ const JOURNEY_GROUPS = [
               const intent = await base44.entities.CampIntent.create({
                 camp_id: ctx.campA.id, athlete_id: ctx.athlete1Id, account_id: ctx.myId || "", status: "favorite",
               });
-              if (!intent?.id) throw new Error("CampIntent.create() returned no id");
+              if (!intent?.id) FAIL.runtime("CampIntent.create() returned no id — write permission may be missing");
               ctx.intent1Id = intent.id;
               return `Intent id=${intent.id} created for athlete 1`;
             },
@@ -2063,7 +2137,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const intents = await base44.entities.CampIntent.filter({ athlete_id: ctx.athlete2Id });
               const leak = (intents || []).filter(i => i.camp_id === ctx.campA.id && i.athlete_id === ctx.athlete1Id);
-              if (leak.length > 0) throw new Error(`Athlete 1's intent leaked into Athlete 2's query — data isolation broken`);
+              if (leak.length > 0) FAIL.runtime(`Athlete 1's intent leaked into Athlete 2's query — athlete_id filter is not isolating data correctly`);
               const ownIntents = (intents || []).filter(i => i.athlete_id === ctx.athlete2Id);
               return `Athlete 2 query: ${ownIntents.length} own intents, 0 from athlete 1 ✓`;
             },
@@ -2073,7 +2147,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const intents = await base44.entities.CampIntent.filter({ athlete_id: ctx.athlete1Id });
               const found = (intents || []).find(i => i.id === ctx.intent1Id);
-              if (!found) throw new Error(`Athlete 1's own intent id=${ctx.intent1Id} not found in their filtered query`);
+              if (!found) FAIL.runtime(`Athlete 1's own intent id=${ctx.intent1Id} not found in their filtered query — CampIntent filter broken`);
               return `Athlete 1 query returns their intent correctly — status: ${found.status} ✓`;
             },
           },
@@ -2096,6 +2170,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "addon_athlete_provisioning",
+        kind: "transaction",
         name: "Add-on Athlete Provisioning",
         icon: "👤",
         description: "A second (non-primary) AthleteProfile can be created with all required fields — home_city, home_state, display_name, is_primary:false — and is correctly queryable by account_id.",
@@ -2104,7 +2179,7 @@ const JOURNEY_GROUPS = [
             name: "Get current account",
             run: async (ctx) => {
               const me = await base44.auth.me();
-              if (!me?.id) throw new Error("auth.me() returned no id");
+              if (!me?.id) FAIL.runtime("auth.me() returned no id");
               ctx.myId = me.id;
               return `account id = ${me.id}`;
             },
@@ -2128,7 +2203,7 @@ const JOURNEY_GROUPS = [
                 parent_last_name: "TestLast",
                 parent_phone: "555-555-5555",
               });
-              if (!profile?.id) throw new Error("AthleteProfile.create() returned no id — add-on flow will fail");
+              if (!profile?.id) FAIL.runtime("AthleteProfile.create() returned no id — add-on athlete provisioning flow will fail");
               ctx.addonProfileId = profile.id;
               return `Add-on profile created (id=${profile.id})`;
             },
@@ -2138,7 +2213,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const profiles = await base44.entities.AthleteProfile.filter({ account_id: ctx.myId });
               const found = (profiles || []).find(p => p.id === ctx.addonProfileId);
-              if (!found) throw new Error(`Add-on profile id=${ctx.addonProfileId} not found via account_id filter`);
+              if (!found) FAIL.runtime(`Add-on profile id=${ctx.addonProfileId} not found via account_id filter — query may be broken`);
               ctx.addonFound = found;
               return `Profile found via account_id filter ✓`;
             },
@@ -2146,7 +2221,7 @@ const JOURNEY_GROUPS = [
           {
             name: "is_primary=false persisted correctly",
             run: async (ctx) => {
-              if (ctx.addonFound.is_primary === true) throw new Error("Add-on athlete incorrectly marked is_primary=true — AthleteSwitcher sort logic will be wrong");
+              if (ctx.addonFound.is_primary === true) FAIL.data("Add-on athlete incorrectly marked is_primary=true — AthleteSwitcher sort logic will be wrong");
               return `is_primary=${ctx.addonFound.is_primary} ✓`;
             },
           },
@@ -2154,7 +2229,7 @@ const JOURNEY_GROUPS = [
             name: "home_city, home_state, display_name all persisted",
             run: async (ctx) => {
               const missing = ["home_city", "home_state", "display_name"].filter(f => !ctx.addonFound[f]);
-              if (missing.length > 0) throw new Error(`Add-on profile missing: ${missing.join(", ")} — linkStripePayment add-on path has a field coverage bug`);
+              if (missing.length > 0) FAIL.data(`Add-on profile missing: ${missing.join(", ")} — linkStripePayment add-on path has a field coverage bug`);
               return `home_city=${ctx.addonFound.home_city}  home_state=${ctx.addonFound.home_state}  display_name=${ctx.addonFound.display_name} ✓`;
             },
           },
@@ -2162,7 +2237,7 @@ const JOURNEY_GROUPS = [
             name: "parent fields persisted",
             run: async (ctx) => {
               const missing = ["parent_first_name", "parent_last_name", "parent_phone"].filter(f => !ctx.addonFound[f]);
-              if (missing.length > 0) throw new Error(`Add-on profile missing parent fields: ${missing.join(", ")}`);
+              if (missing.length > 0) FAIL.data(`Add-on profile missing parent fields: ${missing.join(", ")} — parent contact info not persisting correctly`);
               return `parent: ${ctx.addonFound.parent_first_name} ${ctx.addonFound.parent_last_name}  phone: ${ctx.addonFound.parent_phone} ✓`;
             },
           },
@@ -2183,6 +2258,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "primary_athlete_sort",
+        kind: "transaction",
         name: "Primary Athlete Sort Order",
         icon: "🔢",
         description: "When multiple athletes exist, is_primary:true athletes sort before secondary athletes — AthleteSwitcher defaults to the right athlete.",
@@ -2191,7 +2267,7 @@ const JOURNEY_GROUPS = [
             name: "Get current account",
             run: async (ctx) => {
               const me = await base44.auth.me();
-              if (!me?.id) throw new Error("auth.me() returned no id");
+              if (!me?.id) FAIL.runtime("auth.me() returned no id");
               ctx.myId = me.id;
               return `account id = ${me.id}`;
             },
@@ -2209,7 +2285,7 @@ const JOURNEY_GROUPS = [
                 athlete_name: "__hc_secondary__ __sort_test__", is_primary: false, active: true,
                 sport_id: "test", grad_year: 2099,
               });
-              if (!primary?.id || !secondary?.id) throw new Error("Could not create test athletes");
+              if (!primary?.id || !secondary?.id) FAIL.runtime("Could not create test athletes — AthleteProfile write path may be broken");
               ctx.primaryId = primary.id;
               ctx.secondaryId = secondary.id;
               return `Primary id=${primary.id}  Secondary id=${secondary.id}`;
@@ -2222,14 +2298,14 @@ const JOURNEY_GROUPS = [
               const testProfiles = (profiles || []).filter(p =>
                 p.id === ctx.primaryId || p.id === ctx.secondaryId
               );
-              if (testProfiles.length < 2) throw new Error("Could not find both test profiles for sort check");
+              if (testProfiles.length < 2) FAIL.runtime("Could not find both test profiles for sort check — filter or create step failed");
               // Apply same sort as AthleteSwitcher
               const sorted = [...testProfiles].sort((a, b) => {
                 if (a.is_primary && !b.is_primary) return -1;
                 if (!a.is_primary && b.is_primary) return 1;
                 return 0;
               });
-              if (sorted[0].id !== ctx.primaryId) throw new Error("is_primary:true athlete did not sort first — AthleteSwitcher would default to wrong athlete");
+              if (sorted[0].id !== ctx.primaryId) FAIL.runtime("is_primary:true athlete did not sort first — AthleteSwitcher would default to wrong athlete");
               return "is_primary:true athlete sorts first ✓";
             },
           },
@@ -2250,6 +2326,7 @@ const JOURNEY_GROUPS = [
 
       {
         id: "entitlement_windows",
+        kind: "read",
         name: "Entitlement Time Window Validity",
         icon: "🕐",
         description: "Active entitlements have starts_at and ends_at, and at least one is currently within its access window.",
@@ -2258,7 +2335,7 @@ const JOURNEY_GROUPS = [
             name: "Fetch active entitlements",
             run: async (ctx) => {
               const ents = await base44.entities.Entitlement.filter({ status: "active" });
-              if (!Array.isArray(ents)) throw new Error("Entitlement.filter() returned non-array");
+              if (!Array.isArray(ents)) FAIL.runtime("Entitlement.filter() returned non-array — entity query is broken");
               if (ents.length === 0) {
                 ctx.ents = [];
                 return "No active entitlements — skipping time window checks (post-purge or pre-launch)";
@@ -2270,10 +2347,11 @@ const JOURNEY_GROUPS = [
           {
             name: "Entitlements have starts_at and ends_at",
             run: async (ctx) => {
+              if (ctx.ents.length === 0) return "Skipped — no entitlements to check";
               const missingStart = ctx.ents.filter(e => !e.starts_at).length;
               const missingEnd = ctx.ents.filter(e => !e.ends_at).length;
-              if (missingStart > ctx.ents.length / 2) throw new Error(`${missingStart}/${ctx.ents.length} missing starts_at — access window cannot be evaluated`);
-              if (missingEnd > ctx.ents.length / 2) throw new Error(`${missingEnd}/${ctx.ents.length} missing ends_at — subscriptions may never expire`);
+              if (missingStart > ctx.ents.length / 2) FAIL.data(`${missingStart}/${ctx.ents.length} entitlements missing starts_at — access window cannot be evaluated; subscribers may be incorrectly blocked or granted access`);
+              if (missingEnd > ctx.ents.length / 2) FAIL.data(`${missingEnd}/${ctx.ents.length} entitlements missing ends_at — subscriptions may never expire`);
               return `starts_at present: ${ctx.ents.length - missingStart}/${ctx.ents.length}  ends_at present: ${ctx.ents.length - missingEnd}/${ctx.ents.length}`;
             },
           },
@@ -2289,8 +2367,8 @@ const JOURNEY_GROUPS = [
               if (inWindow.length === 0) {
                 // Check if any are upcoming (starts_at in future)
                 const upcoming = ctx.ents.filter(e => e.starts_at && new Date(e.starts_at) > now);
-                if (upcoming.length > 0) return `0 in-window now, but ${upcoming.length} upcoming — may be off-season`;
-                throw new Error("No active entitlements within their time window — all subscribers would be blocked from access");
+                if (upcoming.length > 0) return `⚠ 0 in-window now, but ${upcoming.length} upcoming — may be off-season`;
+                FAIL.data("No active entitlements within their time window — all subscribers would be blocked from access");
               }
               return `${inWindow.length}/${ctx.ents.length} entitlements currently within their access window ✓`;
             },
@@ -2298,9 +2376,10 @@ const JOURNEY_GROUPS = [
           {
             name: "No entitlement has ends_at in the distant past (> 1 year ago)",
             run: async (ctx) => {
+              if (ctx.ents.length === 0) return "Skipped — no entitlements to check";
               const cutoff = new Date(Date.now() - 365 * 86400000);
               const stale = ctx.ents.filter(e => e.ends_at && new Date(e.ends_at) < cutoff);
-              if (stale.length > 5) throw new Error(`${stale.length} entitlements marked active but ended >1 year ago — status cleanup may be needed`);
+              if (stale.length > 5) return `⚠ ${stale.length} entitlements marked active but ended >1 year ago — status cleanup may be needed`;
               return stale.length > 0
                 ? `${stale.length} stale entitlement${stale.length !== 1 ? "s" : ""} (ended >1yr ago but still active) — consider cleanup`
                 : "No stale entitlements ✓";
@@ -2313,12 +2392,14 @@ const JOURNEY_GROUPS = [
 
   {
     label: "Platform Integrity",
+    section: "Core data integrity",
     journeys: [
       {
         id: "event_tracking",
+        kind: "transaction",
         name: "Event Tracking Write",
         icon: "📡",
-        description: "Event entity is writable — analytics and funnel tracking will record correctly.",
+        description: "Event entity is writable — analytics and funnel tracking will record correctly. Orphan search: filter Event for source_platform='healthcheck' or event_type='healthcheck_ping'.",
         steps: [
           {
             name: "Write a test event",
@@ -2333,7 +2414,7 @@ const JOURNEY_GROUPS = [
                 ts: iso,
                 payload_json: JSON.stringify({ event_name: "healthcheck_ping", test: true }),
               });
-              if (!evt?.id) throw new Error("Event.create() returned no id — analytics will silently fail");
+              if (!evt?.id) FAIL.runtime("Event.create() returned no id — analytics entity write path is broken");
               ctx.eventId = evt.id;
               return `Event created (id=${evt.id})`;
             },
@@ -2342,26 +2423,44 @@ const JOURNEY_GROUPS = [
             name: "Event readable back via event_type filter",
             run: async (ctx) => {
               const evts = await base44.entities.Event.filter({ event_type: "healthcheck_ping" });
-              if (!Array.isArray(evts)) throw new Error("Event.filter() returned non-array");
+              if (!Array.isArray(evts)) FAIL.runtime("Event.filter() returned non-array — entity read path is broken");
               const found = evts.find(e => e.id === ctx.eventId);
               if (!found) return `Event written but not found via filter — may be eventual consistency (id=${ctx.eventId})`;
               return `Event confirmed readable — event_type: ${found.event_type} ✓`;
             },
           },
+          {
+            name: "Delete test event (cleanup)",
+            run: async (ctx) => {
+              if (ctx.eventId) {
+                await base44.entities.Event.delete(ctx.eventId);
+                ctx.eventId = null;
+              }
+              return "Test event deleted";
+            },
+          },
         ],
+        // Safety net: identify orphans by filtering Event for source_platform='healthcheck'
+        // or event_type='healthcheck_ping'.
+        cleanup: async (ctx) => {
+          if (ctx.eventId) {
+            try { await base44.entities.Event.delete(ctx.eventId); } catch {}
+          }
+        },
       },
 
       {
         id: "email_prefs_lifecycle",
+        kind: "transaction",
         name: "Email Preferences Full Lifecycle",
         icon: "📬",
-        description: "EmailPreferences can be created, updated, and deleted — opt-out system is fully operational.",
+        description: "EmailPreferences can be created, updated, and deleted — opt-out system is fully operational. Orphan search: filter EmailPreferences for notes='__healthcheck__' or created via admin account_id with monthly_agenda_opt_out=true.",
         steps: [
           {
             name: "Get current account id",
             run: async (ctx) => {
               const me = await base44.auth.me();
-              if (!me?.id) throw new Error("auth.me() returned no id");
+              if (!me?.id) FAIL.runtime("auth.me() returned no id");
               ctx.myId = me.id;
               return `account id = ${me.id}`;
             },
@@ -2369,16 +2468,20 @@ const JOURNEY_GROUPS = [
           {
             name: "Create EmailPreferences record",
             run: async (ctx) => {
-              // First clean up any leftover healthcheck prefs
+              // First clean up any leftover healthcheck prefs from previous interrupted runs
               const existing = await base44.entities.EmailPreferences.filter({ account_id: ctx.myId });
-              ctx.existingPrefIds = (existing || []).map(p => p.id).filter(Boolean);
+              ctx.existingPrefIds = (existing || []).filter(p => p.notes === "__healthcheck__").map(p => p.id).filter(Boolean);
+              for (const id of ctx.existingPrefIds) {
+                try { await base44.entities.EmailPreferences.delete(id); } catch {}
+              }
 
               const pref = await base44.entities.EmailPreferences.create({
                 account_id: ctx.myId,
                 monthly_agenda_opt_out: false,
                 camp_week_alert_opt_out: false,
+                notes: "__healthcheck__",
               });
-              if (!pref?.id) throw new Error("EmailPreferences.create() returned no id");
+              if (!pref?.id) FAIL.runtime("EmailPreferences.create() returned no id — opt-out system write path is broken");
               ctx.prefId = pref.id;
               return `Created EmailPreferences id=${pref.id}`;
             },
@@ -2388,7 +2491,7 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const prefs = await base44.entities.EmailPreferences.filter({ account_id: ctx.myId });
               const found = (prefs || []).find(p => p.id === ctx.prefId);
-              if (!found) throw new Error(`EmailPreferences id=${ctx.prefId} not found after create`);
+              if (!found) FAIL.runtime(`EmailPreferences id=${ctx.prefId} not found after create — read-after-write broken`);
               return `Read back ok — monthly_opt_out=${found.monthly_agenda_opt_out}  alert_opt_out=${found.camp_week_alert_opt_out}`;
             },
           },
@@ -2398,7 +2501,7 @@ const JOURNEY_GROUPS = [
               const updated = await base44.entities.EmailPreferences.update(ctx.prefId, {
                 monthly_agenda_opt_out: true,
               });
-              if (!updated) throw new Error("EmailPreferences.update() returned null");
+              if (!updated) FAIL.runtime("EmailPreferences.update() returned null — update path is broken");
               return `Updated monthly_agenda_opt_out → true`;
             },
           },
@@ -2407,8 +2510,8 @@ const JOURNEY_GROUPS = [
             run: async (ctx) => {
               const prefs = await base44.entities.EmailPreferences.filter({ account_id: ctx.myId });
               const found = (prefs || []).find(p => p.id === ctx.prefId);
-              if (!found) throw new Error("Record not found after update");
-              if (!found.monthly_agenda_opt_out) throw new Error("opt_out flag did not persist — sendMonthlyAgenda would ignore this opt-out");
+              if (!found) FAIL.runtime("EmailPreferences record not found after update");
+              if (!found.monthly_agenda_opt_out) FAIL.data("opt_out flag did not persist — sendMonthlyAgenda would ignore this opt-out");
               return `Opt-out persisted: monthly_agenda_opt_out=${found.monthly_agenda_opt_out} ✓`;
             },
           },
@@ -2416,7 +2519,8 @@ const JOURNEY_GROUPS = [
             name: "Delete test record (cleanup)",
             run: async (ctx) => {
               await base44.entities.EmailPreferences.delete(ctx.prefId);
-              return `EmailPreferences id=${ctx.prefId} deleted`;
+              ctx.prefId = null;
+              return "EmailPreferences test record deleted";
             },
           },
         ],
@@ -2431,9 +2535,11 @@ const JOURNEY_GROUPS = [
 
   {
     label: "Admin-Only Backend Functions",
+    section: "Critical platform/config",
     journeys: [
       {
         id: "admin_function_guards",
+        kind: "read",
         name: "Admin Function Access & Guards",
         icon: "🔒",
         description: "Probes all 10 admin-guarded backend functions. Each must be reachable and must NOT return 403 for this admin session. A 403 means the admin guard is misconfigured and would block the admin account.",
@@ -2450,9 +2556,9 @@ const JOURNEY_GROUPS = [
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
-                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                  FAIL.config("Admin guard rejected this admin session — user.role may not be 'admin'");
                 if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
-                throw new Error("Function unreachable: " + msg);
+                FAIL.ext("Function unreachable: " + msg);
               }
             },
           },
@@ -2466,9 +2572,9 @@ const JOURNEY_GROUPS = [
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
-                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                  FAIL.config("Admin guard rejected this admin session — user.role may not be 'admin'");
                 if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
-                throw new Error("Function unreachable: " + msg);
+                FAIL.ext("Function unreachable: " + msg);
               }
             },
           },
@@ -2482,9 +2588,9 @@ const JOURNEY_GROUPS = [
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
-                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                  FAIL.config("Admin guard rejected this admin session — user.role may not be 'admin'");
                 if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
-                throw new Error("Function unreachable: " + msg);
+                FAIL.ext("Function unreachable: " + msg);
               }
             },
           },
@@ -2498,9 +2604,9 @@ const JOURNEY_GROUPS = [
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
-                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                  FAIL.config("Admin guard rejected this admin session — user.role may not be 'admin'");
                 if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
-                throw new Error("Function unreachable: " + msg);
+                FAIL.ext("Function unreachable: " + msg);
               }
             },
           },
@@ -2514,9 +2620,9 @@ const JOURNEY_GROUPS = [
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
-                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                  FAIL.config("Admin guard rejected this admin session — user.role may not be 'admin'");
                 if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
-                throw new Error("Function unreachable: " + msg);
+                FAIL.ext("Function unreachable: " + msg);
               }
             },
           },
@@ -2530,9 +2636,9 @@ const JOURNEY_GROUPS = [
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
-                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                  FAIL.config("Admin guard rejected this admin session — user.role may not be 'admin'");
                 if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
-                throw new Error("Function unreachable: " + msg);
+                FAIL.ext("Function unreachable: " + msg);
               }
             },
           },
@@ -2546,9 +2652,9 @@ const JOURNEY_GROUPS = [
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
-                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                  FAIL.config("Admin guard rejected this admin session — user.role may not be 'admin'");
                 if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
-                throw new Error("Function unreachable: " + msg);
+                FAIL.ext("Function unreachable: " + msg);
               }
             },
           },
@@ -2562,9 +2668,9 @@ const JOURNEY_GROUPS = [
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
-                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                  FAIL.config("Admin guard rejected this admin session — user.role may not be 'admin'");
                 if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
-                throw new Error("Function unreachable: " + msg);
+                FAIL.ext("Function unreachable: " + msg);
               }
             },
           },
@@ -2578,9 +2684,9 @@ const JOURNEY_GROUPS = [
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
-                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                  FAIL.config("Admin guard rejected this admin session — user.role may not be 'admin'");
                 if (msg.includes("400")) return "Reachable — admin access confirmed (400 validation enforced) ✓";
-                throw new Error("Function unreachable: " + msg);
+                FAIL.ext("Function unreachable: " + msg);
               }
             },
           },
@@ -2595,9 +2701,9 @@ const JOURNEY_GROUPS = [
               } catch (e) {
                 const msg = String(e?.message || e);
                 if (msg.includes("403") || msg.toLowerCase().includes("forbidden"))
-                  throw new Error("Admin guard rejected this admin session — user.role may not be 'admin'");
+                  FAIL.config("Admin guard rejected this admin session — user.role may not be 'admin'");
                 if (msg.includes("400")) return "Reachable — admin access confirmed (400: toEmail required) ✓";
-                throw new Error("Function unreachable: " + msg);
+                FAIL.ext("Function unreachable: " + msg);
               }
             },
           },
@@ -2617,6 +2723,15 @@ const JOURNEY_GROUPS = [
 
 // Flatten for runner access by id
 const ALL_JOURNEYS = JOURNEY_GROUPS.flatMap(g => g.journeys);
+
+// Section display order
+const SECTION_ORDER = [
+  "Critical platform/config",
+  "Core data integrity",
+  "User journey checks",
+  "Coach journey checks",
+  "Controlled transaction checks",
+];
 
 // ── Runner ───────────────────────────────────────────────────────────────────
 
@@ -2664,7 +2779,9 @@ async function runJourney(journey, onStep) {
       break; // stop on first failure
     }
 
-    const result = { name: step.name, status: "pass", detail: detail || "ok", ms: Date.now() - stepStart };
+    const detailStr = detail || "ok";
+    const stepStatus = typeof detailStr === "string" && detailStr.startsWith("⚠") ? "warn" : "pass";
+    const result = { name: step.name, status: stepStatus, detail: detailStr, ms: Date.now() - stepStart };
     results.push(result);
     onStep(results, failed ? "fail" : "running");
   }
@@ -2674,7 +2791,8 @@ async function runJourney(journey, onStep) {
     try { await journey.cleanup(ctx); } catch {}
   }
 
-  const status = failed ? "fail" : "pass";
+  const hasWarn = results.some(r => r.status === "warn");
+  const status = failed ? "fail" : hasWarn ? "warn" : "pass";
   onStep(results, status);
   return { status, steps: results, duration: Date.now() - start };
 }
@@ -2682,8 +2800,8 @@ async function runJourney(journey, onStep) {
 // ── UI components ─────────────────────────────────────────────────────────────
 
 function StatusDot({ status }) {
-  const colors = { idle: "#d1d5db", running: "#c8850a", pass: "#059669", fail: "#dc2626" };
-  const labels = { idle: "—", running: "⟳", pass: "✓", fail: "✕" };
+  const colors = { idle: "#d1d5db", running: "#c8850a", pass: "#059669", fail: "#dc2626", warn: "#d97706" };
+  const labels = { idle: "—", running: "⟳", pass: "✓", fail: "✕", warn: "⚠" };
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -2703,6 +2821,7 @@ function StatusBadge({ status, duration }) {
     running: { bg: "#fffbeb", color: "#c8850a", text: "Running…" },
     pass:    { bg: "#ecfdf5", color: "#059669", text: duration ? `Passed  ${duration}ms` : "Passed" },
     fail:    { bg: "#fef2f2", color: "#dc2626", text: "Failed" },
+    warn:    { bg: "#fffbeb", color: "#d97706", text: duration ? `Warned  ${duration}ms` : "Warned" },
   }[status] || { bg: "#f3f4f6", color: "#9ca3af", text: status };
 
   return (
@@ -2713,15 +2832,35 @@ function StatusBadge({ status, duration }) {
   );
 }
 
+function KindBadge({ kind }) {
+  if (kind === "transaction") {
+    return (
+      <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4,
+        background: "#fffbeb", color: "#b45309", border: "1px solid #fcd34d", letterSpacing: "0.04em" }}>
+        TXN
+      </span>
+    );
+  }
+  return (
+    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4,
+      background: "#f3f4f6", color: "#6b7280", border: "1px solid #d1d5db", letterSpacing: "0.04em" }}>
+      READ
+    </span>
+  );
+}
+
 function JourneyCard({ journey, state, onRun, disabled }) {
   const [expanded, setExpanded] = useState(false);
   const hasSteps = state.steps.length > 0;
   const isBlocked = state.status === "fail";
+  const isWarn = state.status === "warn";
+
+  const borderColor = isBlocked ? "#fca5a5" : isWarn ? "#fcd34d" : state.status === "pass" ? "#6ee7b7" : "#e5e7eb";
 
   return (
     <div style={{
       background: "#fff",
-      border: `1px solid ${isBlocked ? "#fca5a5" : state.status === "pass" ? "#6ee7b7" : "#e5e7eb"}`,
+      border: `1px solid ${borderColor}`,
       borderRadius: 10, overflow: "hidden",
       boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
     }}>
@@ -2730,11 +2869,18 @@ function JourneyCard({ journey, state, onRun, disabled }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: "#0B1F3B" }}>{journey.name}</span>
+            {journey.kind && <KindBadge kind={journey.kind} />}
             <StatusBadge status={state.status} duration={state.duration} />
           </div>
           <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2, lineHeight: 1.4 }}>
             {journey.description}
           </div>
+          {isBlocked && journey.remediation && (
+            <div style={{ fontSize: 12, color: "#6b7280", fontStyle: "italic", marginTop: 6,
+              padding: "5px 10px", background: "#f9fafb", borderRadius: 5, border: "1px solid #e5e7eb" }}>
+              {journey.remediation}
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
           {hasSteps && (
@@ -2747,9 +2893,9 @@ function JourneyCard({ journey, state, onRun, disabled }) {
             disabled={disabled}
             style={{ ...S.btnRun, opacity: disabled ? 0.45 : 1,
               cursor: disabled ? "not-allowed" : "pointer",
-              background: isBlocked ? "#fef2f2" : "#f8fafc",
-              borderColor: isBlocked ? "#fca5a5" : "#e5e7eb",
-              color: isBlocked ? "#dc2626" : "#374151" }}
+              background: isBlocked ? "#fef2f2" : isWarn ? "#fffbeb" : "#f8fafc",
+              borderColor: isBlocked ? "#fca5a5" : isWarn ? "#fcd34d" : "#e5e7eb",
+              color: isBlocked ? "#dc2626" : isWarn ? "#d97706" : "#374151" }}
           >
             {state.status === "running" ? "Running…" : "Run"}
           </button>
@@ -2768,7 +2914,7 @@ function JourneyCard({ journey, state, onRun, disabled }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>{step.name}</div>
                 <div style={{ fontSize: 12, marginTop: 2, lineHeight: 1.5, wordBreak: "break-word",
-                  color: step.status === "fail" ? "#dc2626" : "#6b7280" }}>
+                  color: step.status === "fail" ? "#dc2626" : step.status === "warn" ? "#d97706" : "#6b7280" }}>
                   {step.detail}
                 </div>
               </div>
@@ -2786,12 +2932,12 @@ function JourneyCard({ journey, state, onRun, disabled }) {
 const IDLE = () => ({ status: "idle", steps: [], duration: null });
 
 export default function AppHealthCheck() {
-  const { appId, serverUrl, isDevUrl } = getEnvLabel();
   const [states, setStates] = useState(() =>
     Object.fromEntries(ALL_JOURNEYS.map(j => [j.id, IDLE()]))
   );
   const [runningAll, setRunningAll] = useState(false);
   const [lastRunAll, setLastRunAll] = useState(null);
+  const [lastRunTimestamp, setLastRunTimestamp] = useState(null);
   const [emailSending, setEmailSending] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const statesRef = useRef(states);
@@ -2891,6 +3037,7 @@ export default function AppHealthCheck() {
     const failures = await runGroup(ALL_JOURNEYS);
     setRunningAll(false);
     setLastRunAll(Date.now() - start);
+    setLastRunTimestamp(new Date());
     if (failures.length > 0) desktopNotify(failures);
   }
 
@@ -2905,6 +3052,11 @@ export default function AppHealthCheck() {
     return acc;
   }, {});
 
+  // Count journeys with at least one warn-level step
+  const warnJourneyCount = Object.entries(states).filter(([id, s]) =>
+    s.status === "warn" || (s.status !== "fail" && s.steps.some(step => step.status === "warn"))
+  ).length;
+
   const totalJourneys = ALL_JOURNEYS.length;
   const allDone = !anyRunning && Object.values(states).every(s => s.status !== "idle");
   const allPassed = allDone && !counts.fail;
@@ -2918,28 +3070,49 @@ export default function AppHealthCheck() {
         <div style={S.header}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={S.title}>App Health Check</div>
-                {/* Environment badge */}
-                <span title={`App ID: ${appId || "unknown"}\nServer: ${serverUrl || "unknown"}`} style={{
-                  display: "inline-block",
-                  padding: "2px 10px",
-                  borderRadius: 12,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  letterSpacing: "0.05em",
-                  background: isDevUrl ? "#fef3c7" : "#fee2e2",
-                  color: isDevUrl ? "#92400e" : "#991b1b",
-                  border: `1px solid ${isDevUrl ? "#fcd34d" : "#fca5a5"}`,
-                  cursor: "default",
+              {/* Production readiness board title */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <div style={S.title}>Production Readiness Board</div>
+                <span style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "3px 12px", borderRadius: 12,
+                  fontSize: 12, fontWeight: 700, letterSpacing: "0.05em",
+                  background: "#dcfce7", color: "#15803d",
+                  border: "1px solid #86efac",
                 }}>
-                  {isDevUrl ? "TEST / DEV" : "PRODUCTION"}
+                  ● PRODUCTION
                 </span>
-                {appId && (
-                  <span style={{ fontSize: 11, color: "#9ca3af", fontFamily: "monospace" }}>
-                    {appId}
-                  </span>
-                )}
+              </div>
+              {/* Production env metadata */}
+              <div style={{
+                display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+                padding: "7px 12px", marginBottom: 6,
+                background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8,
+                fontSize: 12,
+              }}>
+                <span style={{ color: "#166534" }}>
+                  <strong>App ID:</strong>{" "}
+                  <span style={{ fontFamily: "monospace" }}>{PROD_APP_ID}</span>
+                </span>
+                <span style={{ color: "#166534" }}>
+                  <strong>Server:</strong>{" "}
+                  <span style={{ fontFamily: "monospace" }}>{PROD_SERVER_URL}</span>
+                </span>
+                <span style={{ color: "#166534" }}>
+                  <strong>Last run:</strong>{" "}
+                  {lastRunTimestamp
+                    ? lastRunTimestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                    : <span style={{ fontStyle: "italic", color: "#6b7280" }}>Never</span>}
+                </span>
+                <span style={{ color: "#6b7280", fontStyle: "italic" }}>
+                  All checks target production regardless of current page environment.
+                </span>
+                <a
+                  href="/AppHealthCheckDiag"
+                  style={{ marginLeft: "auto", color: "#6b7280", fontSize: 11, textDecoration: "underline", whiteSpace: "nowrap" }}
+                >
+                  🔬 Env Diagnostic
+                </a>
               </div>
               <div style={S.subtitle}>
                 {totalJourneys} journeys across {JOURNEY_GROUPS.length} areas — run after deploys or data changes.
@@ -2975,6 +3148,13 @@ export default function AppHealthCheck() {
                   <span style={{ color: "#059669", marginLeft: 5 }}>passed</span>
                 </div>
               )}
+              {warnJourneyCount > 0 && (
+                <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8,
+                  padding: "5px 14px", fontSize: 13 }}>
+                  <span style={{ fontWeight: 700, color: "#d97706" }}>{warnJourneyCount}</span>
+                  <span style={{ color: "#d97706", marginLeft: 5 }}>warned</span>
+                </div>
+              )}
               {counts.fail > 0 && (
                 <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8,
                   padding: "5px 14px", fontSize: 13 }}>
@@ -3002,54 +3182,100 @@ export default function AppHealthCheck() {
           )}
         </div>
 
-        {/* Groups */}
+        {/* Groups — sorted by section order */}
         <div style={S.content}>
-          {JOURNEY_GROUPS.map(group => {
-            const groupStates = group.journeys.map(j => states[j.id]);
-            const groupDone = groupStates.every(s => s.status !== "idle" && s.status !== "running");
-            const groupFailed = groupStates.filter(s => s.status === "fail").length;
-            const groupPassed = groupStates.filter(s => s.status === "pass").length;
+          {(() => {
+            // Sort groups by section order (groups without section go last)
+            const sorted = [...JOURNEY_GROUPS].sort((a, b) => {
+              const ai = SECTION_ORDER.indexOf(a.section ?? "");
+              const bi = SECTION_ORDER.indexOf(b.section ?? "");
+              if (ai === -1 && bi === -1) return 0;
+              if (ai === -1) return 1;
+              if (bi === -1) return -1;
+              return ai - bi;
+            });
 
-            return (
-              <div key={group.label} style={{ marginBottom: 36, maxWidth: 800 }}>
-                {/* Group header */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-                  marginBottom: 12, paddingBottom: 8, borderBottom: "2px solid #e5e7eb" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em",
-                      textTransform: "uppercase", color: "#6b7280" }}>
-                      {group.label}
-                    </span>
-                    {groupDone && groupFailed === 0 && (
-                      <span style={{ fontSize: 11, color: "#059669", fontWeight: 700 }}>✓ All passed</span>
+            let lastSection = null;
+            return sorted.map(group => {
+              const groupStates = group.journeys.map(j => states[j.id]);
+              const groupDone = groupStates.every(s => s.status !== "idle" && s.status !== "running");
+              const groupFailed = groupStates.filter(s => s.status === "fail").length;
+
+              const showSectionHeader = group.section && group.section !== lastSection;
+              const isFirstSection = lastSection === null;
+              if (showSectionHeader) lastSection = group.section;
+              const isTransaction = group.section === "Controlled transaction checks";
+
+              return (
+                <div key={group.label} style={{ maxWidth: 800 }}>
+                  {showSectionHeader && (
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 12,
+                      marginBottom: 16, marginTop: isFirstSection ? 0 : 24,
+                    }}>
+                      <div style={{ flex: 1, height: 1, background: "#d1d5db" }} />
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, letterSpacing: "0.1em",
+                        textTransform: "uppercase", color: "#6b7280", whiteSpace: "nowrap",
+                      }}>
+                        {group.section}
+                      </span>
+                      <div style={{ flex: 1, height: 1, background: "#d1d5db" }} />
+                    </div>
+                  )}
+
+                  <div style={{ marginBottom: 36 }}>
+                    {/* Group header */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                      marginBottom: 12, paddingBottom: 8, borderBottom: "2px solid #e5e7eb" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em",
+                          textTransform: "uppercase", color: "#6b7280" }}>
+                          {group.label}
+                        </span>
+                        {groupDone && groupFailed === 0 && (
+                          <span style={{ fontSize: 11, color: "#059669", fontWeight: 700 }}>✓ All passed</span>
+                        )}
+                        {groupDone && groupFailed > 0 && (
+                          <span style={{ fontSize: 11, color: "#dc2626", fontWeight: 700 }}>✕ {groupFailed} failed</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => runGroup(group.journeys)}
+                        disabled={anyRunning}
+                        style={{ ...S.btnGhost, fontSize: 12, color: anyRunning ? "#d1d5db" : "#6b7280" }}
+                      >
+                        Run group
+                      </button>
+                    </div>
+
+                    {/* Transaction warning banner */}
+                    {isTransaction && (
+                      <div style={{
+                        marginBottom: 10, padding: "7px 12px",
+                        background: "#fefce8", border: "1px solid #fef08a", borderRadius: 7,
+                        fontSize: 12, color: "#854d0e",
+                      }}>
+                        Controlled synthetic transaction checks — uses dedicated test records. Cleanup runs automatically after each check.
+                      </div>
                     )}
-                    {groupDone && groupFailed > 0 && (
-                      <span style={{ fontSize: 11, color: "#dc2626", fontWeight: 700 }}>✕ {groupFailed} failed</span>
-                    )}
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {group.journeys.map(journey => (
+                        <JourneyCard
+                          key={journey.id}
+                          journey={journey}
+                          state={states[journey.id]}
+                          onRun={() => runOne(journey)}
+                          disabled={anyRunning}
+                        />
+                      ))}
+                    </div>
                   </div>
-                  <button
-                    onClick={() => runGroup(group.journeys)}
-                    disabled={anyRunning}
-                    style={{ ...S.btnGhost, fontSize: 12, color: anyRunning ? "#d1d5db" : "#6b7280" }}
-                  >
-                    Run group
-                  </button>
                 </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {group.journeys.map(journey => (
-                    <JourneyCard
-                      key={journey.id}
-                      journey={journey}
-                      state={states[journey.id]}
-                      onRun={() => runOne(journey)}
-                      disabled={anyRunning}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
         </div>
 
       </div>

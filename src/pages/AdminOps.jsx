@@ -151,6 +151,13 @@ const TOOLS = [
         icon: "🩺",
         color: "#1a6b5a",
       },
+      {
+        title: "Functional Test Environment",
+        description: "Seed, verify, and monitor the functional test dataset. Manage coach/athlete topology and confirm journey coverage.",
+        route: "/FunctionalTestEnv",
+        icon: "🧪",
+        color: "#1a4e6b",
+      },
     ],
   },
   {

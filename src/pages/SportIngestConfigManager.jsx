@@ -2,10 +2,25 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
 
+const DEFAULT_SPORT_CONFIGS = [
+  { sport_key: "football",           display_name: "Football",             gender: "mens",   active: false, non_sport_keywords: [], hardcoded_mappings: [], program_blocklist: [] },
+  { sport_key: "baseball",           display_name: "Baseball",             gender: "mens",   active: false, non_sport_keywords: [], hardcoded_mappings: [], program_blocklist: [] },
+  { sport_key: "basketball_mens",    display_name: "Basketball (Men's)",   gender: "mens",   active: false, non_sport_keywords: [], hardcoded_mappings: [], program_blocklist: [] },
+  { sport_key: "basketball_womens",  display_name: "Basketball (Women's)", gender: "womens", active: false, non_sport_keywords: [], hardcoded_mappings: [], program_blocklist: [] },
+  { sport_key: "gymnastics",         display_name: "Gymnastics",           gender: "womens", active: false, non_sport_keywords: [], hardcoded_mappings: [], program_blocklist: [] },
+  { sport_key: "lacrosse_mens",      display_name: "Lacrosse (Men's)",     gender: "mens",   active: false, non_sport_keywords: [], hardcoded_mappings: [], program_blocklist: [] },
+  { sport_key: "lacrosse_womens",    display_name: "Lacrosse (Women's)",   gender: "womens", active: false, non_sport_keywords: [], hardcoded_mappings: [], program_blocklist: [] },
+  { sport_key: "soccer_mens",        display_name: "Soccer (Men's)",       gender: "mens",   active: false, non_sport_keywords: [], hardcoded_mappings: [], program_blocklist: [] },
+  { sport_key: "soccer_womens",      display_name: "Soccer (Women's)",     gender: "womens", active: false, non_sport_keywords: [], hardcoded_mappings: [], program_blocklist: [] },
+  { sport_key: "softball",           display_name: "Softball",             gender: "womens", active: false, non_sport_keywords: [], hardcoded_mappings: [], program_blocklist: [] },
+  { sport_key: "volleyball",         display_name: "Volleyball",           gender: "womens", active: false, non_sport_keywords: [], hardcoded_mappings: [], program_blocklist: [] },
+];
+
 export default function SportIngestConfigManager() {
   const nav = useNavigate();
   const [configs, setConfigs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
   const [editing, setEditing] = useState(null); // config id being edited
   const [editField, setEditField] = useState(null); // "keywords" | "mappings"
   const [editValue, setEditValue] = useState("");
@@ -57,6 +72,22 @@ export default function SportIngestConfigManager() {
     }
   };
 
+  const seedDefaults = async () => {
+    if (!window.confirm(`Create ${DEFAULT_SPORT_CONFIGS.length} default sport configs (all inactive)? You can set directory URLs and activate them afterwards.`)) return;
+    setSeeding(true);
+    try {
+      const created = [];
+      for (const cfg of DEFAULT_SPORT_CONFIGS) {
+        const rec = await base44.entities.SportIngestConfig.create(cfg);
+        created.push(rec);
+      }
+      setConfigs(created);
+    } catch (e) {
+      alert("Seed failed: " + (e.message || String(e)));
+    }
+    setSeeding(false);
+  };
+
   const saveEdit = async () => {
     try {
       const parsed = JSON.parse(editValue);
@@ -88,11 +119,31 @@ export default function SportIngestConfigManager() {
           <div style={{ fontSize: 24, fontWeight: 700, color: "#0B1F3B" }}>🏆 Sport Ingest Configs</div>
           <div style={{ fontSize: 13, color: "#6B7280", marginTop: 2 }}>{configs.length} sports configured</div>
         </div>
-        <button onClick={() => nav("/AdminOps")} style={S.btn}>← Admin</button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {!loading && configs.length === 0 && (
+            <button
+              onClick={seedDefaults}
+              disabled={seeding}
+              style={{ ...S.btnPrimary, padding: "8px 16px", fontSize: 13, fontWeight: 700, borderRadius: 6 }}
+            >
+              {seeding ? "Seeding…" : "⚡ Seed Default Configs"}
+            </button>
+          )}
+          <button onClick={() => nav("/AdminOps")} style={S.btn}>← Admin</button>
+        </div>
       </div>
 
       {loading ? (
         <div style={{ padding: 60, textAlign: "center", color: "#9CA3AF" }}>Loading…</div>
+      ) : configs.length === 0 ? (
+        <div style={{ padding: "60px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>⚙️</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#0B1F3B", marginBottom: 8 }}>No sport configs yet</div>
+          <div style={{ fontSize: 14, color: "#6B7280", maxWidth: 420, margin: "0 auto 24px" }}>
+            Click <strong>Seed Default Configs</strong> above to create starter records for all 11 supported sports.
+            All records start inactive — add directory URLs and activate each sport when ready.
+          </div>
+        </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>

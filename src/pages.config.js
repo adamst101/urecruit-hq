@@ -49,6 +49,7 @@
  */
 import Account from './pages/Account';
 import AppHealthCheck from './pages/AppHealthCheck';
+import AppHealthCheckDiag from './pages/AppHealthCheckDiag';
 import AdminFactoryReset from './pages/AdminFactoryReset';
 import AdminOps from './pages/AdminOps';
 import AdminSeedSchoolLogos from './pages/AdminSeedSchoolLogos';
@@ -71,6 +72,7 @@ import CoachSignup from './pages/CoachSignup';
 import CoachDemoStory from './pages/CoachDemoStory';
 import DemoStory from './pages/DemoStory';
 import Discover from './pages/Discover';
+import FunctionalTestEnv from './pages/FunctionalTestEnv';
 import GenerateDemoCamps from './pages/GenerateDemoCamps';
 import GeocodeSchools from './pages/GeocodeSchools';
 import Home from './pages/Home';
@@ -104,6 +106,7 @@ import __Layout from './Layout.jsx';
 export const PAGES = {
     "Account": Account,
     "AppHealthCheck": AppHealthCheck,
+    "AppHealthCheckDiag": AppHealthCheckDiag,
     "AdminFactoryReset": AdminFactoryReset,
     "AdminOps": AdminOps,
     "AdminSeedSchoolLogos": AdminSeedSchoolLogos,
@@ -126,6 +129,7 @@ export const PAGES = {
     "CoachDemoStory": CoachDemoStory,
     "DemoStory": DemoStory,
     "Discover": Discover,
+    "FunctionalTestEnv": FunctionalTestEnv,
     "GenerateDemoCamps": GenerateDemoCamps,
     "GeocodeSchools": GeocodeSchools,
     "Home": Home,
