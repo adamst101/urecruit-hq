@@ -178,24 +178,78 @@ function SummaryPreview() {
 }
 
 function UpdatePreview() {
+  // Mirrors the real Coach HQ section: intro narrative, athlete blocks (limited to 3),
+  // and the period recap with stat chips and most-active programs.
+  const narrative = "Since your last visit, 4 athletes had recruiting activity across the program, including a scholarship offer and an unofficial visit.";
+  const athleteBlocks = [
+    { name: "Jaylen Carter",   text: "Florida extended a scholarship offer after his spring camp visit. Ohio State and Georgia also remain in contact with direct follow activity logged." },
+    { name: "Marcus Okafor",   text: "Unofficial visit completed at Auburn. Tennessee has also been active with direct contact logged in the period." },
+    { name: "DeShawn Williams",text: "Campus tour at Michigan added him to their prospect list. The defensive coordinator made direct contact." },
+  ];
+  const statChips = [
+    { value: 4, label: "Athletes active",   qualifier: null,           accent: "#34d399", active: true },
+    { value: 3, label: "With new traction", qualifier: "3 schools",    accent: "#60a5fa", active: true },
+    { value: 4, label: "Major outcomes",    qualifier: "1 offer · 1 visit", accent: "#f59e0b", active: true },
+    { value: 2, label: "Camp registrations",qualifier: "2 athletes",   accent: "#a78bfa", active: true },
+  ];
+  const topColleges = ["Florida", "Auburn", "Georgia"];
+
   return (
-    <PreviewFrame accent="#34d399" label="COACH UPDATE">
-      <div style={{ display: "flex", gap: 5, marginBottom: 12, flexWrap: "wrap" }}>
-        {["Since Last Visit", "30D", "60D", "90D"].map((label, i) => (
-          <div key={label} style={{ padding: "3px 9px", borderRadius: 5, border: "1px solid", fontSize: 10, fontWeight: 700, background: i === 0 ? "#34d399" : "transparent", color: i === 0 ? "#111827" : "#4b5563", borderColor: i === 0 ? "#34d399" : "#374151" }}>{label}</div>
-        ))}
-      </div>
-      {PD.update.map((item, i) => (
-        <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "8px 0", borderBottom: i < PD.update.length - 1 ? "1px solid #1a2535" : "none" }}>
-          <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#1e2d45", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#34d399", flexShrink: 0 }}>{item.initials}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#e8edf3" }}>{item.name}</div>
-            <div style={{ fontSize: 11, color: "#6b7280", lineHeight: 1.45, marginTop: 2 }}>{item.body}</div>
-          </div>
-          <div style={{ fontSize: 9.5, color: "#374151", flexShrink: 0 }}>{item.daysAgo}d ago</div>
+    <div style={{ marginBottom: 22 }}>
+      {/* Section header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ width: 3, height: 20, background: "#34d399", borderRadius: 2 }} />
+        <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f1f5f9" }}>COACH UPDATE</span>
+        <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>recent recruiting changes in the selected period</span>
+        {/* Period toggle */}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          {["Since Last Visit", "30D", "60D", "90D"].map((label, i) => (
+            <div key={label} style={{ padding: "3px 8px", borderRadius: 5, border: "1px solid", fontSize: 10, fontWeight: 700, background: i === 0 ? "#34d399" : "transparent", color: i === 0 ? "#111827" : "#4b5563", borderColor: i === 0 ? "#34d399" : "#374151" }}>{label}</div>
+          ))}
         </div>
-      ))}
-    </PreviewFrame>
+      </div>
+      {/* Card */}
+      <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 22px", boxShadow: "0 4px 24px rgba(0,0,0,0.4)" }}>
+        {/* Intro narrative */}
+        <p style={{ margin: "0 0 12px", fontSize: 14, color: "#d1d5db", lineHeight: 1.7 }}>{narrative}</p>
+        {/* Athlete blocks — limited to 3 */}
+        <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 7 }}>
+          {athleteBlocks.map((block, i) => (
+            <div key={i} style={{ background: "rgba(148,163,184,0.05)", border: "1px solid rgba(148,163,184,0.12)", borderRadius: 9, padding: "9px 13px" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#f1f5f9", marginBottom: 3 }}>{block.name}</div>
+              <div style={{ fontSize: 12.5, color: "#d1d5db", lineHeight: 1.6 }}>{block.text}</div>
+            </div>
+          ))}
+        </div>
+        {/* Period recap */}
+        <div style={{ borderTop: "1px solid #1f2937", paddingTop: 14 }}>
+          {/* Stat chips 2x2 */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 10 }}>
+            {statChips.map(({ value, label, qualifier, accent, active }) => (
+              <div key={label} style={{ background: active ? `${accent}0d` : "rgba(255,255,255,0.02)", border: `1px solid ${active ? accent + "28" : "#1a2535"}`, borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 1 }}>
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 30, color: active ? accent : "#2d3748", lineHeight: 1 }}>{value}</span>
+                <span style={{ fontSize: 10.5, fontWeight: 600, color: active ? "#6b7280" : "#2d3748", lineHeight: 1.3 }}>{label}</span>
+                {qualifier && <span style={{ fontSize: 9.5, color: "#4b5563", marginTop: 2 }}>{qualifier}</span>}
+              </div>
+            ))}
+          </div>
+          {/* Most active programs */}
+          <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #1a2535", borderRadius: 10, padding: "10px 12px" }}>
+            <div style={{ fontSize: 9.5, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Most active programs</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {topColleges.map((col, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 12, color: i === 0 ? "#e8a020" : "#374151", minWidth: 11, textAlign: "right" }}>{i + 1}</span>
+                  <div style={{ height: 2, borderRadius: 1, width: i === 0 ? 20 : i === 1 ? 12 : 6, background: i === 0 ? "rgba(232,160,32,0.4)" : i === 1 ? "rgba(148,163,184,0.18)" : "rgba(255,255,255,0.05)", flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: i === 0 ? "#e8a020" : i === 1 ? "#9ca3af" : "#6b7280" }}>{col}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "right" }}>SAMPLE DATA</div>
+      </div>
+    </div>
   );
 }
 
@@ -455,16 +509,35 @@ const STEPS = [
     nextLabel: "Headline Metrics",
     render: () => (
       <>
+        <p style={{ ...T.eyebrow, marginBottom: 10 }}>Section 2 of 8</p>
+        <h2 style={{ ...T.sectionTitle, marginBottom: 18 }}>Coach Update</h2>
         <UpdatePreview />
-        <p style={{ ...T.eyebrow, marginBottom: 6 }}>Section 2 of 8</p>
-        <h2 style={T.sectionTitle}>Coach Update</h2>
+        <div style={{ borderTop: "1px solid #1a2535", margin: "4px 0 20px" }} />
         <p style={T.sectionBody}>
-          This is your period-based recruiting narrative and change summary. It shows what has
-          changed recently across the roster and where activity has picked up. Use the time period
-          toggles to see exactly the window that is most relevant to you right now.
+          The Coach Update is designed to give the coach a clear narrative of what has actually
+          happened across the program during a selected time period.
         </p>
-        <p style={T.callout}>
-          Stay current on program-wide recruiting changes without chasing individual athlete updates.
+        <p style={{ ...T.sectionBody, marginTop: 12 }}>
+          Where the Program Recruiting Summary is the higher-level snapshot, the Coach Update is
+          meant to answer:
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "14px 0 0" }}>
+          {[
+            { icon: "🎯", text: "What specifically happened recently?" },
+            { icon: "👤", text: "Which athlete had activity?" },
+            { icon: "🏫", text: "Which college was involved?" },
+            { icon: "📞", text: "Who made contact, and how did they engage?" },
+            { icon: "💡", text: "What should I understand from this activity as a coach?" },
+          ].map((item, i) => (
+            <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 15, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{item.icon}</span>
+              <span style={{ fontSize: 13.5, color: "#9ca3af", lineHeight: 1.55 }}>{item.text}</span>
+            </div>
+          ))}
+        </div>
+        <p style={{ ...T.sectionBody, marginTop: 16 }}>
+          It is created by pulling recent recruiting actions across the roster and turning them into
+          a readable update rather than making the coach sort through raw activity logs.
         </p>
       </>
     ),
