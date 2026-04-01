@@ -12,15 +12,116 @@ import { useSeasonAccess } from "./hooks/useSeasonAccess.jsx";
  * - If logged out -> athleteProfile=null immediately (no stale leak)
  * - Scope cache by accountId
  * - Only fetch when authenticated
- * - Prefer active profile if present
+ * - Prefer seed profile over blank direct profile for linked test accounts
  * - Resilient to Base44 id field variations (id/_id/uuid)
+ *
+ * Seed-profile precedence (for Functional Test linked accounts):
+ * - A profile where athlete_name starts with "__hc_ft_" is a SEED profile
+ * - A profile with no athlete_name/grad_year and no camp data is a BLANK direct profile
+ * - If both exist: prefer seed profile (it has real downstream data)
+ * - If only one exists: use it regardless
  */
+
+// ---------- helpers ----------
 
 function normId(x) {
   if (!x) return null;
   if (typeof x === "string") return x;
   return x.id || x._id || x.uuid || null;
 }
+
+function isSeedProfile(profile) {
+  return typeof profile?.athlete_name === "string" &&
+    profile.athlete_name.startsWith("__hc_ft_");
+}
+
+function isBlankProfile(profile) {
+  const noName = !profile?.athlete_name || profile.athlete_name.trim() === "";
+  const noGradYear = !profile?.grad_year;
+  return noName && noGradYear;
+}
+
+/**
+ * Apply seed-profile precedence across a list of profiles.
+ * Returns { chosen, resolutionMode, diagnostics }.
+ */
+function resolveBestProfile(list, requestedAthleteId) {
+  const direct = list.length;
+
+  if (requestedAthleteId) {
+    const match = list.find((p) => normId(p) === requestedAthleteId) || null;
+    return {
+      chosen: match,
+      resolutionMode: match ? "direct" : "unresolved",
+      diagnostics: {
+        directProfilesFound: direct,
+        seedProfileFound: false,
+        seedProfileId: null,
+        finalProfileId: match ? (normId(match) || null) : null,
+        reason: match
+          ? `Matched requested athleteId ${requestedAthleteId}`
+          : `No profile matched requested athleteId ${requestedAthleteId}`,
+      },
+    };
+  }
+
+  if (list.length === 0) {
+    return {
+      chosen: null,
+      resolutionMode: "unresolved",
+      diagnostics: {
+        directProfilesFound: 0,
+        seedProfileFound: false,
+        seedProfileId: null,
+        finalProfileId: null,
+        reason: "No profiles returned",
+      },
+    };
+  }
+
+  const seedProfiles = list.filter(isSeedProfile);
+  const hasSeed = seedProfiles.length > 0;
+  const seedProfileId = hasSeed ? (normId(seedProfiles[0]) || null) : null;
+
+  // If there is a seed profile, prefer it
+  if (hasSeed) {
+    const chosen = seedProfiles[0];
+    return {
+      chosen,
+      resolutionMode: "linked_seed",
+      diagnostics: {
+        directProfilesFound: direct,
+        seedProfileFound: true,
+        seedProfileId,
+        finalProfileId: normId(chosen) || null,
+        reason: `Seed profile preferred (${list.length} total profiles found)`,
+      },
+    };
+  }
+
+  // No seed profile — use standard precedence: primary → active → first
+  const chosen =
+    list.find((p) => p?.is_primary === true && p?.active !== false) ||
+    list.find((p) => p?.active === true) ||
+    list[0] ||
+    null;
+
+  return {
+    chosen,
+    resolutionMode: chosen ? "direct" : "unresolved",
+    diagnostics: {
+      directProfilesFound: direct,
+      seedProfileFound: false,
+      seedProfileId: null,
+      finalProfileId: chosen ? (normId(chosen) || null) : null,
+      reason: chosen
+        ? `Direct profile selected (primary/active/first)`
+        : "No profile found after standard precedence",
+    },
+  };
+}
+
+// ---------- hook ----------
 
 export function useAthleteIdentity({ athleteId } = {}) {
   const queryClient = useQueryClient();
@@ -51,25 +152,29 @@ export function useAthleteIdentity({ athleteId } = {}) {
       const res = await base44.functions.invoke("getMyAthleteProfiles", { accountId });
       const list = Array.isArray(res?.data?.profiles) ? res.data.profiles : [];
 
-      let chosen = null;
-      if (athleteId) {
-        // Load the specific athlete requested
-        chosen = list.find((p) => normId(p) === athleteId) || null;
-      } else {
-        // Default: prefer primary, then active, then first
-        chosen = list.find((p) => p?.is_primary === true && p?.active !== false)
-          || list.find((p) => p?.active === true)
-          || list[0]
-          || null;
+      const { chosen, resolutionMode, diagnostics } = resolveBestProfile(list, athleteId || null);
+
+      const fullDiagnostics = {
+        authAccountId: accountId,
+        ...diagnostics,
+      };
+
+      // Debug logging
+      if (typeof window !== "undefined" && window.__DEBUG_ATHLETE_IDENTITY__) {
+        console.log("[AthleteIdentity]", fullDiagnostics);
       }
 
-      if (!chosen) return null;
+      if (!chosen) {
+        return { _resolved: null, _resolutionMode: resolutionMode, _diagnostics: fullDiagnostics };
+      }
 
       return {
         ...chosen,
-        id: normId(chosen) || null
+        id: normId(chosen) || null,
+        _resolutionMode: resolutionMode,
+        _diagnostics: fullDiagnostics,
       };
-    }
+    },
   });
 
   async function saveIdentity(payload) {
@@ -121,22 +226,32 @@ export function useAthleteIdentity({ athleteId } = {}) {
       return {
         identity: null,
         athleteProfile: null,
+        resolutionMode: "unresolved",
+        diagnostics: null,
         loading: false,
         isLoading: false,
         isError: false,
         error: null,
-        saveIdentity
+        saveIdentity,
       };
     }
 
+    // Strip internal _resolved sentinel if chosen was null
+    const rawData = query.data;
+    const profileData = rawData?._resolved === null ? null : rawData || null;
+    const resolutionMode = rawData?._resolutionMode || (profileData ? "direct" : "unresolved");
+    const diagnostics = rawData?._diagnostics || null;
+
     return {
-      identity: query.data || null,
-      athleteProfile: query.data || null,
+      identity: profileData,
+      athleteProfile: profileData,
+      resolutionMode,
+      diagnostics,
       loading: query.isLoading,
       isLoading: query.isLoading,
       isError: query.isError,
       error: query.error,
-      saveIdentity
+      saveIdentity,
     };
   }, [isAuthed, query.data, query.isLoading, query.isError, query.error, accountId, queryClient]);
 }

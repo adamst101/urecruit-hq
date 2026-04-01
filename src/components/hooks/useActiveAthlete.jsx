@@ -69,11 +69,12 @@ export function useActiveAthleteId() {
 }
 
 // ── Hook: ID + profile ────────────────────────────────────────────────────────
-/** Returns { activeAthleteId, setActiveAthleteId, activeAthlete, isLoading }.
+/** Returns { activeAthleteId, setActiveAthleteId, activeAthlete, isLoading,
+ *            resolutionMode, diagnostics }.
  *  Wraps useAthleteIdentity with the currently selected athlete. */
 export function useActiveAthlete() {
   const [activeAthleteId] = useActiveAthleteId();
-  const { athleteProfile, isLoading } = useAthleteIdentity({
+  const { athleteProfile, isLoading, resolutionMode, diagnostics } = useAthleteIdentity({
     athleteId: activeAthleteId || undefined,
   });
 
@@ -82,5 +83,7 @@ export function useActiveAthlete() {
     setActiveAthleteId,
     activeAthlete: athleteProfile,
     isLoading,
+    resolutionMode,
+    diagnostics,
   };
 }
