@@ -150,36 +150,30 @@ function TBadge({ level }) {
 // ── Section preview components ─────────────────────────────────────────────────
 
 function SummaryPreview() {
-  const s = PD.summary;
+  // Mirrors the real Coach HQ section: narrative sentences, not stat boxes.
+  // Lead sentence + divider + supporting context, matching the actual section layout.
+  const s1 = "Jaylen Carter holds a scholarship offer from Florida, the program's top confirmed outcome this cycle.";
+  const s2 = "Beyond that, 11 other schools have been active across 6 athletes on the roster, including some stronger direct contact signals, with 8 active in the last 30 days.";
+  const s3 = "The recruiting picture shows a scholarship offer as the headline outcome, with mixed broader engagement including stronger contact signals distributed across multiple athletes.";
   return (
-    <PreviewFrame accent="#e8a020" label="PROGRAM RECRUITING SUMMARY">
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        {[
-          { label: "Commits",       value: s.commits,          color: "#34d399" },
-          { label: "Offers",        value: s.offers,           color: "#f59e0b" },
-          { label: "Off. Visits",   value: s.officialVisits,   color: "#60a5fa" },
-          { label: "Unoff. Visits", value: s.unofficialVisits, color: "#a78bfa" },
-          { label: "True Traction", value: s.trueTraction,     color: "#60a5fa" },
-        ].map((item) => (
-          <div key={item.label} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "6px 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 60 }}>
-            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: item.color, lineHeight: 1 }}>{item.value}</span>
-            <span style={{ fontSize: 8.5, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center" }}>{item.label}</span>
-          </div>
-        ))}
+    <div style={{ marginBottom: 22 }}>
+      {/* Section header — matches real Coach HQ header style */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
+        <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f1f5f9" }}>PROGRAM RECRUITING SUMMARY</span>
+        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em" }}>SAMPLE DATA</span>
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 130 }}>
-          <div style={{ fontSize: 8.5, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Top Momentum</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#e8edf3" }}>{s.topAthlete}</div>
-          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>Offer from {s.topCollege} · 3 programs</div>
-        </div>
-        <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "8px 12px", flex: 1, minWidth: 130 }}>
-          <div style={{ fontSize: 8.5, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>College Engagement</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#e8edf3" }}>{s.engagedColleges} schools</div>
-          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>across {s.anyInterest} athletes</div>
+      {/* Summary card — matches real section card */}
+      <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 22px", boxShadow: "0 4px 24px rgba(0,0,0,0.4)" }}>
+        {/* Lead takeaway */}
+        <p style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.90)", lineHeight: 1.55 }}>{s1}</p>
+        {/* Supporting context */}
+        <div style={{ borderTop: "1px solid #1e293b", paddingTop: 12, fontSize: 13, color: "#94a3b8", lineHeight: 1.72 }}>
+          <p style={{ margin: "0 0 9px" }}>{s2}</p>
+          <p style={{ margin: 0 }}>{s3}</p>
         </div>
       </div>
-    </PreviewFrame>
+    </div>
   );
 }
 
@@ -426,16 +420,29 @@ const STEPS = [
     nextLabel: "Coach Update",
     render: () => (
       <>
+        <p style={{ ...T.eyebrow, marginBottom: 10 }}>Section 1 of 8</p>
+        <h2 style={{ ...T.sectionTitle, marginBottom: 18 }}>Program Recruiting Summary</h2>
         <SummaryPreview />
-        <p style={{ ...T.eyebrow, marginBottom: 6 }}>Section 1 of 8</p>
-        <h2 style={T.sectionTitle}>Program Recruiting Summary</h2>
         <p style={T.sectionBody}>
-          This section gives you a high-level read on what is happening across the entire program.
-          You can see where momentum is concentrated, how many athletes have confirmed outcomes, and
-          how broadly college programs are engaging your roster.
+          The Program Recruiting Summary on Coach HQ is designed to give a coach a single, fast
+          read on what is happening across the program's recruiting activity. It is created by
+          rolling up athlete-level recruiting activity into a coach-level program view.
         </p>
-        <p style={T.callout}>
-          Understand the state of the program at a glance without reviewing each athlete individually.
+        <p style={{ ...T.sectionBody, marginTop: 12 }}>
+          In plain terms, the summary is built by taking all of the recruiting signals tied to the
+          athletes in that coach's program and combining them into one structured snapshot. That
+          typically includes:
+        </p>
+        <ul style={{ margin: "10px 0 0", padding: "0 0 0 18px", color: "#9ca3af", fontSize: 13.5, lineHeight: 1.85 }}>
+          <li>which athletes have activity on record</li>
+          <li>which schools are engaging</li>
+          <li>what kinds of activity are happening</li>
+          <li>when that activity occurred</li>
+          <li>whether traction is spread across the roster or concentrated on a few players</li>
+        </ul>
+        <p style={{ ...T.sectionBody, marginTop: 12 }}>
+          So instead of reviewing one athlete at a time, Coach HQ aggregates that underlying data
+          and turns it into a program-wide summary.
         </p>
       </>
     ),
