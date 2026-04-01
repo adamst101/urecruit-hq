@@ -1321,9 +1321,9 @@ export default function CoachDashboard() {
         </div>
       </section>
 
-      {/* ── SECTION 2: HEADLINE PROGRAM METRICS (6 cards) ── */}
+      {/* ── SECTION 2: HEADLINE PROGRAM METRICS (8 tiles, 4 per row) ── */}
       <section id="coach-tour-metrics" style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: 14 }}>
+        <div id="coach-tour-drilldown" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
 
           {/* 1. Players w/ Any Interest */}
           <div
@@ -1426,13 +1426,6 @@ export default function CoachDashboard() {
             </div>
             <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>2+ athletes each</div>
           </div>
-
-        </div>
-      </section>
-
-      {/* ── SECTION 2b: DRILL-DOWN TILES ── */}
-      <section id="coach-tour-drilldown" style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: 14 }}>
 
           {/* 7. Recent Activity */}
           <div
