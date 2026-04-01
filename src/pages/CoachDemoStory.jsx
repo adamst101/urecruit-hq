@@ -587,129 +587,36 @@ const STEPS = [
   // ── STEP 4: Headline Metric Tiles ─────────────────────────────────────────
   {
     nextLabel: "Invite Families",
-    render: () => {
-      const groups = [
-        {
-          label: "Interest, Traction and Outcomes",
-          tiles: [
-            {
-              color: "#34d399",
-              name: "Any Interest",
-              definition: "Players with at least one recorded recruiting signal. This includes any logged activity that indicates possible college interest, even if it is still early-stage.",
-              detail: "Athlete · school · signal type · latest activity",
-            },
-            {
-              color: "#60a5fa",
-              name: "True Traction",
-              definition: "Players with verified recruiting momentum. This includes higher-confidence activity such as direct outreach, verified contact, or other stronger interaction that moves beyond general signal or noise.",
-              detail: "Athlete · school · verified contact or action · date",
-            },
-            {
-              color: "#f59e0b",
-              name: "Visits / Offers",
-              definition: "Confirmed recruiting outcomes such as unofficial visits, official visits, and scholarship offers that are on record for athletes in the program.",
-              detail: "Athlete · school · visit or offer type · status · date",
-            },
-          ],
-        },
-        {
-          label: "College Engagement",
-          tiles: [
-            {
-              color: "#a78bfa",
-              name: "Engaged Colleges",
-              definition: "Unique colleges that have recorded recruiting activity tied to athletes in the program.",
-              detail: "College · linked athletes · activity type · latest date",
-            },
-            {
-              color: "#e8a020",
-              name: "Repeat Colleges",
-              definition: "Colleges engaging more than one athlete in the program, showing broader interest across the roster rather than interest limited to a single player.",
-              detail: "College · linked athletes · connection count · recent activity",
-            },
-          ],
-        },
-        {
-          label: "Momentum and Attention",
-          tiles: [
-            {
-              color: "#fb923c",
-              name: "Heating Up",
-              definition: "Players showing rising recent momentum based on recent activity volume, stronger signals, or an increase in college engagement.",
-              detail: "Athlete · driving schools · activity trend · latest date",
-            },
-            {
-              color: "#94a3b8",
-              name: "Recent Activity",
-              definition: "The total number of recruiting actions logged during the selected time period across the roster.",
-              detail: "Athlete · school · action · contact method · date",
-            },
-            {
-              color: "#f87171",
-              name: "Needs Attention",
-              definition: "Players who may require coach review because of notable activity, missing follow-up, emerging momentum, or another condition that suggests a coach should take a closer look.",
-              detail: "Athlete · issue flagged · related activity · follow-up need",
-            },
-          ],
-        },
-      ];
-      return (
+    render: () => (
         <>
           <MetricTilesPreview />
           <ExplainerCard label="Section 3 of 4" title="Headline Metrics">
-            <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 18px" }}>
-              The tile dashboard is the coach's at-a-glance recruiting command center. It pulls key
-              signals from across the roster and turns them into a simple visual summary, helping the
-              coach see where interest exists, where traction is becoming real, which colleges are
-              active, and which players may require closer attention.
+            <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 14px" }}>
+              The tile dashboard gives coaches an at-a-glance view of recruiting activity across the
+              roster. It surfaces key signals to show where interest exists, where traction is
+              strengthening, which colleges are active, and which players may need attention. Each
+              tile is a drill-down point, with the number serving as the summary and the click
+              revealing the supporting detail.
             </p>
-
-            {groups.map((group, gi) => (
-              <div key={group.label} style={{ marginBottom: gi < groups.length - 1 ? 16 : 0 }}>
-                <div style={{ fontSize: 9.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
-                  {group.label}
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {[
+                { icon: "📡", term: "Recruiting Signal", def: "Any recorded activity that suggests possible college interest, even at an early stage." },
+                { icon: "📈", term: "True Traction",     def: "Verified recruiting momentum, such as direct outreach, confirmed contact, or stronger interaction beyond general interest." },
+                { icon: "🔥", term: "Heating Up",        def: "A player showing increased recent momentum through higher activity, stronger signals, or growing college engagement." },
+                { icon: "🔔", term: "Needs Attention",   def: "A player flagged for coach review due to notable activity, emerging momentum, missing follow-up, or another reason that may warrant a closer look." },
+              ].map((item, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <span style={{ fontSize: 15, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{item.icon}</span>
+                  <span style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.55 }}>
+                    <strong style={{ color: "#0f172a", fontWeight: 700 }}>{item.term}</strong>
+                    {" — "}{item.def}
+                  </span>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
-                  {group.tiles.map((tile, ti) => {
-                    const spanFull = group.tiles.length % 2 !== 0 && ti === group.tiles.length - 1;
-                    return (
-                      <div
-                        key={tile.name}
-                        style={{
-                          background: "rgba(255,255,255,0.72)",
-                          border: "1px solid #e2e8f0",
-                          borderTop: `3px solid ${tile.color}`,
-                          borderRadius: 10,
-                          padding: "10px 11px",
-                          display: "flex",
-                          flexDirection: "column",
-                          gridColumn: spanFull ? "1 / -1" : "auto",
-                        }}
-                      >
-                        <div style={{ fontSize: 11.5, fontWeight: 700, color: "#0f172a", marginBottom: 5 }}>
-                          {tile.name}
-                        </div>
-                        <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.55, flex: 1 }}>
-                          {tile.definition}
-                        </div>
-                        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 7, paddingTop: 6, borderTop: "1px solid #e8edf3", lineHeight: 1.4 }}>
-                          <span style={{ fontWeight: 600, color: "#64748b" }}>Detail: </span>
-                          {tile.detail}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-
-            <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: "16px 0 0", paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
-              Every tile is an entry point. The numbers are the summary. The detail is behind the click.
-            </p>
+              ))}
+            </div>
           </ExplainerCard>
-        </>
-      );
-    },
+      </>
+    ),
   },
   // ── STEP 5: Invite Parents ────────────────────────────────────────────────
   {
