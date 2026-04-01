@@ -38,7 +38,7 @@ export const FT_TOPOLOGY = {
   coaches: [
     {
       _key: "coach1",
-      first_name: "__hc_ft_Coach",
+      first_name: "Test",
       last_name: "Hayes",
       school_or_org: "Riverside High School (FT Seed)",
       sport: "Football",
@@ -49,7 +49,7 @@ export const FT_TOPOLOGY = {
     },
     {
       _key: "coach2",
-      first_name: "__hc_ft_Coach",
+      first_name: "Test",
       last_name: "Rivera",
       school_or_org: "Lincoln Academy (FT Seed)",
       sport: "Football",
@@ -64,9 +64,9 @@ export const FT_TOPOLOGY = {
     {
       _key: "athlete1",
       family: "family1",
-      first_name: "__hc_ft_Tyler",
+      first_name: "Test",
       last_name: "Johnson",
-      athlete_name: "__hc_ft_Tyler Johnson",
+      athlete_name: "Test Johnson",
       account_id: "__hc_ft_family1",
       grad_year: 2026,
       sport_id: "football",
@@ -76,9 +76,9 @@ export const FT_TOPOLOGY = {
     {
       _key: "athlete2",
       family: "family1",
-      first_name: "__hc_ft_Marcus",
+      first_name: "Test",
       last_name: "Johnson",
-      athlete_name: "__hc_ft_Marcus Johnson",
+      athlete_name: "Test Johnson",
       account_id: "__hc_ft_family1",
       grad_year: 2027,
       sport_id: "football",
@@ -88,9 +88,9 @@ export const FT_TOPOLOGY = {
     {
       _key: "athlete3",
       family: "family2",
-      first_name: "__hc_ft_Sofia",
+      first_name: "Test",
       last_name: "Martinez",
-      athlete_name: "__hc_ft_Sofia Martinez",
+      athlete_name: "Test Martinez",
       account_id: "__hc_ft_family2",
       grad_year: 2026,
       sport_id: "football",
@@ -100,9 +100,9 @@ export const FT_TOPOLOGY = {
     {
       _key: "athlete4",
       family: "family3",
-      first_name: "__hc_ft_Jamal",
+      first_name: "Test",
       last_name: "Williams",
-      athlete_name: "__hc_ft_Jamal Williams",
+      athlete_name: "Test Williams",
       account_id: "__hc_ft_family3",
       grad_year: 2026,
       sport_id: "football",
@@ -112,9 +112,9 @@ export const FT_TOPOLOGY = {
     {
       _key: "athlete5",
       family: "family4",
-      first_name: "__hc_ft_Aisha",
+      first_name: "Test",
       last_name: "Davis",
-      athlete_name: "__hc_ft_Aisha Davis",
+      athlete_name: "Test Davis",
       account_id: "__hc_ft_family4",
       grad_year: 2027,
       sport_id: "football",
@@ -124,9 +124,9 @@ export const FT_TOPOLOGY = {
     {
       _key: "athlete6",
       family: "family5",
-      first_name: "__hc_ft_Devon",
+      first_name: "Test",
       last_name: "Brown",
-      athlete_name: "__hc_ft_Devon Brown",
+      athlete_name: "Test Brown",
       account_id: "__hc_ft_family5",
       grad_year: 2028,
       sport_id: "football",
@@ -370,19 +370,20 @@ export async function verifyTopology(base44) {
   const findAthlete = (lastName, accountId) =>
     athletes.find(a => a.last_name === lastName && a.account_id === accountId);
 
-  const tyler  = findAthlete("Johnson",  "__hc_ft_family1");  // first match = Tyler
-  const marcus = athletes.find(a => a.first_name === "__hc_ft_Marcus" && a.account_id === "__hc_ft_family1");
+  // family1 has two athletes with the same last name — distinguish by grad_year
+  const tyler  = athletes.find(a => a.last_name === "Johnson" && a.account_id === "__hc_ft_family1" && a.grad_year === 2026);
+  const marcus = athletes.find(a => a.last_name === "Johnson" && a.account_id === "__hc_ft_family1" && a.grad_year === 2027);
   const sofia  = findAthlete("Martinez", "__hc_ft_family2");
   const jamal  = findAthlete("Williams", "__hc_ft_family3");
   const aisha  = findAthlete("Davis",    "__hc_ft_family4");
   const devon  = findAthlete("Brown",    "__hc_ft_family5");
 
-  if (!tyler)  errors.push("Athlete Tyler Johnson (family1) missing");
-  if (!marcus) errors.push("Athlete Marcus Johnson (family1) missing");
-  if (!sofia)  errors.push("Athlete Sofia Martinez (family2) missing");
-  if (!jamal)  errors.push("Athlete Jamal Williams (family3) missing");
-  if (!aisha)  errors.push("Athlete Aisha Davis (family4) missing");
-  if (!devon)  errors.push("Athlete Devon Brown (family5) missing");
+  if (!tyler)  errors.push("Athlete Test Johnson 2026 (family1) missing");
+  if (!marcus) errors.push("Athlete Test Johnson 2027 (family1) missing");
+  if (!sofia)  errors.push("Athlete Test Martinez (family2) missing");
+  if (!jamal)  errors.push("Athlete Test Williams (family3) missing");
+  if (!aisha)  errors.push("Athlete Test Davis (family4) missing");
+  if (!devon)  errors.push("Athlete Test Brown (family5) missing");
 
   if (athletes.length !== 6) {
     warnings.push(`Expected 6 seed athletes, found ${athletes.length}`);

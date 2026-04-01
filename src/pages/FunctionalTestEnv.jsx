@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminRoute from "../components/auth/AdminRoute";
-import { prodBase44 as base44 } from "../api/healthCheckClient";
+import { base44 } from "../api/base44Client";
 import {
   SEED_VERSION,
   SEED_PREFIX,
