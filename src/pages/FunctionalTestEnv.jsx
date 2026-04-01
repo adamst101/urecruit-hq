@@ -258,8 +258,8 @@ export default function FunctionalTestEnv() {
     for (const [slotKey, { email, accountId }] of slots) {
       try {
         const { updated } = await claimSlot(base44, slotKey, accountId);
-        const { granted, seasonYear } = await grantTestEntitlement(base44, accountId);
-        addLog(`  ✓ ${slotKey} → ${email} (${updated} records, entitlement ${granted ? `granted ${seasonYear}` : "exists"})`);
+        const { granted, seasonYear, reason } = await grantTestEntitlement(base44, accountId);
+        addLog(`  ✓ ${slotKey} → ${email} (${updated} records, entitlement ${granted ? `granted ${seasonYear}` : `skipped — ${reason}`})`);
       } catch (err) {
         addLog(`  ✗ ${slotKey} auto-relink failed: ${err?.message}`);
       }

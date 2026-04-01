@@ -694,20 +694,30 @@ function _ftSeasonYear() {
 export async function grantTestEntitlement(base44, accountId) {
   const seasonYear = _ftSeasonYear();
 
-  // Check for existing active entitlement (admin list permission required)
+  if (!base44.entities?.Entitlement) {
+    return { granted: false, reason: "entity_not_found", seasonYear };
+  }
+
+  // Check for existing active entitlement — list() requires admin session.
+  // Season-year comparison uses loose equality to handle string/number mismatch.
   const all = await base44.entities.Entitlement.list("-created_date", 500).catch(() => []);
+  // eslint-disable-next-line eqeqeq
   const existing = all.find(
-    e => e.account_id === accountId && e.season_year === seasonYear && e.status === "active"
+    e => e.account_id === accountId && e.season_year == seasonYear && e.status === "active"
   );
   if (existing) return { granted: false, reason: "already_entitled", seasonYear };
 
-  await base44.entities.Entitlement.create({
-    account_id:  accountId,
-    season_year: seasonYear,
-    status:      "active",
-    amount_paid: 0,
-    source:      "ft_seed",
-  });
+  try {
+    await base44.entities.Entitlement.create({
+      account_id:  accountId,
+      season_year: seasonYear,
+      status:      "active",
+      amount_paid: 0,
+      source:      "ft_seed",
+    });
+  } catch (createErr) {
+    return { granted: false, reason: `create_failed: ${createErr?.message || createErr}`, seasonYear };
+  }
   return { granted: true, seasonYear };
 }
 
