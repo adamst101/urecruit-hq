@@ -469,11 +469,22 @@ export default function FunctionalTestEnv() {
                 prefix <code style={styles.code}>{SEED_PREFIX}</code> and can be identified and removed at any time.
               </div>
 
+              {/* Warn when records already exist so the user uses Reset instead */}
+              {seedData && (seedData.coaches?.length > 0 || seedData.athletes?.length > 0) && (
+                <div style={{
+                  marginTop: 10, padding: "8px 12px", borderRadius: 6, fontSize: 12,
+                  background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)",
+                  color: "#f59e0b",
+                }}>
+                  Seed records already exist. Use <strong>Reset &amp; Reseed</strong> to replace them — seeding again will be blocked to prevent duplicates.
+                </div>
+              )}
+
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
                 <ActionBtn
                   label="⚡ Seed Dataset"
                   onClick={handleSeed}
-                  disabled={isRunning}
+                  disabled={isRunning || !!(seedData && (seedData.coaches?.length > 0 || seedData.athletes?.length > 0))}
                   running={running === "seed"}
                 />
                 <ActionBtn

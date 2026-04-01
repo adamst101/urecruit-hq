@@ -234,6 +234,21 @@ export async function deleteAllSeeds(base44) {
 // ---------------------------------------------------------------------------
 
 export async function seedTopology(base44) {
+  // Guard: refuse to seed if records already exist — prevents duplicate records
+  // accumulating across multiple seed runs. Use resetTopology to wipe and reseed.
+  const existing = await discoverSeeds(base44);
+  const totalExisting =
+    existing.coaches.length + existing.athletes.length +
+    existing.rosters.length + existing.activities.length;
+  if (totalExisting > 0) {
+    throw new Error(
+      `Seed records already exist (${totalExisting} found: ` +
+      `${existing.coaches.length} coaches, ${existing.athletes.length} athletes, ` +
+      `${existing.rosters.length} rosters, ${existing.activities.length} activities). ` +
+      `Use Reset & Reseed to delete existing records and start fresh.`
+    );
+  }
+
   const seededAt = new Date().toISOString();
 
   // --- Phase 1: Coaches ---
