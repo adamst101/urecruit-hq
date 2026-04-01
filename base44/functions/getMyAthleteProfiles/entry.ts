@@ -24,11 +24,31 @@ Deno.serve(async (req) => {
   const accountId = user?.id || bodyAccountId;
 
   try {
-    const rows = await base44.asServiceRole.entities.AthleteProfile.filter({
-      account_id: accountId,
-    });
+    // Attempt 1: filter by account_id directly (works when Base44 respects field filter)
+    let list: unknown[] = [];
+    try {
+      const rows = await base44.asServiceRole.entities.AthleteProfile.filter({
+        account_id: accountId,
+      });
+      list = Array.isArray(rows) ? rows : [];
+    } catch (_filterErr) {
+      list = [];
+    }
 
-    const list = Array.isArray(rows) ? rows : [];
+    // Attempt 2: if filter returned nothing, fall back to listing all and matching in-process.
+    // This handles the case where Base44 treats account_id as a system field and ignores
+    // it as a filter predicate (returning all or none instead of the matching subset).
+    if (list.length === 0) {
+      try {
+        const all = await base44.asServiceRole.entities.AthleteProfile.list("-created_date", 2000);
+        if (Array.isArray(all)) {
+          list = all.filter((r: Record<string, unknown>) => r.account_id === accountId);
+          console.log(`[getMyAthleteProfiles] filter fallback: scanned ${all.length} total, found ${list.length} matching account_id=${accountId}`);
+        }
+      } catch (listErr) {
+        console.warn("[getMyAthleteProfiles] list fallback failed:", (listErr as Error).message);
+      }
+    }
 
     return Response.json({
       ok: true,
