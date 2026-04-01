@@ -850,12 +850,13 @@ const STEPS = [
         <GivebackPreview />
         <ExplainerCard
           label="Added Benefit"
-          title="URecruitHQ gives coaches a simple way to support families with a better recruiting resource while creating a built-in giveback opportunity for the program."
+          title="Support Families. Strengthen Your Program."
         >
           <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: 0 }}>
-            As families subscribe through your team, your program becomes eligible for quarterly
-            donations based on subscription activity. Giveback levels are tiered to reward stronger
-            participation and broader family engagement across the program.
+            URecruit HQ gives coaches a better way to support families while creating a built-in
+            giveback opportunity for the program. As families subscribe through your team, your
+            program becomes eligible for quarterly donations, with tiered giveback levels tied to
+            participation across the roster.
           </p>
         </ExplainerCard>
       </>
