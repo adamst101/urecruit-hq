@@ -66,7 +66,7 @@ export const FT_TOPOLOGY = {
       family: "family1",
       first_name: "Test",
       last_name: "Johnson",
-      athlete_name: "Test Johnson",
+      athlete_name: "__hc_ft_Test Johnson",
       account_id: "__hc_ft_family1",
       grad_year: 2026,
       sport_id: "football",
@@ -78,7 +78,7 @@ export const FT_TOPOLOGY = {
       family: "family1",
       first_name: "Test",
       last_name: "Johnson",
-      athlete_name: "Test Johnson",
+      athlete_name: "__hc_ft_Test Johnson",
       account_id: "__hc_ft_family1",
       grad_year: 2027,
       sport_id: "football",
@@ -90,7 +90,7 @@ export const FT_TOPOLOGY = {
       family: "family2",
       first_name: "Test",
       last_name: "Martinez",
-      athlete_name: "Test Martinez",
+      athlete_name: "__hc_ft_Test Martinez",
       account_id: "__hc_ft_family2",
       grad_year: 2026,
       sport_id: "football",
@@ -102,7 +102,7 @@ export const FT_TOPOLOGY = {
       family: "family3",
       first_name: "Test",
       last_name: "Williams",
-      athlete_name: "Test Williams",
+      athlete_name: "__hc_ft_Test Williams",
       account_id: "__hc_ft_family3",
       grad_year: 2026,
       sport_id: "football",
@@ -114,7 +114,7 @@ export const FT_TOPOLOGY = {
       family: "family4",
       first_name: "Test",
       last_name: "Davis",
-      athlete_name: "Test Davis",
+      athlete_name: "__hc_ft_Test Davis",
       account_id: "__hc_ft_family4",
       grad_year: 2027,
       sport_id: "football",
@@ -126,7 +126,7 @@ export const FT_TOPOLOGY = {
       family: "family5",
       first_name: "Test",
       last_name: "Brown",
-      athlete_name: "Test Brown",
+      athlete_name: "__hc_ft_Test Brown",
       account_id: "__hc_ft_family5",
       grad_year: 2028,
       sport_id: "football",
@@ -190,7 +190,7 @@ export async function discoverSeeds(base44) {
 
   return {
     coaches:    coaches.filter(r => _isSeedRecord(r, ["first_name", "last_name", "account_id", "invite_code"])),
-    athletes:   athletes.filter(r => _isSeedRecord(r, ["first_name", "last_name", "account_id"])),
+    athletes:   athletes.filter(r => _isSeedRecord(r, ["athlete_name", "account_id"])),
     rosters:    rosters.filter(r => _isSeedRecord(r, ["invite_code", "account_id", "athlete_id", "coach_id"])),
     activities: activities.filter(r => _isSeedRecord(r, ["account_id", "athlete_id", "coach_name"])),
   };
@@ -367,16 +367,17 @@ export async function verifyTopology(base44) {
   }
 
   // --- Athlete check ---
-  const findAthlete = (lastName, accountId) =>
-    athletes.find(a => a.last_name === lastName && a.account_id === accountId);
+  // Use athlete_name + grad_year as stable identifiers — account_id may have been
+  // updated to a real user ID via claimSlot, so it is no longer a reliable lookup key.
+  const findAthlete = (athleteName, gradYear) =>
+    athletes.find(a => a.athlete_name === athleteName && a.grad_year === gradYear);
 
-  // family1 has two athletes with the same last name — distinguish by grad_year
-  const tyler  = athletes.find(a => a.last_name === "Johnson" && a.account_id === "__hc_ft_family1" && a.grad_year === 2026);
-  const marcus = athletes.find(a => a.last_name === "Johnson" && a.account_id === "__hc_ft_family1" && a.grad_year === 2027);
-  const sofia  = findAthlete("Martinez", "__hc_ft_family2");
-  const jamal  = findAthlete("Williams", "__hc_ft_family3");
-  const aisha  = findAthlete("Davis",    "__hc_ft_family4");
-  const devon  = findAthlete("Brown",    "__hc_ft_family5");
+  const tyler  = findAthlete("__hc_ft_Test Johnson",  2026);
+  const marcus = findAthlete("__hc_ft_Test Johnson",  2027);
+  const sofia  = findAthlete("__hc_ft_Test Martinez", 2026);
+  const jamal  = findAthlete("__hc_ft_Test Williams", 2026);
+  const aisha  = findAthlete("__hc_ft_Test Davis",    2027);
+  const devon  = findAthlete("__hc_ft_Test Brown",    2028);
 
   if (!tyler)  errors.push("Athlete Test Johnson 2026 (family1) missing");
   if (!marcus) errors.push("Athlete Test Johnson 2027 (family1) missing");
@@ -390,8 +391,8 @@ export async function verifyTopology(base44) {
   }
 
   // --- Scenario 1: Multi-athlete household ---
-  const family1Athletes = athletes.filter(a => a.account_id === "__hc_ft_family1");
-  scenarios.multiAthleteHousehold = family1Athletes.length >= 2;
+  // Use athlete_name lookup (stable) rather than account_id (may be a real UUID after claim)
+  scenarios.multiAthleteHousehold = tyler !== undefined && marcus !== undefined;
   if (!scenarios.multiAthleteHousehold) {
     errors.push("Scenario 1 FAIL: family1 does not have 2+ athletes");
   } else {
@@ -522,4 +523,142 @@ export async function verifyTopology(base44) {
   }
 
   return { status, scenarios, notes, warnings, errors, counts };
+}
+
+// ---------------------------------------------------------------------------
+// SLOT_MAP — stable definitions for the 7 account slots.
+// Keyed by slotKey; used by claimSlot / releaseSlot to find and patch records
+// even after account_id has been updated to a real user ID.
+// ---------------------------------------------------------------------------
+
+export const SLOT_MAP = {
+  family1: {
+    type: "family",
+    label: "Family 1",
+    desc: "Test Johnson QB '26 · Test Johnson WR '27",
+    syntheticId: "__hc_ft_family1",
+    athletes: [
+      { athleteName: "__hc_ft_Test Johnson", gradYear: 2026 },
+      { athleteName: "__hc_ft_Test Johnson", gradYear: 2027 },
+    ],
+  },
+  family2: {
+    type: "family",
+    label: "Family 2",
+    desc: "Test Martinez DB '26",
+    syntheticId: "__hc_ft_family2",
+    athletes: [{ athleteName: "__hc_ft_Test Martinez", gradYear: 2026 }],
+  },
+  family3: {
+    type: "family",
+    label: "Family 3",
+    desc: "Test Williams RB '26",
+    syntheticId: "__hc_ft_family3",
+    athletes: [{ athleteName: "__hc_ft_Test Williams", gradYear: 2026 }],
+  },
+  family4: {
+    type: "family",
+    label: "Family 4",
+    desc: "Test Davis LB '27",
+    syntheticId: "__hc_ft_family4",
+    athletes: [{ athleteName: "__hc_ft_Test Davis", gradYear: 2027 }],
+  },
+  family5: {
+    type: "family",
+    label: "Family 5",
+    desc: "Test Brown OL '28 (sparse)",
+    syntheticId: "__hc_ft_family5",
+    athletes: [{ athleteName: "__hc_ft_Test Brown", gradYear: 2028 }],
+  },
+  coach1: {
+    type: "coach",
+    label: "Coach Hayes",
+    desc: "TestCoach Hayes — Riverside High",
+    syntheticId: "__hc_ft_coach1_account",
+    inviteCode: "__hc_ft_HAYES-001",
+  },
+  coach2: {
+    type: "coach",
+    label: "Coach Rivera",
+    desc: "TestCoach Rivera — Lincoln Academy",
+    syntheticId: "__hc_ft_coach2_account",
+    inviteCode: "__hc_ft_RIVERA-001",
+  },
+};
+
+// ---------------------------------------------------------------------------
+// claimSlot — link a real Base44 account ID to a seed account slot.
+// Updates account_id on AthleteProfile + CoachRoster (family slots)
+// or Coach (coach slots). Pass slot.syntheticId as realId to release.
+//
+// @param base44    — Base44 client
+// @param slotKey   — key in SLOT_MAP ("family1"…"family5" | "coach1" | "coach2")
+// @param realId    — the real account ID to write (or syntheticId to release)
+// @returns {{ updated: number, errors: string[] }}
+// ---------------------------------------------------------------------------
+
+export async function claimSlot(base44, slotKey, realId) {
+  const slot = SLOT_MAP[slotKey];
+  if (!slot) throw new Error(`Unknown slot key: ${slotKey}`);
+
+  const [allAthletes, allRosters, allCoaches] = await Promise.all([
+    base44.entities.AthleteProfile.filter({}).catch(() => []),
+    base44.entities.CoachRoster.filter({}).catch(() => []),
+    base44.entities.Coach.filter({}).catch(() => []),
+  ]);
+
+  let updated = 0;
+  const errors = [];
+
+  if (slot.type === "family") {
+    for (const def of slot.athletes) {
+      const record = allAthletes.find(
+        a => a.athlete_name === def.athleteName && a.grad_year === def.gradYear
+      );
+      if (!record) {
+        errors.push(`AthleteProfile not found: ${def.athleteName} ${def.gradYear}`);
+        continue;
+      }
+      try {
+        await base44.entities.AthleteProfile.update(record.id, { account_id: realId });
+        updated++;
+      } catch (e) {
+        errors.push(`AthleteProfile ${record.id}: ${e?.message}`);
+      }
+      // Update roster records that link this athlete to a coach
+      const athleteRosters = allRosters.filter(r => r.athlete_id === record.id);
+      for (const r of athleteRosters) {
+        try {
+          await base44.entities.CoachRoster.update(r.id, { account_id: realId });
+          updated++;
+        } catch (e) {
+          errors.push(`CoachRoster ${r.id}: ${e?.message}`);
+        }
+      }
+    }
+  } else if (slot.type === "coach") {
+    const record = allCoaches.find(c => c.invite_code === slot.inviteCode);
+    if (!record) {
+      errors.push(`Coach not found: invite_code ${slot.inviteCode}`);
+    } else {
+      try {
+        await base44.entities.Coach.update(record.id, { account_id: realId });
+        updated++;
+      } catch (e) {
+        errors.push(`Coach ${record.id}: ${e?.message}`);
+      }
+    }
+  }
+
+  return { updated, errors };
+}
+
+// ---------------------------------------------------------------------------
+// releaseSlot — revert a seed account slot back to its synthetic account_id.
+// ---------------------------------------------------------------------------
+
+export async function releaseSlot(base44, slotKey) {
+  const slot = SLOT_MAP[slotKey];
+  if (!slot) throw new Error(`Unknown slot key: ${slotKey}`);
+  return claimSlot(base44, slotKey, slot.syntheticId);
 }

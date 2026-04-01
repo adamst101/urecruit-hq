@@ -9,10 +9,13 @@ import { base44 } from "../api/base44Client";
 import {
   SEED_VERSION,
   SEED_PREFIX,
+  SLOT_MAP,
   verifyTopology,
   seedTopology,
   resetTopology,
   discoverSeeds,
+  claimSlot,
+  releaseSlot,
 } from "../lib/ftEnvService";
 
 // ---------------------------------------------------------------------------
@@ -82,7 +85,7 @@ export default function FunctionalTestEnv() {
   const [actionLog,    setActionLog]    = useState([]);
   const [lastSeeded,   setLastSeeded]   = useState(() => lsGet(LS_LAST_SEEDED));
   const [lastVerified, setLastVerified] = useState(() => lsGet(LS_LAST_VERIFIED));
-  const [running,      setRunning]      = useState(null); // "seed"|"reset"|"verify"|"discover"
+  const [running,      setRunning]      = useState(null); // "seed"|"reset"|"verify"|"discover"|"claim:slotKey"|"release:slotKey"
   const [notesOpen,    setNotesOpen]    = useState(true);
 
   const addLog = useCallback((msg) => {
@@ -223,6 +226,52 @@ export default function FunctionalTestEnv() {
   }, [addLog]);
 
   // -------------------------------------------------------------------------
+  // Claim / Release slot
+  // -------------------------------------------------------------------------
+  const handleClaim = useCallback(async (slotKey) => {
+    setRunning(`claim:${slotKey}`);
+    setLoading(true);
+    addLog(`Claiming slot "${slotKey}" as current user…`);
+    try {
+      const me = await base44.auth.me();
+      if (!me?.id) throw new Error("Could not determine current user ID — are you logged in?");
+      const { updated, errors } = await claimSlot(base44, slotKey, me.id);
+      if (errors.length > 0) {
+        errors.forEach(e => addLog(`  WARN: ${e}`));
+      }
+      addLog(`Slot "${slotKey}" claimed → account ${me.id} (${updated} records updated)`);
+      await handleDiscover();
+    } catch (err) {
+      addLog(`Claim ERROR (${slotKey}): ${err?.message || err}`);
+    } finally {
+      setLoading(false);
+      setRunning(null);
+    }
+  }, [addLog, handleDiscover]);
+
+  const handleRelease = useCallback(async (slotKey) => {
+    if (!window.confirm(
+      `Release slot "${slotKey}"? This reverts account_id back to the synthetic value and breaks any real login tied to it.`
+    )) return;
+    setRunning(`release:${slotKey}`);
+    setLoading(true);
+    addLog(`Releasing slot "${slotKey}" back to synthetic ID…`);
+    try {
+      const { updated, errors } = await releaseSlot(base44, slotKey);
+      if (errors.length > 0) {
+        errors.forEach(e => addLog(`  WARN: ${e}`));
+      }
+      addLog(`Slot "${slotKey}" released (${updated} records reverted)`);
+      await handleDiscover();
+    } catch (err) {
+      addLog(`Release ERROR (${slotKey}): ${err?.message || err}`);
+    } finally {
+      setLoading(false);
+      setRunning(null);
+    }
+  }, [addLog, handleDiscover]);
+
+  // -------------------------------------------------------------------------
   // Derived display values
   // -------------------------------------------------------------------------
 
@@ -254,21 +303,39 @@ export default function FunctionalTestEnv() {
   const hayesCoach  = seedData?.coaches?.find(c => c.last_name === "Hayes");
   const riveraCoach = seedData?.coaches?.find(c => c.last_name === "Rivera");
 
-  // Athlete display rows
+  // Returns { status: "not_seeded"|"unclaimed"|"claimed", currentId: string|null }
+  const getSlotStatus = (slotKey) => {
+    const slot = SLOT_MAP[slotKey];
+    if (!slot) return { status: "not_seeded", currentId: null };
+    if (slot.type === "family") {
+      const def = slot.athletes[0];
+      const record = (seedData?.athletes || []).find(
+        a => a.athlete_name === def.athleteName && a.grad_year === def.gradYear
+      );
+      if (!record) return { status: "not_seeded", currentId: null };
+      const isClaimed = record.account_id !== slot.syntheticId;
+      return { status: isClaimed ? "claimed" : "unclaimed", currentId: record.account_id };
+    } else {
+      const record = (seedData?.coaches || []).find(c => c.invite_code === slot.inviteCode);
+      if (!record) return { status: "not_seeded", currentId: null };
+      const isClaimed = record.account_id !== slot.syntheticId;
+      return { status: isClaimed ? "claimed" : "unclaimed", currentId: record.account_id };
+    }
+  };
+
+  // Athlete display rows — keyed by stable (athlete_name, grad_year) pair
   const ATHLETE_ROWS = [
-    { firstName: "__hc_ft_Tyler",  lastName: "Johnson",  family: "family1", grad: 2026, pos: "QB",  scenario: "High traction · Coach 1 only"   },
-    { firstName: "__hc_ft_Marcus", lastName: "Johnson",  family: "family1", grad: 2027, pos: "WR",  scenario: "Multi-household · Coach 2 only"  },
-    { firstName: "__hc_ft_Sofia",  lastName: "Martinez", family: "family2", grad: 2026, pos: "DB",  scenario: "High traction · Both coaches"    },
-    { firstName: "__hc_ft_Jamal",  lastName: "Williams", family: "family3", grad: 2026, pos: "RB",  scenario: "Camp-focused · Coach 1 only"     },
-    { firstName: "__hc_ft_Aisha",  lastName: "Davis",    family: "family4", grad: 2027, pos: "LB",  scenario: "Moderate · Coach 2 only"         },
-    { firstName: "__hc_ft_Devon",  lastName: "Brown",    family: "family5", grad: 2028, pos: "OL",  scenario: "Sparse — no coach, 0 acts"       },
+    { athleteName: "__hc_ft_Test Johnson",  gradYear: 2026, slotKey: "family1", pos: "QB",  displayName: "Test Johnson '26",  scenario: "High traction · Coach 1 only"   },
+    { athleteName: "__hc_ft_Test Johnson",  gradYear: 2027, slotKey: "family1", pos: "WR",  displayName: "Test Johnson '27",  scenario: "Multi-household · Coach 2 only"  },
+    { athleteName: "__hc_ft_Test Martinez", gradYear: 2026, slotKey: "family2", pos: "DB",  displayName: "Test Martinez",     scenario: "High traction · Both coaches"    },
+    { athleteName: "__hc_ft_Test Williams", gradYear: 2026, slotKey: "family3", pos: "RB",  displayName: "Test Williams",     scenario: "Camp-focused · Coach 1 only"     },
+    { athleteName: "__hc_ft_Test Davis",    gradYear: 2027, slotKey: "family4", pos: "LB",  displayName: "Test Davis",        scenario: "Moderate · Coach 2 only"         },
+    { athleteName: "__hc_ft_Test Brown",    gradYear: 2028, slotKey: "family5", pos: "OL",  displayName: "Test Brown",        scenario: "Sparse — no coach, 0 acts"       },
   ];
 
-  const findAthleteRecord = (firstName, lastName, family) =>
+  const findAthleteRecord = (athleteName, gradYear) =>
     (seedData?.athletes || []).find(
-      a => a.first_name === firstName &&
-           a.last_name  === lastName  &&
-           a.account_id === `__hc_ft_${family}`
+      a => a.athlete_name === athleteName && a.grad_year === gradYear
     );
 
   // Verify result badge
@@ -658,7 +725,95 @@ export default function FunctionalTestEnv() {
             </div>
           </SectionCard>
 
-          {/* ── Section 5: Relationship Matrix ── */}
+          {/* ── Section 5: Link Real Accounts ── */}
+          <SectionCard title="Link Real Accounts">
+            <div style={{ fontSize: 13, color: "#4B5563", marginBottom: 16, lineHeight: 1.6 }}>
+              To log in as a seed account, create a real Base44 login with any email you control,
+              then click <strong>Claim as me</strong> while logged in as that account.
+              All entity records for that slot update to use your real account ID.
+            </div>
+            <div style={styles.tableWrap}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.thead}>
+                    <th style={styles.th}>Slot</th>
+                    <th style={styles.th}>Description</th>
+                    <th style={styles.th}>Account ID</th>
+                    <th style={styles.th}>Status</th>
+                    <th style={{ ...styles.th, textAlign: "right" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(SLOT_MAP).map(([slotKey, slot], i) => {
+                    const { status: slotStatus, currentId } = getSlotStatus(slotKey);
+                    const isClaimRunning   = running === `claim:${slotKey}`;
+                    const isReleaseRunning = running === `release:${slotKey}`;
+                    const isThisRunning    = isClaimRunning || isReleaseRunning;
+
+                    const statusCfg = {
+                      not_seeded: { label: "Not seeded", bg: "#F3F4F6", color: "#6B7280" },
+                      unclaimed:  { label: "Not linked", bg: "#FEF3C7", color: "#92400E" },
+                      claimed:    { label: "Linked",     bg: "#D1FAE5", color: "#065F46" },
+                    }[slotStatus] || { label: "Unknown", bg: "#F3F4F6", color: "#6B7280" };
+
+                    return (
+                      <tr key={slotKey} style={i % 2 === 0 ? styles.trEven : styles.trOdd}>
+                        <td style={{ ...styles.td, fontWeight: 600 }}>{slot.label}</td>
+                        <td style={{ ...styles.td, fontSize: 12, color: "#6B7280" }}>{slot.desc}</td>
+                        <td style={{ ...styles.td, fontFamily: "monospace", fontSize: 11, maxWidth: 200 }}>
+                          {slotStatus === "not_seeded"
+                            ? <span style={{ color: "#9CA3AF" }}>—</span>
+                            : slotStatus === "claimed"
+                              ? <span style={{ color: "#059669" }} title={currentId}>
+                                  {currentId?.slice(0, 8)}…{currentId?.slice(-4)}
+                                </span>
+                              : <span style={{ color: "#9CA3AF" }}>{slot.syntheticId}</span>
+                          }
+                        </td>
+                        <td style={styles.td}>
+                          <Badge label={statusCfg.label} bg={statusCfg.bg} color={statusCfg.color} />
+                        </td>
+                        <td style={{ ...styles.td, textAlign: "right" }}>
+                          {slotStatus === "not_seeded" ? (
+                            <span style={{ fontSize: 12, color: "#9CA3AF" }}>Seed first</span>
+                          ) : slotStatus === "claimed" ? (
+                            <button
+                              onClick={() => handleRelease(slotKey)}
+                              disabled={isRunning}
+                              style={{
+                                padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+                                border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#B91C1C",
+                                cursor: isRunning ? "not-allowed" : "pointer", opacity: isRunning ? 0.5 : 1,
+                              }}
+                            >
+                              {isReleaseRunning ? "⏳" : "Release"}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleClaim(slotKey)}
+                              disabled={isRunning}
+                              style={{
+                                padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+                                border: "1px solid #6EE7B7", background: "#ECFDF5", color: "#065F46",
+                                cursor: isRunning ? "not-allowed" : "pointer", opacity: isRunning ? 0.5 : 1,
+                              }}
+                            >
+                              {isClaimRunning ? "⏳" : "Claim as me"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop: 12, fontSize: 12, color: "#9CA3AF" }}>
+              Each slot can only be claimed by one account at a time. Release a slot before claiming it with a different account.
+            </div>
+          </SectionCard>
+
+          {/* ── Section 7: Relationship Matrix ── */}
           <SectionCard title="Relationship Matrix">
             <div style={styles.tableWrap}>
               <table style={styles.table}>
@@ -675,12 +830,12 @@ export default function FunctionalTestEnv() {
                 </thead>
                 <tbody>
                   {ATHLETE_ROWS.map((row, i) => {
-                    const rec = findAthleteRecord(row.firstName, row.lastName, row.family);
+                    const rec = findAthleteRecord(row.athleteName, row.gradYear);
                     const actCount = rec ? actCountForAthlete(rec.id) : 0;
                     const rosters  = rec ? rostersForAthlete(rec.id)  : [];
                     const hasHayes  = hayesCoach  && rosters.some(r => r.coach_id === hayesCoach.id);
                     const hasRivera = riveraCoach && rosters.some(r => r.coach_id === riveraCoach.id);
-                    const displayName = `${row.firstName.replace(SEED_PREFIX, "")} ${row.lastName}`;
+                    const displayName = row.displayName;
 
                     return (
                       <tr key={row.firstName} style={i % 2 === 0 ? styles.trEven : styles.trOdd}>
