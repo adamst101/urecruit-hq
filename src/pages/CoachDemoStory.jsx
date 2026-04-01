@@ -210,21 +210,25 @@ function SummaryPreview() {
 }
 
 function UpdatePreview() {
-  // Mirrors the real Coach HQ section: intro narrative, athlete blocks (limited to 3),
-  // and the period recap with stat chips and most-active programs.
-  const narrative = "Since your last visit, 4 athletes had recruiting activity across the program, including a scholarship offer and an unofficial visit.";
+  // Determination-first: 3-part takeaway at top, then athlete evidence, then softened metrics.
   const athleteBlocks = [
-    { name: "Jaylen Carter",   text: "Florida extended a scholarship offer after his spring camp visit. Ohio State and Georgia also remain in contact with direct follow activity logged." },
-    { name: "Marcus Okafor",   text: "Unofficial visit completed at Auburn. Tennessee has also been active with direct contact logged in the period." },
-    { name: "DeShawn Williams",text: "Campus tour at Michigan added him to their prospect list. The defensive coordinator made direct contact." },
+    { name: "Jaylen Carter",    text: "Florida extended a scholarship offer. Ohio State and Georgia also remain in direct contact." },
+    { name: "Marcus Okafor",    text: "Unofficial visit completed at Auburn. Tennessee active with direct contact in the period." },
+    { name: "DeShawn Williams", text: "Campus tour at Michigan. Defensive coordinator made direct contact and added him to their list." },
   ];
   const statChips = [
-    { value: 4, label: "Athletes active",   qualifier: null,           accent: "#34d399", active: true },
-    { value: 3, label: "With new traction", qualifier: "3 schools",    accent: "#60a5fa", active: true },
-    { value: 4, label: "Major outcomes",    qualifier: "1 offer · 1 visit", accent: "#f59e0b", active: true },
-    { value: 2, label: "Camp registrations",qualifier: "2 athletes",   accent: "#a78bfa", active: true },
+    { value: 4, label: "Athletes active",    qualifier: null,                accent: "#34d399" },
+    { value: 3, label: "With new traction",  qualifier: "3 schools",         accent: "#60a5fa" },
+    { value: 4, label: "Major outcomes",     qualifier: "1 offer · 1 visit", accent: "#f59e0b" },
+    { value: 2, label: "Camp registrations", qualifier: "2 athletes",        accent: "#a78bfa" },
   ];
   const topColleges = ["Florida", "Auburn", "Georgia"];
+
+  const LabelSm = ({ children, amber }) => (
+    <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6, color: amber ? "#e8a020" : "#4b5563" }}>
+      {children}
+    </div>
+  );
 
   return (
     <div style={{ marginBottom: 22 }}>
@@ -233,52 +237,81 @@ function UpdatePreview() {
         <div style={{ width: 3, height: 20, background: "#34d399", borderRadius: 2 }} />
         <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: "#f1f5f9" }}>COACH UPDATE</span>
         <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>recent recruiting changes in the selected period</span>
-        {/* Period toggle */}
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
           {["Since Last Visit", "30D", "60D", "90D"].map((label, i) => (
             <div key={label} style={{ padding: "3px 8px", borderRadius: 5, border: "1px solid", fontSize: 10, fontWeight: 700, background: i === 0 ? "#34d399" : "transparent", color: i === 0 ? "#111827" : "#4b5563", borderColor: i === 0 ? "#34d399" : "#374151" }}>{label}</div>
           ))}
         </div>
       </div>
-      {/* Card */}
-      <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 22px", boxShadow: "0 8px 40px rgba(0,0,0,0.55), 0 2px 10px rgba(0,0,0,0.35)" }}>
-        {/* Intro narrative */}
-        <p style={{ margin: "0 0 12px", fontSize: 14, color: "#d1d5db", lineHeight: 1.7 }}>{narrative}</p>
-        {/* Athlete blocks — limited to 3 */}
-        <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 7 }}>
+
+      {/* Hero card */}
+      <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "20px 22px", boxShadow: "0 8px 40px rgba(0,0,0,0.55), 0 2px 10px rgba(0,0,0,0.35)" }}>
+
+        {/* ── A. Top takeaway — strongest read ── */}
+        <div style={{ marginBottom: 14 }}>
+          <LabelSm amber>Top takeaway</LabelSm>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb", lineHeight: 1.4 }}>
+            4 athletes had recruiting movement in the period, including a scholarship offer and an unofficial visit.
+          </div>
+        </div>
+
+        {/* ── B. Period readout — factual scope ── */}
+        <div style={{ marginBottom: 14 }}>
+          <LabelSm>Period readout</LabelSm>
+          <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.6 }}>
+            Recent movement includes 3 athletes with new traction, 4 major outcomes, and activity across multiple schools.
+          </div>
+        </div>
+
+        {/* ── C. Coach interpretation — final judgment ── */}
+        <div style={{ marginBottom: 18 }}>
+          <LabelSm>Coach interpretation</LabelSm>
+          <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.6, fontStyle: "italic" }}>
+            The period shows real momentum across several athletes, led by stronger outcomes and direct contact activity.
+          </div>
+        </div>
+
+        {/* Divider before athlete evidence */}
+        <div style={{ borderTop: "1px solid #1e293b", marginBottom: 14 }} />
+
+        {/* ── Athlete blocks — supporting evidence ── */}
+        <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 6 }}>
           {athleteBlocks.map((block, i) => (
-            <div key={i} style={{ background: "rgba(148,163,184,0.05)", border: "1px solid rgba(148,163,184,0.12)", borderRadius: 9, padding: "9px 13px" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#f1f5f9", marginBottom: 3 }}>{block.name}</div>
-              <div style={{ fontSize: 12.5, color: "#d1d5db", lineHeight: 1.6 }}>{block.text}</div>
+            <div key={i} style={{ background: "rgba(148,163,184,0.04)", border: "1px solid rgba(148,163,184,0.10)", borderRadius: 8, padding: "8px 12px" }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: "#f1f5f9", marginBottom: 2 }}>{block.name}</div>
+              <div style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.55 }}>{block.text}</div>
             </div>
           ))}
         </div>
-        {/* Period recap */}
-        <div style={{ borderTop: "1px solid #1f2937", paddingTop: 14 }}>
-          {/* Stat chips 2x2 */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 10 }}>
-            {statChips.map(({ value, label, qualifier, accent, active }) => (
-              <div key={label} style={{ background: active ? `${accent}0d` : "rgba(255,255,255,0.02)", border: `1px solid ${active ? accent + "28" : "#1a2535"}`, borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 1 }}>
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 30, color: active ? accent : "#2d3748", lineHeight: 1 }}>{value}</span>
-                <span style={{ fontSize: 10.5, fontWeight: 600, color: active ? "#6b7280" : "#2d3748", lineHeight: 1.3 }}>{label}</span>
-                {qualifier && <span style={{ fontSize: 9.5, color: "#4b5563", marginTop: 2 }}>{qualifier}</span>}
+
+        {/* Divider before metrics */}
+        <div style={{ borderTop: "1px solid #1f2937", paddingTop: 12 }}>
+          {/* Softened stat chips — reduced intensity so they read as supporting context */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
+            {statChips.map(({ value, label, qualifier, accent }) => (
+              <div key={label} style={{ background: `${accent}07`, border: `1px solid ${accent}1a`, borderRadius: 9, padding: "8px 11px", display: "flex", flexDirection: "column", gap: 1 }}>
+                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: `${accent}cc`, lineHeight: 1 }}>{value}</span>
+                <span style={{ fontSize: 10, fontWeight: 600, color: "#4b5563", lineHeight: 1.3 }}>{label}</span>
+                {qualifier && <span style={{ fontSize: 9, color: "#374151", marginTop: 1 }}>{qualifier}</span>}
               </div>
             ))}
           </div>
-          {/* Most active programs */}
-          <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #1a2535", borderRadius: 10, padding: "10px 12px" }}>
-            <div style={{ fontSize: 9.5, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Most active programs</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+
+          {/* Most active programs — tertiary */}
+          <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid #1a2535", borderRadius: 9, padding: "9px 12px" }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 7 }}>Most active programs</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {topColleges.map((col, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 12, color: i === 0 ? "#e8a020" : "#374151", minWidth: 11, textAlign: "right" }}>{i + 1}</span>
-                  <div style={{ height: 2, borderRadius: 1, width: i === 0 ? 20 : i === 1 ? 12 : 6, background: i === 0 ? "rgba(232,160,32,0.4)" : i === 1 ? "rgba(148,163,184,0.18)" : "rgba(255,255,255,0.05)", flexShrink: 0 }} />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: i === 0 ? "#e8a020" : i === 1 ? "#9ca3af" : "#6b7280" }}>{col}</span>
+                  <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 11, color: i === 0 ? "#e8a020" : "#2d3748", minWidth: 11, textAlign: "right" }}>{i + 1}</span>
+                  <div style={{ height: 2, borderRadius: 1, width: i === 0 ? 18 : i === 1 ? 10 : 5, background: i === 0 ? "rgba(232,160,32,0.35)" : i === 1 ? "rgba(148,163,184,0.12)" : "rgba(255,255,255,0.04)", flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: i === 0 ? "#9ca3af" : "#4b5563" }}>{col}</span>
                 </div>
               ))}
             </div>
           </div>
         </div>
+
         <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
           <span style={{ fontSize: 9, fontWeight: 600, color: "#2d3f55", background: "#0f1a28", border: "1px solid #1a2d40", borderRadius: 20, padding: "2px 9px", letterSpacing: "0.06em" }}>sample data</span>
         </div>
@@ -843,14 +876,14 @@ const STEPS = [
           borderRadius: 10, padding: "14px 16px",
         }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
-            What it highlights
+            What this tells the coach
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {[
-              "Recent athlete movement",
-              "College and contact activity",
-              "Notable outcomes",
-              "Where coach attention may be needed",
+              "Which athletes had real movement",
+              "Where direct contact or stronger traction occurred",
+              "What outcomes stand out in the period",
+              "Where attention may be needed next",
             ].map((item, i) => (
               <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
                 <span style={{ color: "#34d399", fontSize: 11, lineHeight: 1, marginTop: 3, flexShrink: 0 }}>—</span>
