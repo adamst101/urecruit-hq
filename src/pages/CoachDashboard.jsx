@@ -6,7 +6,6 @@ import { base44 } from "../api/base44Client";
 import { clearSeasonAccessCache, useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { T } from "../lib/theme.js";
 import { DEMO_COACH_PROFILE, DEMO_JOURNEY_DATA, DEMO_LAST_VISIT_DATE } from "../lib/demoCoachData.js";
-import CoachGuidedTourOverlay from "../components/demo/CoachGuidedTourOverlay.jsx";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 const LOGO_URL = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -3060,8 +3059,6 @@ export default function CoachDashboard() {
         </>
       )}
 
-      {/* ── COACH GUIDED TOUR OVERLAY ── */}
-      {isDemoCoach && <CoachGuidedTourOverlay />}
 
     </div>
   );
