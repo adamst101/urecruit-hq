@@ -51,6 +51,7 @@ import Account from './pages/Account';
 import AppHealthCheck from './pages/AppHealthCheck';
 import AppHealthCheckDiag from './pages/AppHealthCheckDiag';
 import AdminFactoryReset from './pages/AdminFactoryReset';
+import AdminHQ from './pages/AdminHQ';
 import AdminOps from './pages/AdminOps';
 import AdminSeedSchoolLogos from './pages/AdminSeedSchoolLogos';
 import AdminSeedSchoolsMaster from './pages/AdminSeedSchoolsMaster';
@@ -108,6 +109,7 @@ export const PAGES = {
     "AppHealthCheck": AppHealthCheck,
     "AppHealthCheckDiag": AppHealthCheckDiag,
     "AdminFactoryReset": AdminFactoryReset,
+    "AdminHQ": AdminHQ,
     "AdminOps": AdminOps,
     "AdminSeedSchoolLogos": AdminSeedSchoolLogos,
     "AdminSeedSchoolsMaster": AdminSeedSchoolsMaster,

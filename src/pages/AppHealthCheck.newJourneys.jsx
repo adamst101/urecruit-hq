@@ -168,16 +168,16 @@ export const NEW_JOURNEY_GROUPS = [
               try {
                 mod = await import("../lib/demoUserData.js");
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `demoUserData.js failed to import: ${err.message} — ` +
                   "user demo state cannot be initialized"
                 );
               }
               const { DEMO_ATHLETE, DEMO_SEASON_YEAR, DEMO_FAVORITE_CAMP_IDS } = mod;
-              if (!DEMO_ATHLETE) throw new Error("DEMO_ATHLETE not exported from demoUserData.js — demo profile card will be blank");
-              if (!DEMO_SEASON_YEAR) throw new Error("DEMO_SEASON_YEAR not exported — demo session initialization will fail");
+              if (!DEMO_ATHLETE) FAIL.data("DEMO_ATHLETE not exported from demoUserData.js — demo profile card will be blank");
+              if (!DEMO_SEASON_YEAR) FAIL.data("DEMO_SEASON_YEAR not exported — demo session initialization will fail");
               if (!Array.isArray(DEMO_FAVORITE_CAMP_IDS) || DEMO_FAVORITE_CAMP_IDS.length === 0) {
-                throw new Error("DEMO_FAVORITE_CAMP_IDS is empty — demo user will show 0 favorites");
+                FAIL.data("DEMO_FAVORITE_CAMP_IDS is empty — demo user will show 0 favorites");
               }
               ctx.demoAthleteOk = true;
               return `DEMO_ATHLETE: ${DEMO_ATHLETE.athlete_name}  season: ${DEMO_SEASON_YEAR}  ${DEMO_FAVORITE_CAMP_IDS.length} favorites ✓`;
@@ -190,7 +190,7 @@ export const NEW_JOURNEY_GROUPS = [
               const required = ["athlete_name", "position", "grad_year", "state"];
               const missing = required.filter(f => !DEMO_ATHLETE[f]);
               if (missing.length > 0) {
-                throw new Error(
+                FAIL.data(
                   `DEMO_ATHLETE missing fields: ${missing.join(", ")} — ` +
                   "demo profile card will show blank fields"
                 );
@@ -223,10 +223,10 @@ export const NEW_JOURNEY_GROUPS = [
             run: async () => {
               try {
                 const mod = await import("./CoachDemoStory.jsx");
-                if (!mod.default) throw new Error("No default export");
+                if (!mod.default) FAIL.runtime("CoachDemoStory.jsx has no default export — page will be blank");
                 return "CoachDemoStory.jsx importable — default export present ✓";
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `CoachDemoStory.jsx failed to import: ${err.message} — ` +
                   "the coach demo journey is completely broken"
                 );
@@ -240,7 +240,7 @@ export const NEW_JOURNEY_GROUPS = [
               const mod = await import("../pages.config.js");
               const pages = mod.PAGES || mod.default?.Pages || mod.pagesConfig?.Pages || {};
               if (!pages["CoachDashboard"]) {
-                throw new Error(
+                FAIL.config(
                   "CoachDashboard not in pages.config.js — CoachDemoStory skip will 404"
                 );
               }
@@ -254,14 +254,14 @@ export const NEW_JOURNEY_GROUPS = [
               try {
                 mod = await import("../lib/demoCoachData.js");
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `demoCoachData.js failed to import: ${err.message} — ` +
                   "CoachDashboard demo mode will crash on load"
                 );
               }
               const { DEMO_COACH_PROFILE, DEMO_JOURNEY_DATA } = mod;
-              if (!DEMO_COACH_PROFILE) throw new Error("DEMO_COACH_PROFILE not exported from demoCoachData.js");
-              if (!DEMO_JOURNEY_DATA) throw new Error("DEMO_JOURNEY_DATA not exported from demoCoachData.js");
+              if (!DEMO_COACH_PROFILE) FAIL.data("DEMO_COACH_PROFILE not exported from demoCoachData.js");
+              if (!DEMO_JOURNEY_DATA) FAIL.data("DEMO_JOURNEY_DATA not exported from demoCoachData.js");
               ctx.demoCoach = DEMO_COACH_PROFILE;
               ctx.demoJourney = DEMO_JOURNEY_DATA;
               return "demoCoachData.js importable — DEMO_COACH_PROFILE and DEMO_JOURNEY_DATA present ✓";
@@ -271,14 +271,14 @@ export const NEW_JOURNEY_GROUPS = [
             name: "DEMO_COACH_PROFILE has required structure",
             run: async (ctx) => {
               const profile = ctx.demoCoach;
-              if (!profile.coach) throw new Error("DEMO_COACH_PROFILE.coach is missing — CoachDashboard header will be blank");
+              if (!profile.coach) FAIL.data("DEMO_COACH_PROFILE.coach is missing — CoachDashboard header will be blank");
               if (!Array.isArray(profile.roster) || profile.roster.length === 0) {
-                throw new Error("DEMO_COACH_PROFILE.roster is empty — CoachDashboard will show empty roster panel");
+                FAIL.data("DEMO_COACH_PROFILE.roster is empty — CoachDashboard will show empty roster panel");
               }
               const coachFields = ["first_name", "last_name", "school_or_org", "sport"];
               const missingCoach = coachFields.filter(f => !profile.coach[f]);
               if (missingCoach.length > 0) {
-                throw new Error(`DEMO_COACH_PROFILE.coach missing: ${missingCoach.join(", ")}`);
+                FAIL.data(`DEMO_COACH_PROFILE.coach missing: ${missingCoach.join(", ")}`);
               }
               return `coach: ${profile.coach.first_name} ${profile.coach.last_name}  roster: ${profile.roster.length} athletes ✓`;
             },
@@ -290,14 +290,14 @@ export const NEW_JOURNEY_GROUPS = [
               // journeyData is a map of account_id → journey object
               const keys = Object.keys(journeyData || {});
               if (keys.length === 0) {
-                throw new Error(
+                FAIL.data(
                   "DEMO_JOURNEY_DATA is empty — CoachDashboard will show 0 athletes with traction"
                 );
               }
               // Sample the first journey entry
               const sample = journeyData[keys[0]];
               if (!sample.school_traction && !sample.recent_activities) {
-                throw new Error(
+                FAIL.data(
                   "DEMO_JOURNEY_DATA entries missing school_traction and recent_activities — " +
                   "CoachDashboard recruiting panels will be blank"
                 );
@@ -321,7 +321,7 @@ export const NEW_JOURNEY_GROUPS = [
                 return lastAct && lastAct < cutoff;
               });
               if (stale.length > keys.length / 2) {
-                throw new Error(
+                FAIL.data(
                   `${stale.length}/${keys.length} demo athlete journeys have last_activity_date older than 60 days — ` +
                   "demo activity panel will look stale. Check demoCoachData.js date generation (d() helper)."
                 );
@@ -336,14 +336,14 @@ export const NEW_JOURNEY_GROUPS = [
               try {
                 mod = await import("../lib/demoCampData.js");
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `demoCampData.js failed to import: ${err.message} — ` +
                   "Discover demo mode will crash"
                 );
               }
               const camps = mod.DEMO_CAMPS || mod.default || [];
               if (!Array.isArray(camps) || camps.length === 0) {
-                throw new Error("demoCampData.js exports no camps — demo Discover will show empty state");
+                FAIL.data("demoCampData.js exports no camps — demo Discover will show empty state");
               }
               ctx.demoCamps = camps;
               return `demoCampData.js loaded — ${camps.length} demo camps ✓`;
@@ -359,7 +359,7 @@ export const NEW_JOURNEY_GROUPS = [
                 return missing.length > 0 ? [`camp[${i}] missing: ${missing.join(", ")}`] : [];
               });
               if (issues.length > 0) {
-                throw new Error(`Demo camp field issues: ${issues.join(" | ")}`);
+                FAIL.data(`Demo camp field issues: ${issues.join(" | ")}`);
               }
               return `First 5 demo camps have camp_name and start_date ✓`;
             },
@@ -385,7 +385,7 @@ export const NEW_JOURNEY_GROUPS = [
               const readKey2 = sessionStorage.getItem(key2);
               sessionStorage.removeItem(key1);
               if (readKey2 !== null) {
-                throw new Error(
+                FAIL.runtime(
                   "Demo registration key for profile_B has a value even though we only wrote to profile_A key — " +
                   "keys may be colliding or sessionStorage has stale state"
                 );
@@ -400,9 +400,9 @@ export const NEW_JOURNEY_GROUPS = [
               localStorage.setItem(KEY, "2099");
               const val = localStorage.getItem(KEY);
               localStorage.removeItem(KEY);
-              if (val !== "2099") throw new Error(`localStorage key '${KEY}' round-trip failed`);
+              if (val !== "2099") FAIL.runtime(`localStorage key '${KEY}' round-trip failed — write/read cycle broken`);
               const cleared = localStorage.getItem(KEY);
-              if (cleared !== null) throw new Error(`Key '${KEY}' not removed after removeItem`);
+              if (cleared !== null) FAIL.runtime(`Key '${KEY}' not removed after removeItem — localStorage.removeItem may not be working`);
               return "Demo season year key write/read/clear cycle ok ✓";
             },
           },
@@ -420,7 +420,7 @@ export const NEW_JOURNEY_GROUPS = [
               sessionStorage.removeItem(sharedKey);
               if (localVal === sessionVal) {
                 // Both "local" — sessionStorage.setItem silently used localStorage
-                throw new Error(
+                FAIL.runtime(
                   "sessionStorage and localStorage share state — demo favorites could corrupt real user data"
                 );
               }
@@ -455,13 +455,13 @@ export const NEW_JOURNEY_GROUPS = [
               try {
                 camps = await base44.entities.DemoCamp.filter({});
               } catch (err) {
-                throw new Error(
+                FAIL.data(
                   `DemoCamp entity not readable: ${err.message} — ` +
                   "run GenerateDemoCamps after each deploy to seed the entity"
                 );
               }
               if (!Array.isArray(camps) || camps.length === 0) {
-                throw new Error(
+                FAIL.data(
                   "DemoCamp entity is empty — demo users will see an empty camp list. " +
                   "Run /GenerateDemoCamps (admin page) to seed it."
                 );
@@ -474,7 +474,7 @@ export const NEW_JOURNEY_GROUPS = [
             name: "DemoCamp count is sufficient (>= 10)",
             run: async (ctx) => {
               if (ctx.demoCamps.length < 10) {
-                throw new Error(
+                FAIL.data(
                   `Only ${ctx.demoCamps.length} DemoCamps — demo users see a sparse list. ` +
                   "Run /GenerateDemoCamps to regenerate at least 10+ records."
                 );
@@ -488,7 +488,7 @@ export const NEW_JOURNEY_GROUPS = [
               const year = currentYear();
               const withDate = ctx.demoCamps.filter(c => c.start_date);
               if (withDate.length === 0) {
-                throw new Error("No DemoCamp records have a start_date — calendar demo will be empty");
+                FAIL.data("No DemoCamp records have a start_date — calendar demo will be empty");
               }
               const stale = withDate.filter(c => {
                 const campYear = parseInt((c.start_date || "").slice(0, 4), 10);
@@ -496,7 +496,7 @@ export const NEW_JOURNEY_GROUPS = [
               });
               const pct = Math.round((stale.length / withDate.length) * 100);
               if (stale.length > withDate.length / 2) {
-                throw new Error(
+                FAIL.data(
                   `${stale.length}/${withDate.length} (${pct}%) DemoCamps have start_date before ${year} — ` +
                   "demo calendar will show past-year dates. Run /GenerateDemoCamps to refresh."
                 );
@@ -512,13 +512,13 @@ export const NEW_JOURNEY_GROUPS = [
               const missingName = sample.filter(c => !c.camp_name).length;
               const missingDate = sample.filter(c => !c.start_date).length;
               if (missingName > 2) {
-                throw new Error(
+                FAIL.data(
                   `${missingName}/15 sampled DemoCamps missing camp_name — ` +
                   "demo camp cards will show blank titles"
                 );
               }
               if (missingDate > 0) {
-                throw new Error(
+                FAIL.data(
                   `${missingDate}/15 sampled DemoCamps missing start_date — ` +
                   "demo calendar cannot place these camps"
                 );
@@ -560,7 +560,7 @@ export const NEW_JOURNEY_GROUPS = [
                 if (msg.includes("400") || msg.includes("401") || msg.includes("403")) {
                   return `getMyCoachProfile reachable — returned expected HTTP error (auth required or bad payload) ✓`;
                 }
-                throw new Error(
+                FAIL.runtime(
                   `getMyCoachProfile unreachable: ${msg} — ` +
                   "CoachDashboard will show a blank state for all real coaches"
                 );
@@ -581,7 +581,7 @@ export const NEW_JOURNEY_GROUPS = [
               }
               if (d.ok === true) {
                 if (d.coach === undefined && d.roster === undefined) {
-                  throw new Error(
+                  FAIL.runtime(
                     "getMyCoachProfile returned ok:true but has neither coach nor roster fields — " +
                     "CoachDashboard will render empty even for real coaches"
                   );
@@ -602,7 +602,7 @@ export const NEW_JOURNEY_GROUPS = [
                 if (msg.includes("400") || msg.includes("401") || msg.includes("403")) {
                   return `getCoachRosterMetrics reachable — returned expected HTTP error ✓`;
                 }
-                throw new Error(
+                FAIL.runtime(
                   `getCoachRosterMetrics unreachable: ${msg} — ` +
                   "CoachDashboard headline metrics, Program Recruiting Summary, and Coach Update will all be blank"
                 );
@@ -623,7 +623,7 @@ export const NEW_JOURNEY_GROUPS = [
                 // Expect metrics object or athleteJourneys map
                 const hasMetrics = d.programMetrics != null || d.athleteJourneys != null || d.metrics != null;
                 if (!hasMetrics) {
-                  throw new Error(
+                  FAIL.runtime(
                     "getCoachRosterMetrics returned ok:true but has no programMetrics or athleteJourneys — " +
                     "CoachDashboard traction panels will show all-zero metrics"
                   );
@@ -649,7 +649,7 @@ export const NEW_JOURNEY_GROUPS = [
               try {
                 mod = await import("../lib/reportNarrative.js");
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `reportNarrative.js failed to import: ${err.message} — ` +
                   "all report generation will fail"
                 );
@@ -663,7 +663,7 @@ export const NEW_JOURNEY_GROUPS = [
               ];
               const missing = required.filter(f => typeof mod[f] !== "function");
               if (missing.length > 0) {
-                throw new Error(
+                FAIL.runtime(
                   `reportNarrative.js missing exports: ${missing.join(", ")} — ` +
                   "narrative generation will produce blank sections"
                 );
@@ -679,7 +679,7 @@ export const NEW_JOURNEY_GROUPS = [
               try {
                 mod = await import("../lib/reportBuilder.js");
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `reportBuilder.js failed to import: ${err.message} — ` +
                   "report data assembly will fail"
                 );
@@ -693,12 +693,12 @@ export const NEW_JOURNEY_GROUPS = [
               ];
               const missing = required.filter(f => mod[f] == null);
               if (missing.length > 0) {
-                throw new Error(
+                FAIL.runtime(
                   `reportBuilder.js missing exports: ${missing.join(", ")}`
                 );
               }
               if (!Array.isArray(mod.REPORT_PERIODS) || mod.REPORT_PERIODS.length === 0) {
-                throw new Error("REPORT_PERIODS is empty — period selector in ReportModal will show nothing");
+                FAIL.data("REPORT_PERIODS is empty — period selector in ReportModal will show nothing");
               }
               ctx.builder = mod;
               return `reportBuilder.js ok — ${required.length} exports present  REPORT_PERIODS: ${mod.REPORT_PERIODS.map(p => p.label).join(", ")} ✓`;
@@ -712,11 +712,11 @@ export const NEW_JOURNEY_GROUPS = [
                 const required = ["exportPlayerReportPdf", "exportProgramReportPdf"];
                 const missing = required.filter(f => typeof mod[f] !== "function");
                 if (missing.length > 0) {
-                  throw new Error(`reportExporter.js missing: ${missing.join(", ")}`);
+                  FAIL.runtime(`reportExporter.js missing: ${missing.join(", ")}`);
                 }
                 return `reportExporter.js ok — exportPlayerReportPdf and exportProgramReportPdf exported ✓`;
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `reportExporter.js failed: ${err.message} — ` +
                   "PDF generation will throw when Reports button is clicked"
                 );
@@ -738,7 +738,7 @@ export const NEW_JOURNEY_GROUPS = [
                   period: "all",
                 });
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `buildPlayerRecruitingReportData threw on minimal input: ${err.message} — ` +
                   "will crash on athletes with no journey data (common for new rosters)"
                 );
@@ -747,7 +747,7 @@ export const NEW_JOURNEY_GROUPS = [
                                     "recentActivityNarrative", "recruitingJourneyNarrative"];
               const missing = requiredKeys.filter(k => !(k in result));
               if (missing.length > 0) {
-                throw new Error(`buildPlayerRecruitingReportData output missing keys: ${missing.join(", ")}`);
+                FAIL.runtime(`buildPlayerRecruitingReportData output missing keys: ${missing.join(", ")}`);
               }
               return `Player report data builds correctly with null journey — ${requiredKeys.length} keys present ✓`;
             },
@@ -767,7 +767,7 @@ export const NEW_JOURNEY_GROUPS = [
                   period: "all",
                 });
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `buildProgramRecruitingReportData threw on empty roster: ${err.message} — ` +
                   "will crash when coach has no athletes"
                 );
@@ -775,7 +775,7 @@ export const NEW_JOURNEY_GROUPS = [
               const requiredKeys = ["meta", "programSummary", "programNarrative", "athletes"];
               const missing = requiredKeys.filter(k => !(k in result));
               if (missing.length > 0) {
-                throw new Error(`buildProgramRecruitingReportData output missing keys: ${missing.join(", ")}`);
+                FAIL.runtime(`buildProgramRecruitingReportData output missing keys: ${missing.join(", ")}`);
               }
               return `Program report data builds correctly with empty roster ✓`;
             },
@@ -786,7 +786,7 @@ export const NEW_JOURNEY_GROUPS = [
               const { buildRecentActivityNarrative } = ctx.narrative;
               const result = buildRecentActivityNarrative(null, "Test Athlete", "over all recorded time");
               if (typeof result !== "string" || result.length === 0) {
-                throw new Error("buildRecentActivityNarrative returned empty string for null input — PDF section will be blank");
+                FAIL.runtime("buildRecentActivityNarrative returned empty string for null input — PDF section will be blank");
               }
               return `Null-input narrative: "${result.slice(0, 60)}…" ✓`;
             },
@@ -797,7 +797,7 @@ export const NEW_JOURNEY_GROUPS = [
               const { buildRecruitingJourneyNarrative } = ctx.narrative;
               const result = buildRecruitingJourneyNarrative(null, "Test Athlete");
               if (typeof result !== "string" || result.length === 0) {
-                throw new Error("buildRecruitingJourneyNarrative returned empty string for null journey — PDF section will be blank");
+                FAIL.runtime("buildRecruitingJourneyNarrative returned empty string for null journey — PDF section will be blank");
               }
               return `Null-journey narrative: "${result.slice(0, 60)}…" ✓`;
             },
@@ -830,13 +830,13 @@ export const NEW_JOURNEY_GROUPS = [
               try {
                 rows = await base44.entities.RecruitingActivity.filter({});
               } catch (err) {
-                throw new Error(
+                FAIL.config(
                   `RecruitingActivity entity not readable: ${err.message} — ` +
                   "RecruitingJourney page will show a blank timeline for all users"
                 );
               }
               if (!Array.isArray(rows)) {
-                throw new Error("RecruitingActivity.filter() returned non-array");
+                FAIL.runtime("RecruitingActivity.filter() returned non-array — entity query is broken");
               }
               ctx.activityRows = rows;
               return `RecruitingActivity entity reachable — ${rows.length} records`;
@@ -855,7 +855,7 @@ export const NEW_JOURNEY_GROUPS = [
                 return missing.length > 0 ? [`record[${i}] missing: ${missing.join(", ")}`] : [];
               });
               if (issues.length > 0) {
-                throw new Error(
+                FAIL.data(
                   `Schema issues in RecruitingActivity: ${issues.join(" | ")} — ` +
                   "RecruitingJourney timeline will render incorrectly"
                 );
@@ -867,7 +867,7 @@ export const NEW_JOURNEY_GROUPS = [
             name: "RecruitingActivity create/read/delete cycle",
             run: async (ctx) => {
               const me = await base44.auth.me();
-              if (!me?.id) throw new Error("auth.me() returned no id");
+              if (!me?.id) FAIL.runtime("auth.me() returned no id — session not established");
 
               // Create a test athlete first
               const profile = await base44.entities.AthleteProfile.create({
@@ -875,7 +875,7 @@ export const NEW_JOURNEY_GROUPS = [
                 first_name: "__hc_ra__", last_name: "__test__",
                 athlete_name: "__hc_ra__ __test__",
                 active: true, sport_id: "test", grad_year: 2099,
-              }).catch(err => { throw new Error(`AthleteProfile.create failed: ${err.message}`); });
+              }).catch(err => { FAIL.runtime(`AthleteProfile.create failed: ${err.message}`); });
 
               ctx.raAthleteId = profile.id;
 
@@ -891,13 +891,13 @@ export const NEW_JOURNEY_GROUPS = [
                   notes: "Automated health check — safe to delete",
                 });
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `RecruitingActivity.create failed: ${err.message} — ` +
                   "athletes cannot log contact; the quick-add buttons on RecruitingJourney will silently fail"
                 );
               }
 
-              if (!activity?.id) throw new Error("RecruitingActivity.create returned no id");
+              if (!activity?.id) FAIL.runtime("RecruitingActivity.create returned no id — entity write path broken");
               ctx.raActivityId = activity.id;
               return `RecruitingActivity created (id=${activity.id})`;
             },
@@ -908,10 +908,10 @@ export const NEW_JOURNEY_GROUPS = [
               const rows = await base44.entities.RecruitingActivity.filter({
                 athlete_id: ctx.raAthleteId,
               });
-              if (!Array.isArray(rows)) throw new Error("filter() returned non-array");
+              if (!Array.isArray(rows)) FAIL.runtime("RecruitingActivity.filter() returned non-array — entity query is broken");
               const found = rows.find(r => r.id === ctx.raActivityId);
               if (!found) {
-                throw new Error(
+                FAIL.runtime(
                   `Created record not found via athlete_id filter — ` +
                   "RecruitingJourney timeline query would return empty even after logging contact"
                 );
@@ -962,7 +962,7 @@ export const NEW_JOURNEY_GROUPS = [
               const mod = await import("../pages.config.js");
               const pages = mod.PAGES || mod.default?.Pages || mod.pagesConfig?.Pages || {};
               if (!pages["AuthRedirect"]) {
-                throw new Error(
+                FAIL.config(
                   "AuthRedirect not in pages.config.js — post-signup will 404 instead of establishing a session"
                 );
               }
@@ -973,10 +973,10 @@ export const NEW_JOURNEY_GROUPS = [
             name: "auth.me() is available (AuthRedirect prerequisite)",
             run: async () => {
               if (typeof base44.auth?.me !== "function") {
-                throw new Error("base44.auth.me is not a function — AuthRedirect cannot establish session");
+                FAIL.runtime("base44.auth.me is not a function — AuthRedirect cannot establish session");
               }
               const me = await base44.auth.me();
-              if (!me?.id) throw new Error("auth.me() returned no user — session prerequisite broken");
+              if (!me?.id) FAIL.runtime("auth.me() returned no user — session prerequisite broken");
               return `auth.me() ok — id=${me.id} ✓`;
             },
           },
@@ -994,7 +994,7 @@ export const NEW_JOURNEY_GROUPS = [
                 if (read !== testVal) failures.push(key);
               }
               if (failures.length > 0) {
-                throw new Error(
+                FAIL.runtime(
                   `sessionStorage round-trip failed for keys: ${failures.join(", ")} — ` +
                   "post-payment account creation routing will silently skip Stripe linking"
                 );
@@ -1020,7 +1020,7 @@ export const NEW_JOURNEY_GROUPS = [
               sessionStorage.removeItem(KEY);
 
               if (read !== payload) {
-                throw new Error(
+                FAIL.runtime(
                   `pendingCoachRegistration sessionStorage round-trip failed — ` +
                   "coach registration data will be lost if tab is closed during signup; " +
                   "AuthRedirect will call registerCoach with no data → coach account not created"
@@ -1031,10 +1031,10 @@ export const NEW_JOURNEY_GROUPS = [
               try {
                 const parsed = JSON.parse(read);
                 if (!parsed.first_name || !parsed.school_or_org) {
-                  throw new Error("Parsed payload missing required fields");
+                  FAIL.data("Parsed payload missing required fields");
                 }
               } catch (e) {
-                throw new Error(`pendingCoachRegistration JSON parse failed: ${e.message}`);
+                FAIL.runtime(`pendingCoachRegistration JSON parse failed: ${e.message}`);
               }
 
               return `pendingCoachRegistration sessionStorage key functional — JSON round-trip ok ✓`;
@@ -1045,10 +1045,10 @@ export const NEW_JOURNEY_GROUPS = [
             run: async () => {
               try {
                 const mod = await import("./CoachSignup.jsx");
-                if (!mod.default) throw new Error("No default export");
+                if (!mod.default) FAIL.runtime("CoachSignup.jsx has no default export — page will be blank");
                 return "CoachSignup.jsx importable ✓";
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `CoachSignup.jsx failed to import: ${err.message} — ` +
                   "the coach registration form is broken"
                 );
@@ -1060,10 +1060,10 @@ export const NEW_JOURNEY_GROUPS = [
             run: async () => {
               try {
                 const mod = await import("./Signup.jsx");
-                if (!mod.default) throw new Error("No default export");
+                if (!mod.default) FAIL.runtime("Signup.jsx has no default export — page will be blank");
                 return "Signup.jsx importable ✓";
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `Signup.jsx failed to import: ${err.message} — ` +
                   "the parent/athlete registration form is broken"
                 );
@@ -1085,10 +1085,10 @@ export const NEW_JOURNEY_GROUPS = [
             run: async () => {
               try {
                 const mod = await import("./Workspace.jsx");
-                if (!mod.default) throw new Error("No default export");
+                if (!mod.default) FAIL.runtime("Workspace.jsx has no default export — page will be blank");
                 return "Workspace.jsx importable ✓";
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `Workspace.jsx failed to import: ${err.message} — ` +
                   "new users will land on a blank page after signup"
                 );
@@ -1099,7 +1099,7 @@ export const NEW_JOURNEY_GROUPS = [
             name: "AthleteProfile entity accepts grad_year 2099 (test-safe probe)",
             run: async () => {
               const me = await base44.auth.me();
-              if (!me?.id) throw new Error("auth.me() returned no id");
+              if (!me?.id) FAIL.runtime("auth.me() returned no id — session not established");
               // Probe: create an athlete profile with grad_year=2099 (sentinel for test data)
               // and immediately delete it. Validates the first-run athlete creation step works.
               const profile = await base44.entities.AthleteProfile.create({
@@ -1108,12 +1108,12 @@ export const NEW_JOURNEY_GROUPS = [
                 athlete_name: "__hc_newuser__ __test__",
                 active: true, sport_id: "test", grad_year: 2099,
               }).catch(err => {
-                throw new Error(
+                FAIL.runtime(
                   `AthleteProfile.create failed for new user probe: ${err.message} — ` +
                   "post-registration profile setup step will fail for all new users"
                 );
               });
-              if (!profile?.id) throw new Error("AthleteProfile.create returned no id");
+              if (!profile?.id) FAIL.runtime("AthleteProfile.create returned no id — entity write path broken");
               await base44.entities.AthleteProfile.delete(profile.id).catch(() => {});
               return `AthleteProfile creates and cleans up correctly ✓`;
             },
@@ -1124,7 +1124,7 @@ export const NEW_JOURNEY_GROUPS = [
               const mod = await import("../pages.config.js");
               const pages = mod.PAGES || mod.default?.Pages || mod.pagesConfig?.Pages || {};
               if (!pages["Subscribe"]) {
-                throw new Error(
+                FAIL.config(
                   "Subscribe not in pages.config.js — new users cannot upgrade; upsell CTAs will 404"
                 );
               }
@@ -1160,13 +1160,13 @@ export const NEW_JOURNEY_GROUPS = [
               try {
                 mod = await import("../lib/app-params.js");
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `app-params.js failed to import: ${err.message} — ` +
                   "all environment detection in health checks will fail"
                 );
               }
               const { appParams } = mod;
-              if (!appParams) throw new Error("appParams not exported from app-params.js");
+              if (!appParams) FAIL.runtime("appParams not exported from app-params.js");
               ctx.appParams = appParams;
               return `app-params.js ok — appId present: ${!!appParams.appId}`;
             },
@@ -1179,7 +1179,7 @@ export const NEW_JOURNEY_GROUPS = [
               if (!base44?.entities) missing.push("entities");
               if (!base44?.functions) missing.push("functions");
               if (missing.length > 0) {
-                throw new Error(
+                FAIL.runtime(
                   `base44 SDK missing namespaces: ${missing.join(", ")} — ` +
                   "all data operations will fail"
                 );
@@ -1187,7 +1187,7 @@ export const NEW_JOURNEY_GROUPS = [
               const authFns = ["me", "register", "loginViaEmailPassword", "verifyOtp", "logout"];
               const missingAuth = authFns.filter(f => typeof base44.auth[f] !== "function");
               if (missingAuth.length > 0) {
-                throw new Error(`base44.auth missing functions: ${missingAuth.join(", ")}`);
+                FAIL.runtime(`base44.auth missing functions: ${missingAuth.join(", ")}`);
               }
               return `base44 SDK has auth, entities, functions namespaces with all required auth methods ✓`;
             },
@@ -1208,7 +1208,7 @@ export const NEW_JOURNEY_GROUPS = [
                 }
               }
               if (blocked.length > 0) {
-                throw new Error(
+                FAIL.config(
                   `Entity access issues: ${blocked.join(", ")} — ` +
                   "these entities may have been removed from the schema or renamed"
                 );
@@ -1232,7 +1232,7 @@ export const NEW_JOURNEY_GROUPS = [
                 }
               }
               if (failures.length > 0) {
-                throw new Error(
+                FAIL.runtime(
                   `Storage failures: ${failures.join("; ")} — ` +
                   "demo mode, camp favorites, and auth session caching will all fail"
                 );
@@ -1267,7 +1267,7 @@ export const NEW_JOURNEY_GROUPS = [
               // If device clock is dramatically wrong, "since last visit" calculations,
               // period cutoffs, and demo activity date generation all break silently
               if (year < 2024 || year > 2030) {
-                throw new Error(
+                FAIL.runtime(
                   `Device clock appears wrong — current year: ${year} — ` +
                   "period filters (30d/90d), demo activity dates, and lastVisit calculations will be incorrect"
                 );
@@ -1292,7 +1292,7 @@ export const NEW_JOURNEY_GROUPS = [
               try {
                 mod = await import("../components/hooks/useSeasonAccess.jsx");
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `useSeasonAccess.jsx failed to import: ${err.message} — ` +
                   "ALL pages that check access will crash on load"
                 );
@@ -1307,7 +1307,7 @@ export const NEW_JOURNEY_GROUPS = [
               const required = ["useSeasonAccess", "clearSeasonAccessCache"];
               const missing = required.filter(f => typeof ctx.seasonMod[f] !== "function");
               if (missing.length > 0) {
-                throw new Error(
+                FAIL.runtime(
                   `useSeasonAccess.jsx missing exports: ${missing.join(", ")} — ` +
                   "clearSeasonAccessCache missing means logout cannot clear auth cache; " +
                   "useSeasonAccess missing means the hook is broken for all consumers"
@@ -1323,7 +1323,7 @@ export const NEW_JOURNEY_GROUPS = [
                 // Calling it should be safe at any time (just clears module-level cache)
                 ctx.seasonMod.clearSeasonAccessCache();
               } catch (err) {
-                throw new Error(
+                FAIL.runtime(
                   `clearSeasonAccessCache threw: ${err.message} — ` +
                   "logout will throw and leave stale auth state active"
                 );

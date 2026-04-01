@@ -22,7 +22,7 @@ export default function Layout({ children }) {
 
   const isHomePage = useMemo(() => {
     const p = location.pathname || "";
-    return p === "/" || p === "/Home" || p === "/home" || p === "/DemoStory";
+    return p === "/" || p === "/Home" || p === "/home" || p === "/DemoStory" || p === "/AdminHQ";
   }, [location.pathname]);
 
   // Auth state comes from useSeasonAccess — no extra auth.me() call needed

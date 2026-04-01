@@ -212,6 +212,24 @@ export default function AdminOps() {
   return (
     <AdminRoute>
     <div style={styles.root}>
+      <div style={{
+        background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8,
+        padding: "12px 20px", marginBottom: 20, display: "flex", alignItems: "center",
+        justifyContent: "space-between", gap: 16,
+      }}>
+        <div>
+          <span style={{ fontWeight: 700, color: "#92400e", fontSize: 14 }}>Admin HQ is now available</span>
+          <span style={{ color: "#78350f", fontSize: 13, marginLeft: 8 }}>
+            The new operational command center replaces this page for day-to-day admin work.
+          </span>
+        </div>
+        <button onClick={() => nav("/AdminHQ")} style={{
+          background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 6,
+          padding: "8px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer",
+        }}>
+          Go to Admin HQ →
+        </button>
+      </div>
       <div style={styles.header}>
         <div style={styles.title}>Admin</div>
         <div style={styles.subtitle}>Tools and data managers</div>
