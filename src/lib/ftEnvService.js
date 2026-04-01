@@ -674,3 +674,55 @@ export async function releaseSlot(base44, slotKey) {
   if (!slot) throw new Error(`Unknown slot key: ${slotKey}`);
   return claimSlot(base44, slotKey, slot.syntheticId);
 }
+
+// ---------------------------------------------------------------------------
+// grantTestEntitlement — create an active Entitlement for the current season.
+// Safe to call multiple times — skips creation if one already exists.
+// Uses source: "ft_seed" so revokeTestEntitlement can target it precisely.
+//
+// NOTE: base44.entities.Entitlement.filter() returns [] for non-admins.
+//       .list() works for admin sessions. FunctionalTestEnv is admin-only.
+// ---------------------------------------------------------------------------
+
+function _ftSeasonYear() {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const feb1 = new Date(Date.UTC(y, 1, 1));
+  return now >= feb1 ? y : y - 1;
+}
+
+export async function grantTestEntitlement(base44, accountId) {
+  const seasonYear = _ftSeasonYear();
+
+  // Check for existing active entitlement (admin list permission required)
+  const all = await base44.entities.Entitlement.list("-created_date", 500).catch(() => []);
+  const existing = all.find(
+    e => e.account_id === accountId && e.season_year === seasonYear && e.status === "active"
+  );
+  if (existing) return { granted: false, reason: "already_entitled", seasonYear };
+
+  await base44.entities.Entitlement.create({
+    account_id:  accountId,
+    season_year: seasonYear,
+    status:      "active",
+    amount_paid: 0,
+    source:      "ft_seed",
+  });
+  return { granted: true, seasonYear };
+}
+
+// ---------------------------------------------------------------------------
+// revokeTestEntitlement — delete any ft_seed entitlements for a given account.
+// Only removes records created by grantTestEntitlement (source: "ft_seed").
+// ---------------------------------------------------------------------------
+
+export async function revokeTestEntitlement(base44, accountId) {
+  const all = await base44.entities.Entitlement.list("-created_date", 500).catch(() => []);
+  const toDelete = all.filter(e => e.account_id === accountId && e.source === "ft_seed");
+  let revoked = 0;
+  for (const e of toDelete) {
+    await base44.entities.Entitlement.delete(e.id).catch(() => {});
+    revoked++;
+  }
+  return { revoked };
+}

@@ -17,6 +17,8 @@ import {
   claimSlot,
   releaseSlot,
   lookupAccountByEmail,
+  grantTestEntitlement,
+  revokeTestEntitlement,
 } from "../lib/ftEnvService";
 
 // ---------------------------------------------------------------------------
@@ -243,6 +245,12 @@ export default function FunctionalTestEnv() {
       const { updated, errors } = await claimSlot(base44, slotKey, user.id);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
       addLog(`Slot "${slotKey}" linked to ${user.email} (${updated} records updated)`);
+      // Grant entitlement so the account can reach Workspace
+      const { granted, seasonYear, reason } = await grantTestEntitlement(base44, user.id);
+      addLog(granted
+        ? `Entitlement granted for season ${seasonYear}`
+        : `Entitlement skipped — ${reason} (season ${seasonYear})`
+      );
       // Clear the email input on success
       setEmailInputs(prev => ({ ...prev, [slotKey]: "" }));
       await handleDiscover();
@@ -258,6 +266,8 @@ export default function FunctionalTestEnv() {
     if (!window.confirm(
       `Release slot "${slotKey}"? This reverts the account link and breaks any real login tied to it.`
     )) return;
+    // Capture real account ID before releasing so we can revoke entitlement
+    const { currentId: realIdBeforeRelease } = getSlotStatus(slotKey);
     setRunning(`release:${slotKey}`);
     setLoading(true);
     addLog(`Releasing slot "${slotKey}" back to synthetic ID…`);
@@ -265,6 +275,11 @@ export default function FunctionalTestEnv() {
       const { updated, errors } = await releaseSlot(base44, slotKey);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
       addLog(`Slot "${slotKey}" released (${updated} records reverted)`);
+      // Revoke the ft_seed entitlement so the account can no longer access Workspace
+      if (realIdBeforeRelease && realIdBeforeRelease !== SLOT_MAP[slotKey]?.syntheticId) {
+        const { revoked } = await revokeTestEntitlement(base44, realIdBeforeRelease);
+        addLog(`Entitlement revoked (${revoked} record${revoked !== 1 ? "s" : ""} removed)`);
+      }
       await handleDiscover();
     } catch (err) {
       addLog(`Release ERROR (${slotKey}): ${err?.message || err}`);
