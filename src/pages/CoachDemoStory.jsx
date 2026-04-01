@@ -3,9 +3,11 @@
 // No live Coach HQ is shown during the explanation phase.
 // After the final step, routes to /CoachDashboard?demo=coach for free exploration.
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ensureSchoolMap, schoolMapFind } from "../components/hooks/useSchoolIdentity.jsx";
+import { base44 } from "../api/base44Client";
 
 const TOTAL_STEPS = 8; // 2 intro + 5 section explainers + 1 giveback
 
@@ -493,21 +495,52 @@ Many families begin this journey knowing their athlete has the dream to play col
 // Mirrors real UI tokens: dark bg, amber accents, division/camp-count badges,
 // city+price+grades meta row, date pills, left accent bar per camp row,
 // and the Recommend coach share panel open on the first camp.
-// No live data, no backend calls, no navigation.
+// Camp names and metadata are aligned with the real demoCampData.js records.
+// School logos are loaded at mount from the live School entity via schoolMapFind.
+// No navigation, no backend writes, no production Discover behavior.
 function DiscoverPreview() {
+  const [ufLogoUrl, setUfLogoUrl] = useState(null);
+  const [ugaLogoUrl, setUgaLogoUrl] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const School = base44?.entities?.School;
+        if (!School) return;
+        await ensureSchoolMap(School);
+        if (cancelled) return;
+        const pick = (s) =>
+          s?.athletic_logo_url ||
+          s?.athletics_logo_url ||
+          s?.team_logo_url ||
+          s?.logo_url ||
+          s?.school_logo_url ||
+          s?.primary_logo_url ||
+          s?.logo ||
+          null;
+        setUfLogoUrl(pick(schoolMapFind("University of Florida")));
+        setUgaLogoUrl(pick(schoolMapFind("University of Georgia")));
+      } catch {}
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
   const UF = {
     abbr: "UF",
+    logoUrl: ufLogoUrl,
     accentColor: "#e8a020",
     name: "University of Florida",
     divisionLabel: "D1 · FBS · SEC",
     metaCity: "Gainesville, FL",
-    metaPrice: "$175 – $300",
-    metaGrades: "Grades 8–12",
-    dates: ["Jun 14", "Jul 8"],
+    metaPrice: "$275 – $300",
+    metaGrades: "Grades 9–12",
+    dates: ["Jun 21", "Aug 2"],
     camps: [
       {
-        name: "Elite Skills Camp",
-        date: "Jun 14, 2025",
+        name: "Gator Offensive Skills Camp",
+        date: "Jun 21, 2025",
         city: "Gainesville, FL",
         price: "$300",
         grades: "Grades 9–12",
@@ -515,42 +548,58 @@ function DiscoverPreview() {
         recommendOpen: true,
       },
       {
-        name: "Team Camp",
-        date: "Jul 8, 2025",
+        name: "Florida Prospect Showcase",
+        date: "Aug 2, 2025",
         city: "Gainesville, FL",
-        price: "$175",
-        grades: "Grades 8–12",
-        type: "Full Team",
+        price: "$275",
+        grades: "Grades 10–12",
+        type: "Prospect Day",
         recommendOpen: false,
       },
     ],
   };
   const UGA = {
     abbr: "UGA",
+    logoUrl: ugaLogoUrl,
     accentColor: "#60a5fa",
     name: "University of Georgia",
     divisionLabel: "D1 · FBS · SEC",
     metaCity: "Athens, GA",
-    metaPrice: "$225",
+    metaPrice: "$300 – $375",
     metaGrades: "Grades 9–12",
-    dates: ["Jun 21"],
-    camps: [{ name: "Elite Skills Camp", date: "Jun 21, 2025", city: "Athens, GA", price: "$225", grades: "Grades 9–12", type: "All Skill Positions" }],
+    dates: ["Jun 21", "Jul 26"],
+    camps: [
+      { name: "Bulldog Quarterback Academy", date: "Jun 21, 2025", city: "Athens, GA", price: "$375", grades: "Grades 9–12", type: "Quarterback / Skills" },
+      { name: "Georgia Skills Showcase", date: "Jul 26, 2025", city: "Athens, GA", price: "$300", grades: "Grades 9–12", type: "All Skill Positions" },
+    ],
   };
 
   const recommendMsg =
-    "I recommend checking out this camp: Elite Skills Camp at University of Florida\n📅 Jun 14, 2025 · 📍 Gainesville, FL · $300\n\nGreat opportunity for skill players to get in front of the UF staff.";
+    "I recommend checking out this camp: Gator Offensive Skills Camp at University of Florida\n📅 Jun 21, 2025 · 📍 Gainesville, FL · $300\n\nGreat opportunity for skill players to get in front of the UF staff.";
 
   // ── sub-components ────────────────────────────────────────────────────────────
 
-  function SchoolAvatar({ abbr, color }) {
+  function SchoolAvatar({ abbr, color, logoUrl: url }) {
+    const [imgErr, setImgErr] = useState(false);
+    const showImg = !!url && !imgErr;
     return (
       <div style={{
         width: 38, height: 38, borderRadius: "50%",
         background: "#1e293b", border: `1.5px solid ${color}40`,
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 10, fontWeight: 800, color, flexShrink: 0,
-        letterSpacing: "0.04em",
-      }}>{abbr}</div>
+        overflow: "hidden", flexShrink: 0,
+      }}>
+        {showImg ? (
+          <img
+            src={url}
+            alt={`${abbr} logo`}
+            style={{ width: "100%", height: "100%", objectFit: "contain" }}
+            onError={() => setImgErr(true)}
+          />
+        ) : (
+          <span style={{ fontSize: 10, fontWeight: 800, color, letterSpacing: "0.04em" }}>{abbr}</span>
+        )}
+      </div>
     );
   }
 
@@ -594,7 +643,7 @@ function DiscoverPreview() {
         <div style={{ padding: "13px 16px", display: "flex", alignItems: "flex-start", gap: 11 }}>
           {/* Amber accent bar */}
           <div style={{ width: 3, alignSelf: "stretch", background: school.accentColor, borderRadius: 2, flexShrink: 0, marginTop: 2 }} />
-          <SchoolAvatar abbr={school.abbr} color={school.accentColor} />
+          <SchoolAvatar abbr={school.abbr} color={school.accentColor} logoUrl={school.logoUrl} />
           <div style={{ flex: 1, minWidth: 0 }}>
             {/* Row 1: name + badges */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 5 }}>
@@ -735,23 +784,51 @@ function DiscoverPreview() {
 }
 
 function GivebackPreview() {
+  const tiers = [
+    { tier: "Starter",  families: "5+",  note: "Eligible for quarterly giveback" },
+    { tier: "Builder",  families: "15+", note: "Increased giveback tier" },
+    { tier: "Champion", families: "30+", note: "Maximum giveback level" },
+  ];
   return (
-    <div style={{ background: "linear-gradient(135deg, #0f1624 0%, #0b1221 100%)", border: "1px solid rgba(232,160,32,0.2)", borderRadius: 12, padding: "18px 18px 14px", marginBottom: 22, boxShadow: "0 4px 28px rgba(232,160,32,0.06)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(232,160,32,0.1)", border: "1px solid rgba(232,160,32,0.25)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>🏆</div>
-        <span style={{ fontSize: 9.5, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.1em" }}>Giveback Opportunity</span>
+    <div style={{
+      background: "linear-gradient(135deg, #0f1624 0%, #0b1221 100%)",
+      border: "1px solid rgba(232,160,32,0.2)",
+      borderRadius: 12, padding: "20px 18px 18px", marginBottom: 22,
+      boxShadow: "0 4px 28px rgba(232,160,32,0.06)",
+    }}>
+      {/* Panel label */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+        <div style={{ width: 3, height: 14, background: "#e8a020", borderRadius: 2 }} />
+        <span style={{ fontSize: 9.5, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+          How Giveback Works
+        </span>
       </div>
-      <div style={{ display: "flex", gap: 8, justifyContent: "space-around", flexWrap: "wrap" }}>
-        {[
-          { tier: "Starter",  families: "5+ families",  note: "Eligible for quarterly donation" },
-          { tier: "Builder",  families: "15+ families", note: "Increased donation tier" },
-          { tier: "Champion", families: "30+ families", note: "Maximum giveback level" },
-        ].map(t => (
-          <div key={t.tier} style={{ flex: 1, minWidth: 90, textAlign: "center", padding: "6px 4px" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, color: "#e8a020", letterSpacing: 1 }}>{t.tier}</div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", marginTop: 2 }}>{t.families}</div>
-            <div style={{ fontSize: 9.5, color: "#374151", marginTop: 3, lineHeight: 1.4 }}>{t.note}</div>
-          </div>
+
+      {/* Tier progression */}
+      <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+        {tiers.map((t, i) => (
+          <React.Fragment key={t.tier}>
+            {i > 0 && (
+              <div style={{ color: "#2d3f55", fontSize: 14, padding: "0 6px", flexShrink: 0, lineHeight: 1 }}>›</div>
+            )}
+            <div style={{
+              flex: 1, minWidth: 0, textAlign: "center",
+              background: "rgba(255,255,255,0.02)",
+              border: "1px solid rgba(232,160,32,0.1)",
+              borderRadius: 8, padding: "12px 8px",
+            }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, color: "#e8a020", letterSpacing: 1, marginBottom: 7 }}>
+                {t.tier}
+              </div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#f9fafb", lineHeight: 1 }}>
+                {t.families}
+              </div>
+              <div style={{ fontSize: 9, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.06em", margin: "3px 0 6px" }}>
+                families
+              </div>
+              <div style={{ fontSize: 9.5, color: "#64748b", lineHeight: 1.4 }}>{t.note}</div>
+            </div>
+          </React.Fragment>
         ))}
       </div>
     </div>
@@ -1012,18 +1089,45 @@ const STEPS = [
     nextLabel: "One More Thing",
     render: () => (
       <>
+        {/* ── Step header: eyebrow + title + determination-first read ── */}
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10 }}>
+            Coach Tool
+          </div>
+          <h2 style={{ fontSize: "clamp(22px, 3.8vw, 28px)", fontWeight: 700, color: "#f1f5f9", lineHeight: 1.2, margin: "0 0 12px" }}>
+            Discover Camps
+          </h2>
+          <p style={{ fontSize: 14, color: "#94a3b8", lineHeight: 1.6, margin: 0 }}>
+            Review real camp opportunities, open the details that matter, and recommend a camp directly to your roster from one place.
+          </p>
+        </div>
+
+        {/* ── Hero: expanded real camp snippet ── */}
         <DiscoverPreview />
-        <ExplainerCard label="Coach Tool" title="Discover Camps">
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
-            Discover gives coaches a single place to review camp opportunities across the season.
-            In the coach view, they can quickly scan options, open a camp for more detail, and
-            better support athlete planning across the roster.
-          </p>
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: 0 }}>
-            The expanded view helps coaches move beyond a simple list and see the specific details
-            behind each camp opportunity — then recommend it directly to athletes with one action.
-          </p>
-        </ExplainerCard>
+
+        {/* ── Dark support panel — stays within the dark visual system ── */}
+        <div style={{
+          background: "#0a0f1e", border: "1px solid #1a2535",
+          borderLeft: "3px solid #4ade80",
+          borderRadius: 10, padding: "14px 16px",
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+            What this lets coaches do
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {[
+              "review real camp opportunities",
+              "open the details behind each camp",
+              "recommend camps directly to athletes",
+              "support planning across the roster",
+            ].map((item, i) => (
+              <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+                <span style={{ color: "#4ade80", fontSize: 11, lineHeight: 1, marginTop: 3, flexShrink: 0 }}>—</span>
+                <span style={{ fontSize: 13, color: "#64748b", lineHeight: 1.55 }}>{item}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </>
     ),
   },
@@ -1032,18 +1136,35 @@ const STEPS = [
     nextLabel: "Explore Coach HQ",
     render: () => (
       <>
-        <GivebackPreview />
-        <ExplainerCard
-          label="Added Benefit"
-          title="Support Families. Strengthen Your Program."
-        >
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: 0 }}>
-            URecruit HQ gives coaches a better way to support families while creating a built-in
-            giveback opportunity for the program. As families subscribe through your team, your
-            program becomes eligible for quarterly donations, with tiered giveback levels tied to
-            participation across the roster.
+        {/* ── Step header: eyebrow + title + determination-first read ── */}
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10 }}>
+            Built-In Giveback
+          </div>
+          <h2 style={{ fontSize: "clamp(22px, 3.8vw, 28px)", fontWeight: 700, color: "#f1f5f9", lineHeight: 1.2, margin: "0 0 12px" }}>
+            Program Giveback
+          </h2>
+          <p style={{ fontSize: 14, color: "#94a3b8", lineHeight: 1.6, margin: 0 }}>
+            As more families subscribe through your team, your program becomes eligible for greater quarterly giveback.
           </p>
-        </ExplainerCard>
+        </div>
+
+        {/* ── Hero: giveback tier panel ── */}
+        <GivebackPreview />
+
+        {/* ── Dark support panel — stays within the dark visual system ── */}
+        <div style={{
+          background: "#0a0f1e", border: "1px solid #1a2535",
+          borderLeft: "3px solid #e8a020",
+          borderRadius: 10, padding: "14px 16px",
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+            What this means
+          </div>
+          <p style={{ fontSize: 13, color: "#64748b", lineHeight: 1.6, margin: 0 }}>
+            Families get a better recruiting resource, and your program gains a built-in giveback opportunity tied to participation.
+          </p>
+        </div>
       </>
     ),
   },

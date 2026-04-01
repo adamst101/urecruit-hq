@@ -6,6 +6,7 @@ import { base44 } from "../api/base44Client";
 import { clearSeasonAccessCache, useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { T } from "../lib/theme.js";
 import { DEMO_COACH_PROFILE, DEMO_JOURNEY_DATA, DEMO_LAST_VISIT_DATE } from "../lib/demoCoachData.js";
+import ReportModal from "../components/reports/ReportModal.jsx";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 const LOGO_URL = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -113,6 +114,10 @@ export default function CoachDashboard() {
   const [expandedCollege, setExpandedCollege] = useState(null); // college name string (Colleges Engaging section)
   const [selectedCoachContact, setSelectedCoachContact] = useState(null); // coach contact popup data
   const [activityExpanded, setActivityExpanded] = useState(false);
+
+  // ── Report modal ────────────────────────────────────────────────────────────
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [reportPreselectedAthleteId, setReportPreselectedAthleteId] = useState(null);
 
   // COACH UPDATE — period filter + last-visit tracking via localStorage
   // Demo mode: always use a fixed anchor date so "Since Last Visit" is
@@ -1316,6 +1321,13 @@ export default function CoachDashboard() {
               style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", color: T.textSecondary, fontSize: 13, fontWeight: 600 }}
             >
               ☰ Tools
+            </button>
+            <button
+              onClick={() => { setReportPreselectedAthleteId(null); setReportModalOpen(true); }}
+              style={{ background: "#111827", border: "1px solid #374151", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", color: "#e8a020", fontSize: 13, fontWeight: 600 }}
+              title="Download recruiting report"
+            >
+              📄 Reports
             </button>
           </div>
         </div>
@@ -3053,6 +3065,16 @@ export default function CoachDashboard() {
       )}
 
 
+      <ReportModal
+        open={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        coach={coach}
+        roster={roster}
+        athleteJourneys={athleteJourneys}
+        campsByAccountId={campsByAccountId}
+        programMetrics={programMetrics}
+        preselectedAthleteId={reportPreselectedAthleteId}
+      />
     </div>
   );
 }
