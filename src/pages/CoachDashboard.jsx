@@ -6,6 +6,7 @@ import { base44 } from "../api/base44Client";
 import { clearSeasonAccessCache, useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { T } from "../lib/theme.js";
 import { DEMO_COACH_PROFILE, DEMO_JOURNEY_DATA, DEMO_LAST_VISIT_DATE } from "../lib/demoCoachData.js";
+import CoachGuidedTourOverlay from "../components/demo/CoachGuidedTourOverlay.jsx";
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`;
 const LOGO_URL = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -1272,7 +1273,7 @@ export default function CoachDashboard() {
       )}
 
       {/* ── HEADER ── */}
-      <section style={{ padding: "48px 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+      <section id="coach-tour-header" style={{ padding: "48px 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
           <div style={{ width: 3, height: 40, background: "#e8a020", borderRadius: 2, flexShrink: 0, marginTop: 4 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1322,7 +1323,7 @@ export default function CoachDashboard() {
       </section>
 
       {/* ── SECTION 2: HEADLINE PROGRAM METRICS (6 cards) ── */}
-      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+      <section id="coach-tour-metrics" style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: 14 }}>
 
           {/* 1. Players w/ Any Interest */}
@@ -1431,7 +1432,7 @@ export default function CoachDashboard() {
       </section>
 
       {/* ── SECTION 2b: DRILL-DOWN TILES ── */}
-      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+      <section id="coach-tour-drilldown" style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: 14 }}>
 
           {/* 7. Recent Activity */}
@@ -1472,7 +1473,7 @@ export default function CoachDashboard() {
       </section>
 
       {/* ── SECTION 3: PROGRAM RECRUITING SUMMARY ── */}
-      <section style={{ padding: "0 24px 36px", maxWidth: 1100, margin: "0 auto" }}>
+      <section id="coach-tour-summary" style={{ padding: "0 24px 36px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: T.textPrimary }}>PROGRAM RECRUITING SUMMARY</div>
@@ -1738,7 +1739,7 @@ export default function CoachDashboard() {
       </section>
 
       {/* ── SECTION 4: COACH UPDATE ── */}
-      <section style={{ padding: `0 24px ${coachUpdateData.totalFiltered > 0 ? "28px" : "16px"}`, maxWidth: 1100, margin: "0 auto" }}>
+      <section id="coach-tour-update" style={{ padding: `0 24px ${coachUpdateData.totalFiltered > 0 ? "28px" : "16px"}`, maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ width: 3, height: 20, background: "#34d399", borderRadius: 2 }} />
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1, color: T.textPrimary }}>COACH UPDATE</div>
@@ -3058,6 +3059,9 @@ export default function CoachDashboard() {
           </div>
         </>
       )}
+
+      {/* ── COACH GUIDED TOUR OVERLAY ── */}
+      {isDemoCoach && <CoachGuidedTourOverlay />}
 
     </div>
   );

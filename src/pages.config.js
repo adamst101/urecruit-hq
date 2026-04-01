@@ -68,6 +68,7 @@ import CoachProfile from './pages/CoachProfile';
 import CoachNetworkAdmin from './pages/CoachNetworkAdmin';
 import CoachInviteLanding from './pages/CoachInviteLanding';
 import CoachSignup from './pages/CoachSignup';
+import CoachDemoStory from './pages/CoachDemoStory';
 import DemoStory from './pages/DemoStory';
 import Discover from './pages/Discover';
 import GenerateDemoCamps from './pages/GenerateDemoCamps';
@@ -122,6 +123,7 @@ export const PAGES = {
     "CoachNetworkAdmin": CoachNetworkAdmin,
     "CoachInviteLanding": CoachInviteLanding,
     "CoachSignup": CoachSignup,
+    "CoachDemoStory": CoachDemoStory,
     "DemoStory": DemoStory,
     "Discover": Discover,
     "GenerateDemoCamps": GenerateDemoCamps,
