@@ -163,8 +163,8 @@ function Step2() {
     <div>
       <p style={T.eyebrow}>The Solution</p>
       <h1 style={T.headline}>
-        Coach HQ helps coaches see momentum, support families, and understand recruiting progress
-        across the program.
+        Coach HQ helps coaches see recruiting momentum, support families, and track progress across
+        the program.
       </h1>
       <p style={{ ...T.support, marginBottom: 28 }}>
         One dashboard. Real family-logged data. Clear signals on who is getting traction and where.
