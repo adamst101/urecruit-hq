@@ -614,8 +614,8 @@ export default function RecruitingJourney() {
 
       {!loading && (!!accountId || isUserDemo) && (
         <>
-          {/* ── Quick Add — hidden in tour mode ── */}
-          {!isTourMode && <section style={{ padding: "0 24px 32px", maxWidth: 900, margin: "0 auto" }}>
+          {/* ── Quick Add — hidden in tour mode for non-demo users ── */}
+          {(!isTourMode || isUserDemo) && <section style={{ padding: "0 24px 32px", maxWidth: 900, margin: "0 auto" }}>
             <div style={{
               fontSize: 13, fontWeight: 700, color: "#9ca3af",
               letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12,
@@ -651,8 +651,8 @@ export default function RecruitingJourney() {
             </div>
           </section>}
 
-          {/* ── Traction Snapshot — hidden in tour mode so activities appear at top ── */}
-          {!isTourMode && athleteMetrics && (
+          {/* ── Traction Snapshot — hidden in tour mode for non-demo users ── */}
+          {(!isTourMode || isUserDemo) && athleteMetrics && (
             <section style={{ padding: "0 24px 20px", maxWidth: 900, margin: "0 auto" }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
                 {[
