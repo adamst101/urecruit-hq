@@ -423,27 +423,30 @@ const STEPS = [
         <p style={{ ...T.eyebrow, marginBottom: 10 }}>Section 1 of 8</p>
         <h2 style={{ ...T.sectionTitle, marginBottom: 18 }}>Program Recruiting Summary</h2>
         <SummaryPreview />
+        <div style={{ borderTop: "1px solid #1a2535", margin: "4px 0 20px" }} />
         <p style={T.sectionBody}>
           The Program Recruiting Summary on Coach HQ is designed to give a coach a single, fast
-          read on what is happening across the program's recruiting activity. It is created by
-          rolling up athlete-level recruiting activity into a coach-level program view.
+          read on what is happening across the program's recruiting activity.
         </p>
         <p style={{ ...T.sectionBody, marginTop: 12 }}>
           In plain terms, the summary is built by taking all of the recruiting signals tied to the
           athletes in that coach's program and combining them into one structured snapshot. That
           typically includes:
         </p>
-        <ul style={{ margin: "10px 0 0", padding: "0 0 0 18px", color: "#9ca3af", fontSize: 13.5, lineHeight: 1.85 }}>
-          <li>which athletes have activity on record</li>
-          <li>which schools are engaging</li>
-          <li>what kinds of activity are happening</li>
-          <li>when that activity occurred</li>
-          <li>whether traction is spread across the roster or concentrated on a few players</li>
-        </ul>
-        <p style={{ ...T.sectionBody, marginTop: 12 }}>
-          So instead of reviewing one athlete at a time, Coach HQ aggregates that underlying data
-          and turns it into a program-wide summary.
-        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "14px 0 0" }}>
+          {[
+            { icon: "👤", text: "which athletes have activity on record" },
+            { icon: "🏫", text: "which schools are engaging" },
+            { icon: "📋", text: "what kinds of activity are happening" },
+            { icon: "🗓️", text: "when that activity occurred" },
+            { icon: "📊", text: "whether traction is spread across the roster or concentrated on a few players" },
+          ].map((item, i) => (
+            <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 15, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{item.icon}</span>
+              <span style={{ fontSize: 13.5, color: "#9ca3af", lineHeight: 1.55 }}>{item.text}</span>
+            </div>
+          ))}
+        </div>
       </>
     ),
   },
