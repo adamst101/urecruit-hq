@@ -1430,6 +1430,47 @@ export default function CoachDashboard() {
         </div>
       </section>
 
+      {/* ── SECTION 2b: DRILL-DOWN TILES ── */}
+      <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 220px))", gap: 14 }}>
+
+          {/* 7. Recent Activity */}
+          <div
+            onClick={() => setOpenSheet("tile_recent_activity")}
+            style={{ background: T.cardBg, border: "1px solid #1f2937", boxShadow: "inset 0 3px 0 0 #4b5563", borderRadius: 14, padding: "20px 20px", cursor: "pointer", transition: "border-color 0.15s", display: "flex", flexDirection: "column" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#6b7280"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+          >
+            <div style={{ minHeight: 22, fontSize: 10, color: T.textSecondary, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", textAlign: "center", lineHeight: 1.2 }}>Recent Activity</div>
+            <div style={{ minHeight: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {journeyLoading && recentJourneyActivity.length === 0
+                ? <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#4b5563", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 56, color: "#6b7280", lineHeight: 1 }}>{recentJourneyActivity.length > 0 ? recentJourneyActivity.length : (roster.length > 0 ? "0" : "—")}</div>
+              }
+            </div>
+            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>signals logged</div>
+          </div>
+
+          {/* 8. Needs Attention */}
+          <div
+            onClick={() => setOpenSheet("tile_needs_attention")}
+            style={{ background: T.cardBg, border: "1px solid #1f2937", boxShadow: "inset 0 3px 0 0 #f87171", borderRadius: 14, padding: "20px 20px", cursor: "pointer", transition: "border-color 0.15s", display: "flex", flexDirection: "column" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#f87171"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1f2937"; }}
+          >
+            <div style={{ minHeight: 22, fontSize: 10, color: T.textSecondary, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", textAlign: "center", lineHeight: 1.2 }}>Needs Attention</div>
+            <div style={{ minHeight: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {journeyLoading && playersNeedingAttentionRows.length === 0
+                ? <div style={{ width: 18, height: 18, border: "2px solid #374151", borderTopColor: "#f87171", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 56, color: "#f87171", lineHeight: 1 }}>{playersNeedingAttentionRows.length > 0 ? playersNeedingAttentionRows.length : (roster.length > 0 ? "0" : "—")}</div>
+              }
+            </div>
+            <div style={{ minHeight: 16, fontSize: 10, color: T.textSecondary, textAlign: "center" }}>players to review</div>
+          </div>
+
+        </div>
+      </section>
+
       {/* ── SECTION 3: PROGRAM RECRUITING SUMMARY ── */}
       <section style={{ padding: "0 24px 36px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
@@ -1855,408 +1896,6 @@ export default function CoachDashboard() {
       </section>
 
 
-      {/* ── SECTION 6: COLLEGES ENGAGING THE PROGRAM ── */}
-      {(collegesEngagingViewModel.length > 0 || journeyLoading) && (
-        <section style={{ padding: "0 24px 36px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-            <div style={{ width: 3, height: 24, background: "#a78bfa", borderRadius: 2 }} />
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: T.textPrimary }}>COLLEGES ENGAGING THE PROGRAM</div>
-            <span style={{ fontSize: 11, color: "rgba(148,163,184,0.66)", fontWeight: 600 }}>all signal levels · cross-roster · click to expand</span>
-          </div>
-          {/* Section shell */}
-          <div style={{ background: "#101A2B", border: "1px solid rgba(148,163,184,0.20)", borderRadius: 14, overflow: "hidden", boxShadow: "0 0 0 1px rgba(255,255,255,0.02) inset" }}>
-            {collegesEngagingViewModel.length === 0 ? (
-              <div style={{ padding: "28px 24px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(148,163,184,0.66)", fontSize: 14 }}>
-                <div style={{ width: 16, height: 16, border: "2px solid rgba(148,163,184,0.14)", borderTopColor: "#a78bfa", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                Loading…
-              </div>
-            ) : (
-              <>
-                {/* Column header band — distinct surface */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "10px 20px", background: "#0C1524", borderBottom: "1px solid rgba(148,163,184,0.18)", fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.82)", textTransform: "uppercase", letterSpacing: "0.09em" }}>
-                  <span>College</span><span>Athletes</span><span>Highest Stage</span><span>Last Activity</span><span>Repeat Interest</span><span></span>
-                </div>
-
-                {collegesEngagingViewModel.slice(0, 20).map((col, i) => {
-                  const isExpanded = expandedCollege === col.college;
-                  const isLast = i === Math.min(collegesEngagingViewModel.length, 20) - 1;
-                  const isEven = i % 2 === 1; // subtle alternating rhythm
-                  const rowBase = isExpanded ? "#162338" : isEven ? "rgba(255,255,255,0.015)" : "transparent";
-                  const stageColors = { "Visit / Offer": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#a78bfa", "Watching": "#6b7280" };
-                  const sc = stageColors[col.highestStage] || "#6b7280";
-                  const athleteCount = col.athletesEngaged;
-                  const coachCount = col.coaches.length;
-
-                  return (
-                    <div key={col.college} style={{ borderBottom: (!isLast || isExpanded) ? "1px solid rgba(148,163,184,0.14)" : "none" }}>
-
-                      {/* ── Collapsed summary row ── */}
-                      <div
-                        onClick={() => setExpandedCollege(isExpanded ? null : col.college)}
-                        style={{ display: "grid", gridTemplateColumns: "1fr 60px 110px 80px 110px 36px", gap: 8, padding: "12px 20px", alignItems: "center", cursor: "pointer", background: rowBase, transition: "background-color 180ms ease" }}
-                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = isExpanded ? "#162338" : "rgba(255,255,255,0.04)"; }}
-                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBase; }}
-                      >
-                        {/* College name + secondary */}
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 600, color: "rgba(255,255,255,0.96)", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.college}</div>
-                          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.66)", marginTop: 2 }}>
-                            {athleteCount} athlete{athleteCount !== 1 ? "s" : ""}
-                            {coachCount > 0 ? ` · ${coachCount} coach${coachCount !== 1 ? "es" : ""}` : ""}
-                          </div>
-                        </div>
-                        {/* Athlete count */}
-                        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: athleteCount >= 2 ? "#e8a020" : "rgba(148,163,184,0.50)", lineHeight: 1 }}>{athleteCount}</div>
-                        {/* Stage badge — unchanged semantics */}
-                        <div><span style={{ fontSize: 10, fontWeight: 700, color: sc, background: `${sc}14`, border: `1px solid ${sc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.highestStage}</span></div>
-                        {/* Last activity */}
-                        <div style={{ fontSize: 12, color: "rgba(148,163,184,0.66)" }}>{col.lastActivityDate ? new Date(col.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
-                        {/* Repeat label — unchanged semantics */}
-                        <div>{col.repeatLabel ? <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", background: "#e8a02014", border: "1px solid #e8a02030", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{col.repeatLabel}</span> : <span style={{ fontSize: 11, color: "rgba(148,163,184,0.30)" }}>—</span>}</div>
-                        {/* Chevron */}
-                        <div style={{ fontSize: 14, color: isExpanded ? "rgba(232,160,32,0.75)" : "rgba(148,163,184,0.50)", textAlign: "center", transition: "transform 0.2s, color 180ms ease", transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)" }}>⌄</div>
-                      </div>
-
-                      {/* ── Expanded detail band ── */}
-                      <div style={{ maxHeight: isExpanded ? "900px" : "0px", overflow: "hidden", transition: "max-height 0.3s cubic-bezier(0.4,0,0.2,1)" }}>
-                        <div style={{ background: "#162B47", borderTop: "1px solid rgba(148,163,184,0.22)", borderBottom: "1px solid rgba(148,163,184,0.18)", borderLeft: "2px solid rgba(232,160,32,0.65)", padding: "0 20px 20px" }}>
-                          {/* Two-column layout — vertical divider between columns on desktop, stacks on mobile */}
-                          <div style={{ display: "flex", gap: 0, flexWrap: "wrap" }}>
-
-                            {/* BLOCK 1 — COACHES */}
-                            <div style={{ flex: "1 1 220px", minWidth: 200, paddingRight: 28, borderRight: "1px solid rgba(148,163,184,0.12)" }}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.82)", textTransform: "uppercase", letterSpacing: "0.13em", padding: "14px 0 8px", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>Coaches</div>
-                              {col.coaches.length === 0 ? (
-                                <div style={{ fontSize: 12, color: "rgba(148,163,184,0.44)", fontStyle: "italic", padding: "10px 0" }}>No coach details logged yet</div>
-                              ) : col.coaches.map((coach, ci) => (
-                                <div
-                                  key={ci}
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    setSelectedCoachContact({
-                                      name: coach.name,
-                                      title: coach.title,
-                                      twitter: coach.twitter,
-                                      collegeName: col.college,
-                                      athleteNames: coach.athleteIds.map(id => roster.find(r => r.account_id === id)?.athlete_name || "Athlete").filter(Boolean),
-                                      lastDate: coach.lastDate,
-                                      lastActivityType: coach.lastActivityType,
-                                    });
-                                    setOpenSheet("coach_contact");
-                                  }}
-                                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ci < col.coaches.length - 1 ? "1px solid rgba(148,163,184,0.14)" : "none", cursor: "pointer", transition: "opacity 180ms ease" }}
-                                  onMouseEnter={e => { e.currentTarget.style.opacity = "0.70"; }}
-                                  onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
-                                >
-                                  <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontWeight: 600, color: "rgba(255,255,255,0.96)", fontSize: 13 }}>{coach.name}</div>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2, flexWrap: "wrap" }}>
-                                      {coach.title && <span style={{ fontSize: 11, color: "rgba(148,163,184,0.84)" }}>{coach.title}</span>}
-                                      {coach.twitter && (
-                                        <a
-                                          href={`https://twitter.com/${coach.twitter}`}
-                                          onClick={e => e.stopPropagation()}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          style={{ fontSize: 11, color: "#60a5fa", textDecoration: "none" }}
-                                        >
-                                          @{coach.twitter}
-                                        </a>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div style={{ fontSize: 11, color: "rgba(148,163,184,0.50)", flexShrink: 0 }}>Details →</div>
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* BLOCK 2 — ATHLETES */}
-                            <div style={{ flex: "1 1 220px", minWidth: 200, paddingLeft: 28 }}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.82)", textTransform: "uppercase", letterSpacing: "0.13em", padding: "14px 0 8px", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>Athletes</div>
-                              {col.athletes.length === 0 ? (
-                                <div style={{ fontSize: 12, color: "rgba(148,163,184,0.44)", fontStyle: "italic", padding: "10px 0" }}>No athlete detail available</div>
-                              ) : col.athletes.map((ath, ai) => (
-                                <div key={ai} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: ai < col.athletes.length - 1 ? "1px solid rgba(148,163,184,0.14)" : "none" }}>
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 600, color: "rgba(255,255,255,0.96)", fontSize: 13 }}>
-                                      {ath.name}
-                                      {ath.gradYear && <span style={{ fontSize: 10, color: "rgba(148,163,184,0.55)", marginLeft: 6 }}>'{String(ath.gradYear).slice(-2)}</span>}
-                                    </div>
-                                    {ath.topCoachName && <div style={{ fontSize: 11, color: "rgba(148,163,184,0.66)", marginTop: 2 }}>via {ath.topCoachName}</div>}
-                                  </div>
-                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
-                                    {/* Stage badge — semantics unchanged */}
-                                    <span style={{ fontSize: 10, fontWeight: 700, color: ath.stageColor, background: `${ath.stageColor}14`, border: `1px solid ${ath.stageColor}30`, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{ath.stage}</span>
-                                    {ath.lastDate && <div style={{ fontSize: 10, color: "rgba(148,163,184,0.55)" }}>{new Date(ath.lastDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-
-                          </div>
-                        </div>
-                      </div>
-
-                    </div>
-                  );
-                })}
-
-                {collegesEngagingViewModel.length > 20 && (
-                  <div style={{ padding: "12px 20px", textAlign: "center", fontSize: 13, color: "rgba(148,163,184,0.55)", borderTop: "1px solid rgba(148,163,184,0.14)" }}>+{collegesEngagingViewModel.length - 20} more colleges</div>
-                )}
-              </>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* ── SECTION: PLAYERS HEATING UP ── */}
-      {playersHeatingUpRows.length > 0 && (
-        <section style={{ padding: "0 24px 36px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-            <div style={{ width: 3, height: 24, background: "#fb923c", borderRadius: 2 }} />
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: T.textPrimary }}>PLAYERS HEATING UP</div>
-            <span style={{ fontSize: 11, color: "rgba(148,163,184,0.66)", fontWeight: 600 }}>recruiting momentum in the last 30 days</span>
-            <button
-              onClick={() => setOpenSheet("tile_heating_up")}
-              style={{ marginLeft: "auto", background: "none", border: "none", color: "#fb923c", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
-            >Full View →</button>
-          </div>
-          <div style={{ background: "#101A2B", border: "1px solid rgba(148,163,184,0.20)", borderRadius: 14, overflow: "hidden" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 55px 1fr 110px", gap: 8, padding: "10px 20px", background: "#0C1524", borderBottom: "1px solid rgba(148,163,184,0.18)", fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.82)", textTransform: "uppercase", letterSpacing: "0.09em" }}>
-              <span>Athlete</span><span>Stage</span><span>Schools</span><span>Top College</span><span>Momentum</span>
-            </div>
-            {playersHeatingUpRows.slice(0, 8).map((r, i) => {
-              const _sc = { "Visit / Offer": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#a78bfa", "Watching": "#6b7280" }[r.currentStage] || "#6b7280";
-              const _mc = r.coachAttention === "High Priority" ? "#f87171" : r.coachAttention === "Heating Up" ? "#fb923c" : "#6b7280";
-              const _isLast = i === Math.min(playersHeatingUpRows.length, 8) - 1;
-              return (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 110px 55px 1fr 110px", gap: 8, padding: "12px 20px", borderBottom: !_isLast ? "1px solid rgba(148,163,184,0.1)" : "none", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontWeight: 600, color: "rgba(255,255,255,0.96)", fontSize: 14 }}>{r.athlete_name}</div>
-                    {r.athlete_grad_year && <div style={{ fontSize: 11, color: "rgba(148,163,184,0.55)" }}>'{String(r.athlete_grad_year).slice(-2)}</div>}
-                  </div>
-                  <div><span style={{ fontSize: 10, fontWeight: 700, color: _sc, background: `${_sc}14`, border: `1px solid ${_sc}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{r.currentStage}</span></div>
-                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: r.schoolsEngaging >= 3 ? "#e8a020" : "rgba(148,163,184,0.50)", lineHeight: 1 }}>{r.schoolsEngaging}</div>
-                  <div style={{ fontSize: 13, color: "rgba(148,163,184,0.80)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.topCollege}</div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: _mc }}>{r.coachAttention}</div>
-                </div>
-              );
-            })}
-            {playersHeatingUpRows.length > 8 && (
-              <div onClick={() => setOpenSheet("tile_heating_up")} style={{ padding: "10px 20px", textAlign: "center", fontSize: 12, color: "rgba(148,163,184,0.50)", borderTop: "1px solid rgba(148,163,184,0.14)", cursor: "pointer" }}>
-                +{playersHeatingUpRows.length - 8} more athletes
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* ── SECTION 8: RECENT RECRUITING ACTIVITY ── */}
-      {(recentJourneyActivity.length > 0 || journeyLoading || Object.keys(athleteJourneys).length > 0) && (
-        <section style={{ padding: "40px 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #1f2937" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 3, height: 20, background: "#4b5563", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: T.textSecondary }}>RECENT RECRUITING ACTIVITY</span>
-                <span style={{ fontSize: 11, color: "rgba(148,163,184,0.55)", fontWeight: 600 }}>cross-roster activity log</span>
-              </div>
-              {journeyLoading && <div style={{ width: 14, height: 14, border: "2px solid #374151", borderTopColor: "#4b5563", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
-            </div>
-            {recentJourneyActivity.length === 0 ? (
-              <div style={{ padding: "28px 24px", textAlign: "center" }}>
-                <p style={{ fontSize: 14, color: T.textMuted, margin: 0, lineHeight: 1.65 }}>{journeyLoading ? "Loading recruiting activity…" : "No recruiting activity logged yet."}</p>
-              </div>
-            ) : (
-              <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px 100px 80px", gap: 8, padding: "8px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  <span>Athlete</span><span>College</span><span>Activity</span><span>Tier</span><span>Date</span>
-                </div>
-                {(activityExpanded ? recentJourneyActivity : recentJourneyActivity.slice(0, 5)).map((act, i, arr) => {
-                  const tl = act._traction_level ?? 0;
-                  const tierLabel = tl >= 4 ? "Major Outcome" : tl >= 2 ? "True Traction" : tl === 1 ? (SIGNAL_PERSONAL_TYPES.has(act.activity_type) ? "Personal Signal" : "Watching") : "Watching";
-                  const tierColors = { "Major Outcome": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#34d399", "Watching": "#4b5563" };
-                  const tc = tierColors[tierLabel] || "#4b5563";
-                  return (
-                    <div key={act.id || i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px 100px 80px", gap: 8, padding: "10px 20px", borderBottom: i < arr.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: T.textPrimary }}>{act._athlete_name}</div>
-                      <div style={{ fontSize: 13, color: T.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.school_name || "—"}</div>
-                      <div style={{ fontSize: 11, color: T.textSecondary }}>{ACTIVITY_LABEL[act.activity_type] || act.activity_type}</div>
-                      <div><span style={{ fontSize: 10, fontWeight: 700, color: tc, background: `${tc}14`, border: `1px solid ${tc}30`, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{tierLabel}</span></div>
-                      <div style={{ fontSize: 11, color: "#4b5563" }}>{act.activity_date || (act.created_at || "").slice(0, 10) || "—"}</div>
-                    </div>
-                  );
-                })}
-                {recentJourneyActivity.length > 5 && (
-                  <div style={{ padding: "12px 20px", borderTop: "1px solid #1f2937", textAlign: "center" }}>
-                    <button onClick={() => setActivityExpanded(e => !e)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", padding: "4px 12px" }}>
-                      {activityExpanded ? "SHOW LESS" : `VIEW ALL ACTIVITY (${recentJourneyActivity.length})`}
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* ── SECTION 9: PLAYERS NEEDING ATTENTION ── */}
-      {(playersNeedingAttentionRows.length > 0) && (
-        <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-            <div style={{ width: 3, height: 24, background: "#f87171", borderRadius: 2 }} />
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: T.textPrimary }}>PLAYERS NEEDING ATTENTION</div>
-            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600 }}>recruiting momentum stalled or slowed</span>
-          </div>
-          <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 90px 110px 1fr 140px", gap: 8, padding: "10px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              <span>Athlete</span><span>Last Activity</span><span>Stage</span><span>Reason</span><span>Suggested Action</span>
-            </div>
-            {playersNeedingAttentionRows.map((row, i) => {
-              const actionColors = { "High Priority Conversation": "#f59e0b", "Track Closely": "#a78bfa", "Follow Up": "#60a5fa", "Encourage Follow-Up": "#34d399", "Check In": "#6b7280" };
-              const ac = actionColors[row.suggestedAction] || "#6b7280";
-              return (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 90px 110px 1fr 140px", gap: 8, padding: "12px 20px", borderBottom: i < playersNeedingAttentionRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{row.athlete_name || "Athlete"}</div>
-                    {row.athlete_grad_year && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>'{String(row.athlete_grad_year).slice(-2)}</div>}
-                  </div>
-                  <div style={{ fontSize: 12, color: T.textMuted }}>{row.lastActivity ? new Date(row.lastActivity + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
-                  <div><span style={{ fontSize: 10, fontWeight: 600, color: T.textSecondary, background: "#1f2937", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.stage}</span></div>
-                  <div style={{ fontSize: 12, color: T.textSecondary }}>{row.reason}</div>
-                  <div><span style={{ fontSize: 10, fontWeight: 700, color: ac, background: `${ac}14`, border: `1px solid ${ac}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.suggestedAction}</span></div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* ── ROSTER CAMP OVERVIEW ── */}
-      <section style={{ padding: "40px 24px 24px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-
-          {/* Left: Camp roster board */}
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid #1f2937" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: T.textMuted }}>ROSTER CAMP OVERVIEW</span>
-              </div>
-              <button
-                onClick={() => setOpenSheet("roster")}
-                style={{ background: "none", border: "none", color: T.textMuted, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
-              >
-                Full Roster →
-              </button>
-            </div>
-            {boardRoster.length === 0 ? (
-              <div style={{ padding: "24px", textAlign: "center" }}>
-                <p style={{ fontSize: 13, color: "#4b5563", margin: 0 }}>No athletes yet. Share your invite code to connect players.</p>
-              </div>
-            ) : (
-              <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 46px 90px 50px", gap: 8, padding: "8px 20px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  <span>Athlete</span><span>Class</span><span>Next Camp</span><span style={{ textAlign: "right" }}>Camps</span>
-                </div>
-                {boardRoster.slice(0, 8).map((r, i) => {
-                  const athleteCamps = campsByAccountId[r.account_id] || [];
-                  const noCamps = athleteCamps.length === 0;
-                  const nextCamp = getNextCamp(r);
-                  const days = nextCamp ? daysUntil(nextCamp.start_date) : null;
-                  return (
-                    <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: "1fr 46px 90px 50px", gap: 8, padding: "10px 20px", borderBottom: i < Math.min(boardRoster.length, 8) - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                      <div style={{ fontWeight: 500, color: "#d1d5db", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.athlete_name || "Athlete"}</div>
-                      <div style={{ fontSize: 12, color: T.textMuted }}>{r.athlete_grad_year ? `'${String(r.athlete_grad_year).slice(-2)}` : "—"}</div>
-                      <div style={{ fontSize: 12, color: nextCamp ? "#d1d5db" : "#4b5563" }}>
-                        {nextCamp
-                          ? <><div>{new Date(nextCamp.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
-                              {days !== null && days <= 7 && <div style={{ fontSize: 10, color: "#f59e0b" }}>{days === 0 ? "Today" : `${days}d`}</div>}
-                            </>
-                          : <span style={{ fontSize: 11 }}>—</span>
-                        }
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: noCamps ? "#f87171" : "#6b7280", textAlign: "right" }}>{athleteCamps.length}</div>
-                    </div>
-                  );
-                })}
-                {boardRoster.length > 8 && (
-                  <div onClick={() => setOpenSheet("roster")} style={{ padding: "10px 20px", textAlign: "center", fontSize: 12, color: T.textMuted, fontWeight: 600, cursor: "pointer", borderTop: "1px solid #1f2937" }}>
-                    View all {boardRoster.length} athletes →
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Right: Upcoming Camps */}
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
-            <div
-              onClick={() => setOpenSheet("monthly")}
-              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", cursor: "pointer", borderBottom: "1px solid #1f2937" }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: T.textMuted }}>UPCOMING CAMPS</span>
-              </div>
-              <span style={{ fontSize: 12, color: T.textMuted, fontWeight: 600 }}>View Month →</span>
-            </div>
-            <div style={{ padding: "8px 0" }}>
-              {nextCamps.length === 0 ? (
-                <p style={{ fontSize: 13, color: "#4b5563", padding: "16px 20px", margin: 0 }}>No upcoming camps scheduled.</p>
-              ) : (
-                nextCamps.map(({ athlete, camp, date }, i) => (
-                  <div key={i} style={{ display: "flex", gap: 12, padding: "10px 20px", borderBottom: i < nextCamps.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                    <div style={{ background: "rgba(75,85,99,0.2)", color: T.textMuted, fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 8, textAlign: "center", flexShrink: 0, minWidth: 44 }}>
-                      <div>{date.toLocaleDateString("en-US", { month: "short" })}</div>
-                      <div style={{ fontSize: 15, lineHeight: 1 }}>{date.getDate()}</div>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: T.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{camp.school_name || camp.host_org || camp.ryzer_program_name || camp.camp_name}</div>
-                      <div style={{ fontSize: 11, color: "#4b5563", marginTop: 1 }}>{athlete}</div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-        </div>
-      </section>
-
-      {/* ── RECENT MESSAGES ── */}
-      {messages.length > 0 && (
-        <section style={{ padding: "0 24px 28px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden" }}>
-            <div
-              onClick={() => setOpenSheet("message")}
-              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", cursor: "pointer", borderBottom: "1px solid #1f2937" }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 3, height: 16, background: "#374151", borderRadius: 2 }} />
-                <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 17, letterSpacing: 1, color: T.textMuted }}>RECENT MESSAGES</span>
-              </div>
-              <span style={{ fontSize: 12, color: "#e8a020", fontWeight: 600 }}>Compose + View →</span>
-            </div>
-            <div style={{ padding: "4px 0" }}>
-              {messages.slice(0, 3).map((m, i) => (
-                <div key={m.id || i} style={{ padding: "12px 20px", borderBottom: i < Math.min(messages.length, 3) - 1 ? "1px solid #1f2937" : "none" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 2 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                      → {m.recipient_name || "All Athletes"}
-                    </span>
-                    <span style={{ fontSize: 11, color: "#4b5563", flexShrink: 0 }}>{m.sent_at ? new Date(m.sent_at).toLocaleDateString() : ""}</span>
-                  </div>
-                  {m.subject && <div style={{ fontSize: 13, fontWeight: 600, color: "#d1d5db", marginBottom: 2 }}>{m.subject}</div>}
-                  <div style={{ fontSize: 13, color: T.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.message}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
       {/* ── SHEET OVERLAY ── */}
       {openSheet && (
         <>
@@ -2290,8 +1929,10 @@ export default function CoachDashboard() {
                 {openSheet === "tile_visits_offers"   && `VISITS & OFFERS — ${tractionPairs.filter(p => p.traction_level === 4).length}`}
                 {openSheet === "tile_colleges"        && `COLLEGES ENGAGING PROGRAM — ${collegesEngagingRows.length}`}
                 {openSheet === "tile_heating_up"      && `PLAYERS HEATING UP — ${playersHeatingUpRows.length}`}
-                {openSheet === "tile_repeat_colleges" && `REPEAT-INTEREST COLLEGES — ${collegesEngagingRows.filter(r => r.repeatInterest).length}`}
-                {openSheet === "coach_contact"        && (selectedCoachContact ? `COACH — ${selectedCoachContact.name.toUpperCase()}` : "COACH CONTACT")}
+                {openSheet === "tile_repeat_colleges"    && `REPEAT-INTEREST COLLEGES — ${collegesEngagingRows.filter(r => r.repeatInterest).length}`}
+                {openSheet === "tile_recent_activity"   && `RECENT RECRUITING ACTIVITY — ${recentJourneyActivity.length}`}
+                {openSheet === "tile_needs_attention"   && `PLAYERS NEEDING ATTENTION — ${playersNeedingAttentionRows.length}`}
+                {openSheet === "coach_contact"          && (selectedCoachContact ? `COACH — ${selectedCoachContact.name.toUpperCase()}` : "COACH CONTACT")}
                 {openSheet === "invite_parents"       && "INVITE PARENTS"}
                 {openSheet === "my_account"           && "MY ACCOUNT"}
                 {openSheet === "coach_tools"          && "TOOLS"}
@@ -2823,28 +2464,79 @@ export default function CoachDashboard() {
                 );
               })()}
 
-              {/* ── TILE 4: Colleges Engaging Program ── */}
+              {/* ── TILE 4: Colleges Engaging Program (full expandable table) ── */}
               {openSheet === "tile_colleges" && (() => {
-                return collegesEngagingRows.length === 0 ? (
+                return collegesEngagingViewModel.length === 0 ? (
                   <p style={{ fontSize: 14, color: T.textMuted }}>No colleges with recruiting activity logged yet.</p>
                 ) : (
                   <>
-                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>All colleges with at least one recruiting signal logged across the program. Sorted by highest traction level.</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                      <span>College</span><span>Athletes</span><span>Stage</span><span>Athletes</span><span>Last Activity</span>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>All colleges with at least one recruiting signal logged across the program. Click a row to expand coaches and athletes.</p>
+                    {/* Column headers */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 52px 100px 72px 100px 28px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>College</span><span>Athletes</span><span>Highest Stage</span><span>Last Activity</span><span>Repeat Interest</span><span></span>
                     </div>
-                    {collegesEngagingRows.map((c, i) => {
-                      const stageColor = c.highestLevel >= 4 ? "#f59e0b" : c.highestLevel >= 2 ? "#60a5fa" : "#9ca3af";
+                    {collegesEngagingViewModel.slice(0, 20).map((col, i) => {
+                      const isExpanded = expandedCollege === col.college;
+                      const sc = { "Visit / Offer": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#a78bfa", "Watching": "#6b7280" }[col.highestStage] || "#6b7280";
                       return (
-                        <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 60px 100px 1fr 80px", gap: 8, padding: "11px 0", borderBottom: i < collegesEngagingRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
-                          <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{c.college}</div>
-                          <div style={{ fontSize: 13, color: "#d1d5db", textAlign: "center" }}>{c.athletesEngaged}</div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: stageColor }}>{c.highestStage}</div>
-                          <div style={{ fontSize: 12, color: T.textSecondary }}>{c.athleteNames.slice(0, 3).join(", ")}{c.athleteNames.length > 3 ? ` +${c.athleteNames.length - 3}` : ""}</div>
-                          <div style={{ fontSize: 12, color: T.textMuted }}>{c.lastActivityDate ? new Date(c.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                        <div key={col.college} style={{ borderBottom: i < Math.min(collegesEngagingViewModel.length, 20) - 1 ? "1px solid #1f2937" : "none" }}>
+                          {/* Summary row */}
+                          <div
+                            onClick={() => setExpandedCollege(isExpanded ? null : col.college)}
+                            style={{ display: "grid", gridTemplateColumns: "1fr 52px 100px 72px 100px 28px", gap: 8, padding: "11px 0", alignItems: "center", cursor: "pointer" }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{col.college}</div>
+                              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>{col.athletesEngaged} athlete{col.athletesEngaged !== 1 ? "s" : ""}{col.coaches.length > 0 ? ` · ${col.coaches.length} coach${col.coaches.length !== 1 ? "es" : ""}` : ""}</div>
+                            </div>
+                            <div style={{ fontSize: 13, color: col.athletesEngaged >= 2 ? "#e8a020" : "#d1d5db", fontWeight: 700, textAlign: "center" }}>{col.athletesEngaged}</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: sc }}>{col.highestStage}</div>
+                            <div style={{ fontSize: 12, color: T.textMuted }}>{col.lastActivityDate ? new Date(col.lastActivityDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                            <div>{col.repeatLabel ? <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020" }}>{col.repeatLabel}</span> : <span style={{ color: T.textMuted, fontSize: 11 }}>—</span>}</div>
+                            <div style={{ fontSize: 12, color: isExpanded ? "#e8a020" : T.textMuted, textAlign: "center", transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>⌄</div>
+                          </div>
+                          {/* Expanded detail */}
+                          {isExpanded && (
+                            <div style={{ background: "#0d1421", borderRadius: 8, padding: "12px 14px", marginBottom: 10, display: "flex", gap: 0, flexWrap: "wrap" }}>
+                              {/* Coaches */}
+                              <div style={{ flex: "1 1 180px", paddingRight: 20, borderRight: "1px solid #1f2937", minWidth: 160 }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Coaches</div>
+                                {col.coaches.length === 0
+                                  ? <div style={{ fontSize: 12, color: "#374151", fontStyle: "italic" }}>No coach details logged</div>
+                                  : col.coaches.map((coach, ci) => (
+                                    <div
+                                      key={ci}
+                                      onClick={e => { e.stopPropagation(); setSelectedCoachContact({ name: coach.name, title: coach.title, twitter: coach.twitter, collegeName: col.college, athleteNames: coach.athleteIds.map(id => roster.find(r => r.account_id === id)?.athlete_name || "Athlete").filter(Boolean), lastDate: coach.lastDate, lastActivityType: coach.lastActivityType }); setOpenSheet("coach_contact"); }}
+                                      style={{ padding: "7px 0", borderBottom: ci < col.coaches.length - 1 ? "1px solid #1f2937" : "none", cursor: "pointer" }}
+                                    >
+                                      <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 13 }}>{coach.name}</div>
+                                      {coach.title && <div style={{ fontSize: 11, color: T.textMuted }}>{coach.title}</div>}
+                                      {coach.twitter && <div style={{ fontSize: 11, color: "#60a5fa" }}>@{coach.twitter}</div>}
+                                    </div>
+                                  ))
+                                }
+                              </div>
+                              {/* Athletes */}
+                              <div style={{ flex: "1 1 180px", paddingLeft: 20, minWidth: 160 }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Athletes</div>
+                                {col.athletes.map((ath, ai) => (
+                                  <div key={ai} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 0", borderBottom: ai < col.athletes.length - 1 ? "1px solid #1f2937" : "none" }}>
+                                    <div>
+                                      <span style={{ fontWeight: 600, color: T.textPrimary, fontSize: 13 }}>{ath.name}</span>
+                                      {ath.gradYear && <span style={{ fontSize: 10, color: T.textMuted, marginLeft: 5 }}>'{String(ath.gradYear).slice(-2)}</span>}
+                                    </div>
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: ath.stageColor }}>{ath.stage}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
+                    {collegesEngagingViewModel.length > 20 && (
+                      <div style={{ paddingTop: 12, textAlign: "center", fontSize: 12, color: T.textMuted }}>+{collegesEngagingViewModel.length - 20} more colleges</div>
+                    )}
                   </>
                 );
               })()}
@@ -2872,6 +2564,71 @@ export default function CoachDashboard() {
                           <div style={{ fontSize: 13, color: "#d1d5db", textAlign: "center" }}>{r.schoolsEngaging}</div>
                           <div style={{ fontSize: 13, color: T.textSecondary }}>{r.topCollege}</div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: actionColor }}>{r.coachAttention}</div>
+                        </div>
+                      );
+                    })}
+                  </>
+                );
+              })()}
+
+              {/* ── TILE 7: Recent Recruiting Activity ── */}
+              {openSheet === "tile_recent_activity" && (() => {
+                return recentJourneyActivity.length === 0 ? (
+                  <p style={{ fontSize: 14, color: T.textMuted }}>{journeyLoading ? "Loading recruiting activity…" : "No recruiting activity logged yet."}</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>Cross-roster activity log, newest first.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 90px 72px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>Athlete</span><span>College</span><span>Activity</span><span>Tier</span><span>Date</span>
+                    </div>
+                    {(activityExpanded ? recentJourneyActivity : recentJourneyActivity.slice(0, 10)).map((act, i, arr) => {
+                      const tl = act._traction_level ?? 0;
+                      const tierLabel = tl >= 4 ? "Major Outcome" : tl >= 2 ? "True Traction" : tl === 1 ? (SIGNAL_PERSONAL_TYPES.has(act.activity_type) ? "Personal Signal" : "Watching") : "Watching";
+                      const tc = { "Major Outcome": "#f59e0b", "True Traction": "#60a5fa", "Personal Signal": "#34d399", "Watching": "#4b5563" }[tierLabel] || "#4b5563";
+                      return (
+                        <div key={act.id || i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 90px 72px", gap: 8, padding: "10px 0", borderBottom: i < arr.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: T.textPrimary }}>{act._athlete_name}</div>
+                          <div style={{ fontSize: 13, color: T.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.school_name || "—"}</div>
+                          <div style={{ fontSize: 11, color: T.textSecondary }}>{ACTIVITY_LABEL[act.activity_type] || act.activity_type}</div>
+                          <div><span style={{ fontSize: 10, fontWeight: 700, color: tc, background: `${tc}14`, border: `1px solid ${tc}30`, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{tierLabel}</span></div>
+                          <div style={{ fontSize: 11, color: T.textMuted }}>{act.activity_date || (act.created_at || "").slice(0, 10) || "—"}</div>
+                        </div>
+                      );
+                    })}
+                    {recentJourneyActivity.length > 10 && (
+                      <div style={{ paddingTop: 12, textAlign: "center" }}>
+                        <button onClick={() => setActivityExpanded(e => !e)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                          {activityExpanded ? "SHOW LESS" : `VIEW ALL (${recentJourneyActivity.length})`}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
+              {/* ── TILE 8: Players Needing Attention ── */}
+              {openSheet === "tile_needs_attention" && (() => {
+                return playersNeedingAttentionRows.length === 0 ? (
+                  <p style={{ fontSize: 14, color: T.textMuted }}>No athletes flagged for attention right now.</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 14px" }}>Athletes where recruiting momentum has stalled or slowed. Sorted by priority.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1.2fr 80px 100px 1fr 130px", gap: 8, padding: "0 0 8px", borderBottom: "1px solid #1f2937", fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      <span>Athlete</span><span>Last Activity</span><span>Stage</span><span>Reason</span><span>Suggested Action</span>
+                    </div>
+                    {playersNeedingAttentionRows.map((row, i) => {
+                      const actionColors = { "High Priority Conversation": "#f59e0b", "Track Closely": "#a78bfa", "Follow Up": "#60a5fa", "Encourage Follow-Up": "#34d399", "Check In": "#6b7280" };
+                      const ac = actionColors[row.suggestedAction] || "#6b7280";
+                      return (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 80px 100px 1fr 130px", gap: 8, padding: "11px 0", borderBottom: i < playersNeedingAttentionRows.length - 1 ? "1px solid #1f2937" : "none", alignItems: "center" }}>
+                          <div>
+                            <div style={{ fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>{row.athlete_name || "Athlete"}</div>
+                            {row.athlete_grad_year && <div style={{ fontSize: 11, color: T.textMuted }}>'{String(row.athlete_grad_year).slice(-2)}</div>}
+                          </div>
+                          <div style={{ fontSize: 12, color: T.textMuted }}>{row.lastActivity ? new Date(row.lastActivity + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                          <div><span style={{ fontSize: 10, fontWeight: 600, color: T.textSecondary, background: "#1f2937", borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.stage}</span></div>
+                          <div style={{ fontSize: 12, color: T.textSecondary }}>{row.reason}</div>
+                          <div><span style={{ fontSize: 10, fontWeight: 700, color: ac, background: `${ac}14`, border: `1px solid ${ac}30`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap" }}>{row.suggestedAction}</span></div>
                         </div>
                       );
                     })}
