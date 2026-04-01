@@ -526,6 +526,18 @@ export async function verifyTopology(base44) {
 }
 
 // ---------------------------------------------------------------------------
+// lookupAccountByEmail — find a real Base44 account ID from an email address.
+// Returns { id, email, full_name } or null if not found.
+// ---------------------------------------------------------------------------
+
+export async function lookupAccountByEmail(base44, email) {
+  if (!email) return null;
+  const users = await base44.entities.User.filter({ email: email.trim().toLowerCase() }).catch(() => []);
+  if (!users || users.length === 0) return null;
+  return users[0];
+}
+
+// ---------------------------------------------------------------------------
 // SLOT_MAP — stable definitions for the 7 account slots.
 // Keyed by slotKey; used by claimSlot / releaseSlot to find and patch records
 // even after account_id has been updated to a real user ID.

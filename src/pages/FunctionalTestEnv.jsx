@@ -16,6 +16,7 @@ import {
   discoverSeeds,
   claimSlot,
   releaseSlot,
+  lookupAccountByEmail,
 } from "../lib/ftEnvService";
 
 // ---------------------------------------------------------------------------
@@ -85,7 +86,8 @@ export default function FunctionalTestEnv() {
   const [actionLog,    setActionLog]    = useState([]);
   const [lastSeeded,   setLastSeeded]   = useState(() => lsGet(LS_LAST_SEEDED));
   const [lastVerified, setLastVerified] = useState(() => lsGet(LS_LAST_VERIFIED));
-  const [running,      setRunning]      = useState(null); // "seed"|"reset"|"verify"|"discover"|"claim:slotKey"|"release:slotKey"
+  const [running,      setRunning]      = useState(null); // "seed"|"reset"|"verify"|"discover"|"link:slotKey"|"release:slotKey"
+  const [emailInputs,  setEmailInputs]  = useState({});   // { slotKey: emailString }
   const [notesOpen,    setNotesOpen]    = useState(true);
 
   const addLog = useCallback((msg) => {
@@ -226,41 +228,42 @@ export default function FunctionalTestEnv() {
   }, [addLog]);
 
   // -------------------------------------------------------------------------
-  // Claim / Release slot
+  // Link slot by email / Release slot
   // -------------------------------------------------------------------------
-  const handleClaim = useCallback(async (slotKey) => {
-    setRunning(`claim:${slotKey}`);
+  const handleLinkByEmail = useCallback(async (slotKey) => {
+    const email = (emailInputs[slotKey] || "").trim();
+    if (!email) { addLog(`Link ERROR (${slotKey}): no email entered`); return; }
+    setRunning(`link:${slotKey}`);
     setLoading(true);
-    addLog(`Claiming slot "${slotKey}" as current user…`);
+    addLog(`Looking up account for "${email}"…`);
     try {
-      const me = await base44.auth.me();
-      if (!me?.id) throw new Error("Could not determine current user ID — are you logged in?");
-      const { updated, errors } = await claimSlot(base44, slotKey, me.id);
-      if (errors.length > 0) {
-        errors.forEach(e => addLog(`  WARN: ${e}`));
-      }
-      addLog(`Slot "${slotKey}" claimed → account ${me.id} (${updated} records updated)`);
+      const user = await lookupAccountByEmail(base44, email);
+      if (!user?.id) throw new Error(`No account found for email: ${email}`);
+      addLog(`Found account ${user.id} (${user.email}) — linking slot "${slotKey}"…`);
+      const { updated, errors } = await claimSlot(base44, slotKey, user.id);
+      if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
+      addLog(`Slot "${slotKey}" linked to ${user.email} (${updated} records updated)`);
+      // Clear the email input on success
+      setEmailInputs(prev => ({ ...prev, [slotKey]: "" }));
       await handleDiscover();
     } catch (err) {
-      addLog(`Claim ERROR (${slotKey}): ${err?.message || err}`);
+      addLog(`Link ERROR (${slotKey}): ${err?.message || err}`);
     } finally {
       setLoading(false);
       setRunning(null);
     }
-  }, [addLog, handleDiscover]);
+  }, [emailInputs, addLog, handleDiscover]);
 
   const handleRelease = useCallback(async (slotKey) => {
     if (!window.confirm(
-      `Release slot "${slotKey}"? This reverts account_id back to the synthetic value and breaks any real login tied to it.`
+      `Release slot "${slotKey}"? This reverts the account link and breaks any real login tied to it.`
     )) return;
     setRunning(`release:${slotKey}`);
     setLoading(true);
     addLog(`Releasing slot "${slotKey}" back to synthetic ID…`);
     try {
       const { updated, errors } = await releaseSlot(base44, slotKey);
-      if (errors.length > 0) {
-        errors.forEach(e => addLog(`  WARN: ${e}`));
-      }
+      if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
       addLog(`Slot "${slotKey}" released (${updated} records reverted)`);
       await handleDiscover();
     } catch (err) {
@@ -728,27 +731,27 @@ export default function FunctionalTestEnv() {
           {/* ── Section 5: Link Real Accounts ── */}
           <SectionCard title="Link Real Accounts">
             <div style={{ fontSize: 13, color: "#4B5563", marginBottom: 16, lineHeight: 1.6 }}>
-              To log in as a seed account, create a real Base44 login with any email you control,
-              then click <strong>Claim as me</strong> while logged in as that account.
-              All entity records for that slot update to use your real account ID.
+              Create Base44 login accounts with emails you control, then enter each email below
+              to link it to a seed slot. All athlete/coach entity records for that slot will be
+              updated to the real account ID so the login sees the seed data.
             </div>
             <div style={styles.tableWrap}>
               <table style={styles.table}>
                 <thead>
                   <tr style={styles.thead}>
                     <th style={styles.th}>Slot</th>
-                    <th style={styles.th}>Description</th>
-                    <th style={styles.th}>Account ID</th>
+                    <th style={styles.th}>Athletes / Role</th>
                     <th style={styles.th}>Status</th>
+                    <th style={styles.th}>Email to link</th>
                     <th style={{ ...styles.th, textAlign: "right" }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {Object.entries(SLOT_MAP).map(([slotKey, slot], i) => {
                     const { status: slotStatus, currentId } = getSlotStatus(slotKey);
-                    const isClaimRunning   = running === `claim:${slotKey}`;
+                    const isLinkRunning    = running === `link:${slotKey}`;
                     const isReleaseRunning = running === `release:${slotKey}`;
-                    const isThisRunning    = isClaimRunning || isReleaseRunning;
+                    const emailVal = emailInputs[slotKey] || "";
 
                     const statusCfg = {
                       not_seeded: { label: "Not seeded", bg: "#F3F4F6", color: "#6B7280" },
@@ -758,25 +761,46 @@ export default function FunctionalTestEnv() {
 
                     return (
                       <tr key={slotKey} style={i % 2 === 0 ? styles.trEven : styles.trOdd}>
-                        <td style={{ ...styles.td, fontWeight: 600 }}>{slot.label}</td>
-                        <td style={{ ...styles.td, fontSize: 12, color: "#6B7280" }}>{slot.desc}</td>
-                        <td style={{ ...styles.td, fontFamily: "monospace", fontSize: 11, maxWidth: 200 }}>
-                          {slotStatus === "not_seeded"
-                            ? <span style={{ color: "#9CA3AF" }}>—</span>
-                            : slotStatus === "claimed"
-                              ? <span style={{ color: "#059669" }} title={currentId}>
-                                  {currentId?.slice(0, 8)}…{currentId?.slice(-4)}
-                                </span>
-                              : <span style={{ color: "#9CA3AF" }}>{slot.syntheticId}</span>
-                          }
+                        <td style={{ ...styles.td, fontWeight: 600, whiteSpace: "nowrap" }}>
+                          {slot.label}
                         </td>
-                        <td style={styles.td}>
+                        <td style={{ ...styles.td, fontSize: 12, color: "#6B7280" }}>
+                          {slot.desc}
+                          {slotStatus === "claimed" && (
+                            <div style={{ marginTop: 2, fontFamily: "monospace", fontSize: 10, color: "#059669" }}
+                                 title={currentId}>
+                              {currentId?.slice(0, 10)}…
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ ...styles.td, whiteSpace: "nowrap" }}>
                           <Badge label={statusCfg.label} bg={statusCfg.bg} color={statusCfg.color} />
                         </td>
-                        <td style={{ ...styles.td, textAlign: "right" }}>
+                        <td style={styles.td}>
                           {slotStatus === "not_seeded" ? (
-                            <span style={{ fontSize: 12, color: "#9CA3AF" }}>Seed first</span>
+                            <span style={{ fontSize: 12, color: "#9CA3AF" }}>Seed dataset first</span>
                           ) : slotStatus === "claimed" ? (
+                            <span style={{ fontSize: 12, color: "#6B7280" }}>Linked — release to relink</span>
+                          ) : (
+                            <input
+                              type="email"
+                              placeholder="user@example.com"
+                              value={emailVal}
+                              onChange={e => setEmailInputs(prev => ({ ...prev, [slotKey]: e.target.value }))}
+                              onKeyDown={e => { if (e.key === "Enter") handleLinkByEmail(slotKey); }}
+                              disabled={isRunning}
+                              style={{
+                                width: "100%", padding: "5px 9px", borderRadius: 6, fontSize: 13,
+                                border: "1px solid #D1D5DB", outline: "none", fontFamily: "inherit",
+                                background: isRunning ? "#F9FAFB" : "#FFFFFF", color: "#111827",
+                                boxSizing: "border-box",
+                              }}
+                            />
+                          )}
+                        </td>
+                        <td style={{ ...styles.td, textAlign: "right", whiteSpace: "nowrap" }}>
+                          {slotStatus === "not_seeded" ? null
+                          : slotStatus === "claimed" ? (
                             <button
                               onClick={() => handleRelease(slotKey)}
                               disabled={isRunning}
@@ -790,15 +814,16 @@ export default function FunctionalTestEnv() {
                             </button>
                           ) : (
                             <button
-                              onClick={() => handleClaim(slotKey)}
-                              disabled={isRunning}
+                              onClick={() => handleLinkByEmail(slotKey)}
+                              disabled={isRunning || !emailVal.trim()}
                               style={{
-                                padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+                                padding: "4px 14px", borderRadius: 6, fontSize: 12, fontWeight: 600,
                                 border: "1px solid #6EE7B7", background: "#ECFDF5", color: "#065F46",
-                                cursor: isRunning ? "not-allowed" : "pointer", opacity: isRunning ? 0.5 : 1,
+                                cursor: (isRunning || !emailVal.trim()) ? "not-allowed" : "pointer",
+                                opacity: (isRunning || !emailVal.trim()) ? 0.5 : 1,
                               }}
                             >
-                              {isClaimRunning ? "⏳" : "Claim as me"}
+                              {isLinkRunning ? "⏳" : "Link →"}
                             </button>
                           )}
                         </td>
@@ -809,7 +834,7 @@ export default function FunctionalTestEnv() {
               </table>
             </div>
             <div style={{ marginTop: 12, fontSize: 12, color: "#9CA3AF" }}>
-              Each slot can only be claimed by one account at a time. Release a slot before claiming it with a different account.
+              Press Enter in the email field or click Link →. Release a slot before relinking to a different account.
             </div>
           </SectionCard>
 
