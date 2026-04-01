@@ -613,6 +613,22 @@ export async function claimSlot(base44, slotKey, realId) {
   const slot = SLOT_MAP[slotKey];
   if (!slot) throw new Error(`Unknown slot key: ${slotKey}`);
 
+  // Prefer server-side claim: uses asServiceRole so it can find seed profiles
+  // that client-side filter({}) cannot see (created with synthetic account_id).
+  try {
+    const body = slot.type === "family"
+      ? { type: "family", realId, athletes: slot.athletes.map(d => ({ athleteName: d.athleteName, gradYear: d.gradYear })) }
+      : { type: "coach", realId, inviteCode: slot.inviteCode };
+
+    const res = await base44.functions.invoke("claimSlotProfiles", body);
+    if (res?.data?.ok !== undefined) {
+      return { updated: res.data.updated ?? 0, errors: res.data.errors ?? [] };
+    }
+  } catch (fnErr) {
+    console.warn("[claimSlot] server function failed, falling back to client-side:", fnErr?.message);
+  }
+
+  // Fallback: client-side (only works if records are owned by the current caller)
   const [allAthletes, allRosters, allCoaches] = await Promise.all([
     base44.entities.AthleteProfile.filter({}).catch(() => []),
     base44.entities.CoachRoster.filter({}).catch(() => []),
@@ -628,7 +644,7 @@ export async function claimSlot(base44, slotKey, realId) {
         a => a.athlete_name === def.athleteName && a.grad_year === def.gradYear
       );
       if (!record) {
-        errors.push(`AthleteProfile not found: ${def.athleteName} ${def.gradYear}`);
+        errors.push(`AthleteProfile not found (client-side fallback): ${def.athleteName} ${def.gradYear}`);
         continue;
       }
       try {
@@ -637,7 +653,6 @@ export async function claimSlot(base44, slotKey, realId) {
       } catch (e) {
         errors.push(`AthleteProfile ${record.id}: ${e?.message}`);
       }
-      // Update roster records that link this athlete to a coach
       const athleteRosters = allRosters.filter(r => r.athlete_id === record.id);
       for (const r of athleteRosters) {
         try {

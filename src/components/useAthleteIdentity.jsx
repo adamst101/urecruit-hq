@@ -12,14 +12,13 @@ import { useSeasonAccess } from "./hooks/useSeasonAccess.jsx";
  * - If logged out -> athleteProfile=null immediately (no stale leak)
  * - Scope cache by accountId
  * - Only fetch when authenticated
- * - Prefer seed profile over blank direct profile for linked test accounts
  * - Resilient to Base44 id field variations (id/_id/uuid)
  *
- * Seed-profile precedence (for Functional Test linked accounts):
- * - A profile where athlete_name starts with "__hc_ft_" is a SEED profile
- * - A profile with no athlete_name/grad_year and no camp data is a BLANK direct profile
- * - If both exist: prefer seed profile (it has real downstream data)
- * - If only one exists: use it regardless
+ * Profile resolution:
+ * - getMyAthleteProfiles (server function, asServiceRole) returns only profiles
+ *   where account_id === caller's auth ID. That set is authoritative — no
+ *   name-prefix heuristics needed. claimSlot() is responsible for writing the
+ *   correct account_id at link time (via claimSlotProfiles server function).
  */
 
 // ---------- helpers ----------
@@ -30,23 +29,13 @@ function normId(x) {
   return x.id || x._id || x.uuid || null;
 }
 
-function isSeedProfile(profile) {
-  return typeof profile?.athlete_name === "string" &&
-    profile.athlete_name.startsWith("__hc_ft_");
-}
-
-function isBlankProfile(profile) {
-  const noName = !profile?.athlete_name || profile.athlete_name.trim() === "";
-  const noGradYear = !profile?.grad_year;
-  return noName && noGradYear;
-}
-
 /**
- * Apply seed-profile precedence across a list of profiles.
+ * Pick the best profile from a list returned by getMyAthleteProfiles.
+ * All profiles already belong to the caller (account_id ownership enforced server-side).
  * Returns { chosen, resolutionMode, diagnostics }.
  */
 function resolveBestProfile(list, requestedAthleteId) {
-  const direct = list.length;
+  const total = list.length;
 
   if (requestedAthleteId) {
     const match = list.find((p) => normId(p) === requestedAthleteId) || null;
@@ -54,9 +43,7 @@ function resolveBestProfile(list, requestedAthleteId) {
       chosen: match,
       resolutionMode: match ? "direct" : "unresolved",
       diagnostics: {
-        directProfilesFound: direct,
-        seedProfileFound: false,
-        seedProfileId: null,
+        profilesFound: total,
         finalProfileId: match ? (normId(match) || null) : null,
         reason: match
           ? `Matched requested athleteId ${requestedAthleteId}`
@@ -65,41 +52,19 @@ function resolveBestProfile(list, requestedAthleteId) {
     };
   }
 
-  if (list.length === 0) {
+  if (total === 0) {
     return {
       chosen: null,
       resolutionMode: "unresolved",
       diagnostics: {
-        directProfilesFound: 0,
-        seedProfileFound: false,
-        seedProfileId: null,
+        profilesFound: 0,
         finalProfileId: null,
         reason: "No profiles returned",
       },
     };
   }
 
-  const seedProfiles = list.filter(isSeedProfile);
-  const hasSeed = seedProfiles.length > 0;
-  const seedProfileId = hasSeed ? (normId(seedProfiles[0]) || null) : null;
-
-  // If there is a seed profile, prefer it
-  if (hasSeed) {
-    const chosen = seedProfiles[0];
-    return {
-      chosen,
-      resolutionMode: "linked_seed",
-      diagnostics: {
-        directProfilesFound: direct,
-        seedProfileFound: true,
-        seedProfileId,
-        finalProfileId: normId(chosen) || null,
-        reason: `Seed profile preferred (${list.length} total profiles found)`,
-      },
-    };
-  }
-
-  // No seed profile — use standard precedence: primary → active → first
+  // Standard precedence: primary → active → first
   const chosen =
     list.find((p) => p?.is_primary === true && p?.active !== false) ||
     list.find((p) => p?.active === true) ||
@@ -110,12 +75,10 @@ function resolveBestProfile(list, requestedAthleteId) {
     chosen,
     resolutionMode: chosen ? "direct" : "unresolved",
     diagnostics: {
-      directProfilesFound: direct,
-      seedProfileFound: false,
-      seedProfileId: null,
+      profilesFound: total,
       finalProfileId: chosen ? (normId(chosen) || null) : null,
       reason: chosen
-        ? `Direct profile selected (primary/active/first)`
+        ? `Profile selected (primary/active/first of ${total})`
         : "No profile found after standard precedence",
     },
   };

@@ -836,7 +836,7 @@ export default function Workspace() {
             right: 12,
             zIndex: 99999,
             background: "#111827",
-            border: `1px solid ${athleteResolutionMode === "linked_seed" ? "#f59e0b" : athleteResolutionMode === "direct" ? "#22c55e" : "#ef4444"}`,
+            border: `1px solid ${athleteResolutionMode === "direct" ? "#22c55e" : "#ef4444"}`,
             borderRadius: 8,
             padding: "10px 14px",
             minWidth: 260,
@@ -848,24 +848,18 @@ export default function Workspace() {
             pointerEvents: "none",
           }}
         >
-          <div style={{ fontWeight: 700, color: athleteResolutionMode === "linked_seed" ? "#f59e0b" : athleteResolutionMode === "direct" ? "#22c55e" : "#ef4444", marginBottom: 4 }}>
+          <div style={{ fontWeight: 700, color: athleteResolutionMode === "direct" ? "#22c55e" : "#ef4444", marginBottom: 4 }}>
             [AthleteIdentity Debug]
           </div>
           <div>Account: <span style={{ color: "#93c5fd" }}>{athleteDiagnostics.authAccountId || "—"}</span></div>
           <div>
             Mode:{" "}
-            <span style={{ color: athleteResolutionMode === "linked_seed" ? "#f59e0b" : athleteResolutionMode === "direct" ? "#22c55e" : "#ef4444", fontWeight: 700 }}>
+            <span style={{ color: athleteResolutionMode === "direct" ? "#22c55e" : "#ef4444", fontWeight: 700 }}>
               {athleteResolutionMode}
             </span>
           </div>
           <div>Profile ID: <span style={{ color: "#d1d5db" }}>{athleteDiagnostics.finalProfileId || "—"}</span></div>
-          <div>Profiles found: {athleteDiagnostics.directProfilesFound}</div>
-          <div>
-            Seed found:{" "}
-            <span style={{ color: athleteDiagnostics.seedProfileFound ? "#f59e0b" : "#6b7280" }}>
-              {athleteDiagnostics.seedProfileFound ? `yes (${athleteDiagnostics.seedProfileId})` : "no"}
-            </span>
-          </div>
+          <div>Profiles found: {athleteDiagnostics.profilesFound ?? "—"}</div>
           <div style={{ color: "#9ca3af", marginTop: 2 }}>{athleteDiagnostics.reason}</div>
         </div>
       )}
