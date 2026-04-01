@@ -267,29 +267,60 @@ function MetricTilesPreview() {
   );
 }
 
-function ToolsPreview() {
+function InviteParentsPreview() {
   return (
-    <PreviewFrame accent="#34d399" label="COACH TOOLS">
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-        {[
-          { label: "+ Invite Parents", color: "#34d399", desc: "Share your program link with families" },
-          { label: "☰ Tools",          color: "#94a3b8", desc: "Message roster, manage settings" },
-          { label: "My Account",        color: "#94a3b8", desc: "Profile, email preferences" },
-        ].map((b) => (
-          <div key={b.label} style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "8px 12px 10px", minWidth: 120, flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: b.color, marginBottom: 3 }}>{b.label}</div>
-            <div style={{ fontSize: 10, color: "#4b5563" }}>{b.desc}</div>
-          </div>
-        ))}
+    <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden", marginBottom: 22, boxShadow: "0 6px 32px rgba(0,0,0,0.55)" }}>
+      {/* Modal header */}
+      <div style={{ background: "rgba(0,0,0,0.3)", borderBottom: "1px solid #1a2535", padding: "11px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 3, height: 16, background: "#34d399", borderRadius: 2 }} />
+        <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "#f1f5f9", letterSpacing: 1 }}>INVITE PARENTS</span>
+        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em" }}>SAMPLE DATA</span>
       </div>
-      <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 8, padding: "10px 12px" }}>
-        <div style={{ fontSize: 8.5, color: "#374151", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 7 }}>YOUR PROGRAM LINK</div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ flex: 1, background: "#0b1221", border: "1px solid #1e293b", borderRadius: 6, padding: "6px 10px", fontSize: 11, color: "#374151", fontFamily: "monospace" }}>urecruithq.com/join/your-program</div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", padding: "6px 10px", background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.2)", borderRadius: 6, flexShrink: 0 }}>Copy</div>
+
+      <div style={{ padding: "14px 16px" }}>
+        {/* Program invite link */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>Your program invite link</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ flex: 1, background: "#0b1221", border: "1px solid #1e293b", borderRadius: 6, padding: "7px 10px", fontSize: 11, color: "#374151", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              urecruithq.com/join/your-program
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", padding: "7px 11px", background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.2)", borderRadius: 6, flexShrink: 0 }}>Copy Link</div>
+          </div>
+          <div style={{ fontSize: 10, color: "#374151", marginTop: 6, lineHeight: 1.5 }}>
+            Families who subscribe through this link are automatically connected to your program.
+          </div>
+        </div>
+
+        {/* Side-by-side email + text templates */}
+        <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+          {/* Email template */}
+          <div style={{ flex: "1 1 155px", minWidth: 150, background: "#0b1221", border: "1px solid #1a2535", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column" }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 7 }}>Email Template</div>
+            <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 5, lineHeight: 1.3 }}>
+              <span style={{ color: "#4b5563", fontWeight: 600 }}>Subject: </span>Recruiting resource for [Athlete]
+            </div>
+            <div style={{ fontSize: 10, color: "#374151", lineHeight: 1.6, flex: 1, marginBottom: 9 }}>
+              Hi [Parent], I wanted to share a recruiting resource to help track [Athlete]'s activity. Use this link to join our program: urecruithq.com/join/your-program
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", padding: "4px 9px", background: "rgba(232,160,32,0.07)", border: "1px solid rgba(232,160,32,0.18)", borderRadius: 5 }}>Copy Email</div>
+            </div>
+          </div>
+
+          {/* Text template */}
+          <div style={{ flex: "1 1 155px", minWidth: 150, background: "#0b1221", border: "1px solid #1a2535", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column" }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 7 }}>Text Template</div>
+            <div style={{ fontSize: 10, color: "#374151", lineHeight: 1.6, flex: 1, marginBottom: 9 }}>
+              Hi [Parent], check out URecruitHQ to help track [Athlete]'s recruiting. Join our program here: urecruithq.com/join/your-program
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", padding: "4px 9px", background: "rgba(232,160,32,0.07)", border: "1px solid rgba(232,160,32,0.18)", borderRadius: 5 }}>Copy Text</div>
+            </div>
+          </div>
         </div>
       </div>
-    </PreviewFrame>
+    </div>
   );
 }
 
@@ -567,21 +598,29 @@ const STEPS = [
       );
     },
   },
-  // ── STEP 5: Invite Parents / Tools ────────────────────────────────────────
+  // ── STEP 5: Invite Parents ────────────────────────────────────────────────
   {
     nextLabel: "One More Thing",
     render: () => (
       <>
-        <ToolsPreview />
-        <ExplainerCard label="Section 4 of 4" title="Invite Families and Manage Your Account">
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
-            These tools help you share the platform with families, manage account settings, and
-            support communication across the roster. Inviting families is the most important action a
-            coach can take to get real data flowing into Coach HQ.
+        <InviteParentsPreview />
+        <ExplainerCard label="Section 4 of 4" title="Invite Parents">
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 12px" }}>
+            The Invite Parents tool gives coaches a simple way to introduce families to URecruitHQ
+            and connect them back to the program. The goal is to help coaches communicate the value
+            of the platform clearly, offer families an optional recruiting resource, and create a
+            direct connection between parent participation and the coach's program visibility.
           </p>
-          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
-            Bring families in, connect them to your program, and activate the recruiting data layer that makes Coach HQ useful.
-          </p>
+          <ul style={{ margin: 0, padding: "0 0 0 16px", display: "flex", flexDirection: "column", gap: 4 }}>
+            {[
+              "Link athletes to coach with a program-specific invite code",
+              "Prebuilt outreach",
+              "Ready to copy and paste email template",
+              "Ready to copy and paste text template",
+            ].map((b, i) => (
+              <li key={i} style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.6 }}>{b}</li>
+            ))}
+          </ul>
         </ExplainerCard>
       </>
     ),
