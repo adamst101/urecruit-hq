@@ -143,27 +143,66 @@ function MiniTile({ label, value, color, sub }) {
 // ── Section preview components ─────────────────────────────────────────────────
 
 function SummaryPreview() {
-  // Mirrors the real Coach HQ section: narrative sentences, not stat boxes.
-  // Lead sentence + divider + supporting context, matching the actual section layout.
-  const s1 = "Jaylen Carter holds a scholarship offer from Florida, the program's top confirmed outcome this cycle.";
-  const s2 = "Beyond that, 11 other schools have been active across 6 athletes on the roster, including some stronger direct contact signals, with 8 active in the last 30 days.";
-  const s3 = "The recruiting picture shows a scholarship offer as the headline outcome, with mixed broader engagement including stronger contact signals distributed across multiple athletes.";
+  // Determination-first structure: takeaway → evidence chips → readout → interpretation.
+  // Three clearly differentiated layers inside a single hero card.
   return (
     <div style={{ marginBottom: 22 }}>
-      {/* Section header — matches real Coach HQ header style */}
+      {/* Section header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
         <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f1f5f9" }}>PROGRAM RECRUITING SUMMARY</span>
         <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 600, color: "#2d3f55", background: "#0f1a28", border: "1px solid #1a2d40", borderRadius: 20, padding: "2px 9px", letterSpacing: "0.06em" }}>sample data</span>
       </div>
-      {/* Summary card — matches real section card */}
-      <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 22px", boxShadow: "0 8px 40px rgba(0,0,0,0.55), 0 2px 10px rgba(0,0,0,0.35)" }}>
-        {/* Lead takeaway */}
-        <p style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.90)", lineHeight: 1.55 }}>{s1}</p>
-        {/* Supporting context */}
-        <div style={{ borderTop: "1px solid #1e293b", paddingTop: 12, fontSize: 13, color: "#94a3b8", lineHeight: 1.72 }}>
-          <p style={{ margin: "0 0 9px" }}>{s2}</p>
-          <p style={{ margin: 0 }}>{s3}</p>
+
+      {/* Hero card — 3-part determination hierarchy */}
+      <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "20px 22px", boxShadow: "0 8px 40px rgba(0,0,0,0.55), 0 2px 10px rgba(0,0,0,0.35)" }}>
+
+        {/* A. Top takeaway — strongest read */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>
+            Top takeaway
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb", lineHeight: 1.4 }}>
+            Jaylen Carter holds a scholarship offer from Florida.
+          </div>
+        </div>
+
+        {/* Compact supporting metric chips */}
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 18 }}>
+          {[
+            { value: "6",  label: "Active athletes" },
+            { value: "11", label: "Engaged colleges" },
+            { value: "8",  label: "Active last 30 days" },
+          ].map(({ value, label }) => (
+            <div key={label} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid #1e293b", borderRadius: 8, padding: "7px 12px", display: "flex", alignItems: "baseline", gap: 7 }}>
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#e8a020", lineHeight: 1 }}>{value}</span>
+              <span style={{ fontSize: 10, fontWeight: 600, color: "#4b5563" }}>{label}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ borderTop: "1px solid #1e293b", paddingTop: 16 }}>
+
+          {/* B. Program readout — factual evidence */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>
+              Program readout
+            </div>
+            <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.6 }}>
+              11 schools have been active across 6 athletes, with 8 active in the last 30 days.
+            </div>
+          </div>
+
+          {/* C. Coach interpretation — final judgment */}
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>
+              Coach interpretation
+            </div>
+            <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.6, fontStyle: "italic" }}>
+              One headline outcome is on record, with broader recruiting engagement distributed across the roster.
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -757,14 +796,14 @@ const STEPS = [
           borderRadius: 10, padding: "14px 16px",
         }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
-            What it highlights
+            What this tells the coach
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {[
-              "Active athletes",
-              "Engaged colleges",
-              "Recent activity",
-              "Whether traction is concentrated or distributed across the roster",
+              "Where the strongest outcome exists",
+              "How broad activity is across the roster",
+              "How recent the momentum is",
+              "Whether traction is concentrated or distributed",
             ].map((item, i) => (
               <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
                 <span style={{ color: "#e8a020", fontSize: 11, lineHeight: 1, marginTop: 3, flexShrink: 0 }}>—</span>
