@@ -114,6 +114,31 @@ function PointRow({ points }) {
   );
 }
 
+// ── Shared: explainer card (WhyPanel visual style — light card on dark page) ──
+function ExplainerCard({ label, title, children }) {
+  return (
+    <div style={{
+      background: "#f1f5f9",
+      border: "1.5px solid #e2e8f0",
+      borderRadius: 16,
+      padding: "16px 18px",
+      boxShadow: "0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.15)",
+    }}>
+      {label && (
+        <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 7 }}>
+          {label}
+        </div>
+      )}
+      {title && (
+        <div style={{ fontSize: "clamp(14px, 2.4vw, 17px)", fontWeight: 700, color: "#0f172a", lineHeight: 1.3, marginBottom: 10 }}>
+          {title}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
 // ── Shared: section preview frame ─────────────────────────────────────────────
 function PreviewFrame({ accent, label, children }) {
   return (
@@ -474,33 +499,32 @@ const STEPS = [
     nextLabel: "Coach Update",
     render: () => (
       <>
-        <p style={{ ...T.eyebrow, marginBottom: 10 }}>Section 1 of 8</p>
-        <h2 style={{ ...T.sectionTitle, marginBottom: 18 }}>Program Recruiting Summary</h2>
         <SummaryPreview />
-        <div style={{ borderTop: "1px solid #1a2535", margin: "4px 0 20px" }} />
-        <p style={T.sectionBody}>
-          The Program Recruiting Summary on Coach HQ is designed to give a coach a single, fast
-          read on what is happening across the program's recruiting activity.
-        </p>
-        <p style={{ ...T.sectionBody, marginTop: 12 }}>
-          In plain terms, the summary is built by taking all of the recruiting signals tied to the
-          athletes in that coach's program and combining them into one structured snapshot. That
-          typically includes:
-        </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "14px 0 0" }}>
-          {[
-            { icon: "👤", text: "which athletes have activity on record" },
-            { icon: "🏫", text: "which schools are engaging" },
-            { icon: "📋", text: "what kinds of activity are happening" },
-            { icon: "🗓️", text: "when that activity occurred" },
-            { icon: "📊", text: "whether traction is spread across the roster or concentrated on a few players" },
-          ].map((item, i) => (
-            <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-              <span style={{ fontSize: 15, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{item.icon}</span>
-              <span style={{ fontSize: 13.5, color: "#9ca3af", lineHeight: 1.55 }}>{item.text}</span>
-            </div>
-          ))}
-        </div>
+        <ExplainerCard label="Section 1 of 8" title="Program Recruiting Summary">
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
+            The Program Recruiting Summary on Coach HQ is designed to give a coach a single, fast
+            read on what is happening across the program's recruiting activity.
+          </p>
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 12px" }}>
+            In plain terms, the summary is built by taking all of the recruiting signals tied to the
+            athletes in that coach's program and combining them into one structured snapshot. That
+            typically includes:
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {[
+              { icon: "👤", text: "which athletes have activity on record" },
+              { icon: "🏫", text: "which schools are engaging" },
+              { icon: "📋", text: "what kinds of activity are happening" },
+              { icon: "🗓️", text: "when that activity occurred" },
+              { icon: "📊", text: "whether traction is spread across the roster or concentrated on a few players" },
+            ].map((item, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 14, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{item.icon}</span>
+                <span style={{ fontSize: 13, color: "#475569", lineHeight: 1.55 }}>{item.text}</span>
+              </div>
+            ))}
+          </div>
+        </ExplainerCard>
       </>
     ),
   },
@@ -509,36 +533,35 @@ const STEPS = [
     nextLabel: "Headline Metrics",
     render: () => (
       <>
-        <p style={{ ...T.eyebrow, marginBottom: 10 }}>Section 2 of 8</p>
-        <h2 style={{ ...T.sectionTitle, marginBottom: 18 }}>Coach Update</h2>
         <UpdatePreview />
-        <div style={{ borderTop: "1px solid #1a2535", margin: "4px 0 20px" }} />
-        <p style={T.sectionBody}>
-          The Coach Update is designed to give the coach a clear narrative of what has actually
-          happened across the program during a selected time period.
-        </p>
-        <p style={{ ...T.sectionBody, marginTop: 12 }}>
-          Where the Program Recruiting Summary is the higher-level snapshot, the Coach Update is
-          meant to answer:
-        </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "14px 0 0" }}>
-          {[
-            { icon: "🎯", text: "What specifically happened recently?" },
-            { icon: "👤", text: "Which athlete had activity?" },
-            { icon: "🏫", text: "Which college was involved?" },
-            { icon: "📞", text: "Who made contact, and how did they engage?" },
-            { icon: "💡", text: "What should I understand from this activity as a coach?" },
-          ].map((item, i) => (
-            <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-              <span style={{ fontSize: 15, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{item.icon}</span>
-              <span style={{ fontSize: 13.5, color: "#9ca3af", lineHeight: 1.55 }}>{item.text}</span>
-            </div>
-          ))}
-        </div>
-        <p style={{ ...T.sectionBody, marginTop: 16 }}>
-          It is created by pulling recent recruiting actions across the roster and turning them into
-          a readable update rather than making the coach sort through raw activity logs.
-        </p>
+        <ExplainerCard label="Section 2 of 8" title="Coach Update">
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
+            The Coach Update is designed to give the coach a clear narrative of what has actually
+            happened across the program during a selected time period.
+          </p>
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 12px" }}>
+            Where the Program Recruiting Summary is the higher-level snapshot, the Coach Update is
+            meant to answer:
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 12 }}>
+            {[
+              { icon: "🎯", text: "What specifically happened recently?" },
+              { icon: "👤", text: "Which athlete had activity?" },
+              { icon: "🏫", text: "Which college was involved?" },
+              { icon: "📞", text: "Who made contact, and how did they engage?" },
+              { icon: "💡", text: "What should I understand from this activity as a coach?" },
+            ].map((item, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 14, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{item.icon}</span>
+                <span style={{ fontSize: 13, color: "#475569", lineHeight: 1.55 }}>{item.text}</span>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: 0 }}>
+            It is created by pulling recent recruiting actions across the roster and turning them into
+            a readable update rather than making the coach sort through raw activity logs.
+          </p>
+        </ExplainerCard>
       </>
     ),
   },
@@ -548,17 +571,17 @@ const STEPS = [
     render: () => (
       <>
         <MetricTilesPreview />
-        <p style={{ ...T.eyebrow, marginBottom: 6 }}>Section 3 of 8</p>
-        <h2 style={T.sectionTitle}>Headline Program Metrics</h2>
-        <p style={T.sectionBody}>
-          These tiles give you the fastest read on overall program momentum, traction, outcomes, and
-          engagement. Each tile opens a detailed view of the underlying data. The True Traction tile,
-          shown expanded above, surfaces which athletes have consistent, verified two-way contact
-          with college programs.
-        </p>
-        <p style={T.callout}>
-          Assess where the program stands and drill into any section that needs a closer look.
-        </p>
+        <ExplainerCard label="Section 3 of 8" title="Headline Program Metrics">
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
+            These tiles give you the fastest read on overall program momentum, traction, outcomes, and
+            engagement. Each tile opens a detailed view of the underlying data. The True Traction tile,
+            shown expanded above, surfaces which athletes have consistent, verified two-way contact
+            with college programs.
+          </p>
+          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
+            Assess where the program stands and drill into any section that needs a closer look.
+          </p>
+        </ExplainerCard>
       </>
     ),
   },
@@ -568,16 +591,16 @@ const STEPS = [
     render: () => (
       <>
         <HeatingUpPreview />
-        <p style={{ ...T.eyebrow, marginBottom: 6 }}>Section 4 of 8</p>
-        <h2 style={T.sectionTitle}>Players Heating Up</h2>
-        <p style={T.sectionBody}>
-          This section surfaces athletes who are showing increasing momentum right now. These are
-          not necessarily the most recruited players on the roster. They are the ones whose activity
-          curve is trending upward most noticeably in the recent period.
-        </p>
-        <p style={T.callout}>
-          Spot momentum shifts early so you can follow up or encourage athletes before the window shifts.
-        </p>
+        <ExplainerCard label="Section 4 of 8" title="Players Heating Up">
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
+            This section surfaces athletes who are showing increasing momentum right now. These are
+            not necessarily the most recruited players on the roster. They are the ones whose activity
+            curve is trending upward most noticeably in the recent period.
+          </p>
+          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
+            Spot momentum shifts early so you can follow up or encourage athletes before the window shifts.
+          </p>
+        </ExplainerCard>
       </>
     ),
   },
@@ -587,16 +610,16 @@ const STEPS = [
     render: () => (
       <>
         <TractionBoardPreview />
-        <p style={{ ...T.eyebrow, marginBottom: 6 }}>Section 5 of 8</p>
-        <h2 style={T.sectionTitle}>True Traction Board</h2>
-        <p style={T.sectionBody}>
-          Where Players Heating Up signals momentum, this section signals substance. These athletes
-          have consistent, documented contact from one or more college programs. This is the board
-          coaches want to see grow over the course of the season.
-        </p>
-        <p style={T.callout}>
-          See which athletes have moved from early noise into real, verified recruiting traction.
-        </p>
+        <ExplainerCard label="Section 5 of 8" title="True Traction Board">
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
+            Where Players Heating Up signals momentum, this section signals substance. These athletes
+            have consistent, documented contact from one or more college programs. This is the board
+            coaches want to see grow over the course of the season.
+          </p>
+          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
+            See which athletes have moved from early noise into real, verified recruiting traction.
+          </p>
+        </ExplainerCard>
       </>
     ),
   },
@@ -606,16 +629,16 @@ const STEPS = [
     render: () => (
       <>
         <CollegesPreview />
-        <p style={{ ...T.eyebrow, marginBottom: 6 }}>Section 6 of 8</p>
-        <h2 style={T.sectionTitle}>Colleges Engaging the Program</h2>
-        <p style={T.sectionBody}>
-          This view shows which college programs are actively engaging your roster and how many
-          athletes each school is connected to. It helps you understand the breadth of college
-          engagement across the program, not just for individual athletes.
-        </p>
-        <p style={T.callout}>
-          See which schools are most active across the roster and identify where program-wide interest is growing.
-        </p>
+        <ExplainerCard label="Section 6 of 8" title="Colleges Engaging the Program">
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
+            This view shows which college programs are actively engaging your roster and how many
+            athletes each school is connected to. It helps you understand the breadth of college
+            engagement across the program, not just for individual athletes.
+          </p>
+          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
+            See which schools are most active across the roster and identify where program-wide interest is growing.
+          </p>
+        </ExplainerCard>
       </>
     ),
   },
@@ -625,16 +648,16 @@ const STEPS = [
     render: () => (
       <>
         <ActivityPreview />
-        <p style={{ ...T.eyebrow, marginBottom: 6 }}>Section 7 of 8</p>
-        <h2 style={T.sectionTitle}>Recent Recruiting Activity</h2>
-        <p style={T.sectionBody}>
-          This is the supporting evidence layer behind the broader program story. Every event
-          athletes and families log across the roster appears here, giving you a running view of
-          what is happening and where the activity is coming from.
-        </p>
-        <p style={T.callout}>
-          Connect the summary-level view to the ground-level activity that drives it.
-        </p>
+        <ExplainerCard label="Section 7 of 8" title="Recent Recruiting Activity">
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
+            This is the supporting evidence layer behind the broader program story. Every event
+            athletes and families log across the roster appears here, giving you a running view of
+            what is happening and where the activity is coming from.
+          </p>
+          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
+            Connect the summary-level view to the ground-level activity that drives it.
+          </p>
+        </ExplainerCard>
       </>
     ),
   },
@@ -644,16 +667,16 @@ const STEPS = [
     render: () => (
       <>
         <ToolsPreview />
-        <p style={{ ...T.eyebrow, marginBottom: 6 }}>Section 8 of 8</p>
-        <h2 style={T.sectionTitle}>Invite Families and Manage Your Account</h2>
-        <p style={T.sectionBody}>
-          These tools help you share the platform with families, manage account settings, and
-          support communication across the roster. Inviting families is the most important action a
-          coach can take to get real data flowing into Coach HQ.
-        </p>
-        <p style={T.callout}>
-          Bring families in, connect them to your program, and activate the recruiting data layer that makes Coach HQ useful.
-        </p>
+        <ExplainerCard label="Section 8 of 8" title="Invite Families and Manage Your Account">
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
+            These tools help you share the platform with families, manage account settings, and
+            support communication across the roster. Inviting families is the most important action a
+            coach can take to get real data flowing into Coach HQ.
+          </p>
+          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
+            Bring families in, connect them to your program, and activate the recruiting data layer that makes Coach HQ useful.
+          </p>
+        </ExplainerCard>
       </>
     ),
   },
@@ -663,16 +686,16 @@ const STEPS = [
     render: () => (
       <>
         <GivebackPreview />
-        <p style={{ ...T.eyebrow, marginBottom: 6 }}>Added Benefit</p>
-        <h2 style={T.sectionTitle}>
-          URecruitHQ gives coaches a simple way to support families with a better recruiting
-          resource while creating a built-in giveback opportunity for the program.
-        </h2>
-        <p style={T.sectionBody}>
-          As families subscribe through your team, your program becomes eligible for quarterly
-          donations based on subscription activity. Giveback levels are tiered to reward stronger
-          participation and broader family engagement across the program.
-        </p>
+        <ExplainerCard
+          label="Added Benefit"
+          title="URecruitHQ gives coaches a simple way to support families with a better recruiting resource while creating a built-in giveback opportunity for the program."
+        >
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: 0 }}>
+            As families subscribe through your team, your program becomes eligible for quarterly
+            donations based on subscription activity. Giveback levels are tiered to reward stronger
+            participation and broader family engagement across the program.
+          </p>
+        </ExplainerCard>
       </>
     ),
   },
