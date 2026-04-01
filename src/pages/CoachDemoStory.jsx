@@ -202,7 +202,7 @@ function UpdatePreview() {
         </div>
       </div>
       {/* Card */}
-      <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 22px", boxShadow: "0 4px 24px rgba(0,0,0,0.4)" }}>
+      <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 22px", boxShadow: "0 8px 40px rgba(0,0,0,0.55), 0 2px 10px rgba(0,0,0,0.35)" }}>
         {/* Intro narrative */}
         <p style={{ margin: "0 0 12px", fontSize: 14, color: "#d1d5db", lineHeight: 1.7 }}>{narrative}</p>
         {/* Athlete blocks — limited to 3 */}
@@ -240,7 +240,9 @@ function UpdatePreview() {
             </div>
           </div>
         </div>
-        <div style={{ marginTop: 10, fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "right" }}>SAMPLE DATA</div>
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+          <span style={{ fontSize: 9, fontWeight: 600, color: "#2d3f55", background: "#0f1a28", border: "1px solid #1a2d40", borderRadius: 20, padding: "2px 9px", letterSpacing: "0.06em" }}>sample data</span>
+        </div>
       </div>
     </div>
   );
@@ -779,35 +781,45 @@ const STEPS = [
     nextLabel: "Headline Metrics",
     render: () => (
       <>
+        {/* ── Step header ── */}
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10 }}>
+            Section 2 of 4
+          </div>
+          <h2 style={{ fontSize: "clamp(22px, 3.8vw, 28px)", fontWeight: 700, color: "#f1f5f9", lineHeight: 1.2, margin: "0 0 10px" }}>
+            Coach Update
+          </h2>
+          <p style={{ fontSize: 14, color: "#64748b", lineHeight: 1.6, margin: 0 }}>
+            Shows what actually happened across the program during the selected period.
+          </p>
+        </div>
+
+        {/* ── Hero panel ── */}
         <UpdatePreview />
-        <ExplainerCard label="Section 2 of 4" title="Coach Update">
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
-            The Coach Update is designed to give the coach a clear narrative of what has actually
-            happened across the program during a selected time period.
-          </p>
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 12px" }}>
-            Where the Program Recruiting Summary is the higher-level snapshot, the Coach Update is
-            meant to answer:
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 12 }}>
+
+        {/* ── Slim dark support panel ── */}
+        <div style={{
+          background: "#0a0f1e", border: "1px solid #1a2535",
+          borderLeft: "3px solid #34d399",
+          borderRadius: 10, padding: "14px 16px",
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+            What it highlights
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {[
-              { icon: "🎯", text: "What specifically happened recently?" },
-              { icon: "👤", text: "Which athlete had activity?" },
-              { icon: "🏫", text: "Which college was involved?" },
-              { icon: "📞", text: "Who made contact, and how did they engage?" },
-              { icon: "💡", text: "What should I understand from this activity as a coach?" },
+              "Recent athlete movement",
+              "College and contact activity",
+              "Notable outcomes",
+              "Where coach attention may be needed",
             ].map((item, i) => (
-              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <span style={{ fontSize: 14, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{item.icon}</span>
-                <span style={{ fontSize: 13, color: "#475569", lineHeight: 1.55 }}>{item.text}</span>
+              <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+                <span style={{ color: "#34d399", fontSize: 11, lineHeight: 1, marginTop: 3, flexShrink: 0 }}>—</span>
+                <span style={{ fontSize: 13, color: "#64748b", lineHeight: 1.55 }}>{item}</span>
               </div>
             ))}
           </div>
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: 0 }}>
-            It is created by pulling recent recruiting actions across the roster and turning them into
-            a readable update rather than making the coach sort through raw activity logs.
-          </p>
-        </ExplainerCard>
+        </div>
       </>
     ),
   },
