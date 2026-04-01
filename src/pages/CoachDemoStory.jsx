@@ -118,11 +118,11 @@ function ExplainerCard({ label, title, children }) {
 // ── Shared: section preview frame ─────────────────────────────────────────────
 function PreviewFrame({ accent, label, children }) {
   return (
-    <div style={{ background: "#0b1221", border: "1px solid #1e293b", borderRadius: 12, overflow: "hidden", boxShadow: "0 6px 32px rgba(0,0,0,0.55)", marginBottom: 22 }}>
+    <div style={{ background: "#0b1221", border: "1px solid #1e293b", borderRadius: 12, overflow: "hidden", boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 2px 10px rgba(0,0,0,0.35)", marginBottom: 22 }}>
       <div style={{ borderTop: `3px solid ${accent}`, padding: "9px 16px", background: "rgba(0,0,0,0.3)", borderBottom: "1px solid #1a2535", display: "flex", alignItems: "center", gap: 8 }}>
         <div style={{ width: 3, height: 14, background: accent, borderRadius: 2 }} />
         <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, color: "#cbd5e1", letterSpacing: 1 }}>{label}</span>
-        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em" }}>SAMPLE DATA</span>
+        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 600, color: "#2d3f55", background: "#0f1a28", border: "1px solid #1a2d40", borderRadius: 20, padding: "2px 9px", letterSpacing: "0.06em" }}>sample data</span>
       </div>
       <div style={{ padding: "14px 16px" }}>{children}</div>
     </div>
@@ -827,33 +827,49 @@ const STEPS = [
   {
     nextLabel: "Invite Families",
     render: () => (
-        <>
-          <MetricTilesPreview />
-          <ExplainerCard label="Section 3 of 4" title="Headline Metrics">
-            <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 14px" }}>
-              The tile dashboard gives coaches an at-a-glance view of recruiting activity across the
-              roster. It surfaces key signals to show where interest exists, where traction is
-              strengthening, which colleges are active, and which players may need attention. Each
-              tile is a drill-down point, with the number serving as the summary and the click
-              revealing the supporting detail.
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-              {[
-                { icon: "📡", term: "Recruiting Signal", def: "Any recorded activity that suggests possible college interest, even at an early stage." },
-                { icon: "📈", term: "True Traction",     def: "Verified recruiting momentum, such as direct outreach, confirmed contact, or stronger interaction beyond general interest." },
-                { icon: "🔥", term: "Heating Up",        def: "A player showing increased recent momentum through higher activity, stronger signals, or growing college engagement." },
-                { icon: "🔔", term: "Needs Attention",   def: "A player flagged for coach review due to notable activity, emerging momentum, missing follow-up, or another reason that may warrant a closer look." },
-              ].map((item, i) => (
-                <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                  <span style={{ fontSize: 15, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{item.icon}</span>
-                  <span style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.55 }}>
-                    <strong style={{ color: "#0f172a", fontWeight: 700 }}>{item.term}</strong>
-                    {" — "}{item.def}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </ExplainerCard>
+      <>
+        {/* ── Step header ── */}
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10 }}>
+            Section 3 of 4
+          </div>
+          <h2 style={{ fontSize: "clamp(22px, 3.8vw, 28px)", fontWeight: 700, color: "#f1f5f9", lineHeight: 1.2, margin: "0 0 10px" }}>
+            Headline Metrics
+          </h2>
+          <p style={{ fontSize: 14, color: "#64748b", lineHeight: 1.6, margin: 0 }}>
+            At-a-glance view of recruiting activity across the roster.
+          </p>
+        </div>
+
+        {/* ── Hero dashboard panel ── */}
+        <MetricTilesPreview />
+
+        {/* ── Slim dark support panel ── */}
+        <div style={{
+          background: "#0a0f1e", border: "1px solid #1a2535",
+          borderLeft: "3px solid #e8a020",
+          borderRadius: 10, padding: "14px 16px",
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+            Key definitions
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {[
+              { term: "Recruiting Signal",  def: "any recorded indication of possible college interest" },
+              { term: "True Traction",      def: "verified momentum such as direct outreach or confirmed contact" },
+              { term: "Heating Up",         def: "rising recent activity or stronger engagement" },
+              { term: "Needs Attention",    def: "activity that may warrant coach review" },
+            ].map((item, i) => (
+              <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+                <span style={{ color: "#e8a020", fontSize: 11, lineHeight: 1, marginTop: 3, flexShrink: 0 }}>—</span>
+                <span style={{ fontSize: 13, color: "#64748b", lineHeight: 1.55 }}>
+                  <span style={{ color: "#94a3b8", fontWeight: 600 }}>{item.term}</span>
+                  {" — "}{item.def}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       </>
     ),
   },
