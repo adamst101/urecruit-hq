@@ -144,14 +144,13 @@ function Step1() {
     <div>
       <p style={T.eyebrow}>The Challenge</p>
       <h1 style={T.headline}>
-        Coaches want to help their athletes get opportunities, but recruiting updates are often
+        Coaches want to help athletes earn opportunities, but recruiting updates are often
         fragmented and incomplete.
       </h1>
       <p style={{ ...T.support, marginBottom: 28 }}>
-        Recruiting information often comes through scattered texts, conversations, screenshots,
-        parent updates, and one-off athlete check-ins. That makes it hard to see what is really
-        happening across the roster, which players are gaining real traction, and where a coach may
-        need to step in.
+        Recruiting information is often scattered across texts, conversations, screenshots, and
+        parent or athlete updates, making it hard to see real traction across the roster and where
+        a coach needs to step in.
       </p>
       <PointRow points={PROBLEM_POINTS} />
     </div>
