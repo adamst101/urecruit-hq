@@ -827,8 +827,8 @@ export default function Workspace() {
 
       <BottomNav />
 
-      {/* ── ATHLETE IDENTITY DEBUG CARD — only visible when window.__DEBUG_ATHLETE_IDENTITY__ === true ── */}
-      {typeof window !== "undefined" && window.__DEBUG_ATHLETE_IDENTITY__ && athleteDiagnostics && (
+      {/* ── ATHLETE IDENTITY DEBUG CARD — enable via: localStorage.setItem('__DEBUG_ATHLETE_IDENTITY__','1') then reload ── */}
+      {typeof window !== "undefined" && localStorage.getItem("__DEBUG_ATHLETE_IDENTITY__") === "1" && athleteDiagnostics && (
         <div
           style={{
             position: "fixed",

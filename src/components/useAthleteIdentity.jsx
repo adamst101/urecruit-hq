@@ -123,7 +123,7 @@ export function useAthleteIdentity({ athleteId } = {}) {
       };
 
       // Debug logging
-      if (typeof window !== "undefined" && window.__DEBUG_ATHLETE_IDENTITY__) {
+      if (typeof window !== "undefined" && localStorage.getItem("__DEBUG_ATHLETE_IDENTITY__") === "1") {
         console.log("[AthleteIdentity]", fullDiagnostics);
       }
 
