@@ -154,10 +154,10 @@ function SummaryPreview() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <div style={{ width: 3, height: 20, background: "#e8a020", borderRadius: 2 }} />
         <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, color: "#f1f5f9" }}>PROGRAM RECRUITING SUMMARY</span>
-        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em" }}>SAMPLE DATA</span>
+        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 600, color: "#2d3f55", background: "#0f1a28", border: "1px solid #1a2d40", borderRadius: 20, padding: "2px 9px", letterSpacing: "0.06em" }}>sample data</span>
       </div>
       {/* Summary card — matches real section card */}
-      <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 22px", boxShadow: "0 4px 24px rgba(0,0,0,0.4)" }}>
+      <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 22px", boxShadow: "0 8px 40px rgba(0,0,0,0.55), 0 2px 10px rgba(0,0,0,0.35)" }}>
         {/* Lead takeaway */}
         <p style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.90)", lineHeight: 1.55 }}>{s1}</p>
         {/* Supporting context */}
@@ -732,32 +732,45 @@ const STEPS = [
     nextLabel: "Coach Update",
     render: () => (
       <>
+        {/* ── Step header ── */}
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10 }}>
+            Section 1 of 4
+          </div>
+          <h2 style={{ fontSize: "clamp(22px, 3.8vw, 28px)", fontWeight: 700, color: "#f1f5f9", lineHeight: 1.2, margin: "0 0 10px" }}>
+            Program Recruiting Summary
+          </h2>
+          <p style={{ fontSize: 14, color: "#64748b", lineHeight: 1.6, margin: 0 }}>
+            Gives coaches a fast, program-level read on recruiting activity across the roster.
+          </p>
+        </div>
+
+        {/* ── Hero insight card ── */}
         <SummaryPreview />
-        <ExplainerCard label="Section 1 of 4" title="Program Recruiting Summary">
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
-            The Program Recruiting Summary on Coach HQ is designed to give a coach a single, fast
-            read on what is happening across the program's recruiting activity.
-          </p>
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 12px" }}>
-            In plain terms, the summary is built by taking all of the recruiting signals tied to the
-            athletes in that coach's program and combining them into one structured snapshot. That
-            typically includes:
-          </p>
+
+        {/* ── Slim dark support panel ── */}
+        <div style={{
+          background: "#0a0f1e", border: "1px solid #1a2535",
+          borderLeft: "3px solid #e8a020",
+          borderRadius: 10, padding: "14px 16px",
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+            What it highlights
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {[
-              { icon: "👤", text: "which athletes have activity on record" },
-              { icon: "🏫", text: "which schools are engaging" },
-              { icon: "📋", text: "what kinds of activity are happening" },
-              { icon: "🗓️", text: "when that activity occurred" },
-              { icon: "📊", text: "whether traction is spread across the roster or concentrated on a few players" },
+              "Active athletes",
+              "Engaged colleges",
+              "Recent activity",
+              "Whether traction is concentrated or distributed across the roster",
             ].map((item, i) => (
-              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <span style={{ fontSize: 14, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{item.icon}</span>
-                <span style={{ fontSize: 13, color: "#475569", lineHeight: 1.55 }}>{item.text}</span>
+              <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+                <span style={{ color: "#e8a020", fontSize: 11, lineHeight: 1, marginTop: 3, flexShrink: 0 }}>—</span>
+                <span style={{ fontSize: 13, color: "#64748b", lineHeight: 1.55 }}>{item}</span>
               </div>
             ))}
           </div>
-        </ExplainerCard>
+        </div>
       </>
     ),
   },
