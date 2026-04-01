@@ -38,7 +38,7 @@ export const FT_TOPOLOGY = {
   coaches: [
     {
       _key: "coach1",
-      first_name: "Test",
+      first_name: "TestCoach",
       last_name: "Hayes",
       school_or_org: "Riverside High School (FT Seed)",
       sport: "Football",
@@ -49,7 +49,7 @@ export const FT_TOPOLOGY = {
     },
     {
       _key: "coach2",
-      first_name: "Test",
+      first_name: "TestCoach",
       last_name: "Rivera",
       school_or_org: "Lincoln Academy (FT Seed)",
       sport: "Football",
