@@ -391,13 +391,15 @@ export default function Home() {
             <div className="hero-text-col" style={{ flex: "0 0 44%", minWidth: 0, position: "relative", zIndex: 2, paddingTop: 40 }}>
               {/* Subtext */}
               <p className="hero-subtext" style={{
-                fontSize: 18,
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: "clamp(24px, 3.2vw, 48px)",
                 color: "#9ca3af",
-                lineHeight: 1.65,
+                lineHeight: 1.2,
+                letterSpacing: 0.5,
                 margin: "0 0 16px",
-                maxWidth: 420,
+                maxWidth: 500,
               }}>
-                URecruit HQ helps football families understand the recruiting process earlier, organize camps, and track progress so they can support their athlete with more clarity, structure, and confidence.
+                Understand recruiting earlier. Organize camps. Track progress with more clarity, structure, and confidence.
               </p>
               <div style={{ margin: "0 0 28px", maxWidth: 560 }}>
                 <p style={{ fontSize: 17, fontWeight: 600, color: "#d1d5db", lineHeight: 1.3, margin: 0, whiteSpace: "nowrap" }}>
