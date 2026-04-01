@@ -114,17 +114,22 @@ export function useAthleteIdentity({ athleteId } = {}) {
       // created via asServiceRole (stripeWebhook, linkStripePayment, activateFreeAccess).
       const res = await base44.functions.invoke("getMyAthleteProfiles", { accountId });
       const list = Array.isArray(res?.data?.profiles) ? res.data.profiles : [];
+      const serverMeta = res?.data?._meta || null;
 
       const { chosen, resolutionMode, diagnostics } = resolveBestProfile(list, athleteId || null);
 
       const fullDiagnostics = {
         authAccountId: accountId,
         ...diagnostics,
+        fetchMethod: serverMeta?.method || "unknown",
+        listTotal: serverMeta?.listTotal ?? null,
+        schoolPrefAthleteId: serverMeta?.schoolPrefAthleteId ?? null,
       };
 
       // Debug logging
       if (typeof window !== "undefined" && localStorage.getItem("__DEBUG_ATHLETE_IDENTITY__") === "1") {
         console.log("[AthleteIdentity]", fullDiagnostics);
+        if (serverMeta) console.log("[AthleteIdentity] server _meta:", serverMeta);
       }
 
       if (!chosen) {

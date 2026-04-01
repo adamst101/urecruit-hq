@@ -37,22 +37,33 @@ Deno.serve(async (req) => {
     "d3_1",  "d3_2",  "d3_3",
   ] as const;
 
-  const payload: Record<string, string | null> = {
-    athlete_id: body.athlete_id?.trim() || null,
-    updated_at: new Date().toISOString(),
-  };
-  for (const f of fields) {
-    payload[f] = (body[f] as string | undefined)?.trim() || null;
-  }
-
   try {
     const existing = await base44.asServiceRole.entities.SchoolPreference
       .filter({ account_id: accountId })
       .catch(() => []);
 
+    const existingRecord = Array.isArray(existing) && existing.length > 0 ? existing[0] : null;
+
+    // Preserve athlete_id if already set and not explicitly provided in this request.
+    // claimSlotProfiles writes athlete_id as the canonical FT seed profile link —
+    // we must not overwrite it with null when the user saves school preferences.
+    const incomingAthleteId = body.athlete_id?.trim() || null;
+    const existingAthleteId = (existingRecord as Record<string, unknown> | null)?.athlete_id
+      ? String((existingRecord as Record<string, unknown>).athlete_id)
+      : null;
+    const resolvedAthleteId = incomingAthleteId ?? existingAthleteId ?? null;
+
+    const payload: Record<string, string | null> = {
+      athlete_id: resolvedAthleteId,
+      updated_at: new Date().toISOString(),
+    };
+    for (const f of fields) {
+      payload[f] = (body[f] as string | undefined)?.trim() || null;
+    }
+
     let result;
-    if (Array.isArray(existing) && existing.length > 0) {
-      result = await base44.asServiceRole.entities.SchoolPreference.update(existing[0].id, payload);
+    if (existingRecord) {
+      result = await base44.asServiceRole.entities.SchoolPreference.update(existingRecord.id, payload);
     } else {
       result = await base44.asServiceRole.entities.SchoolPreference.create({
         account_id: accountId,

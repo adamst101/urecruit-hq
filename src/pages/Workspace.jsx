@@ -828,7 +828,7 @@ export default function Workspace() {
       <BottomNav />
 
       {/* ── ATHLETE IDENTITY DEBUG CARD — enable via: localStorage.setItem('__DEBUG_ATHLETE_IDENTITY__','1') then reload ── */}
-      {typeof window !== "undefined" && localStorage.getItem("__DEBUG_ATHLETE_IDENTITY__") === "1" && athleteDiagnostics && (
+      {typeof window !== "undefined" && localStorage.getItem("__DEBUG_ATHLETE_IDENTITY__") === "1" && (
         <div
           style={{
             position: "fixed",
@@ -839,7 +839,7 @@ export default function Workspace() {
             border: `1px solid ${athleteResolutionMode === "direct" ? "#22c55e" : "#ef4444"}`,
             borderRadius: 8,
             padding: "10px 14px",
-            minWidth: 260,
+            minWidth: 280,
             fontFamily: "monospace",
             fontSize: 11,
             color: "#f9fafb",
@@ -851,16 +851,26 @@ export default function Workspace() {
           <div style={{ fontWeight: 700, color: athleteResolutionMode === "direct" ? "#22c55e" : "#ef4444", marginBottom: 4 }}>
             [AthleteIdentity Debug]
           </div>
-          <div>Account: <span style={{ color: "#93c5fd" }}>{athleteDiagnostics.authAccountId || "—"}</span></div>
+          <div>Account: <span style={{ color: "#93c5fd" }}>{athleteDiagnostics?.authAccountId || "—"}</span></div>
           <div>
             Mode:{" "}
             <span style={{ color: athleteResolutionMode === "direct" ? "#22c55e" : "#ef4444", fontWeight: 700 }}>
-              {athleteResolutionMode}
+              {athleteResolutionMode || "—"}
             </span>
           </div>
-          <div>Profile ID: <span style={{ color: "#d1d5db" }}>{athleteDiagnostics.finalProfileId || "—"}</span></div>
-          <div>Profiles found: {athleteDiagnostics.profilesFound ?? "—"}</div>
-          <div style={{ color: "#9ca3af", marginTop: 2 }}>{athleteDiagnostics.reason}</div>
+          <div>Profile ID: <span style={{ color: "#d1d5db" }}>{athleteDiagnostics?.finalProfileId || "—"}</span></div>
+          <div>Profiles found: {athleteDiagnostics?.profilesFound ?? "—"}</div>
+          <div>Fetch method: <span style={{ color: "#fbbf24" }}>{athleteDiagnostics?.fetchMethod || "—"}</span></div>
+          {athleteDiagnostics?.schoolPrefAthleteId && (
+            <div>SchoolPref link: <span style={{ color: "#a78bfa" }}>{athleteDiagnostics.schoolPrefAthleteId}</span></div>
+          )}
+          <div style={{ color: "#9ca3af", marginTop: 2 }}>{athleteDiagnostics?.reason || "—"}</div>
+          {/* "Entitled but no athlete" warning */}
+          {season?.hasAccess && !athleteDiagnostics?.finalProfileId && (
+            <div style={{ marginTop: 6, color: "#f87171", fontWeight: 700 }}>
+              ⚠ Entitled but no athlete linked
+            </div>
+          )}
         </div>
       )}
     </div>

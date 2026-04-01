@@ -622,7 +622,11 @@ export async function claimSlot(base44, slotKey, realId) {
 
     const res = await base44.functions.invoke("claimSlotProfiles", body);
     if (res?.data?.ok !== undefined) {
-      return { updated: res.data.updated ?? 0, errors: res.data.errors ?? [] };
+      const d = res.data;
+      if (d.athleteProfileIds?.length) {
+        console.log("[claimSlot] athlete profile IDs found by server:", d.athleteProfileIds);
+      }
+      return { updated: d.updated ?? 0, errors: d.errors ?? [], athleteProfileIds: d.athleteProfileIds ?? [] };
     }
   } catch (fnErr) {
     console.warn("[claimSlot] server function failed, falling back to client-side:", fnErr?.message);
