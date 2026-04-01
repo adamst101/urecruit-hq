@@ -61,7 +61,7 @@ const T = {
 
 // ── Representative preview data (matches demoCoachData naming) ─────────────────
 const PD = {
-  metrics: { anyInterest: 7, trueTraction: 4, visitsOffers: 6, colleges: 12, heatingUp: 3, repeatColleges: 5 },
+  metrics: { anyInterest: 7, trueTraction: 4, visitsOffers: 6, colleges: 12, heatingUp: 3, repeatColleges: 5, recentActivity: 14, needsAttention: 2 },
   summary: { commits: 1, offers: 3, officialVisits: 1, unofficialVisits: 2, trueTraction: 4, anyInterest: 7, engagedColleges: 12, topAthlete: "Jaylen Carter", topCollege: "Florida" },
   update: [
     { initials: "JC", name: "Jaylen Carter",    body: "Offer received from Florida after spring camp visit",                    daysAgo: 2 },
@@ -281,28 +281,19 @@ function UpdatePreview() {
 function MetricTilesPreview() {
   const m = PD.metrics;
   const tiles = [
-    { label: "Any Interest",    value: m.anyInterest,    color: "#34d399", sub: "players w/ a signal" },
-    { label: "True Traction",   value: m.trueTraction,   color: "#60a5fa", sub: "verified contact" },
-    { label: "Visits / Offers", value: m.visitsOffers,   color: "#f59e0b", sub: "confirmed outcomes" },
-    { label: "Colleges",        value: m.colleges,       color: "#a78bfa", sub: "schools in pipeline" },
-    { label: "Heating Up",      value: m.heatingUp,      color: "#fb923c", sub: "last 30 days" },
-    { label: "Repeat Colleges", value: m.repeatColleges, color: "#e8a020", sub: "2+ athletes each" },
+    { label: "Any Interest",     value: m.anyInterest,     color: "#34d399", sub: "players w/ a signal" },
+    { label: "True Traction",    value: m.trueTraction,    color: "#60a5fa", sub: "verified contact" },
+    { label: "Visits / Offers",  value: m.visitsOffers,    color: "#f59e0b", sub: "confirmed outcomes" },
+    { label: "Engaged Colleges", value: m.colleges,        color: "#a78bfa", sub: "schools in pipeline" },
+    { label: "Heating Up",       value: m.heatingUp,       color: "#fb923c", sub: "rising momentum" },
+    { label: "Repeat Colleges",  value: m.repeatColleges,  color: "#e8a020", sub: "2+ athletes each" },
+    { label: "Recent Activity",  value: m.recentActivity,  color: "#94a3b8", sub: "actions this period" },
+    { label: "Needs Attention",  value: m.needsAttention,  color: "#f87171", sub: "coach review" },
   ];
   return (
     <PreviewFrame accent="#e8a020" label="HEADLINE PROGRAM METRICS">
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 7, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
         {tiles.map(t => <MiniTile key={t.label} {...t} />)}
-      </div>
-      {/* Expanded True Traction panel beneath the tile row */}
-      <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 8, padding: "10px 12px" }}>
-        <div style={{ fontSize: 8.5, color: "#4b5563", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>TRUE TRACTION BOARD (tile expanded)</div>
-        {PD.traction.map((a, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: i < PD.traction.length - 1 ? "1px solid #1a2535" : "none" }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#e8edf3", flex: 1 }}>{a.name}</div>
-            <TBadge level={a.level} />
-            <div style={{ fontSize: 10, color: "#6b7280", flexShrink: 0 }}>{a.latest}</div>
-          </div>
-        ))}
       </div>
     </PreviewFrame>
   );
@@ -571,15 +562,78 @@ const STEPS = [
     render: () => (
       <>
         <MetricTilesPreview />
-        <ExplainerCard label="Section 3 of 8" title="Headline Program Metrics">
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
-            These tiles give you the fastest read on overall program momentum, traction, outcomes, and
-            engagement. Each tile opens a detailed view of the underlying data. The True Traction tile,
-            shown expanded above, surfaces which athletes have consistent, verified two-way contact
-            with college programs.
+        <ExplainerCard label="Section 3 of 8" title="Headline Metrics">
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 16px" }}>
+            The tile dashboard is the coach's at-a-glance recruiting command center. It pulls key
+            signals from across the roster and turns them into a simple visual summary, helping the
+            coach see where interest exists, where traction is becoming real, which colleges are
+            active, and which players may require closer attention.
           </p>
-          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
-            Assess where the program stands and drill into any section that needs a closer look.
+
+          {/* Group 1: Interest, Traction, Outcomes */}
+          <div style={{ fontSize: 9.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+            Interest, Traction and Outcomes
+          </div>
+          {[
+            { color: "#34d399", name: "Any Interest",    shows: "Players with at least one recruiting signal",       detail: "Athlete, school, signal type, latest activity" },
+            { color: "#60a5fa", name: "True Traction",   shows: "Players with verified recruiting momentum",          detail: "Athlete, school, verified contact or action, date" },
+            { color: "#f59e0b", name: "Visits / Offers", shows: "Confirmed recruiting outcomes",                      detail: "Athlete, school, visit or offer type, status, date" },
+          ].map((tile, i, arr) => (
+            <div key={tile.name} style={{ display: "grid", gridTemplateColumns: "3px 1fr", gap: "0 10px", alignItems: "start", paddingBottom: i < arr.length - 1 ? 9 : 0, marginBottom: i < arr.length - 1 ? 9 : 0, borderBottom: i < arr.length - 1 ? "1px solid #e2e8f0" : "none" }}>
+              <div style={{ width: 3, background: tile.color, borderRadius: 2, alignSelf: "stretch", marginTop: 2 }} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", marginBottom: 3 }}>{tile.name}</div>
+                <div style={{ fontSize: 11.5, color: "#475569", lineHeight: 1.45, marginBottom: 2 }}>{tile.shows}</div>
+                <div style={{ fontSize: 10.5, color: "#94a3b8", lineHeight: 1.4 }}>
+                  <span style={{ fontWeight: 600, color: "#64748b" }}>Detail: </span>{tile.detail}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {/* Group 2: College Engagement */}
+          <div style={{ fontSize: 9.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", margin: "16px 0 8px" }}>
+            College Engagement
+          </div>
+          {[
+            { color: "#a78bfa", name: "Engaged Colleges", shows: "Unique colleges active with the program",          detail: "College, linked athletes, activity type, latest date" },
+            { color: "#e8a020", name: "Repeat Colleges",   shows: "Colleges engaging multiple athletes",              detail: "College, linked athletes, connection count, recent activity" },
+          ].map((tile, i, arr) => (
+            <div key={tile.name} style={{ display: "grid", gridTemplateColumns: "3px 1fr", gap: "0 10px", alignItems: "start", paddingBottom: i < arr.length - 1 ? 9 : 0, marginBottom: i < arr.length - 1 ? 9 : 0, borderBottom: i < arr.length - 1 ? "1px solid #e2e8f0" : "none" }}>
+              <div style={{ width: 3, background: tile.color, borderRadius: 2, alignSelf: "stretch", marginTop: 2 }} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", marginBottom: 3 }}>{tile.name}</div>
+                <div style={{ fontSize: 11.5, color: "#475569", lineHeight: 1.45, marginBottom: 2 }}>{tile.shows}</div>
+                <div style={{ fontSize: 10.5, color: "#94a3b8", lineHeight: 1.4 }}>
+                  <span style={{ fontWeight: 600, color: "#64748b" }}>Detail: </span>{tile.detail}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {/* Group 3: Momentum and Attention */}
+          <div style={{ fontSize: 9.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", margin: "16px 0 8px" }}>
+            Momentum and Attention
+          </div>
+          {[
+            { color: "#fb923c", name: "Heating Up",       shows: "Players with rising recent momentum",               detail: "Athlete, driving schools, activity trend, latest date" },
+            { color: "#94a3b8", name: "Recent Activity",  shows: "Total actions logged in the selected period",        detail: "Athlete, school, action, contact method, date" },
+            { color: "#f87171", name: "Needs Attention",  shows: "Players requiring coach review",                     detail: "Athlete, issue flagged, related activity, follow-up need" },
+          ].map((tile, i, arr) => (
+            <div key={tile.name} style={{ display: "grid", gridTemplateColumns: "3px 1fr", gap: "0 10px", alignItems: "start", paddingBottom: i < arr.length - 1 ? 9 : 0, marginBottom: i < arr.length - 1 ? 9 : 0, borderBottom: i < arr.length - 1 ? "1px solid #e2e8f0" : "none" }}>
+              <div style={{ width: 3, background: tile.color, borderRadius: 2, alignSelf: "stretch", marginTop: 2 }} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", marginBottom: 3 }}>{tile.name}</div>
+                <div style={{ fontSize: 11.5, color: "#475569", lineHeight: 1.45, marginBottom: 2 }}>{tile.shows}</div>
+                <div style={{ fontSize: 10.5, color: "#94a3b8", lineHeight: 1.4 }}>
+                  <span style={{ fontWeight: 600, color: "#64748b" }}>Detail: </span>{tile.detail}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: "16px 0 0", paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
+            Every tile is an entry point. The numbers are the summary. The detail is behind the click.
           </p>
         </ExplainerCard>
       </>
