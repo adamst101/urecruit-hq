@@ -174,6 +174,16 @@ export default function AuthRedirect() {
       return;
     }
 
+    // ── Admin accounts → AdminHQ ──
+    // Honour an explicit ?next= or loginReturnUrl, but default to AdminHQ
+    // instead of Workspace so admins land in the operational command center.
+    if (season?.role === "admin") {
+      didRoute.current = true;
+      const dest = next === PATHS.WORKSPACE ? "/AdminHQ" : next;
+      nav(dest, { replace: true });
+      return;
+    }
+
     // ── Priority 1: Post-payment signup flow ──
     const postPayment = ssGet("postPaymentSignup");
     if (postPayment) {
