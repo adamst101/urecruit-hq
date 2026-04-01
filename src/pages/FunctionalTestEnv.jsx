@@ -25,15 +25,31 @@ import {
 // localStorage helpers
 // ---------------------------------------------------------------------------
 
-const LS_LAST_SEEDED  = "__hc_ft_lastSeeded";
-const LS_LAST_VERIFIED = "__hc_ft_lastVerified";
-const LS_SEED_VERSION  = "__hc_ft_seedVersion";
+const LS_LAST_SEEDED    = "__hc_ft_lastSeeded";
+const LS_LAST_VERIFIED  = "__hc_ft_lastVerified";
+const LS_SEED_VERSION   = "__hc_ft_seedVersion";
+const LS_LINKED_ACCOUNTS = "__hc_ft_linked_accounts"; // { slotKey: { email, accountId } }
 
 function lsGet(key) {
   try { return localStorage.getItem(key) || null; } catch { return null; }
 }
 function lsSet(key, val) {
   try { localStorage.setItem(key, val); } catch {}
+}
+
+// Saved slot mappings — persisted so Reset & Reseed can auto-relink
+function getSavedMappings() {
+  try { return JSON.parse(lsGet(LS_LINKED_ACCOUNTS) || "{}"); } catch { return {}; }
+}
+function setSavedMapping(slotKey, email, accountId) {
+  const m = getSavedMappings();
+  m[slotKey] = { email, accountId };
+  lsSet(LS_LINKED_ACCOUNTS, JSON.stringify(m));
+}
+function clearSavedMapping(slotKey) {
+  const m = getSavedMappings();
+  delete m[slotKey];
+  lsSet(LS_LINKED_ACCOUNTS, JSON.stringify(m));
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +182,7 @@ export default function FunctionalTestEnv() {
       lsSet(LS_SEED_VERSION, SEED_VERSION);
       setLastSeeded(ts);
       addLog(`Seed complete — ${result.meta.totalRecords} records created (v${SEED_VERSION})`);
+      await handleAutoRelink();
     } catch (err) {
       setStatus("broken");
       addLog(`Seed ERROR: ${err?.message || err}`);
@@ -196,6 +213,7 @@ export default function FunctionalTestEnv() {
       setLastSeeded(ts);
       setVerifyResult(null);
       addLog(`Reset complete — ${result.meta.totalRecords} records recreated (v${SEED_VERSION})`);
+      await handleAutoRelink();
     } catch (err) {
       setStatus("broken");
       addLog(`Reset ERROR: ${err?.message || err}`);
@@ -230,6 +248,25 @@ export default function FunctionalTestEnv() {
   }, [addLog]);
 
   // -------------------------------------------------------------------------
+  // Auto-relink — restore saved slot mappings after a reset
+  // -------------------------------------------------------------------------
+  const handleAutoRelink = useCallback(async () => {
+    const mappings = getSavedMappings();
+    const slots = Object.entries(mappings);
+    if (slots.length === 0) return;
+    addLog(`Auto-relinking ${slots.length} saved slot${slots.length !== 1 ? "s" : ""}…`);
+    for (const [slotKey, { email, accountId }] of slots) {
+      try {
+        const { updated } = await claimSlot(base44, slotKey, accountId);
+        const { granted, seasonYear } = await grantTestEntitlement(base44, accountId);
+        addLog(`  ✓ ${slotKey} → ${email} (${updated} records, entitlement ${granted ? `granted ${seasonYear}` : "exists"})`);
+      } catch (err) {
+        addLog(`  ✗ ${slotKey} auto-relink failed: ${err?.message}`);
+      }
+    }
+  }, [addLog]);
+
+  // -------------------------------------------------------------------------
   // Link slot by email / Release slot
   // -------------------------------------------------------------------------
   const handleLinkByEmail = useCallback(async (slotKey) => {
@@ -251,6 +288,8 @@ export default function FunctionalTestEnv() {
         ? `Entitlement granted for season ${seasonYear}`
         : `Entitlement skipped — ${reason} (season ${seasonYear})`
       );
+      // Persist mapping so Reset & Reseed can auto-relink
+      setSavedMapping(slotKey, email, user.id);
       // Clear the email input on success
       setEmailInputs(prev => ({ ...prev, [slotKey]: "" }));
       await handleDiscover();
@@ -280,6 +319,7 @@ export default function FunctionalTestEnv() {
         const { revoked } = await revokeTestEntitlement(base44, realIdBeforeRelease);
         addLog(`Entitlement revoked (${revoked} record${revoked !== 1 ? "s" : ""} removed)`);
       }
+      clearSavedMapping(slotKey);
       await handleDiscover();
     } catch (err) {
       addLog(`Release ERROR (${slotKey}): ${err?.message || err}`);
@@ -767,6 +807,7 @@ export default function FunctionalTestEnv() {
                     const isLinkRunning    = running === `link:${slotKey}`;
                     const isReleaseRunning = running === `release:${slotKey}`;
                     const emailVal = emailInputs[slotKey] || "";
+                    const savedMapping = getSavedMappings()[slotKey];
 
                     const statusCfg = {
                       not_seeded: { label: "Not seeded", bg: "#F3F4F6", color: "#6B7280" },
@@ -781,10 +822,9 @@ export default function FunctionalTestEnv() {
                         </td>
                         <td style={{ ...styles.td, fontSize: 12, color: "#6B7280" }}>
                           {slot.desc}
-                          {slotStatus === "claimed" && (
-                            <div style={{ marginTop: 2, fontFamily: "monospace", fontSize: 10, color: "#059669" }}
-                                 title={currentId}>
-                              {currentId?.slice(0, 10)}…
+                          {slotStatus === "claimed" && savedMapping?.email && (
+                            <div style={{ marginTop: 2, fontSize: 11, color: "#059669" }}>
+                              {savedMapping.email}
                             </div>
                           )}
                         </td>
