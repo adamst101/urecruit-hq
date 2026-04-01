@@ -267,58 +267,109 @@ function MetricTilesPreview() {
   );
 }
 
+// ── Invite Parents: static product-faithful replica of the real sheet ──────────
+// Uses real invite code (RWEBB25 from demo dataset), real email/text template
+// content, and exact CoachDashboard styling tokens. No clipboard or backend calls.
 function InviteParentsPreview() {
+  const INVITE_CODE = "RWEBB25";
+  const EMAIL_SUBJECT = "Optional Resource for Families Interested in College Football Recruiting";
+  const EMAIL_BODY = `Dear Parents,
+
+I want to share an optional resource that may be valuable for families with athletes who are interested in playing at the next level.
+
+Many families begin this journey knowing their athlete has the dream to play college football, but not yet knowing how to navigate the process. As things begin to move, it can quickly become a mix of camp choices, registrations, dates, travel plans, costs, communication, and uncertainty about what matters most. URecruitHQ was created by parents who went through that process themselves and wanted a better way to stay organized and make smarter decisions along the way.
+
+This is not something required by our program, and I am not asking every family to use it. I am simply making you aware of it because some families may find it helpful to have more structure, visibility, and clarity as they support their athlete's recruiting journey.
+
+Please note that this is a paid resource, so participation is entirely your choice. There is a free demo available if you would like to evaluate it first at https://urecruithq.com/.
+
+If you choose to subscribe and are prompted for an invite code, please use: ${INVITE_CODE}. Using that code allows me to have visibility into my players' recruiting journey inside the coach view, which can help me stay informed on college interest, better understand momentum, and support families and athletes more effectively.
+
+I am sharing it as a resource only, with the hope that it may help some families feel better prepared and less overwhelmed as the process develops.
+
+Thank you,
+
+Coach Webb`;
+
+  const TEXT_BODY = `Hi parents. I wanted to share an optional resource that may be helpful for families with athletes interested in playing college football. URecruitHQ was created by parents who went through the process themselves and wanted a better way to stay organized around camps, dates, registrations, and recruiting movement. This is not required by our program. I am simply sharing it as a resource some families may find helpful. There is a free demo available at https://urecruithq.com/, and if you choose to subscribe, please use my invite code: ${INVITE_CODE}. Using that code allows me to stay informed on my players' recruiting journey and better support families throughout the process.`;
+
+  const SL = ({ children }) => (
+    <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+      {children}
+    </div>
+  );
+  const CopyBtn = ({ children }) => (
+    <div style={{ background: "#111827", border: "1px solid #374151", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 600, color: "#9ca3af", flexShrink: 0, cursor: "default" }}>
+      {children}
+    </div>
+  );
+
   return (
-    <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden", marginBottom: 22, boxShadow: "0 6px 32px rgba(0,0,0,0.55)" }}>
-      {/* Modal header */}
-      <div style={{ background: "rgba(0,0,0,0.3)", borderBottom: "1px solid #1a2535", padding: "11px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+    <div style={{ background: "#0a0e1a", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden", marginBottom: 22, boxShadow: "0 6px 32px rgba(0,0,0,0.55)" }}>
+      {/* Sheet header */}
+      <div style={{ background: "rgba(0,0,0,0.35)", borderBottom: "1px solid #1a2535", padding: "11px 20px", display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ width: 3, height: 16, background: "#34d399", borderRadius: 2 }} />
         <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "#f1f5f9", letterSpacing: 1 }}>INVITE PARENTS</span>
         <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em" }}>SAMPLE DATA</span>
       </div>
 
-      <div style={{ padding: "14px 16px" }}>
-        {/* Program invite link */}
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>Your program invite link</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ flex: 1, background: "#0b1221", border: "1px solid #1e293b", borderRadius: 6, padding: "7px 10px", fontSize: 11, color: "#374151", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              urecruithq.com/join/your-program
+      <div style={{ padding: "20px 22px" }}>
+
+        {/* Demo notice — mirrors real component */}
+        <div style={{ background: "#111827", border: "1px solid #374151", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "#9ca3af", lineHeight: 1.55 }}>
+          <span style={{ fontWeight: 700, color: "#e8a020" }}>Sample data</span>{" "}
+          — the invite code and templates below reflect the real product content.
+        </div>
+
+        {/* ── Invite Code ── */}
+        <div style={{ marginBottom: 24 }}>
+          <SL>Your Invite Code</SL>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ fontFamily: "monospace", fontSize: 30, fontWeight: 700, color: "#e8a020", letterSpacing: 4, background: "#0a0e1a", border: "1px solid #374151", borderRadius: 10, padding: "14px 22px" }}>
+              {INVITE_CODE}
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", padding: "7px 11px", background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.2)", borderRadius: 6, flexShrink: 0 }}>Copy Link</div>
+            <div style={{ background: "#e8a020", color: "#0a0e1a", borderRadius: 8, padding: "12px 20px", fontSize: 13, fontWeight: 700, cursor: "default" }}>
+              Copy Code
+            </div>
           </div>
-          <div style={{ fontSize: 10, color: "#374151", marginTop: 6, lineHeight: 1.5 }}>
-            Families who subscribe through this link are automatically connected to your program.
+          <p style={{ fontSize: 12, color: "#4b5563", marginTop: 10, marginBottom: 0 }}>
+            Parents enter this code during signup at urecruithq.com to connect to your program.
+          </p>
+        </div>
+
+        <div style={{ borderTop: "1px solid #1f2937", marginBottom: 24 }} />
+
+        {/* ── Email Template ── */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
+            <SL>Parent Email Template</SL>
+            <CopyBtn>Copy Email</CopyBtn>
+          </div>
+          <div style={{ background: "#0a0e1a", border: "1px solid #1f2937", borderBottom: "none", borderRadius: "10px 10px 0 0", padding: "10px 16px" }}>
+            <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 600, marginRight: 8 }}>SUBJECT</span>
+            <span style={{ fontSize: 12, color: "#9ca3af" }}>{EMAIL_SUBJECT}</span>
+          </div>
+          <div style={{ background: "#0a0e1a", border: "1px solid #1f2937", borderRadius: "0 0 10px 10px", padding: "14px 16px", fontSize: 13, color: "#9ca3af", lineHeight: 1.75, whiteSpace: "pre-wrap", maxHeight: 220, overflowY: "auto" }}>
+            {EMAIL_BODY}
           </div>
         </div>
 
-        {/* Side-by-side email + text templates */}
-        <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
-          {/* Email template */}
-          <div style={{ flex: "1 1 155px", minWidth: 150, background: "#0b1221", border: "1px solid #1a2535", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 7 }}>Email Template</div>
-            <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 5, lineHeight: 1.3 }}>
-              <span style={{ color: "#4b5563", fontWeight: 600 }}>Subject: </span>Recruiting resource for [Athlete]
-            </div>
-            <div style={{ fontSize: 10, color: "#374151", lineHeight: 1.6, flex: 1, marginBottom: 9 }}>
-              Hi [Parent], I wanted to share a recruiting resource to help track [Athlete]'s activity. Use this link to join our program: urecruithq.com/join/your-program
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", padding: "4px 9px", background: "rgba(232,160,32,0.07)", border: "1px solid rgba(232,160,32,0.18)", borderRadius: 5 }}>Copy Email</div>
-            </div>
-          </div>
+        <div style={{ borderTop: "1px solid #1f2937", marginBottom: 24 }} />
 
-          {/* Text template */}
-          <div style={{ flex: "1 1 155px", minWidth: 150, background: "#0b1221", border: "1px solid #1a2535", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 7 }}>Text Template</div>
-            <div style={{ fontSize: 10, color: "#374151", lineHeight: 1.6, flex: 1, marginBottom: 9 }}>
-              Hi [Parent], check out URecruitHQ to help track [Athlete]'s recruiting. Join our program here: urecruithq.com/join/your-program
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", padding: "4px 9px", background: "rgba(232,160,32,0.07)", border: "1px solid rgba(232,160,32,0.18)", borderRadius: 5 }}>Copy Text</div>
-            </div>
+        {/* ── Text / Message Template ── */}
+        <div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+            <SL>Parent Text / Message Template</SL>
+            <CopyBtn>Copy Text</CopyBtn>
           </div>
+          <div style={{ background: "#0a0e1a", border: "1px solid #1f2937", borderRadius: 10, padding: "14px 16px", fontSize: 13, color: "#9ca3af", lineHeight: 1.75 }}>
+            {TEXT_BODY}
+          </div>
+          <p style={{ fontSize: 11, color: "#374151", marginTop: 8, marginBottom: 0 }}>
+            Suitable for team apps, group texts, or direct message platforms.
+          </p>
         </div>
+
       </div>
     </div>
   );
@@ -625,22 +676,15 @@ const STEPS = [
       <>
         <InviteParentsPreview />
         <ExplainerCard label="Section 4 of 4" title="Invite Parents">
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 12px" }}>
-            The Invite Parents tool gives coaches a simple way to introduce families to URecruitHQ
-            and connect them back to the program. The goal is to help coaches communicate the value
-            of the platform clearly, offer families an optional recruiting resource, and create a
-            direct connection between parent participation and the coach's program visibility.
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
+            Invite Parents gives coaches a ready-to-use way to share URecruit HQ with families.
+            With a program-specific code and copy-ready email and text templates, coaches can
+            introduce the platform without creating the outreach from scratch.
           </p>
-          <ul style={{ margin: 0, padding: "0 0 0 16px", display: "flex", flexDirection: "column", gap: 4 }}>
-            {[
-              "Link athletes to coach with a program-specific invite code",
-              "Prebuilt outreach",
-              "Ready to copy and paste email template",
-              "Ready to copy and paste text template",
-            ].map((b, i) => (
-              <li key={i} style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.6 }}>{b}</li>
-            ))}
-          </ul>
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: 0 }}>
+            Families who join through the coach's code are connected back to the program, giving
+            the coach better visibility and continuity across the roster.
+          </p>
         </ExplainerCard>
       </>
     ),
