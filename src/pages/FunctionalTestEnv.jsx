@@ -838,7 +838,7 @@ export default function FunctionalTestEnv() {
                             <span style={{ fontSize: 12, color: "#6B7280" }}>Linked — release to relink</span>
                           ) : (
                             <input
-                              type="email"
+                              type="text"
                               placeholder="user@example.com"
                               value={emailVal}
                               onChange={e => setEmailInputs(prev => ({ ...prev, [slotKey]: e.target.value }))}
