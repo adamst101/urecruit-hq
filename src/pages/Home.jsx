@@ -397,7 +397,7 @@ export default function Home() {
                 margin: "0 0 16px",
                 maxWidth: 420,
               }}>
-                URecruit HQ helps football families organize camps, track progress, and understand the process earlier — so they can support the dream with more clarity, structure, and confidence.
+                URecruit HQ helps football families understand the recruiting process earlier, organize camps, and track progress so they can support their athlete with more clarity, structure, and confidence.
               </p>
               <div style={{ margin: "0 0 28px", maxWidth: 460 }}>
                 <p style={{ fontSize: 14, fontWeight: 500, color: "#d1d5db", lineHeight: 1.55, margin: "0 0 5px" }}>
