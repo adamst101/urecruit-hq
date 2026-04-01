@@ -31,7 +31,7 @@ export default function BackfillRyzerProgramName() {
             Re-fetches Ryzer pages to fill missing ryzer_program_name, venue_name, venue_address
           </div>
         </div>
-        <button onClick={() => nav("/AdminOps")} style={S.btn}>← Admin</button>
+        <button onClick={() => nav("/AdminHQ")} style={S.btn}>← Admin</button>
       </div>
 
       <div style={{ padding: "20px 24px", maxWidth: 900 }}>

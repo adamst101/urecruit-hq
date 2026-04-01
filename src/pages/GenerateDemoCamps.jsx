@@ -68,7 +68,7 @@ export default function GenerateDemoCamps() {
             Clone current football camps with dates shifted back one year
           </div>
         </div>
-        <button onClick={() => nav("/AdminOps")} style={S.btn}>← Admin</button>
+        <button onClick={() => nav("/AdminHQ")} style={S.btn}>← Admin</button>
       </div>
 
       <div style={{ padding: "20px 24px", maxWidth: 900 }}>

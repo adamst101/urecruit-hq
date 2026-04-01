@@ -450,7 +450,7 @@ export default function ProductMetrics() {
           {/* Header */}
           <button
             type="button"
-            onClick={() => nav("/AdminOps")}
+            onClick={() => nav("/AdminHQ")}
             className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1"
           >
             <ArrowLeft className="w-4 h-4" /> Admin Ops

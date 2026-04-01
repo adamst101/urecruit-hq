@@ -116,7 +116,7 @@ export default function CoachNetworkAdmin() {
         <div style={{ maxWidth: 900, margin: "0 auto" }}>
 
           <button
-            onClick={() => nav("/AdminOps")}
+            onClick={() => nav("/AdminHQ")}
             style={{ display: "flex", alignItems: "center", gap: 6, color: "#e8a020", fontSize: 13, fontWeight: 600, background: "none", border: "none", cursor: "pointer", marginBottom: 24, padding: 0 }}
           >
             <ArrowLeft style={{ width: 16, height: 16 }} /> Admin Ops

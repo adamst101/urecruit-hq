@@ -129,7 +129,7 @@ export default function SportIngestConfigManager() {
               {seeding ? "Seeding…" : "⚡ Seed Default Configs"}
             </button>
           )}
-          <button onClick={() => nav("/AdminOps")} style={S.btn}>← Admin</button>
+          <button onClick={() => nav("/AdminHQ")} style={S.btn}>← Admin</button>
         </div>
       </div>
 

@@ -49,7 +49,7 @@ export default function BlockListManager() {
             {filtered.length} of {rows.length} blocked source keys — these camps will never be re-ingested
           </div>
         </div>
-        <button onClick={() => nav("/AdminOps")}
+        <button onClick={() => nav("/AdminHQ")}
           style={{ background: "#FFF", border: "1px solid #E5E7EB", borderRadius: 6, padding: "6px 14px", fontSize: 14, cursor: "pointer" }}>
           ← Admin
         </button>

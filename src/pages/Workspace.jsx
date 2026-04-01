@@ -43,7 +43,7 @@ const ROUTES = {
   RecruitingJourney: "/RecruitingJourney",
   Account: "/Account",
   AdminImport: "/AdminImport",
-  AdminOps: "/AdminOps",
+  AdminOps: "/AdminHQ",
   CampsManager: "/CampsManager",
   SchoolsManager: "/SchoolsManager",
   TestFunctions: "/TestFunctions",
@@ -810,7 +810,7 @@ export default function Workspace() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
               {[
-                { label: "Admin Ops", route: ROUTES.AdminOps },
+                { label: "Admin HQ", route: ROUTES.AdminOps },
                 { label: "Camps Manager", route: ROUTES.CampsManager },
                 { label: "Schools Manager", route: ROUTES.SchoolsManager },
                 { label: "Ingest Runner", route: ROUTES.TestFunctions },

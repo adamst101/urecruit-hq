@@ -938,7 +938,7 @@ export default function Discover() {
           <div className="mt-1 text-sm text-ur-secondary">{campErr}</div>
           <div className="mt-4 flex gap-2">
             <Button variant="outline" className="border-ur-border-input bg-transparent text-ur-primary hover:bg-ur-border" onClick={() => loadCamps()}>Retry</Button>
-            <Button variant="outline" className="border-ur-border-input bg-transparent text-ur-primary hover:bg-ur-border" onClick={() => nav("/AdminOps")}>Open Admin Ops</Button>
+            <Button variant="outline" className="border-ur-border-input bg-transparent text-ur-primary hover:bg-ur-border" onClick={() => nav("/AdminHQ")}>Open Admin Ops</Button>
           </div>
         </Card>
       );

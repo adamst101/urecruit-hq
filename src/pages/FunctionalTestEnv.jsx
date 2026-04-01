@@ -383,7 +383,7 @@ export default function FunctionalTestEnv() {
         {/* Page Header */}
         <div style={styles.header}>
           <button
-            onClick={() => nav("/AdminOps")}
+            onClick={() => nav("/AdminHQ")}
             style={styles.backBtn}
           >
             ← Admin Ops

@@ -100,7 +100,7 @@ export default function GeocodeSchools() {
   return (
     <AdminRoute>
       <div style={{ background: "#F3F4F6", minHeight: "100vh", padding: "28px 32px", fontFamily: "Inter, system-ui, sans-serif" }}>
-        <button onClick={() => nav("/AdminOps")} style={{ background: "none", border: "none", color: "#e8a020", cursor: "pointer", fontSize: 14, marginBottom: 16 }}>← Back to Admin</button>
+        <button onClick={() => nav("/AdminHQ")} style={{ background: "none", border: "none", color: "#e8a020", cursor: "pointer", fontSize: 14, marginBottom: 16 }}>← Back to Admin</button>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: "#0B1F3B", marginBottom: 8 }}>Geocode Missing Schools</h1>
         <p style={{ color: "#6B7280", fontSize: 14, marginBottom: 24 }}>
           Backfill lat/lng coordinates on School records using Nominatim (OpenStreetMap). Schools with existing coordinates are skipped.

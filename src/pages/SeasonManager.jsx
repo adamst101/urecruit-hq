@@ -99,7 +99,7 @@ export default function SeasonManager() {
     <AdminRoute>
     <div style={{ background: "#F3F4F6", minHeight: "100vh", fontFamily: "Inter, system-ui, sans-serif", color: "#111827" }}>
       <div style={{ padding: "20px 32px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={() => nav("/AdminOps")} style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280", display: "flex", alignItems: "center", gap: 4 }}>
+        <button onClick={() => nav("/AdminHQ")} style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280", display: "flex", alignItems: "center", gap: 4 }}>
           <ArrowLeft style={{ width: 16, height: 16 }} /> Back
         </button>
         <div style={{ fontSize: 22, fontWeight: 700, color: "#0B1F3B" }}>📅 Season Manager</div>

@@ -96,7 +96,7 @@ export default function HostOrgMappingManager() {
             {rows.length} total — {verifiedCount} verified, {suggestedCount} suggested
           </div>
         </div>
-        <button onClick={() => nav("/AdminOps")} style={S.btn}>← Admin</button>
+        <button onClick={() => nav("/AdminHQ")} style={S.btn}>← Admin</button>
       </div>
 
       <div style={S.filters}>

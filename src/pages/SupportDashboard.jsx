@@ -108,7 +108,7 @@ export default function SupportDashboard() {
     <AdminRoute>
     <div className="min-h-screen bg-[#0a0e1a] text-[#f9fafb] pb-20">
       <div className="max-w-6xl mx-auto px-4 pt-6">
-        <button type="button" onClick={() => nav(createPageUrl("AdminOps"))} className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1">
+        <button type="button" onClick={() => nav("/AdminHQ")} className="mb-3 text-sm font-medium text-[#e8a020] hover:text-[#f3b13f] flex items-center gap-1">
           <ArrowLeft className="w-4 h-4" /> Admin Ops
         </button>
 
