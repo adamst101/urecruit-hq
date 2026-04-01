@@ -311,7 +311,7 @@ export default function FunctionalTestEnv() {
     setLoading(true);
     addLog(`Releasing slot "${slotKey}" back to synthetic ID…`);
     try {
-      const { updated, errors } = await releaseSlot(base44, slotKey);
+      const { updated, errors } = await releaseSlot(base44, slotKey, realIdBeforeRelease);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
       addLog(`Slot "${slotKey}" released (${updated} records reverted)`);
       // Revoke the ft_seed entitlement so the account can no longer access Workspace

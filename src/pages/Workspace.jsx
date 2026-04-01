@@ -861,14 +861,36 @@ export default function Workspace() {
           <div>Profile ID: <span style={{ color: "#d1d5db" }}>{athleteDiagnostics?.finalProfileId || "—"}</span></div>
           <div>Profiles found: {athleteDiagnostics?.profilesFound ?? "—"}</div>
           <div>Fetch method: <span style={{ color: "#fbbf24" }}>{athleteDiagnostics?.fetchMethod || "—"}</span></div>
+          {(athleteDiagnostics?.directAthleteIds?.length > 0) && (
+            <div style={{ color: "#6b7280", fontSize: 10 }}>Direct IDs: {athleteDiagnostics.directAthleteIds.join(", ")}</div>
+          )}
           {athleteDiagnostics?.schoolPrefAthleteId && (
             <div>SchoolPref link: <span style={{ color: "#a78bfa" }}>{athleteDiagnostics.schoolPrefAthleteId}</span></div>
           )}
+          {athleteDiagnostics?.directVsLinkedMatch === false && (
+            <div style={{ color: "#f59e0b", fontWeight: 700 }}>⚠ Direct ID ≠ SchoolPref link</div>
+          )}
           <div style={{ color: "#9ca3af", marginTop: 2 }}>{athleteDiagnostics?.reason || "—"}</div>
-          {/* "Entitled but no athlete" warning */}
+          {athleteDiagnostics?.multiplePrefWarning && (
+            <div style={{ color: "#f59e0b" }}>⚠ Multiple SchoolPreference rows</div>
+          )}
+          {athleteDiagnostics?.missingProfileWarning && (
+            <div style={{ color: "#f87171" }}>⚠ SchoolPref link → profile not found</div>
+          )}
+          {athleteDiagnostics?.serverErrors?.length > 0 && (
+            <div style={{ color: "#f87171", fontSize: 10, marginTop: 2 }}>
+              {athleteDiagnostics.serverErrors.map((e, i) => <div key={i}>{e}</div>)}
+            </div>
+          )}
+          {/* Entitlement + athlete mismatch warnings */}
           {season?.hasAccess && !athleteDiagnostics?.finalProfileId && (
             <div style={{ marginTop: 6, color: "#f87171", fontWeight: 700 }}>
               ⚠ Entitled but no athlete linked
+            </div>
+          )}
+          {!season?.hasAccess && athleteDiagnostics?.finalProfileId && (
+            <div style={{ marginTop: 6, color: "#f59e0b", fontWeight: 700 }}>
+              ⚠ Athlete linked but not entitled
             </div>
           )}
         </div>

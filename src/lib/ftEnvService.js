@@ -609,22 +609,29 @@ export const SLOT_MAP = {
 // @returns {{ updated: number, errors: string[] }}
 // ---------------------------------------------------------------------------
 
-export async function claimSlot(base44, slotKey, realId) {
+// opts.previousRealId — the real account ID that previously held this slot,
+// required on release so the server can clear its SchoolPreference athlete link.
+export async function claimSlot(base44, slotKey, realId, opts = {}) {
   const slot = SLOT_MAP[slotKey];
   if (!slot) throw new Error(`Unknown slot key: ${slotKey}`);
 
   // Prefer server-side claim: uses asServiceRole so it can find seed profiles
   // that client-side filter({}) cannot see (created with synthetic account_id).
+  // On release, previousRealId allows the server to clear the SchoolPreference link.
   try {
-    const body = slot.type === "family"
+    const base = slot.type === "family"
       ? { type: "family", realId, athletes: slot.athletes.map(d => ({ athleteName: d.athleteName, gradYear: d.gradYear })) }
       : { type: "coach", realId, inviteCode: slot.inviteCode };
+    const body = opts.previousRealId ? { ...base, previousRealId: opts.previousRealId } : base;
 
     const res = await base44.functions.invoke("claimSlotProfiles", body);
     if (res?.data?.ok !== undefined) {
       const d = res.data;
       if (d.athleteProfileIds?.length) {
         console.log("[claimSlot] athlete profile IDs found by server:", d.athleteProfileIds);
+      }
+      if (d.errors?.length) {
+        d.errors.forEach(e => console.warn("[claimSlot] server warning:", e));
       }
       return { updated: d.updated ?? 0, errors: d.errors ?? [], athleteProfileIds: d.athleteProfileIds ?? [] };
     }
@@ -686,12 +693,14 @@ export async function claimSlot(base44, slotKey, realId) {
 
 // ---------------------------------------------------------------------------
 // releaseSlot — revert a seed account slot back to its synthetic account_id.
+// previousRealId: the real account that currently holds the slot — passed so
+// the server can clear its SchoolPreference athlete link on release.
 // ---------------------------------------------------------------------------
 
-export async function releaseSlot(base44, slotKey) {
+export async function releaseSlot(base44, slotKey, previousRealId) {
   const slot = SLOT_MAP[slotKey];
   if (!slot) throw new Error(`Unknown slot key: ${slotKey}`);
-  return claimSlot(base44, slotKey, slot.syntheticId);
+  return claimSlot(base44, slotKey, slot.syntheticId, { previousRealId });
 }
 
 // ---------------------------------------------------------------------------

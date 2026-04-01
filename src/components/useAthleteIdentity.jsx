@@ -123,7 +123,12 @@ export function useAthleteIdentity({ athleteId } = {}) {
         ...diagnostics,
         fetchMethod: serverMeta?.method || "unknown",
         listTotal: serverMeta?.listTotal ?? null,
+        directAthleteIds: serverMeta?.directAthleteIds ?? [],
         schoolPrefAthleteId: serverMeta?.schoolPrefAthleteId ?? null,
+        directVsLinkedMatch: serverMeta?.directVsLinkedMatch ?? null,
+        multiplePrefWarning: serverMeta?.multiplePrefWarning ?? false,
+        missingProfileWarning: serverMeta?.missingProfileWarning ?? false,
+        serverErrors: serverMeta?.errors ?? [],
       };
 
       // Debug logging

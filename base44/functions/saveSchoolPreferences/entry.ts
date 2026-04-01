@@ -1,3 +1,17 @@
+// functions/saveSchoolPreferences/entry.ts
+//
+// IMPORTANT — athlete_id field preservation:
+//   SchoolPreference.athlete_id doubles as the canonical FT seed athlete link.
+//   claimSlotProfiles writes it (via asServiceRole) to map a real account to a
+//   seed AthleteProfile. getMyAthleteProfiles reads it as a Step 3 fallback.
+//
+//   This function MUST preserve athlete_id when not explicitly provided in the
+//   incoming request, so that a user saving their school targets does not
+//   accidentally clear the seed athlete linkage.
+//
+//   Canonical write path: base44/functions/claimSlotProfiles/entry.ts
+//   Canonical read path:  base44/functions/getMyAthleteProfiles/entry.ts
+
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
 
 Deno.serve(async (req) => {
