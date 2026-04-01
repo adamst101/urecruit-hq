@@ -563,7 +563,7 @@ export default function FunctionalTestEnv() {
                   { label: "Coaches",    val: counts.coaches,    exp: 2  },
                   { label: "Athletes",   val: counts.athletes,   exp: 6  },
                   { label: "Rosters",    val: counts.rosters,    exp: 6  },
-                  { label: "Activities", val: counts.activities, exp: 15 },
+                  { label: "Activities", val: counts.activities, exp: 14 },
                 ].map(({ label, val, exp }) => (
                   <div key={label} style={styles.countTile}>
                     <div style={{

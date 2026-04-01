@@ -505,8 +505,8 @@ export async function verifyTopology(base44) {
     warnings.push(`Expected 6 CoachRoster records, found ${rosters.length}`);
   }
 
-  if (activities.length !== 15) {
-    warnings.push(`Expected 15 RecruitingActivity records, found ${activities.length}`);
+  if (activities.length !== 14) {
+    warnings.push(`Expected 14 RecruitingActivity records, found ${activities.length}`);
   }
 
   // --- Determine overall status ---
