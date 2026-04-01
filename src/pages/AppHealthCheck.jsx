@@ -6,6 +6,7 @@ import { appParams } from "../lib/app-params";
 import { toast } from "../components/ui/use-toast";
 import { ADMIN_EMAILS } from "../components/auth/adminEmails.jsx";
 import { COACH_JOURNEY_GROUP } from "./AppHealthCheck.coachJourneys.jsx";
+import { NEW_JOURNEY_GROUPS } from "./AppHealthCheck.newJourneys.jsx";
 
 // ── Environment detection ────────────────────────────────────────────────────
 // base44 stores the active app_id in localStorage (base44_app_id).
@@ -2606,6 +2607,11 @@ const JOURNEY_GROUPS = [
   },
 
   COACH_JOURNEY_GROUP,
+
+  // ── Phase 2: rebuilt journey coverage ──────────────────────────────────────
+  // Route registration, demo integrity, demo data freshness, coach HQ functions,
+  // recruiting activity entity, report feature, registration chain, env sanity.
+  ...NEW_JOURNEY_GROUPS,
 
 ];
 
