@@ -334,6 +334,15 @@ function MetricTilesPreview() {
   ];
   return (
     <PreviewFrame accent="#e8a020" label="HEADLINE PROGRAM METRICS">
+      {/* Top takeaway — interpretation before tiles */}
+      <div style={{ marginBottom: 14, paddingBottom: 13, borderBottom: "1px solid #1a2535" }}>
+        <div style={{ fontSize: 9, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>
+          Top takeaway
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#d1d5db", lineHeight: 1.5 }}>
+          The roster shows active recruiting movement, with verified traction, confirmed outcomes, and a smaller group that may need closer coach review.
+        </div>
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
         {tiles.map(t => <MiniTile key={t.label} {...t} />)}
       </div>
@@ -922,24 +931,42 @@ const STEPS = [
           borderLeft: "3px solid #e8a020",
           borderRadius: 10, padding: "14px 16px",
         }}>
+          {/* Interpretation bullets — primary read */}
           <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
-            Key definitions
+            What this tells the coach
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 14 }}>
             {[
-              { term: "Recruiting Signal",  def: "any recorded indication of possible college interest" },
-              { term: "True Traction",      def: "verified momentum such as direct outreach or confirmed contact" },
-              { term: "Heating Up",         def: "rising recent activity or stronger engagement" },
-              { term: "Needs Attention",    def: "activity that may warrant coach review" },
+              "Where general interest exists across the roster",
+              "Which signals reflect verified momentum",
+              "Which athletes are heating up",
+              "Where coach review may be needed",
             ].map((item, i) => (
               <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
                 <span style={{ color: "#e8a020", fontSize: 11, lineHeight: 1, marginTop: 3, flexShrink: 0 }}>—</span>
-                <span style={{ fontSize: 13, color: "#64748b", lineHeight: 1.55 }}>
-                  <span style={{ color: "#94a3b8", fontWeight: 600 }}>{item.term}</span>
-                  {" — "}{item.def}
-                </span>
+                <span style={{ fontSize: 13, color: "#64748b", lineHeight: 1.55 }}>{item}</span>
               </div>
             ))}
+          </div>
+
+          {/* Compact definitions — subordinate context */}
+          <div style={{ borderTop: "1px solid #1a2535", paddingTop: 10 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#2d3f55", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+              Key terms
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {[
+                { term: "Recruiting Signal", def: "possible college interest on record" },
+                { term: "True Traction",     def: "verified momentum or direct contact" },
+                { term: "Heating Up",        def: "rising recent activity or stronger engagement" },
+                { term: "Needs Attention",   def: "activity that may warrant coach review" },
+              ].map((item, i) => (
+                <div key={i} style={{ fontSize: 11.5, color: "#374151", lineHeight: 1.5 }}>
+                  <span style={{ color: "#4b5563", fontWeight: 600 }}>{item.term}</span>
+                  {" — "}{item.def}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </>
