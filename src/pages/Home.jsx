@@ -437,7 +437,7 @@ export default function Home() {
                 </p>
                 <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                   <button
-                    onClick={() => nav("/CoachDashboard?demo=coach")}
+                    onClick={() => nav("/CoachDemoStory")}
                     style={{
                       background: "rgba(255,255,255,0.05)",
                       border: "1px solid rgba(255,255,255,0.16)",
