@@ -375,114 +375,247 @@ Coach Webb`;
   );
 }
 
+// ── DiscoverPreview ─────────────────────────────────────────────────────────────
+// Story-only static replica of the real Discover page SchoolGroupCard pattern.
+// Mirrors real UI tokens: dark bg, amber accents, division/camp-count badges,
+// city+price+grades meta row, date pills, left accent bar per camp row,
+// and the Recommend coach share panel open on the first camp.
+// No live data, no backend calls, no navigation.
 function DiscoverPreview() {
-  const schools = [
-    {
-      abbr: "UF", color: "#e8a020", name: "University of Florida", division: "D1 (SEC)",
-      dates: ["Jun 14", "Jul 8"],
-      camps: [
-        { name: "Summer Quarterback Camp", date: "Jun 14", city: "Gainesville, FL", price: "$250", positions: "QB, WR, TE" },
-        { name: "Team Camp",               date: "Jul 8",  city: "Gainesville, FL", price: "$175", positions: "All Positions" },
-      ],
-    },
-    {
-      abbr: "UGA", color: "#60a5fa", name: "University of Georgia", division: "D1 (SEC)",
-      dates: ["Jun 21", "Jul 12"],
-      camps: [
-        { name: "Elite Skills Camp", date: "Jun 21", city: "Athens, GA", price: "$225", positions: "All Skill Positions" },
-      ],
-    },
-  ];
+  const UF = {
+    abbr: "UF",
+    accentColor: "#e8a020",
+    name: "University of Florida",
+    divisionLabel: "D1 · FBS · SEC",
+    metaCity: "Gainesville, FL",
+    metaPrice: "$175 – $300",
+    metaGrades: "Grades 8–12",
+    dates: ["Jun 14", "Jul 8"],
+    camps: [
+      {
+        name: "Elite Skills Camp",
+        date: "Jun 14, 2025",
+        city: "Gainesville, FL",
+        price: "$300",
+        grades: "Grades 9–12",
+        type: "Skills / 7-on-7",
+        recommendOpen: true,
+      },
+      {
+        name: "Team Camp",
+        date: "Jul 8, 2025",
+        city: "Gainesville, FL",
+        price: "$175",
+        grades: "Grades 8–12",
+        type: "Full Team",
+        recommendOpen: false,
+      },
+    ],
+  };
+  const UGA = {
+    abbr: "UGA",
+    accentColor: "#60a5fa",
+    name: "University of Georgia",
+    divisionLabel: "D1 · FBS · SEC",
+    metaCity: "Athens, GA",
+    metaPrice: "$225",
+    metaGrades: "Grades 9–12",
+    dates: ["Jun 21"],
+    camps: [{ name: "Elite Skills Camp", date: "Jun 21, 2025", city: "Athens, GA", price: "$225", grades: "Grades 9–12", type: "All Skill Positions" }],
+  };
 
-  return (
-    <div style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 14, overflow: "hidden", marginBottom: 22, boxShadow: "0 6px 32px rgba(0,0,0,0.55)" }}>
-      {/* Preview header */}
-      <div style={{ background: "rgba(0,0,0,0.3)", borderBottom: "1px solid #1a2535", padding: "11px 18px", display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
-        <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "#f1f5f9", letterSpacing: 1 }}>DISCOVER CAMPS</span>
-        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em" }}>SAMPLE DATA</span>
-      </div>
+  const recommendMsg =
+    "I recommend checking out this camp: Elite Skills Camp at University of Florida\n📅 Jun 14, 2025 · 📍 Gainesville, FL · $300\n\nGreat opportunity for skill players to get in front of the UF staff.";
 
-      <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-        {schools.map((school, si) => (
-          <div key={school.abbr} style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, overflow: "hidden" }}>
-            {/* School group header */}
-            <div style={{ padding: "11px 16px", display: "flex", alignItems: "center", gap: 11 }}>
-              <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#1e293b", border: "1px solid #374151", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: school.color, flexShrink: 0 }}>
-                {school.abbr}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#f9fafb" }}>{school.name}</span>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: school.color, background: `${school.color}18`, border: `1px solid ${school.color}30`, borderRadius: 4, padding: "2px 6px" }}>{school.division}</span>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", background: "rgba(148,163,184,0.08)", border: "1px solid rgba(148,163,184,0.15)", borderRadius: 4, padding: "2px 6px" }}>{school.camps.length} camp{school.camps.length !== 1 ? "s" : ""}</span>
-                </div>
-                <div style={{ display: "flex", gap: 5, marginTop: 5, flexWrap: "wrap" }}>
-                  {school.dates.map(d => (
-                    <span key={d} style={{ fontSize: 9.5, color: "#94a3b8", background: "#1a2535", border: "1px solid #1e293b", borderRadius: 4, padding: "2px 7px" }}>{d}</span>
-                  ))}
-                </div>
-              </div>
+  // ── sub-components ────────────────────────────────────────────────────────────
+
+  function SchoolAvatar({ abbr, color }) {
+    return (
+      <div style={{
+        width: 38, height: 38, borderRadius: "50%",
+        background: "#1e293b", border: `1.5px solid ${color}40`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 10, fontWeight: 800, color, flexShrink: 0,
+        letterSpacing: "0.04em",
+      }}>{abbr}</div>
+    );
+  }
+
+  function Badge({ children, color }) {
+    return (
+      <span style={{
+        fontSize: 9, fontWeight: 700, color,
+        background: `${color}18`, border: `1px solid ${color}30`,
+        borderRadius: 4, padding: "2px 6px", whiteSpace: "nowrap",
+      }}>{children}</span>
+    );
+  }
+
+  function DatePill({ label }) {
+    return (
+      <span style={{
+        fontSize: 9.5, color: "#94a3b8",
+        background: "#1a2535", border: "1px solid #1e293b",
+        borderRadius: 20, padding: "2px 8px",
+      }}>{label}</span>
+    );
+  }
+
+  function CoachBtn({ label, active }) {
+    return (
+      <div style={{
+        fontSize: 11, fontWeight: active ? 700 : 600,
+        color: active ? "#86efac" : "#9ca3af",
+        background: active ? "#1a2e1a" : "transparent",
+        border: `1px solid ${active ? "#4ade80" : "#374151"}`,
+        borderRadius: 7, padding: "5px 12px",
+        whiteSpace: "nowrap", flexShrink: 0,
+      }}>{label}</div>
+    );
+  }
+
+  function SchoolGroup({ school, expanded }) {
+    return (
+      <div style={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 12, overflow: "hidden" }}>
+        {/* ── School header ── */}
+        <div style={{ padding: "13px 16px", display: "flex", alignItems: "flex-start", gap: 11 }}>
+          {/* Amber accent bar */}
+          <div style={{ width: 3, alignSelf: "stretch", background: school.accentColor, borderRadius: 2, flexShrink: 0, marginTop: 2 }} />
+          <SchoolAvatar abbr={school.abbr} color={school.accentColor} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Row 1: name + badges */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 5 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: "#f9fafb" }}>{school.name}</span>
+              <Badge color={school.accentColor}>{school.divisionLabel}</Badge>
+              <Badge color="#94a3b8">{school.camps.length} camp{school.camps.length !== 1 ? "s" : ""}</Badge>
             </div>
+            {/* Row 2: city · price · grades */}
+            <div style={{ fontSize: 10.5, color: "#6b7280", marginBottom: 6, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <span>📍 {school.metaCity}</span>
+              <span>💰 {school.metaPrice}</span>
+              <span>🎓 {school.metaGrades}</span>
+            </div>
+            {/* Row 3: date pills */}
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 10.5 }}>📅</span>
+              {school.dates.map(d => <DatePill key={d} label={d} />)}
+            </div>
+          </div>
+          {/* Chevron */}
+          <span style={{ fontSize: 13, color: "#4b5563", marginTop: 2, transform: expanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>›</span>
+        </div>
 
-            {/* Camp rows (only expanded for first school) */}
-            {si === 0 && school.camps.map((camp, ci) => (
-              <div key={ci} style={{ borderTop: "1px solid #1a2535" }}>
-                <div style={{ padding: "10px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ flex: 1, minWidth: 140 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 600, color: "#f9fafb", marginBottom: 4 }}>{camp.name}</div>
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 10, color: "#6b7280" }}>{camp.date}</span>
-                        <span style={{ fontSize: 10, color: "#6b7280" }}>{camp.city}</span>
-                        <span style={{ fontSize: 10, color: "#6b7280" }}>{camp.price}</span>
-                        <span style={{ fontSize: 10, color: "#6b7280" }}>{camp.positions}</span>
-                      </div>
-                    </div>
-                    {/* Coach action buttons */}
-                    <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: ci === 0 ? "#4ade80" : "#9ca3af", background: ci === 0 ? "rgba(74,222,128,0.1)" : "transparent", border: `1px solid ${ci === 0 ? "#4ade80" : "#374151"}`, borderRadius: 7, padding: "5px 11px" }}>
-                        Recommend
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", border: "1px solid #374151", borderRadius: 7, padding: "5px 11px" }}>
-                        Message Roster
-                      </div>
+        {/* ── Camp rows (only when expanded) ── */}
+        {expanded && school.camps.map((camp, ci) => (
+          <div key={ci} style={{ borderTop: "1px solid #1f2937" }}>
+            <div style={{ display: "flex", gap: 0 }}>
+              {/* Left accent bar: green when recommend open, muted otherwise */}
+              <div style={{ width: 3, flexShrink: 0, background: camp.recommendOpen ? "#4ade80" : "#1f2937" }} />
+              <div style={{ flex: 1, padding: "11px 14px 11px 12px" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+                  {/* Camp info */}
+                  <div style={{ flex: 1, minWidth: 140 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#f9fafb", marginBottom: 4 }}>{camp.name}</div>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 10.5, color: "#6b7280" }}>{camp.date}</span>
+                      <span style={{ fontSize: 10.5, color: "#6b7280" }}>{camp.city}</span>
+                      <span style={{ fontSize: 10.5, color: "#e8a020" }}>{camp.price}</span>
+                      <span style={{ fontSize: 10.5, color: "#6b7280" }}>{camp.grades}</span>
+                      <span style={{ fontSize: 10.5, color: "#4b5563" }}>{camp.type}</span>
                     </div>
                   </div>
+                  {/* Coach buttons */}
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                    <CoachBtn label="Recommend" active={camp.recommendOpen} />
+                    <CoachBtn label="Message Roster" active={false} />
+                  </div>
+                </div>
 
-                  {/* Inline share panel — shown for first camp only */}
-                  {ci === 0 && (
-                    <div style={{ marginTop: 10, background: "#0d1f0d", border: "1px solid rgba(74,222,128,0.22)", borderRadius: 9, padding: "10px 12px" }}>
-                      {/* Recipient selector */}
-                      <div style={{ marginBottom: 8, background: "#111827", border: "1px solid #1e293b", borderRadius: 6, padding: "5px 9px", fontSize: 11, color: "#94a3b8", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                {/* ── Recommend panel (open for first camp) ── */}
+                {camp.recommendOpen && (
+                  <div style={{
+                    marginTop: 10,
+                    background: "#0d1a0d",
+                    border: "1px solid #1a3a1a",
+                    borderRadius: 9,
+                    padding: "11px 13px",
+                  }}>
+                    {/* Panel header */}
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#86efac", marginBottom: 9 }}>
+                      Recommend to Roster
+                    </div>
+                    {/* To: selector */}
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, color: "#9ca3af", marginBottom: 4 }}>To</div>
+                      <div style={{
+                        background: "#111827", border: "1px solid #1e293b",
+                        borderRadius: 6, padding: "6px 10px",
+                        fontSize: 11, color: "#94a3b8",
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                      }}>
                         <span>All Athletes (5)</span>
                         <span style={{ color: "#374151", fontSize: 10 }}>▾</span>
                       </div>
-                      {/* Pre-filled message */}
-                      <div style={{ fontSize: 10, color: "#4b5563", background: "#111827", border: "1px solid #1e293b", borderRadius: 6, padding: "8px 10px", lineHeight: 1.6, marginBottom: 8 }}>
-                        I recommend checking out this camp: Summer Quarterback Camp at University of Florida. Great opportunity for QBs and WRs to get in front of their staff.
-                      </div>
-                      {/* Send button */}
-                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "#0a1a0a", background: "#4ade80", borderRadius: 6, padding: "5px 13px" }}>
-                          Send Recommendation
-                        </div>
-                      </div>
                     </div>
-                  )}
-                </div>
+                    {/* Message textarea */}
+                    <div style={{ marginBottom: 9 }}>
+                      <div style={{ fontSize: 10, color: "#9ca3af", marginBottom: 4 }}>Message</div>
+                      <div style={{
+                        background: "#111827", border: "1px solid #1e293b",
+                        borderRadius: 6, padding: "8px 10px",
+                        fontSize: 10.5, color: "#6b7280",
+                        lineHeight: 1.65, whiteSpace: "pre-wrap",
+                      }}>{recommendMsg}</div>
+                    </div>
+                    {/* Actions */}
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: "#4b5563", cursor: "default" }}>Cancel</span>
+                      <div style={{
+                        fontSize: 11, fontWeight: 700,
+                        color: "#0a1a0a", background: "#4ade80",
+                        borderRadius: 6, padding: "6px 14px",
+                      }}>Send</div>
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
-
-            {/* Collapsed indicator for second school */}
-            {si === 1 && (
-              <div style={{ borderTop: "1px solid #1a2535", padding: "8px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 10.5, color: "#374151" }}>Tap to view camps</span>
-                <span style={{ fontSize: 16, color: "#374151" }}>›</span>
-              </div>
-            )}
+            </div>
           </div>
         ))}
+
+        {/* ── Collapsed hint (when not expanded) ── */}
+        {!expanded && (
+          <div style={{ borderTop: "1px solid #1f2937", padding: "8px 16px 8px 19px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 10.5, color: "#374151" }}>{school.camps.length} camp{school.camps.length !== 1 ? "s" : ""} · Tap to view</span>
+            <span style={{ fontSize: 15, color: "#374151" }}>›</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: "#0a0e1a", border: "1px solid #1f2937", borderRadius: 14, overflow: "hidden", marginBottom: 22, boxShadow: "0 6px 32px rgba(0,0,0,0.55)" }}>
+      {/* ── Page chrome header ── */}
+      <div style={{
+        background: "rgba(0,0,0,0.35)", borderBottom: "1px solid #1a2535",
+        padding: "10px 18px", display: "flex", alignItems: "center", gap: 10,
+      }}>
+        <div style={{ width: 3, height: 16, background: "#e8a020", borderRadius: 2 }} />
+        <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, color: "#f1f5f9", letterSpacing: "0.06em" }}>
+          DISCOVER CAMPS
+        </span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            COACH VIEW · SAMPLE DATA
+          </span>
+        </div>
+      </div>
+
+      {/* ── School list ── */}
+      <div style={{ padding: "14px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <SchoolGroup school={UF} expanded={true} />
+        <SchoolGroup school={UGA} expanded={false} />
       </div>
     </div>
   );
@@ -695,23 +828,16 @@ const STEPS = [
     render: () => (
       <>
         <DiscoverPreview />
-        <ExplainerCard label="Coach Tool" title="Discover and Recommend Camps">
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 12px" }}>
-            The Discover and Recommend Camps workflow gives coaches a way to review college camp
-            options and share them directly with athletes. It helps the coach move from simply
-            viewing camps to actively guiding families toward opportunities that may be worth
-            considering.
+        <ExplainerCard label="Coach Tool" title="Discover Camps">
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
+            Discover gives coaches a single place to review camp opportunities across the season.
+            In the coach view, they can quickly scan options, open a camp for more detail, and
+            better support athlete planning across the roster.
           </p>
-          <ul style={{ margin: 0, padding: "0 0 0 16px", display: "flex", flexDirection: "column", gap: 4 }}>
-            {[
-              "Browse camp options across schools, dates, and divisions",
-              "Identify camps they want athletes to consider",
-              "Recommend camps directly to athletes from the coach view",
-              "Use the platform as a practical support tool, not just a passive dashboard",
-            ].map((b, i) => (
-              <li key={i} style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.6 }}>{b}</li>
-            ))}
-          </ul>
+          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: 0 }}>
+            The expanded view helps coaches move beyond a simple list and see the specific details
+            behind each camp opportunity — then recommend it directly to athletes with one action.
+          </p>
         </ExplainerCard>
       </>
     ),
