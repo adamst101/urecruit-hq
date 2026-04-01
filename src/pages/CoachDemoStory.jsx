@@ -7,7 +7,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
-const TOTAL_STEPS = 11; // 2 intro + 8 section explainers + 1 giveback
+const TOTAL_STEPS = 7; // 2 intro + 4 section explainers + 1 giveback
 
 const LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/693c6f46122d274d698c00ef/d0ff95a98_logo_transp.png";
@@ -68,30 +68,6 @@ const PD = {
     { initials: "MO", name: "Marcus Okafor",    body: "Unofficial visit completed at Auburn, follow-up conversation logged",    daysAgo: 5 },
     { initials: "DW", name: "DeShawn Williams", body: "Campus tour at Michigan, added to prospect list by defensive coordinator", daysAgo: 7 },
     { initials: "CH", name: "Caleb Harrison",   body: "First direct coach contact from Penn State area recruiter",               daysAgo: 9 },
-  ],
-  heatingUp: [
-    { initials: "JC", name: "Jaylen Carter",  grad: 2026, detail: "3 coach contacts in the past 14 days", schools: ["Florida", "Georgia"] },
-    { initials: "MO", name: "Marcus Okafor",  grad: 2026, detail: "2 contacts and a camp invite in 21 days", schools: ["Auburn", "Tennessee"] },
-    { initials: "CH", name: "Caleb Harrison", grad: 2027, detail: "First direct coach contact from Penn State", schools: ["Penn State"] },
-  ],
-  traction: [
-    { name: "Jaylen Carter",    level: "High",   schoolList: "Florida, Georgia, Ohio State", latest: "Offer Received" },
-    { name: "Marcus Okafor",    level: "High",   schoolList: "Auburn, Tennessee",             latest: "Unofficial Visit" },
-    { name: "DeShawn Williams", level: "Medium", schoolList: "Michigan, LSU",                 latest: "Campus Tour" },
-    { name: "Caleb Harrison",   level: "Medium", schoolList: "Penn State",                    latest: "Direct Follow" },
-  ],
-  colleges: [
-    { name: "Florida",    athletes: 3 }, { name: "Auburn",     athletes: 3 },
-    { name: "Georgia",    athletes: 2 }, { name: "Tennessee",  athletes: 2 },
-    { name: "Penn State", athletes: 2 }, { name: "Michigan",   athletes: 2 },
-    { name: "Ohio State", athletes: 1 }, { name: "LSU",        athletes: 1 },
-  ],
-  activity: [
-    { name: "Jaylen Carter",   type: "Offer Received",        college: "Florida",    daysAgo: 2,  color: "#f59e0b" },
-    { name: "Marcus Okafor",   type: "Unofficial Visit",      college: "Auburn",     daysAgo: 5,  color: "#60a5fa" },
-    { name: "DeShawn Williams",type: "Campus Tour",           college: "Michigan",   daysAgo: 7,  color: "#34d399" },
-    { name: "Caleb Harrison",  type: "Direct Coach Contact",  college: "Penn State", daysAgo: 9,  color: "#34d399" },
-    { name: "Malik Thompson",  type: "Camp Invite",           college: "Georgia",    daysAgo: 12, color: "#94a3b8" },
   ],
 };
 
@@ -161,14 +137,6 @@ function MiniTile({ label, value, color, sub }) {
       <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 34, color, lineHeight: 1 }}>{value}</div>
       <div style={{ fontSize: 8.5, color: "#4b5563", textAlign: "center", marginTop: 3 }}>{sub}</div>
     </div>
-  );
-}
-
-// ── Traction level badge ───────────────────────────────────────────────────────
-function TBadge({ level }) {
-  const c = level === "High" ? "#f59e0b" : level === "Medium" ? "#60a5fa" : "#34d399";
-  return (
-    <span style={{ fontSize: 9, fontWeight: 700, color: c, background: `${c}18`, border: `1px solid ${c}40`, borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{level}</span>
   );
 }
 
@@ -299,90 +267,6 @@ function MetricTilesPreview() {
   );
 }
 
-function HeatingUpPreview() {
-  return (
-    <PreviewFrame accent="#fb923c" label="PLAYERS HEATING UP">
-      {PD.heatingUp.map((a, i) => (
-        <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", borderBottom: i < PD.heatingUp.length - 1 ? "1px solid #1a2535" : "none" }}>
-          <div style={{ width: 30, height: 30, borderRadius: "50%", background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.25)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fb923c", flexShrink: 0 }}>{a.initials}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#e8edf3" }}>{a.name}</span>
-              <span style={{ fontSize: 9.5, color: "#6b7280" }}>Class of {a.grad}</span>
-            </div>
-            <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 5 }}>{a.detail}</div>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {a.schools.map(s => (
-                <span key={s} style={{ fontSize: 9, fontWeight: 700, color: "#fb923c", background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.2)", borderRadius: 4, padding: "2px 6px" }}>{s}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-      ))}
-    </PreviewFrame>
-  );
-}
-
-function TractionBoardPreview() {
-  return (
-    <PreviewFrame accent="#60a5fa" label="TRUE TRACTION BOARD">
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: "5px 12px", alignItems: "center" }}>
-        {["Athlete", "Level", "Latest"].map(h => (
-          <div key={h} style={{ fontSize: 8.5, color: "#374151", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", paddingBottom: 6, borderBottom: "1px solid #1a2535" }}>{h}</div>
-        ))}
-        {PD.traction.map((a, i) => (
-          <React.Fragment key={i}>
-            <div style={{ paddingBottom: i < PD.traction.length - 1 ? 8 : 0, borderBottom: i < PD.traction.length - 1 ? "1px solid #1a2535" : "none" }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: "#e8edf3" }}>{a.name}</div>
-              <div style={{ fontSize: 10, color: "#4b5563" }}>{a.schoolList}</div>
-            </div>
-            <div style={{ paddingBottom: i < PD.traction.length - 1 ? 8 : 0, borderBottom: i < PD.traction.length - 1 ? "1px solid #1a2535" : "none" }}><TBadge level={a.level} /></div>
-            <div style={{ fontSize: 10, color: "#6b7280", whiteSpace: "nowrap", paddingBottom: i < PD.traction.length - 1 ? 8 : 0, borderBottom: i < PD.traction.length - 1 ? "1px solid #1a2535" : "none" }}>{a.latest}</div>
-          </React.Fragment>
-        ))}
-      </div>
-    </PreviewFrame>
-  );
-}
-
-function CollegesPreview() {
-  return (
-    <PreviewFrame accent="#a78bfa" label="COLLEGES ENGAGING THE PROGRAM">
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "6px 14px", alignItems: "center" }}>
-        {["College", "Athletes"].map(h => (
-          <div key={h} style={{ fontSize: 8.5, color: "#374151", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", paddingBottom: 6, borderBottom: "1px solid #1a2535" }}>{h}</div>
-        ))}
-        {PD.colleges.map((c, i) => (
-          <React.Fragment key={i}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: "#e8edf3", paddingBottom: i < PD.colleges.length - 1 ? 6 : 0, borderBottom: i < PD.colleges.length - 1 ? "1px solid #1a2535" : "none" }}>{c.name}</div>
-            <div style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700, textAlign: "right", paddingBottom: i < PD.colleges.length - 1 ? 6 : 0, borderBottom: i < PD.colleges.length - 1 ? "1px solid #1a2535" : "none" }}>{c.athletes}</div>
-          </React.Fragment>
-        ))}
-      </div>
-      <div style={{ marginTop: 10, fontSize: 10, color: "#374151" }}>+ 4 more schools across the roster</div>
-    </PreviewFrame>
-  );
-}
-
-function ActivityPreview() {
-  return (
-    <PreviewFrame accent="#4b5563" label="RECENT RECRUITING ACTIVITY">
-      {PD.activity.map((item, i) => (
-        <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "7px 0", borderBottom: i < PD.activity.length - 1 ? "1px solid #1a2535" : "none" }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: item.color, marginTop: 5, flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: "#e8edf3" }}>{item.name}</span>
-              <span style={{ fontSize: 9.5, fontWeight: 700, color: item.color, background: `${item.color}18`, border: `1px solid ${item.color}40`, borderRadius: 4, padding: "1px 5px" }}>{item.type}</span>
-            </div>
-            <div style={{ fontSize: 10.5, color: "#4b5563", marginTop: 2 }}>{item.college} · {item.daysAgo} days ago</div>
-          </div>
-        </div>
-      ))}
-    </PreviewFrame>
-  );
-}
-
 function ToolsPreview() {
   return (
     <PreviewFrame accent="#34d399" label="COACH TOOLS">
@@ -491,7 +375,7 @@ const STEPS = [
     render: () => (
       <>
         <SummaryPreview />
-        <ExplainerCard label="Section 1 of 8" title="Program Recruiting Summary">
+        <ExplainerCard label="Section 1 of 4" title="Program Recruiting Summary">
           <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
             The Program Recruiting Summary on Coach HQ is designed to give a coach a single, fast
             read on what is happening across the program's recruiting activity.
@@ -525,7 +409,7 @@ const STEPS = [
     render: () => (
       <>
         <UpdatePreview />
-        <ExplainerCard label="Section 2 of 8" title="Coach Update">
+        <ExplainerCard label="Section 2 of 4" title="Coach Update">
           <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
             The Coach Update is designed to give the coach a clear narrative of what has actually
             happened across the program during a selected time period.
@@ -558,7 +442,7 @@ const STEPS = [
   },
   // ── STEP 4: Headline Metric Tiles ─────────────────────────────────────────
   {
-    nextLabel: "Players Heating Up",
+    nextLabel: "Invite Families",
     render: () => {
       const groups = [
         {
@@ -628,7 +512,7 @@ const STEPS = [
       return (
         <>
           <MetricTilesPreview />
-          <ExplainerCard label="Section 3 of 8" title="Headline Metrics">
+          <ExplainerCard label="Section 3 of 4" title="Headline Metrics">
             <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 18px" }}>
               The tile dashboard is the coach's at-a-glance recruiting command center. It pulls key
               signals from across the roster and turns them into a simple visual summary, helping the
@@ -683,89 +567,13 @@ const STEPS = [
       );
     },
   },
-  // ── STEP 5: Players Heating Up ────────────────────────────────────────────
-  {
-    nextLabel: "True Traction Board",
-    render: () => (
-      <>
-        <HeatingUpPreview />
-        <ExplainerCard label="Section 4 of 8" title="Players Heating Up">
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
-            This section surfaces athletes who are showing increasing momentum right now. These are
-            not necessarily the most recruited players on the roster. They are the ones whose activity
-            curve is trending upward most noticeably in the recent period.
-          </p>
-          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
-            Spot momentum shifts early so you can follow up or encourage athletes before the window shifts.
-          </p>
-        </ExplainerCard>
-      </>
-    ),
-  },
-  // ── STEP 6: True Traction Board ───────────────────────────────────────────
-  {
-    nextLabel: "Colleges Engaging",
-    render: () => (
-      <>
-        <TractionBoardPreview />
-        <ExplainerCard label="Section 5 of 8" title="True Traction Board">
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
-            Where Players Heating Up signals momentum, this section signals substance. These athletes
-            have consistent, documented contact from one or more college programs. This is the board
-            coaches want to see grow over the course of the season.
-          </p>
-          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
-            See which athletes have moved from early noise into real, verified recruiting traction.
-          </p>
-        </ExplainerCard>
-      </>
-    ),
-  },
-  // ── STEP 7: Colleges Engaging ─────────────────────────────────────────────
-  {
-    nextLabel: "Recent Activity",
-    render: () => (
-      <>
-        <CollegesPreview />
-        <ExplainerCard label="Section 6 of 8" title="Colleges Engaging the Program">
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
-            This view shows which college programs are actively engaging your roster and how many
-            athletes each school is connected to. It helps you understand the breadth of college
-            engagement across the program, not just for individual athletes.
-          </p>
-          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
-            See which schools are most active across the roster and identify where program-wide interest is growing.
-          </p>
-        </ExplainerCard>
-      </>
-    ),
-  },
-  // ── STEP 8: Recent Recruiting Activity ────────────────────────────────────
-  {
-    nextLabel: "Invite Families",
-    render: () => (
-      <>
-        <ActivityPreview />
-        <ExplainerCard label="Section 7 of 8" title="Recent Recruiting Activity">
-          <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
-            This is the supporting evidence layer behind the broader program story. Every event
-            athletes and families log across the roster appears here, giving you a running view of
-            what is happening and where the activity is coming from.
-          </p>
-          <p style={{ fontSize: 12.5, color: "#64748b", lineHeight: 1.6, margin: 0, paddingLeft: 10, borderLeft: "2px solid rgba(232,160,32,0.5)" }}>
-            Connect the summary-level view to the ground-level activity that drives it.
-          </p>
-        </ExplainerCard>
-      </>
-    ),
-  },
-  // ── STEP 9: Invite Parents / Tools ────────────────────────────────────────
+  // ── STEP 5: Invite Parents / Tools ────────────────────────────────────────
   {
     nextLabel: "One More Thing",
     render: () => (
       <>
         <ToolsPreview />
-        <ExplainerCard label="Section 8 of 8" title="Invite Families and Manage Your Account">
+        <ExplainerCard label="Section 4 of 4" title="Invite Families and Manage Your Account">
           <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>
             These tools help you share the platform with families, manage account settings, and
             support communication across the roster. Inviting families is the most important action a
@@ -778,7 +586,7 @@ const STEPS = [
       </>
     ),
   },
-  // ── STEP 10: Giveback ─────────────────────────────────────────────────────
+  // ── STEP 6: Giveback ──────────────────────────────────────────────────────
   {
     nextLabel: "Explore Coach HQ",
     render: () => (
