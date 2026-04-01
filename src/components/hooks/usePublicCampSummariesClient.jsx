@@ -1,7 +1,7 @@
 // src/components/hooks/usePublicCampSummariesClient.jsx
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
-import { prodBase44 } from "../../api/healthCheckClient";
+import { lockedBase44 } from "../../api/lockedBase44Client";
 
 /**
  * Public/Demo camp summaries (no athlete required).
@@ -143,7 +143,7 @@ async function fetchPublicCampSummaries({
   const sportIds = uniq(filtered.map((c) => normId(c?.sport_id)).filter(Boolean));
 
   const [schools, sports] = await Promise.all([
-    fetchByIds(prodBase44.entities.School, schoolIds),
+    fetchByIds(lockedBase44.entities.School, schoolIds),
     fetchByIds(base44.entities.Sport, sportIds),
   ]);
 

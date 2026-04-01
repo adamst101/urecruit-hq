@@ -1,7 +1,7 @@
 // src/components/hooks/useCampSummariesClient.jsx
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "../../api/base44Client";
-import { prodBase44 } from "../../api/healthCheckClient";
+import { lockedBase44 } from "../../api/lockedBase44Client";
 import { ensureSchoolMap, schoolMapGet } from "./useSchoolIdentity.jsx";
 
 // Module-level in-flight deduplication: if the same athlete's intents are already
@@ -192,7 +192,7 @@ async function fetchEntityMap(entityName, ids) {
   // School entity doesn't support $in filter on id — use the shared module-level
   // map from useSchoolIdentity which loads all schools in one unrestricted call.
   if (entityName === "School") {
-    const SchoolEntity = prodBase44.entities?.School;
+    const SchoolEntity = lockedBase44.entities?.School;
     if (SchoolEntity?.filter) await ensureSchoolMap(SchoolEntity);
     for (const id of cleanIds) {
       const record = schoolMapGet(id);
