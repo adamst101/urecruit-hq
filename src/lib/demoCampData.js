@@ -11,7 +11,7 @@
 // display and still renders correctly (just without a logo).
 
 import { ensureSchoolMap, schoolMapFind } from "../components/hooks/useSchoolIdentity.jsx";
-import { base44 } from "../api/base44Client";
+import { prodBase44 } from "../api/healthCheckClient";
 
 function normId(x) {
   if (!x) return null;
@@ -783,7 +783,7 @@ export async function loadDemoCamps() {
   if (_demoCampsCache) return _demoCampsCache;
 
   // Populate the shared school map (no-op if already loaded)
-  const School = base44?.entities?.School;
+  const School = prodBase44?.entities?.School;
   if (School) {
     try {
       await ensureSchoolMap(School);

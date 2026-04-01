@@ -2,7 +2,7 @@
 // Resolves the best available school identity (logo, name, division) for a set of Camp rows.
 
 import { useEffect, useState } from "react";
-import { base44 } from "../../api/base44Client";
+import { prodBase44 } from "../../api/healthCheckClient";
 
 const BAD_TEXT = new Set(["unknown", "n/a", "na", "none", "null", "undefined", "-", ""]);
 
@@ -254,7 +254,7 @@ export function useSchoolIdentity(campRows) {
     async function fetchSchools() {
       setLoading(true);
       try {
-        const School = base44?.entities?.School;
+        const School = prodBase44?.entities?.School;
         if (!School?.filter) return;
 
         const fetched = await fetchSchoolsByIds(School, ids);
