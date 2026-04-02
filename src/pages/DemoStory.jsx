@@ -266,8 +266,8 @@ function ProgressDots({ step }) {
           }}
         />
       ))}
-      <span style={{ fontSize: 11, color: "#4b5563", marginLeft: 4 }}>
-        {step + 1} of {TOTAL_STEPS}
+      <span style={{ fontSize: 12, color: "#64748b", marginLeft: 6, fontWeight: 500 }}>
+        2-min intro · {step + 1} of {TOTAL_STEPS}
       </span>
     </div>
   );
@@ -360,7 +360,7 @@ export default function DemoStory() {
               gap: 5,
             }}
           >
-            Skip to Athlete HQ
+            Skip intro
             <ArrowRight style={{ width: 11, height: 11 }} />
           </button>
         </div>

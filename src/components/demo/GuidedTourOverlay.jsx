@@ -11,7 +11,7 @@
 
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { X, ArrowRight } from "lucide-react";
+import { X, ArrowRight, Sparkles } from "lucide-react";
 
 // ── Tour sequence ──────────────────────────────────────────────────────────────
 const TOUR_STEPS = [
@@ -32,7 +32,7 @@ const TOUR_STEPS = [
     title: "The Playbook",
     message:
       "Before diving into camps, Marcus's parents spent time here. The Playbook broke down how recruiting actually works — what happens when, and what families can control.",
-    hint: "Take a minute to read the Recruiting Timeline and Building Your Camp Strategy.",
+    hint: "Glance at the Recruiting Timeline — tap next when you're ready.",
     nextKey: "discover",
     nextLabel: "Discover Camps",
     nextPath: "/Discover",
@@ -112,6 +112,7 @@ export default function GuidedTourOverlay({ tourKey }) {
   const nav = useNavigate();
   const loc = useLocation();
   const [dismissed, setDismissed] = useState(false);
+  const [showEndCard, setShowEndCard] = useState(false);
 
   const tourParam = new URLSearchParams(loc.search).get("tour");
   if (tourParam !== tourKey) return null;
@@ -123,7 +124,8 @@ export default function GuidedTourOverlay({ tourKey }) {
     if (step.nextKey) {
       nav(`${step.nextPath}?demo=user&tour=${step.nextKey}&src=demo_story`);
     } else {
-      nav("/Workspace?demo=user&src=demo_story");
+      // Last step — show conversion card instead of silent Workspace drop
+      setShowEndCard(true);
     }
   }
 
@@ -172,6 +174,160 @@ export default function GuidedTourOverlay({ tourKey }) {
           Resume Tour: {step.stepNum} of {TOTAL}
           <ArrowRight style={{ width: 13, height: 13 }} />
         </button>
+      </>
+    );
+  }
+
+  // ── End-of-tour conversion card ──────────────────────────────────────────────
+  if (showEndCard) {
+    return (
+      <>
+        <style>{`
+          @media (max-width: 520px) {
+            .dt-end-card {
+              top: auto !important;
+              bottom: 0 !important;
+              right: 0 !important;
+              left: 0 !important;
+              width: 100% !important;
+              max-width: 100% !important;
+              border-radius: 20px 20px 0 0 !important;
+              padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+            }
+            .dt-end-signup-btn {
+              width: 100% !important;
+              justify-content: center !important;
+              padding: 15px 18px !important;
+              font-size: 15px !important;
+            }
+            .dt-end-explore-btn {
+              width: 100% !important;
+              text-align: center !important;
+              padding: 10px 0 !important;
+            }
+          }
+        `}</style>
+        <div
+          className="dt-end-card"
+          style={{
+            position: "fixed",
+            top: TOP_OFFSET,
+            right: 20,
+            zIndex: 50000,
+            width: 348,
+            maxWidth: "calc(100vw - 40px)",
+            background: C.bg,
+            border: `1.5px solid ${C.border}`,
+            borderRadius: 16,
+            boxShadow: C.shadow,
+            fontFamily: "'DM Sans', Inter, system-ui, sans-serif",
+            overflow: "hidden",
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "11px 16px 10px",
+              borderBottom: `1px solid ${C.headerBorder}`,
+              background: C.headerBg,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Sparkles style={{ width: 13, height: 13, color: C.pipActive }} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.pipActive, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                Tour Complete
+              </span>
+            </div>
+            {/* Completed pip strip */}
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              {TOUR_STEPS.map((s) => (
+                <div
+                  key={s.key}
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 3,
+                    background: C.pipDone,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Body */}
+          <div style={{ padding: "20px 18px 22px" }}>
+            <div
+              style={{
+                fontSize: 17,
+                fontWeight: 700,
+                color: C.title,
+                marginBottom: 10,
+                lineHeight: 1.25,
+              }}
+            >
+              Ready to start your family's workspace?
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: C.body,
+                lineHeight: 1.6,
+                marginBottom: 20,
+              }}
+            >
+              Create your free account to begin tracking camps, interest, and recruiting activity.
+            </div>
+
+            {/* Primary CTA */}
+            <button
+              className="dt-end-signup-btn"
+              onClick={() => nav("/Signup?src=demo_tour_end")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                width: "100%",
+                background: "#e8a020",
+                color: "#0a0e1a",
+                border: "none",
+                borderRadius: 9,
+                padding: "13px 18px",
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                boxShadow: "0 2px 14px rgba(232,160,32,0.4)",
+                marginBottom: 10,
+              }}
+            >
+              Start Your Free Account
+              <ArrowRight style={{ width: 15, height: 15 }} />
+            </button>
+
+            {/* Secondary: keep exploring */}
+            <button
+              className="dt-end-explore-btn"
+              onClick={() => nav("/Workspace?demo=user&src=demo_tour_end_explore")}
+              style={{
+                display: "block",
+                width: "100%",
+                background: "none",
+                border: "none",
+                color: C.skip,
+                fontSize: 12,
+                cursor: "pointer",
+                padding: "4px 0",
+                fontFamily: "inherit",
+                textAlign: "center",
+              }}
+            >
+              Keep Exploring Demo
+            </button>
+          </div>
+        </div>
       </>
     );
   }
@@ -240,17 +396,6 @@ export default function GuidedTourOverlay({ tourKey }) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                color: C.label,
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-              }}
-            >
-              Marcus's Journey
-            </span>
             {/* Step pip strip */}
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               {TOUR_STEPS.map((s) => (
@@ -271,8 +416,15 @@ export default function GuidedTourOverlay({ tourKey }) {
                 />
               ))}
             </div>
-            <span style={{ fontSize: 10, color: C.label, fontWeight: 500 }}>
-              {step.stepNum} of {TOTAL}
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                color: C.label,
+                letterSpacing: "0.01em",
+              }}
+            >
+              Quick tour · {step.stepNum} of {TOTAL}
             </span>
           </div>
           <button
@@ -386,7 +538,7 @@ export default function GuidedTourOverlay({ tourKey }) {
                 boxShadow: "0 2px 10px rgba(232,160,32,0.35)",
               }}
             >
-              {step.nextKey ? `See: ${step.nextLabel}` : "Explore Freely"}
+              {step.nextKey ? `See: ${step.nextLabel}` : "Finish Tour"}
               <ArrowRight style={{ width: 14, height: 14 }} />
             </button>
           </div>
