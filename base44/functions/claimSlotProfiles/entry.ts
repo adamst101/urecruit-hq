@@ -344,7 +344,9 @@ Deno.serve(async (req) => {
   } catch (e) {
     console.error("claimSlotProfiles unhandled error:", (e as Error).message);
     return Response.json({
-      ok: false, error: (e as Error).message,
+      ok: false,
+      functionVersion: "claimSlotProfiles_v_livecheck_1",
+      error: (e as Error).message,
       updated, errors, athleteProfileIds,
       athleteProfileReverted, schoolPreferenceCleared, rosterReverted,
     }, { status: 500 });
@@ -352,6 +354,7 @@ Deno.serve(async (req) => {
 
   return Response.json({
     ok: true,
+    functionVersion: "claimSlotProfiles_v_livecheck_1",
     updated,
     errors,
     athleteProfileIds,

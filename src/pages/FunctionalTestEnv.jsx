@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminRoute from "../components/auth/AdminRoute";
 import { base44 } from "../api/base44Client";
+import { appParams } from "../lib/app-params";
 import {
   SEED_VERSION,
   SEED_PREFIX,
@@ -319,7 +320,9 @@ export default function FunctionalTestEnv() {
     setLoading(true);
     addLog(`Releasing slot "${slotKey}" — previousRealId=${previousRealId} athleteIds=[${knownAthleteIds.join(",")}]`);
     try {
-      const { updated, errors, athleteProfileReverted, schoolPreferenceCleared, rosterReverted } = await releaseSlot(base44, slotKey, previousRealId, knownAthleteIds);
+      const releaseResult = await releaseSlot(base44, slotKey, previousRealId, knownAthleteIds);
+      const { updated, errors, athleteProfileReverted, schoolPreferenceCleared, rosterReverted, _raw: releaseRaw } = releaseResult;
+      addLog(`[LIVECHECK] claimSlotProfiles raw: ${JSON.stringify(releaseRaw ?? releaseResult)}`);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
       if (updated > 0) {
         const detail = [
@@ -333,7 +336,9 @@ export default function FunctionalTestEnv() {
       }
       // Revoke the ft_seed entitlement so the account can no longer access Workspace
       if (previousRealId !== SLOT_MAP[slotKey]?.syntheticId) {
-        const { revoked } = await revokeTestEntitlement(base44, previousRealId);
+        const revokeResult = await revokeTestEntitlement(base44, previousRealId);
+        const { revoked, _raw: revokeRaw } = revokeResult;
+        addLog(`[LIVECHECK] revokeFtEntitlement raw: ${JSON.stringify(revokeRaw ?? revokeResult)}`);
         addLog(`Entitlement revoked (${revoked} record${revoked !== 1 ? "s" : ""} removed)`);
       }
       clearSavedMapping(slotKey);
@@ -578,6 +583,20 @@ export default function FunctionalTestEnv() {
                     <Badge label={verifyBadge.label} bg={verifyBadge.bg} color={verifyBadge.color} />
                   </div>
                 )}
+
+                <div style={styles.statusItem}>
+                  <div style={styles.statusLabel}>Functions Version</div>
+                  <div style={{ ...styles.statusValue, fontFamily: "monospace", fontSize: 11, color: appParams.functionsVersion === "prod" ? "#059669" : "#D97706" }}>
+                    {appParams.functionsVersion || "unknown"}
+                  </div>
+                </div>
+
+                <div style={styles.statusItem}>
+                  <div style={styles.statusLabel}>App ID</div>
+                  <div style={{ ...styles.statusValue, fontFamily: "monospace", fontSize: 11 }}>
+                    {appParams.appId || "unknown"}
+                  </div>
+                </div>
               </div>
 
               {/* Record counts row */}

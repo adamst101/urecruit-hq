@@ -138,9 +138,12 @@ Deno.serve(async (req) => {
 
   return Response.json({
     ok: true,
+    functionVersion: "revokeFtEntitlement_v_livecheck_1",
     revoked: deletedIds.length,
     accountId,
     deletedIds,
+    srIds,
+    dbIds,
     errors,
   });
 });

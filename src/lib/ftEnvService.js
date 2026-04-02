@@ -629,6 +629,7 @@ export async function claimSlot(base44, slotKey, realId, opts = {}) {
     };
 
     const res = await base44.functions.invoke("claimSlotProfiles", body);
+    console.log("[claimSlot] RAW claimSlotProfiles response:", JSON.stringify(res?.data ?? res));
     if (res?.data?.ok !== undefined) {
       const d = res.data;
       if (d.errors?.length) {
@@ -641,6 +642,7 @@ export async function claimSlot(base44, slotKey, realId, opts = {}) {
         athleteProfileReverted: d.athleteProfileReverted ?? null,
         schoolPreferenceCleared: d.schoolPreferenceCleared ?? null,
         rosterReverted: d.rosterReverted ?? null,
+        _raw: d,
       };
     }
   } catch (fnErr) {
@@ -796,12 +798,13 @@ export async function revokeTestEntitlement(base44, accountId) {
   // Client-side list() is permanently blind to those records.
   try {
     const res = await base44.functions.invoke("revokeFtEntitlement", { accountId });
+    console.log("[revokeTestEntitlement] RAW revokeFtEntitlement response:", JSON.stringify(res?.data ?? res));
     if (res?.data?.ok !== undefined) {
       const d = res.data;
       if (d.errors?.length) {
         d.errors.forEach(e => console.warn("[revokeTestEntitlement] server warning:", e));
       }
-      return { revoked: d.revoked ?? 0, errors: d.errors ?? [] };
+      return { revoked: d.revoked ?? 0, errors: d.errors ?? [], _raw: d };
     }
   } catch (fnErr) {
     console.warn("[revokeTestEntitlement] server function failed, falling back to client-side:", fnErr?.message);
