@@ -57,9 +57,9 @@ const FT_ATHLETES = [
   { _key: "athlete1", first_name: "Test", last_name: "Johnson",  athlete_name: "__hc_ft_Test Johnson",  account_id: "__hc_ft_family1", grad_year: 2026, sport_id: "football", position: "QB", active: true },
   { _key: "athlete2", first_name: "Test", last_name: "Johnson",  athlete_name: "__hc_ft_Test Johnson",  account_id: "__hc_ft_family1", grad_year: 2027, sport_id: "football", position: "WR", active: true },
   { _key: "athlete3", first_name: "Test", last_name: "Martinez", athlete_name: "__hc_ft_Test Martinez", account_id: "__hc_ft_family2", grad_year: 2026, sport_id: "football", position: "DB", active: true, home_city: "Tampa", home_state: "FL" },
-  { _key: "athlete4", first_name: "Test", last_name: "Williams", athlete_name: "__hc_ft_Test Williams", account_id: "__hc_ft_family3", grad_year: 2025, sport_id: "football", position: "LB", active: true },
-  { _key: "athlete5", first_name: "Test", last_name: "Davis",    athlete_name: "__hc_ft_Test Davis",    account_id: "__hc_ft_family4", grad_year: 2026, sport_id: "football", position: "OL", active: true },
-  { _key: "athlete6", first_name: "Test", last_name: "Brown",    athlete_name: "__hc_ft_Test Brown",    account_id: "__hc_ft_family5", grad_year: 2027, sport_id: "football", position: "DL", active: true },
+  { _key: "athlete4", first_name: "Test", last_name: "Williams", athlete_name: "__hc_ft_Test Williams", account_id: "__hc_ft_family3", grad_year: 2026, sport_id: "football", position: "RB", active: true },
+  { _key: "athlete5", first_name: "Test", last_name: "Davis",    athlete_name: "__hc_ft_Test Davis",    account_id: "__hc_ft_family4", grad_year: 2027, sport_id: "football", position: "LB", active: true },
+  { _key: "athlete6", first_name: "Test", last_name: "Brown",    athlete_name: "__hc_ft_Test Brown",    account_id: "__hc_ft_family5", grad_year: 2028, sport_id: "football", position: "OL", active: true },
 ];
 
 const FT_ROSTERS = [
