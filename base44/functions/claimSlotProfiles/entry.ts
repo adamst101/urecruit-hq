@@ -175,7 +175,7 @@ Deno.serve(async (req) => {
 
   let updated = 0;
   let athleteProfileReverted = 0;
-  let schoolPreferenceCleared = 0;
+  let schoolPreferenceUpdated = 0;  // 1 = bridge written (claim) or cleared (release)
   let rosterReverted = 0;
   let lookupMethod = "n/a";
   const errors: string[] = [];
@@ -212,20 +212,38 @@ Deno.serve(async (req) => {
 
           console.log(`[claimSlotProfiles] release — previousRealId=${previousRealId} clientIds=${JSON.stringify(clientIds)} bridgeId=${bridgeAthleteId} idsToRevert=${JSON.stringify(idsToRevert)}`);
 
+          // ── SchoolPreference bridge clear — canonical release operation ───────
+          // This is the only step that determines release success. The bridge
+          // clear is what getMyAthleteProfiles Step 3 checks; once it is gone
+          // the real account can no longer resolve the athlete profile.
+          if (prefId) {
+            try {
+              const { cleared } = await clearAthleteLink(sr, previousRealId);
+              schoolPreferenceUpdated += cleared;
+              updated += cleared;
+            } catch (e) {
+              errors.push(`clearAthleteLink(${previousRealId}) failed: ${(e as Error).message}`);
+            }
+          } else {
+            errors.push(`No SchoolPreference bridge found for ${previousRealId} — slot may already be released`);
+          }
+
+          // ── Best-effort: revert AthleteProfile/CoachRoster account_id ────────
+          // Base44's permission model blocks updates to records owned by a different
+          // account_id even from admin callers, so these will often fail with "not found".
+          // They are NOT required for workspace isolation — all workspace data is
+          // filtered by athlete_id, not account_id. Failures are logged as warnings.
           if (idsToRevert.length > 0) {
             for (const aid of idsToRevert) {
               athleteProfileIds.push(aid);
 
-              // Revert AthleteProfile.account_id → synthetic (caller admin auth)
               try {
                 await db.entities.AthleteProfile.update(aid, { account_id: realId });
                 athleteProfileReverted++;
-                updated++;
               } catch (e) {
-                errors.push(`AthleteProfile ${aid} revert failed: ${(e as Error).message}`);
+                errors.push(`AthleteProfile ${aid} revert failed [non-critical]: ${(e as Error).message}`);
               }
 
-              // Revert CoachRoster.account_id → synthetic (caller admin auth)
               try {
                 const rosters = await db.entities.CoachRoster.filter({ athlete_id: aid });
                 const rosterList = Array.isArray(rosters) ? rosters : [];
@@ -235,29 +253,14 @@ Deno.serve(async (req) => {
                   try {
                     await db.entities.CoachRoster.update(rid, { account_id: realId });
                     rosterReverted++;
-                    updated++;
                   } catch (e) {
-                    errors.push(`CoachRoster ${rid} revert failed: ${(e as Error).message}`);
+                    errors.push(`CoachRoster ${rid} revert failed [non-critical]: ${(e as Error).message}`);
                   }
                 }
               } catch (e) {
-                errors.push(`CoachRoster filter failed for athlete ${aid}: ${(e as Error).message}`);
+                errors.push(`CoachRoster filter failed for athlete ${aid} [non-critical]: ${(e as Error).message}`);
               }
             }
-          } else {
-            errors.push(`No athlete IDs available for release (previousRealId=${previousRealId}) — AthleteProfile not reverted`);
-          }
-
-          // Clear SchoolPreference bridge (asServiceRole — it owns this record)
-          if (prefId) {
-            try {
-              const { cleared } = await clearAthleteLink(sr, previousRealId);
-              schoolPreferenceCleared += cleared;
-            } catch (e) {
-              errors.push(`clearAthleteLink(${previousRealId}) failed: ${(e as Error).message}`);
-            }
-          } else {
-            console.log(`[claimSlotProfiles] no SchoolPreference for ${previousRealId} — already cleared or never written`);
           }
         }
 
@@ -298,7 +301,7 @@ Deno.serve(async (req) => {
             ],
             athleteProfileIds: [],
             athleteProfileReverted: 0,
-            schoolPreferenceCleared: 0,
+            schoolPreferenceUpdated: 0,
             rosterReverted: 0,
           });
         }
@@ -369,19 +372,20 @@ Deno.serve(async (req) => {
           }
 
           athleteProfileIds.push(athleteId);
-          console.log(`[claimSlotProfiles] claim updating athleteId=${athleteId} account_id -> ${realId} (method=${lookupMethod})`);
 
-          // Update AthleteProfile.account_id (caller admin auth)
+          // Best-effort: update AthleteProfile.account_id.
+          // Base44 blocks updates to records owned by a different account_id even
+          // from admin callers ("not found"). This is NOT required for workspace
+          // access — getMyAthleteProfiles resolves the athlete via SchoolPreference
+          // bridge (Step 3), and all workspace filters use athlete_id not account_id.
           try {
             await db.entities.AthleteProfile.update(athleteId, { account_id: realId });
             athleteProfileReverted++;
-            updated++;
           } catch (e) {
-            errors.push(`AthleteProfile ${athleteId} update failed (${lookupMethod}): ${(e as Error).message}`);
-            // Non-fatal — SchoolPreference link is the canonical mapping
+            errors.push(`AthleteProfile ${athleteId} update failed [non-critical]: ${(e as Error).message}`);
           }
 
-          // Update CoachRoster records (caller admin auth)
+          // Best-effort: update CoachRoster.account_id (same permission constraint).
           try {
             const rosters = await db.entities.CoachRoster.filter({ athlete_id: athleteId });
             const rosterList = Array.isArray(rosters) ? rosters : [];
@@ -391,22 +395,25 @@ Deno.serve(async (req) => {
               try {
                 await db.entities.CoachRoster.update(rid, { account_id: realId });
                 rosterReverted++;
-                updated++;
               } catch (e) {
-                errors.push(`CoachRoster ${rid} update failed: ${(e as Error).message}`);
+                errors.push(`CoachRoster ${rid} update failed [non-critical]: ${(e as Error).message}`);
               }
             }
           } catch (e) {
-            errors.push(`CoachRoster filter failed for athlete ${athleteId}: ${(e as Error).message}`);
+            errors.push(`CoachRoster filter failed for athlete ${athleteId} [non-critical]: ${(e as Error).message}`);
           }
         }
 
-        // Write SchoolPreference bridge (asServiceRole — must be asServiceRole so
-        // getMyAthleteProfiles can read it back via asServiceRole in Step 3)
+        // ── SchoolPreference bridge write — canonical claim operation ─────────
+        // This is what determines claim success. getMyAthleteProfiles Step 3
+        // reads SchoolPreference { account_id: realId, athlete_id: athleteId }
+        // written via asServiceRole. Once this is written the real account can
+        // resolve and access the athlete profile even if account_id is unchanged.
         if (athleteProfileIds.length > 0) {
           try {
             await writeAthleteLink(sr, realId, athleteProfileIds[0]);
-            schoolPreferenceCleared++;  // reusing field as "schoolPref written" count
+            schoolPreferenceUpdated++;
+            updated++;
           } catch (e) {
             errors.push(`writeAthleteLink(${realId}) failed: ${(e as Error).message}`);
           }
@@ -444,7 +451,7 @@ Deno.serve(async (req) => {
       error: (e as Error).message,
       lookupMethod,
       updated, errors, athleteProfileIds,
-      athleteProfileReverted, schoolPreferenceCleared, rosterReverted,
+      athleteProfileReverted, schoolPreferenceUpdated, rosterReverted,
     }, { status: 500 });
   }
 
@@ -456,7 +463,7 @@ Deno.serve(async (req) => {
     errors,
     athleteProfileIds,
     athleteProfileReverted,
-    schoolPreferenceCleared,
+    schoolPreferenceUpdated,
     rosterReverted,
   });
 });

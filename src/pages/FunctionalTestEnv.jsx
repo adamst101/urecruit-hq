@@ -283,20 +283,20 @@ export default function FunctionalTestEnv() {
       const syntheticId = SLOT_MAP[slotKey]?.syntheticId;
       addLog(`Found account ${user.id} (${user.email}) — linking slot "${slotKey}" syntheticId=${syntheticId} athleteIds=[${knownAthleteIds.join(",")}]`);
       const linkResult = await claimSlot(base44, slotKey, user.id, { knownAthleteProfileIds: knownAthleteIds });
-      const { updated, errors, athleteProfileReverted, schoolPreferenceCleared, rosterReverted, _raw: linkRaw } = linkResult;
+      const { updated, errors, athleteProfileReverted, schoolPreferenceUpdated, rosterReverted, _raw: linkRaw } = linkResult;
       const lookupMethod = linkRaw?.lookupMethod ?? "unknown";
       addLog(`[LIVECHECK] claimSlotProfiles (claim) raw: ${JSON.stringify(linkRaw ?? linkResult)}`);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
       if (updated > 0) {
         const detail = [
           `method=${lookupMethod}`,
+          schoolPreferenceUpdated != null ? `bridge=${schoolPreferenceUpdated}` : null,
           athleteProfileReverted != null ? `athlete=${athleteProfileReverted}` : null,
-          schoolPreferenceCleared != null ? `schoolPref=${schoolPreferenceCleared}` : null,
           rosterReverted != null ? `roster=${rosterReverted}` : null,
         ].filter(Boolean).join(" ");
-        addLog(`Slot "${slotKey}" linked to ${user.email} (${updated} records updated — ${detail})`);
+        addLog(`Slot "${slotKey}" linked to ${user.email} (${updated} records — ${detail})`);
       } else {
-        addLog(`Link FAILED for "${slotKey}" — 0 records updated (method=${lookupMethod})${errors.length ? " (see WARNs)" : ""}`);
+        addLog(`Link FAILED for "${slotKey}" — 0 records (method=${lookupMethod})${errors.length ? " (see WARNs)" : ""}`);
       }
       // Grant entitlement so the account can reach Workspace
       const { granted, seasonYear, reason } = await grantTestEntitlement(base44, user.id);
@@ -336,18 +336,18 @@ export default function FunctionalTestEnv() {
     addLog(`Releasing slot "${slotKey}" — previousRealId=${previousRealId} athleteIds=[${knownAthleteIds.join(",")}]`);
     try {
       const releaseResult = await releaseSlot(base44, slotKey, previousRealId, knownAthleteIds);
-      const { updated, errors, athleteProfileReverted, schoolPreferenceCleared, rosterReverted, _raw: releaseRaw } = releaseResult;
+      const { updated, errors, athleteProfileReverted, schoolPreferenceUpdated, rosterReverted, _raw: releaseRaw } = releaseResult;
       addLog(`[LIVECHECK] claimSlotProfiles raw: ${JSON.stringify(releaseRaw ?? releaseResult)}`);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
       if (updated > 0) {
         const detail = [
+          schoolPreferenceUpdated != null ? `bridge=${schoolPreferenceUpdated}` : null,
           athleteProfileReverted != null ? `athlete=${athleteProfileReverted}` : null,
-          schoolPreferenceCleared != null ? `schoolPref=${schoolPreferenceCleared}` : null,
           rosterReverted != null ? `roster=${rosterReverted}` : null,
         ].filter(Boolean).join(" ");
-        addLog(`Slot "${slotKey}" released — ${updated} records reverted${detail ? ` (${detail})` : ""}`);
+        addLog(`Slot "${slotKey}" released (${detail})`);
       } else {
-        addLog(`Slot "${slotKey}" release: 0 records reverted${errors.length ? " — see WARNs above" : ""}`);
+        addLog(`Slot "${slotKey}" release FAILED — SchoolPreference bridge not cleared${errors.length ? " — see WARNs above" : ""}`);
       }
       // Revoke the ft_seed entitlement so the account can no longer access Workspace
       if (previousRealId !== SLOT_MAP[slotKey]?.syntheticId) {
@@ -414,10 +414,16 @@ export default function FunctionalTestEnv() {
             .filter(Boolean);
       if (records.length === 0) return { status: "not_seeded", currentId: null, athleteProfileIds: [] };
       const primary = records[0];
-      const isClaimed = primary.account_id !== slot.syntheticId;
+      // SchoolPreference bridge is the canonical claim indicator — AthleteProfile.account_id
+      // may remain synthetic even after a successful claim (Base44 permission model blocks
+      // account_id updates on records owned by a different account). Use savedMapping
+      // (written by handleLinkByEmail on success) as primary source of truth; fall back to
+      // account_id check for backwards compatibility with slots claimed before this change.
+      const mapping = getSavedMappings()[slotKey];
+      const isClaimed = mapping != null || primary.account_id !== slot.syntheticId;
       return {
         status: isClaimed ? "claimed" : "unclaimed",
-        currentId: primary.account_id,
+        currentId: mapping?.accountId ?? primary.account_id,
         athleteProfileIds: records.map(r => r.id).filter(Boolean),
       };
     } else {

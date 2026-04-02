@@ -640,7 +640,7 @@ export async function claimSlot(base44, slotKey, realId, opts = {}) {
         errors: d.errors ?? [],
         athleteProfileIds: d.athleteProfileIds ?? [],
         athleteProfileReverted: d.athleteProfileReverted ?? null,
-        schoolPreferenceCleared: d.schoolPreferenceCleared ?? null,
+        schoolPreferenceUpdated: d.schoolPreferenceUpdated ?? null,
         rosterReverted: d.rosterReverted ?? null,
         _raw: d,
       };
