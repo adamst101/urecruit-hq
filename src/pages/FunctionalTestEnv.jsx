@@ -319,12 +319,17 @@ export default function FunctionalTestEnv() {
     setLoading(true);
     addLog(`Releasing slot "${slotKey}" — previousRealId=${previousRealId} athleteIds=[${knownAthleteIds.join(",")}]`);
     try {
-      const { updated, errors } = await releaseSlot(base44, slotKey, previousRealId, knownAthleteIds);
+      const { updated, errors, athleteProfileReverted, schoolPreferenceCleared, rosterReverted } = await releaseSlot(base44, slotKey, previousRealId, knownAthleteIds);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
       if (updated > 0) {
-        addLog(`Slot "${slotKey}" released (${updated} records reverted)`);
+        const detail = [
+          athleteProfileReverted != null ? `athlete=${athleteProfileReverted}` : null,
+          schoolPreferenceCleared != null ? `schoolPref=${schoolPreferenceCleared}` : null,
+          rosterReverted != null ? `roster=${rosterReverted}` : null,
+        ].filter(Boolean).join(" ");
+        addLog(`Slot "${slotKey}" released — ${updated} records reverted${detail ? ` (${detail})` : ""}`);
       } else {
-        addLog(`Slot "${slotKey}" release: 0 records reverted — SchoolPreference link may still be cleared, check badge after refresh`);
+        addLog(`Slot "${slotKey}" release: 0 records reverted${errors.length ? " — see WARNs above" : ""}`);
       }
       // Revoke the ft_seed entitlement so the account can no longer access Workspace
       if (previousRealId !== SLOT_MAP[slotKey]?.syntheticId) {

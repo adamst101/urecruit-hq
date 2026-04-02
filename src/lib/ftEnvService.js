@@ -631,13 +631,17 @@ export async function claimSlot(base44, slotKey, realId, opts = {}) {
     const res = await base44.functions.invoke("claimSlotProfiles", body);
     if (res?.data?.ok !== undefined) {
       const d = res.data;
-      if (d.athleteProfileIds?.length) {
-        console.log("[claimSlot] athlete profile IDs found by server:", d.athleteProfileIds);
-      }
       if (d.errors?.length) {
         d.errors.forEach(e => console.warn("[claimSlot] server warning:", e));
       }
-      return { updated: d.updated ?? 0, errors: d.errors ?? [], athleteProfileIds: d.athleteProfileIds ?? [] };
+      return {
+        updated: d.updated ?? 0,
+        errors: d.errors ?? [],
+        athleteProfileIds: d.athleteProfileIds ?? [],
+        athleteProfileReverted: d.athleteProfileReverted ?? null,
+        schoolPreferenceCleared: d.schoolPreferenceCleared ?? null,
+        rosterReverted: d.rosterReverted ?? null,
+      };
     }
   } catch (fnErr) {
     console.warn("[claimSlot] server function failed, falling back to client-side:", fnErr?.message);

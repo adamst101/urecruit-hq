@@ -1,18 +1,20 @@
 // functions/revokeFtEntitlement/entry.ts
 // Admin-only server function to revoke ft_seed entitlements for an account.
 //
-// Mirror of grantFtEntitlement — uses asServiceRole for the same visibility
-// guarantee. base44.entities.Entitlement.list() (client-side) cannot see
-// records created by asServiceRole, so revocation MUST go through this function.
+// VISIBILITY MODEL — three-step discovery:
+//   Step 1: asServiceRole.filter()  — finds entitlements created via grantFtEntitlement
+//           (asServiceRole-created, visible to asServiceRole)
+//   Step 2: asServiceRole.list()    — list-scan fallback for asServiceRole-created records
+//           that may not appear in filter results
+//   Step 3: base44.entities.Entitlement.list() (caller admin auth) — finds entitlements
+//           created via the client-side fallback in grantTestEntitlement, which are
+//           NOT visible to asServiceRole at all
 //
-// Accepts { accountId } — the account whose ft_seed entitlements to remove.
-// Uses two-step discovery:
-//   Step 1: asServiceRole.filter({ account_id, source: "ft_seed", status: "active" })
-//   Step 2: asServiceRole.list() + in-process filter (fallback for records that
-//           may have been created via client-side entity.create(), which are NOT
-//           visible to asServiceRole.filter())
+// Deletion uses the same auth context that found the record:
+//   asServiceRole-found → asServiceRole.delete()
+//   admin-auth-found    → base44.entities.delete() with asServiceRole fallback
 //
-// Returns { ok, revoked, accountId, errors }.
+// Returns { ok, revoked, accountId, deletedIds, errors }.
 
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
 
@@ -24,84 +26,121 @@ const ADMIN_EMAILS = [
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
 
-  // Require admin
   const caller = await base44.auth.me().catch(() => null);
-  if (!caller) {
-    return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
-  }
+  if (!caller) return Response.json({ ok: false, error: "Not authenticated" }, { status: 401 });
   const isAdmin = caller.role === "admin" || ADMIN_EMAILS.includes(caller.email);
-  if (!isAdmin) {
-    return Response.json({ ok: false, error: "Admin only" }, { status: 403 });
-  }
+  if (!isAdmin) return Response.json({ ok: false, error: "Admin only" }, { status: 403 });
 
   let body: { accountId?: string } = {};
   try { body = await req.json(); } catch { /* no body */ }
 
   const { accountId } = body;
-  if (!accountId) {
-    return Response.json({ ok: false, error: "accountId required" }, { status: 400 });
-  }
+  if (!accountId) return Response.json({ ok: false, error: "accountId required" }, { status: 400 });
 
   const errors: string[] = [];
+  // Track which IDs came from which source so we delete with the right auth context
+  const srIds: string[]   = [];  // found via asServiceRole — delete with asServiceRole
+  const dbIds: string[]   = [];  // found via caller admin auth — delete with base44.entities
   const deletedIds: string[] = [];
 
+  const sr = base44.asServiceRole;
+
+  // ── Step 1: asServiceRole filter ────────────────────────────────────────────
   try {
-    // Step 1: filter by account_id + source — asServiceRole can find records it created
-    let rows: Record<string, unknown>[] = [];
-    try {
-      const res = await base44.asServiceRole.entities.Entitlement.filter({
-        account_id: accountId,
-        source: "ft_seed",
-        status: "active",
-      });
-      if (Array.isArray(res)) rows = res;
-    } catch (e) {
-      errors.push(`filter_failed: ${(e as Error).message}`);
-    }
-
-    // Step 2: list-scan fallback — catches records created via client-side entity.create()
-    // that are NOT visible to asServiceRole.filter()
-    if (rows.length === 0) {
-      try {
-        const all = await base44.asServiceRole.entities.Entitlement.list("-created_date", 500);
-        if (Array.isArray(all)) {
-          rows = all.filter(
-            (e: Record<string, unknown>) =>
-              e.account_id === accountId && e.source === "ft_seed" && e.status === "active"
-          );
-        }
-      } catch (e) {
-        errors.push(`list_scan_failed: ${(e as Error).message}`);
-      }
-    }
-
-    // Delete each found record
-    for (const row of rows) {
-      const id = (row as Record<string, unknown>).id as string | undefined;
-      if (!id) continue;
-      try {
-        await base44.asServiceRole.entities.Entitlement.delete(id);
-        deletedIds.push(id);
-      } catch (e) {
-        errors.push(`delete_failed(${id}): ${(e as Error).message}`);
-      }
-    }
-
-    console.log(
-      "revokeFtEntitlement — account:", accountId,
-      "revoked:", deletedIds.length,
-      "errors:", errors.length
-    );
-
-    return Response.json({
-      ok: true,
-      revoked: deletedIds.length,
-      accountId,
-      deletedIds,
-      errors,
+    const res = await sr.entities.Entitlement.filter({
+      account_id: accountId,
+      source: "ft_seed",
+      status: "active",
     });
-  } catch (err) {
-    console.error("revokeFtEntitlement error:", (err as Error).message);
-    return Response.json({ ok: false, error: (err as Error).message }, { status: 500 });
+    if (Array.isArray(res)) {
+      res.forEach((r: Record<string, unknown>) => {
+        const id = r.id as string | undefined;
+        if (id) srIds.push(id);
+      });
+    }
+  } catch (e) {
+    errors.push(`sr_filter_failed: ${(e as Error).message}`);
   }
+
+  // ── Step 2: asServiceRole list-scan ─────────────────────────────────────────
+  if (srIds.length === 0) {
+    try {
+      const all = await sr.entities.Entitlement.list("-created_date", 500);
+      if (Array.isArray(all)) {
+        all
+          .filter((e: Record<string, unknown>) =>
+            e.account_id === accountId && e.source === "ft_seed" && e.status === "active"
+          )
+          .forEach((e: Record<string, unknown>) => {
+            const id = e.id as string | undefined;
+            if (id && !srIds.includes(id)) srIds.push(id);
+          });
+      }
+    } catch (e) {
+      errors.push(`sr_list_scan_failed: ${(e as Error).message}`);
+    }
+  }
+
+  // ── Step 3: caller admin auth list (catches client-side-created entitlements) ─
+  // admin sessions can list() Entitlement; regular users cannot.
+  // Records created via grantTestEntitlement's client-side fallback are ONLY
+  // visible here — asServiceRole steps 1 and 2 will not find them.
+  try {
+    const all = await base44.entities.Entitlement.list("-created_date", 500);
+    if (Array.isArray(all)) {
+      all
+        .filter((e: Record<string, unknown>) =>
+          e.account_id === accountId && e.source === "ft_seed" && e.status === "active"
+        )
+        .forEach((e: Record<string, unknown>) => {
+          const id = e.id as string | undefined;
+          if (id && !srIds.includes(id) && !dbIds.includes(id)) dbIds.push(id);
+        });
+    }
+  } catch (e) {
+    errors.push(`db_list_scan_failed: ${(e as Error).message}`);
+  }
+
+  console.log(`[revokeFtEntitlement] account=${accountId} srIds=${JSON.stringify(srIds)} dbIds=${JSON.stringify(dbIds)}`);
+
+  // ── Delete — use the auth context that found the record ─────────────────────
+  for (const id of srIds) {
+    try {
+      await sr.entities.Entitlement.delete(id);
+      deletedIds.push(id);
+    } catch (e) {
+      // sr delete failed — try caller auth as fallback
+      try {
+        await base44.entities.Entitlement.delete(id);
+        deletedIds.push(id);
+      } catch (e2) {
+        errors.push(`delete_failed(${id}): sr=${(e as Error).message} db=${(e2 as Error).message}`);
+      }
+    }
+  }
+
+  for (const id of dbIds) {
+    try {
+      await base44.entities.Entitlement.delete(id);
+      deletedIds.push(id);
+    } catch (e) {
+      // db delete failed — try asServiceRole as fallback
+      try {
+        await sr.entities.Entitlement.delete(id);
+        deletedIds.push(id);
+      } catch (e2) {
+        errors.push(`delete_failed(${id}): db=${(e as Error).message} sr=${(e2 as Error).message}`);
+      }
+    }
+  }
+
+  console.log(`[revokeFtEntitlement] account=${accountId} revoked=${deletedIds.length} errors=${errors.length}`);
+
+  return Response.json({
+    ok: true,
+    revoked: deletedIds.length,
+    accountId,
+    deletedIds,
+    errors,
+  });
 });
