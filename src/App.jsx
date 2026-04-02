@@ -10,6 +10,7 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
+import DebugAthletePanel from '@/components/DebugAthletePanel';
 
 class AppErrorBoundary extends React.Component {
   constructor(props) {
@@ -105,6 +106,7 @@ function App() {
           </Router>
           <Toaster />
           <VisualEditAgent />
+          <DebugAthletePanel />
         </QueryClientProvider>
       </AuthProvider>
     </AppErrorBoundary>

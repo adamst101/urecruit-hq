@@ -15,10 +15,13 @@ import { useSeasonAccess } from "./hooks/useSeasonAccess.jsx";
  * - Resilient to Base44 id field variations (id/_id/uuid)
  *
  * Profile resolution:
- * - getMyAthleteProfiles (server function, asServiceRole) returns only profiles
- *   where account_id === caller's auth ID. That set is authoritative — no
- *   name-prefix heuristics needed. claimSlot() is responsible for writing the
- *   correct account_id at link time (via claimSlotProfiles server function).
+ * - getMyAthleteProfiles (server function) resolves via three steps:
+ *   1. asServiceRole.filter({ account_id }) — Stripe/payment-created profiles
+ *   2. asServiceRole list scan — same as above, filter-index-lag fallback
+ *   3. SchoolPreference.athlete_id bridge — admin-created FT seed profiles
+ *      (fetchMethod: "school_pref_link_caller_filter" or "school_pref_link_caller_list")
+ * - AthleteProfile.account_id may not equal the caller's id after FT linking.
+ *   The SchoolPreference bridge is the canonical claim indicator.
  */
 
 // ---------- helpers ----------
@@ -131,10 +134,27 @@ export function useAthleteIdentity({ athleteId } = {}) {
         serverErrors: serverMeta?.errors ?? [],
       };
 
-      // Debug logging
+      // Debug logging — set localStorage.__DEBUG_ATHLETE_IDENTITY__ = "1" to enable
       if (typeof window !== "undefined" && localStorage.getItem("__DEBUG_ATHLETE_IDENTITY__") === "1") {
-        console.log("[AthleteIdentity]", fullDiagnostics);
-        if (serverMeta) console.log("[AthleteIdentity] server _meta:", serverMeta);
+        console.group("[AthleteIdentity] resolution diagnostics");
+        console.log("authAccountId      :", accountId);
+        console.log("fetchMethod        :", fullDiagnostics.fetchMethod);
+        console.log("schoolPrefAthleteId:", fullDiagnostics.schoolPrefAthleteId);
+        console.log("finalProfileId     :", fullDiagnostics.finalProfileId);
+        console.log("profilesFound      :", fullDiagnostics.profilesFound);
+        console.log("resolutionMode     :", resolutionMode);
+        if (fullDiagnostics.missingProfileWarning) {
+          console.warn("[AthleteIdentity] ⚠ Linked bridge exists but athlete profile fetch failed — SchoolPreference.athlete_id points to a profile not visible in any auth context");
+        }
+        if (fullDiagnostics.schoolPrefAthleteId && fullDiagnostics.profilesFound === 0) {
+          console.warn("[AthleteIdentity] ⚠ Bridge athlete_id found but 0 profiles returned — check getMyAthleteProfiles Step 3 caller auth");
+        }
+        if (fullDiagnostics.serverErrors?.length) {
+          console.warn("[AthleteIdentity] server errors:", fullDiagnostics.serverErrors);
+        }
+        console.log("full diagnostics   :", fullDiagnostics);
+        if (serverMeta) console.log("server _meta       :", serverMeta);
+        console.groupEnd();
       }
 
       if (!chosen) {

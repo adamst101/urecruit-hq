@@ -33,7 +33,7 @@
 //
 // ════════════════════════════════════════════════════════════════════════════
 
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.21';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
 
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
@@ -133,28 +133,81 @@ Deno.serve(async (req) => {
         _meta.schoolPrefAthleteId = linkedAthleteId;
 
         if (linkedAthleteId) {
-          // Fetch the AthleteProfile by ID via full list scan.
-          // Direct filter by id is not reliably available via asServiceRole in all SDK versions.
+          // Three-attempt fetch for the linked AthleteProfile, from most to least reliable:
+          //
+          // Attempt 1 — asServiceRole list scan
+          //   Works for profiles created or updated via asServiceRole.
+          //   Seed profiles are admin-created and NOT visible here — expect empty.
+          //
+          // Attempt 2 — caller auth filter({ id })
+          //   AthleteProfile has permissive read in this app (recruiting platform —
+          //   coaches/admins must be able to see all athletes). Caller auth can
+          //   therefore read any profile by ID regardless of account_id ownership.
+          //   This is the path that resolves admin-created seed profiles.
+          //
+          // Attempt 3 — caller auth list scan
+          //   Fallback in case filter({ id }) is not supported by the SDK version.
+          //   Same permissive-read reasoning as Attempt 2.
+
+          // Attempt 1: asServiceRole list scan
           try {
-            const allProfiles = await sr.entities.AthleteProfile.list("-created_date", 2000);
-            if (Array.isArray(allProfiles)) {
-              const found = allProfiles.filter((r: any) =>
+            const allSr = await sr.entities.AthleteProfile.list("-created_date", 2000);
+            if (Array.isArray(allSr)) {
+              const found = allSr.filter((r: any) =>
                 String(r.id || r._id || r.uuid || "") === linkedAthleteId
               );
-
               if (found.length > 0) {
                 list = found;
                 _meta.method = "school_pref_link";
-                console.log(`[getMyAthleteProfiles] resolved via SchoolPreference: account=${accountId} -> athlete=${linkedAthleteId}`);
-              } else {
-                // Link exists but points to a non-existent profile
-                _meta.missingProfileWarning = true;
-                metaErrors.push(`SchoolPreference.athlete_id=${linkedAthleteId} points to a profile that does not exist in the list scan`);
-                console.warn(`[getMyAthleteProfiles] dangling SchoolPreference link: account=${accountId} -> athlete=${linkedAthleteId} (not found)`);
+                console.log(`[getMyAthleteProfiles] resolved via SchoolPreference (sr list): account=${accountId} -> athlete=${linkedAthleteId}`);
               }
             }
-          } catch (fetchErr) {
-            metaErrors.push(`SchoolPreference link fetch: ${(fetchErr as Error).message}`);
+          } catch (e) {
+            metaErrors.push(`sr list fetch: ${(e as Error).message}`);
+          }
+
+          // Attempt 2: caller auth filter by id (seed / admin-created profiles)
+          if (list.length === 0) {
+            try {
+              const byId = await base44.entities.AthleteProfile.filter({ id: linkedAthleteId })
+                .catch(() => null);
+              if (Array.isArray(byId) && byId.length > 0) {
+                list = byId;
+                _meta.method = "school_pref_link_caller_filter";
+                console.log(`[getMyAthleteProfiles] resolved via SchoolPreference (caller filter): account=${accountId} -> athlete=${linkedAthleteId}`);
+              }
+            } catch (e) {
+              metaErrors.push(`caller filter: ${(e as Error).message}`);
+            }
+          }
+
+          // Attempt 3: caller auth list scan
+          if (list.length === 0) {
+            try {
+              const allCaller = await base44.entities.AthleteProfile.list("-created_date", 2000)
+                .catch(() => null);
+              if (Array.isArray(allCaller)) {
+                const found = allCaller.filter((r: any) =>
+                  String(r.id || r._id || r.uuid || "") === linkedAthleteId
+                );
+                if (found.length > 0) {
+                  list = found;
+                  _meta.method = "school_pref_link_caller_list";
+                  console.log(`[getMyAthleteProfiles] resolved via SchoolPreference (caller list): account=${accountId} -> athlete=${linkedAthleteId}`);
+                }
+              }
+            } catch (e) {
+              metaErrors.push(`caller list scan: ${(e as Error).message}`);
+            }
+          }
+
+          if (list.length === 0) {
+            _meta.missingProfileWarning = true;
+            metaErrors.push(
+              `SchoolPreference.athlete_id=${linkedAthleteId} not found in sr list, ` +
+              `caller filter, or caller list — profile may have been deleted`
+            );
+            console.warn(`[getMyAthleteProfiles] dangling SchoolPreference link: account=${accountId} -> athlete=${linkedAthleteId} (not found in any auth context)`);
           }
         }
       } catch (prefErr) {
