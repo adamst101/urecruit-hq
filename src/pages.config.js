@@ -72,6 +72,7 @@ import CoachInviteLanding from './pages/CoachInviteLanding';
 import CoachSignup from './pages/CoachSignup';
 import CoachDemoStory from './pages/CoachDemoStory';
 import DemoStory from './pages/DemoStory';
+import DemoPreview from './pages/DemoPreview';
 import Discover from './pages/Discover';
 import FunctionalTestEnv from './pages/FunctionalTestEnv';
 import GenerateDemoCamps from './pages/GenerateDemoCamps';
@@ -130,6 +131,7 @@ export const PAGES = {
     "CoachSignup": CoachSignup,
     "CoachDemoStory": CoachDemoStory,
     "DemoStory": DemoStory,
+    "DemoPreview": DemoPreview,
     "Discover": Discover,
     "FunctionalTestEnv": FunctionalTestEnv,
     "GenerateDemoCamps": GenerateDemoCamps,

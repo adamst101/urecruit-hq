@@ -12,6 +12,7 @@ import BottomNav from "../components/navigation/BottomNav.jsx";
 import FilterSheet from "../components/filters/FilterSheet.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
 import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
+import DemoPreviewStrip from "../components/demo/DemoPreviewStrip.jsx";
 
 import { useSeasonAccess } from "../components/hooks/useSeasonAccess.jsx";
 import { trackEventOnce } from "../utils/trackEvent.js";
@@ -192,7 +193,8 @@ export default function Calendar() {
   const isUserDemo = useMemo(() => {
     try { return new URLSearchParams(loc.search).get("demo") === "user"; } catch { return false; }
   }, [loc.search]);
-  const isTourMode = new URLSearchParams(loc.search).get("tour") !== null;
+  const isTourMode    = new URLSearchParams(loc.search).get("tour") !== null;
+  const isPreviewMode = new URLSearchParams(loc.search).get("src") === "demo_preview";
 
   const athleteId = useMemo(() => {
     if (!isPaid) return null;
@@ -901,9 +903,16 @@ export default function Calendar() {
 
   return (
     <div className="min-h-screen bg-ur-page text-ur-primary">
+      {isPreviewMode && (
+        <DemoPreviewStrip
+          payoff="Make camp season less chaotic"
+          nextRoute="/RecruitingJourney?demo=user&src=demo_preview"
+          nextLabel="See Tracker"
+        />
+      )}
       <div className="max-w-5xl mx-auto px-4 pt-5 pb-24">
 
-        {!isTourMode && (
+        {!isTourMode && !isPreviewMode && (
           <button
             type="button"
             onClick={() => nav(isCoach ? "/CoachDashboard" : isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
@@ -930,7 +939,7 @@ export default function Calendar() {
           </div>
         )}
 
-        {!isPaid && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
+        {!isPaid && !isPreviewMode && <div className="mb-4"><DemoBanner seasonYear={seasonYear} /></div>}
 
         {/* Inline filters — list view only */}
         {calView === "list" && (

@@ -69,7 +69,9 @@ function getCheckoutForm() {
 export default function Signup() {
   const loc = useLocation();
   // Detect demo-tour entry so we can bridge the journey context
-  const fromTour = new URLSearchParams(loc.search).get("src") === "demo_tour_end";
+  const urlSrc    = new URLSearchParams(loc.search).get("src");
+  const fromTour    = urlSrc === "demo_tour_end";
+  const fromPreview = urlSrc === "demo_preview";
 
   const [firstName, setFirstName] = useState(() => getCheckoutForm()?.parentFirstName || "");
   const [lastName, setLastName] = useState(() => getCheckoutForm()?.parentLastName || "");
@@ -278,7 +280,7 @@ export default function Signup() {
         ) : (
           /* ── Registration form ── */
           <>
-            {fromTour && (
+            {(fromTour || fromPreview) && (
               <div style={{
                 background: "rgba(232,160,32,0.07)",
                 border: "1px solid rgba(232,160,32,0.2)",
@@ -296,12 +298,14 @@ export default function Signup() {
               </div>
             )}
             <h1 style={HEADING}>
-              {fromTour ? "START YOUR WORKSPACE" : "CREATE YOUR ACCOUNT"}
+              {(fromTour || fromPreview) ? "READY TO START YOUR WORKSPACE?" : "CREATE YOUR ACCOUNT"}
             </h1>
             <p style={{ color: "#9ca3af", fontSize: 14, margin: "0 0 28px" }}>
-              {fromTour
-                ? "Your free account is where your family's recruiting journey actually begins."
-                : "Join uRecruitHQ to track camps, save favorites, and build your recruiting timeline."
+              {fromPreview
+                ? "Create your free account to organize camps and track recruiting progress."
+                : fromTour
+                  ? "Your free account is where your family's recruiting journey actually begins."
+                  : "Join uRecruitHQ to track camps, save favorites, and build your recruiting timeline."
               }
             </p>
 
@@ -394,7 +398,7 @@ export default function Signup() {
               {/* Submit */}
               <button type="submit" disabled={working} style={{ ...SUBMIT_BTN, background: working ? "#92400e" : "#e8a020" }}>
                 {working && <Loader2 style={{ width: 18, height: 18, animation: "spin 1s linear infinite" }} />}
-                {working ? "Creating account…" : "Create Account"}
+                {working ? "Creating account…" : (fromPreview || fromTour) ? "Start Your Free Account" : "Create Account"}
               </button>
             </form>
 

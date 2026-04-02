@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
+import DemoPreviewStrip from "../components/demo/DemoPreviewStrip.jsx";
 import BottomNav from "../components/navigation/BottomNav.jsx";
 import { useDemoHint, DemoHintPopup } from "../components/demo/DemoHintPopup.jsx";
 import { ArrowLeft } from "lucide-react";
@@ -219,8 +220,9 @@ function normId(x) {
 export default function RecruitingJourney() {
   const nav = useNavigate();
   const loc = useLocation();
-  const isUserDemo = new URLSearchParams(loc.search).get("demo") === "user";
-  const isTourMode = new URLSearchParams(loc.search).get("tour") !== null;
+  const isUserDemo    = new URLSearchParams(loc.search).get("demo") === "user";
+  const isTourMode    = new URLSearchParams(loc.search).get("tour") !== null;
+  const isPreviewMode = new URLSearchParams(loc.search).get("src") === "demo_preview";
   const { accountId, isLoading: seasonLoading } = useSeasonAccess();
   const { activeAthlete: athleteProfile } = useActiveAthlete();
   const athleteId = normId(athleteProfile);
@@ -503,6 +505,13 @@ export default function RecruitingJourney() {
       fontFamily: T.fontBody, paddingBottom: 80,
     }}>
       <DemoHintPopup demoHint={demoHint} onDismiss={clearDemoHint} />
+      {isPreviewMode && (
+        <DemoPreviewStrip
+          payoff="Separate momentum from noise"
+          nextRoute="/Signup?src=demo_preview"
+          nextLabel="Start Free Account"
+        />
+      )}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
         @media (max-width: 640px) {
@@ -518,7 +527,7 @@ export default function RecruitingJourney() {
 
       {/* ── Header ── */}
       <section className="rj-header-section" style={{ padding: "24px 24px 0", maxWidth: 900, margin: "0 auto" }}>
-        {!isTourMode && (
+        {!isTourMode && !isPreviewMode && (
           <button
             onClick={() => nav(isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
             style={{

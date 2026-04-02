@@ -36,6 +36,7 @@ import { getCityCoords } from "../components/hooks/useCityCoords.jsx";
 import InlineFilterBar from "../components/filters/InlineFilterBar.jsx";
 import DemoBanner from "../components/DemoBanner.jsx";
 import GuidedTourOverlay from "../components/demo/GuidedTourOverlay.jsx";
+import DemoPreviewStrip from "../components/demo/DemoPreviewStrip.jsx";
 import ConflictWarningModal from "../components/camps/ConflictWarningModal.jsx";
 import RegisterConfirmModal from "../components/camps/RegisterConfirmModal.jsx";
 import UnregisterConfirmModal from "../components/camps/UnregisterConfirmModal.jsx";
@@ -255,9 +256,10 @@ export default function Discover() {
     try { return new URLSearchParams(loc?.search || "").get("demo") || null; }
     catch { return null; }
   }, [loc?.search]);
-  const isCoachDemo = demoParam === "coach";
-  const isUserDemo  = demoParam === "user";
-  const isTourMode  = new URLSearchParams(loc?.search || "").get("tour") !== null;
+  const isCoachDemo    = demoParam === "coach";
+  const isUserDemo     = demoParam === "user";
+  const isTourMode     = new URLSearchParams(loc?.search || "").get("tour") !== null;
+  const isPreviewMode  = new URLSearchParams(loc?.search || "").get("src") === "demo_preview";
 
   // Read demo mode only for season year override (not for isPaid determination)
   const dm             = readDemoMode();           // null | { mode, seasonYear, setAt }
@@ -1045,9 +1047,17 @@ export default function Discover() {
 
   return (
     <div className="min-h-screen bg-ur-page text-ur-primary pb-20">
+      {/* DemoPreview funnel strip — replaces guided overlay on curated screens */}
+      {isPreviewMode && (
+        <DemoPreviewStrip
+          payoff="Turn searching into a plan"
+          nextRoute="/Calendar?demo=user&src=demo_preview"
+          nextLabel="See Calendar"
+        />
+      )}
       <div className="max-w-5xl mx-auto px-4 pt-6">
-        {/* ← HQ navigation — hidden during guided tour */}
-        {!isTourMode && (
+        {/* ← HQ navigation — hidden during guided tour and preview mode */}
+        {!isTourMode && !isPreviewMode && (
           <button
             type="button"
             onClick={() => nav(isCoach ? "/CoachDashboard" : isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
@@ -1101,7 +1111,7 @@ export default function Discover() {
           </div>
         )}
 
-        {!isPaid && !isCoachDemo && <div className="mt-5 mb-2"><DemoBanner seasonYear={seasonYear} compact={isTourMode} /></div>}
+        {!isPaid && !isCoachDemo && !isPreviewMode && <div className="mt-5 mb-2"><DemoBanner seasonYear={seasonYear} compact={isTourMode} /></div>}
 
         {/* Inline filter dropdowns */}
         <div className="mt-4">
