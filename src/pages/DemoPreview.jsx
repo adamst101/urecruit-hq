@@ -17,21 +17,21 @@ const EXPLORE_SCREENS = [
     icon: "🔍",
     label: "Discover Camps",
     payoff: "Turn searching into a plan",
-    route: "/Discover?demo=user&src=demo_preview",
+    route: "/Discover?preview=1&src=demo_preview",
   },
   {
     key: "calendar",
     icon: "📅",
     label: "Camp Calendar",
     payoff: "Make camp season less chaotic",
-    route: "/Calendar?demo=user&src=demo_preview",
+    route: "/Calendar?preview=1&src=demo_preview",
   },
   {
     key: "tracker",
     icon: "📊",
     label: "Recruiting Tracker",
     payoff: "Separate momentum from noise",
-    route: "/RecruitingJourney?demo=user&src=demo_preview",
+    route: "/RecruitingJourney?preview=1&src=demo_preview",
   },
 ];
 

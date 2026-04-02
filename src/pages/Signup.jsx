@@ -69,9 +69,9 @@ function getCheckoutForm() {
 export default function Signup() {
   const loc = useLocation();
   // Detect demo-tour entry so we can bridge the journey context
-  const urlSrc    = new URLSearchParams(loc.search).get("src");
+  const urlSrc      = new URLSearchParams(loc.search).get("src");
   const fromTour    = urlSrc === "demo_tour_end";
-  const fromPreview = urlSrc === "demo_preview";
+  const fromPreview = urlSrc === "demo_preview" || urlSrc === "demo_preview_tracker";
 
   const [firstName, setFirstName] = useState(() => getCheckoutForm()?.parentFirstName || "");
   const [lastName, setLastName] = useState(() => getCheckoutForm()?.parentLastName || "");

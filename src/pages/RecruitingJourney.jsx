@@ -220,9 +220,10 @@ function normId(x) {
 export default function RecruitingJourney() {
   const nav = useNavigate();
   const loc = useLocation();
-  const isUserDemo    = new URLSearchParams(loc.search).get("demo") === "user";
-  const isTourMode    = new URLSearchParams(loc.search).get("tour") !== null;
-  const isPreviewMode = new URLSearchParams(loc.search).get("src") === "demo_preview";
+  const _rjParams     = new URLSearchParams(loc.search);
+  const isPreviewMode = _rjParams.get("preview") === "1";
+  const isUserDemo    = _rjParams.get("demo") === "user" || isPreviewMode;
+  const isTourMode    = _rjParams.get("tour") !== null;
   const { accountId, isLoading: seasonLoading } = useSeasonAccess();
   const { activeAthlete: athleteProfile } = useActiveAthlete();
   const athleteId = normId(athleteProfile);
@@ -508,7 +509,7 @@ export default function RecruitingJourney() {
       {isPreviewMode && (
         <DemoPreviewStrip
           payoff="Separate momentum from noise"
-          nextRoute="/Signup?src=demo_preview"
+          nextRoute="/Signup?src=demo_preview_tracker"
           nextLabel="Start Free Account"
         />
       )}

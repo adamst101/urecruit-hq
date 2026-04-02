@@ -43,9 +43,9 @@ function Card1() {
       {/* Visual: scattered problem indicators */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "0 0 8px" }}>
         {[
-          { icon: "🗺️", text: "How does the process actually work?" },
-          { icon: "🧩", text: "Where does all the information live?" },
-          { icon: "🔀", text: "What should we do first?" },
+          { icon: "🗺️", text: "What do we do first?" },
+          { icon: "🧩", text: "Which camps actually matter?" },
+          { icon: "🔀", text: "How do we know if anything is real?" },
         ].map((item) => (
           <div key={item.text} style={{
             display: "flex", alignItems: "center", gap: 14,
@@ -107,7 +107,7 @@ function Card2() {
           {
             num: "03",
             title: "Track real progress",
-            detail: "Log coach interactions so you can see which schools are showing real interest.",
+            detail: "Log coach interactions so you can see when schools are showing real interest.",
           },
         ].map((p) => (
           <div key={p.num} style={{
@@ -149,7 +149,7 @@ function Card3() {
         fontSize: 10, fontWeight: 700, color: "#e8a020",
         textTransform: "uppercase", letterSpacing: "0.14em", margin: "0 0 16px",
       }}>
-        See it in action
+        THIS IS WHAT CONTROL LOOKS LIKE.
       </p>
       <h1 style={{
         fontFamily: "'Bebas Neue', sans-serif",
@@ -288,12 +288,12 @@ export default function DemoStory() {
     if (step < TOTAL - 1) {
       goTo(step + 1);
     } else {
-      nav("/DemoPreview");
+      nav("/DemoPreview?src=demo_story");
     }
   }
 
   function skip() {
-    nav("/DemoPreview");
+    nav("/DemoPreview?src=demo_story");
   }
 
   const CARDS = [Card1, Card2, Card3];

@@ -257,9 +257,11 @@ export default function Discover() {
     catch { return null; }
   }, [loc?.search]);
   const isCoachDemo    = demoParam === "coach";
-  const isUserDemo     = demoParam === "user";
+  const _isUserDemoParam = demoParam === "user";
   const isTourMode     = new URLSearchParams(loc?.search || "").get("tour") !== null;
-  const isPreviewMode  = new URLSearchParams(loc?.search || "").get("src") === "demo_preview";
+  const isPreviewMode  = new URLSearchParams(loc?.search || "").get("preview") === "1";
+  // Preview mode acts as user demo for data loading purposes
+  const isUserDemo     = _isUserDemoParam || isPreviewMode;
 
   // Read demo mode only for season year override (not for isPaid determination)
   const dm             = readDemoMode();           // null | { mode, seasonYear, setAt }
@@ -1051,7 +1053,7 @@ export default function Discover() {
       {isPreviewMode && (
         <DemoPreviewStrip
           payoff="Turn searching into a plan"
-          nextRoute="/Calendar?demo=user&src=demo_preview"
+          nextRoute="/Calendar?preview=1&src=demo_preview"
           nextLabel="See Calendar"
         />
       )}

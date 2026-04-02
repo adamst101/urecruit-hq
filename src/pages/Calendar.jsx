@@ -191,10 +191,13 @@ export default function Calendar() {
 
   const isAdmin = season?.role === "admin";
   const isUserDemo = useMemo(() => {
-    try { return new URLSearchParams(loc.search).get("demo") === "user"; } catch { return false; }
+    try {
+      const p = new URLSearchParams(loc.search);
+      return p.get("demo") === "user" || p.get("preview") === "1";
+    } catch { return false; }
   }, [loc.search]);
   const isTourMode    = new URLSearchParams(loc.search).get("tour") !== null;
-  const isPreviewMode = new URLSearchParams(loc.search).get("src") === "demo_preview";
+  const isPreviewMode = new URLSearchParams(loc.search).get("preview") === "1";
 
   const athleteId = useMemo(() => {
     if (!isPaid) return null;
@@ -906,7 +909,7 @@ export default function Calendar() {
       {isPreviewMode && (
         <DemoPreviewStrip
           payoff="Make camp season less chaotic"
-          nextRoute="/RecruitingJourney?demo=user&src=demo_preview"
+          nextRoute="/RecruitingJourney?preview=1&src=demo_preview"
           nextLabel="See Tracker"
         />
       )}
