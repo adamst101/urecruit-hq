@@ -16,7 +16,7 @@
  * All synthetic records are identifiable by the __hc_ft_ prefix in name/id fields.
  */
 
-export const SEED_VERSION = "1.1.0";
+export const SEED_VERSION = "1.2.0";
 export const SEED_PREFIX = "__hc_ft_";
 
 // ---------------------------------------------------------------------------
@@ -62,76 +62,52 @@ export const FT_TOPOLOGY = {
 
   athletes: [
     {
-      _key: "athlete1",
-      family: "family1",
-      first_name: "Test",
-      last_name: "Johnson",
-      athlete_name: "__hc_ft_Test Johnson",
-      account_id: "__hc_ft_family1",
-      grad_year: 2026,
-      sport_id: "football",
-      position: "QB",
-      active: true,
+      _key: "athlete1", family: "family1",
+      first_name: "Test", last_name: "Johnson", athlete_name: "__hc_ft_Test Johnson",
+      account_id: "__hc_ft_family1", grad_year: 2026, sport_id: "football", position: "QB", active: true,
+      home_city: "Alpharetta", home_state: "GA", height_ft: 6, height_in: 2, weight_lbs: 195,
+      player_email: "tyler.johnson.ft@fttest.invalid", x_handle: "@TylerJohnsonQB26",
+      parent_first_name: "David",  parent_last_name: "Johnson",  parent_phone: "555-201-0001",
     },
     {
-      _key: "athlete2",
-      family: "family1",
-      first_name: "Test",
-      last_name: "Johnson2",
-      athlete_name: "__hc_ft_Test Johnson2",
-      account_id: "__hc_ft_family1",
-      grad_year: 2027,
-      sport_id: "football",
-      position: "WR",
-      active: true,
+      _key: "athlete2", family: "family1",
+      first_name: "Test", last_name: "Johnson2", athlete_name: "__hc_ft_Test Johnson2",
+      account_id: "__hc_ft_family1", grad_year: 2027, sport_id: "football", position: "WR", active: true,
+      home_city: "Alpharetta", home_state: "GA", height_ft: 6, height_in: 0, weight_lbs: 175,
+      player_email: "marcus.johnson2.ft@fttest.invalid", x_handle: "@MarcusJohnson2WR27",
+      parent_first_name: "David",  parent_last_name: "Johnson",  parent_phone: "555-201-0001",
     },
     {
-      _key: "athlete3",
-      family: "family2",
-      first_name: "Test",
-      last_name: "Martinez",
-      athlete_name: "__hc_ft_Test Martinez",
-      account_id: "__hc_ft_family2",
-      grad_year: 2026,
-      sport_id: "football",
-      position: "DB",
-      active: true,
+      _key: "athlete3", family: "family2",
+      first_name: "Test", last_name: "Martinez", athlete_name: "__hc_ft_Test Martinez",
+      account_id: "__hc_ft_family2", grad_year: 2026, sport_id: "football", position: "DB", active: true,
+      home_city: "Tampa",       home_state: "FL", height_ft: 5, height_in: 10, weight_lbs: 165,
+      player_email: "sofia.martinez.ft@fttest.invalid", x_handle: "@SofiaMartinezDB26",
+      parent_first_name: "Maria",  parent_last_name: "Martinez", parent_phone: "555-202-0003",
     },
     {
-      _key: "athlete4",
-      family: "family3",
-      first_name: "Test",
-      last_name: "Williams",
-      athlete_name: "__hc_ft_Test Williams",
-      account_id: "__hc_ft_family3",
-      grad_year: 2026,
-      sport_id: "football",
-      position: "RB",
-      active: true,
+      _key: "athlete4", family: "family3",
+      first_name: "Test", last_name: "Williams", athlete_name: "__hc_ft_Test Williams",
+      account_id: "__hc_ft_family3", grad_year: 2026, sport_id: "football", position: "RB", active: true,
+      home_city: "Houston",     home_state: "TX", height_ft: 5, height_in: 11, weight_lbs: 205,
+      player_email: "jamal.williams.ft@fttest.invalid", x_handle: "@JamalWilliamsRB26",
+      parent_first_name: "Robert", parent_last_name: "Williams", parent_phone: "555-203-0004",
     },
     {
-      _key: "athlete5",
-      family: "family4",
-      first_name: "Test",
-      last_name: "Davis",
-      athlete_name: "__hc_ft_Test Davis",
-      account_id: "__hc_ft_family4",
-      grad_year: 2027,
-      sport_id: "football",
-      position: "LB",
-      active: true,
+      _key: "athlete5", family: "family4",
+      first_name: "Test", last_name: "Davis", athlete_name: "__hc_ft_Test Davis",
+      account_id: "__hc_ft_family4", grad_year: 2027, sport_id: "football", position: "LB", active: true,
+      home_city: "Atlanta",     home_state: "GA", height_ft: 6, height_in: 1,  weight_lbs: 225,
+      player_email: "aisha.davis.ft@fttest.invalid",    x_handle: "@AishaDavisLB27",
+      parent_first_name: "Lisa",   parent_last_name: "Davis",    parent_phone: "555-204-0005",
     },
     {
-      _key: "athlete6",
-      family: "family5",
-      first_name: "Test",
-      last_name: "Brown",
-      athlete_name: "__hc_ft_Test Brown",
-      account_id: "__hc_ft_family5",
-      grad_year: 2028,
-      sport_id: "football",
-      position: "OL",
-      active: true,
+      _key: "athlete6", family: "family5",
+      first_name: "Test", last_name: "Brown", athlete_name: "__hc_ft_Test Brown",
+      account_id: "__hc_ft_family5", grad_year: 2028, sport_id: "football", position: "OL", active: true,
+      home_city: "Charlotte",   home_state: "NC", height_ft: 6, height_in: 4,  weight_lbs: 285,
+      player_email: "devon.brown.ft@fttest.invalid",    x_handle: "@DevonBrownOL28",
+      parent_first_name: "James",  parent_last_name: "Brown",    parent_phone: "555-205-0006",
     },
   ],
 
@@ -200,10 +176,11 @@ export async function discoverSeeds(base44) {
   }));
   if (!d?.ok) throw new Error(d?.error || "manageFtSeeds discover failed");
   return {
-    coaches:    d.coaches    ?? [],
-    athletes:   d.athletes   ?? [],
-    rosters:    d.rosters    ?? [],
-    activities: d.activities ?? [],
+    coaches:     d.coaches     ?? [],
+    athletes:    d.athletes    ?? [],
+    rosters:     d.rosters     ?? [],
+    activities:  d.activities  ?? [],
+    campIntents: d.campIntents ?? [],
   };
 }
 
@@ -229,6 +206,7 @@ export async function checkSeedIntegrity(base44) {
   return {
     ok:                      d.ok,
     counts:                  d.counts           ?? { coaches: 0, athletes: 0, rosters: 0, activities: 0 },
+    perAthleteStats:         d.perAthleteStats  ?? [],
     family2AthleteId:        d.family2AthleteId ?? null,
     family2ActivityCount:    d.family2ActivityCount    ?? null,
     family2CampIntentCount:  d.family2CampIntentCount  ?? null,
@@ -366,13 +344,14 @@ export async function verifyTopology(base44) {
   };
 
   // Discover current seeds
-  const { coaches, athletes, rosters, activities } = await discoverSeeds(base44);
+  const { coaches, athletes, rosters, activities, campIntents } = await discoverSeeds(base44);
 
   const counts = {
     coaches:    coaches.length,
     athletes:   athletes.length,
     rosters:    rosters.length,
     activities: activities.length,
+    campIntents: campIntents.length,
   };
 
   // --- Coach check ---
@@ -527,6 +506,39 @@ export async function verifyTopology(base44) {
 
   if (activities.length !== 14) {
     warnings.push(`Expected 14 RecruitingActivity records, found ${activities.length}`);
+  }
+
+  // --- Camp intent checks (v1.2) — per-athlete minimums and profile completeness ---
+  const campIntentAthletes = [
+    { athlete: tyler,  name: "Tyler Johnson",  minFav: 3, minReg: 2 },
+    { athlete: marcus, name: "Marcus Johnson2", minFav: 3, minReg: 2 },
+    { athlete: sofia,  name: "Sofia Martinez",  minFav: 3, minReg: 2 },
+    { athlete: jamal,  name: "Jamal Williams",  minFav: 3, minReg: 2 },
+    { athlete: aisha,  name: "Aisha Davis",     minFav: 3, minReg: 2 },
+    { athlete: devon,  name: "Devon Brown",     minFav: 3, minReg: 2 },
+  ];
+  let totalCampIntents = 0;
+  for (const { athlete, name, minFav, minReg } of campIntentAthletes) {
+    if (!athlete) continue; // already reported as missing above
+    const athleteId   = athlete.id;
+    const aCampIntents = campIntents.filter(ci => ci.athlete_id === athleteId);
+    const favCount  = aCampIntents.filter(ci => ci.status === "favorite").length;
+    const regCount  = aCampIntents.filter(ci => ci.status === "registered").length;
+    const nullCount = aCampIntents.filter(ci => !ci.camp_id).length;
+    totalCampIntents += aCampIntents.length;
+    if (favCount < minFav) warnings.push(`${name}: favCount=${favCount} < ${minFav} (run reset to rebuild)`);
+    if (regCount < minReg) warnings.push(`${name}: regCount=${regCount} < ${minReg} (run reset to rebuild)`);
+    if (nullCount > 0)     warnings.push(`${name}: ${nullCount} CampIntent(s) with null camp_id`);
+    // Profile completeness
+    if (!athlete.player_email)      warnings.push(`${name}: missing player_email`);
+    if (!athlete.x_handle)          warnings.push(`${name}: missing x_handle`);
+    if (!athlete.parent_first_name) warnings.push(`${name}: missing parent_first_name`);
+    if (favCount >= minFav && regCount >= minReg && nullCount === 0) {
+      notes.push(`Camp OK ${name}: fav=${favCount} reg=${regCount}`);
+    }
+  }
+  if (campIntents.length > 0 && totalCampIntents === 0) {
+    warnings.push(`${campIntents.length} CampIntent(s) found but none matched known athlete IDs`);
   }
 
   // --- Determine overall status ---

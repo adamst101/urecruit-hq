@@ -38,7 +38,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
 
 const ADMIN_EMAILS = ["adamst101@gmail.com", "adamst1@gmail.com"];
 const SEED_PREFIX  = "__hc_ft_";
-const SEED_VERSION = "1.1.0";
+const SEED_VERSION = "1.2.0";
 
 // ─── FT Topology (mirrors src/lib/ftEnvService.js FT_TOPOLOGY) ───────────────
 
@@ -54,12 +54,30 @@ const FT_COACHES = [
 ];
 
 const FT_ATHLETES = [
-  { _key: "athlete1", first_name: "Test", last_name: "Johnson",  athlete_name: "__hc_ft_Test Johnson",  account_id: "__hc_ft_family1", grad_year: 2026, sport_id: "football", position: "QB", active: true },
-  { _key: "athlete2", first_name: "Test", last_name: "Johnson2", athlete_name: "__hc_ft_Test Johnson2", account_id: "__hc_ft_family1", grad_year: 2027, sport_id: "football", position: "WR", active: true },
-  { _key: "athlete3", first_name: "Test", last_name: "Martinez", athlete_name: "__hc_ft_Test Martinez", account_id: "__hc_ft_family2", grad_year: 2026, sport_id: "football", position: "DB", active: true, home_city: "Tampa", home_state: "FL" },
-  { _key: "athlete4", first_name: "Test", last_name: "Williams", athlete_name: "__hc_ft_Test Williams", account_id: "__hc_ft_family3", grad_year: 2026, sport_id: "football", position: "RB", active: true },
-  { _key: "athlete5", first_name: "Test", last_name: "Davis",    athlete_name: "__hc_ft_Test Davis",    account_id: "__hc_ft_family4", grad_year: 2027, sport_id: "football", position: "LB", active: true },
-  { _key: "athlete6", first_name: "Test", last_name: "Brown",    athlete_name: "__hc_ft_Test Brown",    account_id: "__hc_ft_family5", grad_year: 2028, sport_id: "football", position: "OL", active: true },
+  { _key: "athlete1", first_name: "Test", last_name: "Johnson",  athlete_name: "__hc_ft_Test Johnson",  account_id: "__hc_ft_family1", grad_year: 2026, sport_id: "football", position: "QB", active: true,
+    home_city: "Alpharetta", home_state: "GA", height_ft: 6, height_in: 2, weight_lbs: 195,
+    player_email: "tyler.johnson.ft@fttest.invalid", x_handle: "@TylerJohnsonQB26",
+    parent_first_name: "David",  parent_last_name: "Johnson",  parent_phone: "555-201-0001" },
+  { _key: "athlete2", first_name: "Test", last_name: "Johnson2", athlete_name: "__hc_ft_Test Johnson2", account_id: "__hc_ft_family1", grad_year: 2027, sport_id: "football", position: "WR", active: true,
+    home_city: "Alpharetta", home_state: "GA", height_ft: 6, height_in: 0, weight_lbs: 175,
+    player_email: "marcus.johnson2.ft@fttest.invalid", x_handle: "@MarcusJohnson2WR27",
+    parent_first_name: "David",  parent_last_name: "Johnson",  parent_phone: "555-201-0001" },
+  { _key: "athlete3", first_name: "Test", last_name: "Martinez", athlete_name: "__hc_ft_Test Martinez", account_id: "__hc_ft_family2", grad_year: 2026, sport_id: "football", position: "DB", active: true,
+    home_city: "Tampa",       home_state: "FL", height_ft: 5, height_in: 10, weight_lbs: 165,
+    player_email: "sofia.martinez.ft@fttest.invalid", x_handle: "@SofiaMartinezDB26",
+    parent_first_name: "Maria",  parent_last_name: "Martinez", parent_phone: "555-202-0003" },
+  { _key: "athlete4", first_name: "Test", last_name: "Williams", athlete_name: "__hc_ft_Test Williams", account_id: "__hc_ft_family3", grad_year: 2026, sport_id: "football", position: "RB", active: true,
+    home_city: "Houston",     home_state: "TX", height_ft: 5, height_in: 11, weight_lbs: 205,
+    player_email: "jamal.williams.ft@fttest.invalid", x_handle: "@JamalWilliamsRB26",
+    parent_first_name: "Robert", parent_last_name: "Williams", parent_phone: "555-203-0004" },
+  { _key: "athlete5", first_name: "Test", last_name: "Davis",    athlete_name: "__hc_ft_Test Davis",    account_id: "__hc_ft_family4", grad_year: 2027, sport_id: "football", position: "LB", active: true,
+    home_city: "Atlanta",     home_state: "GA", height_ft: 6, height_in: 1,  weight_lbs: 225,
+    player_email: "aisha.davis.ft@fttest.invalid",    x_handle: "@AishaDavisLB27",
+    parent_first_name: "Lisa",   parent_last_name: "Davis",    parent_phone: "555-204-0005" },
+  { _key: "athlete6", first_name: "Test", last_name: "Brown",    athlete_name: "__hc_ft_Test Brown",    account_id: "__hc_ft_family5", grad_year: 2028, sport_id: "football", position: "OL", active: true,
+    home_city: "Charlotte",   home_state: "NC", height_ft: 6, height_in: 4,  weight_lbs: 285,
+    player_email: "devon.brown.ft@fttest.invalid",    x_handle: "@DevonBrownOL28",
+    parent_first_name: "James",  parent_last_name: "Brown",    parent_phone: "555-205-0006" },
 ];
 
 const FT_ROSTERS = [
@@ -93,6 +111,20 @@ const FT_ACTIVITIES: { _athleteKey: string; daysAgo: number; [k: string]: any }[
   { _athleteKey: "athlete5", activity_type: "phone_call",   school_name: "Penn State", coach_name: "__hc_ft_Coach Jones", coach_title: "Linebackers Coach",      notes: "Initial recruiting call.", daysAgo: 38 },
   { _athleteKey: "athlete5", activity_type: "text_message", school_name: "Ohio State",  coach_name: "__hc_ft_Coach Kim",   coach_title: "Recruiting Coordinator", notes: "Quick check-in text.",     daysAgo: 12 },
   // Devon (athlete6) — 0 records intentionally
+];
+
+// ─── Camp intent plan — staggered offsets into a shared football camp pool ────
+// Max offset 22 → pool must have ≥23 camps; seedAll fetches 200, takes 25, wraps with modulo.
+// Offsets overlap across athletes intentionally (realistic: same popular camps attract multiple recruits).
+// Per-athlete dedup (Set) prevents the same camp_id+status appearing twice for one athlete.
+
+const ATHLETE_CAMP_PLANS: { _key: string; favoriteOffsets: number[]; registeredOffsets: number[] }[] = [
+  { _key: "athlete1", favoriteOffsets: [0, 1, 2],             registeredOffsets: [3, 4]       }, // 3 fav  2 reg
+  { _key: "athlete2", favoriteOffsets: [2, 3, 5, 6],         registeredOffsets: [7, 8]       }, // 4 fav  2 reg
+  { _key: "athlete3", favoriteOffsets: [4, 5, 9],             registeredOffsets: [10, 11]     }, // 3 fav  2 reg
+  { _key: "athlete4", favoriteOffsets: [6, 7, 8, 12],        registeredOffsets: [13, 14, 15] }, // 4 fav  3 reg
+  { _key: "athlete5", favoriteOffsets: [9, 10, 16],           registeredOffsets: [17, 18]     }, // 3 fav  2 reg
+  { _key: "athlete6", favoriteOffsets: [11, 12, 13, 19, 20], registeredOffsets: [21, 22]     }, // 5 fav  2 reg
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -250,59 +282,63 @@ async function seedAll(sr: any, base44?: any): Promise<{
   }
   console.log(`[manageFtSeeds] seed Phase 4 done — ${activities.length} activities`);
 
-  // Phase 5: CampIntents for family2 (athlete3) — 2 favorites + 1 registered
-  // Uses base44.entities.Camp (caller auth, no X-Origin-URL from server → PROD data) to
-  // find real Camp records, then creates CampIntents via SR so getMyCampIntents (SR) can find them.
+  // Phase 5: CampIntents for all 6 athletes — staggered pool offsets per ATHLETE_CAMP_PLANS.
+  // Each athlete gets ≥3 favorites and ≥2 registered from a shared football camp pool (25 camps max).
+  // Offsets wrap with modulo so any pool size ≥1 works. Per-athlete Set deduplicates same camp+status.
   //
-  // camp_id normalization: Base44 entity records may carry the ID in `.id` or `._id`.
-  // Always use `camp.id ?? camp._id` so camp_id is never stored as undefined/null —
-  // useCampSummariesClient skips any intent whose camp_id is falsy.
-  // Use `continue` (not `break`) so a missing camp at one index doesn't abort later ones.
+  // camp_id normalization: always prefer .id → ._id → event_key; never store undefined/null
+  // (useCampSummariesClient skips intents with falsy camp_id).
   const campIntents: any[] = [];
   if (base44) {
     try {
-      const family2 = athleteById["athlete3"];
-      if (family2) {
-        const family2Id = String(family2.id ?? family2._id ?? "");
-        const camps = await base44.entities.Camp.list("-created_date", 200).catch(() => []);
-        const campList = Array.isArray(camps) ? camps : [];
-        const footballCamps = campList.filter((c: any) =>
-          (c.sport ?? "").toLowerCase().includes("football") ||
-          (c.sport_id ?? "").toLowerCase().includes("football")
-        );
-        const targetCamps = (footballCamps.length >= 3 ? footballCamps : campList).slice(0, 3);
-        console.log(`[manageFtSeeds] Phase 5: campList=${campList.length} footballCamps=${footballCamps.length} targetCamps=${targetCamps.length}`);
-        const intentDefs = [
-          { campIndex: 0, status: "favorite"   },
-          { campIndex: 1, status: "favorite"   },
-          { campIndex: 2, status: "registered" },
+      const camps = await base44.entities.Camp.list("-created_date", 200).catch(() => []);
+      const campList = Array.isArray(camps) ? camps : [];
+      const footballCamps = campList.filter((c: any) =>
+        (c.sport ?? "").toLowerCase().includes("football") ||
+        (c.sport_id ?? "").toLowerCase().includes("football")
+      );
+      const campPool = (footballCamps.length >= 10 ? footballCamps : campList).slice(0, 25);
+      console.log(`[manageFtSeeds] Phase 5: campList=${campList.length} footballCamps=${footballCamps.length} campPool=${campPool.length}`);
+
+      for (const plan of ATHLETE_CAMP_PLANS) {
+        const athlete = athleteById[plan._key];
+        if (!athlete) {
+          console.warn(`[manageFtSeeds] Phase 5: athlete ${plan._key} not found — skipping`);
+          continue;
+        }
+        const athleteId  = String(athlete.id ?? athlete._id ?? "");
+        const accountId  = String(athlete.account_id ?? "");
+        const usedKeys   = new Set<string>();
+
+        const intentDefs: { offset: number; status: string }[] = [
+          ...plan.favoriteOffsets.map((o) => ({ offset: o, status: "favorite" })),
+          ...plan.registeredOffsets.map((o) => ({ offset: o, status: "registered" })),
         ];
-        for (const { campIndex, status } of intentDefs) {
-          const camp = targetCamps[campIndex];
-          if (!camp) {
-            console.warn(`[manageFtSeeds] Phase 5: no camp at index ${campIndex} — skipping ${status} intent`);
-            continue;  // skip this intent; do not abort the loop
-          }
-          // Normalize: prefer .id, fall back to ._id, then event_key as last resort
+
+        for (const { offset, status } of intentDefs) {
+          if (campPool.length === 0) { console.warn(`[manageFtSeeds] Phase 5: empty camp pool — aborting`); break; }
+          const camp   = campPool[offset % campPool.length];
+          if (!camp) continue;
           const campId = String(camp.id ?? camp._id ?? "") || String(camp.event_key ?? "");
-          if (!campId) {
-            console.warn(`[manageFtSeeds] Phase 5: camp at index ${campIndex} has no id or event_key — skipping`);
-            continue;
-          }
+          if (!campId) { console.warn(`[manageFtSeeds] Phase 5: camp at offset ${offset} has no id — skipping`); continue; }
+          const dedupeKey = `${campId}:${status}`;
+          if (usedKeys.has(dedupeKey)) { console.warn(`[manageFtSeeds] Phase 5: dedup ${plan._key} ${dedupeKey}`); continue; }
+          usedKeys.add(dedupeKey);
           const record = await sr.entities.CampIntent.create({
             camp_id:    campId,
-            athlete_id: family2Id,
-            account_id: "__hc_ft_family2",
+            athlete_id: athleteId,
+            account_id: accountId,
             status,
             priority:   status === "registered" ? "high" : "medium",
           });
           campIntents.push(record);
-          console.log(`[manageFtSeeds] campIntent created: id=${record.id ?? record._id} camp_id=${campId} camp_name="${camp.camp_name ?? ""}" status=${status}`);
+          console.log(`[manageFtSeeds] campIntent: ${plan._key} camp_id=${campId} camp_name="${camp.camp_name ?? ""}" status=${status}`);
         }
-        const nullCampIdCount = campIntents.filter((ci: any) => !ci.camp_id).length;
-        if (nullCampIdCount > 0) {
-          console.warn(`[manageFtSeeds] Phase 5 WARNING: ${nullCampIdCount} CampIntent(s) returned without camp_id — MyCamps join will fail`);
-        }
+      }
+
+      const nullCampIdCount = campIntents.filter((ci: any) => !ci.camp_id).length;
+      if (nullCampIdCount > 0) {
+        console.warn(`[manageFtSeeds] Phase 5 WARNING: ${nullCampIdCount} CampIntent(s) without camp_id — MyCamps join will fail`);
       }
     } catch (e) {
       console.warn(`[manageFtSeeds] Phase 5 CampIntent creation failed (non-critical): ${(e as Error).message}`);
@@ -318,9 +354,20 @@ async function seedAll(sr: any, base44?: any): Promise<{
 
 // ─── checkIntegrity ───────────────────────────────────────────────────────────
 
+// Definitions used only for integrity checking (athlete_name + grad_year = stable key after claim).
+const INTEGRITY_ATHLETE_DEFS = [
+  { _key: "athlete1", athleteName: "__hc_ft_Test Johnson",  gradYear: 2026, minFav: 3, minReg: 2 },
+  { _key: "athlete2", athleteName: "__hc_ft_Test Johnson2", gradYear: 2027, minFav: 3, minReg: 2 },
+  { _key: "athlete3", athleteName: "__hc_ft_Test Martinez", gradYear: 2026, minFav: 3, minReg: 2 },
+  { _key: "athlete4", athleteName: "__hc_ft_Test Williams", gradYear: 2026, minFav: 3, minReg: 2 },
+  { _key: "athlete5", athleteName: "__hc_ft_Test Davis",    gradYear: 2027, minFav: 3, minReg: 2 },
+  { _key: "athlete6", athleteName: "__hc_ft_Test Brown",    gradYear: 2028, minFav: 3, minReg: 2 },
+];
+
 async function checkIntegrity(sr: any): Promise<{
   ok: boolean;
   counts: { coaches: number; athletes: number; rosters: number; activities: number; campIntents: number };
+  perAthleteStats: any[];
   family2AthleteId: string | null;
   family2ActivityCount: number;
   family2CampIntentCount: number;
@@ -346,51 +393,71 @@ async function checkIntegrity(sr: any): Promise<{
     }
   }
 
-  const family2Athlete = athletes.find((a: any) => a.account_id === "__hc_ft_family2");
-  const family2AthleteId = family2Athlete ? String(family2Athlete.id ?? family2Athlete._id ?? "") : null;
+  // ── Per-athlete stats (all 6) ─────────────────────────────────────────────
+  const perAthleteStats: any[] = [];
+  for (const def of INTEGRITY_ATHLETE_DEFS) {
+    const athlete = athletes.find(
+      (a: any) => a.athlete_name === def.athleteName && Number(a.grad_year) === def.gradYear
+    );
+    if (!athlete) {
+      issues.push(`${def.athleteName} (${def.gradYear}) not found`);
+      perAthleteStats.push({
+        id: null, accountId: null, name: def.athleteName, gradYear: def.gradYear,
+        hasEmail: false, hasTwitter: false, hasParent: false,
+        favCount: 0, regCount: 0, nullCampIdCount: 0, warnings: ["not found"],
+      });
+      continue;
+    }
+    const athleteId = String(athlete.id ?? athlete._id ?? "");
+    const aCampIntents = campIntents.filter((ci: any) => String(ci.athlete_id ?? "") === athleteId);
+    const favCount        = aCampIntents.filter((ci: any) => String(ci.status ?? "") === "favorite").length;
+    const regCount        = aCampIntents.filter((ci: any) => String(ci.status ?? "") === "registered").length;
+    const nullCampIdCount = aCampIntents.filter((ci: any) => !ci.camp_id).length;
+    const hasEmail   = !!athlete.player_email;
+    const hasTwitter = !!athlete.x_handle;
+    const hasParent  = !!athlete.parent_first_name;
+    const warnings: string[] = [];
+    if (!hasEmail)           { warnings.push("missing player_email");      issues.push(`${def.athleteName}: missing player_email`); }
+    if (!hasTwitter)         { warnings.push("missing x_handle");          issues.push(`${def.athleteName}: missing x_handle`); }
+    if (!hasParent)          { warnings.push("missing parent_first_name"); issues.push(`${def.athleteName}: missing parent_first_name`); }
+    if (favCount < def.minFav) { warnings.push(`fav=${favCount} < min ${def.minFav}`); issues.push(`${def.athleteName}: favCount=${favCount} < ${def.minFav}`); }
+    if (regCount < def.minReg) { warnings.push(`reg=${regCount} < min ${def.minReg}`); issues.push(`${def.athleteName}: regCount=${regCount} < ${def.minReg}`); }
+    if (nullCampIdCount > 0) { warnings.push(`${nullCampIdCount} null camp_id`); issues.push(`${def.athleteName}: ${nullCampIdCount} CampIntent(s) with null camp_id`); }
+    perAthleteStats.push({
+      id: athleteId, accountId: String(athlete.account_id ?? ""), name: def.athleteName, gradYear: def.gradYear,
+      hasEmail, hasTwitter, hasParent, favCount, regCount, nullCampIdCount, warnings,
+    });
+  }
 
+  // ── Legacy family2 fields (backward compat) ───────────────────────────────
+  const family2Athlete    = athletes.find((a: any) => a.account_id === "__hc_ft_family2");
+  const family2AthleteId  = family2Athlete ? String(family2Athlete.id ?? family2Athlete._id ?? "") : null;
   const family2ActivityCount = family2AthleteId
-    ? activities.filter((a: any) => String(a.athlete_id ?? "") === family2AthleteId).length
-    : 0;
-
-  const family2CampIntents = family2AthleteId
-    ? campIntents.filter((ci: any) => String(ci.athlete_id ?? "") === family2AthleteId)
-    : [];
+    ? activities.filter((a: any) => String(a.athlete_id ?? "") === family2AthleteId).length : 0;
+  const family2CampIntents   = family2AthleteId
+    ? campIntents.filter((ci: any) => String(ci.athlete_id ?? "") === family2AthleteId) : [];
   const family2CampIntentCount  = family2CampIntents.length;
   const family2FavoriteCount    = family2CampIntents.filter((ci: any) => String(ci.status ?? "") === "favorite").length;
   const family2RegisteredCount  = family2CampIntents.filter((ci: any) => String(ci.status ?? "") === "registered").length;
   const family2NullCampIdCount  = family2CampIntents.filter((ci: any) => !ci.camp_id).length;
   const family2CampIntentIds    = family2CampIntents.map((ci: any) => ({
-    id:     String(ci.id ?? ci._id ?? ""),
-    status: String(ci.status ?? ""),
-    campId: ci.camp_id ? String(ci.camp_id) : null,
+    id: String(ci.id ?? ci._id ?? ""), status: String(ci.status ?? ""), campId: ci.camp_id ? String(ci.camp_id) : null,
   }));
 
-  if (!family2Athlete) {
-    issues.push("family2 athlete missing");
-  } else {
-    if (!family2Athlete.sport_id) issues.push("family2 athlete missing sport_id");
-    if (!family2Athlete.home_city) issues.push("family2 athlete missing home_city");
-    if (family2ActivityCount === 0) issues.push("family2 athlete has zero RecruitingActivity records");
-    if (family2CampIntentCount === 0) issues.push("family2 athlete has zero CampIntent records");
-    if (family2NullCampIdCount > 0) issues.push(`family2 has ${family2NullCampIdCount} CampIntent(s) with null camp_id — MyCamps/Calendar join will fail`);
-    if (family2FavoriteCount < 2) issues.push(`family2 expected 2 favorite CampIntents, found ${family2FavoriteCount}`);
-    if (family2RegisteredCount < 1) issues.push(`family2 expected 1 registered CampIntent, found ${family2RegisteredCount}`);
-  }
-
+  const totalCampIntents = campIntents.length;
   console.log(
-    `[manageFtSeeds] integrity: coaches=${coaches.length} athletes=${athletes.length} ` +
-    `rosters=${rosters.length} activities=${activities.length} campIntents=${campIntents.length} ` +
-    `family2=${family2AthleteId ?? "MISSING"} family2Acts=${family2ActivityCount} ` +
-    `family2Camps=${family2CampIntentCount} fav=${family2FavoriteCount} reg=${family2RegisteredCount} nullCampId=${family2NullCampIdCount} issues=${issues.length}`,
+    `[manageFtSeeds] integrity v1.2: coaches=${coaches.length} athletes=${athletes.length} ` +
+    `rosters=${rosters.length} activities=${activities.length} campIntents=${totalCampIntents} issues=${issues.length}` +
+    (perAthleteStats.length ? ` | perAthlete: ${perAthleteStats.map(s => `${s.name.replace("__hc_ft_","")}(fav=${s.favCount} reg=${s.regCount})`).join(", ")}` : ""),
   );
 
   return {
     ok: issues.length === 0,
     counts: {
       coaches: coaches.length, athletes: athletes.length,
-      rosters: rosters.length, activities: activities.length, campIntents: campIntents.length,
+      rosters: rosters.length, activities: activities.length, campIntents: totalCampIntents,
     },
+    perAthleteStats,
     family2AthleteId,
     family2ActivityCount,
     family2CampIntentCount,

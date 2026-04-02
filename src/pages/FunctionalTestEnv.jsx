@@ -198,12 +198,16 @@ export default function FunctionalTestEnv() {
       setLastSeeded(ts);
       addLog(`Seed complete — ${result.meta.totalRecords} records created (v${SEED_VERSION}) env=${result.meta.envLabel}`);
       const integrity = await checkSeedIntegrity(SEED_CLIENT);
-      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} activities=${integrity.counts.activities} campIntents=${integrity.counts.campIntents ?? "?"} family2=${integrity.family2AthleteId ?? "MISSING"} acts=${integrity.family2ActivityCount ?? "?"} fav=${integrity.family2FavoriteCount ?? "?"} reg=${integrity.family2RegisteredCount ?? "?"} nullCampId=${integrity.family2NullCampIdCount ?? "?"}`);
-      if ((integrity.family2NullCampIdCount ?? 0) > 0) {
-        addLog(`  WARN: ${integrity.family2NullCampIdCount} CampIntent(s) have null camp_id — MyCamps join will fail. Run Reset to regenerate.`);
-      }
-      if (integrity.family2CampIntentIds?.length) {
-        integrity.family2CampIntentIds.forEach(ci => addLog(`  CampIntent id=${ci.id} status=${ci.status} camp_id=${ci.campId ?? "NULL"}`));
+      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} activities=${integrity.counts.activities} campIntents=${integrity.counts.campIntents ?? "?"}`);
+      if (integrity.perAthleteStats?.length) {
+        integrity.perAthleteStats.forEach(s => {
+          const label = s.name.replace("__hc_ft_", "");
+          const flags = [
+            s.hasEmail ? null : "noEmail", s.hasTwitter ? null : "noTwitter", s.hasParent ? null : "noParent",
+            `fav=${s.favCount}`, `reg=${s.regCount}`, s.nullCampIdCount > 0 ? `nullCampId=${s.nullCampIdCount}` : null,
+          ].filter(Boolean).join(" ");
+          addLog(`  ${label} (${s.gradYear}): ${flags || "OK"}`);
+        });
       }
       if (!integrity.ok) integrity.issues.forEach(i => addLog(`  WARN: ${i}`));
       await handleAutoRelink();
@@ -261,12 +265,16 @@ export default function FunctionalTestEnv() {
       }
 
       const integrity = await checkSeedIntegrity(SEED_CLIENT);
-      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} activities=${integrity.counts.activities} campIntents=${integrity.counts.campIntents ?? "?"} family2=${integrity.family2AthleteId ?? "MISSING"} acts=${integrity.family2ActivityCount ?? "?"} fav=${integrity.family2FavoriteCount ?? "?"} reg=${integrity.family2RegisteredCount ?? "?"} nullCampId=${integrity.family2NullCampIdCount ?? "?"}`);
-      if ((integrity.family2NullCampIdCount ?? 0) > 0) {
-        addLog(`  WARN: ${integrity.family2NullCampIdCount} CampIntent(s) have null camp_id — MyCamps join will fail. Run Reset to regenerate.`);
-      }
-      if (integrity.family2CampIntentIds?.length) {
-        integrity.family2CampIntentIds.forEach(ci => addLog(`  CampIntent id=${ci.id} status=${ci.status} camp_id=${ci.campId ?? "NULL"}`));
+      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} activities=${integrity.counts.activities} campIntents=${integrity.counts.campIntents ?? "?"}`);
+      if (integrity.perAthleteStats?.length) {
+        integrity.perAthleteStats.forEach(s => {
+          const label = s.name.replace("__hc_ft_", "");
+          const flags = [
+            s.hasEmail ? null : "noEmail", s.hasTwitter ? null : "noTwitter", s.hasParent ? null : "noParent",
+            `fav=${s.favCount}`, `reg=${s.regCount}`, s.nullCampIdCount > 0 ? `nullCampId=${s.nullCampIdCount}` : null,
+          ].filter(Boolean).join(" ");
+          addLog(`  ${label} (${s.gradYear}): ${flags || "OK"}`);
+        });
       }
       if (!integrity.ok) integrity.issues.forEach(i => addLog(`  WARN: ${i}`));
       await handleAutoRelink();
