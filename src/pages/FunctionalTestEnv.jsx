@@ -22,6 +22,7 @@ import {
   grantTestEntitlement,
   revokeTestEntitlement,
   checkSeedIntegrity,
+  campCheck,
 } from "../lib/ftEnvService";
 
 // All FT operations use ftProdBase44 — a client hardcoded to
@@ -293,6 +294,45 @@ export default function FunctionalTestEnv() {
     } catch (err) {
       setStatus("broken");
       addLog(`Verify ERROR: ${err?.message || err}`);
+    } finally {
+      setLoading(false);
+      setRunning(null);
+    }
+  }, [addLog]);
+
+  // -------------------------------------------------------------------------
+  // Camp Check — deep CampIntent + Camp join verification for family2
+  // -------------------------------------------------------------------------
+  const handleCampCheck = useCallback(async () => {
+    setRunning("camp_check");
+    setLoading(true);
+    addLog("Camp Check: querying family2 CampIntents + Camp joins…");
+    try {
+      const r = await campCheck(SEED_CLIENT);
+      addLog(`Camp Check: ok=${r.ok} athleteId=${r.family2AthleteId ?? "MISSING"} accountId=${r.family2AthleteAccountId ?? "?"}`);
+      addLog(`  Intents total=${r.totalCampIntents} fav=${r.favoriteCount} reg=${r.registeredCount} nullCampId=${r.nullCampIdCount} stale=${r.staleCount}`);
+      addLog(`  Camp joins matched=${r.matchedCampCount} / ${r.intentRows.filter(i => !!i.campId).length} with campId`);
+      addLog(`  Workspace → saved=${r.workspaceCampsSaved} upcoming=${r.workspaceUpcomingCamps}`);
+      addLog(`  MyCamps   → fav renderable=${r.myCampsFavoritesRenderable} reg renderable=${r.myCampsRegisteredRenderable}`);
+      if (r.intentRows.length > 0) {
+        addLog("  Per-intent breakdown:");
+        r.intentRows.forEach(i => {
+          const seedFlag = i.isSeed ? "[seed]" : "[STALE]";
+          const campInfo = i.campId
+            ? `camp_id=${i.campId} found=${i.campFound} name="${i.campName ?? "?"}""`
+            : "camp_id=NULL";
+          addLog(`    id=${i.id} status=${i.status} ${campInfo} acct=${i.accountId} ${seedFlag}`);
+        });
+      }
+      if (r.staleRows.length > 0) {
+        addLog(`  STALE ROWS (survived reset — real accountId, not __hc_ft_):`);
+        r.staleRows.forEach(s => addLog(`    id=${s.id} status=${s.status} acct=${s.accountId} camp_id=${s.campId ?? "NULL"}`));
+      }
+      if (r.nullCampIdCount > 0) {
+        addLog(`  WARN: ${r.nullCampIdCount} intent(s) have null camp_id — MyCamps/Calendar join will fail. Run Reset.`);
+      }
+    } catch (err) {
+      addLog(`Camp Check ERROR: ${err?.message || err}`);
     } finally {
       setLoading(false);
       setRunning(null);
@@ -754,6 +794,12 @@ export default function FunctionalTestEnv() {
                   onClick={handleDiscover}
                   disabled={isRunning}
                   running={running === "discover"}
+                />
+                <ActionBtn
+                  label="🏕 Camp Check"
+                  onClick={handleCampCheck}
+                  disabled={isRunning}
+                  running={running === "camp_check"}
                 />
               </div>
 

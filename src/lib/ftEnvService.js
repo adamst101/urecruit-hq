@@ -227,11 +227,45 @@ export async function checkSeedIntegrity(base44) {
   const d = res?.data ?? res;
   if (!d?.ok) throw new Error(d?.error || "manageFtSeeds integrity failed");
   return {
-    ok:               d.ok,
-    counts:           d.counts           ?? { coaches: 0, athletes: 0, rosters: 0, activities: 0 },
-    family2AthleteId: d.family2AthleteId ?? null,
-    athleteIds:       d.athleteIds       ?? [],
-    issues:           d.issues           ?? [],
+    ok:                      d.ok,
+    counts:                  d.counts           ?? { coaches: 0, athletes: 0, rosters: 0, activities: 0 },
+    family2AthleteId:        d.family2AthleteId ?? null,
+    family2ActivityCount:    d.family2ActivityCount    ?? null,
+    family2CampIntentCount:  d.family2CampIntentCount  ?? null,
+    family2FavoriteCount:    d.family2FavoriteCount    ?? null,
+    family2RegisteredCount:  d.family2RegisteredCount  ?? null,
+    family2NullCampIdCount:  d.family2NullCampIdCount  ?? null,
+    family2CampIntentIds:    d.family2CampIntentIds    ?? [],
+    athleteIds:              d.athleteIds       ?? [],
+    issues:                  d.issues           ?? [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// campCheck — deep verification of family2 CampIntent rows and Camp joins.
+// ---------------------------------------------------------------------------
+
+export async function campCheck(base44) {
+  const res = await base44.functions.invoke("manageFtSeeds", { action: "camp_check" });
+  const d = res?.data ?? res;
+  if (d == null) throw new Error("campCheck: no response from manageFtSeeds");
+  if (!d.ok && d.error) throw new Error(d.error);
+  return {
+    ok:                          d.ok ?? false,
+    family2AthleteId:            d.family2AthleteId            ?? null,
+    family2AthleteAccountId:     d.family2AthleteAccountId     ?? null,
+    totalCampIntents:            d.totalCampIntents            ?? 0,
+    favoriteCount:               d.favoriteCount               ?? 0,
+    registeredCount:             d.registeredCount             ?? 0,
+    nullCampIdCount:             d.nullCampIdCount             ?? 0,
+    matchedCampCount:            d.matchedCampCount            ?? 0,
+    staleCount:                  d.staleCount                  ?? 0,
+    intentRows:                  d.intentRows                  ?? [],
+    staleRows:                   d.staleRows                   ?? [],
+    workspaceCampsSaved:         d.workspaceCampsSaved         ?? 0,
+    workspaceUpcomingCamps:      d.workspaceUpcomingCamps      ?? 0,
+    myCampsFavoritesRenderable:  d.myCampsFavoritesRenderable  ?? 0,
+    myCampsRegisteredRenderable: d.myCampsRegisteredRenderable ?? 0,
   };
 }
 

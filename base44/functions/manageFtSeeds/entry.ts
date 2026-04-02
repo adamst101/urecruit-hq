@@ -534,11 +534,74 @@ Deno.serve(async (req) => {
         return Response.json({ ok: true, ...execCtx, ...result });
       }
 
+      case "camp_check": {
+        const allAthletes = await sr.entities.AthleteProfile.list("-created_date", 2000).catch(() => []);
+        const family2Athlete = (Array.isArray(allAthletes) ? allAthletes : [])
+          .find((a: any) => a.athlete_name === "__hc_ft_Test Martinez" && Number(a.grad_year) === 2026);
+        const family2AthleteId = family2Athlete
+          ? String(family2Athlete.id ?? family2Athlete._id ?? "")
+          : null;
+        if (!family2AthleteId) {
+          return Response.json({ ok: false, ...execCtx, error: "family2 athlete not found (name=__hc_ft_Test Martinez grad_year=2026)" }, { status: 404 });
+        }
+        const allIntents = await sr.entities.CampIntent.filter({ athlete_id: family2AthleteId }).catch(() => []);
+        const intentList = Array.isArray(allIntents) ? allIntents : [];
+        const intentRows: { id: string; status: string; campId: string | null; campFound: boolean; campName: string | null; isSeed: boolean; accountId: string }[] = [];
+        let matchedCount = 0;
+        for (const ci of intentList) {
+          const intentId = String(ci.id ?? ci._id ?? "");
+          const campId   = ci.camp_id ? String(ci.camp_id) : null;
+          let campFound  = false;
+          let campName: string | null = null;
+          if (campId) {
+            try {
+              const camp = await base44.entities.Camp.get(campId);
+              campFound = !!(camp && (camp.id || camp._id || camp.event_key));
+              campName  = camp?.camp_name ?? null;
+              if (campFound) matchedCount++;
+            } catch { /* camp not found */ }
+          }
+          intentRows.push({
+            id: intentId,
+            status: String(ci.status ?? ""),
+            campId,
+            campFound,
+            campName,
+            isSeed: String(ci.account_id ?? "").startsWith("__hc_ft_"),
+            accountId: String(ci.account_id ?? ""),
+          });
+        }
+        const favoriteCount   = intentList.filter((ci: any) => ci.status === "favorite").length;
+        const registeredCount = intentList.filter((ci: any) => ci.status === "registered").length;
+        const nullCampIdCount = intentList.filter((ci: any) => !ci.camp_id).length;
+        const staleRows       = intentRows.filter((r) => !r.isSeed);
+        const allOk = nullCampIdCount === 0 && intentList.length >= 3 && staleRows.length === 0 &&
+                      matchedCount >= intentRows.filter((r) => !!r.campId).length;
+        return Response.json({
+          ok: allOk,
+          ...execCtx,
+          family2AthleteId,
+          family2AthleteAccountId: String(family2Athlete.account_id ?? ""),
+          totalCampIntents:          intentList.length,
+          favoriteCount,
+          registeredCount,
+          nullCampIdCount,
+          matchedCampCount:          matchedCount,
+          staleCount:                staleRows.length,
+          intentRows,
+          staleRows,
+          workspaceCampsSaved:       intentList.filter((ci: any) => ci.status === "favorite" || ci.status === "registered").length,
+          workspaceUpcomingCamps:    registeredCount,
+          myCampsFavoritesRenderable:  intentRows.filter((r) => r.status === "favorite"   && r.campFound).length,
+          myCampsRegisteredRenderable: intentRows.filter((r) => r.status === "registered" && r.campFound).length,
+        });
+      }
+
       default:
         return Response.json({
           ok: false,
           ...execCtx,
-          error: `Unknown action: ${JSON.stringify(action)}. Valid actions: seed, reset, delete, discover, integrity`,
+          error: `Unknown action: ${JSON.stringify(action)}. Valid actions: seed, reset, delete, discover, integrity, camp_check`,
         }, { status: 400 });
     }
   } catch (e) {
