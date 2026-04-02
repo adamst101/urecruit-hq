@@ -301,22 +301,34 @@ export default function FunctionalTestEnv() {
     }
   }, [emailInputs, addLog, handleDiscover]);
 
-  const handleRelease = useCallback(async (slotKey) => {
+  // previousRealId and knownAthleteIds are passed directly from the render at click time —
+  // do NOT derive them inside this callback. handleRelease is memoized and its closure
+  // captures a stale seedData (from mount), so getSlotStatus called here would always
+  // return currentId: null. The render has the live values; pass them via onClick.
+  const handleRelease = useCallback(async (slotKey, previousRealId, knownAthleteIds = []) => {
     if (!window.confirm(
       `Release slot "${slotKey}"? This reverts the account link and breaks any real login tied to it.`
     )) return;
-    // Capture real account ID and athlete profile IDs before releasing
-    const { currentId: realIdBeforeRelease, athleteProfileIds: knownAthleteIds } = getSlotStatus(slotKey);
+
+    if (!previousRealId || previousRealId.startsWith("__hc_ft_")) {
+      addLog(`Release ABORTED (${slotKey}): no linked account ID available — refresh the page and try again`);
+      return;
+    }
+
     setRunning(`release:${slotKey}`);
     setLoading(true);
-    addLog(`Releasing slot "${slotKey}" back to synthetic ID…`);
+    addLog(`Releasing slot "${slotKey}" — previousRealId=${previousRealId} athleteIds=[${knownAthleteIds.join(",")}]`);
     try {
-      const { updated, errors } = await releaseSlot(base44, slotKey, realIdBeforeRelease, knownAthleteIds);
+      const { updated, errors } = await releaseSlot(base44, slotKey, previousRealId, knownAthleteIds);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
-      addLog(`Slot "${slotKey}" released (${updated} records reverted)`);
+      if (updated > 0) {
+        addLog(`Slot "${slotKey}" released (${updated} records reverted)`);
+      } else {
+        addLog(`Slot "${slotKey}" release: 0 records reverted — SchoolPreference link may still be cleared, check badge after refresh`);
+      }
       // Revoke the ft_seed entitlement so the account can no longer access Workspace
-      if (realIdBeforeRelease && realIdBeforeRelease !== SLOT_MAP[slotKey]?.syntheticId) {
-        const { revoked } = await revokeTestEntitlement(base44, realIdBeforeRelease);
+      if (previousRealId !== SLOT_MAP[slotKey]?.syntheticId) {
+        const { revoked } = await revokeTestEntitlement(base44, previousRealId);
         addLog(`Entitlement revoked (${revoked} record${revoked !== 1 ? "s" : ""} removed)`);
       }
       clearSavedMapping(slotKey);
@@ -809,7 +821,7 @@ export default function FunctionalTestEnv() {
                 </thead>
                 <tbody>
                   {Object.entries(SLOT_MAP).map(([slotKey, slot], i) => {
-                    const { status: slotStatus, currentId } = getSlotStatus(slotKey);
+                    const { status: slotStatus, currentId, athleteProfileIds: slotAthleteIds } = getSlotStatus(slotKey);
                     const isLinkRunning    = running === `link:${slotKey}`;
                     const isReleaseRunning = running === `release:${slotKey}`;
                     const emailVal = emailInputs[slotKey] || "";
@@ -863,7 +875,7 @@ export default function FunctionalTestEnv() {
                           {slotStatus === "not_seeded" ? null
                           : slotStatus === "claimed" ? (
                             <button
-                              onClick={() => handleRelease(slotKey)}
+                              onClick={() => handleRelease(slotKey, currentId, slotAthleteIds)}
                               disabled={isRunning}
                               style={{
                                 padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600,
