@@ -194,7 +194,7 @@ export default function FunctionalTestEnv() {
       setLastSeeded(ts);
       addLog(`Seed complete — ${result.meta.totalRecords} records created (v${SEED_VERSION}) env=${result.meta.envLabel}`);
       const integrity = await checkSeedIntegrity(SEED_CLIENT);
-      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} family2=${integrity.family2AthleteId ?? "MISSING"}`);
+      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} activities=${integrity.counts.activities} campIntents=${integrity.counts.campIntents ?? "?"} family2=${integrity.family2AthleteId ?? "MISSING"} acts=${integrity.family2ActivityCount ?? "?"} camps=${integrity.family2CampIntentCount ?? "?"}`);
       if (!integrity.ok) integrity.issues.forEach(i => addLog(`  WARN: ${i}`));
       await handleAutoRelink();
     } catch (err) {
@@ -251,7 +251,7 @@ export default function FunctionalTestEnv() {
       }
 
       const integrity = await checkSeedIntegrity(SEED_CLIENT);
-      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} family2=${integrity.family2AthleteId ?? "MISSING"}`);
+      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} activities=${integrity.counts.activities} campIntents=${integrity.counts.campIntents ?? "?"} family2=${integrity.family2AthleteId ?? "MISSING"} acts=${integrity.family2ActivityCount ?? "?"} camps=${integrity.family2CampIntentCount ?? "?"}`);
       if (!integrity.ok) integrity.issues.forEach(i => addLog(`  WARN: ${i}`));
       await handleAutoRelink();
     } catch (err) {

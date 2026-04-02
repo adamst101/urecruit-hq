@@ -253,6 +253,25 @@ Deno.serve(async (req) => {
               } catch (e) {
                 errors.push(`CoachRoster filter failed for athlete ${aid} [non-critical]: ${(e as Error).message}`);
               }
+
+              // Revert RecruitingActivity.account_id back to syntheticId.
+              // On release, realId === syntheticId — the slot's placeholder account.
+              try {
+                const acts = await sr.entities.RecruitingActivity.filter({ athlete_id: aid });
+                const actList = Array.isArray(acts) ? acts : [];
+                for (const a of actList) {
+                  const actId = String(a.id ?? a._id ?? "");
+                  if (!actId) continue;
+                  try {
+                    await sr.entities.RecruitingActivity.update(actId, { account_id: realId }); // realId = syntheticId on release
+                  } catch (e) {
+                    errors.push(`RecruitingActivity ${actId} account_id revert [non-critical]: ${(e as Error).message}`);
+                  }
+                }
+                console.log(`[claimSlotProfiles] reverted ${actList.length} RecruitingActivity.account_id for athlete ${aid} → ${realId} (syntheticId)`);
+              } catch (e) {
+                errors.push(`RecruitingActivity filter for athlete ${aid} [non-critical]: ${(e as Error).message}`);
+              }
             }
           }
         }
@@ -385,6 +404,27 @@ Deno.serve(async (req) => {
             }
           } catch (e) {
             errors.push(`CoachRoster filter failed for athlete ${athleteId} [non-critical]: ${(e as Error).message}`);
+          }
+
+          // Update RecruitingActivity.account_id so getRecruitingJourney can find them.
+          // getRecruitingJourney filters by account_id === realId; seeds are created
+          // with account_id === syntheticId. Without this update activities are invisible
+          // to the real user after claim.
+          try {
+            const acts = await sr.entities.RecruitingActivity.filter({ athlete_id: athleteId });
+            const actList = Array.isArray(acts) ? acts : [];
+            for (const a of actList) {
+              const actId = String(a.id ?? a._id ?? "");
+              if (!actId) continue;
+              try {
+                await sr.entities.RecruitingActivity.update(actId, { account_id: realId });
+              } catch (e) {
+                errors.push(`RecruitingActivity ${actId} account_id update [non-critical]: ${(e as Error).message}`);
+              }
+            }
+            console.log(`[claimSlotProfiles] updated ${actList.length} RecruitingActivity.account_id for athlete ${athleteId} → ${realId}`);
+          } catch (e) {
+            errors.push(`RecruitingActivity filter for athlete ${athleteId} [non-critical]: ${(e as Error).message}`);
           }
         }
 

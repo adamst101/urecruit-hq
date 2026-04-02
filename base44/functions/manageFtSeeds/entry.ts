@@ -56,7 +56,7 @@ const FT_COACHES = [
 const FT_ATHLETES = [
   { _key: "athlete1", first_name: "Test", last_name: "Johnson",  athlete_name: "__hc_ft_Test Johnson",  account_id: "__hc_ft_family1", grad_year: 2026, sport_id: "football", position: "QB", active: true },
   { _key: "athlete2", first_name: "Test", last_name: "Johnson",  athlete_name: "__hc_ft_Test Johnson",  account_id: "__hc_ft_family1", grad_year: 2027, sport_id: "football", position: "WR", active: true },
-  { _key: "athlete3", first_name: "Test", last_name: "Martinez", athlete_name: "__hc_ft_Test Martinez", account_id: "__hc_ft_family2", grad_year: 2026, sport_id: "football", position: "DB", active: true },
+  { _key: "athlete3", first_name: "Test", last_name: "Martinez", athlete_name: "__hc_ft_Test Martinez", account_id: "__hc_ft_family2", grad_year: 2026, sport_id: "football", position: "DB", active: true, home_city: "Tampa", home_state: "FL" },
   { _key: "athlete4", first_name: "Test", last_name: "Williams", athlete_name: "__hc_ft_Test Williams", account_id: "__hc_ft_family3", grad_year: 2025, sport_id: "football", position: "LB", active: true },
   { _key: "athlete5", first_name: "Test", last_name: "Davis",    athlete_name: "__hc_ft_Test Davis",    account_id: "__hc_ft_family4", grad_year: 2026, sport_id: "football", position: "OL", active: true },
   { _key: "athlete6", first_name: "Test", last_name: "Brown",    athlete_name: "__hc_ft_Test Brown",    account_id: "__hc_ft_family5", grad_year: 2027, sport_id: "football", position: "DL", active: true },
@@ -104,17 +104,19 @@ function isSeedRecord(record: any, fields: string[]): boolean {
 // ─── discoverSeeds — SR list scan filtered by __hc_ft_ prefix ────────────────
 
 async function discoverSeeds(sr: any) {
-  const [coaches, athletes, rosters, activities] = await Promise.all([
+  const [coaches, athletes, rosters, activities, campIntents] = await Promise.all([
     sr.entities.Coach.list("-created_date", 2000).catch(() => []),
     sr.entities.AthleteProfile.list("-created_date", 2000).catch(() => []),
     sr.entities.CoachRoster.list("-created_date", 2000).catch(() => []),
     sr.entities.RecruitingActivity.list("-created_date", 2000).catch(() => []),
+    sr.entities.CampIntent.list("-created_date", 2000).catch(() => []),
   ]);
   return {
-    coaches:    (Array.isArray(coaches)    ? coaches    : []).filter((r: any) => isSeedRecord(r, ["first_name", "last_name", "account_id", "invite_code"])),
-    athletes:   (Array.isArray(athletes)   ? athletes   : []).filter((r: any) => isSeedRecord(r, ["athlete_name", "account_id"])),
-    rosters:    (Array.isArray(rosters)    ? rosters    : []).filter((r: any) => isSeedRecord(r, ["invite_code", "account_id", "athlete_id", "coach_id"])),
-    activities: (Array.isArray(activities) ? activities : []).filter((r: any) => isSeedRecord(r, ["account_id", "athlete_id", "coach_name"])),
+    coaches:     (Array.isArray(coaches)     ? coaches     : []).filter((r: any) => isSeedRecord(r, ["first_name", "last_name", "account_id", "invite_code"])),
+    athletes:    (Array.isArray(athletes)    ? athletes    : []).filter((r: any) => isSeedRecord(r, ["athlete_name", "account_id"])),
+    rosters:     (Array.isArray(rosters)     ? rosters     : []).filter((r: any) => isSeedRecord(r, ["invite_code", "account_id", "athlete_id", "coach_id"])),
+    activities:  (Array.isArray(activities)  ? activities  : []).filter((r: any) => isSeedRecord(r, ["account_id", "athlete_id", "coach_name"])),
+    campIntents: (Array.isArray(campIntents) ? campIntents : []).filter((r: any) => isSeedRecord(r, ["account_id"])),
   };
 }
 
@@ -125,12 +127,13 @@ async function deleteAllSeeds(sr: any): Promise<{ deleted: number; errors: strin
   let deleted = 0;
   const errors: string[] = [];
 
-  // Delete in dependency order: activities → rosters → athletes → coaches
+  // Delete in dependency order: campIntents → activities → rosters → athletes → coaches
   const queue = [
-    ...found.activities.map((r: any) => ({ entity: sr.entities.RecruitingActivity, id: r.id, label: `RecruitingActivity:${r.id}` })),
-    ...found.rosters.map((r: any) =>    ({ entity: sr.entities.CoachRoster,        id: r.id, label: `CoachRoster:${r.id}` })),
-    ...found.athletes.map((r: any) =>   ({ entity: sr.entities.AthleteProfile,     id: r.id, label: `AthleteProfile:${r.id}` })),
-    ...found.coaches.map((r: any) =>    ({ entity: sr.entities.Coach,              id: r.id, label: `Coach:${r.id}` })),
+    ...found.campIntents.map((r: any) => ({ entity: sr.entities.CampIntent,          id: r.id, label: `CampIntent:${r.id}` })),
+    ...found.activities.map((r: any) =>  ({ entity: sr.entities.RecruitingActivity,  id: r.id, label: `RecruitingActivity:${r.id}` })),
+    ...found.rosters.map((r: any) =>     ({ entity: sr.entities.CoachRoster,         id: r.id, label: `CoachRoster:${r.id}` })),
+    ...found.athletes.map((r: any) =>    ({ entity: sr.entities.AthleteProfile,      id: r.id, label: `AthleteProfile:${r.id}` })),
+    ...found.coaches.map((r: any) =>     ({ entity: sr.entities.Coach,               id: r.id, label: `Coach:${r.id}` })),
   ];
 
   console.log(`[manageFtSeeds] delete: ${queue.length} records to delete`);
@@ -149,8 +152,8 @@ async function deleteAllSeeds(sr: any): Promise<{ deleted: number; errors: strin
 
 // ─── seedAll — create all FT seed records via SR ─────────────────────────────
 
-async function seedAll(sr: any): Promise<{
-  coaches: any[]; athletes: any[]; rosters: any[]; activities: any[]; totalRecords: number;
+async function seedAll(sr: any, base44?: any): Promise<{
+  coaches: any[]; athletes: any[]; rosters: any[]; activities: any[]; campIntents: any[]; totalRecords: number;
 }> {
   // Phase 1: Coaches
   const coaches: any[] = [];
@@ -215,22 +218,63 @@ async function seedAll(sr: any): Promise<{
   }
   console.log(`[manageFtSeeds] seed Phase 4 done — ${activities.length} activities`);
 
-  const totalRecords = coaches.length + athletes.length + rosters.length + activities.length;
+  // Phase 5: CampIntents for family2 (athlete3) — 2 favorites + 1 registered
+  // Uses base44.entities.Camp (caller auth, no X-Origin-URL from server → PROD data) to
+  // find real Camp records, then creates CampIntents via SR so getMyCampIntents (SR) can find them.
+  const campIntents: any[] = [];
+  if (base44) {
+    try {
+      const family2 = athleteById["athlete3"];
+      if (family2) {
+        const camps = await base44.entities.Camp.list("-created_date", 100).catch(() => []);
+        const campList = Array.isArray(camps) ? camps : [];
+        const footballCamps = campList.filter((c: any) =>
+          (c.sport ?? "").toLowerCase().includes("football") ||
+          (c.sport_id ?? "").toLowerCase().includes("football")
+        );
+        const targetCamps = (footballCamps.length >= 3 ? footballCamps : campList).slice(0, 3);
+        const intentDefs = [
+          { campIndex: 0, status: "favorite"   },
+          { campIndex: 1, status: "favorite"   },
+          { campIndex: 2, status: "registered" },
+        ];
+        for (const { campIndex, status } of intentDefs) {
+          const camp = targetCamps[campIndex];
+          if (!camp) break;
+          const record = await sr.entities.CampIntent.create({
+            camp_id:    camp.id,
+            athlete_id: String(family2.id ?? family2._id ?? ""),
+            account_id: "__hc_ft_family2",
+            status,
+          });
+          campIntents.push(record);
+          console.log(`[manageFtSeeds] campIntent created: camp_id=${camp.id} athlete_id=${family2.id} status=${status}`);
+        }
+      }
+    } catch (e) {
+      console.warn(`[manageFtSeeds] Phase 5 CampIntent creation failed (non-critical): ${(e as Error).message}`);
+    }
+  }
+  console.log(`[manageFtSeeds] seed Phase 5 done — ${campIntents.length} campIntents`);
+
+  const totalRecords = coaches.length + athletes.length + rosters.length + activities.length + campIntents.length;
   console.log(`[manageFtSeeds] seed complete: total=${totalRecords} version=${SEED_VERSION} env=PROD (server-side SR)`);
 
-  return { coaches, athletes, rosters, activities, totalRecords };
+  return { coaches, athletes, rosters, activities, campIntents, totalRecords };
 }
 
 // ─── checkIntegrity ───────────────────────────────────────────────────────────
 
 async function checkIntegrity(sr: any): Promise<{
   ok: boolean;
-  counts: { coaches: number; athletes: number; rosters: number; activities: number };
+  counts: { coaches: number; athletes: number; rosters: number; activities: number; campIntents: number };
   family2AthleteId: string | null;
+  family2ActivityCount: number;
+  family2CampIntentCount: number;
   athleteIds: { id: string; accountId: string; name: string }[];
   issues: string[];
 }> {
-  const { coaches, athletes, rosters, activities } = await discoverSeeds(sr);
+  const { coaches, athletes, rosters, activities, campIntents } = await discoverSeeds(sr);
   const issues: string[] = [];
 
   // Each family slot must have at least one athlete with the synthetic account_id
@@ -246,17 +290,39 @@ async function checkIntegrity(sr: any): Promise<{
   }
 
   const family2Athlete = athletes.find((a: any) => a.account_id === "__hc_ft_family2");
+  const family2AthleteId = family2Athlete ? String(family2Athlete.id ?? family2Athlete._id ?? "") : null;
+
+  const family2ActivityCount  = family2AthleteId
+    ? activities.filter((a: any)   => String(a.athlete_id ?? "") === family2AthleteId).length
+    : 0;
+  const family2CampIntentCount = family2AthleteId
+    ? campIntents.filter((ci: any) => String(ci.athlete_id ?? "") === family2AthleteId).length
+    : 0;
+
+  if (!family2Athlete) {
+    issues.push("family2 athlete missing");
+  } else {
+    if (!family2Athlete.sport_id) issues.push("family2 athlete missing sport_id");
+    if (!family2Athlete.home_city) issues.push("family2 athlete missing home_city");
+    if (family2ActivityCount  === 0) issues.push("family2 athlete has zero RecruitingActivity records");
+    if (family2CampIntentCount === 0) issues.push("family2 athlete has zero CampIntent records");
+  }
 
   console.log(
     `[manageFtSeeds] integrity: coaches=${coaches.length} athletes=${athletes.length} ` +
-    `rosters=${rosters.length} activities=${activities.length} ` +
-    `family2=${family2Athlete?.id ?? "MISSING"} issues=${issues.length}`,
+    `rosters=${rosters.length} activities=${activities.length} campIntents=${campIntents.length} ` +
+    `family2=${family2AthleteId ?? "MISSING"} family2Acts=${family2ActivityCount} family2Camps=${family2CampIntentCount} issues=${issues.length}`,
   );
 
   return {
     ok: issues.length === 0,
-    counts: { coaches: coaches.length, athletes: athletes.length, rosters: rosters.length, activities: activities.length },
-    family2AthleteId: family2Athlete ? String(family2Athlete.id ?? family2Athlete._id ?? "") : null,
+    counts: {
+      coaches: coaches.length, athletes: athletes.length,
+      rosters: rosters.length, activities: activities.length, campIntents: campIntents.length,
+    },
+    family2AthleteId,
+    family2ActivityCount,
+    family2CampIntentCount,
     athleteIds: athletes.map((a: any) => ({
       id: String(a.id ?? a._id ?? ""),
       accountId: String(a.account_id ?? ""),
@@ -355,7 +421,7 @@ Deno.serve(async (req) => {
             existing: { coaches: existing.coaches.length, athletes: existing.athletes.length, rosters: existing.rosters.length, activities: existing.activities.length },
           }, { status: 409 });
         }
-        const result = await seedAll(sr);
+        const result = await seedAll(sr, base44);
         const postWriteVerify = await verifyFamily2Write(sr);
         return Response.json({
           ok: true, ...execCtx, version: SEED_VERSION, ...result,
@@ -367,7 +433,7 @@ Deno.serve(async (req) => {
 
       case "reset": {
         const deleteResult = await deleteAllSeeds(sr);
-        const seedResult   = await seedAll(sr);
+        const seedResult   = await seedAll(sr, base44);
         const postWriteVerify = await verifyFamily2Write(sr);
         return Response.json({
           ok: true, ...execCtx, version: SEED_VERSION, deleteResult, ...seedResult,
