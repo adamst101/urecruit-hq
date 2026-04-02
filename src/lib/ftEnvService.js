@@ -729,15 +729,20 @@ export async function grantTestEntitlement(base44, accountId) {
     const res = await base44.functions.invoke("grantFtEntitlement", { accountId });
     if (res?.data?.ok !== undefined) {
       const d = res.data;
-      return {
-        granted:    d.granted === true,
-        reason:     d.granted === true ? undefined : (d.reason || d.error || "server_skipped"),
-        seasonYear: d.seasonYear ?? seasonYear,
-      };
+      if (d.granted === true) {
+        return { granted: true, seasonYear: d.seasonYear ?? seasonYear };
+      }
+      // "already_entitled" means an active entitlement already exists — skip fallback.
+      // Any other error (permission, server fault, etc.) falls through to the client-side
+      // path so a usable entitlement is still created.
+      if (d.reason === "already_entitled") {
+        return { granted: false, reason: "already_entitled", seasonYear: d.seasonYear ?? seasonYear };
+      }
+      console.warn("[grantTestEntitlement] server function returned non-success, trying fallback:", d.error || d.reason);
     }
   } catch (fnErr) {
     // Server function not yet deployed or not reachable — fall through to direct entity write
-    console.warn("[grantTestEntitlement] server function failed, falling back to direct write:", fnErr?.message);
+    console.warn("[grantTestEntitlement] server function threw, falling back to direct write:", fnErr?.message);
   }
 
   // Fallback: direct entity write (requires Entitlement entity to be accessible).
@@ -771,9 +776,30 @@ export async function grantTestEntitlement(base44, accountId) {
 // ---------------------------------------------------------------------------
 // revokeTestEntitlement — delete any ft_seed entitlements for a given account.
 // Only removes records created by grantTestEntitlement (source: "ft_seed").
+//
+// IMPORTANT: client-side base44.entities.Entitlement.list() cannot see records
+// created via asServiceRole (grantFtEntitlement server function). The revokeFtEntitlement
+// server function uses asServiceRole with a list-scan fallback, covering both paths.
 // ---------------------------------------------------------------------------
 
 export async function revokeTestEntitlement(base44, accountId) {
+  // Prefer the server-side function — it uses asServiceRole so it can find
+  // entitlements created by grantFtEntitlement (which also uses asServiceRole).
+  // Client-side list() is permanently blind to those records.
+  try {
+    const res = await base44.functions.invoke("revokeFtEntitlement", { accountId });
+    if (res?.data?.ok !== undefined) {
+      const d = res.data;
+      if (d.errors?.length) {
+        d.errors.forEach(e => console.warn("[revokeTestEntitlement] server warning:", e));
+      }
+      return { revoked: d.revoked ?? 0, errors: d.errors ?? [] };
+    }
+  } catch (fnErr) {
+    console.warn("[revokeTestEntitlement] server function failed, falling back to client-side:", fnErr?.message);
+  }
+
+  // Fallback: client-side delete (only sees records not created via asServiceRole)
   const all = await base44.entities.Entitlement.list("-created_date", 500).catch(() => []);
   const toDelete = all.filter(e => e.account_id === accountId && e.source === "ft_seed");
   let revoked = 0;
