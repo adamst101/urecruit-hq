@@ -233,7 +233,46 @@ export async function deleteAllSeeds(base44) {
 // seedTopology
 // ---------------------------------------------------------------------------
 
-export async function seedTopology(base44) {
+// ---------------------------------------------------------------------------
+// checkSeedIntegrity — verify seed records are present and consistent
+// ---------------------------------------------------------------------------
+
+export async function checkSeedIntegrity(base44) {
+  const { coaches, athletes, rosters, activities } = await discoverSeeds(base44);
+  const issues = [];
+
+  // Verify each family slot has at least one athlete with the canonical account_id
+  for (const [slotKey, slot] of Object.entries(SLOT_MAP)) {
+    if (slot.type !== "family") continue;
+    const slotAthletes = athletes.filter(a => a.account_id === slot.syntheticId);
+    if (slotAthletes.length === 0) {
+      issues.push(`${slotKey}: no athlete found with account_id === "${slot.syntheticId}"`);
+    }
+  }
+
+  if (coaches.length === 0) issues.push("No seed coaches found");
+  if (rosters.length === 0) issues.push("No seed rosters found");
+
+  const family2Athlete = athletes.find(a => a.account_id === "__hc_ft_family2");
+
+  console.log(
+    `[checkSeedIntegrity] coaches=${coaches.length} athletes=${athletes.length} ` +
+    `rosters=${rosters.length} activities=${activities.length} ` +
+    `family2=${family2Athlete?.id ?? "MISSING"} issues=${issues.length}`
+  );
+
+  return {
+    ok: issues.length === 0,
+    counts: { coaches: coaches.length, athletes: athletes.length, rosters: rosters.length, activities: activities.length },
+    family2AthleteId: family2Athlete?.id ?? null,
+    athleteIds: athletes.map(a => ({ id: a.id, accountId: a.account_id, name: a.athlete_name })),
+    issues,
+  };
+}
+
+export async function seedTopology(base44, { envLabel = "default" } = {}) {
+  console.log(`[seedTopology] Starting seed — env=${envLabel}`);
+
   // Guard: refuse to seed if records already exist — prevents duplicate records
   // accumulating across multiple seed runs. Use resetTopology to wipe and reseed.
   const existing = await discoverSeeds(base44);
@@ -308,12 +347,20 @@ export async function seedTopology(base44) {
 
   const totalRecords = coaches.length + athletes.length + rosters.length + activities.length;
 
+  console.log(
+    `[seedTopology] Complete — env=${envLabel} ` +
+    `coaches=${coaches.length} athletes=${athletes.length} ` +
+    `rosters=${rosters.length} activities=${activities.length} ` +
+    `total=${totalRecords} ` +
+    `athleteIds=${JSON.stringify(athletes.map(a => ({ id: a.id, account_id: a.account_id })))}`
+  );
+
   return {
     coaches,
     athletes,
     rosters,
     activities,
-    meta: { seededAt, version: SEED_VERSION, totalRecords },
+    meta: { seededAt, version: SEED_VERSION, totalRecords, envLabel },
   };
 }
 
@@ -321,9 +368,11 @@ export async function seedTopology(base44) {
 // resetTopology — delete existing seeds then reseed
 // ---------------------------------------------------------------------------
 
-export async function resetTopology(base44) {
+export async function resetTopology(base44, opts = {}) {
+  const envLabel = opts.envLabel ?? "default";
+  console.log(`[resetTopology] Starting reset — env=${envLabel}`);
   await deleteAllSeeds(base44);
-  return seedTopology(base44);
+  return seedTopology(base44, { envLabel });
 }
 
 // ---------------------------------------------------------------------------

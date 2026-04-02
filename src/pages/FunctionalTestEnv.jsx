@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminRoute from "../components/auth/AdminRoute";
 import { base44 } from "../api/base44Client";
+import { ftProdBase44, FT_SEED_ENV } from "../api/ftProdBase44";
 import { appParams } from "../lib/app-params";
 import {
   SEED_VERSION,
@@ -20,7 +21,13 @@ import {
   lookupAccountByEmail,
   grantTestEntitlement,
   revokeTestEntitlement,
+  checkSeedIntegrity,
 } from "../lib/ftEnvService";
+
+// All FT seed entity writes and function calls use ftProdBase44 — a client
+// hardcoded to functionsVersion:"prod" so records always land in the PROD
+// namespace regardless of any URL-param or localStorage overrides on base44.
+const SEED_CLIENT = ftProdBase44;
 
 // ---------------------------------------------------------------------------
 // localStorage helpers
@@ -121,7 +128,7 @@ export default function FunctionalTestEnv() {
     setRunning("discover");
     setLoading(true);
     try {
-      const found = await discoverSeeds(base44);
+      const found = await discoverSeeds(SEED_CLIENT);
       setSeedData({
         coaches:    found.coaches,
         athletes:   found.athletes,
@@ -175,14 +182,17 @@ export default function FunctionalTestEnv() {
     setLoading(true);
     addLog("Seeding topology…");
     try {
-      const result = await seedTopology(base44);
+      const result = await seedTopology(SEED_CLIENT, { envLabel: "PROD (locked)" });
       setSeedData(result);
       setStatus("ready");
       const ts = new Date().toISOString();
       lsSet(LS_LAST_SEEDED,  ts);
       lsSet(LS_SEED_VERSION, SEED_VERSION);
       setLastSeeded(ts);
-      addLog(`Seed complete — ${result.meta.totalRecords} records created (v${SEED_VERSION})`);
+      addLog(`Seed complete — ${result.meta.totalRecords} records created (v${SEED_VERSION}) env=${result.meta.envLabel}`);
+      const integrity = await checkSeedIntegrity(SEED_CLIENT);
+      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} family2=${integrity.family2AthleteId ?? "MISSING"}`);
+      if (!integrity.ok) integrity.issues.forEach(i => addLog(`  WARN: ${i}`));
       await handleAutoRelink();
     } catch (err) {
       setStatus("broken");
@@ -205,7 +215,7 @@ export default function FunctionalTestEnv() {
     setLoading(true);
     addLog("Resetting topology (delete + reseed)…");
     try {
-      const result = await resetTopology(base44);
+      const result = await resetTopology(SEED_CLIENT, { envLabel: "PROD (locked)" });
       setSeedData(result);
       setStatus("ready");
       const ts = new Date().toISOString();
@@ -213,7 +223,10 @@ export default function FunctionalTestEnv() {
       lsSet(LS_SEED_VERSION, SEED_VERSION);
       setLastSeeded(ts);
       setVerifyResult(null);
-      addLog(`Reset complete — ${result.meta.totalRecords} records recreated (v${SEED_VERSION})`);
+      addLog(`Reset complete — ${result.meta.totalRecords} records recreated (v${SEED_VERSION}) env=${result.meta.envLabel}`);
+      const integrity = await checkSeedIntegrity(SEED_CLIENT);
+      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} family2=${integrity.family2AthleteId ?? "MISSING"}`);
+      if (!integrity.ok) integrity.issues.forEach(i => addLog(`  WARN: ${i}`));
       await handleAutoRelink();
     } catch (err) {
       setStatus("broken");
@@ -232,7 +245,7 @@ export default function FunctionalTestEnv() {
     setLoading(true);
     addLog("Running verification…");
     try {
-      const result = await verifyTopology(base44);
+      const result = await verifyTopology(SEED_CLIENT);
       setVerifyResult(result);
       setStatus(result.status);
       const ts = new Date().toISOString();
@@ -258,8 +271,8 @@ export default function FunctionalTestEnv() {
     addLog(`Auto-relinking ${slots.length} saved slot${slots.length !== 1 ? "s" : ""}…`);
     for (const [slotKey, { email, accountId }] of slots) {
       try {
-        const { updated } = await claimSlot(base44, slotKey, accountId);
-        const { granted, seasonYear, reason } = await grantTestEntitlement(base44, accountId);
+        const { updated } = await claimSlot(SEED_CLIENT, slotKey, accountId);
+        const { granted, seasonYear, reason } = await grantTestEntitlement(SEED_CLIENT, accountId);
         addLog(`  ✓ ${slotKey} → ${email} (${updated} records, entitlement ${granted ? `granted ${seasonYear}` : `skipped — ${reason}`})`);
       } catch (err) {
         addLog(`  ✗ ${slotKey} auto-relink failed: ${err?.message}`);
@@ -278,11 +291,11 @@ export default function FunctionalTestEnv() {
     setLoading(true);
     addLog(`Looking up account for "${email}"…`);
     try {
-      const user = await lookupAccountByEmail(base44, email);
+      const user = await lookupAccountByEmail(SEED_CLIENT, email);
       if (!user?.id) throw new Error(`No account found for email: ${email}`);
       const syntheticId = SLOT_MAP[slotKey]?.syntheticId;
       addLog(`Found account ${user.id} (${user.email}) — linking slot "${slotKey}" syntheticId=${syntheticId} athleteIds=[${knownAthleteIds.join(",")}]`);
-      const linkResult = await claimSlot(base44, slotKey, user.id, { knownAthleteProfileIds: knownAthleteIds });
+      const linkResult = await claimSlot(SEED_CLIENT, slotKey, user.id, { knownAthleteProfileIds: knownAthleteIds });
       const { updated, errors, athleteProfileReverted, schoolPreferenceUpdated, rosterReverted, _raw: linkRaw } = linkResult;
       const lookupMethod = linkRaw?.lookupMethod ?? "unknown";
       addLog(`[LIVECHECK] claimSlotProfiles (claim) raw: ${JSON.stringify(linkRaw ?? linkResult)}`);
@@ -299,7 +312,7 @@ export default function FunctionalTestEnv() {
         addLog(`Link FAILED for "${slotKey}" — 0 records (method=${lookupMethod})${errors.length ? " (see WARNs)" : ""}`);
       }
       // Grant entitlement so the account can reach Workspace
-      const { granted, seasonYear, reason } = await grantTestEntitlement(base44, user.id);
+      const { granted, seasonYear, reason } = await grantTestEntitlement(SEED_CLIENT, user.id);
       addLog(granted
         ? `Entitlement granted for season ${seasonYear}`
         : `Entitlement skipped — ${reason} (season ${seasonYear})`
@@ -335,7 +348,7 @@ export default function FunctionalTestEnv() {
     setLoading(true);
     addLog(`Releasing slot "${slotKey}" — previousRealId=${previousRealId} athleteIds=[${knownAthleteIds.join(",")}]`);
     try {
-      const releaseResult = await releaseSlot(base44, slotKey, previousRealId, knownAthleteIds);
+      const releaseResult = await releaseSlot(SEED_CLIENT, slotKey, previousRealId, knownAthleteIds);
       const { updated, errors, athleteProfileReverted, schoolPreferenceUpdated, rosterReverted, _raw: releaseRaw } = releaseResult;
       addLog(`[LIVECHECK] claimSlotProfiles raw: ${JSON.stringify(releaseRaw ?? releaseResult)}`);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
@@ -351,7 +364,7 @@ export default function FunctionalTestEnv() {
       }
       // Revoke the ft_seed entitlement so the account can no longer access Workspace
       if (previousRealId !== SLOT_MAP[slotKey]?.syntheticId) {
-        const revokeResult = await revokeTestEntitlement(base44, previousRealId);
+        const revokeResult = await revokeTestEntitlement(SEED_CLIENT, previousRealId);
         const { revoked, _raw: revokeRaw } = revokeResult;
         addLog(`[LIVECHECK] revokeFtEntitlement raw: ${JSON.stringify(revokeRaw ?? revokeResult)}`);
         addLog(`Entitlement revoked (${revoked} record${revoked !== 1 ? "s" : ""} removed)`);
@@ -613,6 +626,12 @@ export default function FunctionalTestEnv() {
                   <div style={styles.statusLabel}>Functions Version</div>
                   <div style={{ ...styles.statusValue, fontFamily: "monospace", fontSize: 11, color: appParams.functionsVersion === "prod" ? "#059669" : "#D97706" }}>
                     {appParams.functionsVersion || "unknown"}
+                  </div>
+                </div>
+                <div style={styles.statusItem}>
+                  <div style={styles.statusLabel}>Seed Environment</div>
+                  <div style={{ ...styles.statusValue, fontFamily: "monospace", fontSize: 11, color: FT_SEED_ENV.locked ? "#059669" : "#D97706", fontWeight: 700 }}>
+                    {FT_SEED_ENV.functionsVersion} {FT_SEED_ENV.locked ? "🔒" : "⚠"}
                   </div>
                 </div>
 
