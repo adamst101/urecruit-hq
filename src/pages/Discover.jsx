@@ -1101,7 +1101,7 @@ export default function Discover() {
           </div>
         )}
 
-        {!isPaid && !isCoachDemo && <div className="mt-5 mb-2"><DemoBanner seasonYear={seasonYear} /></div>}
+        {!isPaid && !isCoachDemo && <div className="mt-5 mb-2"><DemoBanner seasonYear={seasonYear} compact={isTourMode} /></div>}
 
         {/* Inline filter dropdowns */}
         <div className="mt-4">

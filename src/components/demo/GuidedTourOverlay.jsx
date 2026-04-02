@@ -21,8 +21,8 @@ const TOUR_STEPS = [
     key: "profile",
     stepNum: 1,
     title: "Get organized first",
-    message: "Put the basics in one place so every camp, coach interaction, and next step is easier to manage.",
-    hint: "Scroll to see Marcus's profile.",
+    message: "Put the basics in one place so every next step is easier to manage.",
+    hint: "Scroll Marcus's profile.",
     nextKey: "playbook",
     nextLabel: "Recruiting Playbook",
     nextPath: "/KnowledgeBase",
@@ -32,8 +32,8 @@ const TOUR_STEPS = [
     key: "playbook",
     stepNum: 2,
     title: "Understand the process earlier",
-    message: "This gives families a clearer picture of what matters, when it matters, and how to plan.",
-    hint: "Glance at the timeline, then continue.",
+    message: "Get a clearer picture of what matters, when it matters, and how to plan.",
+    hint: "Glance at the timeline.",
     nextKey: "discover",
     nextLabel: "Discover Camps",
     nextPath: "/Discover",
@@ -42,9 +42,9 @@ const TOUR_STEPS = [
   {
     key: "discover",
     stepNum: 3,
-    title: "Turn searching into a real plan",
-    message: "Instead of bouncing between camp sites, families can compare options and save the right ones in one place.",
-    hint: "Browse camps and look for good-fit options.",
+    title: "Turn searching into a plan",
+    message: "Compare camps in one place instead of bouncing between camp sites.",
+    hint: "Browse and save the right fits.",
     nextKey: "mycamps",
     nextLabel: "My Camps",
     nextPath: "/MyCamps",
@@ -53,9 +53,9 @@ const TOUR_STEPS = [
   {
     key: "mycamps",
     stepNum: 4,
-    title: "Keep your options in one place",
-    message: "This is where saved and registered camps start to feel like a real camp plan, not scattered notes.",
-    hint: "Review what Marcus saved and registered.",
+    title: "Keep your options together",
+    message: "Saved and registered camps start to feel like a real plan instead of scattered notes.",
+    hint: "Review what Marcus saved.",
     nextKey: "calendar",
     nextLabel: "My Calendar",
     nextPath: "/Calendar",
@@ -65,8 +65,8 @@ const TOUR_STEPS = [
     key: "calendar",
     stepNum: 5,
     title: "Make camp season less chaotic",
-    message: "This helps families spot conflicts, timing issues, and travel pressure before plans get messy.",
-    hint: "Look at how camps line up across the calendar.",
+    message: "Spot conflicts and timing issues before plans get messy.",
+    hint: "Review how camps line up.",
     nextKey: "tracker",
     nextLabel: "Recruiting Tracker",
     nextPath: "/RecruitingJourney",
@@ -76,8 +76,8 @@ const TOUR_STEPS = [
     key: "tracker",
     stepNum: 6,
     title: "Separate momentum from noise",
-    message: "This is where families track real recruiting activity so they can see what is actually progressing.",
-    hint: "Review Marcus's activity and how it builds over time.",
+    message: "Track real recruiting activity so you can see what is actually progressing.",
+    hint: "Review Marcus's activity.",
     nextKey: null,
     nextLabel: null,
     nextPath: "/Workspace",
@@ -350,11 +350,11 @@ export default function GuidedTourOverlay({ tourKey }) {
             /* Push content above the iPhone home indicator */
             padding-bottom: env(safe-area-inset-bottom, 0px) !important;
           }
-          /* Tighten body padding ~25% to reveal more product below the sheet */
-          .dt-body   { padding: 10px 16px 10px !important; }
-          .dt-title  { font-size: 14px !important; margin-bottom: 5px !important; }
-          .dt-message{ margin-bottom: 6px !important; line-height: 1.5 !important; }
-          .dt-hint   { margin-bottom: 6px !important; font-size: 11px !important; }
+          /* Compact guidance rail — minimal footprint, page carries the value */
+          .dt-body   { padding: 8px 14px 10px !important; }
+          .dt-title  { font-size: 14px !important; margin-bottom: 4px !important; }
+          .dt-message{ font-size: 12px !important; margin-bottom: 5px !important; line-height: 1.45 !important; }
+          .dt-hint   { margin-bottom: 5px !important; font-size: 11px !important; padding-left: 8px !important; }
           /* Stack actions vertically: amber CTA full-width on top, skip text below */
           .dt-spacer  { display: none !important; }
           .dt-actions {

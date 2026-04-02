@@ -339,32 +339,43 @@ export default function Profile() {
 
         {/* User demo athlete card */}
         {isUserDemo && (
-          <div style={{ background: "rgba(232,160,32,0.06)", border: "1px solid rgba(232,160,32,0.2)", borderRadius: 12, padding: "16px 20px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-              <div style={{ background: "#e8a020", color: "#0a0e1a", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                Demo Profile
+          <div style={{ background: "rgba(10,14,26,0.8)", border: "1px solid #1e2d45", borderRadius: 14, overflow: "hidden" }}>
+            {/* Athlete name header */}
+            <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid #1a2740" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.1em", background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.2)", borderRadius: 4, padding: "2px 7px" }}>
+                  Demo Profile
+                </span>
               </div>
-              <span style={{ fontSize: 13, color: "#6b7280" }}>Pre-populated sample athlete</span>
+              <div style={{ fontFamily: "'Bebas Neue', 'DM Sans', sans-serif", fontSize: "clamp(28px, 7vw, 38px)", color: "#f1f5f9", lineHeight: 1, letterSpacing: 1, marginBottom: 6 }}>
+                {DEMO_ATHLETE.first_name} {DEMO_ATHLETE.last_name}
+              </div>
+              {/* Core identity row */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#e8a020" }}>{DEMO_ATHLETE.position}</span>
+                <span style={{ color: "#374151", fontSize: 12 }}>·</span>
+                <span style={{ fontSize: 13, color: "#9ca3af" }}>Class of {DEMO_ATHLETE.grad_year}</span>
+                <span style={{ color: "#374151", fontSize: 12 }}>·</span>
+                <span style={{ fontSize: 13, color: "#9ca3af" }}>{DEMO_ATHLETE.height} · {DEMO_ATHLETE.weight}</span>
+                <span style={{ color: "#374151", fontSize: 12 }}>·</span>
+                <span style={{ fontSize: 13, color: "#9ca3af" }}>{DEMO_ATHLETE.home_city}, {DEMO_ATHLETE.home_state}</span>
+              </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+            {/* Secondary details */}
+            <div style={{ padding: "14px 20px", display: "flex", flexWrap: "wrap", gap: "10px 28px" }}>
               {[
-                ["Athlete", `${DEMO_ATHLETE.first_name} ${DEMO_ATHLETE.last_name}`],
-                ["Grad Year", String(DEMO_ATHLETE.grad_year)],
-                ["Position", DEMO_ATHLETE.position],
-                ["Height / Weight", `${DEMO_ATHLETE.height} · ${DEMO_ATHLETE.weight}`],
-                ["Hometown", `${DEMO_ATHLETE.home_city}, ${DEMO_ATHLETE.home_state}`],
                 ["High School", DEMO_ATHLETE.high_school],
                 ["GPA", DEMO_ATHLETE.gpa],
                 ["Target Division", DEMO_ATHLETE.target_division],
               ].map(([label, value]) => (
                 <div key={label}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontSize: 14, color: "#f9fafb" }}>{value}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: 13, color: "#d1d5db" }}>{value}</div>
                 </div>
               ))}
             </div>
             {!isTourMode && (
-              <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(232,160,32,0.15)", display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ padding: "0 20px 16px", display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button
                   onClick={() => nav("/Subscribe?source=profile_demo")}
                   style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
@@ -373,7 +384,7 @@ export default function Profile() {
                 </button>
                 <button
                   onClick={() => nav("/Workspace?demo=user&src=home_demo")}
-                  style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}
+                  style={{ background: "transparent", color: "#6b7280", border: "1px solid #1e2d45", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}
                 >
                   ← Back to HQ
                 </button>

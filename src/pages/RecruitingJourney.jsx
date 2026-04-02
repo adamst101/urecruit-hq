@@ -503,10 +503,21 @@ export default function RecruitingJourney() {
       fontFamily: T.fontBody, paddingBottom: 80,
     }}>
       <DemoHintPopup demoHint={demoHint} onDismiss={clearDemoHint} />
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
+        @media (max-width: 640px) {
+          /* Tighter header padding on mobile */
+          .rj-header-section { padding: 20px 20px 0 !important; }
+          /* Traction snapshot: 2-column grid on small screen */
+          .rj-traction-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          /* Quick add: scroll horizontally on narrow screens */
+          .rj-quick-add-row { flex-wrap: nowrap !important; overflow-x: auto !important; padding-bottom: 4px !important; }
+          .rj-quick-add-row::-webkit-scrollbar { display: none; }
+        }
+      `}</style>
 
       {/* ── Header ── */}
-      <section style={{ padding: "24px 24px 0", maxWidth: 900, margin: "0 auto" }}>
+      <section className="rj-header-section" style={{ padding: "24px 24px 0", maxWidth: 900, margin: "0 auto" }}>
         {!isTourMode && (
           <button
             onClick={() => nav(isUserDemo ? "/Workspace?demo=user&src=home_demo" : "/Workspace")}
@@ -543,7 +554,7 @@ export default function RecruitingJourney() {
           )}
         </div>
         <p style={{ color: "#9ca3af", fontSize: 15, margin: "0 0 32px 13px", lineHeight: 1.5 }}>
-          Track college interest, DMs, camp conversations, and offers
+          Track the signals that matter — from DMs to camp invites to real traction.
         </p>
       </section>
 
@@ -614,47 +625,10 @@ export default function RecruitingJourney() {
 
       {!loading && (!!accountId || isUserDemo) && (
         <>
-          {/* ── Quick Add — hidden in tour mode for non-demo users ── */}
-          {(!isTourMode || isUserDemo) && <section style={{ padding: "0 24px 32px", maxWidth: 900, margin: "0 auto" }}>
-            <div style={{
-              fontSize: 13, fontWeight: 700, color: "#9ca3af",
-              letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12,
-            }}>
-              Quick Add
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              {QUICK_ADDS.map(qa => (
-                <button
-                  key={qa.type}
-                  onClick={(e) => {
-                    if (isUserDemo) {
-                      const hint = QUICK_ADD_DEMO_HINTS[qa.type];
-                      if (hint) showDemoHintCustom(e, hint);
-                      return;
-                    }
-                    openAdd(qa.type);
-                  }}
-                  style={{
-                    background: T.shellBg, border: T.shellBorderFull, borderRadius: 10,
-                    padding: "10px 18px", color: T.textPrimary,
-                    fontSize: 14, fontWeight: 600,
-                    cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
-                    transition: `border-color ${T.transitionBase}`,
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = T.amber; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = T.shellBorder; }}
-                >
-                  <span style={{ fontSize: 16 }}>{ACTIVITY_TYPES[qa.type].icon}</span>
-                  {qa.label}
-                </button>
-              ))}
-            </div>
-          </section>}
-
-          {/* ── Traction Snapshot — hidden in tour mode for non-demo users ── */}
+          {/* ── Traction Snapshot — insight first, tools below ── */}
           {(!isTourMode || isUserDemo) && athleteMetrics && (
             <section style={{ padding: "0 24px 20px", maxWidth: 900, margin: "0 auto" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+              <div className="rj-traction-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
                 {[
                   {
                     label: "Stage",
@@ -814,6 +788,43 @@ export default function RecruitingJourney() {
               )}
             </div>
           </section>
+
+          {/* ── Quick Add — below the activity feed so insight comes first ── */}
+          {(!isTourMode || isUserDemo) && <section style={{ padding: "0 24px 32px", maxWidth: 900, margin: "0 auto" }}>
+            <div style={{
+              fontSize: 13, fontWeight: 700, color: "#9ca3af",
+              letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12,
+            }}>
+              Quick Add
+            </div>
+            <div className="rj-quick-add-row" style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              {QUICK_ADDS.map(qa => (
+                <button
+                  key={qa.type}
+                  onClick={(e) => {
+                    if (isUserDemo) {
+                      const hint = QUICK_ADD_DEMO_HINTS[qa.type];
+                      if (hint) showDemoHintCustom(e, hint);
+                      return;
+                    }
+                    openAdd(qa.type);
+                  }}
+                  style={{
+                    background: T.shellBg, border: T.shellBorderFull, borderRadius: 10,
+                    padding: "10px 18px", color: T.textPrimary,
+                    fontSize: 14, fontWeight: 600,
+                    cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
+                    transition: `border-color ${T.transitionBase}`,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = T.amber; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = T.shellBorder; }}
+                >
+                  <span style={{ fontSize: 16 }}>{ACTIVITY_TYPES[qa.type].icon}</span>
+                  {qa.label}
+                </button>
+              ))}
+            </div>
+          </section>}
 
           {/* ── Target Schools ── */}
           <section style={{ padding: "0 24px 80px", maxWidth: 900, margin: "0 auto" }}>

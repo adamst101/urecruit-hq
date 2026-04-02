@@ -403,10 +403,24 @@ export default function Workspace() {
             justify-content: center !important;
             box-sizing: border-box !important;
           }
-          /* Next Step panel: tighter padding on small screen */
-          .ws-nextstep-panel { padding: 18px 16px !important; }
-          /* Action buttons: tighter on mobile */
-          .ws-nextstep-action-btn { padding: 9px 14px !important; font-size: 13px !important; }
+          /* Next Step panel: dominant payoff card — stronger visual weight on mobile */
+          .ws-nextstep-panel {
+            padding: 18px 16px !important;
+            border-left-width: 5px !important;
+            box-shadow: 0 4px 24px rgba(232,160,32,0.12) !important;
+          }
+          .ws-nextstep-eyebrow { font-size: 10px !important; margin-bottom: 6px !important; }
+          .ws-nextstep-headline { font-size: 20px !important; margin-bottom: 8px !important; }
+          .ws-nextstep-body { font-size: 13px !important; margin-bottom: 16px !important; }
+          /* Action buttons: full-width stack on mobile */
+          .ws-nextstep-action-btn {
+            padding: 11px 14px !important;
+            font-size: 13px !important;
+            width: 100% !important;
+            justify-content: center !important;
+            box-sizing: border-box !important;
+          }
+          .ws-nextstep-actions { flex-direction: column !important; gap: 8px !important; }
           /* Demo mobile: hide verbose context note and micro message */
           .ws-demo-context { display: none !important; }
           .ws-micro-msg-section { display: none !important; }
@@ -574,16 +588,16 @@ export default function Workspace() {
             borderRadius: 14,
             padding: "24px 28px",
           }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 8 }}>
+            <div className="ws-nextstep-eyebrow" style={{ fontSize: 11, fontWeight: 700, color: "#e8a020", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 8 }}>
               {activeStep.eyebrow}
             </div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(20px, 3vw, 26px)", color: "#f9fafb", letterSpacing: 1, marginBottom: 10 }}>
+            <div className="ws-nextstep-headline" style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(20px, 3vw, 26px)", color: "#f9fafb", letterSpacing: 1, marginBottom: 10 }}>
               {activeStep.headline}
             </div>
-            <p style={{ fontSize: 14, color: "#9ca3af", margin: "0 0 20px", lineHeight: 1.65, maxWidth: 640 }}>
+            <p className="ws-nextstep-body" style={{ fontSize: 14, color: "#9ca3af", margin: "0 0 20px", lineHeight: 1.65, maxWidth: 640 }}>
               {activeStep.body}
             </p>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div className="ws-nextstep-actions" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               {activeStep.actions.map((a, i) => (
                 <button
                   key={a.label}
