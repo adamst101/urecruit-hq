@@ -181,6 +181,12 @@ export default function Home() {
             min-height: 44px !important;
             border-radius: 8px !important;
           }
+          .nav-member-login-btn {
+            background: transparent !important;
+            color: #6b7280 !important;
+            border: 1px solid #d1d5db !important;
+            font-weight: 500 !important;
+          }
         }
 
         /* ── HERO RESPONSIVE ── */
@@ -299,7 +305,7 @@ export default function Home() {
               </>
             ) : (
               <>
-                <button onClick={handleMemberLogin} style={S.navBtnMemberLogin}>
+                <button className="nav-member-login-btn" onClick={handleMemberLogin} style={S.navBtnMemberLogin}>
                   Members Login
                 </button>
               </>
@@ -421,7 +427,7 @@ export default function Home() {
                 Understand recruiting earlier. Organize camps. Track progress with more clarity, structure, and confidence.
               </p>
               <p className="hero-mobile-subhead" style={{ display: "none", fontSize: 15, color: "#9ca3af", lineHeight: 1.5, margin: "0 0 16px" }}>
-                URecruit HQ gives families a clearer plan for camps, recruiting, and what actually matters next.
+                Get a clearer plan for camps, recruiting, and what matters next.
               </p>
               <div className="hero-support-wrap" style={{ margin: "0 0 28px", maxWidth: 560 }}>
                 <p className="hero-support-line" style={{ fontSize: 17, fontWeight: 600, color: "#d1d5db", lineHeight: 1.3, margin: 0, whiteSpace: "nowrap" }}>
@@ -580,7 +586,7 @@ export default function Home() {
           <p className="hero-proof-strip hero-proof-strip-desktop" style={{ fontSize: 15, color: "#9ca3af", margin: 0 }}>
             100%&nbsp;<em style={{ fontStyle: "italic", color: "#d1d5db" }}>College</em>&nbsp;Coaching Staffs &nbsp;·&nbsp; Zero Club Camps &nbsp;·&nbsp; All Divisions
           </p>
-          <p className="hero-proof-strip hero-proof-strip-mobile" style={{ display: "none", fontSize: 13, color: "#4b5563", margin: 0, lineHeight: 1.5 }}>
+          <p className="hero-proof-strip hero-proof-strip-mobile" style={{ display: "none", fontSize: 14, color: "#6b7280", margin: 0, lineHeight: 1.5 }}>
             Built for football families trying to make sense of recruiting earlier.
           </p>
         </div>
